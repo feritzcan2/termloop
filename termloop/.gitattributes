@@ -1,0 +1,20 @@
+# TermLoop fork discipline
+#
+# During an upstream rebase / merge, keep our isolated paths as-is instead of
+# letting git concoct a 3-way merge inside them. The `merge=ours` attribute
+# references a merge driver named `ours`. Enable it once per clone with:
+#
+#   git config merge.ours.driver true
+#
+# (or run `scripts/install-termloop.sh` which does this + hook path wiring).
+
+Sources/TermLoop/**                        merge=ours
+CLI/TermLoop/**                            merge=ours
+Resources/TermLoop.xcstrings               merge=ours
+docs/termloop/**                           merge=ours
+.claude/commands/sync-upstream.md          merge=ours
+.githooks/**                               merge=ours
+scripts/termloop-check.py                  merge=ours
+scripts/generate-hooks-inventory.py        merge=ours
+scripts/install-termloop.sh                merge=ours
+.github/workflows/termloop-discipline.yml  merge=ours

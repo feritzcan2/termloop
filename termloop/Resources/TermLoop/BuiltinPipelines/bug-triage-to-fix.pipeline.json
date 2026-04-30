@@ -1,0 +1,45 @@
+{
+  "id": "bug-triage-to-fix",
+  "name": "Bug Triage → Fix",
+  "description": "From a bug report: minimal repro, root cause, approval, fix + test.",
+  "scope": "workspace",
+  "triggers": [
+    { "type": "manual" }
+  ],
+  "variables": {
+    "brief": {
+      "required": true,
+      "prompt": "Bug raporunu yapıştır ya da yaşadığın problemi yaz."
+    }
+  },
+  "nodes": [
+    {
+      "id": "reproducer",
+      "type": "solo",
+      "role": "agents/reproducer.md",
+      "inputs": ["brief.txt"],
+      "output": "REPRO.md"
+    },
+    {
+      "id": "diagnoser",
+      "type": "solo",
+      "role": "agents/diagnoser.md",
+      "inputs": ["REPRO.md"],
+      "output": "DIAGNOSIS.md"
+    },
+    {
+      "id": "approve_fix",
+      "type": "gate",
+      "prompt": "Kök neden ve önerilen fix onaylanıyor mu?",
+      "inputs": ["DIAGNOSIS.md"],
+      "on_revise": "diagnoser"
+    },
+    {
+      "id": "fixer",
+      "type": "solo",
+      "role": "agents/fixer.md",
+      "inputs": ["REPRO.md", "DIAGNOSIS.md"],
+      "output": "SHIPLOG.md"
+    }
+  ]
+}

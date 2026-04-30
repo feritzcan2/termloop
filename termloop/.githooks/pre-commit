@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# TermLoop fork discipline — pre-commit runs checks that don't need the
+# commit message (K1 new-file location, K3a marker balance, K4 xcstrings).
+# The K3b stray-edit check is deferred to the commit-msg hook so the
+# `termloop-exception:` trailer can downgrade properly-documented
+# exceptions locally, matching the --vs (CI) behavior.
+# Enable: git config core.hooksPath .githooks  (or run scripts/install-termloop.sh)
+
+set -e
+
+repo_root="$(git rev-parse --show-toplevel)"
+script="$repo_root/scripts/termloop-check.py"
+
+if [ ! -x "$script" ]; then
+    if [ -f "$script" ]; then
+        python3 "$script" --staged --skip-stray-edits
+    else
+        echo "termloop pre-commit: $script missing — skipping." >&2
+    fi
+    exit 0
+fi
+
+"$script" --staged --skip-stray-edits

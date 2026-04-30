@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>termloop — quickaction agents pinned above footer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --page-bg:        #c8c9cd;
+    --sidebar-bg:     #e9e9ec;
+    --sidebar-bg-2:   #e2e2e5;
+    --pinned-bg:      #ecedf0;
+    --ink-1:          #1a1a1f;
+    --ink-2:          #5a5d66;
+    --ink-3:          #8c8f97;
+    --line:           rgba(0,0,0,0.07);
+    --line-soft:      rgba(0,0,0,0.04);
+    --line-strong:    rgba(0,0,0,0.12);
+    --mac-blue:       #0a6cff;
+    --mac-blue-edge:  #2f83ff;
+    --amber:          #ef8f1a;
+    --amber-edge:     #ffb94d;
+    --green:          #1e9e4a;
+    --red:            #d93838;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background:
+      radial-gradient(1200px 800px at 20% 0%, #e6e6ea, transparent 60%),
+      radial-gradient(1000px 700px at 100% 100%, #cdced2, transparent 60%),
+      var(--page-bg);
+    color: var(--ink-1);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    padding: 40px 28px 80px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page-head {
+    max-width: 1480px; margin: 0 auto 28px;
+    display: flex; align-items: baseline; justify-content: space-between; gap: 24px;
+    border-bottom: 1px solid rgba(0,0,0,0.1);
+    padding-bottom: 16px;
+  }
+  .page-head h1 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: 0.02em; color: var(--ink-2); }
+  .page-head h1 b { color: var(--mac-blue); font-weight: 700; }
+  .page-head .legend { font-size: 11px; color: var(--ink-3); letter-spacing: 0.04em; text-transform: uppercase; }
+
+  .grid {
+    max-width: 1480px; margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 28px;
+  }
+
+  .card { display: flex; flex-direction: column; gap: 12px; }
+  .card .caption {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 0 2px;
+  }
+  .card .caption .name {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--ink-1);
+  }
+  .card .caption .tag {
+    font-size: 10px; font-weight: 500; color: var(--ink-3);
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  }
+
+  /* ===== sidebar chrome ===== */
+  .sb {
+    background: var(--sidebar-bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.08), 0 1px 0 rgba(255,255,255,0.4) inset;
+    display: flex; flex-direction: column;
+    min-height: 640px;
+  }
+
+  .titlebar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px 8px;
+    background: linear-gradient(#eaeaee, #dfdfe3);
+    border-bottom: 1px solid var(--line);
+  }
+  .dots { display: flex; gap: 6px; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .dot.r { background: #ff5f57; } .dot.y { background: #febc2e; } .dot.g { background: #28c840; }
+
+  .tabs {
+    display: grid; grid-template-columns: 1fr 1fr 1fr;
+    background: linear-gradient(#dfdfe3, #d7d7db);
+    border-bottom: 1px solid rgba(0,0,0,0.09);
+  }
+  .tab {
+    text-align: center; padding: 8px 0 10px;
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.16em;
+    color: #8a8d95;
+  }
+  .tab.active { color: var(--ink-1); box-shadow: inset 0 -2px 0 0 var(--mac-blue); }
+
+  .section-head {
+    padding: 7px 14px;
+    background: #cfcfd3;
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+    text-align: center;
+    font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+    color: #5a5d66;
+  }
+
+  .epic {
+    padding: 9px 12px; display: flex; align-items: center; gap: 6px;
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+    color: #2a2d34; border-bottom: 1px solid var(--line-soft);
+    background: var(--sidebar-bg-2);
+    position: relative;
+  }
+  .epic.collapsed { color: #6a6d75; font-weight: 600; }
+  .epic .caret { width: 10px; color: #6a6d75; font-size: 9px; }
+  .epic .count { margin-left: auto; font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-weight: 500; color: #8a8d95; font-size: 10px; }
+
+  .ws-list { padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 4px; }
+
+  .ws {
+    position: relative;
+    padding: 8px 10px;
+    border-radius: 6px;
+    display: flex; flex-direction: column; gap: 2px;
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  }
+  .ws .title { font-size: 11.5px; font-weight: 600; color: #15161a; display: flex; align-items: center; gap: 8px; }
+  .ws .sub   { font-size: 10.5px; color: #6a6d75; }
+  .ws .title .x { margin-left: auto; width: 14px; height: 14px; display: grid; place-items: center; color: #8a8d95; font-size: 12px; }
+  .ws.is-rest:hover { background: rgba(0,0,0,0.03); }
+  .ws.is-sel {
+    background: linear-gradient(var(--mac-blue-edge), var(--mac-blue));
+    box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 1px 2px rgba(0,0,0,0.14);
+  }
+  .ws.is-sel .title, .ws.is-sel .sub { color: #fff; }
+  .ws.is-sel .title .x { color: rgba(255,255,255,0.85); }
+
+  .spacer-flex { flex: 1 1 auto; }
+
+  /* ===================== PINNED QUICKACTION AGENTS — FINAL ===================== */
+  /* V03 keyline (status on left spine) + V02 height (18px) + single-letter glyph */
+  .pinned {
+    border-top: 1px solid var(--line-strong);
+    background: var(--pinned-bg);
+  }
+  .pinned-head {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 12px 4px;
+    font-size: 9.5px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase;
+    color: #6a6d75;
+  }
+  .pinned-head .bolt { color: var(--amber); font-size: 11px; line-height: 1; }
+  .pinned-head .count {
+    margin-left: auto;
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    font-size: 9.5px; letter-spacing: 0; color: #8a8d95; font-weight: 500;
+  }
+
+  .qa-list { padding: 2px 6px 6px; display: flex; flex-direction: column; gap: 1px; }
+
+  /* Final row: 18px, 2pt status spine on left, single-letter agent glyph, branch, elapsed, × */
+  .qa {
+    display: grid;
+    grid-template-columns: 14px 1fr auto auto;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 6px 2px 8px;
+    border-left: 2px solid transparent;
+    border-radius: 0 4px 4px 0;
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    font-size: 10.5px;
+    color: var(--ink-1);
+    min-height: 18px;
+    cursor: grab;
+  }
+  .qa:active { cursor: grabbing; }
+  .qa:hover { background: rgba(0,0,0,0.04); }
+
+  /* status spine */
+  .qa.run  { border-left-color: var(--green); }
+  .qa.wait { border-left-color: var(--amber); }
+  .qa.err  { border-left-color: var(--red); }
+  .qa.done { border-left-color: #c4c7cd; }
+
+  /* single-letter agent glyph — C (Claude), X (codeX), G (Gemini) */
+  .qa .ag {
+    width: 14px; height: 14px;
+    display: grid; place-items: center;
+    font-size: 9.5px; font-weight: 700;
+    font-family: 'Inter', sans-serif;
+    color: #4a4d55;
+    border-radius: 3px;
+    background: rgba(0,0,0,0.05);
+    letter-spacing: 0;
+  }
+  .qa.run  .ag { background: rgba(30,158,74,0.14); color: #0d5a2b; animation: glyph-pulse 1.6s ease-in-out infinite; }
+  .qa.wait .ag { background: rgba(239,143,26,0.18); color: #7a4206; }
+  .qa.err  .ag { background: rgba(217,56,56,0.14); color: #7a1010; }
+  .qa.done .ag { opacity: 0.55; }
+
+  /* branch / task label */
+  .qa .lbl {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--ink-1); font-weight: 500;
+  }
+  .qa.done .lbl { color: var(--ink-2); }
+
+  /* elapsed / state meta */
+  .qa .meta {
+    font-size: 9.5px; color: var(--ink-3); font-weight: 500; letter-spacing: 0.02em;
+  }
+
+  /* close glyph */
+  .qa .x {
+    width: 12px; height: 12px; display: grid; place-items: center;
+    color: #a4a7af; font-size: 11px; border-radius: 2px;
+    opacity: 0; transition: opacity 120ms ease;
+  }
+  .qa:hover .x { opacity: 1; }
+  .qa .x:hover { color: var(--ink-1); background: rgba(0,0,0,0.06); }
+
+  /* selected agent (currently focused) */
+  .qa.is-sel {
+    background: linear-gradient(var(--mac-blue-edge), var(--mac-blue));
+    color: #fff;
+    border-left-color: #fff;
+  }
+  .qa.is-sel .lbl { color: #fff; }
+  .qa.is-sel .meta { color: rgba(255,255,255,0.78); }
+  .qa.is-sel .ag { background: rgba(255,255,255,0.22); color: #fff; animation: none; }
+  .qa.is-sel .x { color: rgba(255,255,255,0.85); opacity: 1; }
+
+  @keyframes glyph-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(30,158,74,0.0); }
+    50%      { box-shadow: 0 0 0 2px rgba(30,158,74,0.16); }
+  }
+
+  /* ===================== FOOTER ===================== */
+  .footer {
+    border-top: 1px solid var(--line-strong);
+    background: #e2e2e6;
+    padding: 7px 12px;
+    display: flex; align-items: center; gap: 10px;
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    font-size: 10.5px; color: var(--ink-2);
+  }
+  .footer .pill {
+    padding: 2px 7px; border-radius: 10px;
+    background: rgba(30,158,74,0.14); color: #0d5a2b;
+    font-weight: 700; font-size: 9.5px; letter-spacing: 0.06em;
+  }
+  .footer .sp { flex: 1; }
+  .footer .q { font-weight: 600; color: var(--ink-2); }
+
+  /* ===================== DRAG-DROP STATES ===================== */
+
+  .qa.is-dragging {
+    opacity: 0.42;
+    background: transparent !important;
+    outline: 1px dashed rgba(10,108,255,0.55);
+    outline-offset: -1px;
+  }
+  .qa.is-dragging .x { opacity: 0; }
+
+  .drag-ghost {
+    position: absolute;
+    pointer-events: none;
+    z-index: 10;
+    padding: 4px 8px;
+    border-radius: 5px;
+    background: #fbfbfd;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.22), 0 0 0 1px rgba(10,108,255,0.35);
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    font-size: 10.5px;
+    display: inline-flex; align-items: center; gap: 6px;
+    color: var(--ink-1);
+    transform: rotate(-1.2deg);
+  }
+  .drag-ghost .ag {
+    width: 14px; height: 14px; display: grid; place-items: center;
+    font-size: 9.5px; font-weight: 700;
+    background: rgba(30,158,74,0.14); color: #0d5a2b;
+    border-radius: 3px;
+  }
+  .drag-ghost .plus-badge {
+    margin-left: 4px;
+    font-family: 'Inter', sans-serif; font-weight: 700; font-size: 10px;
+    padding: 1px 5px; border-radius: 8px;
+    background: var(--mac-blue); color: #fff;
+  }
+
+  .epic.drop-into {
+    box-shadow: inset 0 0 0 2px var(--mac-blue);
+    background: rgba(10,108,255,0.08);
+    color: #0a3d8a;
+  }
+  .epic.drop-into .caret { color: #0a3d8a; }
+  .epic.drop-into .count { color: #0a3d8a; }
+
+  .ws.drop-above::before,
+  .ws.drop-below::before {
+    content: "";
+    position: absolute;
+    left: 4px; right: 4px; height: 2px;
+    background: var(--mac-blue);
+    border-radius: 1px;
+  }
+  .ws.drop-above::before { top: -1px; }
+  .ws.drop-below::before { bottom: -1px; }
+
+  .epic.just-accepted {
+    animation: flash 900ms ease-out;
+  }
+  @keyframes flash {
+    0%   { box-shadow: inset 0 0 0 2px var(--mac-blue); background: rgba(10,108,255,0.18); }
+    100% { box-shadow: inset 0 0 0 0 var(--mac-blue); background: var(--sidebar-bg-2); }
+  }
+
+  /* landed agent-row inside a folder — compact, keeps status spine */
+  .ws.is-agent {
+    padding: 4px 10px 4px 12px;
+    gap: 0;
+    border-left: 2px solid var(--green);
+    border-radius: 0 5px 5px 0;
+    margin-left: 2px;
+  }
+  .ws.is-agent .title { font-size: 10.5px; font-weight: 600; }
+  .ws.is-agent .sub   { font-size: 9.5px; }
+  .ws.is-agent .agtag {
+    width: 14px; height: 14px;
+    display: inline-grid; place-items: center;
+    font-size: 9.5px; font-weight: 700; font-family: 'Inter', sans-serif;
+    border-radius: 3px;
+    background: rgba(30,158,74,0.14); color: #0d5a2b;
+    margin-right: 6px;
+  }
+
+  /* ===== notes ===== */
+  .notes {
+    max-width: 1480px; margin: 40px auto 0;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px 28px;
+    border-top: 1px solid rgba(0,0,0,0.1); padding-top: 20px;
+  }
+  .notes h3 { font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; margin: 0 0 4px; color: #3a3d44; }
+  .notes p { font-size: 12px; line-height: 1.55; margin: 0; color: var(--ink-2); }
+  .notes code { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: #3a3d44; background: rgba(0,0,0,0.05); padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>termloop — <b>quickaction agents</b> · sidebar footer üzerine sabitlenmiş inline satırlar</h1>
+  <div class="legend">tek template · keyline spine + 18px + tek harf glyph</div>
+</div>
+
+<div class="grid">
+
+  <!-- ===================== FINAL — single consolidated design ===================== -->
+  <div class="card">
+    <div class="caption"><span class="name">Final · Keyline + Tight + Single-letter</span><span class="tag">18px / row</span></div>
+    <div class="sb">
+      <div class="titlebar"><div class="dots"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div></div>
+      <div class="tabs"><div class="tab active">WORK</div><div class="tab">BMAD</div><div class="tab">AGENTS</div></div>
+      <div class="section-head">TERMLOOP</div>
+
+      <div class="epic"><span class="caret">▾</span>PROJECT<span class="count">3</span></div>
+      <div class="ws-list">
+        <div class="ws is-sel"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master* · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/termloop <span class="x">×</span></div><div class="sub">bridge · ~/Projects/bmadworkflowtest/termloop</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/terminal-app <span class="x">×</span></div><div class="sub">main · ~/Projects/bmadworkflowtest/terminal-app</div></div>
+      </div>
+
+      <div class="epic collapsed"><span class="caret">▸</span>MOBILEAPP<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>WORKTREE<span class="count">2</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>UI<span class="count">1</span></div>
+
+      <div class="spacer-flex"></div>
+
+      <div class="pinned">
+        <div class="pinned-head">
+          <span class="bolt">⚡︎</span>QUICKACTION AGENTS<span class="count">5 · 3 run</span>
+        </div>
+        <div class="qa-list">
+          <div class="qa run is-sel">
+            <span class="ag">C</span>
+            <span class="lbl">fix/sidebar-footer-pin</span>
+            <span class="meta">02:14</span>
+            <span class="x">×</span>
+          </div>
+          <div class="qa run">
+            <span class="ag">X</span>
+            <span class="lbl">feat/bridge-reconnect</span>
+            <span class="meta">00:47</span>
+            <span class="x">×</span>
+          </div>
+          <div class="qa run">
+            <span class="ag">C</span>
+            <span class="lbl">refactor/worktree-coordinator</span>
+            <span class="meta">01:02</span>
+            <span class="x">×</span>
+          </div>
+          <div class="qa wait">
+            <span class="ag">C</span>
+            <span class="lbl">chore/rename-termloop-termloop</span>
+            <span class="meta">wait</span>
+            <span class="x">×</span>
+          </div>
+          <div class="qa done">
+            <span class="ag">G</span>
+            <span class="lbl">docs/worktree-rules</span>
+            <span class="meta">3m</span>
+            <span class="x">×</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <span class="q">✦</span>
+        <span class="pill">tcp:7878</span>
+        <span class="sp"></span>
+        <span>?</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== Drag → Folder `.into` ===================== -->
+  <div class="card">
+    <div class="caption"><span class="name">Drag → Folder `.into`</span><span class="tag">agent → project folder</span></div>
+    <div class="sb" style="position: relative;">
+      <div class="titlebar"><div class="dots"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div></div>
+      <div class="tabs"><div class="tab active">WORK</div><div class="tab">BMAD</div><div class="tab">AGENTS</div></div>
+      <div class="section-head">TERMLOOP</div>
+
+      <div class="epic drop-into"><span class="caret">▾</span>PROJECT<span class="count">3</span></div>
+      <div class="ws-list">
+        <div class="ws is-sel"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master* · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/termloop <span class="x">×</span></div><div class="sub">bridge · ~/Projects/bmadworkflowtest/termloop</div></div>
+      </div>
+
+      <div class="epic collapsed"><span class="caret">▸</span>MOBILEAPP<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>WORKTREE<span class="count">2</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>UI<span class="count">1</span></div>
+
+      <div class="spacer-flex"></div>
+
+      <div class="pinned">
+        <div class="pinned-head">
+          <span class="bolt">⚡︎</span>QUICKACTION AGENTS<span class="count">4</span>
+        </div>
+        <div class="qa-list">
+          <div class="qa run">
+            <span class="ag">C</span>
+            <span class="lbl">fix/sidebar-footer-pin</span>
+            <span class="meta">02:14</span>
+            <span class="x">×</span>
+          </div>
+          <div class="qa run is-dragging">
+            <span class="ag">X</span>
+            <span class="lbl">feat/bridge-reconnect</span>
+            <span class="meta">00:47</span>
+            <span class="x">×</span>
+          </div>
+          <div class="qa wait">
+            <span class="ag">C</span>
+            <span class="lbl">chore/rename-termloop</span>
+            <span class="meta">wait</span>
+            <span class="x">×</span>
+          </div>
+          <div class="qa done">
+            <span class="ag">G</span>
+            <span class="lbl">docs/worktree-rules</span>
+            <span class="meta">3m</span>
+            <span class="x">×</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <span class="q">✦</span>
+        <span class="pill">tcp:7878</span>
+        <span class="sp"></span>
+        <span>?</span>
+      </div>
+
+      <div class="drag-ghost" style="left: 118px; top: 148px;">
+        <span class="ag">X</span>
+        <span>feat/bridge-reconnect</span>
+        <span class="plus-badge">+ into</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== After drop · Agent lives in folder ===================== -->
+  <div class="card">
+    <div class="caption"><span class="name">After drop · Agent in folder</span><span class="tag">keeps live spine</span></div>
+    <div class="sb">
+      <div class="titlebar"><div class="dots"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div></div>
+      <div class="tabs"><div class="tab active">WORK</div><div class="tab">BMAD</div><div class="tab">AGENTS</div></div>
+      <div class="section-head">TERMLOOP</div>
+
+      <div class="epic just-accepted"><span class="caret">▾</span>PROJECT<span class="count">4</span></div>
+      <div class="ws-list">
+        <div class="ws is-sel"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master* · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/termloop <span class="x">×</span></div><div class="sub">bridge · ~/Projects/bmadworkflowtest/termloop</div></div>
+        <div class="ws is-rest is-agent">
+          <div class="title">
+            <span class="agtag">X</span>
+            feat/bridge-reconnect <span class="x">×</span>
+          </div>
+          <div class="sub">agent · 00:47 · ~/Projects/bmadworkflowtest/termloop</div>
+        </div>
+      </div>
+
+      <div class="epic collapsed"><span class="caret">▸</span>MOBILEAPP<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>WORKTREE<span class="count">2</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>UI<span class="count">1</span></div>
+
+      <div class="spacer-flex"></div>
+
+      <div class="pinned">
+        <div class="pinned-head">
+          <span class="bolt">⚡︎</span>QUICKACTION AGENTS<span class="count">3</span>
+        </div>
+        <div class="qa-list">
+          <div class="qa run">
+            <span class="ag">C</span>
+            <span class="lbl">fix/sidebar-footer-pin</span>
+            <span class="meta">02:14</span>
+            <span class="x">×</span>
+          </div>
+          <div class="qa wait">
+            <span class="ag">C</span>
+            <span class="lbl">chore/rename-termloop</span>
+            <span class="meta">wait</span>
+            <span class="x">×</span>
+          </div>
+          <div class="qa done">
+            <span class="ag">G</span>
+            <span class="lbl">docs/worktree-rules</span>
+            <span class="meta">3m</span>
+            <span class="x">×</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <span class="q">✦</span>
+        <span class="pill">tcp:7878</span>
+        <span class="sp"></span>
+        <span>?</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== Drop between workspaces ===================== -->
+  <div class="card">
+    <div class="caption"><span class="name">Drop between rows · `.above`</span><span class="tag">2pt accent line</span></div>
+    <div class="sb" style="position: relative;">
+      <div class="titlebar"><div class="dots"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div></div>
+      <div class="tabs"><div class="tab active">WORK</div><div class="tab">BMAD</div><div class="tab">AGENTS</div></div>
+      <div class="section-head">TERMLOOP</div>
+
+      <div class="epic"><span class="caret">▾</span>PROJECT<span class="count">3</span></div>
+      <div class="ws-list">
+        <div class="ws is-sel"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master* · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest drop-above"><div class="title">feritzcan@Mac:~/termloop <span class="x">×</span></div><div class="sub">bridge · ~/Projects/bmadworkflowtest/termloop</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/terminal-app <span class="x">×</span></div><div class="sub">main · ~/Projects/bmadworkflowtest/terminal-app</div></div>
+      </div>
+
+      <div class="epic collapsed"><span class="caret">▸</span>MOBILEAPP<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>WORKTREE<span class="count">2</span></div>
+
+      <div class="spacer-flex"></div>
+
+      <div class="pinned">
+        <div class="pinned-head">
+          <span class="bolt">⚡︎</span>QUICKACTION AGENTS<span class="count">4</span>
+        </div>
+        <div class="qa-list">
+          <div class="qa run">
+            <span class="ag">C</span>
+            <span class="lbl">fix/sidebar-footer-pin</span>
+            <span class="meta">02:14</span>
+            <span class="x">×</span>
+          </div>
+          <div class="qa run is-dragging">
+            <span class="ag">X</span>
+            <span class="lbl">feat/bridge-reconnect</span>
+            <span class="meta">00:47</span>
+            <span class="x">×</span>
+          </div>
+          <div class="qa wait">
+            <span class="ag">C</span>
+            <span class="lbl">chore/rename-termloop</span>
+            <span class="meta">wait</span>
+            <span class="x">×</span>
+          </div>
+          <div class="qa done">
+            <span class="ag">G</span>
+            <span class="lbl">docs/worktree-rules</span>
+            <span class="meta">3m</span>
+            <span class="x">×</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <span class="q">✦</span>
+        <span class="pill">tcp:7878</span>
+        <span class="sp"></span>
+        <span>?</span>
+      </div>
+
+      <div class="drag-ghost" style="left: 130px; top: 188px;">
+        <span class="ag">X</span>
+        <span>feat/bridge-reconnect</span>
+        <span class="plus-badge">↑ above</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="notes">
+  <div>
+    <h3>yerleşim</h3>
+    <p>Pinned blok <code>.pinned</code> footer'ın hemen üstüne oturur. Üstteki workspace listesi doğal flex ile uzar (<code>.spacer-flex</code>), pinned + footer her zaman dipte kalır — ekran kısa olunca bile.</p>
+  </div>
+  <div>
+    <h3>satır yoğunluğu</h3>
+    <p>Normal <code>.ws</code> satırları iki satırlı (~34px). Quickaction <code>.qa</code> satırları tek satırlı, 18px. Mesaj: "bu bir çalışma alanı değil, geçici bir agent koşusu."</p>
+  </div>
+  <div>
+    <h3>durum dili</h3>
+    <p>Sol 2pt renkli spine tek durum sinyali — <b style="color:#1e9e4a">yeşil</b> = koşuyor, <b style="color:#ef8f1a">amber</b> = kullanıcı bekliyor, <b style="color:#8c8f97">gri</b> = bitti, <b style="color:#d93838">kırmızı</b> = hata. Ayrı dot sütunu yok; koşan agent glyph'in çevresinde sessiz halo pulse'u var.</p>
+  </div>
+  <div>
+    <h3>agent glyph</h3>
+    <p>14x14 kare, tek harf: <code>C</code> (Claude), <code>X</code> (codeX), <code>G</code> (Gemini). Durumla tintlenir. Uzun <code>CLAUD/CODEX/GEM</code> rozeti yerine; hem dar sidebar'a sığar hem koşan model kimliği korunur.</p>
+  </div>
+  <div>
+    <h3>etkileşim</h3>
+    <p>Row tıklanınca workspace seçimi olur (mac-blue gradient + beyaz spine). Hover'da <code>×</code> görünür, tek tıkla agent'ı sonlandırır. <code>cursor: grab</code> ile sürükle-bırak'a hazır.</p>
+  </div>
+  <div>
+    <h3>swift tarafı</h3>
+    <p>Uygulamada <code>TermLoopSidebarFooter</code>'ın üstüne yeni bir <code>PinnedQuickActionAgents</code> view'i, <code>AgentRunDisplay</code> / <code>ActiveAgentPinStore</code>'dan besleniyor. <code>QuickActionLRUStore</code> mevcut kayıtları sıralamak için kullanılabilir.</p>
+  </div>
+  <div>
+    <h3>drag-drop pipeline</h3>
+    <p>Mevcut <code>UILayout.md · SideMenuTreeLayout</code> iki-UTI deseni ile uyumlu: pinned satırlar yeni bir <code>com.termloop.quickaction-agent</code> UTI'si ile <code>.onDrag</code> yapar. <code>SidebarTreeDropDelegate</code> bu UTI'yi üçüncü tip olarak tanır; folder'da <code>.into</code>, workspace satırında <code>.above/.below</code> aynen uygulanır.</p>
+  </div>
+  <div>
+    <h3>.into → folder atama</h3>
+    <p>Folder'a bırakıldığında: (1) <code>WorkspaceMetadataStore.setFeatureId</code>, (2) <code>SidebarLayoutStore.reindexParentIfNeeded</code> + append, (3) <code>FolderTreeState.shared.setExpanded(dest, true)</code> auto-expand, (4) <code>positionVersion</code> tick. Aynı <code>didReorderSidebarTab</code> hook hattı.</p>
+  </div>
+  <div>
+    <h3>landed agent satırı</h3>
+    <p>Folder içindeki agent workspace'i normal <code>TabItemView</code>'dan kompakt: sol 2pt yeşil spine, 14x14 tek harf rozeti. Koşmayı bitirince spine grileşir, rozet kaybolur, satır standart <code>.ws</code>'ye "terfi" eder (veya sağ tık → <i>Detach from folder</i>).</p>
+  </div>
+  <div>
+    <h3>indicator stili</h3>
+    <p><code>.drop-into</code>: 2pt mac-blue iç çerçeve + %8 tint. <code>.drop-above/.below</code>: 2pt mac-blue çizgi satırın üst/alt kenarında. Ghost satır cursor'u izler, -1.2° rotasyon + <code>+ into</code> / <code>↑ above</code> badge.</p>
+  </div>
+  <div>
+    <h3>cross-system UTI</h3>
+    <p>Pinned drag kendi UTI'siyle çıkar; <code>SidebarTabDropDelegate</code> (com.cmux.sidebar-tab-reorder) onu tanımaz → workspace inline drop'a karışmaz. Sadece <code>SidebarTreeDropDelegate</code> eşleşir. <code>.ownProcess</code> visibility UTI harici sızıntıyı engeller.</p>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "id": "doc-sweep",
+  "name": "Doc Sweep",
+  "description": "Every 10 minutes, check the repo for code↔documentation drift and flag mismatches.",
+  "scope": "root",
+  "triggers": [
+    { "type": "cron", "interval_seconds": 600 }
+  ],
+  "nodes": [
+    {
+      "id": "documenter",
+      "type": "solo",
+      "role": "agents/documenter.md",
+      "inputs": [],
+      "output": "DRIFT.md"
+    }
+  ]
+}

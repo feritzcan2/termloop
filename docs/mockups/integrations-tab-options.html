@@ -1,0 +1,956 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>termloop — integrations tab · 3 options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --page-bg:        #c8c9cd;
+    --sidebar-bg:     #e9e9ec;
+    --sidebar-bg-2:   #e2e2e5;
+    --row-bg:         #f2f2f5;
+    --row-hover:      #ecedf0;
+    --ink-1:          #1a1a1f;
+    --ink-2:          #5a5d66;
+    --ink-3:          #8c8f97;
+    --ink-4:          #b0b3ba;
+    --line:           rgba(0,0,0,0.07);
+    --line-soft:      rgba(0,0,0,0.04);
+    --line-strong:    rgba(0,0,0,0.12);
+    --mac-blue:       #0a6cff;
+    --amber:          #ef8f1a;
+    --green:          #1e9e4a;
+    --red:            #d43a3a;
+    --violet:         #6a3dd7;
+    --violet-soft:    rgba(106,61,215,0.13);
+    --violet-ink:     #3b207f;
+    --mcp:            #0a6cff;
+    --cli:            #1e9e4a;
+    --webhook:        #ef8f1a;
+    --chook:          #6a3dd7;
+    --xhook:          #c45ab0;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background:
+      radial-gradient(1200px 800px at 20% 0%, #e6e6ea, transparent 60%),
+      radial-gradient(1000px 700px at 100% 100%, #cdced2, transparent 60%),
+      var(--page-bg);
+    color: var(--ink-1);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    padding: 40px 28px 80px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page-head {
+    max-width: 1480px; margin: 0 auto 28px;
+    display: flex; align-items: baseline; justify-content: space-between; gap: 24px;
+    border-bottom: 1px solid rgba(0,0,0,0.1);
+    padding-bottom: 16px;
+  }
+  .page-head h1 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: 0.02em; color: var(--ink-2); }
+  .page-head h1 b { color: var(--mac-blue); font-weight: 700; }
+  .page-head .legend { font-size: 11px; color: var(--ink-3); letter-spacing: 0.04em; text-transform: uppercase; }
+
+  .grid {
+    max-width: 1480px; margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(360px, 1fr));
+    gap: 28px;
+  }
+  @media (max-width: 1180px) { .grid { grid-template-columns: 1fr; } }
+
+  .card { display: flex; flex-direction: column; gap: 12px; }
+  .card .caption {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 0 2px;
+  }
+  .card .caption .name {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--ink-1);
+  }
+  .card .caption .tag {
+    font-size: 10px; font-weight: 500; color: var(--ink-3);
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  }
+  .card .desc {
+    font-size: 11px; color: var(--ink-2); line-height: 1.45;
+    padding: 0 2px;
+  }
+
+  .sb {
+    background: var(--sidebar-bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    height: 720px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.08);
+  }
+
+  .tabbar {
+    display: flex; background: rgba(0,0,0,0.05);
+    border-bottom: 1px solid var(--line);
+    height: 28px;
+  }
+  .tabbar .t {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    font: 700 9px/1 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    letter-spacing: 1.6px;
+    color: var(--ink-3);
+    position: relative;
+  }
+  .tabbar .t.active { color: var(--ink-1); }
+  .tabbar .t.active::after {
+    content: ''; position: absolute; left: 8px; right: 8px; bottom: 0;
+    height: 2px; background: var(--mac-blue); border-radius: 2px 2px 0 0;
+  }
+
+  /* OPTION A — flat list with chips */
+  .a-toolbar {
+    display: flex; gap: 6px; padding: 10px 10px 8px; flex-wrap: wrap;
+    border-bottom: 1px solid var(--line-soft);
+    background: var(--sidebar-bg-2);
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 8px; border-radius: 10px;
+    font: 600 10px/1 'Inter';
+    border: 1px solid var(--line-strong);
+    background: white; color: var(--ink-2);
+    cursor: pointer;
+  }
+  .chip.active { background: var(--ink-1); color: white; border-color: var(--ink-1); }
+  .chip .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .chip .c-mcp     { background: var(--mcp); }
+  .chip .c-cli     { background: var(--cli); }
+  .chip .c-webhook { background: var(--webhook); }
+  .chip .c-chook   { background: var(--chook); }
+  .chip .c-xhook   { background: var(--xhook); }
+
+  .search {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 10px; border-bottom: 1px solid var(--line-soft);
+    background: white;
+  }
+  .search input {
+    flex: 1; border: none; outline: none; background: transparent;
+    font: 500 12px 'Inter'; color: var(--ink-1);
+  }
+  .search input::placeholder { color: var(--ink-4); }
+  .search .kbd {
+    font: 600 9px 'JetBrains Mono', monospace;
+    padding: 2px 5px; border: 1px solid var(--line-strong);
+    border-radius: 4px; color: var(--ink-3); background: #f6f6f8;
+  }
+
+  .rows { flex: 1; overflow-y: auto; padding: 4px 0; }
+  .row {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    align-items: center; gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line-soft);
+    cursor: pointer;
+  }
+  .row:hover { background: var(--row-hover); }
+  .row .badge {
+    font: 700 8px/1 'JetBrains Mono', monospace;
+    padding: 3px 5px; border-radius: 3px;
+    letter-spacing: 0.6px; color: white;
+  }
+  .badge.b-mcp     { background: var(--mcp); }
+  .badge.b-cli     { background: var(--cli); }
+  .badge.b-webhook { background: var(--webhook); }
+  .badge.b-chook   { background: var(--chook); }
+  .badge.b-xhook   { background: var(--xhook); }
+  .row .main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .row .main .t1 { font: 600 12px 'Inter'; color: var(--ink-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .main .t2 { font: 500 10px 'JetBrains Mono', monospace; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .status {
+    width: 8px; height: 8px; border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.9);
+  }
+  .s-ok    { background: var(--green); }
+  .s-fail  { background: var(--red); }
+  .s-idle  { background: var(--ink-4); }
+  .s-run   { background: var(--amber); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  .btn {
+    font: 600 10px 'Inter'; color: var(--ink-2);
+    padding: 4px 8px; border: 1px solid var(--line-strong);
+    background: white; border-radius: 5px;
+    cursor: pointer;
+  }
+  .btn:hover { border-color: var(--ink-2); color: var(--ink-1); }
+  .btn.primary { background: var(--mac-blue); color: white; border-color: var(--mac-blue); }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.ghost { background: transparent; border-color: transparent; color: var(--ink-3); }
+  .btn.ghost:hover { background: rgba(0,0,0,0.05); color: var(--ink-1); }
+  .btn.sm { padding: 2px 6px; font-size: 9px; }
+
+  /* OPTION B — sub-tabs */
+  .subtabs {
+    display: flex; overflow-x: auto;
+    background: var(--sidebar-bg-2);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .subtab {
+    display: flex; align-items: center; gap: 5px;
+    padding: 9px 11px;
+    font: 600 10px 'Inter';
+    color: var(--ink-3); white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+  }
+  .subtab .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .subtab.active { color: var(--ink-1); border-bottom-color: var(--ink-1); background: var(--sidebar-bg); }
+
+  .sub-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px 6px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .sub-head .title { font: 700 11px 'Inter'; color: var(--ink-1); }
+  .sub-head .count { font: 500 10px 'JetBrains Mono', monospace; color: var(--ink-3); }
+
+  /* OPTION C — accordion + detail */
+  .accord { flex: 1; overflow-y: auto; }
+  .accord-group { border-bottom: 1px solid var(--line-soft); }
+  .accord-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; cursor: pointer;
+    background: var(--sidebar-bg-2);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .accord-head .chev {
+    font: 900 10px 'JetBrains Mono', monospace;
+    color: var(--ink-3); width: 10px;
+    transition: transform 0.15s;
+  }
+  .accord-group.open > .accord-head .chev { transform: rotate(90deg); }
+  .accord-head .name { font: 700 10px 'Inter'; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-1); flex: 1; }
+  .accord-head .pill {
+    font: 600 9px 'JetBrains Mono', monospace;
+    padding: 1px 5px; border-radius: 3px;
+    background: rgba(0,0,0,0.06); color: var(--ink-2);
+  }
+  .accord-body { display: none; }
+  .accord-group.open > .accord-body { display: block; }
+
+  .row-compact {
+    display: grid; grid-template-columns: auto 1fr auto; gap: 8px;
+    padding: 6px 10px 6px 26px;
+    align-items: center;
+    border-bottom: 1px solid var(--line-soft);
+    cursor: pointer;
+  }
+  .row-compact:last-child { border-bottom: none; }
+  .row-compact:hover { background: var(--row-hover); }
+  .row-compact .t1 { font: 500 12px 'Inter'; color: var(--ink-1); }
+  .row-compact .t2 { font: 500 10px 'JetBrains Mono', monospace; color: var(--ink-3); }
+
+  .detail {
+    border-top: 1px solid var(--line);
+    background: white;
+    padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .detail .d-head {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .detail .d-title { font: 700 12px 'Inter'; color: var(--ink-1); flex: 1; }
+  .detail .kv { display: flex; justify-content: space-between; gap: 8px; font: 500 11px 'JetBrains Mono', monospace; }
+  .detail .kv .k { color: var(--ink-3); }
+  .detail .kv .v { color: var(--ink-1); }
+  .detail .actions { display: flex; gap: 6px; margin-top: 4px; }
+
+  .footer-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 10px; border-top: 1px solid var(--line-soft);
+    background: var(--sidebar-bg-2);
+    font: 500 10px 'JetBrains Mono', monospace;
+    color: var(--ink-3);
+  }
+  .footer-bar .link { color: var(--mac-blue); cursor: pointer; }
+  .footer-bar .link:hover { text-decoration: underline; }
+
+  .trafficlights {
+    display: flex; gap: 6px; padding: 9px 12px 0;
+  }
+  .tl { width: 11px; height: 11px; border-radius: 50%; }
+  .tl.r { background: #ed6a5e; }
+  .tl.y { background: #f5bf4f; }
+  .tl.g { background: #62c555; }
+
+  .legend-row {
+    max-width: 1480px; margin: 22px auto 0;
+    display: flex; flex-wrap: wrap; gap: 14px;
+    font: 500 11px 'Inter'; color: var(--ink-2);
+  }
+  .legend-row .li { display: inline-flex; align-items: center; gap: 6px; }
+  .legend-row .sw { width: 10px; height: 10px; border-radius: 3px; }
+
+  /* Recommended badge + tooltip */
+  .rec-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 8px; border-radius: 10px;
+    font: 700 9px/1 'Inter'; letter-spacing: 0.08em; text-transform: uppercase;
+    background: linear-gradient(135deg, #1e9e4a 0%, #148a3e 100%);
+    color: white;
+    box-shadow: 0 1px 2px rgba(30,158,74,0.3);
+    position: relative; cursor: help;
+  }
+  .rec-badge::before { content: '★'; font-size: 10px; }
+  .rec-badge .why {
+    position: absolute; top: calc(100% + 8px); right: 0;
+    width: 340px;
+    padding: 12px 14px;
+    background: #1a1a1f;
+    color: #f3f3f5;
+    border-radius: 8px;
+    font: 500 11px/1.5 'Inter';
+    text-transform: none; letter-spacing: 0;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+    opacity: 0; pointer-events: none;
+    transform: translateY(-4px);
+    transition: opacity 0.12s, transform 0.12s;
+    z-index: 10;
+  }
+  .rec-badge .why::before {
+    content: ''; position: absolute; top: -6px; right: 18px;
+    width: 12px; height: 12px; background: #1a1a1f;
+    transform: rotate(45deg);
+  }
+  .rec-badge .why h4 {
+    margin: 0 0 6px; font: 700 11px 'Inter';
+    color: #62c555; letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .rec-badge .why ul { margin: 0; padding-left: 16px; }
+  .rec-badge .why li { margin: 3px 0; }
+  .rec-badge .why .foot {
+    margin-top: 8px; padding-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    color: #b0b3ba; font-size: 10px;
+  }
+  .rec-badge:hover .why {
+    opacity: 1; pointer-events: auto; transform: translateY(0);
+  }
+
+  .opt-badge {
+    display: inline-flex; align-items: center;
+    padding: 2px 7px; border-radius: 8px;
+    font: 600 9px 'Inter'; letter-spacing: 0.06em; text-transform: uppercase;
+    background: rgba(0,0,0,0.08); color: var(--ink-2);
+    cursor: help; position: relative;
+  }
+  .opt-badge .why {
+    position: absolute; top: calc(100% + 8px); right: 0;
+    width: 300px;
+    padding: 10px 12px;
+    background: #1a1a1f;
+    color: #f3f3f5;
+    border-radius: 8px;
+    font: 500 11px/1.5 'Inter';
+    text-transform: none; letter-spacing: 0;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+    opacity: 0; pointer-events: none;
+    transform: translateY(-4px);
+    transition: opacity 0.12s, transform 0.12s;
+    z-index: 10;
+  }
+  .opt-badge .why::before {
+    content: ''; position: absolute; top: -6px; right: 18px;
+    width: 12px; height: 12px; background: #1a1a1f;
+    transform: rotate(45deg);
+  }
+  .opt-badge .why strong { color: #f5bf4f; }
+  .opt-badge:hover .why {
+    opacity: 1; pointer-events: auto; transform: translateY(0);
+  }
+
+  /* Recommended section — pinned category shown in-list */
+  .rec-group {
+    background: linear-gradient(180deg, rgba(30,158,74,0.08) 0%, rgba(30,158,74,0.02) 100%);
+    border-bottom: 1px solid rgba(30,158,74,0.18);
+    position: sticky; top: 0; z-index: 2;
+  }
+  .rec-group .accord-head {
+    background: transparent;
+    border-bottom: 1px solid rgba(30,158,74,0.18);
+  }
+  .rec-group .accord-head .chev { color: var(--green); }
+  .rec-group .accord-head .name { color: #0f6b30; }
+  .rec-group .accord-head .pill {
+    background: rgba(30,158,74,0.18); color: #0f6b30;
+  }
+  .rec-group .accord-head .star {
+    font-size: 11px; color: var(--green);
+  }
+  .rec-row {
+    display: grid; grid-template-columns: auto auto 1fr auto auto; gap: 8px;
+    align-items: center;
+    padding: 8px 10px 8px 26px;
+    border-bottom: 1px solid rgba(30,158,74,0.1);
+    cursor: help;
+    position: relative;
+  }
+  .rec-row:last-child { border-bottom: none; }
+  .rec-row:hover { background: rgba(30,158,74,0.06); }
+  .rec-row .t1 { font: 600 12px 'Inter'; color: var(--ink-1); }
+  .rec-row .t2 {
+    font: 500 10px 'JetBrains Mono', monospace; color: var(--ink-3);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .rec-row .rec-why {
+    position: absolute; top: calc(100% - 4px); left: 20px; right: 20px;
+    background: #1a1a1f; color: #f3f3f5;
+    padding: 10px 12px; border-radius: 8px;
+    font: 500 11px/1.5 'Inter';
+    box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+    opacity: 0; pointer-events: none;
+    transform: translateY(-4px);
+    transition: opacity 0.12s, transform 0.12s;
+    z-index: 20;
+  }
+  .rec-row .rec-why::before {
+    content: ''; position: absolute; top: -6px; left: 24px;
+    width: 12px; height: 12px; background: #1a1a1f;
+    transform: rotate(45deg);
+  }
+  .rec-row .rec-why strong { color: #62c555; }
+  .rec-row:hover .rec-why {
+    opacity: 1; pointer-events: auto; transform: translateY(0);
+  }
+  .rec-row .add-btn {
+    padding: 3px 8px; font: 700 9px 'Inter'; letter-spacing: 0.04em;
+    background: var(--green); color: white; border: none; border-radius: 5px;
+    cursor: pointer;
+  }
+  .rec-row .add-btn:hover { filter: brightness(1.1); }
+
+  /* Recommended bar used in flat list (Option A) */
+  .rec-flat-head {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 12px 6px;
+    background: linear-gradient(90deg, rgba(30,158,74,0.1), rgba(30,158,74,0.02));
+    border-bottom: 1px solid rgba(30,158,74,0.2);
+    font: 700 10px 'Inter'; letter-spacing: 0.08em; text-transform: uppercase;
+    color: #0f6b30;
+  }
+  .rec-flat-head .count {
+    margin-left: auto; font: 500 10px 'JetBrains Mono', monospace;
+    color: #0f6b30; letter-spacing: 0; text-transform: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>termloop — <b>Integrations</b> tab · 3 layout options</h1>
+  <div class="legend">mockup · sidebar width ≈ 320px · category scope: MCP · CLI · Webhook · Claude Hooks · Codex Hooks</div>
+</div>
+
+<div class="grid">
+
+  <!-- ============ OPTION A ============ -->
+  <div class="card">
+    <div class="caption">
+      <span class="name">Option A — flat list · chips</span>
+      <span class="opt-badge">tradeoff
+        <span class="why">
+          <strong>Hızlı ama sığ.</strong><br>
+          24 item'ı tek scroll'da görürsün, kategori filtre chip'i var. Ancak her item için config/auth/logs açmak ek sheet gerektirir — sidebar bağlamını kaybedersin. Detay yok.
+        </span>
+      </span>
+    </div>
+    <div class="desc">Tek birleşik liste. Üstte kategori chip'leri ile filtre, aranabilir, her satırda rozet + status + test butonu.</div>
+    <div class="sb">
+      <div class="trafficlights"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span></div>
+      <div class="tabbar">
+        <span class="t">WORK</span>
+        <span class="t">BMAD</span>
+        <span class="t">AGENTS</span>
+        <span class="t active">INTEGR.</span>
+        <span class="t">PLAN</span>
+      </div>
+      <div class="a-toolbar">
+        <span class="chip active"><span class="dot" style="background:#1a1a1f"></span>All · 24</span>
+        <span class="chip"><span class="dot c-mcp"></span>MCP · 6</span>
+        <span class="chip"><span class="dot c-cli"></span>CLI · 9</span>
+        <span class="chip"><span class="dot c-webhook"></span>Webhook · 3</span>
+        <span class="chip"><span class="dot c-chook"></span>Claude · 4</span>
+        <span class="chip"><span class="dot c-xhook"></span>Codex · 2</span>
+      </div>
+      <div class="search">
+        <span style="font:500 13px 'JetBrains Mono', monospace; color: var(--ink-3);">⌕</span>
+        <input placeholder="filter integrations…" />
+        <span class="kbd">⌘K</span>
+      </div>
+      <div class="rows">
+        <div class="rec-flat-head">
+          <span>★</span>
+          <span>Recommended</span>
+          <span class="count">4 suggestions</span>
+        </div>
+        <div class="rec-row">
+          <span class="badge b-mcp">MCP</span>
+          <div><span class="t1">jira-mcp</span></div>
+          <span class="t2">issues, sprints</span>
+          <span class="status s-idle"></span>
+          <button class="add-btn">+ Add</button>
+          <span class="rec-why">
+            <strong>Neden?</strong> Proje root'unda `AGMX-` Jira anahtarı var; MCP bağlı değil. Agent ticket okuyup yorum ekleyebilir.
+          </span>
+        </div>
+        <div class="rec-row">
+          <span class="badge b-cli">CLI</span>
+          <div><span class="t1">wrangler</span></div>
+          <span class="t2">cloudflare · auth eksik</span>
+          <span class="status s-fail"></span>
+          <button class="add-btn">Fix</button>
+          <span class="rec-why">
+            <strong>Neden?</strong> `landing/_headers` Cloudflare Pages göstergesi. Wrangler yüklü, auth yok. `wrangler login` yeter.
+          </span>
+        </div>
+        <div class="rec-row">
+          <span class="badge b-mcp">MCP</span>
+          <div><span class="t1">context7</span></div>
+          <span class="t2">güncel doc fetch</span>
+          <span class="status s-idle"></span>
+          <button class="add-btn">+ Add</button>
+          <span class="rec-why">
+            <strong>Neden?</strong> Expo + NativeWind kullanıyorsun; Context7 training-data yerine güncel doküman sağlar.
+          </span>
+        </div>
+        <div class="rec-row">
+          <span class="badge b-chook">CHOOK</span>
+          <div><span class="t1">PreToolUse · git-safety</span></div>
+          <span class="t2">deny force-push</span>
+          <span class="status s-idle"></span>
+          <button class="add-btn">+ Add</button>
+          <span class="rec-why">
+            <strong>Neden?</strong> CLAUDE.md'de force-push yasak. Hook sistem seviyesinde kilitler.
+          </span>
+        </div>
+
+        <div class="rec-flat-head" style="background: rgba(0,0,0,0.04); color: var(--ink-2); border-color: var(--line);">
+          <span>All integrations</span>
+          <span class="count" style="color: var(--ink-3);">24 total</span>
+        </div>
+        <div class="row">
+          <span class="badge b-mcp">MCP</span>
+          <div class="main">
+            <span class="t1">jira-mcp</span>
+            <span class="t2">stdio · atlassian/mcp-jira@1.4.0</span>
+          </div>
+          <span class="status s-ok" title="last test passed"></span>
+          <button class="btn sm">Test</button>
+        </div>
+        <div class="row">
+          <span class="badge b-cli">CLI</span>
+          <div class="main">
+            <span class="t1">wrangler</span>
+            <span class="t2">/opt/homebrew/bin/wrangler · 3.112.0</span>
+          </div>
+          <span class="status s-fail" title="not authed"></span>
+          <button class="btn sm">Test</button>
+        </div>
+        <div class="row">
+          <span class="badge b-cli">CLI</span>
+          <div class="main">
+            <span class="t1">gh</span>
+            <span class="t2">authed as feritzcan · ghcr ✓</span>
+          </div>
+          <span class="status s-ok"></span>
+          <button class="btn sm">Test</button>
+        </div>
+        <div class="row">
+          <span class="badge b-mcp">MCP</span>
+          <div class="main">
+            <span class="t1">context7</span>
+            <span class="t2">http · https://mcp.context7.com</span>
+          </div>
+          <span class="status s-run" title="running test…"></span>
+          <button class="btn sm" disabled>…</button>
+        </div>
+        <div class="row">
+          <span class="badge b-chook">CHOOK</span>
+          <div class="main">
+            <span class="t1">PreToolUse · bash-guard</span>
+            <span class="t2">~/.claude/settings.json · deny rm -rf /</span>
+          </div>
+          <span class="status s-ok"></span>
+          <button class="btn sm">Test</button>
+        </div>
+        <div class="row">
+          <span class="badge b-webhook">HTTP</span>
+          <div class="main">
+            <span class="t1">linear-graphql</span>
+            <span class="t2">POST https://api.linear.app/graphql</span>
+          </div>
+          <span class="status s-idle"></span>
+          <button class="btn sm">Test</button>
+        </div>
+        <div class="row">
+          <span class="badge b-xhook">XHOOK</span>
+          <div class="main">
+            <span class="t1">codex · on_exec</span>
+            <span class="t2">~/.codex/config.toml · approve-sensitive</span>
+          </div>
+          <span class="status s-ok"></span>
+          <button class="btn sm">Test</button>
+        </div>
+        <div class="row">
+          <span class="badge b-cli">CLI</span>
+          <div class="main">
+            <span class="t1">aws</span>
+            <span class="t2">sso session: termloop-dev · exp 2026-04-18</span>
+          </div>
+          <span class="status s-ok"></span>
+          <button class="btn sm">Test</button>
+        </div>
+        <div class="row">
+          <span class="badge b-mcp">MCP</span>
+          <div class="main">
+            <span class="t1">filesystem</span>
+            <span class="t2">@modelcontextprotocol/server-filesystem</span>
+          </div>
+          <span class="status s-ok"></span>
+          <button class="btn sm">Test</button>
+        </div>
+        <div class="row">
+          <span class="badge b-chook">CHOOK</span>
+          <div class="main">
+            <span class="t1">Stop · notify-termloop</span>
+            <span class="t2">TermLoopClaudeHooks.sh</span>
+          </div>
+          <span class="status s-ok"></span>
+          <button class="btn sm">Test</button>
+        </div>
+      </div>
+      <div class="footer-bar">
+        <span>12 ok · 1 fail · 1 running · 2 idle</span>
+        <span class="link">+ Add integration</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ OPTION B ============ -->
+  <div class="card">
+    <div class="caption">
+      <span class="name">Option B — sub-tabs</span>
+      <span class="opt-badge">tradeoff
+        <span class="why">
+          <strong>Temiz ama gezinme pahalı.</strong><br>
+          Her kategori izole, "+ Add" akışı kategori-özel. Ama cross-kategori bakış imkansız (Jira hem MCP hem CLI olabilir — iki sub-tab'ta ayrı). Global "hepsi yeşil mi" görüntüsü yok.
+        </span>
+      </span>
+    </div>
+    <div class="desc">Integrations tab'ı içinde ikinci seviye tab. Her kategori kendi listesi ve kendi "Add" akışı; karmaşayı ayırır.</div>
+    <div class="sb">
+      <div class="trafficlights"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span></div>
+      <div class="tabbar">
+        <span class="t">WORK</span>
+        <span class="t">BMAD</span>
+        <span class="t">AGENTS</span>
+        <span class="t active">INTEGR.</span>
+        <span class="t">PLAN</span>
+      </div>
+      <div class="subtabs">
+        <span class="subtab"><span style="color:var(--green); font-size:11px;">★</span>Recommended</span>
+        <span class="subtab"><span class="dot c-mcp"></span>MCP</span>
+        <span class="subtab active"><span class="dot c-cli"></span>CLI</span>
+        <span class="subtab"><span class="dot c-webhook"></span>Webhooks</span>
+        <span class="subtab"><span class="dot c-chook"></span>Claude Hooks</span>
+        <span class="subtab"><span class="dot c-xhook"></span>Codex Hooks</span>
+      </div>
+      <div class="rec-flat-head">
+        <span>★</span>
+        <span>Recommended for this workspace</span>
+        <span class="count">4 suggestions</span>
+      </div>
+      <div class="rec-row">
+        <span class="badge b-mcp">MCP</span>
+        <div><span class="t1">jira-mcp</span></div>
+        <span class="t2">AGMX keys found</span>
+        <span class="status s-idle"></span>
+        <button class="add-btn">+ Add</button>
+        <span class="rec-why"><strong>Neden?</strong> Repo'da `AGMX-` ticket referansları var, Jira MCP bağlanmamış.</span>
+      </div>
+      <div class="rec-row">
+        <span class="badge b-cli">CLI</span>
+        <div><span class="t1">wrangler</span></div>
+        <span class="t2">cloudflare · auth yok</span>
+        <span class="status s-fail"></span>
+        <button class="add-btn">Fix</button>
+        <span class="rec-why"><strong>Neden?</strong> `landing/_headers` Pages göstergesi. `wrangler login` yeter.</span>
+      </div>
+      <div class="sub-head">
+        <span class="title">CLI integrations</span>
+        <span class="count">9 tools · 7 authed</span>
+      </div>
+      <div class="rows">
+        <div class="row">
+          <span class="badge b-cli">CLI</span>
+          <div class="main">
+            <span class="t1">wrangler</span>
+            <span class="t2">cloudflare · deploy, tail, dev</span>
+          </div>
+          <span class="status s-fail"></span>
+          <button class="btn sm">Test</button>
+        </div>
+        <div class="row">
+          <span class="badge b-cli">CLI</span>
+          <div class="main">
+            <span class="t1">gh</span>
+            <span class="t2">github · prs, issues, gists</span>
+          </div>
+          <span class="status s-ok"></span>
+          <button class="btn sm">Test</button>
+        </div>
+        <div class="row">
+          <span class="badge b-cli">CLI</span>
+          <div class="main">
+            <span class="t1">aws</span>
+            <span class="t2">sso · termloop-dev</span>
+          </div>
+          <span class="status s-ok"></span>
+          <button class="btn sm">Test</button>
+        </div>
+        <div class="row">
+          <span class="badge b-cli">CLI</span>
+          <div class="main">
+            <span class="t1">gcloud</span>
+            <span class="t2">feritzcan@gmail — 2 projects</span>
+          </div>
+          <span class="status s-ok"></span>
+          <button class="btn sm">Test</button>
+        </div>
+        <div class="row">
+          <span class="badge b-cli">CLI</span>
+          <div class="main">
+            <span class="t1">jira-cli</span>
+            <span class="t2">not authed · run `jira init`</span>
+          </div>
+          <span class="status s-fail"></span>
+          <button class="btn sm">Test</button>
+        </div>
+        <div class="row">
+          <span class="badge b-cli">CLI</span>
+          <div class="main">
+            <span class="t1">vercel</span>
+            <span class="t2">feritzcan · team: termloop</span>
+          </div>
+          <span class="status s-ok"></span>
+          <button class="btn sm">Test</button>
+        </div>
+        <div class="row">
+          <span class="badge b-cli">CLI</span>
+          <div class="main">
+            <span class="t1">supabase</span>
+            <span class="t2">cli 1.172 · 3 linked projects</span>
+          </div>
+          <span class="status s-ok"></span>
+          <button class="btn sm">Test</button>
+        </div>
+        <div class="row">
+          <span class="badge b-cli">CLI</span>
+          <div class="main">
+            <span class="t1">railway</span>
+            <span class="t2">logged in as feritz</span>
+          </div>
+          <span class="status s-ok"></span>
+          <button class="btn sm">Test</button>
+        </div>
+        <div class="row">
+          <span class="badge b-cli">CLI</span>
+          <div class="main">
+            <span class="t1">fly</span>
+            <span class="t2">flyctl 0.4 · personal org</span>
+          </div>
+          <span class="status s-ok"></span>
+          <button class="btn sm">Test</button>
+        </div>
+      </div>
+      <div class="footer-bar">
+        <span>CLI category · 7 ok · 2 fail</span>
+        <span class="link">+ Add CLI</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ OPTION C ============ -->
+  <div class="card">
+    <div class="caption">
+      <span class="name">Option C — accordion + detail</span>
+      <span class="tag">c.accordion</span>
+    </div>
+    <div class="desc">Sol üstte collapse'li kategori grupları, altta seçilenin detay paneli. Hızlı keşif + deep config aynı ekranda.</div>
+    <div class="sb">
+      <div class="trafficlights"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span></div>
+      <div class="tabbar">
+        <span class="t">WORK</span>
+        <span class="t">BMAD</span>
+        <span class="t">AGENTS</span>
+        <span class="t active">INTEGR.</span>
+        <span class="t">PLAN</span>
+      </div>
+      <div class="accord">
+        <div class="accord-group open rec-group">
+          <div class="accord-head">
+            <span class="chev">▶</span>
+            <span class="star">★</span>
+            <span class="name">Recommended</span>
+            <span class="pill">4 · not added</span>
+          </div>
+          <div class="accord-body">
+            <div class="rec-row">
+              <span class="badge b-mcp">MCP</span>
+              <div><span class="t1">jira-mcp</span></div>
+              <span class="t2">atlassian · issues, sprints</span>
+              <span class="status s-idle"></span>
+              <button class="add-btn">+ Add</button>
+              <span class="rec-why">
+                <strong>Neden?</strong> Proje root'unda bir Jira issue anahtarı (`AGMX-`) tespit ettik; aktif projede jira-cli yüklü ama MCP bağlı değil. Agent'lar ticket statusu okuyup yorum ekleyebilir.
+              </span>
+            </div>
+            <div class="rec-row">
+              <span class="badge b-cli">CLI</span>
+              <div><span class="t1">wrangler</span></div>
+              <span class="t2">cloudflare · 3.112</span>
+              <span class="status s-fail"></span>
+              <button class="add-btn">Fix</button>
+              <span class="rec-why">
+                <strong>Neden?</strong> `landing/_headers` ve `landing/_redirects` repo'da var (Cloudflare Pages). Wrangler yüklü ama auth'suz — agent deploy/tail komutlarını çalıştıramaz. Bir `wrangler login` yeter.
+              </span>
+            </div>
+            <div class="rec-row">
+              <span class="badge b-mcp">MCP</span>
+              <div><span class="t1">context7</span></div>
+              <span class="t2">http · mcp.context7.com</span>
+              <span class="status s-idle"></span>
+              <button class="add-btn">+ Add</button>
+              <span class="rec-why">
+                <strong>Neden?</strong> Terminal-app'te Expo SDK ve NativeWind kullanıyorsun. Context7 agent'a güncel Expo/React Native dokümanı sağlar — "hangi sürümde neyi deprecate ettiler" için training-data'ya güvenmek yerine.
+              </span>
+            </div>
+            <div class="rec-row">
+              <span class="badge b-chook">CHOOK</span>
+              <div><span class="t1">PreToolUse · git-safety</span></div>
+              <span class="t2">preset · deny force push to master</span>
+              <span class="status s-idle"></span>
+              <button class="add-btn">+ Add</button>
+              <span class="rec-why">
+                <strong>Neden?</strong> CLAUDE.md'de "force push'a asla izin verme" kuralı var; hook versiyonu bunu sistem seviyesinde kilitler. Agent yanlış komutu üretse bile shell erişemez.
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="accord-group open">
+          <div class="accord-head">
+            <span class="chev">▶</span>
+            <span class="name">MCP</span>
+            <span class="pill">6 · 5 ok</span>
+          </div>
+          <div class="accord-body">
+            <div class="row-compact">
+              <span class="status s-ok"></span>
+              <div><span class="t1">jira-mcp</span> <span class="t2">· stdio</span></div>
+              <button class="btn ghost sm">Test</button>
+            </div>
+            <div class="row-compact">
+              <span class="status s-ok"></span>
+              <div><span class="t1">context7</span> <span class="t2">· http</span></div>
+              <button class="btn ghost sm">Test</button>
+            </div>
+            <div class="row-compact">
+              <span class="status s-fail"></span>
+              <div><span class="t1">linear-mcp</span> <span class="t2">· needs api key</span></div>
+              <button class="btn ghost sm">Test</button>
+            </div>
+          </div>
+        </div>
+        <div class="accord-group open">
+          <div class="accord-head">
+            <span class="chev">▶</span>
+            <span class="name">CLI</span>
+            <span class="pill">9 · 7 ok</span>
+          </div>
+          <div class="accord-body">
+            <div class="row-compact" style="background: var(--row-hover);">
+              <span class="status s-fail"></span>
+              <div><span class="t1">wrangler</span> <span class="t2">· not authed</span></div>
+              <button class="btn ghost sm">Test</button>
+            </div>
+            <div class="row-compact">
+              <span class="status s-ok"></span>
+              <div><span class="t1">gh</span> <span class="t2">· feritzcan</span></div>
+              <button class="btn ghost sm">Test</button>
+            </div>
+          </div>
+        </div>
+        <div class="accord-group">
+          <div class="accord-head">
+            <span class="chev">▶</span>
+            <span class="name">Webhooks</span>
+            <span class="pill">3</span>
+          </div>
+        </div>
+        <div class="accord-group">
+          <div class="accord-head">
+            <span class="chev">▶</span>
+            <span class="name">Claude Hooks</span>
+            <span class="pill">4 · 4 ok</span>
+          </div>
+        </div>
+        <div class="accord-group">
+          <div class="accord-head">
+            <span class="chev">▶</span>
+            <span class="name">Codex Hooks</span>
+            <span class="pill">2</span>
+          </div>
+        </div>
+      </div>
+      <div class="detail">
+        <div class="d-head">
+          <span class="badge b-cli">CLI</span>
+          <span class="d-title">wrangler</span>
+          <span class="status s-fail"></span>
+        </div>
+        <div class="kv"><span class="k">binary</span><span class="v">/opt/homebrew/bin/wrangler</span></div>
+        <div class="kv"><span class="k">version</span><span class="v">3.112.0</span></div>
+        <div class="kv"><span class="k">auth</span><span class="v" style="color:var(--red)">not signed in</span></div>
+        <div class="kv"><span class="k">last test</span><span class="v">`wrangler whoami` → exit 1</span></div>
+        <div class="kv"><span class="k">attach to agent</span><span class="v">off</span></div>
+        <div class="actions">
+          <button class="btn primary">Run test</button>
+          <button class="btn">Configure…</button>
+          <button class="btn">Attach to spawn</button>
+          <button class="btn ghost">View logs</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="legend-row">
+  <span class="li"><span class="sw" style="background:var(--mcp)"></span>MCP server</span>
+  <span class="li"><span class="sw" style="background:var(--cli)"></span>CLI tool</span>
+  <span class="li"><span class="sw" style="background:var(--webhook)"></span>Webhook / REST preset</span>
+  <span class="li"><span class="sw" style="background:var(--chook)"></span>Claude Code hook</span>
+  <span class="li"><span class="sw" style="background:var(--xhook)"></span>Codex hook</span>
+  <span class="li" style="margin-left:auto">· ok · fail · running · idle</span>
+</div>
+
+</body>
+</html>

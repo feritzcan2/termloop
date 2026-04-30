@@ -1,0 +1,9 @@
+{
+  "platforms": ["ios", "android"],
+  "ios": {
+    "modules": ["ExpoTermLoopModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.termloop.ExpoTermLoopModule"]
+  }
+}

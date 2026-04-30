@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TermLoop — a terminal where agents do the typing</title>
+<meta name="description" content="TermLoop is a macOS terminal IDE designed for running AI agents in parallel. Built-in git worktrees. A mobile bridge so your phone can drive your agents.">
+<meta property="og:title" content="TermLoop">
+<meta property="og:description" content="A terminal where agents do the typing. Parallel agents, worktree-native, phone-controlled.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#f5f0e8">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,300..900,0..100,0..1;1,9..144,300..900,0..100,0..1&family=JetBrains+Mono:ital,wght@0,300..700;1,300..700&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --paper: #f5f0e8;
+    --paper-deep: #ede7dc;
+    --ink: #0a0a0a;
+    --ink-80: rgba(10, 10, 10, 0.80);
+    --ink-60: rgba(10, 10, 10, 0.60);
+    --ink-40: rgba(10, 10, 10, 0.40);
+    --ink-15: rgba(10, 10, 10, 0.15);
+    --accent: #ff3d00;
+    --accent-soft: rgba(255, 61, 0, 0.12);
+    --muted: #8a8075;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { font-size: 16px; scroll-behavior: smooth; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-weight: 400;
+    font-size: 13.5px;
+    line-height: 1.55;
+    min-height: 100vh;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* subtle paper halation + grain */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    pointer-events: none; z-index: 1;
+    background:
+      radial-gradient(circle at 18% 28%, rgba(10,10,10,0.03) 0%, transparent 55%),
+      radial-gradient(circle at 82% 78%, rgba(255,61,0,0.05) 0%, transparent 45%);
+    mix-blend-mode: multiply;
+  }
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    pointer-events: none; z-index: 2;
+    opacity: 0.55;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.04 0 0 0 0 0.04 0 0 0 0 0.04 0 0 0 0.22 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    mix-blend-mode: multiply;
+  }
+
+  .page {
+    position: relative;
+    z-index: 5;
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 28px 48px 56px;
+  }
+
+  /* ─── MASTHEAD ───────────────────────────────────────── */
+  .masthead {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 24px;
+    padding-bottom: 18px;
+    border-bottom: 1.5px solid var(--ink);
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .masthead .left { color: var(--ink-60); }
+  .masthead .right { text-align: right; color: var(--ink-60); }
+  .masthead .center {
+    font-family: 'Fraunces', serif;
+    font-variation-settings: 'opsz' 144, 'SOFT' 0, 'WONK' 1;
+    font-weight: 500;
+    font-size: 18px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+  }
+  .dot-live {
+    display: inline-block;
+    width: 7px; height: 7px;
+    background: var(--accent);
+    border-radius: 50%;
+    vertical-align: middle;
+    margin-right: 8px;
+    box-shadow: 0 0 0 0 rgba(255,61,0,0.5);
+    animation: pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(255,61,0,0.4); }
+    50% { opacity: 0.5; box-shadow: 0 0 0 6px rgba(255,61,0,0); }
+  }
+
+  /* ─── HERO ───────────────────────────────────────────── */
+  .hero {
+    display: grid;
+    grid-template-columns: 1.15fr 1fr;
+    gap: 48px;
+    align-items: center;
+    padding: 72px 0 88px;
+    border-bottom: 1px solid var(--ink-15);
+    position: relative;
+  }
+  /* vertical ticker on the left margin */
+  .hero::before {
+    content: 'TERMLOOP · VOL·01 · AN AGENTIC TERMINAL IDE · BUILT ON CMUX';
+    position: absolute;
+    left: -22px; top: 0; bottom: 0;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    color: var(--ink-40);
+    display: flex;
+    align-items: center;
+  }
+
+  h1.hero-title {
+    font-family: 'Fraunces', serif;
+    font-variation-settings: 'opsz' 144, 'SOFT' 50, 'WONK' 1;
+    font-weight: 380;
+    font-size: clamp(2.8rem, 7.2vw, 6.6rem);
+    line-height: 0.94;
+    letter-spacing: -0.032em;
+    color: var(--ink);
+  }
+  h1.hero-title em {
+    font-style: italic;
+    color: var(--accent);
+    font-variation-settings: 'opsz' 144, 'SOFT' 90, 'WONK' 1;
+    position: relative;
+  }
+  h1.hero-title em::after {
+    content: '';
+    position: absolute;
+    left: -4%;
+    bottom: 0.08em;
+    width: 108%;
+    height: 0.16em;
+    background: var(--accent);
+    opacity: 0.18;
+    transform: skewX(-8deg);
+  }
+
+  .hero-sub {
+    color: var(--ink-80);
+    font-size: 14px;
+    line-height: 1.62;
+    max-width: 50ch;
+    margin-top: 28px;
+  }
+  .hero-meta {
+    margin-top: 36px;
+    padding-top: 16px;
+    border-top: 1px solid var(--ink-15);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 28px;
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-60);
+  }
+  .hero-meta span b {
+    color: var(--ink);
+    font-weight: 500;
+    margin-right: 2px;
+  }
+
+  /* ─── LOOP VISUAL ────────────────────────────────────── */
+  .loopviz {
+    position: relative;
+    aspect-ratio: 1;
+    width: 100%;
+    max-width: 460px;
+    justify-self: end;
+  }
+  .loopviz svg { width: 100%; height: 100%; overflow: visible; display: block; }
+  .loopviz .cap {
+    position: absolute;
+    bottom: -6px; left: 50%;
+    transform: translateX(-50%);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-40);
+    white-space: nowrap;
+  }
+  .loopviz .corner-tl,
+  .loopviz .corner-tr,
+  .loopviz .corner-bl,
+  .loopviz .corner-br {
+    position: absolute;
+    width: 12px; height: 12px;
+    border: 1.5px solid var(--ink);
+    opacity: 0.35;
+  }
+  .loopviz .corner-tl { top: 0; left: 0; border-right: none; border-bottom: none; }
+  .loopviz .corner-tr { top: 0; right: 0; border-left: none; border-bottom: none; }
+  .loopviz .corner-bl { bottom: 0; left: 0; border-right: none; border-top: none; }
+  .loopviz .corner-br { bottom: 0; right: 0; border-left: none; border-top: none; }
+
+  /* ─── SECTION LABEL ──────────────────────────────────── */
+  .section-label {
+    font-size: 10.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 500;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .section-label .sigil {
+    font-family: 'Fraunces', serif;
+    font-variation-settings: 'opsz' 144, 'SOFT' 30, 'WONK' 1;
+    font-size: 24px;
+    line-height: 1;
+    color: var(--ink);
+    font-weight: 400;
+  }
+  .section-label .counter {
+    font-family: 'Fraunces', serif;
+    font-style: italic;
+    font-size: 14px;
+    color: var(--ink-60);
+    margin-left: auto;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  /* ─── FEATURES ───────────────────────────────────────── */
+  .features-head {
+    padding: 72px 0 20px;
+    display: flex;
+    align-items: baseline;
+    gap: 28px;
+  }
+  .features {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    border-top: 1.5px solid var(--ink);
+    border-bottom: 1.5px solid var(--ink);
+  }
+  .feature {
+    padding: 36px 28px 40px;
+    border-right: 1px dashed var(--ink-15);
+    position: relative;
+    transition: background 0.25s ease;
+  }
+  .feature:last-child { border-right: none; }
+  .feature:hover { background: var(--accent-soft); }
+  .feature:hover .num { color: var(--ink); }
+  .feature .num {
+    font-family: 'Fraunces', serif;
+    font-variation-settings: 'opsz' 144, 'SOFT' 10, 'WONK' 1;
+    font-weight: 300;
+    font-size: 72px;
+    line-height: 0.9;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 12px;
+    letter-spacing: -0.02em;
+    transition: color 0.25s ease;
+  }
+  .feature h3 {
+    font-family: 'Fraunces', serif;
+    font-variation-settings: 'opsz' 36, 'SOFT' 0, 'WONK' 1;
+    font-weight: 500;
+    font-size: 22px;
+    line-height: 1.15;
+    letter-spacing: -0.012em;
+    margin-bottom: 12px;
+  }
+  .feature p {
+    color: var(--ink-80);
+    font-size: 13px;
+    line-height: 1.62;
+  }
+  .feature .tags {
+    margin-top: 20px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--ink-15);
+    font-size: 9.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+  }
+  .feature .tags span::before {
+    content: '·';
+    margin-right: 6px;
+    color: var(--accent);
+  }
+
+  /* ─── SIGNUP ─────────────────────────────────────────── */
+  .signup {
+    padding: 80px 0 48px;
+    display: grid;
+    grid-template-columns: 1.15fr 1fr;
+    gap: 56px;
+    align-items: start;
+  }
+  .signup h2 {
+    font-family: 'Fraunces', serif;
+    font-variation-settings: 'opsz' 96, 'SOFT' 50, 'WONK' 1;
+    font-weight: 400;
+    font-size: clamp(2rem, 4.2vw, 3.4rem);
+    line-height: 1.02;
+    letter-spacing: -0.022em;
+    margin-top: 22px;
+  }
+  .signup h2 em { font-style: italic; color: var(--accent); }
+  .signup .copy {
+    color: var(--ink-80);
+    font-size: 14px;
+    line-height: 1.62;
+    max-width: 48ch;
+    margin-top: 20px;
+  }
+
+  /* shell-prompt email form */
+  .shell {
+    background: #161616;
+    color: var(--paper);
+    padding: 42px 22px 22px;
+    border-radius: 4px;
+    box-shadow: 6px 6px 0 0 var(--accent);
+    font-family: 'JetBrains Mono', monospace;
+    position: relative;
+    border: 1px solid rgba(245,240,232,0.08);
+  }
+  .shell::before {
+    content: '';
+    position: absolute;
+    top: 14px; left: 14px;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #ff5f56;
+    box-shadow:
+      14px 0 0 #ffbd2e,
+      28px 0 0 #27c93f;
+  }
+  .shell .titlebar {
+    position: absolute;
+    top: 12px; left: 0; right: 0;
+    text-align: center;
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    color: rgba(245,240,232,0.38);
+  }
+  .shell .prompt {
+    font-size: 11.5px;
+    color: rgba(245,240,232,0.5);
+    margin: 8px 0 10px;
+    letter-spacing: 0.02em;
+  }
+  .shell .prompt .user { color: var(--accent); }
+  .shell .prompt .host { color: rgba(245,240,232,0.6); }
+  .shell form {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+  }
+  .shell form::before {
+    content: '$';
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .shell input[type=email] {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--paper);
+    font: inherit;
+    outline: none;
+    padding: 6px 0;
+    caret-color: var(--accent);
+    min-width: 0;
+  }
+  .shell input[type=email]::placeholder { color: rgba(245,240,232,0.28); }
+  .shell button {
+    background: var(--paper);
+    color: var(--ink);
+    border: none;
+    font: inherit;
+    font-weight: 600;
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 9px 16px;
+    cursor: pointer;
+    transition: transform 0.12s ease, background 0.12s ease, color 0.12s ease;
+    white-space: nowrap;
+  }
+  .shell button:hover {
+    background: var(--accent);
+    color: var(--paper);
+    transform: translate(-1px, -1px);
+  }
+  .shell button:active { transform: translate(0, 0); }
+  .shell .status {
+    margin-top: 18px;
+    font-size: 11px;
+    color: rgba(245,240,232,0.4);
+    letter-spacing: 0.04em;
+    min-height: 1em;
+  }
+  .shell .caret {
+    color: var(--accent);
+    animation: blink 1.05s steps(2) infinite;
+    margin-left: 2px;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ─── FOOTNOTES ──────────────────────────────────────── */
+  .footnotes {
+    border-top: 1px solid var(--ink-15);
+    padding: 28px 0 16px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    font-size: 11px;
+    color: var(--ink-60);
+    line-height: 1.55;
+  }
+  .footnotes .num {
+    display: inline-block;
+    width: 1.6em;
+    color: var(--accent);
+    font-family: 'Fraunces', serif;
+    font-style: italic;
+    font-weight: 500;
+  }
+
+  /* ─── FOOTER ─────────────────────────────────────────── */
+  footer {
+    margin-top: 56px;
+    padding-top: 18px;
+    border-top: 1.5px solid var(--ink);
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 24px;
+    align-items: center;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-60);
+  }
+  footer .wordmark {
+    text-align: center;
+    font-family: 'Fraunces', serif;
+    font-variation-settings: 'opsz' 144, 'SOFT' 0, 'WONK' 1;
+    font-size: 20px;
+    letter-spacing: 0.28em;
+    color: var(--ink);
+    font-weight: 500;
+  }
+  footer a {
+    color: var(--ink-60);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--ink-40);
+    transition: color 0.14s, border-color 0.14s;
+  }
+  footer a:hover { color: var(--accent); border-color: var(--accent); }
+  footer .right { text-align: right; }
+
+  /* ─── ANIMATIONS ─────────────────────────────────────── */
+  .reveal {
+    opacity: 0;
+    transform: translateY(10px);
+    animation: reveal 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  @keyframes reveal {
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal { opacity: 1; transform: none; animation: none; }
+    .dot-live { animation: none; }
+  }
+
+  /* ─── RESPONSIVE ─────────────────────────────────────── */
+  @media (max-width: 960px) {
+    .page { padding: 20px 22px 40px; }
+    .masthead { grid-template-columns: 1fr 1fr; }
+    .masthead .center { grid-column: 1 / -1; order: -1; padding-bottom: 10px; text-align: center; font-size: 16px; }
+    .hero::before { display: none; }
+    .hero { grid-template-columns: 1fr; gap: 32px; padding: 48px 0 64px; }
+    .loopviz { justify-self: center; max-width: 320px; }
+    .features { grid-template-columns: 1fr; }
+    .feature { border-right: none; border-bottom: 1px dashed var(--ink-15); }
+    .feature:last-child { border-bottom: none; }
+    .signup { grid-template-columns: 1fr; gap: 32px; }
+    .footnotes { grid-template-columns: 1fr; gap: 12px; }
+    footer { grid-template-columns: 1fr; text-align: center; gap: 12px; }
+    footer .right, footer .left { text-align: center; }
+  }
+
+  @media (max-width: 480px) {
+    h1.hero-title { font-size: 3rem; }
+    .feature .num { font-size: 56px; }
+    .shell { padding: 38px 18px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- ═══ MASTHEAD ═══ -->
+  <header class="masthead">
+    <div class="left reveal" style="animation-delay: 0.0s">
+      <span class="dot-live"></span> VOL 01 · NO. 001
+    </div>
+    <div class="center reveal" style="animation-delay: 0.1s">TermLoop</div>
+    <div class="right reveal" style="animation-delay: 0.0s">
+      APR 17 · 2026 · An agentic terminal IDE
+    </div>
+  </header>
+
+  <!-- ═══ HERO ═══ -->
+  <section class="hero">
+    <div>
+      <h1 class="hero-title reveal" style="animation-delay: 0.25s">
+        A terminal<br>
+        where <em>agents</em><br>
+        do the typing.
+      </h1>
+      <p class="hero-sub reveal" style="animation-delay: 0.42s">
+        TermLoop is a macOS terminal IDE designed for running AI agents in parallel.
+        Every task gets its own git worktree. A native iOS bridge lets you drive
+        your agents from your phone. One terminal, many loops.
+      </p>
+      <div class="hero-meta reveal" style="animation-delay: 0.55s">
+        <span><b>Status</b> pre-alpha</span>
+        <span><b>Platform</b> macOS · iOS</span>
+        <span><b>Built on</b> cmux</span>
+        <span><b>Launch</b> 2026</span>
+      </div>
+    </div>
+
+    <div class="loopviz reveal" style="animation-delay: 0.35s" aria-hidden="true">
+      <span class="corner-tl"></span>
+      <span class="corner-tr"></span>
+      <span class="corner-bl"></span>
+      <span class="corner-br"></span>
+      <svg viewBox="-100 -100 200 200">
+        <!-- dashed guide ring -->
+        <circle cx="0" cy="0" r="92" fill="none"
+                stroke="#0a0a0a" stroke-opacity="0.22"
+                stroke-width="0.4" stroke-dasharray="0.6 2.2"/>
+        <!-- tick marks on guide ring -->
+        <g stroke="#0a0a0a" stroke-opacity="0.35" stroke-width="0.8">
+          <line x1="0" y1="-96" x2="0" y2="-88"/>
+          <line x1="0" y1="96"  x2="0" y2="88"/>
+          <line x1="-96" y1="0" x2="-88" y2="0"/>
+          <line x1="96"  y1="0" x2="88"  y2="0"/>
+        </g>
+
+        <!-- parallel agent orbits (counter-rotating ellipses) -->
+        <g stroke="#ff3d00" fill="none" stroke-width="0.55">
+          <g>
+            <ellipse cx="0" cy="0" rx="80" ry="32" opacity="0.95"/>
+            <animateTransform attributeName="transform" type="rotate"
+                              from="0 0 0" to="360 0 0" dur="22s" repeatCount="indefinite"/>
+          </g>
+          <g>
+            <ellipse cx="0" cy="0" rx="72" ry="44" opacity="0.85"/>
+            <animateTransform attributeName="transform" type="rotate"
+                              from="0 0 0" to="-360 0 0" dur="28s" repeatCount="indefinite"/>
+          </g>
+          <g>
+            <ellipse cx="0" cy="0" rx="62" ry="54" opacity="0.75"/>
+            <animateTransform attributeName="transform" type="rotate"
+                              from="0 0 0" to="360 0 0" dur="34s" repeatCount="indefinite"/>
+          </g>
+        </g>
+
+        <!-- agent dots orbiting at their own cadence -->
+        <g>
+          <g>
+            <circle cx="80" cy="0" r="3.4" fill="#0a0a0a"/>
+            <animateTransform attributeName="transform" type="rotate"
+                              from="0 0 0" to="360 0 0" dur="7.5s" repeatCount="indefinite"/>
+          </g>
+          <g>
+            <circle cx="72" cy="0" r="2.8" fill="#0a0a0a"/>
+            <animateTransform attributeName="transform" type="rotate"
+                              from="120 0 0" to="-240 0 0" dur="10s" repeatCount="indefinite"/>
+          </g>
+          <g>
+            <circle cx="62" cy="0" r="2.2" fill="#0a0a0a"/>
+            <animateTransform attributeName="transform" type="rotate"
+                              from="240 0 0" to="600 0 0" dur="13s" repeatCount="indefinite"/>
+          </g>
+        </g>
+
+        <!-- core -->
+        <circle cx="0" cy="0" r="3" fill="#ff3d00"/>
+        <circle cx="0" cy="0" r="8" fill="none" stroke="#ff3d00" stroke-width="0.5" stroke-opacity="0.5"/>
+
+        <!-- labels -->
+        <text x="0" y="-102" text-anchor="middle"
+              font-family="JetBrains Mono, monospace" font-size="4.5"
+              fill="#0a0a0a" opacity="0.55" letter-spacing="1">
+          PARALLEL ORBITS · 3 AGENTS
+        </text>
+        <text x="0" y="108" text-anchor="middle"
+              font-family="JetBrains Mono, monospace" font-size="4"
+              fill="#ff3d00" opacity="0.75" letter-spacing="1.2">
+          plan · act · observe · repeat
+        </text>
+      </svg>
+      <span class="cap">fig. 1 — agent topology</span>
+    </div>
+  </section>
+
+  <!-- ═══ FEATURES ═══ -->
+  <div class="features-head">
+    <div class="section-label reveal" style="animation-delay: 0.1s">
+      <span class="sigil">§</span>
+      <span>First-principles</span>
+      <span class="counter">Three tenets</span>
+    </div>
+  </div>
+  <section class="features">
+    <article class="feature reveal" style="animation-delay: 0.15s">
+      <span class="num">01</span>
+      <h3>Parallel agent sessions.</h3>
+      <p>
+        Run four Claudes, a Codex, and a Gemini at once &mdash; each in its own pane,
+        each in its own worktree. Nothing collides. Nothing waits its turn.
+      </p>
+      <div class="tags">
+        <span>multiplexed</span>
+        <span>isolated</span>
+        <span>lossless</span>
+      </div>
+    </article>
+
+    <article class="feature reveal" style="animation-delay: 0.25s">
+      <span class="num">02</span>
+      <h3>Worktrees, first-class.</h3>
+      <p>
+        Every task gets its own branch and its own directory, created automatically.
+        No stashing. No branch gymnastics. Agents can't step on work in progress.
+      </p>
+      <div class="tags">
+        <span>zero-config</span>
+        <span>git-native</span>
+        <span>disposable</span>
+      </div>
+    </article>
+
+    <article class="feature reveal" style="animation-delay: 0.35s">
+      <span class="num">03</span>
+      <h3>Phone in the loop.</h3>
+      <p>
+        Start an agent from your couch. Check output from a coffee-shop queue. A
+        native iOS client speaks to TermLoop over an authenticated TCP bridge.
+      </p>
+      <div class="tags">
+        <span>bridged</span>
+        <span>encrypted</span>
+        <span>async-native</span>
+      </div>
+    </article>
+  </section>
+
+  <!-- ═══ SIGNUP ═══ -->
+  <section class="signup">
+    <div>
+      <div class="section-label">
+        <span class="sigil">§</span>
+        <span>Notify me</span>
+      </div>
+      <h2 class="reveal" style="animation-delay: 0.15s">
+        Get <em>early access</em><br>when TermLoop ships.
+      </h2>
+      <p class="copy reveal" style="animation-delay: 0.25s">
+        No newsletter. No marketing drip. One email when the first binary is ready
+        to download &mdash; and a private TestFlight invite when mobile opens up.
+      </p>
+    </div>
+
+    <div class="shell reveal" style="animation-delay: 0.3s">
+      <div class="titlebar">termloop — zsh — notify</div>
+      <div class="prompt">
+        <span class="user">you</span>@<span class="host">termloop</span>:~/agents<span style="color: var(--accent)">$</span>
+        <span style="color: rgba(245,240,232,0.7)">./termloop notify --email</span>
+      </div>
+      <form id="signup" action="#" novalidate>
+        <input
+          type="email"
+          name="email"
+          placeholder="you@domain.dev"
+          required
+          autocomplete="email"
+          spellcheck="false"
+          aria-label="Your email">
+        <button type="submit">Subscribe</button>
+      </form>
+      <div class="status" id="status">
+        ↵ waiting for input<span class="caret">▮</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ FOOTNOTES ═══ -->
+  <aside class="footnotes">
+    <p><span class="num">¹</span> TermLoop is a fork of <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener" style="color: var(--ink-80); border-bottom: 1px dotted var(--ink-40); text-decoration: none;">cmux</a>, re-imagined for agent-first workflows.</p>
+    <p><span class="num">²</span> Open-source pieces will ship on <a href="https://github.com/termloopai" target="_blank" rel="noopener" style="color: var(--ink-80); border-bottom: 1px dotted var(--ink-40); text-decoration: none;">github.com/termloopai</a>.</p>
+    <p><span class="num">³</span> Reach the maintainer: <a href="mailto:feritzcan93@gmail.com" style="color: var(--ink-80); border-bottom: 1px dotted var(--ink-40); text-decoration: none;">feritzcan93@gmail.com</a>.</p>
+  </aside>
+
+  <!-- ═══ FOOTER ═══ -->
+  <footer>
+    <div class="left">&copy; 2026 &nbsp;·&nbsp; TermLoop</div>
+    <div class="wordmark">◎ AGENT LOOP ◎</div>
+    <div class="right">
+      <a href="https://github.com/termloopai" target="_blank" rel="noopener">GitHub</a>
+      &nbsp;·&nbsp;
+      <a href="mailto:feritzcan93@gmail.com">Mail</a>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+  (function () {
+    const form = document.getElementById('signup');
+    const status = document.getElementById('status');
+    if (!form) return;
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      const input = form.querySelector('input[type=email]');
+      const email = (input.value || '').trim();
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        status.innerHTML = '⚠  invalid email — try again<span class="caret">▮</span>';
+        status.style.color = '#ff3d00';
+        return;
+      }
+      // TODO: wire to Cloudflare Worker / Buttondown / Resend endpoint
+      status.innerHTML = '✓  queued · <span style="color: #ff3d00">' + escapeHtml(email) + '</span> · you\'ll hear from us at launch';
+      status.style.color = 'rgba(245,240,232,0.7)';
+      form.style.opacity = '0.45';
+      form.style.pointerEvents = 'none';
+    });
+
+    function escapeHtml(s) {
+      return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+  })();
+</script>
+
+</body>
+</html>

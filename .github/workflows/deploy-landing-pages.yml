@@ -1,0 +1,50 @@
+name: Deploy landing to Cloudflare Pages
+
+on:
+  pull_request:
+    paths:
+      - "landing/**"
+      - ".github/workflows/deploy-landing-pages.yml"
+  push:
+    branches:
+      - master
+    paths:
+      - "landing/**"
+      - ".github/workflows/deploy-landing-pages.yml"
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: landing-pages-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Resolve Pages branch
+        id: pages_branch
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "name=${{ github.head_ref }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=master" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          command: >-
+            pages deploy landing
+            --project-name=termloop
+            --branch=${{ steps.pages_branch.outputs.name }}

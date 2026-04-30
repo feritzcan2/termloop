@@ -1,0 +1,67 @@
+{
+  "id": "feature-idea-to-ship",
+  "name": "Feature Idea → Ship",
+  "description": "A two-sentence feature idea becomes a debated spec, a reviewed plan, a shipped implementation, and a code review. End-to-end.",
+  "scope": "workspace",
+  "flagship": true,
+  "triggers": [
+    { "type": "manual" }
+  ],
+  "variables": {
+    "brief": {
+      "required": true,
+      "prompt": "Feature fikrini 2–3 cümleyle yaz."
+    }
+  },
+  "nodes": [
+    {
+      "id": "design_room",
+      "type": "debate_room",
+      "roles": [
+        "agents/product-architect.md",
+        "agents/skeptical-critic.md",
+        "agents/pragmatic-engineer.md"
+      ],
+      "inputs": ["brief.txt"],
+      "output": "FINAL_SPEC.md",
+      "turn_limit": 12,
+      "moderator": "algorithm",
+      "convergence": { "min_turns": 4, "stability_window": 2 }
+    },
+    {
+      "id": "approve_spec",
+      "type": "gate",
+      "prompt": "Spec uygun mu?",
+      "inputs": ["FINAL_SPEC.md"],
+      "on_revise": "design_room"
+    },
+    {
+      "id": "planner",
+      "type": "solo",
+      "role": "agents/planner.md",
+      "inputs": ["FINAL_SPEC.md"],
+      "output": "PLAN.md"
+    },
+    {
+      "id": "approve_plan",
+      "type": "gate",
+      "prompt": "Plan adımları mantıklı mı?",
+      "inputs": ["FINAL_SPEC.md", "PLAN.md"],
+      "on_revise": "planner"
+    },
+    {
+      "id": "executor",
+      "type": "solo",
+      "role": "agents/executor.md",
+      "inputs": ["FINAL_SPEC.md", "PLAN.md"],
+      "output": "SHIPLOG.md"
+    },
+    {
+      "id": "reviewer",
+      "type": "solo",
+      "role": "agents/reviewer.md",
+      "inputs": ["FINAL_SPEC.md", "PLAN.md", "SHIPLOG.md"],
+      "output": "REVIEW.md"
+    }
+  ]
+}

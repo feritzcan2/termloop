@@ -1,0 +1,306 @@
+#!/usr/bin/env bash
+# termloop claude wrapper - injects hooks and session tracking
+#
+# When running inside a termloop terminal (TERMLOOP_SURFACE_ID is set), this wrapper
+# intercepts `claude` invocations to inject --session-id and --settings flags
+# so that Claude Code hooks fire back into termloop for notifications/status.
+# Outside cmux, it passes through to the real claude binary unchanged.
+
+resolve_explicit_claude_path() {
+    local candidate="${1:-}"
+    candidate="${candidate#"${candidate%%[![:space:]]*}"}"  # trim leading whitespace
+    candidate="${candidate%"${candidate##*[![:space:]]}"}"  # trim trailing whitespace
+    [[ -n "$candidate" && -f "$candidate" && -x "$candidate" ]] || return 1
+    [[ ! "$candidate" -ef "$0" ]] || return 1
+    printf '%s' "$candidate"
+}
+
+# Find the real claude binary, skipping our own directory.
+find_real_claude() {
+    # Honor custom path from Settings > Automation > Claude Code > Claude Binary Path.
+    # Guard against self-reference (user pointing back to this wrapper).
+    local custom=""
+    custom="$(resolve_explicit_claude_path "${TERMLOOP_CUSTOM_CLAUDE_PATH:-}" 2>/dev/null || true)"
+    if [[ -n "$custom" ]]; then
+        printf '%s' "$custom"
+        return 0
+    fi
+
+    # App-level discovery hint for GUI launches with a minimal PATH.
+    local resolved=""
+    resolved="$(resolve_explicit_claude_path "${TERMLOOP_REAL_CLAUDE_PATH:-}" 2>/dev/null || true)"
+    if [[ -n "$resolved" ]]; then
+        printf '%s' "$resolved"
+        return 0
+    fi
+
+    local self_dir
+    self_dir="$(cd "$(dirname "$0")" && pwd)"
+    local IFS=:
+    for d in $PATH; do
+        [[ "$d" == "$self_dir" ]] && continue
+        [[ -x "$d/claude" ]] || continue
+        # Skip other termloop wrapper copies (from parallel tagged builds,
+        # production/staging builds, etc.). The real claude binary is
+        # never a shell script with our marker comment.
+        if head -2 "$d/claude" 2>/dev/null | grep -q "termloop claude wrapper"; then
+            continue
+        fi
+        printf '%s' "$d/claude" && return 0
+    done
+    # Fallback: well-known installation paths that may not be in PATH
+    # (macOS GUI apps inherit a minimal PATH from launchd).
+    local candidate
+    for candidate in \
+        "$HOME/.local/bin/claude" \
+        "$HOME/.claude/local/bin/claude" \
+        "/opt/homebrew/bin/claude" \
+        "/usr/local/bin/claude"; do
+        [[ -x "$candidate" ]] || continue
+        [[ ! "$candidate" -ef "$0" ]] || continue
+        printf '%s' "$candidate"
+        return 0
+    done
+    return 1
+}
+
+# Return 0 only when TERMLOOP_SOCKET_PATH points to a live termloop socket.
+cmux_socket_available() {
+    local socket="${TERMLOOP_SOCKET_PATH:-}"
+    [[ -n "$socket" && -S "$socket" ]] || return 1
+
+    local self_dir cmux_bin
+    self_dir="$(cd "$(dirname "$0")" && pwd)"
+    cmux_bin="$self_dir/termloop"
+    [[ -x "$cmux_bin" ]] || cmux_bin="$(command -v termloop || true)"
+    [[ -n "$cmux_bin" ]] || return 1
+
+    # Keep stale/hung socket checks bounded so claude startup does not block
+    # behind the CLI default timeout (15s).
+    TERMLOOP_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+        "$cmux_bin" --socket "$socket" ping >/dev/null 2>&1
+}
+
+resolve_hook_cmux_bin() {
+    local self_dir bundled_cli
+    bundled_cli="${TERMLOOP_BUNDLED_CLI_PATH:-}"
+    if [[ -n "$bundled_cli" && -x "$bundled_cli" ]]; then
+        printf '%s' "$bundled_cli"
+        return 0
+    fi
+
+    self_dir="$(cd "$(dirname "$0")" && pwd)"
+    bundled_cli="$self_dir/termloop"
+    if [[ -x "$bundled_cli" ]]; then
+        printf '%s' "$bundled_cli"
+        return 0
+    fi
+
+    bundled_cli="$(command -v termloop || true)"
+    if [[ -n "$bundled_cli" ]]; then
+        printf '%s' "$bundled_cli"
+        return 0
+    fi
+
+    printf '%s' "termloop"
+}
+
+# Pass through if not in a termloop terminal, hooks are disabled, or the TermLoop
+# socket is unavailable (stale env / app not running).
+IN_CMUX=0
+if [[ -n "$TERMLOOP_SURFACE_ID" ]]; then
+    IN_CMUX=1
+fi
+
+if [[ "$IN_CMUX" == "0" || "$TERMLOOP_CLAUDE_HOOKS_DISABLED" == "1" ]] || ! cmux_socket_available; then
+    # In TermLoop-launched shells, preserve old behavior and always clear nested
+    # Claude session markers, even when we must pass through due to stale socket.
+    if [[ "$IN_CMUX" == "1" ]]; then
+        unset CLAUDECODE
+    fi
+    REAL_CLAUDE="$(find_real_claude)" || { echo "Error: claude not found in PATH" >&2; exit 127; }
+    exec "$REAL_CLAUDE" "$@"
+fi
+
+# Find real claude.
+REAL_CLAUDE="$(find_real_claude)" || { echo "Error: claude not found in PATH" >&2; exit 127; }
+
+ensure_node_options_restore_module() {
+    local guard_dir="${TMPDIR:-/tmp}"
+    guard_dir="${guard_dir%/}/termloop-claude-node-options"
+    local guard_path="$guard_dir/restore-node-options.cjs"
+    mkdir -p "$guard_dir" || return 1
+    local temp_path
+    temp_path="$(mktemp "$guard_dir/restore-node-options.XXXXXX")" || return 1
+    cat >"$temp_path" <<'EOF'
+const hadOriginalNodeOptions = process.env.TERMLOOP_ORIGINAL_NODE_OPTIONS_PRESENT === "1";
+if (hadOriginalNodeOptions) {
+  process.env.NODE_OPTIONS = process.env.TERMLOOP_ORIGINAL_NODE_OPTIONS ?? "";
+} else {
+  delete process.env.NODE_OPTIONS;
+}
+delete process.env.TERMLOOP_ORIGINAL_NODE_OPTIONS;
+delete process.env.TERMLOOP_ORIGINAL_NODE_OPTIONS_PRESENT;
+EOF
+    chmod 0644 "$temp_path" || {
+        rm -f "$temp_path"
+        return 1
+    }
+    if [[ -f "$guard_path" ]] && cmp -s "$temp_path" "$guard_path"; then
+        rm -f "$temp_path" || return 1
+    else
+        mv -f "$temp_path" "$guard_path" || {
+            rm -f "$temp_path"
+            return 1
+        }
+    fi
+    printf '%s' "$guard_path"
+}
+
+merge_node_options() {
+    local guard_path="$1"
+    local require_flag="--require=$guard_path"
+    local memory_flag="--max-old-space-size=4096"
+    local existing="${NODE_OPTIONS:-}"
+    local -a filtered=()
+    local -a tokens=()
+    local token
+    local skip_next=0
+
+    if [[ -z "$guard_path" ]]; then
+        printf '%s' "$existing"
+        return 0
+    fi
+
+    read -r -a tokens <<<"$existing"
+    for token in "${tokens[@]}"; do
+        if (( skip_next )); then
+            skip_next=0
+            continue
+        fi
+        if [[ "$token" == "--max-old-space-size" ]]; then
+            skip_next=1
+            continue
+        fi
+        if [[ "$token" == --max-old-space-size=* ]]; then
+            continue
+        fi
+        filtered+=("$token")
+    done
+
+    if (( ${#filtered[@]} == 0 )); then
+        printf '%s %s' "$require_flag" "$memory_flag"
+        return 0
+    fi
+    printf '%s %s' "$require_flag" "$memory_flag"
+    printf ' %s' "${filtered[@]}"
+}
+
+# Pass through subcommands that don't support session/hook flags.
+case "${1:-}" in
+    mcp|config|api-key|rc|remote-control) exec "$REAL_CLAUDE" "$@" ;;
+esac
+
+# Unset CLAUDECODE to avoid "nested session" detection — termloop terminals are
+# independent sessions even when the parent shell was launched from Claude Code.
+unset CLAUDECODE
+
+# Check if the user already specified a session/resume flag.
+# If so, don't inject our own --session-id (it would conflict).
+SKIP_SESSION_ID=false
+for arg in "$@"; do
+    case "$arg" in
+        --resume|--resume=*|-r|--session-id|--session-id=*|--continue|-c)
+            SKIP_SESSION_ID=true
+            ;;
+    esac
+done
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [[ -f "$SCRIPT_DIR/lib/termloop-context.sh" ]]; then
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/lib/termloop-context.sh"
+fi
+
+resolve_append_system_prompt() {
+    # Note: do NOT skip just because the user (or runner) already passed a
+    # `--append-system-prompt` / `--system-prompt` flag. The runner's
+    # non-plan path injects reporting instructions via that flag without
+    # the abilities/reported-state block, so we still need to fetch and
+    # add the workspace context as a second `--append-system-prompt`.
+    # The only legitimate reason to skip is `termloop_context_should_skip`,
+    # which already covers `TERMLOOP_LAUNCH_PROVIDED_CONTEXT=1` (runner
+    # already inlined the full joined context).
+    declare -F termloop_context_should_skip >/dev/null || return 0
+    if termloop_context_should_skip; then
+        return 0
+    fi
+    termloop_context_fetch claude
+}
+
+# Export the wrapper's PID. Because we exec claude below, this PID becomes
+# the actual claude process PID, which hooks use for stale-session detection.
+export TERMLOOP_CLAUDE_PID=$$
+if GUARD_PATH="$(ensure_node_options_restore_module)"; then
+    if [[ ${NODE_OPTIONS+x} ]]; then
+        export TERMLOOP_ORIGINAL_NODE_OPTIONS_PRESENT=1
+        export TERMLOOP_ORIGINAL_NODE_OPTIONS="$NODE_OPTIONS"
+    else
+        export TERMLOOP_ORIGINAL_NODE_OPTIONS_PRESENT=0
+        unset TERMLOOP_ORIGINAL_NODE_OPTIONS
+    fi
+    export NODE_OPTIONS="$(merge_node_options "$GUARD_PATH")"
+fi
+
+# Hooks are owned by user-scope ~/.claude/settings.json via UserScopeHookSync.
+# The wrapper only injects non-hook base settings (tool policy + optional MCP
+# servers); Claude Code merges --settings additively with settings.json.
+BASE_SETTINGS='{"disallowedTools":["MCPSearch"]}'
+
+merge_mcp_settings() {
+    local base_json="$1"
+    local mcp_path="${2:-}"
+    [[ -n "$mcp_path" && -f "$mcp_path" ]] || {
+        printf '%s' "$base_json"
+        return 0
+    }
+    if ! command -v python3 >/dev/null 2>&1; then
+        printf '%s' "$base_json"
+        return 0
+    fi
+
+    python3 - "$base_json" "$mcp_path" <<'PY'
+import json
+import pathlib
+import sys
+
+base = json.loads(sys.argv[1])
+path = pathlib.Path(sys.argv[2])
+
+try:
+    payload = json.loads(path.read_text())
+except Exception:
+    print(sys.argv[1])
+    raise SystemExit(0)
+
+servers = payload.get("mcpServers")
+if isinstance(servers, dict) and servers:
+    base["mcpServers"] = servers
+
+print(json.dumps(base, separators=(",", ":")))
+PY
+}
+
+APPEND_SYSTEM_PROMPT="$(resolve_append_system_prompt)"
+SETTINGS_JSON="$(merge_mcp_settings "$BASE_SETTINGS" "${CLAUDE_MCP_CONFIG:-}")"
+EXTRA_ARGS=()
+if [[ -n "$APPEND_SYSTEM_PROMPT" ]]; then
+    EXTRA_ARGS+=(--append-system-prompt "$APPEND_SYSTEM_PROMPT")
+fi
+
+if [[ "$SKIP_SESSION_ID" == true ]]; then
+    exec "$REAL_CLAUDE" "${EXTRA_ARGS[@]}" --settings "$SETTINGS_JSON" "$@"
+else
+    SESSION_ID="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+    exec "$REAL_CLAUDE" --session-id "$SESSION_ID" "${EXTRA_ARGS[@]}" --settings "$SETTINGS_JSON" "$@"
+fi

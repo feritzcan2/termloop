@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0E1626"/>
+      <stop offset="100%" stop-color="#04070D"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0%" stop-color="#FFD2A1"/>
+      <stop offset="100%" stop-color="#E94B6A"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" rx="225" ry="225" fill="url(#bg)"/>
+
+  <!-- Sadeleştirilmiş: sadece chevron + cursor (loop ring yok, 16-32 px için) -->
+  <polyline points="320,300 600,512 320,724"
+    fill="none" stroke="url(#mark)" stroke-width="110"
+    stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="660" y="420" width="68" height="184" rx="12" fill="url(#mark)"/>
+</svg>

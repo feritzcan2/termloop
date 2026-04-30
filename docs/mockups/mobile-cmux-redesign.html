@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>termloop/mobile — epic tree redesign</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg:            #07080b;
+    --bg-ink:        #0b0d12;
+    --bg-elev:       #0f1218;
+    --line:          rgba(255,255,255,0.055);
+    --line-strong:   rgba(255,255,255,0.12);
+    --ink-1:         #e6e7ea;
+    --ink-2:         #a8acb6;
+    --ink-3:         #6b707d;
+    --ink-4:         #434752;
+
+    --cyan:          #7de3ff;
+    --cyan-hot:      #22d3ee;
+    --cyan-dim:      rgba(125,227,255,0.08);
+
+    --sel:           #3d6dff;     /* cmux-style filled selection */
+    --sel-edge:      #7aa0ff;
+    --sel-glow:      rgba(61,109,255,0.55);
+
+    --phos:          #6af29a;     /* running */
+    --amber:         #ffb454;     /* needs input */
+    --rose:          #ff6b8a;     /* error */
+    --violet:        #b794ff;     /* agent */
+
+    --pad:           14px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(34,211,238,0.07), transparent 60%),
+      radial-gradient(900px 500px at 90% 110%, rgba(183,148,255,0.06), transparent 60%),
+      #050608;
+    color: var(--ink-1);
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    font-feature-settings: "calt" 1, "ss02" 1, "zero" 1;
+    min-height: 100vh;
+    padding: 56px 32px 96px;
+  }
+
+  .page-head {
+    max-width: 1240px;
+    margin: 0 auto 40px;
+    display: flex; align-items: baseline; justify-content: space-between; gap: 24px;
+    border-bottom: 1px dashed var(--line-strong);
+    padding-bottom: 18px;
+  }
+  .page-head h1 { font-size: 13px; font-weight: 500; letter-spacing: 0.04em; margin: 0; color: var(--ink-2); }
+  .page-head h1 b { color: var(--cyan); font-weight: 700; }
+  .page-head .meta { font-size: 11px; color: var(--ink-3); letter-spacing: 0.08em; text-transform: uppercase; }
+  .page-head .meta span { color: var(--phos); }
+
+  .stage {
+    max-width: 1240px; margin: 0 auto;
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 56px; align-items: start;
+  }
+  @media (max-width: 920px) { .stage { grid-template-columns: 1fr; } }
+
+  .frame-wrap { position: relative; display: flex; flex-direction: column; gap: 18px; }
+  .frame-caption { display: flex; align-items: baseline; gap: 12px; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-3); }
+  .frame-caption b { color: var(--ink-1); font-weight: 600; letter-spacing: 0.04em; text-transform: none; font-size: 13px; }
+  .frame-caption .dot { display: inline-block; width: 6px; height: 6px; border-radius: 999px; background: var(--ink-3); }
+  .frame-wrap.active .frame-caption .dot { background: var(--sel-edge); box-shadow: 0 0 10px var(--sel-edge); }
+
+  .phone {
+    width: 390px; max-width: 100%; height: 844px;
+    border-radius: 44px; background: var(--bg); padding: 12px;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.04),
+      0 0 0 2px rgba(0,0,0,0.6),
+      0 40px 80px -20px rgba(0,0,0,0.8),
+      0 0 80px -10px rgba(61,109,255,0.06);
+    position: relative; overflow: hidden;
+  }
+  .phone::after {
+    content: ''; position: absolute; inset: 0;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(255,255,255,0.018) 0px,
+      rgba(255,255,255,0.018) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    pointer-events: none; mix-blend-mode: overlay; border-radius: 44px;
+  }
+
+  .screen {
+    width: 100%; height: 100%;
+    border-radius: 32px; background: var(--bg);
+    position: relative; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+
+  /* status bar */
+  .statbar { display: flex; justify-content: space-between; align-items: center; padding: 14px 26px 6px; font-size: 11px; color: var(--ink-2); letter-spacing: 0.04em; }
+  .statbar .clock { color: var(--ink-1); font-weight: 600; }
+  .statbar .right { display: flex; gap: 6px; align-items: center; font-size: 10px; color: var(--ink-3); }
+  .statbar .right .bar { width: 14px; height: 8px; border: 1px solid var(--ink-3); border-radius: 2px; position: relative; }
+  .statbar .right .bar::before { content:''; position:absolute; inset: 1px 3px 1px 1px; background: var(--ink-2); border-radius: 1px; }
+
+  /* tabs row (WORK / BMAD / AGENTS) */
+  .tabs {
+    display: flex;
+    padding: 10px 0 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .tabs button {
+    all: unset; cursor: default;
+    flex: 1; text-align: center;
+    padding: 10px 0 12px;
+    font-size: 10.5px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 600;
+    position: relative;
+  }
+  .tabs button.on { color: var(--ink-1); }
+  .tabs button.on::after {
+    content:''; position: absolute; left: 22%; right: 22%; bottom: -1px;
+    height: 2px; background: var(--sel-edge);
+    box-shadow: 0 0 10px var(--sel-glow);
+  }
+
+  /* workspace sub-header */
+  .ws-head {
+    padding: 10px 20px 10px;
+    display: flex; align-items: center; justify-content: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(255,255,255,0.015), transparent);
+  }
+  .ws-head .ws-name {
+    font-size: 11px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    font-weight: 600;
+  }
+  .ws-head .ws-sep { color: var(--ink-4); }
+  .ws-head .ws-caret { width: 6px; height: 12px; background: var(--sel-edge); box-shadow: 0 0 8px var(--sel-glow); animation: blink 1.1s steps(2, start) infinite; }
+  @keyframes blink { to { opacity: 0.15; } }
+
+  /* tree body */
+  .tree { flex: 1; overflow: hidden; position: relative; }
+
+  /* epic group header */
+  .epic {
+    display: grid;
+    grid-template-columns: 28px 1fr auto;
+    align-items: center;
+    padding: 11px 16px 11px 12px;
+    border-bottom: 1px solid var(--line);
+    cursor: default;
+  }
+  .epic .disc {
+    font-size: 9px;
+    color: var(--ink-3);
+    text-align: center;
+    line-height: 1;
+  }
+  .epic .name {
+    font-size: 11.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    font-weight: 600;
+  }
+  .epic .count {
+    font-size: 10.5px;
+    color: var(--ink-4);
+    letter-spacing: 0.04em;
+    font-weight: 500;
+    min-width: 18px;
+    text-align: right;
+  }
+  .epic.open .disc { color: var(--ink-2); }
+  .epic.open .name { color: var(--ink-1); }
+  .epic.current .disc { color: var(--sel-edge); }
+  .epic.current .name { color: var(--sel-edge); text-shadow: 0 0 8px var(--sel-glow); }
+  .epic.current .count { color: var(--sel-edge); }
+
+  /* feature row */
+  .feat {
+    display: grid;
+    grid-template-columns: 28px 1fr auto;
+    align-items: start;
+    padding: 12px 16px 14px 12px;
+    border-bottom: 1px solid var(--line);
+    position: relative;
+  }
+  .feat .bullet {
+    color: var(--ink-3);
+    font-size: 13px;
+    text-align: center;
+    padding-top: 1px;
+    line-height: 1;
+  }
+  .feat .body { min-width: 0; }
+  .feat .title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink-1);
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .feat .stat {
+    margin-top: 5px;
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--ink-2);
+  }
+  .feat .stat.run   { color: var(--cyan); }
+  .feat .stat.input { color: var(--amber); }
+  .feat .stat.err   { color: var(--rose); }
+  .feat .stat.idle  { color: var(--ink-3); }
+  .feat .stat .ic   { font-size: 11px; }
+
+  .feat .path {
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--ink-3);
+    letter-spacing: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .feat .path .branch { color: var(--amber); }
+  .feat .path .sep { color: var(--ink-4); margin: 0 4px; }
+  .feat .chev { color: var(--ink-4); font-size: 14px; padding-top: 2px; }
+
+  /* SHELL row — the terminal prompt at the bottom of an epic */
+  .shell {
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    padding: 12px 16px 14px 12px;
+    border-bottom: 1px solid var(--line);
+    font-size: 12px;
+  }
+  .shell .bullet { color: var(--ink-4); text-align: center; line-height: 1; padding-top: 1px; font-size: 11px; }
+  .shell .prompt { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .shell .prompt .user { color: var(--cyan); }
+  .shell .prompt .sep { color: var(--ink-4); }
+  .shell .prompt .path { color: var(--ink-3); }
+
+  /* ============ SELECTION — cmux-style filled block ========== */
+  .feat.selected {
+    background:
+      linear-gradient(90deg, var(--sel) 0%, rgba(61,109,255,0.88) 100%);
+    border-bottom-color: transparent;
+    margin: 6px 10px;
+    padding: 12px 14px 14px 14px;
+    border-radius: 6px;
+    box-shadow:
+      0 0 0 1px var(--sel-edge),
+      0 0 24px -4px var(--sel-glow),
+      inset 0 1px 0 rgba(255,255,255,0.18);
+    grid-template-columns: 22px 1fr auto;
+    position: relative;
+  }
+  .feat.selected::before {
+    content: '';
+    position: absolute;
+    left: -10px; top: 6px; bottom: 6px;
+    width: 3px;
+    background: var(--sel-edge);
+    box-shadow: 0 0 12px var(--sel-glow);
+    border-radius: 2px;
+  }
+  .feat.selected .bullet { color: #fff; opacity: 0.9; }
+  .feat.selected .title  { color: #fff; }
+  .feat.selected .title::after {
+    content: '';
+    display: inline-block;
+    width: 6px; height: 12px;
+    background: #fff;
+    margin-left: 4px;
+    vertical-align: -1px;
+    animation: blink 1.1s steps(2, start) infinite;
+  }
+  .feat.selected .stat.run   { color: #c7dcff; }
+  .feat.selected .stat.input { color: #ffe0b3; }
+  .feat.selected .path       { color: #c7dcff; }
+  .feat.selected .path .branch { color: #ffe0b3; }
+  .feat.selected .path .sep    { color: rgba(255,255,255,0.4); }
+  .feat.selected .chev         { color: #fff; }
+
+  /* bottom command bar */
+  .cmdbar {
+    border-top: 1px solid var(--line-strong);
+    padding: 14px 20px 16px;
+    display: flex; align-items: center; gap: 10px;
+    font-size: 12px;
+    background: linear-gradient(180deg, transparent, rgba(61,109,255,0.04));
+  }
+  .cmdbar .plus { color: var(--sel-edge); font-weight: 700; font-size: 14px; }
+  .cmdbar .label { color: var(--ink-2); flex: 1; letter-spacing: 0.24em; text-transform: uppercase; font-size: 11px; font-weight: 600; }
+  .cmdbar .kbd { font-size: 10px; padding: 2px 6px; border: 1px solid var(--line-strong); color: var(--ink-2); letter-spacing: 0.08em; }
+
+  .home-bar { height: 30px; display: flex; align-items: center; justify-content: center; }
+  .home-bar i { width: 124px; height: 4px; border-radius: 4px; background: rgba(255,255,255,0.35); }
+
+  /* tokens panel */
+  .tokens {
+    max-width: 1240px; margin: 56px auto 0;
+    padding: 28px;
+    border: 1px dashed var(--line-strong);
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 28px;
+  }
+  @media (max-width: 920px) { .tokens { grid-template-columns: repeat(2, 1fr); } }
+  .tok-head { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 12px; }
+  .tok-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 11.5px; color: var(--ink-2); border-bottom: 1px solid var(--line); }
+  .tok-row:last-child { border-bottom: 0; }
+  .swatch { width: 18px; height: 18px; border: 1px solid var(--line-strong); flex-shrink: 0; }
+  .tok-row .name { color: var(--ink-1); font-weight: 500; min-width: 100px; }
+  .tok-row .val  { color: var(--ink-3); margin-left: auto; font-size: 10.5px; }
+  .rules { display: flex; flex-direction: column; gap: 8px; padding: 0; margin: 0; }
+  .rules li { list-style: none; font-size: 11.5px; color: var(--ink-2); padding-left: 14px; position: relative; line-height: 1.45; }
+  .rules li::before { content:'▸'; color: var(--sel-edge); position: absolute; left: 0; }
+  .rules li b { color: var(--ink-1); font-weight: 600; }
+  .rules li code { color: var(--cyan); font-family: inherit; font-size: 11px; }
+
+  .footer-note {
+    max-width: 1240px; margin: 28px auto 0;
+    color: var(--ink-3); font-size: 11px; letter-spacing: 0.08em;
+    display: flex; justify-content: space-between;
+    border-top: 1px dashed var(--line-strong); padding-top: 18px;
+  }
+  .footer-note b { color: var(--ink-1); }
+</style>
+</head>
+<body>
+
+<header class="page-head">
+  <h1><b>termloop</b>/mobile &nbsp;·&nbsp; epic / feature tree &nbsp;·&nbsp; TermLoop workspace view</h1>
+  <div class="meta">v2 <span>●</span> 2026-04-14</div>
+</header>
+
+<div class="stage">
+
+  <!-- FRAME A — COLLAPSED + EXPANDED GROUPS =================== -->
+  <div class="frame-wrap">
+    <div class="frame-caption"><span class="dot"></span><b>A · Tree · idle</b> <span>no feature selected</span></div>
+    <div class="phone"><div class="screen">
+
+      <div class="statbar">
+        <span class="clock">23:07</span>
+        <span class="right"><span>tailscale</span><span class="bar"></span></span>
+      </div>
+
+      <div class="tabs">
+        <button class="on">Work</button>
+        <button>Bmad</button>
+        <button>Agents</button>
+      </div>
+
+      <div class="ws-head">
+        <span class="ws-name">Cmuxfork</span>
+        <span class="ws-sep">/</span>
+        <span class="ws-caret"></span>
+      </div>
+
+      <section class="tree">
+
+        <div class="epic open">
+          <span class="disc">▼</span>
+          <span class="name">Mobileapp</span>
+          <span class="count">1</span>
+        </div>
+        <article class="feat">
+          <div class="bullet">·</div>
+          <div class="body">
+            <div class="title">Persistence</div>
+            <div class="stat run"><span class="ic">⚡</span>Running</div>
+            <div class="path"><span class="branch">master*</span><span class="sep">·</span>~/Projects/bmadworkflowtest</div>
+          </div>
+          <div class="chev">›</div>
+        </article>
+
+        <div class="epic">
+          <span class="disc">▶</span>
+          <span class="name">Project</span>
+          <span class="count">2</span>
+        </div>
+
+        <div class="epic open">
+          <span class="disc">▼</span>
+          <span class="name">Worktree</span>
+          <span class="count">1</span>
+        </div>
+        <article class="feat">
+          <div class="bullet">·</div>
+          <div class="body">
+            <div class="title">Set up worktree support in cmux</div>
+            <div class="stat run"><span class="ic">⚡</span>Running</div>
+            <div class="path"><span class="branch">master*</span><span class="sep">·</span>~/Projects/bmadworkflowtest</div>
+          </div>
+          <div class="chev">›</div>
+        </article>
+
+        <div class="epic"><span class="disc">▶</span><span class="name">Pluginsystem</span><span class="count">2</span></div>
+        <div class="epic"><span class="disc">▶</span><span class="name">Ui</span><span class="count">1</span></div>
+        <div class="epic"><span class="disc">▶</span><span class="name">Gitchanges</span><span class="count">1</span></div>
+        <div class="epic"><span class="disc">▶</span><span class="name">Agents</span><span class="count">1</span></div>
+        <div class="epic"><span class="disc">▶</span><span class="name">Superpowers</span><span class="count">1</span></div>
+        <div class="epic"><span class="disc">▶</span><span class="name">Map</span><span class="count">1</span></div>
+        <div class="epic"><span class="disc">▶</span><span class="name">Mobileui</span><span class="count">1</span></div>
+
+      </section>
+
+      <div class="cmdbar">
+        <span class="plus">+</span>
+        <span class="label">New epic</span>
+        <span class="kbd">⌘N</span>
+      </div>
+
+      <div class="home-bar"><i></i></div>
+
+    </div></div>
+  </div>
+
+  <!-- FRAME B — SELECTED FEATURE (TermLoop filled block) ========== -->
+  <div class="frame-wrap active">
+    <div class="frame-caption"><span class="dot"></span><b>B · Feature selected</b> <span>row press-in · current epic cyan</span></div>
+    <div class="phone"><div class="screen">
+
+      <div class="statbar">
+        <span class="clock">23:07</span>
+        <span class="right"><span>tailscale</span><span class="bar"></span></span>
+      </div>
+
+      <div class="tabs">
+        <button class="on">Work</button>
+        <button>Bmad</button>
+        <button>Agents</button>
+      </div>
+
+      <div class="ws-head">
+        <span class="ws-name">Cmuxfork</span>
+        <span class="ws-sep">/</span>
+        <span class="ws-caret"></span>
+      </div>
+
+      <section class="tree">
+
+        <div class="epic"><span class="disc">▶</span><span class="name">Mobileapp</span><span class="count">1</span></div>
+        <div class="epic"><span class="disc">▶</span><span class="name">Project</span><span class="count">2</span></div>
+        <div class="epic"><span class="disc">▶</span><span class="name">Worktree</span><span class="count">1</span></div>
+        <div class="epic"><span class="disc">▶</span><span class="name">Pluginsystem</span><span class="count">2</span></div>
+        <div class="epic"><span class="disc">▶</span><span class="name">Ui</span><span class="count">1</span></div>
+        <div class="epic"><span class="disc">▶</span><span class="name">Gitchanges</span><span class="count">1</span></div>
+        <div class="epic"><span class="disc">▶</span><span class="name">Agents</span><span class="count">1</span></div>
+        <div class="epic"><span class="disc">▶</span><span class="name">Superpowers</span><span class="count">1</span></div>
+        <div class="epic"><span class="disc">▶</span><span class="name">Map</span><span class="count">1</span></div>
+
+        <div class="epic open">
+          <span class="disc">▼</span>
+          <span class="name">Mobileui</span>
+          <span class="count">1</span>
+        </div>
+        <article class="feat selected">
+          <div class="bullet">·</div>
+          <div class="body">
+            <div class="title">Fix mobile app selection feedback UI</div>
+            <div class="stat run"><span class="ic">⚡</span>Running</div>
+            <div class="path"><span class="branch">master*</span><span class="sep">·</span>~/Projects/bmadworkflowtest</div>
+          </div>
+          <div class="chev">›</div>
+        </article>
+
+        <div class="epic open current">
+          <span class="disc">▼</span>
+          <span class="name">Startupbuilder</span>
+          <span class="count">2</span>
+        </div>
+        <article class="feat">
+          <div class="bullet">✳</div>
+          <div class="body">
+            <div class="title">AI-driven project planning and parallel d…</div>
+            <div class="stat input"><span class="ic">🔔</span>Needs input</div>
+            <div class="path"><span class="branch">master*</span><span class="sep">·</span>~/Projects/bmadworkflowtest</div>
+          </div>
+          <div class="chev">›</div>
+        </article>
+        <div class="shell">
+          <div class="bullet">»</div>
+          <div class="prompt"><span class="user">feritzcan@Mac</span><span class="sep">:</span><span class="path">~/Projects/bmadworkflowt…</span></div>
+        </div>
+
+      </section>
+
+      <div class="cmdbar">
+        <span class="plus">+</span>
+        <span class="label">New epic</span>
+        <span class="kbd">⌘N</span>
+      </div>
+
+      <div class="home-bar"><i></i></div>
+
+    </div></div>
+  </div>
+
+</div>
+
+<!-- SPEC / TOKENS ============================================ -->
+<section class="tokens">
+
+  <div>
+    <div class="tok-head">Palette</div>
+    <div class="tok-row"><span class="swatch" style="background:#07080b"></span><span class="name">bg</span><span class="val">#07080B</span></div>
+    <div class="tok-row"><span class="swatch" style="background:#3d6dff"></span><span class="name">sel</span><span class="val">#3D6DFF</span></div>
+    <div class="tok-row"><span class="swatch" style="background:#7aa0ff"></span><span class="name">sel.edge</span><span class="val">#7AA0FF</span></div>
+    <div class="tok-row"><span class="swatch" style="background:#7de3ff"></span><span class="name">cyan</span><span class="val">#7DE3FF</span></div>
+    <div class="tok-row"><span class="swatch" style="background:#6af29a"></span><span class="name">phos</span><span class="val">#6AF29A</span></div>
+    <div class="tok-row"><span class="swatch" style="background:#ffb454"></span><span class="name">amber</span><span class="val">#FFB454</span></div>
+    <div class="tok-row"><span class="swatch" style="background:#ff6b8a"></span><span class="name">rose</span><span class="val">#FF6B8A</span></div>
+    <div class="tok-row"><span class="swatch" style="background:#a8acb6"></span><span class="name">ink.2</span><span class="val">#A8ACB6</span></div>
+  </div>
+
+  <div>
+    <div class="tok-head">Tree structure</div>
+    <ul class="rules">
+      <li><b>Tabs</b> · Work / Bmad / Agents · 28% tracking uppercase</li>
+      <li><b>Workspace</b> · Cmuxfork header, centered, blinking caret</li>
+      <li><b>Epic row</b> · <code>▶/▼</code> · UPPERCASE name · count · hairline ayraç</li>
+      <li><b>Feature row</b> · <code>·</code>/<code>✳</code> bullet · title · <code>⚡Running</code>/<code>🔔Needs input</code> · <code>branch* · path</code></li>
+      <li><b>Shell row</b> · <code>»</code> · <code>user@host:~/path</code> — alt prompt satırı</li>
+      <li><b>Current epic</b> · isim cyan (<code>sel.edge</code>) + glow</li>
+    </ul>
+  </div>
+
+  <div>
+    <div class="tok-head">Selection spec</div>
+    <ul class="rules">
+      <li><b>Fill</b> · <code>#3D6DFF</code> → 88% gradient, tüm satırı kaplayan blok</li>
+      <li><b>Border</b> · <code>0 0 0 1px</code> cyan edge + <code>inset 0 1px 0 #fff18</code> üst highlight</li>
+      <li><b>Left accent</b> · 3px cyan bar, 12px glow, hafif dış çıkıntı</li>
+      <li><b>Radius</b> · 6px (tek seçili item'da, diğerleri hairline flush)</li>
+      <li><b>Gutter</b> · 10px içeriden blok, etrafı nefes alsın</li>
+      <li><b>Cursor</b> · 6×12 beyaz blok başlık sonunda, 1.1s blink</li>
+      <li><b>Haptics</b> · <code>Haptics.selection()</code> press-in'de</li>
+    </ul>
+  </div>
+
+  <div>
+    <div class="tok-head">Mobile invariants</div>
+    <ul class="rules">
+      <li><b>Touch min</b> · epic satırı 44px, feature satırı 64px+</li>
+      <li><b>Long-press</b> · "attach / detach / delete" action sheet</li>
+      <li><b>Swipe-right</b> · collapse tüm epic'ler</li>
+      <li><b>Pull-to-refresh</b> · <code>workspace.list</code> + status poll</li>
+      <li><b>Current epic</b> · aktif TermLoop session'ın epic'i cyan başlık</li>
+      <li><b>+ NEW EPIC</b> · bottom bar, FAB değil — kbd ipucu <code>⌘N</code> (Bluetooth klavyede)</li>
+    </ul>
+  </div>
+
+</section>
+
+<div class="footer-note">
+  <span>file · <b>docs/mockups/mobile-cmux-redesign.html</b></span>
+  <span>source · <b>termloop workspace tree</b></span>
+</div>
+
+</body>
+</html>

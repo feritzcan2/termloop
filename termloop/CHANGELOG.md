@@ -1,0 +1,924 @@
+# Changelog
+
+All notable changes to termloop are documented here.
+
+## [0.63.2] - 2026-04-06
+
+### Added
+- Support chorded keyboard shortcuts ([#2528](https://github.com/feritzcan2/termloop/pull/2528))
+- Detect listening ports for remote SSH workspaces ([#2398](https://github.com/feritzcan2/termloop/pull/2398))
+- Editable workspace descriptions ([#2475](https://github.com/feritzcan2/termloop/pull/2475))
+- Claude Binary Path setting ([#2514](https://github.com/feritzcan2/termloop/pull/2514))
+- `cmux omx` and `cmux omc` agent integrations ([#2619](https://github.com/feritzcan2/termloop/pull/2619))
+- "Open Folder in VS Code (Inline)" menu item and command palette entry ([#2409](https://github.com/feritzcan2/termloop/pull/2409))
+- New Window entry in the Dock menu ([#2340](https://github.com/feritzcan2/termloop/pull/2340))
+- Reset-terminal workaround in the terminal menu ([#2349](https://github.com/feritzcan2/termloop/pull/2349))
+- React Grab inject button in the browser toolbar ([#2373](https://github.com/feritzcan2/termloop/pull/2373))
+- Hover background on split action buttons ([#2271](https://github.com/feritzcan2/termloop/pull/2271))
+- Cmd-click fallback for bare filenames in `ls` output ([#2294](https://github.com/feritzcan2/termloop/pull/2294))
+- Localized tab context menu and alert strings ([#2422](https://github.com/feritzcan2/termloop/pull/2422))
+
+### Changed
+- Relicense termloop from AGPL-3.0 to GPL-3.0 ([#2364](https://github.com/feritzcan2/termloop/pull/2364))
+- Update bundled Ghostty fork to latest upstream ([#2379](https://github.com/feritzcan2/termloop/pull/2379))
+- Sidebar PR lookups are now event-driven to reduce GitHub API load ([#2453](https://github.com/feritzcan2/termloop/pull/2453))
+- Keep the latest sidebar notification until it is explicitly cleared ([#2623](https://github.com/feritzcan2/termloop/pull/2623))
+- Switch the nightly Sparkle appcast feed to R2 ([#2335](https://github.com/feritzcan2/termloop/pull/2335), [#2363](https://github.com/feritzcan2/termloop/pull/2363), [#2366](https://github.com/feritzcan2/termloop/pull/2366))
+
+### Fixed
+- Fix terminals freezing when the first responder drifts off the focused surface ([#2505](https://github.com/feritzcan2/termloop/pull/2505))
+- Fix sidebar layout loop and CLI socket deadlocks ([#2601](https://github.com/feritzcan2/termloop/pull/2601))
+- Fix sidebar LazyVStack layout loop in the workspace list ([#2328](https://github.com/feritzcan2/termloop/pull/2328))
+- Fix focus reporting leak on pane creation ([#2511](https://github.com/feritzcan2/termloop/pull/2511))
+- Fix browser pane flicker during multi-split resize ([#2574](https://github.com/feritzcan2/termloop/pull/2574))
+- Fix browser panel resize flicker during split drag ([#2513](https://github.com/feritzcan2/termloop/pull/2513))
+- Fix browser pane hangs from redundant portal refreshes ([#2353](https://github.com/feritzcan2/termloop/pull/2353))
+- Fix browser pane dark-mode leak on light pages ([#2346](https://github.com/feritzcan2/termloop/pull/2346))
+- Fix DevTools pane breaking after workspace switch round-trips ([#2621](https://github.com/feritzcan2/termloop/pull/2621))
+- Fix sidebar background: add missing locale entries and portal resync on toggle ([#2622](https://github.com/feritzcan2/termloop/pull/2622))
+- Fix session restore suppression on relaunch ([#2469](https://github.com/feritzcan2/termloop/pull/2469))
+- Fix session restore terminal cursor focus race ([#2471](https://github.com/feritzcan2/termloop/pull/2471))
+- Fix terminal focus and surface recovery after layout changes ([#2354](https://github.com/feritzcan2/termloop/pull/2354))
+- Fix missing sidebar ports for agent-run dev servers ([#2562](https://github.com/feritzcan2/termloop/pull/2562))
+- Fix missing sidebar git branch metadata for workspaces ([#2563](https://github.com/feritzcan2/termloop/pull/2563))
+- Fix sidebar live refresh for branch and PR state ([#2331](https://github.com/feritzcan2/termloop/pull/2331))
+- Fix duplicate sidebar git metadata publishes ([#2405](https://github.com/feritzcan2/termloop/pull/2405))
+- Fix SSH password-auth bootstrap race ([#2564](https://github.com/feritzcan2/termloop/pull/2564))
+- Fix remote proxy notification spam with cooldown, backoff, and SSH keepalive ([#2330](https://github.com/feritzcan2/termloop/pull/2330))
+- Fix tmux-compat `split-window` surface resolution ([#2351](https://github.com/feritzcan2/termloop/pull/2351))
+- Fix `new-split` falling back to the focused surface when the target is stale ([#2518](https://github.com/feritzcan2/termloop/pull/2518)) — thanks @anusheel!
+- Fix CLI commands briefly stealing focus ([#2464](https://github.com/feritzcan2/termloop/pull/2464))
+- Fix paste from Raycast and other apps using alternate plain-text UTIs ([#2467](https://github.com/feritzcan2/termloop/pull/2467))
+- Fix stray `C` insertion from Speakly dictation ([#2413](https://github.com/feritzcan2/termloop/pull/2413))
+- Fix Korean IME jamo leak during composition ([#2529](https://github.com/feritzcan2/termloop/pull/2529))
+- Stop swallowing `/` and `?` on ABC-QWERTZ keyboard layouts ([#2447](https://github.com/feritzcan2/termloop/pull/2447))
+- Keep prompt colors when zsh switches local `TERM` to `xterm-256color` ([#2613](https://github.com/feritzcan2/termloop/pull/2613))
+- Ensure shell integrations always dispatch `claude` through the bundled wrapper ([#2465](https://github.com/feritzcan2/termloop/pull/2465))
+- Fix shell integration review regressions ([#2466](https://github.com/feritzcan2/termloop/pull/2466))
+- Fix React Grab Cmd+Shift+G terminal round-trip ([#2615](https://github.com/feritzcan2/termloop/pull/2615))
+- Suppress cmd-hover path highlighting while terminal selection is active ([#2579](https://github.com/feritzcan2/termloop/pull/2579))
+- Keep termloop browser Find shortcuts authoritative over page handlers ([#2356](https://github.com/feritzcan2/termloop/pull/2356))
+- Fix minimal-mode tab bar disappearing in fullscreen ([#2375](https://github.com/feritzcan2/termloop/pull/2375))
+- Fix transparent background flash during sidebar toggle ([#2378](https://github.com/feritzcan2/termloop/pull/2378))
+- Fix macOS 26 glass window gating ([#2468](https://github.com/feritzcan2/termloop/pull/2468))
+- Fix fullscreen new windows opening in the current Space ([#2345](https://github.com/feritzcan2/termloop/pull/2345))
+- Fix Dock persistence for manual app icons ([#2360](https://github.com/feritzcan2/termloop/pull/2360))
+- Fix update error details dialog overflow ([#2359](https://github.com/feritzcan2/termloop/pull/2359))
+- Fix Ctrl+K reaching the command palette text editor ([#2394](https://github.com/feritzcan2/termloop/pull/2394))
+- Keep Cmd+P stable during animated workspace title updates ([#2393](https://github.com/feritzcan2/termloop/pull/2393))
+- Fix Cmd+P workspace retention for the main CI workspace ([#2412](https://github.com/feritzcan2/termloop/pull/2412))
+- Coalesce portal sync to latest geometry to fix browser overlay drift ([#2214](https://github.com/feritzcan2/termloop/pull/2214))
+- Fix `claude_vm_node` OOM behavior and hook payload retention ([#2462](https://github.com/feritzcan2/termloop/pull/2462))
+- Fix GitHub star badge `k` formatting ([#2473](https://github.com/feritzcan2/termloop/pull/2473))
+- Keep GitHub stars badge stable across navigation ([#2476](https://github.com/feritzcan2/termloop/pull/2476))
+- Fix web header overlap ([#2452](https://github.com/feritzcan2/termloop/pull/2452))
+
+### Thanks to 3 contributors!
+
+- [@austinywang](https://github.com/austinywang)
+- [@lawrencecchen](https://github.com/lawrencecchen)
+- [@anusheel](https://github.com/anusheel)
+
+## [0.63.1] - 2026-03-28
+
+### Fixed
+- Fix crash on startup after upgrading from older versions due to stale window geometry data ([#2306](https://github.com/feritzcan2/termloop/pull/2306))
+- Fix re-entrant `displayIfNeeded` crash during layout follow-up from SwiftUI geometry changes ([#2305](https://github.com/feritzcan2/termloop/pull/2305)) — thanks @KyleJamesWalker!
+- Fix macOS compatibility with versioned geometry persistence to prevent future upgrade crashes ([#2308](https://github.com/feritzcan2/termloop/pull/2308))
+
+### Thanks to 2 contributors!
+
+- [@austinywang](https://github.com/austinywang)
+- [@KyleJamesWalker](https://github.com/KyleJamesWalker)
+
+## [0.63.0] - 2026-03-28
+
+### Added
+- Browser profile import — cookies, history, and settings from Chrome, Firefox, Safari, and more ([#318](https://github.com/feritzcan2/termloop/pull/318), [#1582](https://github.com/feritzcan2/termloop/pull/1582), [#1593](https://github.com/feritzcan2/termloop/pull/1593))
+- Support `window.open()` popup windows in browser panes with shared OAuth context ([#1150](https://github.com/feritzcan2/termloop/pull/1150), [#1600](https://github.com/feritzcan2/termloop/pull/1600))
+- Minimal mode — hide the titlebar for a distraction-free terminal ([#1479](https://github.com/feritzcan2/termloop/pull/1479), [#2218](https://github.com/feritzcan2/termloop/pull/2218))
+- `cmux.json` custom commands — define project-specific actions launched from the command palette ([#2011](https://github.com/feritzcan2/termloop/pull/2011), [#2122](https://github.com/feritzcan2/termloop/pull/2122))
+- `cmux omo` command for oh-my-openagent integration ([#2087](https://github.com/feritzcan2/termloop/pull/2087), [#2230](https://github.com/feritzcan2/termloop/pull/2230), [#2280](https://github.com/feritzcan2/termloop/pull/2280))
+- Codex CLI hooks integration for terminal notifications ([#2103](https://github.com/feritzcan2/termloop/pull/2103))
+- Customizable number shortcuts for workspace switching ([#1951](https://github.com/feritzcan2/termloop/pull/1951))
+- Customizable sidebar selection highlight color ([#1824](https://github.com/feritzcan2/termloop/pull/1824))
+- Match Terminal Background sidebar color setting ([#2293](https://github.com/feritzcan2/termloop/pull/2293))
+- Optional single-click focus for inactive split panes ([#1796](https://github.com/feritzcan2/termloop/pull/1796))
+- Support image drag-and-drop into SSH terminals ([#1838](https://github.com/feritzcan2/termloop/pull/1838))
+- Support dropping folders onto the dock icon to open as workspaces ([#1571](https://github.com/feritzcan2/termloop/pull/1571))
+- Support modifier+key combinations in `send-key` CLI — ctrl+enter, shift+tab, arrow keys, home/end/delete/pageup/pagedown ([#1994](https://github.com/feritzcan2/termloop/pull/1994), [#1920](https://github.com/feritzcan2/termloop/pull/1920))
+- `--name` flag for `new-workspace` CLI command ([#2160](https://github.com/feritzcan2/termloop/pull/2160))
+- `--no-focus` flag for `cmux ssh` ([#2227](https://github.com/feritzcan2/termloop/pull/2227))
+- `--direction` flag for markdown open command ([#1763](https://github.com/feritzcan2/termloop/pull/1763))
+- Per-surface TTY exposed in `cmux tree` output ([#2040](https://github.com/feritzcan2/termloop/pull/2040))
+- `set-color` / `clear-color` workspace actions for tab color via CLI ([#1873](https://github.com/feritzcan2/termloop/pull/1873), [#1833](https://github.com/feritzcan2/termloop/pull/1833))
+- IntelliJ IDEA added to command palette Open Directory targets ([#1860](https://github.com/feritzcan2/termloop/pull/1860))
+- Open a new terminal tab from empty tab bar double-click ([#1601](https://github.com/feritzcan2/termloop/pull/1601))
+- Double-click custom titlebar to zoom or minimize ([#2130](https://github.com/feritzcan2/termloop/pull/2130))
+- Confirm before closing pinned workspaces ([#1895](https://github.com/feritzcan2/termloop/pull/1895))
+- Show tab name in close tab confirmation dialog ([#1845](https://github.com/feritzcan2/termloop/pull/1845))
+- Sidebar listening ports are now clickable to open in browser ([#1844](https://github.com/feritzcan2/termloop/pull/1844))
+- Ukrainian (uk) localization ([#2226](https://github.com/feritzcan2/termloop/pull/2226))
+- Hidden CLI command for live terminal debugging ([#1599](https://github.com/feritzcan2/termloop/pull/1599))
+- `rc` and `remote-control` added to command passthrough ([#1539](https://github.com/feritzcan2/termloop/pull/1539))
+- Export `TERMLOOP_SOCKET` alongside `TERMLOOP_SOCKET_PATH` in terminal env ([#1991](https://github.com/feritzcan2/termloop/pull/1991))
+- Dual licensing — AGPL + commercial ([#2021](https://github.com/feritzcan2/termloop/pull/2021))
+- Universal binary (arm64 + x86_64) for stable releases ([#2287](https://github.com/feritzcan2/termloop/pull/2287))
+- Add claude-teams, omo, and __tmux-compat to Go relay CLI for SSH sessions ([#2238](https://github.com/feritzcan2/termloop/pull/2238))
+- Warn Before Quit enforced when Cmd+Q arrives via app switcher ([#2186](https://github.com/feritzcan2/termloop/pull/2186))
+
+### Changed
+- Show update-available banner automatically on launch ([#1651](https://github.com/feritzcan2/termloop/pull/1651), [#1543](https://github.com/feritzcan2/termloop/pull/1543), [#1575](https://github.com/feritzcan2/termloop/pull/1575))
+- Restore Sparkle scheduled update checks ([#1597](https://github.com/feritzcan2/termloop/pull/1597))
+- New window inherits size from current window ([#2124](https://github.com/feritzcan2/termloop/pull/2124))
+- Restore last-surface close preference toggle ([#1679](https://github.com/feritzcan2/termloop/pull/1679))
+- Rename "Import From Browser" to "Import Browser Data" ([#1672](https://github.com/feritzcan2/termloop/pull/1672))
+- Make founders email selectable in feedback success view ([#1733](https://github.com/feritzcan2/termloop/pull/1733))
+- Include hardware details in feedback submissions ([#1726](https://github.com/feritzcan2/termloop/pull/1726))
+- Coalesce scrollbar updates during bulk output for improved performance ([#2116](https://github.com/feritzcan2/termloop/pull/2116))
+- Reduce shell integration prompt latency ([#2109](https://github.com/feritzcan2/termloop/pull/2109))
+- Skip quit confirmation for tagged DEV builds ([#2288](https://github.com/feritzcan2/termloop/pull/2288))
+- Use dedicated setting for sidebar port link browser preference ([#2219](https://github.com/feritzcan2/termloop/pull/2219))
+- Skip sidebar PR lookup on main/master branches ([#2110](https://github.com/feritzcan2/termloop/pull/2110))
+- Stabilize sidebar directory ordering when split focus changes ([#1798](https://github.com/feritzcan2/termloop/pull/1798))
+- Improve tmux notification attention routing ([#1898](https://github.com/feritzcan2/termloop/pull/1898))
+
+### Fixed
+- Fix Cmd+N workspace creation crashes caused by stale snapshots, ARC hotpaths, and restore-time races ([#2204](https://github.com/feritzcan2/termloop/pull/2204), [#2183](https://github.com/feritzcan2/termloop/pull/2183), [#2181](https://github.com/feritzcan2/termloop/pull/2181), [#2178](https://github.com/feritzcan2/termloop/pull/2178), [#2176](https://github.com/feritzcan2/termloop/pull/2176), [#2173](https://github.com/feritzcan2/termloop/pull/2173), [#2133](https://github.com/feritzcan2/termloop/pull/2133), [#2023](https://github.com/feritzcan2/termloop/pull/2023), [#1985](https://github.com/feritzcan2/termloop/pull/1985), [#1930](https://github.com/feritzcan2/termloop/pull/1930))
+- Fix ARC workspace inheritance crash and native Zig helper builds ([#2283](https://github.com/feritzcan2/termloop/pull/2283))
+- Fix `EXC_BAD_ACCESS` caused by over-releasing Ghostty font ([#1496](https://github.com/feritzcan2/termloop/pull/1496))
+- Fix terminal black screen on macOS 26.3.1 by dispatching Ghostty callbacks to main thread ([#1937](https://github.com/feritzcan2/termloop/pull/1937))
+- Fix blank terminal renders after workspace switches ([#1964](https://github.com/feritzcan2/termloop/pull/1964))
+- Fix stale terminal portal after restore churn ([#2025](https://github.com/feritzcan2/termloop/pull/2025))
+- Fix floating portal terminal after nightly update relaunch ([#1696](https://github.com/feritzcan2/termloop/pull/1696))
+- Fix terminal portal resync after restore-time bind ([#1973](https://github.com/feritzcan2/termloop/pull/1973))
+- Fix terminal find overlay crash and focus handoff ([#1487](https://github.com/feritzcan2/termloop/pull/1487))
+- Fix split transparency regression ([#1568](https://github.com/feritzcan2/termloop/pull/1568))
+- Apply `background-opacity` and `background-blur` to terminal rendering area ([#1858](https://github.com/feritzcan2/termloop/pull/1858))
+- Fix keyboard shortcuts not working with CJK input sources (Korean, Japanese, Russian) ([#1649](https://github.com/feritzcan2/termloop/pull/1649), [#1913](https://github.com/feritzcan2/termloop/pull/1913), [#2202](https://github.com/feritzcan2/termloop/pull/2202))
+- Skip CJK fallback font injection when font-family already covers glyphs ([#2241](https://github.com/feritzcan2/termloop/pull/2241))
+- Skip Korean from CJK font-codepoint-map auto-injection ([#1700](https://github.com/feritzcan2/termloop/pull/1700))
+- Fix Japanese IME confirmation Enter from executing command prematurely ([#2075](https://github.com/feritzcan2/termloop/pull/2075), [#1671](https://github.com/feritzcan2/termloop/pull/1671))
+- Fix Korean IME Enter handling on composition path in browser panes ([#2108](https://github.com/feritzcan2/termloop/pull/2108))
+- Fix AZERTY Option+Delete word delete in Claude Code ([#1640](https://github.com/feritzcan2/termloop/pull/1640))
+- Fix Escape key not working in terminal panels (e.g., lazygit) ([#1957](https://github.com/feritzcan2/termloop/pull/1957))
+- Fix unbound Cmd+Shift+key combos being silently swallowed ([#1959](https://github.com/feritzcan2/termloop/pull/1959))
+- Fix Cmd+W closing terminal tabs instead of About/Licenses windows ([#1473](https://github.com/feritzcan2/termloop/pull/1473))
+- Fix Cmd+O opening Documents folder — handle in custom shortcut handler ([#2034](https://github.com/feritzcan2/termloop/pull/2034))
+- Consume Cmd+number shortcuts when workspace index is out of bounds ([#2033](https://github.com/feritzcan2/termloop/pull/2033))
+- Fix arrow key glyph matching in customizable shortcuts ([#1443](https://github.com/feritzcan2/termloop/pull/1443))
+- Fix cursor movement on double-click selection ([#1709](https://github.com/feritzcan2/termloop/pull/1709))
+- Fix doomscroll when reviewing scrollback ([#1616](https://github.com/feritzcan2/termloop/pull/1616))
+- Fix browser panes rendering blank after reopen ([#2141](https://github.com/feritzcan2/termloop/pull/2141))
+- Fix browser portal leaking to other tabs on Bonsplit tab switch ([#2000](https://github.com/feritzcan2/termloop/pull/2000))
+- Fix browser freeze after pane split ([#1852](https://github.com/feritzcan2/termloop/pull/1852))
+- Fix browser pane video fullscreen ([#1921](https://github.com/feritzcan2/termloop/pull/1921))
+- Fix browser image copy pasteboard data ([#1850](https://github.com/feritzcan2/termloop/pull/1850))
+- Fix browser pane file drops hanging on "Uploading" ([#1843](https://github.com/feritzcan2/termloop/pull/1843))
+- Fix browser back navigation history handoff ([#1897](https://github.com/feritzcan2/termloop/pull/1897))
+- Fix browser devtools X-close persistence ([#1627](https://github.com/feritzcan2/termloop/pull/1627))
+- Fix browser PR metadata deadlock and BrowserPanelView hot paths ([#1564](https://github.com/feritzcan2/termloop/pull/1564))
+- Fix Cloudflare/CAPTCHA verification failures in browser panel ([#1877](https://github.com/feritzcan2/termloop/pull/1877))
+- Fix Google sign-in infinite loading in browser pane ([#1493](https://github.com/feritzcan2/termloop/pull/1493))
+- Fix native value setter for React compatibility in browser panes ([#2059](https://github.com/feritzcan2/termloop/pull/2059))
+- Fix sidebar badges not refreshing on workspace state change ([#2046](https://github.com/feritzcan2/termloop/pull/2046))
+- Fix sidebar PR badge detection for workspace branches and restored workspaces ([#1896](https://github.com/feritzcan2/termloop/pull/1896), [#1570](https://github.com/feritzcan2/termloop/pull/1570), [#1636](https://github.com/feritzcan2/termloop/pull/1636))
+- Fix sidebar notification persisting after being read ([#1933](https://github.com/feritzcan2/termloop/pull/1933))
+- Fix premature workspace title truncation in sidebar ([#1859](https://github.com/feritzcan2/termloop/pull/1859))
+- Fix pinned workspace ordering — keep pinned workspaces above pin boundary ([#1503](https://github.com/feritzcan2/termloop/pull/1503), [#1505](https://github.com/feritzcan2/termloop/pull/1505))
+- Fix command palette ordering for "check" query ([#1740](https://github.com/feritzcan2/termloop/pull/1740))
+- Fix command palette focus after terminal find ([#2089](https://github.com/feritzcan2/termloop/pull/2089))
+- Fix missing command palette open-in targets ([#1621](https://github.com/feritzcan2/termloop/pull/1621))
+- Fix all split panes appearing focused after layout restoration ([#2088](https://github.com/feritzcan2/termloop/pull/2088))
+- Fix panel resize stuttering when tiled with browser panels ([#1969](https://github.com/feritzcan2/termloop/pull/1969))
+- Fix splitter hitbox overlap and terminal scrollbar width resync ([#1950](https://github.com/feritzcan2/termloop/pull/1950))
+- Increase content side hit width to prevent accidental window resize ([#2018](https://github.com/feritzcan2/termloop/pull/2018))
+- Fix window position restore on relaunch ([#2129](https://github.com/feritzcan2/termloop/pull/2129))
+- Fix dock icon not auto-switching with system dark mode ([#1928](https://github.com/feritzcan2/termloop/pull/1928), [#1510](https://github.com/feritzcan2/termloop/pull/1510))
+- Align titlebar icons with traffic-light buttons ([#1754](https://github.com/feritzcan2/termloop/pull/1754))
+- Fix focused notification sound playback ([#1855](https://github.com/feritzcan2/termloop/pull/1855))
+- Fix laggy terminal sync during sidebar drags ([#1598](https://github.com/feritzcan2/termloop/pull/1598))
+- Fix spinner hang after display resolution changes ([#1549](https://github.com/feritzcan2/termloop/pull/1549))
+- Fix workspace layout follow-up spin loop ([#1633](https://github.com/feritzcan2/termloop/pull/1633))
+- Fix Ghostty `resize_split` keybind support ([#1899](https://github.com/feritzcan2/termloop/pull/1899))
+- Fix update attempt refreshing pill without actually updating ([#2168](https://github.com/feritzcan2/termloop/pull/2168), [#2142](https://github.com/feritzcan2/termloop/pull/2142), [#2117](https://github.com/feritzcan2/termloop/pull/2117))
+- Fix SSH control master cleanup on remote teardown ([#2104](https://github.com/feritzcan2/termloop/pull/2104))
+- Fix SSH cleanup after moving the last remote surface ([#2123](https://github.com/feritzcan2/termloop/pull/2123))
+- Fix SSH image transfer cleanup and IPv6 followups ([#1907](https://github.com/feritzcan2/termloop/pull/1907), [#1904](https://github.com/feritzcan2/termloop/pull/1904))
+- Fix SSH remote CLI wrapper and proxy follow-ups ([#1596](https://github.com/feritzcan2/termloop/pull/1596))
+- Fix nightly SSH remote daemon checksum mismatch ([#2225](https://github.com/feritzcan2/termloop/pull/2225))
+- Fix termloop ssh notify surface targeting ([#1799](https://github.com/feritzcan2/termloop/pull/1799))
+- Fix tmux compat store decoding, layout cleanup, and cross-workspace fallback ([#2207](https://github.com/feritzcan2/termloop/pull/2207))
+- Fix claude-teams pane anchoring with main-vertical layout ([#2119](https://github.com/feritzcan2/termloop/pull/2119))
+- Fix claude-hook stop teardown races ([#1954](https://github.com/feritzcan2/termloop/pull/1954))
+- Fix Claude Code hooks config to match actual schema ([#1388](https://github.com/feritzcan2/termloop/pull/1388))
+- Handle TabManager unavailable in SessionEnd/Start hooks ([#1735](https://github.com/feritzcan2/termloop/pull/1735))
+- Fix blocking sleep in preexec hook causing command lag ([#1444](https://github.com/feritzcan2/termloop/pull/1444))
+- Fix redundant focus events causing Powerlevel10k redraws ([#1579](https://github.com/feritzcan2/termloop/pull/1579))
+- Fix identical session autosave writes ([#1732](https://github.com/feritzcan2/termloop/pull/1732))
+- Fix locale page crashes under Google Translate ([#1956](https://github.com/feritzcan2/termloop/pull/1956))
+- Fix About Panel newline escaping ([#1298](https://github.com/feritzcan2/termloop/pull/1298))
+- Fix remote sidebar directory canonicalization to preserve live paths ([#1800](https://github.com/feritzcan2/termloop/pull/1800))
+- Fix AppleScript `count windows` returning 0 and `working directory` returning empty ([#1826](https://github.com/feritzcan2/termloop/pull/1826))
+- Fix PWD action routing to correct TabManager per tabId ([#2147](https://github.com/feritzcan2/termloop/pull/2147))
+- Fix socket returning wrong error when surface_id is provided but unresolvable ([#2150](https://github.com/feritzcan2/termloop/pull/2150))
+- Guard inherited terminal config against stale surfaces ([#2101](https://github.com/feritzcan2/termloop/pull/2101))
+- Suppress socat stdout in `_cmux_send` to prevent "OK" leak ([#1619](https://github.com/feritzcan2/termloop/pull/1619))
+- Add `-r` shorthand to skip session ID check in Claude wrapper ([#1992](https://github.com/feritzcan2/termloop/pull/1992))
+- Check git repo before running git commands to prevent TCC permission prompts ([#1677](https://github.com/feritzcan2/termloop/pull/1677))
+- Preserve explicit wheel scrollback against passive follow ([#1965](https://github.com/feritzcan2/termloop/pull/1965))
+- Fix terminal pane drag/drop handoff delay ([#1837](https://github.com/feritzcan2/termloop/pull/1837))
+
+### Removed
+- Remove restricted web-browser entitlement ([#1727](https://github.com/feritzcan2/termloop/pull/1727))
+
+## [0.62.2] - 2026-03-14
+
+### Added
+- Configurable sidebar tint color with separate light/dark mode support via Settings and config file (`sidebar-background`, `sidebar-tint-opacity`) ([#1465](https://github.com/feritzcan2/termloop/pull/1465))
+- Cmd+P all-surfaces search option ([#1382](https://github.com/feritzcan2/termloop/pull/1382))
+- `cmux themes` command with bundled Ghostty themes ([#1334](https://github.com/feritzcan2/termloop/pull/1334), [#1314](https://github.com/feritzcan2/termloop/pull/1314))
+- Sidebar can now shrink to smaller widths ([#1420](https://github.com/feritzcan2/termloop/pull/1420))
+- Menu bar visibility setting ([#1330](https://github.com/feritzcan2/termloop/pull/1330))
+
+### Changed
+- CLI Sentry events are now tagged with the app release ([#1408](https://github.com/feritzcan2/termloop/pull/1408))
+- Stable socket listener now falls back to a user-scoped path, and repeated startup failures are throttled ([#1351](https://github.com/feritzcan2/termloop/pull/1351), [#1415](https://github.com/feritzcan2/termloop/pull/1415))
+
+### Fixed
+- Command palette command-mode shortcut, navigation, and omnibar backspace or arrow-key regressions ([#1417](https://github.com/feritzcan2/termloop/pull/1417), [#1413](https://github.com/feritzcan2/termloop/pull/1413))
+- Stale Claude sidebar status from missing hooks, OSC suppression, and PID cleanup ([#1306](https://github.com/feritzcan2/termloop/pull/1306))
+- Split cwd inheritance when the shell cwd is stale ([#1403](https://github.com/feritzcan2/termloop/pull/1403))
+- Crashes when creating a new workspace and when inserting a workspace into an orphaned window context ([#1391](https://github.com/feritzcan2/termloop/pull/1391), [#1380](https://github.com/feritzcan2/termloop/pull/1380))
+- Cmd+W close behavior and close-confirmation shell-state regressions ([#1395](https://github.com/feritzcan2/termloop/pull/1395), [#1386](https://github.com/feritzcan2/termloop/pull/1386))
+- macOS dictation NSTextInputClient conformance and terminal image-paste fallbacks ([#1410](https://github.com/feritzcan2/termloop/pull/1410), [#1305](https://github.com/feritzcan2/termloop/pull/1305), [#1361](https://github.com/feritzcan2/termloop/pull/1361), [#1358](https://github.com/feritzcan2/termloop/pull/1358))
+- VS Code command palette target resolution, Ghostty Pure prompt redraws, and internal drag regressions ([#1389](https://github.com/feritzcan2/termloop/pull/1389), [#1363](https://github.com/feritzcan2/termloop/pull/1363), [#1316](https://github.com/feritzcan2/termloop/pull/1316), [#1379](https://github.com/feritzcan2/termloop/pull/1379))
+
+## [0.62.1] - 2026-03-13
+
+### Added
+- Cmd+T (New tab) shortcut on the welcome screen ([#1258](https://github.com/feritzcan2/termloop/pull/1258))
+
+### Fixed
+- Cmd+backtick window cycling skipping windows
+- Titlebar shortcut hint clipping ([#1259](https://github.com/feritzcan2/termloop/pull/1259))
+- Terminal portals desyncing after sidebar changes ([#1253](https://github.com/feritzcan2/termloop/pull/1253))
+- Background terminal focus retries reordering windows
+- Pure-style multiline prompt redraws in Ghostty
+- Return key not working on Cmd+Ctrl+W close confirmation ([#1279](https://github.com/feritzcan2/termloop/pull/1279))
+- Concurrent remote daemon RPC calls timing out ([#1281](https://github.com/feritzcan2/termloop/pull/1281))
+
+### Removed
+- SSH remote port proxying (reverted, will return in a future release)
+
+## [0.62.0] - 2026-03-12
+
+### Added
+- Markdown viewer panel with live file watching ([#883](https://github.com/feritzcan2/termloop/pull/883))
+- Find-in-page (Cmd+F) for browser panels ([#837](https://github.com/feritzcan2/termloop/issues/837), [#875](https://github.com/feritzcan2/termloop/pull/875))
+- Keyboard copy mode for terminal scrollback with vi-style navigation ([#792](https://github.com/feritzcan2/termloop/pull/792))
+- Custom notification sounds with file picker support ([#839](https://github.com/feritzcan2/termloop/pull/839), [#869](https://github.com/feritzcan2/termloop/pull/869))
+- Browser camera and microphone permission support ([#760](https://github.com/feritzcan2/termloop/issues/760), [#913](https://github.com/feritzcan2/termloop/pull/913))
+- Language setting for per-app locale override ([#886](https://github.com/feritzcan2/termloop/pull/886))
+- Japanese localization ([#819](https://github.com/feritzcan2/termloop/pull/819))
+- 16 new languages added to localization ([#895](https://github.com/feritzcan2/termloop/pull/895))
+- Kagi as a search provider option ([#561](https://github.com/feritzcan2/termloop/pull/561))
+- Open Folder command (Cmd+O) ([#656](https://github.com/feritzcan2/termloop/pull/656))
+- Dark mode app icon for macOS Sequoia ([#702](https://github.com/feritzcan2/termloop/pull/702))
+- Close other pane tabs with confirmation ([#475](https://github.com/feritzcan2/termloop/pull/475))
+- Flash Focused Panel command palette action ([#638](https://github.com/feritzcan2/termloop/pull/638))
+- Zoom/maximize focused pane in splits ([#634](https://github.com/feritzcan2/termloop/pull/634))
+- `cmux tree` command for full CLI hierarchy view ([#592](https://github.com/feritzcan2/termloop/pull/592))
+- Install or uninstall the `termloop` CLI from the command palette ([#626](https://github.com/feritzcan2/termloop/pull/626))
+- Clipboard image paste in terminal with Cmd+V ([#562](https://github.com/feritzcan2/termloop/pull/562), [#853](https://github.com/feritzcan2/termloop/pull/853))
+- Middle-click X11-style selection paste in terminal ([#369](https://github.com/feritzcan2/termloop/pull/369))
+- Honor Ghostty `background-opacity` across all termloop chrome ([#667](https://github.com/feritzcan2/termloop/pull/667))
+- Setting to hide Cmd-hold shortcut hints ([#765](https://github.com/feritzcan2/termloop/pull/765))
+- Focus-follows-mouse on terminal hover ([#519](https://github.com/feritzcan2/termloop/pull/519))
+- Sidebar help menu in the footer ([#958](https://github.com/feritzcan2/termloop/pull/958))
+- External URL bypass rules for the embedded browser ([#768](https://github.com/feritzcan2/termloop/pull/768))
+- Telemetry opt-out setting ([#610](https://github.com/feritzcan2/termloop/pull/610))
+- Browser automation docs page ([#622](https://github.com/feritzcan2/termloop/pull/622))
+- Vim mode indicator badge on terminal panes ([#1092](https://github.com/feritzcan2/termloop/pull/1092))
+- Sidebar workspace color in CLI sidebar_state output ([#1101](https://github.com/feritzcan2/termloop/pull/1101))
+- Prompt before closing window with Cmd+Ctrl+W ([#1219](https://github.com/feritzcan2/termloop/pull/1219))
+- Jump to Latest button in notifications popover ([#1167](https://github.com/feritzcan2/termloop/pull/1167))
+- Khmer localization ([#1198](https://github.com/feritzcan2/termloop/pull/1198))
+- termloop claude-teams launcher ([#1179](https://github.com/feritzcan2/termloop/pull/1179))
+
+### Changed
+- Command palette search is now async and decoupled from typing for reduced lag
+- Fuzzy matching improved with single-edit and omitted-character word matches
+- Replaced keychain password storage with file-based storage ([#576](https://github.com/feritzcan2/termloop/pull/576))
+- Fullscreen shortcut changed to Cmd+Ctrl+F, and Cmd+Enter also toggles fullscreen ([#530](https://github.com/feritzcan2/termloop/pull/530))
+- Workspace rename shortcut Cmd+Shift+R now uses the command palette flow
+- Renamed tab color to workspace color in user-facing strings ([#637](https://github.com/feritzcan2/termloop/pull/637))
+- Feedback recipient changed to `feritzcan93@gmail.com` ([#1007](https://github.com/feritzcan2/termloop/pull/1007))
+- Regenerated app icons from Icon Composer ([#1005](https://github.com/feritzcan2/termloop/pull/1005))
+- Moved update logs into the Debug menu ([#1008](https://github.com/feritzcan2/termloop/pull/1008))
+- Updated Ghostty to v1.3.0 ([#1142](https://github.com/feritzcan2/termloop/pull/1142))
+- Welcome screen colors adapted for light mode ([#1214](https://github.com/feritzcan2/termloop/pull/1214))
+- Notification sound picker width constrained ([#1168](https://github.com/feritzcan2/termloop/pull/1168))
+
+### Fixed
+- Frozen blank launch from session restore race condition ([#399](https://github.com/feritzcan2/termloop/issues/399), [#565](https://github.com/feritzcan2/termloop/pull/565))
+- Crash on launch from an exclusive access violation in drag-handle hit testing ([#490](https://github.com/feritzcan2/termloop/issues/490))
+- Use-after-free in `ghostty_surface_refresh` after sleep/wake ([#432](https://github.com/feritzcan2/termloop/issues/432), [#619](https://github.com/feritzcan2/termloop/pull/619))
+- Startup SIGSEGV by pre-warming locale before `SentrySDK.start` ([#927](https://github.com/feritzcan2/termloop/pull/927))
+- IME issues: Shift+Space toggle inserting a space ([#641](https://github.com/feritzcan2/termloop/issues/641), [#670](https://github.com/feritzcan2/termloop/pull/670)), Ctrl fast path blocking IME events, browser address bar Japanese IME ([#789](https://github.com/feritzcan2/termloop/issues/789), [#867](https://github.com/feritzcan2/termloop/pull/867)), and Cmd shortcuts during IME composition
+- CLI socket autodiscovery for tagged sockets ([#832](https://github.com/feritzcan2/termloop/pull/832))
+- Flaky CLI socket listener recovery ([#952](https://github.com/feritzcan2/termloop/issues/952), [#954](https://github.com/feritzcan2/termloop/pull/954))
+- Side-docked dev tools resize ([#712](https://github.com/feritzcan2/termloop/pull/712))
+- Dvorak Cmd+C colliding with the notifications shortcut ([#762](https://github.com/feritzcan2/termloop/pull/762))
+- Terminal drag hover overlay flicker
+- Titlebar controls clipped at the bottom edge ([#1016](https://github.com/feritzcan2/termloop/pull/1016))
+- Sidebar git branch recovery after sleep/wake and agent checkout ([#494](https://github.com/feritzcan2/termloop/issues/494), [#671](https://github.com/feritzcan2/termloop/pull/671), [#905](https://github.com/feritzcan2/termloop/pull/905))
+- Browser portal routing, uploads, and click focus regressions ([#908](https://github.com/feritzcan2/termloop/pull/908), [#961](https://github.com/feritzcan2/termloop/pull/961))
+- Notification unread persistence on workspace focus
+- Escape propagation when the command palette is visible ([#847](https://github.com/feritzcan2/termloop/pull/847))
+- Cmd+Shift+Enter pane zoom regression in browser focus ([#826](https://github.com/feritzcan2/termloop/pull/826))
+- Cross-window theme background after jump-to-unread ([#861](https://github.com/feritzcan2/termloop/pull/861))
+- `window.open()` and `target=_blank` not opening in a new tab ([#693](https://github.com/feritzcan2/termloop/pull/693))
+- Terminal wrap width for the overlay scrollbar ([#522](https://github.com/feritzcan2/termloop/pull/522))
+- Orphaned child processes when closing workspace tabs ([#889](https://github.com/feritzcan2/termloop/pull/889))
+- Cmd+F Escape passthrough into terminal ([#918](https://github.com/feritzcan2/termloop/pull/918))
+- Terminal link opens staying in the source workspace ([#912](https://github.com/feritzcan2/termloop/pull/912))
+- Ghost terminal surface rebind after close ([#808](https://github.com/feritzcan2/termloop/pull/808))
+- Cmd+plus zoom handling on non-US keyboard layouts ([#680](https://github.com/feritzcan2/termloop/pull/680))
+- Menubar icon invisible in light mode ([#741](https://github.com/feritzcan2/termloop/pull/741))
+- Various drag-handle crash fixes and reentrancy guards
+- Background workspace git metadata refresh after external checkout
+- Markdown panel text click focus ([#991](https://github.com/feritzcan2/termloop/pull/991))
+- Browser Cmd+F overlay clipping in portal mode ([#916](https://github.com/feritzcan2/termloop/pull/916))
+- Voice dictation text insertion ([#857](https://github.com/feritzcan2/termloop/pull/857))
+- Browser panel lifecycle after WebContent process termination ([#892](https://github.com/feritzcan2/termloop/pull/892))
+- Typing lag reduction by hiding invisible views from the accessibility tree ([#862](https://github.com/feritzcan2/termloop/pull/862))
+- CJK font fallback preventing decorative font rendering for CJK characters ([#1017](https://github.com/feritzcan2/termloop/pull/1017))
+- Inline VS Code serve-web token exposure via argv ([#1033](https://github.com/feritzcan2/termloop/pull/1033))
+- Browser pane portal anchor sizing ([#1094](https://github.com/feritzcan2/termloop/pull/1094))
+- Pinned workspace notification reordering ([#1116](https://github.com/feritzcan2/termloop/pull/1116))
+- termloop --version memory blowup ([#1121](https://github.com/feritzcan2/termloop/pull/1121))
+- Notification ring dismissal on direct terminal clicks ([#1126](https://github.com/feritzcan2/termloop/pull/1126))
+- Browser portal visibility when terminal tab is active ([#1130](https://github.com/feritzcan2/termloop/pull/1130))
+- Browser panes reloading when switching workspaces ([#1136](https://github.com/feritzcan2/termloop/pull/1136))
+- Sidebar PR badge detection ([#1139](https://github.com/feritzcan2/termloop/pull/1139))
+- Browser address bar disappearing during pane zoom ([#1145](https://github.com/feritzcan2/termloop/pull/1145))
+- Ghost terminal surface focus after split close ([#1148](https://github.com/feritzcan2/termloop/pull/1148))
+- Browser DevTools resize loop and layout stability ([#1170](https://github.com/feritzcan2/termloop/pull/1170), [#1173](https://github.com/feritzcan2/termloop/pull/1173), [#1189](https://github.com/feritzcan2/termloop/pull/1189))
+- Typing lag from sidebar re-evaluation and hitTest overhead ([#1204](https://github.com/feritzcan2/termloop/issues/1204))
+- Browser pane stale content after drag splits ([#1215](https://github.com/feritzcan2/termloop/pull/1215))
+- Terminal drop overlay misplacement during drag hover ([#1213](https://github.com/feritzcan2/termloop/pull/1213))
+- Hidden browser slot inspector focus crash ([#1211](https://github.com/feritzcan2/termloop/pull/1211))
+- Browser devtools hide fallback ([#1220](https://github.com/feritzcan2/termloop/pull/1220))
+- Browser portal refresh on geometry churn ([#1224](https://github.com/feritzcan2/termloop/pull/1224))
+- Browser tab switch triggering unnecessary reload ([#1228](https://github.com/feritzcan2/termloop/pull/1228))
+- Devtools side dock guard for attached devtools ([#1230](https://github.com/feritzcan2/termloop/pull/1230))
+
+### Thanks to 24 contributors!
+- [@0xble](https://github.com/0xble)
+- [@afxjzs](https://github.com/afxjzs)
+- [@AI-per](https://github.com/AI-per)
+- [@atani](https://github.com/atani)
+- [@atmigtnca](https://github.com/atmigtnca)
+- [@austinywang](https://github.com/austinywang)
+- [@cheulyop](https://github.com/cheulyop)
+- [@ConnorCallison](https://github.com/ConnorCallison)
+- [@gonzaloserrano](https://github.com/gonzaloserrano)
+- [@harukitosa](https://github.com/harukitosa)
+- [@homanp](https://github.com/homanp)
+- [@JLeeChan](https://github.com/JLeeChan)
+- [@josemasri](https://github.com/josemasri)
+- [@lawrencecchen](https://github.com/lawrencecchen)
+- [@novarii](https://github.com/novarii)
+- [@orkhanrz](https://github.com/orkhanrz)
+- [@qianwan](https://github.com/qianwan)
+- [@rjwittams](https://github.com/rjwittams)
+- [@sminamot](https://github.com/sminamot)
+- [@tmcarr](https://github.com/tmcarr)
+- [@trydis](https://github.com/trydis)
+- [@ukoasis](https://github.com/ukoasis)
+- [@y-agatsuma](https://github.com/y-agatsuma)
+- [@yasunogithub](https://github.com/yasunogithub)
+
+## [0.61.0] - 2026-02-25
+
+### Added
+- Command palette (Cmd+Shift+P) with update actions and all-window switcher results ([#358](https://github.com/feritzcan2/termloop/pull/358), [#361](https://github.com/feritzcan2/termloop/pull/361))
+- Split actions and shortcut hints in terminal context menus
+- Cross-window tab and workspace move UI with improved destination focus behavior
+- Sidebar pull request metadata rows and workspace PR open actions
+- Workspace color schemes and left-rail workspace indicator settings ([#324](https://github.com/feritzcan2/termloop/pull/324), [#329](https://github.com/feritzcan2/termloop/pull/329), [#332](https://github.com/feritzcan2/termloop/pull/332))
+- URL open-wrapper routing into the embedded browser ([#332](https://github.com/feritzcan2/termloop/pull/332))
+- Cmd+Q quit warning with suppression toggle ([#295](https://github.com/feritzcan2/termloop/pull/295))
+- `cmux --version` output now includes commit metadata
+
+### Changed
+- Added light mode and unified theme refresh across app surfaces ([#258](https://github.com/feritzcan2/termloop/pull/258)) — thanks @ijpatricio for the report!
+- Browser link middle-click handling now uses native WebKit behavior ([#416](https://github.com/feritzcan2/termloop/pull/416))
+- Settings-window actions now route through a single command-palette/settings flow
+- Sentry upgraded with tracing, breadcrumbs, and dSYM upload support ([#366](https://github.com/feritzcan2/termloop/pull/366))
+- Session restore scope clarification: termloop restores layout, working directory, scrollback, and browser history, but does not resume live terminal process state yet
+
+### Fixed
+- Startup split hang when pressing Cmd+D then Ctrl+D early after launch ([#364](https://github.com/feritzcan2/termloop/pull/364))
+- Browser focus handoff and click-to-focus regressions in mixed terminal/browser workspaces ([#381](https://github.com/feritzcan2/termloop/pull/381), [#355](https://github.com/feritzcan2/termloop/pull/355))
+- Caps Lock handling in browser omnibar keyboard paths ([#382](https://github.com/feritzcan2/termloop/pull/382))
+- Embedded browser deeplink URL scheme handling ([#392](https://github.com/feritzcan2/termloop/pull/392))
+- Sidebar resize cap regression ([#393](https://github.com/feritzcan2/termloop/pull/393))
+- Terminal zoom inheritance for new splits, surfaces, and workspaces ([#384](https://github.com/feritzcan2/termloop/pull/384))
+- Terminal find overlay layering across split and portal-hosted layouts
+- Titlebar drag and double-click zoom handling on browser-side panes
+- Stale browser favicon and window-title updates after navigation
+
+### Thanks to 7 contributors!
+- [@austinywang](https://github.com/austinywang)
+- [@avisser](https://github.com/avisser)
+- [@gnguralnick](https://github.com/gnguralnick)
+- [@ijpatricio](https://github.com/ijpatricio)
+- [@jperkin](https://github.com/jperkin)
+- [@jungcome7](https://github.com/jungcome7)
+- [@lawrencecchen](https://github.com/lawrencecchen)
+
+## [0.60.0] - 2026-02-21
+
+### Added
+- Tab context menu with rename, close, unread, and workspace actions ([#225](https://github.com/feritzcan2/termloop/pull/225))
+- Cmd+Shift+T reopens closed browser panels ([#253](https://github.com/feritzcan2/termloop/pull/253))
+- Vertical sidebar branch layout setting showing git branch and directory per pane
+- JavaScript alert/confirm/prompt dialogs in browser panel ([#237](https://github.com/feritzcan2/termloop/pull/237))
+- File drag-and-drop and file input in browser panel ([#214](https://github.com/feritzcan2/termloop/pull/214))
+- tmux-compatible command set with matrix tests ([#221](https://github.com/feritzcan2/termloop/pull/221))
+- Pane resize divider control via CLI ([#223](https://github.com/feritzcan2/termloop/pull/223))
+- Production read-screen capture APIs ([#219](https://github.com/feritzcan2/termloop/pull/219))
+- Notification rings on terminal panes ([#132](https://github.com/feritzcan2/termloop/pull/132))
+- Claude Code integration enabled by default ([#247](https://github.com/feritzcan2/termloop/pull/247))
+- HTTP host allowlist for embedded browser with save and proceed flow ([#206](https://github.com/feritzcan2/termloop/pull/206), [#203](https://github.com/feritzcan2/termloop/pull/203))
+- Setting to disable workspace auto-reorder on notification ([#215](https://github.com/feritzcan2/termloop/issues/205))
+- Browser panel mouse back/forward buttons and middle-click close ([#139](https://github.com/feritzcan2/termloop/pull/139))
+- Browser DevTools shortcut wiring and persistence ([#117](https://github.com/feritzcan2/termloop/pull/117))
+- CJK IME input support for Korean, Chinese, and Japanese ([#125](https://github.com/feritzcan2/termloop/pull/125))
+- `--help` flag on CLI subcommands ([#128](https://github.com/feritzcan2/termloop/pull/128))
+- `--command` flag for `new-workspace` CLI command ([#121](https://github.com/feritzcan2/termloop/pull/121))
+- `rename-tab` socket command ([#260](https://github.com/feritzcan2/termloop/pull/260))
+- Remap-aware bonsplit tooltips and browser split shortcuts ([#200](https://github.com/feritzcan2/termloop/pull/200))
+
+### Fixed
+- IME preedit anchor sizing ([#266](https://github.com/feritzcan2/termloop/pull/266))
+- Cmd+Shift+T focus against deferred stale callbacks ([#267](https://github.com/feritzcan2/termloop/pull/267))
+- Unknown Bonsplit tab context actions causing crash ([#264](https://github.com/feritzcan2/termloop/pull/264))
+- Socket CLI commands stealing macOS app focus ([#260](https://github.com/feritzcan2/termloop/pull/260))
+- CLI unix socket lag from main-thread blocking ([#259](https://github.com/feritzcan2/termloop/pull/259))
+- Main-thread notification cascade causing hangs ([#232](https://github.com/feritzcan2/termloop/pull/232))
+- Favicon out-of-sync during back/forward navigation ([#233](https://github.com/feritzcan2/termloop/pull/233))
+- Stale sidebar git branch after closing a split
+- Browser download UX and crash path ([#235](https://github.com/feritzcan2/termloop/pull/235))
+- Browser reopen focus across workspace switches ([#257](https://github.com/feritzcan2/termloop/pull/257))
+- Mark Tab as Unread no-op on focused tab ([#249](https://github.com/feritzcan2/termloop/pull/249))
+- Split dividers disappearing in tiny panes ([#250](https://github.com/feritzcan2/termloop/pull/250))
+- Flaky browser download activity accounting ([#246](https://github.com/feritzcan2/termloop/pull/246))
+- Drag overlay routing and terminal overlay regressions ([#218](https://github.com/feritzcan2/termloop/pull/218))
+- Initial bonsplit split animation flicker
+- Window top inset on new window creation ([#224](https://github.com/feritzcan2/termloop/pull/224))
+- Cmd+Enter being routed as browser reload ([#213](https://github.com/feritzcan2/termloop/pull/213))
+- Child-exit close for last-terminal workspaces ([#254](https://github.com/feritzcan2/termloop/pull/254))
+- Sidebar resizer hitbox and cursor across portals ([#255](https://github.com/feritzcan2/termloop/pull/255))
+- Workspace-scoped tab action resolution
+- IDN host allowlist normalization
+- `setup.sh` cache rebuild and stale lock timeout ([#217](https://github.com/feritzcan2/termloop/pull/217))
+- Inconsistent Tab/Workspace terminology in settings and menus ([#187](https://github.com/feritzcan2/termloop/pull/187))
+
+### Changed
+- CLI workspace commands now run off the main thread for better responsiveness ([#270](https://github.com/feritzcan2/termloop/pull/270))
+- Remove border below titlebar ([#242](https://github.com/feritzcan2/termloop/pull/242))
+- Slimmer browser omnibar with button hover/press states ([#271](https://github.com/feritzcan2/termloop/pull/271))
+- Browser under-page background refreshes on theme updates ([#272](https://github.com/feritzcan2/termloop/pull/272))
+- Command shortcut hints scoped to active window ([#226](https://github.com/feritzcan2/termloop/pull/226))
+- Nightly and release assets are now immutable (no accidental overwrite) ([#268](https://github.com/feritzcan2/termloop/pull/268), [#269](https://github.com/feritzcan2/termloop/pull/269))
+
+## [0.59.0] - 2026-02-19
+
+### Fixed
+- Fix panel resize hitbox being too narrow and stale portal frame after panel resize
+
+## [0.58.0] - 2026-02-19
+
+### Fixed
+- Fix split blackout race condition and focus handoff when creating or closing splits
+
+## [0.57.0] - 2026-02-19
+
+### Added
+- Terminal panes now show an animated drop overlay when dragging tabs
+
+### Fixed
+- Fix blue hover not showing when dragging tabs onto terminal panes
+- Fix stale drag overlay blocking clicks after tab drag ends
+
+## [0.56.0] - 2026-02-19
+
+_No user-facing changes._
+
+## [0.55.0] - 2026-02-19
+
+### Changed
+- Move port scanning from shell to app-side with batching for faster startup
+
+### Fixed
+- Fix visual stretch when closing split panes
+- Fix omnibar Cmd+L focus races
+
+## [0.54.0] - 2026-02-18
+
+### Fixed
+- Fix browser omnibar Cmd+L causing 100% CPU from infinite focus loop
+
+## [0.53.0] - 2026-02-18
+
+### Changed
+- CLI commands are now workspace-relative: commands use `TERMLOOP_WORKSPACE_ID` environment variable so background agents target their own workspace instead of the user's focused workspace
+- Remove all index-based CLI APIs in favor of short ID refs (`surface:1`, `pane:2`, `workspace:3`)
+- CLI `send` and `send-key` support `--workspace` and `--surface` flags for explicit targeting
+- CLI escape sequences (`\n`, `\r`, `\t`) in `send` payloads are now handled correctly
+- `--id-format` flag is respected in text output for all list commands
+
+### Fixed
+- Fix background agents sending input to the wrong workspace
+- Fix `close-surface` rejecting cross-workspace surface refs
+- Fix malformed surface/pane/workspace/window handles passing through without error
+- Fix `--window` flag being overridden by `TERMLOOP_WORKSPACE_ID` environment variable
+
+## [0.52.0] - 2026-02-18
+
+### Changed
+- Faster workspace switching with reduced rendering churn
+
+### Fixed
+- Fix Finder file drop not reaching portal-hosted terminals
+- Fix unfocused pane dimming not showing for portal-hosted terminals
+- Fix terminal hit-testing and visual glitches during workspace teardown
+
+## [0.51.0] - 2026-02-18
+
+### Fixed
+- Fix menubar and right-click lag on M1 Macs in release builds
+- Fix browser panel opening new tabs on link click
+
+## [0.50.0] - 2026-02-18
+
+### Fixed
+- Fix crashes and fatal error when dropping files from Finder
+- Fix zsh git branch display not refreshing after changing directories
+- Fix menubar and right-click lag on M1 Macs
+
+## [0.49.0] - 2026-02-18
+
+### Fixed
+- Fix crash (stack overflow) when clicking after a Finder file drag
+- Fix titlebar folder icon briefly enlarging on workspace switch
+
+## [0.48.0] - 2026-02-18
+
+### Fixed
+- Fix right-click context menu lag in notarized builds by adding missing hardened runtime entitlements
+- Fix claude shim conflicting with `--resume`, `--continue`, and `--session-id` flags
+
+## [0.47.0] - 2026-02-18
+
+### Fixed
+- Fix sidebar tab drag-and-drop reordering not working
+
+## [0.46.0] - 2026-02-18
+
+### Fixed
+- Fix broken mouse click forwarding in terminal views
+
+## [0.45.0] - 2026-02-18
+
+### Changed
+- Rebuild with Xcode 26.2 and macOS 26.2 SDK
+
+## [0.44.0] - 2026-02-18
+
+### Fixed
+- Crash caused by infinite recursion when clicking in terminal (FileDropOverlayView mouse event forwarding)
+
+## [0.38.1] - 2026-02-18
+
+### Fixed
+- Right-click and menubar lag in production builds (rebuilt with macOS 26.2 SDK)
+
+## [0.38.0] - 2026-02-18
+
+### Added
+- Double-clicking the sidebar title-bar area now zooms/maximizes the window
+
+### Fixed
+- Browser omnibar `Cmd+L` now reliably refreshes/selects-all and supports immediate typing without stale inline text
+- Omnibar inline completion no longer replaces typed prefixes with mismatched suggestion text
+
+## [0.37.0] - 2026-02-17
+
+### Added
+- "+" button on the tab bar for quickly creating new terminal or browser tabs
+
+## [0.36.0] - 2026-02-17
+
+### Fixed
+- App hang when omnibar safety timeout failed to fire (blocked main thread)
+- Tab drag/drop not working when multiple workspaces exist
+- Clicking in browser WebView not focusing the browser tab
+
+## [0.35.0] - 2026-02-17
+
+### Fixed
+- App hang when clicking browser omnibar (NSTextView tracking loop spinning forever)
+- White flash when creating new browser panels
+- Tab drag/drop broken when dragging over WebView panes
+- Stale drag timeout cancelling new drags of the same tab
+- 88% idle CPU from infinite makeFirstResponder loop
+- Terminal keys (arrows, Ctrl+N/P) swallowed after opening browser
+- Cmd+N swallowed by browser omnibar navigation
+- Split focus stolen by re-entrant becomeFirstResponder during reparenting
+
+## [0.34.0] - 2026-02-16
+
+### Fixed
+- Browser not loading localhost URLs correctly
+
+## [0.33.0] - 2026-02-16
+
+### Fixed
+- Menubar and general UI lag in production builds
+- Sidebar tabs getting extra left padding when update pill is visible
+- Memory leak when middle-clicking to close tabs
+
+## [0.32.0] - 2026-02-16
+
+### Added
+- Sidebar metadata: git branch, listening ports, log entries, progress bars, and status pills
+
+### Fixed
+- localhost and 127.0.0.1 URLs not resolving correctly in the browser panel
+
+### Changed
+- `browser open` now targets the caller's workspace by default via TERMLOOP_WORKSPACE_ID
+
+## [0.31.0] - 2026-02-15
+
+### Added
+- Arrow key navigation in browser omnibar suggestions
+- Browser zoom shortcuts (Cmd+/-, Cmd+0 to reset)
+- "Install Update and Relaunch" menu item when an update is available
+
+### Changed
+- Open browser shortcut remapped from Cmd+Shift+B to Cmd+Shift+L
+- Flash focused panel shortcut remapped from Cmd+Shift+L to Cmd+Shift+H
+- Update pill now shows only in the sidebar footer
+
+### Fixed
+- Omnibar inline completion showing partial domain (e.g. "news." instead of "news.ycombinator.com")
+
+## [0.30.0] - 2026-02-15
+
+### Fixed
+- Update pill not appearing when sidebar is visible in Release builds
+
+## [0.29.0] - 2026-02-15
+
+### Added
+- Cmd+click on links in the browser opens them in a new tab
+- Right-click context menu shows "Open Link in New Tab" instead of "Open in New Window"
+- Third-party licenses bundled in app with Licenses button in About window
+- Update availability pill now visible in Release builds
+
+### Changed
+- Cmd+[/] now triggers browser back/forward when a browser panel is focused (no-op on terminal)
+- Reload configuration shortcut changed to Cmd+Shift+,
+- Improved browser omnibar suggestions and focus behavior
+
+## [0.28.2] - 2026-02-14
+
+### Fixed
+- Sparkle updates from `0.27.0` could fail to detect newer releases because release build numbers were behind the latest published appcast build number
+- Release GitHub Action failed on repeat runs when `SUPublicEDKey` / `SUFeedURL` already existed in `Info.plist`
+
+## [0.28.1] - 2026-02-14
+
+### Fixed
+- Release build failure caused by debug-only helper symbols referenced in non-debug code paths
+
+## [0.28.0] - 2026-02-14
+
+### Added
+- Optional nightly update channel in Settings (`Receive Nightly Builds`)
+- Automated nightly build and publish workflow for `main` when new commits are available
+
+### Changed
+- Settings and About windows now use the updated transparent titlebar styling and aligned controls
+- Repository license changed to GNU AGPLv3
+
+### Fixed
+- Terminal panes freezing after repeated split churn
+- Finder service directory resolution now normalizes paths consistently
+
+## [0.27.0] - 2026-02-11
+
+### Fixed
+- Muted traffic lights and toolbar items on macOS 14 (Sonoma) caused by `clipsToBounds` default change
+- Toolbar buttons (sidebar, notifications, new tab) disappearing after toggling sidebar with Cmd+B
+- Update check pill not appearing in titlebar on macOS 14 (Sonoma)
+
+## [0.26.0] - 2026-02-11
+
+### Fixed
+- Muted traffic lights and toolbar items in focused window caused by background blur in themeFrame
+- Sidebar showing two different textures near the titlebar on older macOS versions
+
+## [0.25.0] - 2026-02-11
+
+### Fixed
+- Blank terminal on macOS 26 (Tahoe) — two additional code paths were still clearing the window background, bypassing the initial fix
+- Blank terminal on macOS 15 caused by background blur view covering terminal content
+
+## [0.24.0] - 2026-02-09
+
+### Changed
+- Update bundle identifier to `com.termloop.app` for consistency
+
+## [0.23.0] - 2026-02-09
+
+### Changed
+- Rename app to termloop — new app name, socket paths, Homebrew tap, and CLI binary name (bundle ID remains `com.termloop.app` for Sparkle update continuity)
+- Sidebar now shows tab status as text instead of colored dots, with instant git HEAD change detection
+
+### Fixed
+- CLI `set-status` command not properly quoting values or routing `--tab` flag
+
+## [0.22.0] - 2026-02-09
+
+### Fixed
+- Xcode and system environment variables (e.g. DYLD, LANGUAGE) leaking into terminal sessions
+
+## [0.21.0] - 2026-02-09
+
+### Fixed
+- Zsh autosuggestions not working with shared history across terminal panes
+
+## [0.17.3] - 2025-02-05
+
+### Fixed
+- Auto-update not working (Sparkle EdDSA signing was silently failing due to SUPublicEDKey missing from Info.plist)
+
+## [0.17.1] - 2025-02-05
+
+### Fixed
+- Auto-update not working (Sparkle public key was missing from release builds)
+
+## [0.17.0] - 2025-02-05
+
+### Fixed
+- Traffic lights (close/minimize/zoom) not showing on macOS 13-15
+- Titlebar content overlapping traffic lights and toolbar buttons when sidebar is hidden
+
+## [0.16.0] - 2025-02-04
+
+### Added
+- Sidebar blur effect with withinWindow blending for a polished look
+- `--panel` flag for `new-split` command to control split pane placement
+
+## [0.15.0] - 2025-01-30
+
+### Fixed
+- Typing lag caused by redundant render loop
+
+## [0.14.0] - 2025-01-30
+
+### Added
+- Setup script for initializing submodules and building dependencies
+- Contributing guide for new contributors
+
+### Fixed
+- Terminal focus when scrolling with mouse/trackpad
+
+### Changed
+- Reload scripts are more robust with better error handling
+
+## [0.13.0] - 2025-01-29
+
+### Added
+- Customizable keyboard shortcuts via Settings
+
+### Fixed
+- Find panel focus and search alignment with Ghostty behavior
+
+### Changed
+- Sentry environment now distinguishes between production and dev builds
+
+## [0.12.0] - 2025-01-29
+
+### Fixed
+- Handle display scale changes when moving between monitors
+
+### Changed
+- Fix SwiftPM cache handling for release builds
+
+## [0.11.0] - 2025-01-29
+
+### Added
+- Notifications documentation for AI agent integrations
+
+### Changed
+- App and tooling updates
+
+## [0.10.0] - 2025-01-29
+
+### Added
+- Sentry SDK for crash reporting
+- Documentation site with Fumadocs
+- Homebrew installation support (`brew install --cask termloop`)
+- Auto-update Homebrew cask on release
+
+### Fixed
+- High CPU usage from notification system
+- Release workflow SwiftPM cache issues
+
+### Changed
+- New tabs now insert after current tab and inherit working directory
+
+## [0.9.0] - 2025-01-29
+
+### Changed
+- Normalized window controls appearance
+- Added confirmation panel when closing windows with active processes
+
+## [0.8.0] - 2025-01-29
+
+### Fixed
+- Socket key input handling
+- OSC 777 notification sequence support
+
+### Changed
+- Customized About window
+- Restricted titlebar accessories for cleaner appearance
+
+## [0.7.0] - 2025-01-29
+
+### Fixed
+- Environment variable and terminfo packaging issues
+- XDG defaults handling
+
+## [0.6.0] - 2025-01-28
+
+### Fixed
+- Terminfo packaging for proper terminal compatibility
+
+## [0.5.0] - 2025-01-28
+
+### Added
+- Sparkle updater cache handling
+- Ghostty fork documentation
+
+## [0.4.0] - 2025-01-28
+
+### Added
+- termloop CLI with socket control modes
+- NSPopover-based notifications
+
+### Fixed
+- Notarization and codesigning for embedded CLI
+- Release workflow reliability
+
+### Changed
+- Refined titlebar controls and variants
+- Clear notifications on window close
+
+## [0.3.0] - 2025-01-28
+
+### Added
+- Debug scrollback tab with smooth scroll wheel
+- Mock update feed UI tests
+- Dev build branding and reload scripts
+
+### Fixed
+- Notification focus handling and indicators
+- Tab focus for key input
+- Update UI error details and pill visibility
+
+### Changed
+- Renamed app to cmux
+- Improved CI UI test stability
+
+## [0.1.0] - 2025-01-28
+
+### Added
+- Sparkle auto-update flow
+- Titlebar update UI indicator
+
+## [0.0.x] - 2025-01-28
+
+Initial releases with core terminal functionality:
+- GPU-accelerated terminal rendering via Ghostty
+- Tab management with native macOS UI
+- Split pane support
+- Keyboard shortcuts
+- Socket API for automation

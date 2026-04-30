@@ -1,0 +1,687 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>termloop — free prompt is default · template via dropdown</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --page-bg:        #b8babf;
+    --panel-bg:       #1c1d22;
+    --panel-edge:     rgba(255,255,255,0.06);
+    --panel-edge-2:   rgba(255,255,255,0.09);
+    --ink-1:          #f1f2f5;
+    --ink-2:          #a9acb4;
+    --ink-3:          #70737b;
+    --ink-4:          #4a4c54;
+    --accent:         #6ea8ff;
+    --amber:          #ffb049;
+    --green:          #51d68a;
+    --red:            #ff6868;
+    --violet:         #b98dff;
+    --teal:           #4dd0c1;
+    --mono:           'JetBrains Mono', ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background:
+      radial-gradient(1400px 900px at 10% -10%, #dcdde1, transparent 55%),
+      radial-gradient(1100px 800px at 100% 110%, #a9aab0, transparent 55%),
+      var(--page-bg);
+    color: var(--ink-1);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    padding: 48px 32px 96px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page-head {
+    max-width: 1720px; margin: 0 auto 34px;
+    display: flex; align-items: baseline; justify-content: space-between; gap: 24px;
+    border-bottom: 1px solid rgba(0,0,0,0.12);
+    padding-bottom: 18px;
+  }
+  .page-head h1 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: 0.02em; color: #2a2b30; }
+  .page-head h1 b { color: #0a4ee4; font-weight: 700; }
+  .page-head .legend { font-size: 11px; color: #5a5d66; letter-spacing: 0.04em; text-transform: uppercase; }
+
+  .grid {
+    max-width: 1720px; margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(560px, 1fr));
+    gap: 40px 32px;
+  }
+  .card { display: flex; flex-direction: column; gap: 14px; }
+  .card .caption {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 0 2px;
+  }
+  .card .caption .name { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #17181c; }
+  .card .caption .tag { font-size: 10px; font-weight: 500; color: #5a5d66; font-family: var(--mono); }
+  .card .note { font-size: 11.5px; color: #2a2b30; line-height: 1.6; padding: 0 2px; }
+  .card .note b { color: #0a4ee4; }
+  .card .note code { font-family: var(--mono); font-size: 11px; color: #6a3ec7; background: rgba(106,62,199,0.07); padding: 1px 5px; border-radius: 3px; }
+
+  .palette {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-edge-2);
+    border-radius: 14px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 40px 80px -20px rgba(0,0,0,0.55), 0 14px 32px -8px rgba(0,0,0,0.45);
+    overflow: hidden;
+    color: var(--ink-1);
+    position: relative;
+  }
+
+  /* ====================================================
+     TOP BAR: template picker (left), target pill (right)
+     ==================================================== */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px 10px 12px;
+    border-bottom: 1px solid var(--panel-edge);
+    background: linear-gradient(180deg, #22232a 0%, #1c1d22 100%);
+    gap: 10px;
+  }
+  .tpl-picker {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 5px 9px 5px 8px;
+    border: 1px solid var(--panel-edge-2);
+    background: rgba(255,255,255,0.04);
+    border-radius: 8px;
+    font-size: 12.5px; color: var(--ink-1); font-weight: 500;
+    cursor: pointer;
+    min-width: 0;
+  }
+  .tpl-picker .ri {
+    width: 20px; height: 20px; border-radius: 5px;
+    display: grid; place-items: center; font-size: 12px;
+    background: repeating-linear-gradient(45deg, rgba(255,255,255,0.06), rgba(255,255,255,0.06) 4px, rgba(255,255,255,0.12) 4px, rgba(255,255,255,0.12) 8px);
+    border: 1px solid rgba(255,255,255,0.14);
+    color: #fff;
+  }
+  .tpl-picker .ri.tpl { background: linear-gradient(135deg, #6a3ec7, #b98dff); border-color: rgba(185,141,255,0.35); }
+  .tpl-picker .ri.tpl.blue { background: linear-gradient(135deg, #2a64ff, #5d8aff); border-color: rgba(120,160,255,0.35); }
+  .tpl-picker .name { letter-spacing: -0.005em; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+  .tpl-picker .sub {
+    font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); font-weight: 400;
+    padding-left: 6px; border-left: 1px solid var(--panel-edge-2); margin-left: 2px;
+  }
+  .tpl-picker .caret {
+    margin-left: 2px; color: var(--ink-3); font-size: 10px;
+  }
+  .tpl-picker:hover { background: rgba(255,255,255,0.06); }
+
+  .target {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 9px 4px 7px;
+    background: rgba(110,168,255,0.12);
+    border: 1px solid rgba(110,168,255,0.22);
+    border-radius: 7px;
+    font-size: 11.5px; font-weight: 500; color: #d2e1ff;
+    font-family: var(--mono); white-space: nowrap;
+  }
+  .target .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(110,168,255,0.18); }
+  .target .kbd-swap { font-size: 9.5px; color: #8eaaff; padding: 1px 4px; background: rgba(255,255,255,0.05); border-radius: 3px; margin-left: 2px; font-family: var(--mono); font-weight: 600; }
+
+  /* ====================================================
+     COMPOSER
+     ==================================================== */
+  .composer {
+    padding: 14px 16px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .cmp-textarea {
+    min-height: 120px;
+    background: #0f1015;
+    border: 1px solid rgba(110,168,255,0.35);
+    box-shadow: 0 0 0 3px rgba(42,100,255,0.10);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-family: var(--mono); font-size: 13.5px; line-height: 1.6;
+    color: var(--ink-1);
+    letter-spacing: -0.005em;
+    white-space: pre-wrap;
+  }
+  .cmp-textarea.empty {
+    border-color: var(--panel-edge-2);
+    box-shadow: none;
+    background: #0d0e12;
+  }
+  .cmp-textarea .placeholder { color: var(--ink-4); font-style: italic; }
+  .cmp-textarea .caret { display: inline-block; width: 2px; height: 16px; background: var(--accent); vertical-align: -3px; animation: blink 1.1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* config toolbar */
+  .cmp-toolbar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 9px 4px 8px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--panel-edge-2);
+    border-radius: 999px;
+    font-family: var(--mono); font-size: 11.5px;
+    color: var(--ink-2); cursor: pointer;
+  }
+  .pill .lab { color: var(--ink-4); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .pill .val { color: var(--ink-1); font-weight: 500; }
+  .pill.warn .val { color: var(--amber); }
+  .pill.teal .val { color: var(--teal); }
+  .pill.violet .val { color: var(--violet); }
+  .pill .cx { color: var(--ink-3); font-size: 9.5px; margin-left: 2px; }
+  .pill.focused {
+    border-color: rgba(110,168,255,0.45);
+    background: rgba(110,168,255,0.10);
+    box-shadow: 0 0 0 3px rgba(42,100,255,0.08);
+  }
+  .pill.link {
+    color: var(--accent); border-color: rgba(110,168,255,0.25); background: rgba(110,168,255,0.06);
+    font-size: 10.5px;
+  }
+
+  .remembered {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 2px 8px; border-radius: 999px;
+    background: rgba(81,214,138,0.06);
+    border: 1px solid rgba(81,214,138,0.20);
+    color: var(--green);
+    font-family: var(--mono); font-size: 10px;
+    letter-spacing: 0.04em;
+  }
+  .remembered .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
+
+  /* ====================================================
+     DROPDOWN: template picker open
+     ==================================================== */
+  .dropdown {
+    position: absolute; left: 12px; top: 50px;
+    width: 360px;
+    background: #1f2026;
+    border: 1px solid var(--panel-edge-2);
+    border-radius: 12px;
+    box-shadow: 0 20px 48px -14px rgba(0,0,0,0.55), 0 8px 20px -6px rgba(0,0,0,0.35);
+    padding: 8px 0 6px;
+    z-index: 2;
+  }
+  .dd-search {
+    margin: 0 10px 6px;
+    padding: 7px 10px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--panel-edge-2);
+    border-radius: 7px;
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 12px;
+    color: var(--ink-1);
+  }
+  .dd-search input {
+    flex: 1; background: transparent; border: 0; outline: none;
+    color: var(--ink-1); font: inherit;
+  }
+  .dd-search input::placeholder { color: var(--ink-4); }
+  .dd-search .kc { font-size: 9.5px; color: var(--ink-4); padding: 1px 5px; border: 1px solid var(--panel-edge-2); border-radius: 3px; }
+  .dd-section {
+    padding: 8px 14px 4px;
+    font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-4);
+  }
+  .dd-row {
+    display: grid; grid-template-columns: 26px 1fr auto;
+    align-items: center; gap: 10px;
+    padding: 7px 10px;
+    margin: 0 6px; border-radius: 7px;
+    cursor: default;
+  }
+  .dd-row + .dd-row { margin-top: 1px; }
+  .dd-row:hover { background: rgba(255,255,255,0.04); }
+  .dd-row.sel { background: linear-gradient(180deg, #2a64ff 0%, #1f54e8 100%); box-shadow: 0 0 0 1px rgba(120,160,255,0.45); }
+  .dd-row .ri {
+    width: 26px; height: 26px; border-radius: 6px;
+    display: grid; place-items: center; font-size: 13px;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--panel-edge-2);
+  }
+  .dd-row .ri.free { background: repeating-linear-gradient(45deg, rgba(255,255,255,0.06), rgba(255,255,255,0.06) 4px, rgba(255,255,255,0.12) 4px, rgba(255,255,255,0.12) 8px); color: #fff; }
+  .dd-row .ri.blue { background: linear-gradient(135deg, #2a64ff, #5d8aff); color: #fff; border-color: rgba(120,160,255,0.35); }
+  .dd-row .ri.amber { background: linear-gradient(135deg, #c06e14, #ffb049); color: #fff; border-color: rgba(255,176,73,0.35); }
+  .dd-row .ri.violet { background: linear-gradient(135deg, #6a3ec7, #b98dff); color: #fff; border-color: rgba(185,141,255,0.35); }
+  .dd-row .ri.green { background: linear-gradient(135deg, #1f7f44, #51d68a); color: #fff; border-color: rgba(81,214,138,0.35); }
+  .dd-row .rn { font-size: 12.5px; font-weight: 500; color: var(--ink-1); letter-spacing: -0.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dd-row .rs { font-size: 10.5px; color: var(--ink-3); font-family: var(--mono); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dd-row.sel .rn, .dd-row.sel .rs { color: #fff; }
+  .dd-row.sel .rs { color: rgba(255,255,255,0.78); }
+  .dd-row .rk {
+    font-family: var(--mono); font-size: 10px; color: var(--ink-3);
+    padding: 1px 5px; border: 1px solid var(--panel-edge-2);
+    border-radius: 4px; background: rgba(255,255,255,0.03);
+  }
+  .dd-row.sel .rk { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.22); color: #fff; }
+  .dd-row .badge-current {
+    font-family: var(--mono); font-size: 9px; color: var(--green);
+    padding: 1px 5px; border-radius: 3px;
+    background: rgba(81,214,138,0.12); border: 1px solid rgba(81,214,138,0.25);
+    letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .dd-row.sel .badge-current { background: rgba(255,255,255,0.18); color: #fff; border-color: rgba(255,255,255,0.28); }
+  .dd-div { height: 1px; background: var(--panel-edge); margin: 4px 6px; }
+  .dd-foot {
+    padding: 6px 14px 4px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: var(--mono); font-size: 10px; color: var(--ink-4);
+  }
+  .dd-foot .k { color: var(--ink-3); }
+  .dd-foot .k b { color: var(--ink-1); font-weight: 500; }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 1px 6px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--panel-edge-2);
+    border-radius: 4px;
+    font-family: var(--mono); font-size: 9.5px; font-weight: 500;
+    color: var(--ink-2); letter-spacing: 0.02em; vertical-align: 1px;
+  }
+  .chip.warn { color: var(--amber); border-color: rgba(255,176,73,0.28); background: rgba(255,176,73,0.08); }
+  .chip.danger { color: #ff9c9c; border-color: rgba(255,104,104,0.28); background: rgba(255,104,104,0.08); }
+
+  /* ====================================================
+     FOOTER
+     ==================================================== */
+  .pal-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 9px 14px 9px 16px;
+    border-top: 1px solid var(--panel-edge);
+    background: linear-gradient(180deg, #1c1d22 0%, #191a1f 100%);
+    font-size: 11px;
+  }
+  .pal-footer .left { display: flex; align-items: center; gap: 10px; }
+  .pal-footer .brand { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink-2); font-size: 11px; }
+  .pal-footer .brand .logo { width: 14px; height: 14px; border-radius: 3.5px; background: linear-gradient(135deg, #2a64ff, #6ea8ff); }
+  .pal-footer .sep { width: 1px; height: 12px; background: var(--panel-edge-2); }
+  .pal-footer .hint { color: var(--ink-3); font-size: 11px; font-family: var(--mono); }
+  .pal-footer .hint b { color: var(--ink-2); font-weight: 500; }
+  .pal-footer .right { display: flex; align-items: center; gap: 14px; }
+  .pal-footer .act { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-2); }
+  .pal-footer .act .lbl { color: var(--ink-3); }
+  .kbd {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px; padding: 0 5px;
+    border: 1px solid rgba(255,255,255,0.10);
+    background: rgba(255,255,255,0.04);
+    border-radius: 4px;
+    font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+    color: var(--ink-1);
+    box-shadow: inset 0 -1px 0 rgba(0,0,0,0.25);
+  }
+  .kbd.esc { min-width: 34px; font-size: 10px; }
+  .kbd.plus { border: 0; background: transparent; color: var(--ink-4); padding: 0; min-width: 0; font-weight: 400; }
+
+  /* ====================================================
+     C11 table (reused for advanced)
+     ==================================================== */
+  .adv-table {
+    border-top: 1px solid var(--panel-edge);
+    background: #181a1f;
+  }
+  .adv-table table {
+    width: 100%; border-collapse: collapse;
+    font-family: var(--mono); font-size: 12px;
+  }
+  .adv-table th {
+    text-align: left; padding: 8px 14px;
+    font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-3); font-weight: 600;
+    background: #14151a; border-bottom: 1px solid var(--panel-edge);
+  }
+  .adv-table td { padding: 7px 14px; border-bottom: 1px solid var(--panel-edge); color: var(--ink-2); vertical-align: middle; }
+  .adv-table tr:last-child td { border-bottom: 0; }
+  .adv-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .adv-table tr.sel td { background: rgba(110,168,255,0.07); color: var(--ink-1); }
+  .adv-table tr.sel td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+  .adv-table td.k { color: var(--violet); width: 150px; }
+  .adv-table td.op { color: var(--ink-4); width: 24px; text-align: center; }
+  .adv-table td.v { color: var(--green); }
+  .adv-table td.v.warn { color: var(--amber); }
+  .adv-table td.v.teal { color: var(--teal); }
+  .adv-table td.v.plain { color: var(--ink-1); }
+  .adv-table td.src {
+    color: var(--ink-4); width: 84px;
+    font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .adv-table td.action { text-align: right; color: var(--ink-4); font-size: 10.5px; padding-right: 14px; width: 52px; }
+  .adv-table td.action .kbd-in { display: inline-block; padding: 1px 5px; border: 1px solid var(--panel-edge-2); border-radius: 3px; font-family: var(--mono); font-size: 10px; color: var(--ink-2); background: rgba(255,255,255,0.03); }
+  .adv-table .row-head { color: var(--ink-4); letter-spacing: 0.14em; text-transform: uppercase; font-size: 9.5px; background: #14151a; }
+  .adv-table .persist {
+    font-size: 9.5px; color: var(--green);
+    padding: 1px 5px; border-radius: 3px;
+    background: rgba(81,214,138,0.08); border: 1px solid rgba(81,214,138,0.22);
+    letter-spacing: 0.04em; text-transform: uppercase;
+    margin-left: 6px;
+  }
+
+  .span-2 { grid-column: span 2; }
+  @media (max-width: 1080px) { .span-2 { grid-column: auto; } }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>termloop — <b>free prompt default</b> · template via dropdown · last setup persists</h1>
+  <div class="legend">Shift-Shift → composer with remembered config · dropdown swaps in a template</div>
+</div>
+
+<div class="grid">
+
+  <!-- ================================================================
+       D1 — default open state: composer with remembered config
+       ================================================================ -->
+  <div class="card">
+    <div class="caption">
+      <span class="name">D1 · Default on open · last setup restored</span>
+      <span class="tag">composer focused · no typing yet</span>
+    </div>
+
+    <div class="palette">
+      <div class="topbar">
+        <div class="tpl-picker">
+          <span class="ri">✎</span>
+          <span class="name">Free prompt</span>
+          <span class="sub">default</span>
+          <span class="caret">▾</span>
+        </div>
+        <div class="target">
+          <span class="dot"></span> termloop · bridge <span class="kbd-swap">⌘T</span>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="cmp-textarea empty">
+          <span class="placeholder">Type your prompt — ↵ sends, ⇧↵ newline</span><span class="caret"></span>
+        </div>
+        <div class="cmp-toolbar">
+          <span class="pill violet"><span class="lab">model</span><span class="val">sonnet-4.6</span></span>
+          <span class="pill warn"><span class="lab">perm</span><span class="val">acceptEdits</span></span>
+          <span class="pill teal"><span class="lab">mode</span><span class="val">headless</span></span>
+          <span style="flex: 1;"></span>
+          <span class="remembered"><span class="dot"></span> restored from last run · 4 min ago</span>
+        </div>
+      </div>
+
+      <div class="pal-footer">
+        <div class="left">
+          <span class="brand"><span class="logo"></span> termloop</span>
+          <span class="sep"></span>
+          <span class="hint">↵ runs immediately — last-used model/perm/target is preloaded</span>
+        </div>
+        <div class="right">
+          <span class="act"><span class="lbl">template</span><span class="kbd">⌘</span><span class="kbd plus">+</span><span class="kbd">K</span></span>
+          <span class="act"><span class="lbl">advanced</span><span class="kbd">⌘</span><span class="kbd plus">+</span><span class="kbd">↵</span></span>
+          <span class="act"><span class="lbl">close</span><span class="kbd esc">esc</span></span>
+        </div>
+      </div>
+    </div>
+
+    <p class="note"><b>Default state.</b> Opening the palette drops the user straight into the free-prompt composer. Model / permission / mode pills restore from the <code>__free_prompt__</code> LRU slot. No "select a template" step, no Enter-to-free-prompt dance.</p>
+  </div>
+
+  <!-- ================================================================
+       D2 — template dropdown open
+       ================================================================ -->
+  <div class="card">
+    <div class="caption">
+      <span class="name">D2 · Template dropdown · swaps the composer's carrier</span>
+      <span class="tag">⌘K or click the picker</span>
+    </div>
+
+    <div class="palette" style="min-height: 460px;">
+      <div class="topbar">
+        <div class="tpl-picker" style="border-color: rgba(110,168,255,0.45); background: rgba(110,168,255,0.10);">
+          <span class="ri">✎</span>
+          <span class="name">Free prompt</span>
+          <span class="sub">searching…</span>
+          <span class="caret" style="color: var(--accent);">▾</span>
+        </div>
+        <div class="target">
+          <span class="dot"></span> termloop · bridge <span class="kbd-swap">⌘T</span>
+        </div>
+      </div>
+
+      <div class="dropdown">
+        <div class="dd-search">
+          <span style="color: var(--ink-3);">⌕</span>
+          <input placeholder="Search templates…" disabled />
+          <span class="kc">⌘K</span>
+        </div>
+
+        <div class="dd-section">Default</div>
+        <div class="dd-row sel">
+          <div class="ri free">✎</div>
+          <div>
+            <div class="rn">Free prompt</div>
+            <div class="rs">sonnet-4.6 · acceptEdits · no prelude</div>
+          </div>
+          <span class="badge-current">current</span>
+        </div>
+
+        <div class="dd-section">Recent templates</div>
+        <div class="dd-row">
+          <div class="ri blue">★</div>
+          <div>
+            <div class="rn">Plan feature <span class="chip danger">bypass</span></div>
+            <div class="rs">sonnet-4.6 · scope: workspace</div>
+          </div>
+          <span class="rk">⌘1</span>
+        </div>
+        <div class="dd-row">
+          <div class="ri amber">⚡</div>
+          <div>
+            <div class="rn">Triage failing tests</div>
+            <div class="rs">haiku-4.5 · scope: workspace · $branch_name</div>
+          </div>
+          <span class="rk">⌘2</span>
+        </div>
+        <div class="dd-row">
+          <div class="ri violet">⌘</div>
+          <div>
+            <div class="rn">Refactor module <span class="chip warn">acceptEdits</span></div>
+            <div class="rs">sonnet-4.6 · scope: workspace · $target_path</div>
+          </div>
+          <span class="rk">⌘3</span>
+        </div>
+        <div class="dd-row">
+          <div class="ri green">↻</div>
+          <div>
+            <div class="rn">Review open PR</div>
+            <div class="rs">opus-4.7 · scope: root</div>
+          </div>
+          <span class="rk">⌘4</span>
+        </div>
+
+        <div class="dd-div"></div>
+        <div class="dd-foot">
+          <span class="k">↑↓ pick · <b>↵</b> select · <b>esc</b> back to prompt</span>
+          <span>4 templates</span>
+        </div>
+      </div>
+
+      <div class="composer" style="opacity: 0.35; pointer-events: none;">
+        <div class="cmp-textarea empty">
+          <span class="placeholder">Type your prompt — ↵ sends, ⇧↵ newline</span>
+        </div>
+        <div class="cmp-toolbar">
+          <span class="pill violet"><span class="lab">model</span><span class="val">sonnet-4.6</span></span>
+          <span class="pill warn"><span class="lab">perm</span><span class="val">acceptEdits</span></span>
+          <span class="pill teal"><span class="lab">mode</span><span class="val">headless</span></span>
+        </div>
+      </div>
+
+      <div class="pal-footer" style="position: relative;">
+        <div class="left"><span class="brand"><span class="logo"></span> termloop</span><span class="sep"></span><span class="hint">template picker open · selecting swaps the composer</span></div>
+        <div class="right">
+          <span class="act"><span class="lbl">pick</span><span class="kbd">↑↓</span></span>
+          <span class="act"><span class="lbl">select</span><span class="kbd">↵</span></span>
+          <span class="act"><span class="lbl">back</span><span class="kbd esc">esc</span></span>
+        </div>
+      </div>
+    </div>
+
+    <p class="note"><b>Dropdown is the only way to leave free-prompt mode.</b> Click the picker, press <code>⌘K</code>, or type "/" at the start of the composer — any of these opens it. Free prompt sits at the top, flagged <span class="chip" style="font-size: 9px;">current</span>. Esc goes back to the composer, keeps the typed text intact.</p>
+  </div>
+
+  <!-- ================================================================
+       D3 — after selecting a template from dropdown
+       ================================================================ -->
+  <div class="card">
+    <div class="caption">
+      <span class="name">D3 · Template selected · picker shows it, composer adopts its prompt</span>
+      <span class="tag">switching back: open picker → Free prompt → ↵</span>
+    </div>
+
+    <div class="palette">
+      <div class="topbar">
+        <div class="tpl-picker">
+          <span class="ri tpl">⌘</span>
+          <span class="name">Refactor module</span>
+          <span class="sub">$target_path</span>
+          <span class="caret">▾</span>
+        </div>
+        <div class="target">
+          <span class="dot"></span> termloop · bridge <span class="kbd-swap">⌘T</span>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="cmp-textarea">Refactor code under <span style="color: var(--violet);">$target_path</span> following style guidelines. Preserve public APIs; split unrelated changes into separate commits.<span class="caret"></span></div>
+        <div class="cmp-toolbar">
+          <span class="pill violet"><span class="lab">model</span><span class="val">sonnet-4.6</span></span>
+          <span class="pill warn"><span class="lab">perm</span><span class="val">acceptEdits</span></span>
+          <span class="pill teal"><span class="lab">mode</span><span class="val">headless</span></span>
+          <span class="pill"><span class="lab">var</span><span class="val">$target_path</span> <span class="cx">empty · ⌘4 to fill</span></span>
+          <span style="flex: 1;"></span>
+          <span class="pill link">↶ back to free prompt <span style="color: var(--ink-4);">· ⌘K</span></span>
+        </div>
+      </div>
+
+      <div class="pal-footer">
+        <div class="left"><span class="brand"><span class="logo"></span> termloop</span><span class="sep"></span><span class="hint">template mode · <b>⌘K</b> to return to free prompt</span></div>
+        <div class="right">
+          <span class="act"><span class="lbl">run</span><span class="kbd">↵</span></span>
+          <span class="act"><span class="lbl">advanced</span><span class="kbd">⌘</span><span class="kbd plus">+</span><span class="kbd">↵</span></span>
+          <span class="act"><span class="lbl">close</span><span class="kbd esc">esc</span></span>
+        </div>
+      </div>
+    </div>
+
+    <p class="note">When a template is picked, the picker label swaps and the composer fills with the template's prompt body (variables shown as violet tokens). A quiet "<b>↶ back to free prompt</b>" link in the toolbar makes the return trip obvious.</p>
+  </div>
+
+  <!-- ================================================================
+       D4 — advanced (⌘↵) — same C11 table, persists under __free_prompt__
+       ================================================================ -->
+  <div class="card span-2">
+    <div class="caption">
+      <span class="name">D4 · ⌘↵ advanced · edits persist to the free-prompt slot</span>
+      <span class="tag">next Shift-Shift restores these values</span>
+    </div>
+
+    <div class="palette">
+      <div class="topbar">
+        <div class="tpl-picker">
+          <span class="ri">✎</span>
+          <span class="name">Free prompt</span>
+          <span class="sub">default</span>
+          <span class="caret">▾</span>
+        </div>
+        <div class="target">
+          <span class="dot"></span> termloop · bridge <span class="kbd-swap">⌘T</span>
+        </div>
+      </div>
+
+      <div class="composer" style="padding-bottom: 10px;">
+        <div class="cmp-textarea">find why TerminalController drops writes on the TCP path and fix it<span class="caret"></span></div>
+      </div>
+
+      <div class="adv-table">
+        <table>
+          <thead>
+            <tr><th>Field</th><th></th><th>Value</th><th>Source</th><th style="text-align: right; padding-right: 14px;">Edit</th></tr>
+          </thead>
+          <tbody>
+            <tr class="row-head"><td colspan="5" style="padding-top: 10px; padding-bottom: 4px;">Model · agent <span class="persist">saved</span></td></tr>
+            <tr class="sel">
+              <td class="k">model</td><td class="op">=</td>
+              <td class="v plain">claude-sonnet-4.6 <span style="color: var(--ink-4);">· ⌥↓ for opus / haiku</span></td>
+              <td class="src">free LRU</td>
+              <td class="action"><span class="kbd-in">⌘1</span></td>
+            </tr>
+            <tr>
+              <td class="k">permission</td><td class="op">=</td>
+              <td class="v warn">acceptEdits <span style="color: var(--ink-4); font-weight: 400;">· default | plan | bypass</span></td>
+              <td class="src">free LRU</td>
+              <td class="action"><span class="kbd-in">⌘2</span></td>
+            </tr>
+            <tr>
+              <td class="k">mode</td><td class="op">=</td>
+              <td class="v teal">headless <span style="color: var(--ink-4); font-weight: 400;">· terminal</span></td>
+              <td class="src">free LRU</td>
+              <td class="action"><span class="kbd-in">⌘3</span></td>
+            </tr>
+
+            <tr class="row-head"><td colspan="5" style="padding-top: 10px; padding-bottom: 4px;">Target · workspace <span class="persist" style="color: var(--accent); background: rgba(110,168,255,0.08); border-color: rgba(110,168,255,0.22);">session</span></td></tr>
+            <tr>
+              <td class="k">workspace</td><td class="op">=</td>
+              <td class="v"><span style="color: var(--accent);">bridge</span> <span style="color: var(--ink-4);">· termloop / main / none · ⌘T switches</span></td>
+              <td class="src">palette</td>
+              <td class="action"><span class="kbd-in">⌘T</span></td>
+            </tr>
+            <tr>
+              <td class="k">cwd</td><td class="op">=</td>
+              <td class="v">/Users/…/termloop/.cmux-worktrees/bridge</td>
+              <td class="src">auto</td>
+              <td class="action"></td>
+            </tr>
+
+            <tr class="row-head"><td colspan="5" style="padding-top: 10px; padding-bottom: 4px;">Prompt · this run only</td></tr>
+            <tr>
+              <td class="k">prompt</td><td class="op">=</td>
+              <td class="v" style="color: var(--ink-1);">"find why TerminalController drops writes on the TCP path and fix it"</td>
+              <td class="src">free</td>
+              <td class="action"><span class="kbd-in">⌘E</span></td>
+            </tr>
+            <tr>
+              <td class="k">prelude</td><td class="op">=</td>
+              <td class="v" style="color: var(--ink-3); font-style: italic;">none <span style="color: var(--ink-4); font-style: normal;">· no template wraps this run</span></td>
+              <td class="src">—</td>
+              <td class="action"></td>
+            </tr>
+            <tr>
+              <td class="k">triggerReason</td><td class="op">=</td>
+              <td class="v" style="color: var(--accent);">quickAction.freePrompt</td>
+              <td class="src">auto</td>
+              <td class="action"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pal-footer">
+        <div class="left"><span class="brand"><span class="logo"></span> termloop</span><span class="sep"></span><span class="hint">rows marked <span class="persist" style="font-size: 9px; margin-left: 0;">saved</span> persist to next Shift-Shift</span></div>
+        <div class="right">
+          <span class="act"><span class="lbl">run</span><span class="kbd">↵</span></span>
+          <span class="act"><span class="lbl">row</span><span class="kbd">↑↓</span></span>
+          <span class="act"><span class="lbl">template</span><span class="kbd">⌘</span><span class="kbd plus">+</span><span class="kbd">K</span></span>
+          <span class="act"><span class="lbl">close pane</span><span class="kbd">⌘</span><span class="kbd plus">+</span><span class="kbd">↵</span></span>
+          <span class="act"><span class="lbl">dismiss</span><span class="kbd esc">esc</span></span>
+        </div>
+      </div>
+    </div>
+
+    <p class="note"><b>Persistence contract.</b> Rows tagged <span class="persist" style="font-size: 9px; margin-left: 0;">saved</span> (model, permission, mode) write back to <code>QuickActionLRUStore.advancedMemory["__free_prompt__"]</code> — they restore next time the palette opens. Rows tagged <span class="persist" style="color: var(--accent); background: rgba(110,168,255,0.08); border-color: rgba(110,168,255,0.22); font-size: 9px; margin-left: 0;">session</span> (workspace) come from the currently-active TermLoop tab — not sticky across quits. The prompt itself is never remembered (by design — it's the one thing that should always be fresh).</p>
+  </div>
+
+</div>
+
+</body>
+</html>

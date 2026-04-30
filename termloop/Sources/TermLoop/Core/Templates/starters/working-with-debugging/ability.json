@@ -1,0 +1,18 @@
+{
+  "activation" : "listed",
+  "description" : "Use when the task involves debugging crashes, logs, instrumentation, runtime behavior, or performance in this project.",
+  "id" : "working-with-debugging",
+  "items" : [
+    {
+      "type" : "requiredSkill",
+      "value" : "working-with-debugging"
+    }
+  ],
+  "name" : "Working With Debugging",
+  "tags" : [
+    "debugging",
+    "logs",
+    "runtime",
+    "crashes"
+  ]
+}

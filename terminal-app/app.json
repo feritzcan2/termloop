@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "TerminalApp",
+    "slug": "terminal-app",
+    "version": "1.0.0",
+    "scheme": "terminal-app",
+    "platforms": ["ios", "android"],
+    "ios": {
+      "bundleIdentifier": "com.feritzcan.sshterminal",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "TerminalApp needs access to local/private networks to connect to SSH servers (including Tailscale and LAN).",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSAllowsLocalNetworking": true
+        }
+      }
+    },
+    "android": {
+      "package": "com.terminalapp.dev",
+      "adaptiveIcon": {
+        "backgroundColor": "#282a36"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "./modules/expo-ssh/app.plugin.js",
+      ["./modules/expo-push/app.plugin.js", { "mode": "development" }]
+    ]
+  }
+}

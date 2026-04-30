@@ -1,0 +1,996 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>termloop — quickaction redesign</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --page-bg:        #b8babf;
+    --panel-bg:       #1c1d22;
+    --panel-bg-2:     #232429;
+    --panel-edge:     rgba(255,255,255,0.06);
+    --panel-edge-2:   rgba(255,255,255,0.09);
+    --row-hover:      rgba(255,255,255,0.04);
+    --row-sel:        linear-gradient(180deg, #2a64ff 0%, #1f54e8 100%);
+    --row-sel-edge:   rgba(120,160,255,0.45);
+    --ink-1:          #f1f2f5;
+    --ink-2:          #a9acb4;
+    --ink-3:          #70737b;
+    --ink-4:          #4a4c54;
+    --accent:         #6ea8ff;
+    --amber:          #ffb049;
+    --green:          #51d68a;
+    --red:            #ff6868;
+    --violet:         #b98dff;
+    --pink:           #ff7ab6;
+    --mono:           'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+    /* light variant tokens */
+    --light-panel:     #f4f4f7;
+    --light-panel-2:   #eceef2;
+    --light-edge:      rgba(0,0,0,0.08);
+    --light-edge-2:    rgba(0,0,0,0.12);
+    --light-row-sel:   linear-gradient(180deg, #1a64ff 0%, #0a4ee4 100%);
+    --light-ink-1:     #17181c;
+    --light-ink-2:     #5a5d66;
+    --light-ink-3:     #8b8e96;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background:
+      radial-gradient(1400px 900px at 10% -10%, #dcdde1, transparent 55%),
+      radial-gradient(1100px 800px at 100% 110%, #a9aab0, transparent 55%),
+      var(--page-bg);
+    color: var(--ink-1);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    padding: 48px 32px 96px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page-head {
+    max-width: 1640px; margin: 0 auto 34px;
+    display: flex; align-items: baseline; justify-content: space-between; gap: 24px;
+    border-bottom: 1px solid rgba(0,0,0,0.12);
+    padding-bottom: 18px;
+  }
+  .page-head h1 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: 0.02em; color: #2a2b30; }
+  .page-head h1 b { color: #0a4ee4; font-weight: 700; }
+  .page-head .legend { font-size: 11px; color: #5a5d66; letter-spacing: 0.04em; text-transform: uppercase; }
+
+  .grid {
+    max-width: 1640px; margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(520px, 1fr));
+    gap: 36px 32px;
+  }
+
+  .card { display: flex; flex-direction: column; gap: 14px; }
+  .card .caption {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 0 2px;
+  }
+  .card .caption .name {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+    color: #17181c;
+  }
+  .card .caption .tag {
+    font-size: 10px; font-weight: 500; color: #5a5d66;
+    font-family: var(--mono);
+  }
+  .card .note {
+    font-size: 11px; color: #5a5d66; line-height: 1.5;
+    padding: 0 2px;
+  }
+
+  /* ============================================================
+     PALETTE — floating panel, dark (primary design)
+     ============================================================ */
+  .palette {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-edge-2);
+    border-radius: 14px;
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.04) inset,
+      0 40px 80px -20px rgba(0,0,0,0.55),
+      0 14px 32px -8px rgba(0,0,0,0.45);
+    overflow: hidden;
+    color: var(--ink-1);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+  }
+
+  /* ===== search header ===== */
+  .pal-search {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--panel-edge);
+    background: linear-gradient(180deg, #22232a 0%, #1c1d22 100%);
+  }
+  .pal-search .mag {
+    width: 18px; height: 18px; flex: 0 0 18px;
+    color: var(--ink-3);
+    display: grid; place-items: center;
+  }
+  .pal-search input {
+    flex: 1; background: transparent; border: 0; outline: none;
+    color: var(--ink-1); font-size: 15px; font-weight: 500;
+    font-family: inherit;
+    letter-spacing: -0.005em;
+    caret-color: var(--accent);
+  }
+  .pal-search input::placeholder { color: var(--ink-3); font-weight: 400; }
+  .pal-search .cursor {
+    width: 1.5px; height: 17px; background: var(--accent); display: inline-block;
+    animation: blink 1.1s step-end infinite;
+    vertical-align: -3px;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .pal-target {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 9px 4px 7px;
+    background: rgba(110,168,255,0.12);
+    border: 1px solid rgba(110,168,255,0.22);
+    border-radius: 7px;
+    font-size: 11.5px; font-weight: 500; color: #d2e1ff;
+    font-family: var(--mono);
+    white-space: nowrap;
+  }
+  .pal-target .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(110,168,255,0.18); }
+  .pal-target .kbd-swap {
+    font-size: 9.5px; color: #8eaaff; padding: 1px 4px;
+    background: rgba(255,255,255,0.05); border-radius: 3px;
+    margin-left: 2px; font-family: var(--mono); font-weight: 600;
+  }
+
+  /* ===== section headers ===== */
+  .pal-section {
+    padding: 10px 16px 4px;
+    font-size: 10px; font-weight: 600; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-3);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .pal-section .count {
+    font-family: var(--mono); font-size: 10px; font-weight: 500;
+    color: var(--ink-4); letter-spacing: 0.02em; text-transform: none;
+  }
+
+  /* ===== rows ===== */
+  .pal-row {
+    display: grid;
+    grid-template-columns: 32px 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 12px 9px 12px;
+    margin: 0 8px;
+    border-radius: 8px;
+    cursor: default;
+  }
+  .pal-row + .pal-row { margin-top: 1px; }
+  .pal-row:hover { background: var(--row-hover); }
+  .pal-row.sel {
+    background: var(--row-sel);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.18) inset,
+      0 0 0 1px var(--row-sel-edge),
+      0 6px 18px -6px rgba(42,100,255,0.55);
+  }
+  .pal-row.sel .r-name,
+  .pal-row.sel .r-sub,
+  .pal-row.sel .r-meta,
+  .pal-row.sel .r-shortcut { color: #fff; }
+  .pal-row.sel .r-sub { color: rgba(255,255,255,0.78); }
+  .pal-row.sel .r-meta { color: rgba(255,255,255,0.72); }
+  .pal-row.sel .r-shortcut {
+    background: rgba(255,255,255,0.16);
+    border-color: rgba(255,255,255,0.22);
+    color: #fff;
+  }
+  .pal-row.disabled { opacity: 0.42; }
+
+  .r-icon {
+    width: 32px; height: 32px; border-radius: 8px;
+    display: grid; place-items: center;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    font-size: 15px;
+  }
+  .r-icon.grad-blue   { background: linear-gradient(135deg, #2a64ff, #5d8aff); border-color: rgba(120,160,255,0.35); color: #fff; }
+  .r-icon.grad-amber  { background: linear-gradient(135deg, #c06e14, #ffb049); border-color: rgba(255,176,73,0.35); color: #fff; }
+  .r-icon.grad-green  { background: linear-gradient(135deg, #1f7f44, #51d68a); border-color: rgba(81,214,138,0.35); color: #fff; }
+  .r-icon.grad-violet { background: linear-gradient(135deg, #6a3ec7, #b98dff); border-color: rgba(185,141,255,0.35); color: #fff; }
+  .r-icon.grad-pink   { background: linear-gradient(135deg, #c03976, #ff7ab6); border-color: rgba(255,122,182,0.35); color: #fff; }
+  .r-icon.grad-graph  { background: linear-gradient(135deg, #2a2b30, #3a3b42); border-color: rgba(255,255,255,0.08); color: var(--ink-1); }
+  .r-icon.free {
+    background: repeating-linear-gradient(45deg, rgba(255,255,255,0.03), rgba(255,255,255,0.03) 4px, rgba(255,255,255,0.06) 4px, rgba(255,255,255,0.06) 8px);
+    border-color: rgba(255,255,255,0.12);
+    color: var(--ink-2);
+  }
+  .pal-row.sel .r-icon { border-color: rgba(255,255,255,0.30); }
+
+  .r-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .r-name {
+    font-size: 13.5px; font-weight: 500; color: var(--ink-1);
+    letter-spacing: -0.005em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .r-name .match { color: #fff; font-weight: 600; }
+  .pal-row:not(.sel) .r-name .match { color: #fff; }
+  .r-sub {
+    font-size: 11.5px; color: var(--ink-2); font-weight: 400;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .r-sub .pip {
+    display: inline-block; width: 3px; height: 3px; border-radius: 50%;
+    background: currentColor; opacity: 0.4; margin: 0 6px; vertical-align: 2px;
+  }
+  .r-sub .perm {
+    font-family: var(--mono); font-size: 10.5px;
+    color: var(--amber); font-weight: 500;
+  }
+  .pal-row.sel .r-sub .perm { color: #ffd79e; }
+  .r-sub .scope {
+    font-family: var(--mono); font-size: 10.5px; color: var(--ink-3);
+  }
+  .r-sub .var {
+    font-family: var(--mono); font-size: 10.5px; color: var(--violet);
+  }
+  .pal-row.sel .r-sub .var { color: #e0d1ff; }
+
+  .r-trail { display: flex; align-items: center; gap: 8px; }
+  .r-meta {
+    font-family: var(--mono); font-size: 10.5px; color: var(--ink-3);
+    letter-spacing: 0.01em;
+  }
+  .r-shortcut {
+    display: inline-flex; align-items: center; gap: 2px;
+    padding: 2px 6px; min-height: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+    border-radius: 5px;
+    font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+    color: var(--ink-2);
+  }
+  .r-pinned {
+    width: 14px; height: 14px;
+    color: var(--ink-4);
+  }
+
+  .pal-divider {
+    height: 1px; background: var(--panel-edge);
+    margin: 6px 0;
+  }
+
+  /* ===== footer ===== */
+  .pal-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px;
+    padding: 9px 14px 9px 16px;
+    border-top: 1px solid var(--panel-edge);
+    background: linear-gradient(180deg, #1c1d22 0%, #191a1f 100%);
+    font-size: 11px;
+  }
+  .pal-footer .left { display: flex; align-items: center; gap: 10px; }
+  .pal-footer .brand {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-weight: 600; color: var(--ink-2); letter-spacing: 0.02em;
+    font-size: 11px;
+  }
+  .pal-footer .brand .logo {
+    width: 14px; height: 14px; border-radius: 3.5px;
+    background: linear-gradient(135deg, #2a64ff, #6ea8ff);
+    box-shadow: 0 0 0 0.5px rgba(120,160,255,0.55);
+  }
+  .pal-footer .sep { width: 1px; height: 12px; background: var(--panel-edge-2); }
+  .pal-footer .hint {
+    color: var(--ink-3); font-size: 11px;
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono);
+  }
+  .pal-footer .hint b { color: var(--ink-2); font-weight: 500; }
+  .pal-footer .right { display: flex; align-items: center; gap: 14px; }
+  .pal-footer .act {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; color: var(--ink-2);
+  }
+  .pal-footer .act .lbl { color: var(--ink-3); }
+  .kbd {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px; padding: 0 5px;
+    border: 1px solid rgba(255,255,255,0.10);
+    background: rgba(255,255,255,0.04);
+    border-radius: 4px;
+    font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+    color: var(--ink-1);
+    box-shadow: inset 0 -1px 0 rgba(0,0,0,0.25);
+  }
+  .kbd.esc { min-width: 34px; font-size: 10px; }
+  .kbd.plus { border: 0; background: transparent; color: var(--ink-4); padding: 0; min-width: 0; font-weight: 400; }
+
+  /* ============================================================
+     VARIANT — light panel
+     ============================================================ */
+  .palette.light {
+    background: var(--light-panel);
+    border: 1px solid var(--light-edge-2);
+    color: var(--light-ink-1);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.9) inset,
+      0 30px 60px -18px rgba(0,0,0,0.25),
+      0 10px 24px -6px rgba(0,0,0,0.18);
+  }
+  .palette.light .pal-search {
+    background: linear-gradient(180deg, #fafafc 0%, #f0f1f5 100%);
+    border-bottom: 1px solid var(--light-edge);
+  }
+  .palette.light .pal-search input { color: var(--light-ink-1); }
+  .palette.light .pal-search input::placeholder { color: var(--light-ink-3); }
+  .palette.light .pal-search .mag { color: var(--light-ink-3); }
+  .palette.light .pal-target {
+    background: rgba(10,78,228,0.07);
+    border-color: rgba(10,78,228,0.18);
+    color: #0a4ee4;
+  }
+  .palette.light .pal-target .dot { background: #0a4ee4; box-shadow: 0 0 0 2px rgba(10,78,228,0.14); }
+  .palette.light .pal-target .kbd-swap { color: #0a4ee4; background: rgba(10,78,228,0.08); }
+  .palette.light .pal-section { color: var(--light-ink-3); }
+  .palette.light .pal-section .count { color: #a4a6ac; }
+  .palette.light .pal-row:hover { background: rgba(0,0,0,0.03); }
+  .palette.light .pal-row .r-name { color: var(--light-ink-1); }
+  .palette.light .pal-row .r-sub { color: var(--light-ink-2); }
+  .palette.light .pal-row.sel { background: var(--light-row-sel); }
+  .palette.light .pal-row.sel .r-name { color: #fff; }
+  .palette.light .r-icon { background: rgba(0,0,0,0.04); border-color: var(--light-edge); }
+  .palette.light .r-icon.free {
+    background: repeating-linear-gradient(45deg, rgba(0,0,0,0.025), rgba(0,0,0,0.025) 4px, rgba(0,0,0,0.05) 4px, rgba(0,0,0,0.05) 8px);
+    border-color: var(--light-edge-2);
+    color: var(--light-ink-2);
+  }
+  .palette.light .r-shortcut {
+    background: rgba(0,0,0,0.03);
+    border-color: var(--light-edge);
+    color: var(--light-ink-2);
+  }
+  .palette.light .r-meta { color: var(--light-ink-3); }
+  .palette.light .pal-divider { background: var(--light-edge); }
+  .palette.light .pal-footer {
+    background: linear-gradient(180deg, #f0f1f5 0%, #e8e9ee 100%);
+    border-top: 1px solid var(--light-edge);
+  }
+  .palette.light .pal-footer .brand { color: var(--light-ink-2); }
+  .palette.light .pal-footer .sep { background: var(--light-edge-2); }
+  .palette.light .pal-footer .hint { color: var(--light-ink-3); }
+  .palette.light .pal-footer .hint b { color: var(--light-ink-2); }
+  .palette.light .pal-footer .act { color: var(--light-ink-2); }
+  .palette.light .pal-footer .act .lbl { color: var(--light-ink-3); }
+  .palette.light .kbd {
+    background: #fff; border-color: var(--light-edge-2);
+    color: var(--light-ink-1);
+    box-shadow: inset 0 -1px 0 rgba(0,0,0,0.06), 0 1px 0 rgba(255,255,255,0.8);
+  }
+
+  /* ============================================================
+     ADVANCED PANE (Cmd-Enter)
+     ============================================================ */
+  .adv {
+    padding: 14px 16px 12px;
+    border-top: 1px solid var(--panel-edge);
+    background: #181a1f;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  }
+  .adv .field { display: flex; flex-direction: column; gap: 6px; }
+  .adv .field-label {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .adv .seg {
+    display: inline-flex; padding: 2px; gap: 2px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--panel-edge-2);
+    border-radius: 7px;
+  }
+  .adv .seg button {
+    all: unset;
+    padding: 5px 11px; font-size: 11.5px; font-weight: 500;
+    color: var(--ink-2); border-radius: 5px; cursor: pointer;
+    font-family: inherit;
+  }
+  .adv .seg button.on {
+    background: linear-gradient(180deg, #2b2d34, #23252b);
+    color: var(--ink-1);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 1px 2px rgba(0,0,0,0.3);
+  }
+  .adv .var-input {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 10px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--panel-edge-2);
+    border-radius: 7px;
+    font-family: var(--mono); font-size: 12px; color: var(--ink-1);
+  }
+  .adv .var-input .name { color: var(--violet); }
+  .adv .var-input .eq { color: var(--ink-3); }
+  .adv .var-input .val { color: var(--green); }
+
+  /* ============================================================
+     INFLIGHT — row shows spinner + auto-dismiss
+     ============================================================ */
+  .pal-row.inflight {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .pal-row.inflight .r-name { color: var(--ink-1); }
+  .pal-row.inflight .r-trail .r-meta { color: var(--green); }
+  .spinner {
+    width: 13px; height: 13px; border-radius: 50%;
+    border: 1.5px solid rgba(81,214,138,0.2);
+    border-top-color: var(--green);
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ============================================================
+     DISMISS TOAST — brief confirmation after launch
+     ============================================================ */
+  .toast {
+    width: 340px; margin: 0 auto;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-edge-2);
+    border-radius: 12px;
+    padding: 10px 14px 11px;
+    display: flex; align-items: center; gap: 12px;
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.04) inset,
+      0 18px 48px -14px rgba(0,0,0,0.55),
+      0 6px 18px -6px rgba(0,0,0,0.35);
+    color: var(--ink-1);
+  }
+  .toast .check {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: linear-gradient(135deg, #1f7f44, #51d68a);
+    display: grid; place-items: center;
+    color: #fff; font-size: 12px; font-weight: 700;
+  }
+  .toast .t-body { display: flex; flex-direction: column; gap: 1px; flex: 1; }
+  .toast .t-name { font-size: 12.5px; font-weight: 500; }
+  .toast .t-sub { font-size: 11px; color: var(--ink-3); font-family: var(--mono); }
+  .toast .t-sub b { color: var(--ink-2); font-weight: 500; }
+  .toast .t-kbd { font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); }
+
+  /* ============================================================
+     ANNOTATION (callouts)
+     ============================================================ */
+  .callout {
+    position: relative;
+    margin-top: 8px;
+    padding: 10px 12px;
+    background: rgba(10,78,228,0.06);
+    border: 1px solid rgba(10,78,228,0.16);
+    border-radius: 8px;
+    color: #17181c;
+    font-size: 11.5px; line-height: 1.5;
+  }
+  .callout b { color: #0a4ee4; font-weight: 600; }
+
+  /* ============================================================
+     span helpers
+     ============================================================ */
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 1px 6px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--panel-edge-2);
+    border-radius: 4px;
+    font-family: var(--mono); font-size: 10px; font-weight: 500;
+    color: var(--ink-2);
+    letter-spacing: 0.02em;
+    margin-left: 6px; vertical-align: 1px;
+  }
+  .chip.danger { color: var(--amber); border-color: rgba(255,176,73,0.28); background: rgba(255,176,73,0.08); }
+  .chip.safe { color: var(--green); border-color: rgba(81,214,138,0.25); background: rgba(81,214,138,0.08); }
+  .palette.light .chip { background: rgba(0,0,0,0.04); border-color: var(--light-edge-2); color: var(--light-ink-2); }
+  .palette.light .chip.danger { color: #b9600b; border-color: rgba(255,140,0,0.25); background: rgba(255,160,30,0.1); }
+
+  .span-2 { grid-column: span 2; }
+  @media (max-width: 1080px) { .span-2 { grid-column: auto; } }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>termloop — <b>QuickAction redesign</b> · floating palette mockups</h1>
+  <div class="legend">Shift-Shift → type → ↵ · Esc dismisses · launch auto-closes</div>
+</div>
+
+<div class="grid">
+
+  <!-- ============================================================
+       Card 1 — primary dark palette, resting state
+       ============================================================ -->
+  <div class="card span-2">
+    <div class="caption">
+      <span class="name">A · Dark palette · idle (no query)</span>
+      <span class="tag">~580 × 460 · rounded-14 · NSPanel borderless</span>
+    </div>
+
+    <div class="palette" style="max-width: 640px;">
+      <div class="pal-search">
+        <span class="mag">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </span>
+        <input placeholder="Run an agent or type a free prompt…" disabled />
+        <span class="cursor"></span>
+        <span class="pal-target">
+          <span class="dot"></span>
+          termloop · bridge
+          <span class="kbd-swap">⌘T</span>
+        </span>
+      </div>
+
+      <div class="pal-section">
+        <span>Recent</span><span class="count">Shift-Shift · 8 templates</span>
+      </div>
+
+      <div class="pal-row sel">
+        <div class="r-icon grad-blue">★</div>
+        <div class="r-body">
+          <div class="r-name">Plan feature<span class="chip danger">bypass</span></div>
+          <div class="r-sub">claude-sonnet-4.6 <span class="pip"></span> <span class="scope">scope: workspace</span> <span class="pip"></span> used 4 min ago</div>
+        </div>
+        <div class="r-trail">
+          <span class="r-meta">↵ run</span>
+          <span class="r-shortcut">⌘1</span>
+        </div>
+      </div>
+
+      <div class="pal-row">
+        <div class="r-icon grad-amber">⚡</div>
+        <div class="r-body">
+          <div class="r-name">Triage failing tests</div>
+          <div class="r-sub">haiku-4.5 <span class="pip"></span> <span class="scope">scope: workspace</span> <span class="pip"></span> <span class="var">$branch_name</span></div>
+        </div>
+        <div class="r-trail">
+          <span class="r-shortcut">⌘2</span>
+        </div>
+      </div>
+
+      <div class="pal-row">
+        <div class="r-icon grad-green">↻</div>
+        <div class="r-body">
+          <div class="r-name">Review open PR</div>
+          <div class="r-sub">opus-4.7 <span class="pip"></span> <span class="scope">scope: root</span> <span class="pip"></span> used yesterday</div>
+        </div>
+        <div class="r-trail">
+          <span class="r-shortcut">⌘3</span>
+        </div>
+      </div>
+
+      <div class="pal-row">
+        <div class="r-icon grad-violet">⌘</div>
+        <div class="r-body">
+          <div class="r-name">Refactor module<span class="chip">acceptEdits</span></div>
+          <div class="r-sub">sonnet-4.6 <span class="pip"></span> <span class="scope">scope: workspace</span> <span class="pip"></span> <span class="var">$target_path</span></div>
+        </div>
+        <div class="r-trail">
+          <span class="r-shortcut">⌘4</span>
+        </div>
+      </div>
+
+      <div class="pal-row">
+        <div class="r-icon grad-pink">✦</div>
+        <div class="r-body">
+          <div class="r-name">Commit &amp; push</div>
+          <div class="r-sub">haiku-4.5 <span class="pip"></span> <span class="scope">scope: workspace</span> <span class="pip"></span> used 2 days ago</div>
+        </div>
+        <div class="r-trail">
+          <span class="r-shortcut">⌘5</span>
+        </div>
+      </div>
+
+      <div class="pal-divider"></div>
+
+      <div class="pal-section">
+        <span>Library</span><span class="count">3 more · ↓ to browse</span>
+      </div>
+
+      <div class="pal-row disabled">
+        <div class="r-icon grad-graph">◇</div>
+        <div class="r-body">
+          <div class="r-name">Design doc draft<span class="chip">plan mode</span></div>
+          <div class="r-sub">opus-4.7 <span class="pip"></span> <span class="scope">scope: workspace · disabled on root</span></div>
+        </div>
+        <div class="r-trail">
+          <span class="r-meta">scope req.</span>
+        </div>
+      </div>
+
+      <div class="pal-row">
+        <div class="r-icon grad-graph">◎</div>
+        <div class="r-body">
+          <div class="r-name">Audit dependencies</div>
+          <div class="r-sub">sonnet-4.6 <span class="pip"></span> <span class="scope">scope: root</span></div>
+        </div>
+        <div class="r-trail">
+          <span class="r-shortcut">⌘6</span>
+        </div>
+      </div>
+
+      <div class="pal-footer">
+        <div class="left">
+          <span class="brand"><span class="logo"></span> termloop</span>
+          <span class="sep"></span>
+          <span class="hint">bypassPermissions · headless run</span>
+        </div>
+        <div class="right">
+          <span class="act"><span class="lbl">run</span><span class="kbd">↵</span></span>
+          <span class="act"><span class="lbl">advanced</span><span class="kbd">⌘</span><span class="kbd plus">+</span><span class="kbd">↵</span></span>
+          <span class="act"><span class="lbl">switch target</span><span class="kbd">⌘</span><span class="kbd plus">+</span><span class="kbd">T</span></span>
+          <span class="act"><span class="lbl">close</span><span class="kbd esc">esc</span></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <b>Fixes from current version:</b> dedicated footer hint row makes <b>esc</b>, <b>↵</b>, and <b>⌘↵</b> always visible (user reported no esc cue). Target pill (<b>⌘T</b>) replaces the unlabeled workspace pill. Rows grow to show permission mode + required variables at a glance, so launch no longer feels blind.
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Card 2 — filtered + free-prompt row
+       ============================================================ -->
+  <div class="card">
+    <div class="caption">
+      <span class="name">B · Filtered query · free-prompt surfaced</span>
+      <span class="tag">typed: "test" → matches + free prompt</span>
+    </div>
+
+    <div class="palette">
+      <div class="pal-search">
+        <span class="mag">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </span>
+        <input value="fix failing unit test in Socket" disabled style="color: var(--ink-1);" />
+        <span class="pal-target">
+          <span class="dot"></span>
+          termloop · bridge
+          <span class="kbd-swap">⌘T</span>
+        </span>
+      </div>
+
+      <div class="pal-section">
+        <span>Matching templates</span><span class="count">2 of 8</span>
+      </div>
+
+      <div class="pal-row">
+        <div class="r-icon grad-amber">⚡</div>
+        <div class="r-body">
+          <div class="r-name">Triage failing <span class="match">test</span>s</div>
+          <div class="r-sub">haiku-4.5 <span class="pip"></span> <span class="scope">scope: workspace</span></div>
+        </div>
+        <div class="r-trail"><span class="r-shortcut">⌘1</span></div>
+      </div>
+
+      <div class="pal-row">
+        <div class="r-icon grad-blue">★</div>
+        <div class="r-body">
+          <div class="r-name">Plan feature<span class="chip danger">bypass</span></div>
+          <div class="r-sub">sonnet-4.6 <span class="pip"></span> <span class="scope">scope: workspace</span></div>
+        </div>
+        <div class="r-trail"><span class="r-shortcut">⌘2</span></div>
+      </div>
+
+      <div class="pal-divider"></div>
+
+      <div class="pal-section">
+        <span>Free prompt</span><span class="count">default template</span>
+      </div>
+
+      <div class="pal-row sel">
+        <div class="r-icon free">✎</div>
+        <div class="r-body">
+          <div class="r-name">Run as free prompt → “<span style="color: rgba(255,255,255,0.88)">fix failing unit test in Socket</span>”</div>
+          <div class="r-sub">via <b style="color: #fff; font-weight: 600;">Plan feature</b> · sonnet-4.6 · <span class="perm" style="color:#ffd79e;">bypass</span></div>
+        </div>
+        <div class="r-trail">
+          <span class="r-meta">↵ run</span>
+        </div>
+      </div>
+
+      <div class="pal-footer">
+        <div class="left">
+          <span class="brand"><span class="logo"></span> termloop</span>
+          <span class="sep"></span>
+          <span class="hint">free prompt · promptOverride</span>
+        </div>
+        <div class="right">
+          <span class="act"><span class="lbl">run</span><span class="kbd">↵</span></span>
+          <span class="act"><span class="lbl">change tpl</span><span class="kbd">⌘</span><span class="kbd plus">+</span><span class="kbd">↵</span></span>
+          <span class="act"><span class="lbl">close</span><span class="kbd esc">esc</span></span>
+        </div>
+      </div>
+    </div>
+
+    <p class="note">Free-prompt row embeds the query so it's unambiguous what gets launched. "via <em>Plan feature</em>" reveals the LRU-remembered default template — clickable to swap via ⌘↵.</p>
+  </div>
+
+  <!-- ============================================================
+       Card 3 — advanced pane (Cmd+Enter) + required vars
+       ============================================================ -->
+  <div class="card">
+    <div class="caption">
+      <span class="name">C · Advanced pane · variables + permission</span>
+      <span class="tag">⌘↵ or Tab · inline expand</span>
+    </div>
+
+    <div class="palette">
+      <div class="pal-search">
+        <span class="mag">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </span>
+        <input value="refactor" disabled style="color: var(--ink-1);" />
+        <span class="pal-target">
+          <span class="dot"></span>
+          termloop · bridge
+          <span class="kbd-swap">⌘T</span>
+        </span>
+      </div>
+
+      <div class="pal-section">
+        <span>Selected</span><span class="count">variables required</span>
+      </div>
+
+      <div class="pal-row sel">
+        <div class="r-icon grad-violet">⌘</div>
+        <div class="r-body">
+          <div class="r-name"><span class="match">Refactor</span> module<span class="chip">acceptEdits</span></div>
+          <div class="r-sub">sonnet-4.6 <span class="pip"></span> <span class="scope">scope: workspace</span></div>
+        </div>
+        <div class="r-trail">
+          <span class="r-meta">↵ run</span>
+        </div>
+      </div>
+
+      <div class="adv">
+        <div class="field">
+          <span class="field-label">Permission</span>
+          <div class="seg">
+            <button>default</button>
+            <button class="on">acceptEdits</button>
+            <button>plan</button>
+            <button>bypass</button>
+          </div>
+        </div>
+        <div class="field">
+          <span class="field-label">Run mode</span>
+          <div class="seg">
+            <button class="on">headless</button>
+            <button>terminal</button>
+          </div>
+        </div>
+        <div class="field" style="grid-column: span 2;">
+          <span class="field-label">Variables</span>
+          <div class="var-input">
+            <span class="name">$target_path</span>
+            <span class="eq">=</span>
+            <span class="val">Sources/TermLoop/UI/QuickAction/</span>
+          </div>
+          <div class="var-input">
+            <span class="name">$style_guide</span>
+            <span class="eq">=</span>
+            <span style="color: var(--ink-3);">(empty — required)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pal-footer">
+        <div class="left">
+          <span class="brand"><span class="logo"></span> termloop</span>
+          <span class="sep"></span>
+          <span class="hint">acceptEdits · headless</span>
+        </div>
+        <div class="right">
+          <span class="act"><span class="lbl">run</span><span class="kbd">↵</span></span>
+          <span class="act"><span class="lbl">close pane</span><span class="kbd">tab</span></span>
+          <span class="act"><span class="lbl">dismiss</span><span class="kbd esc">esc</span></span>
+        </div>
+      </div>
+    </div>
+
+    <p class="note">Missing required variable is called out inline, preventing the launch until filled. <b>Esc</b> remains the universal exit — closes pane first, then palette — and the footer labels this explicitly.</p>
+  </div>
+
+  <!-- ============================================================
+       Card 4 — launching + auto-dismiss toast
+       ============================================================ -->
+  <div class="card">
+    <div class="caption">
+      <span class="name">D · Launch feedback · palette auto-closes</span>
+      <span class="tag">~120 ms · then fade out</span>
+    </div>
+
+    <div class="palette">
+      <div class="pal-search">
+        <span class="mag">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </span>
+        <input value="plan feature" disabled style="color: var(--ink-1);" />
+        <span class="pal-target">
+          <span class="dot"></span>
+          termloop · bridge
+          <span class="kbd-swap">⌘T</span>
+        </span>
+      </div>
+
+      <div class="pal-row inflight">
+        <div class="r-icon grad-blue">★</div>
+        <div class="r-body">
+          <div class="r-name">Plan feature</div>
+          <div class="r-sub">starting headless run · <span class="perm">bypass</span> · <span class="scope">workspace: bridge</span></div>
+        </div>
+        <div class="r-trail">
+          <span class="spinner"></span>
+          <span class="r-meta">launched</span>
+        </div>
+      </div>
+
+      <div class="pal-footer">
+        <div class="left">
+          <span class="brand"><span class="logo"></span> termloop</span>
+          <span class="sep"></span>
+          <span class="hint">closing in <b>120 ms</b> · view in Runs tab</span>
+        </div>
+        <div class="right">
+          <span class="act"><span class="lbl">cancel</span><span class="kbd esc">esc</span></span>
+        </div>
+      </div>
+    </div>
+
+    <div style="height: 20px;"></div>
+
+    <div class="toast">
+      <div class="check">✓</div>
+      <div class="t-body">
+        <div class="t-name">Plan feature launched</div>
+        <div class="t-sub">run <b>r_7Jm2Qx</b> · bridge · bypass · <span style="color: var(--ink-3)">⌘R to reveal</span></div>
+      </div>
+      <div class="t-kbd">auto-hide 2.4s</div>
+    </div>
+
+    <div class="callout">
+      <b>Addresses "başlatınca kapansın":</b> on <b>↵</b>, the selected row shows an inflight state for ~120 ms (so the user sees what launched), then the panel fades out automatically. A small, non-blocking toast in the top-right confirms the run and offers <b>⌘R</b> to jump to the Runs tab — no lingering palette to close.
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Card 5 — light theme variant
+       ============================================================ -->
+  <div class="card">
+    <div class="caption">
+      <span class="name">E · Light theme variant</span>
+      <span class="tag">follows macOS appearance</span>
+    </div>
+
+    <div class="palette light">
+      <div class="pal-search">
+        <span class="mag">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </span>
+        <input placeholder="Run an agent or type a free prompt…" disabled />
+        <span class="pal-target">
+          <span class="dot"></span>
+          termloop · bridge
+          <span class="kbd-swap">⌘T</span>
+        </span>
+      </div>
+
+      <div class="pal-section"><span>Recent</span><span class="count">8 templates</span></div>
+
+      <div class="pal-row sel">
+        <div class="r-icon grad-blue">★</div>
+        <div class="r-body">
+          <div class="r-name">Plan feature<span class="chip danger">bypass</span></div>
+          <div class="r-sub" style="color: rgba(255,255,255,0.8);">sonnet-4.6 · scope: workspace · used 4 min ago</div>
+        </div>
+        <div class="r-trail">
+          <span class="r-meta" style="color: rgba(255,255,255,0.75);">↵ run</span>
+          <span class="r-shortcut">⌘1</span>
+        </div>
+      </div>
+
+      <div class="pal-row">
+        <div class="r-icon grad-amber">⚡</div>
+        <div class="r-body">
+          <div class="r-name">Triage failing tests</div>
+          <div class="r-sub">haiku-4.5 · scope: workspace · $branch_name</div>
+        </div>
+        <div class="r-trail"><span class="r-shortcut">⌘2</span></div>
+      </div>
+
+      <div class="pal-row">
+        <div class="r-icon grad-green">↻</div>
+        <div class="r-body">
+          <div class="r-name">Review open PR</div>
+          <div class="r-sub">opus-4.7 · scope: root · used yesterday</div>
+        </div>
+        <div class="r-trail"><span class="r-shortcut">⌘3</span></div>
+      </div>
+
+      <div class="pal-row">
+        <div class="r-icon grad-violet">⌘</div>
+        <div class="r-body">
+          <div class="r-name">Refactor module<span class="chip">acceptEdits</span></div>
+          <div class="r-sub">sonnet-4.6 · scope: workspace · $target_path</div>
+        </div>
+        <div class="r-trail"><span class="r-shortcut">⌘4</span></div>
+      </div>
+
+      <div class="pal-footer">
+        <div class="left">
+          <span class="brand"><span class="logo"></span> termloop</span>
+          <span class="sep"></span>
+          <span class="hint">bypass · headless run</span>
+        </div>
+        <div class="right">
+          <span class="act"><span class="lbl">run</span><span class="kbd">↵</span></span>
+          <span class="act"><span class="lbl">advanced</span><span class="kbd">⌘</span><span class="kbd plus">+</span><span class="kbd">↵</span></span>
+          <span class="act"><span class="lbl">close</span><span class="kbd esc">esc</span></span>
+        </div>
+      </div>
+    </div>
+
+    <p class="note">Same structure, light surface. Blue selection stays vivid; permission/variable chips adapt their tint. Honors <code>NSWindow.effectiveAppearance</code> at present time, re-keyed on appearance change.</p>
+  </div>
+
+  <!-- ============================================================
+       Card 6 — interaction spec summary
+       ============================================================ -->
+  <div class="card span-2">
+    <div class="caption">
+      <span class="name">Interaction spec · key behaviors</span>
+      <span class="tag">for QuickActionView / QuickActionViewModel</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; background: #fff; border: 1px solid rgba(0,0,0,0.08); border-radius: 12px; padding: 18px; color: #17181c;">
+      <div>
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #5a5d66; margin-bottom: 8px;">Dismissal</div>
+        <ul style="margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.65; color: #2a2b30;">
+          <li><b>Esc</b> while pane closed → palette closes</li>
+          <li><b>Esc</b> while advanced pane open → closes pane only</li>
+          <li>Click outside NSPanel → closes palette</li>
+          <li>Target app change → closes palette</li>
+          <li><b>↵</b> (launch) → inflight 120&nbsp;ms → fade-out</li>
+        </ul>
+      </div>
+      <div>
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #5a5d66; margin-bottom: 8px;">Launch confirmation</div>
+        <ul style="margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.65; color: #2a2b30;">
+          <li>Selected row flips to inflight state on submit</li>
+          <li>Fade palette opacity 1 → 0 over 140&nbsp;ms after run accepted</li>
+          <li>Toast appears top-right: <b>⌘R</b> reveal, auto-hide 2.4&nbsp;s</li>
+          <li>No double-launch: Enter disabled during inflight window</li>
+        </ul>
+      </div>
+      <div>
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #5a5d66; margin-bottom: 8px;">Always-visible cues</div>
+        <ul style="margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.65; color: #2a2b30;">
+          <li>Footer: <b>↵</b> run · <b>⌘↵</b> advanced · <b>⌘T</b> target · <b>esc</b> close</li>
+          <li>Target pill shows active workspace/project + shortcut hint</li>
+          <li>Permission chip on row = no hidden <code>bypass</code></li>
+          <li>Required variables shown on row before advanced opens</li>
+          <li>Scope mismatch (workspace-only on root) row disabled, not hidden</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

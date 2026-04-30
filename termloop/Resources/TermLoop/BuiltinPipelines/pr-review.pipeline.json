@@ -1,0 +1,31 @@
+{
+  "id": "pr-review",
+  "name": "PR Review",
+  "description": "Three independent reviewers (logic, security, regression) audit the PR in parallel; a merger produces one report.",
+  "scope": "workspace",
+  "triggers": [
+    { "type": "manual" }
+  ],
+  "variables": {
+    "brief": {
+      "required": true,
+      "prompt": "PR numarası veya tanımı."
+    }
+  },
+  "nodes": [
+    {
+      "id": "review_fanout",
+      "type": "parallel_merge",
+      "parallel": [
+        { "role": "agents/logic-reviewer.md", "output": "logic.md" },
+        { "role": "agents/security-reviewer.md", "output": "security.md" },
+        { "role": "agents/regression-reviewer.md", "output": "regression.md" }
+      ],
+      "merger": {
+        "role": "agents/review-merger.md",
+        "inputs": ["logic.md", "security.md", "regression.md"],
+        "output": "REVIEW.md"
+      }
+    }
+  ]
+}

@@ -1,0 +1,954 @@
+// Copyright (c) 2026-present Ferit özcan. All rights reserved.
+// Part of TermLoop — GPL-3.0-or-later
+
+import Foundation
+
+enum TermLoopMCPServer {
+    private static let supportedProtocolVersions = [
+        "2025-03-26",
+        "2024-11-05",
+    ]
+    /// Comma-separated names of optional built-in tools the active project's
+    /// abilities have opted into. Optional tools (set_jira_ticket, ...) are
+    /// only surfaced when listed.
+    private static let enabledToolsEnvKey = "TERMLOOP_ENABLED_MCP_TOOLS"
+
+    /// CLI-side copy of the Jira ticket reporter tool name. The app side keeps
+    /// a matching `TermLoopBuiltInMCP.setJiraTicketToolName`; the two cannot
+    /// share a constant because the CLI target does not link app sources.
+    private static let setJiraTicketToolName = "set_jira_ticket"
+    private static let getJiraTicketToolName = "get_jira_ticket"
+    private static let jiraAbilityId = "working-with-jira"
+    private static let jiraBindingId = "ticket"
+    private static let askToToolName = "ask_to"
+    private static let reportLinkToolName = "report_link"
+    private static let contextBankProposeToolName = "context_bank_propose_suggestion"
+    private static let contextBankFinalizeToolName = "context_bank_finalize_run"
+
+    /// CLI-side mirror of the Run Targets tool names. App side keeps its own
+    /// copy in `TermLoopBuiltInMCP`; the two cannot share a constant because
+    /// the CLI target does not link app sources.
+    private static let setRunTargetsToolName = "set_run_targets"
+    private static let getRunTargetsToolName = "get_run_targets"
+    private static let runningYourApplicationAbilityId = "running-your-application"
+
+    /// Built-in tool descriptor — name, description, JSON schema (as
+    /// JSONSerialization-ready dictionary), and a handler closure that runs in
+    /// the MCP server process.
+    private struct BuiltInTool {
+        let name: String
+        let description: String
+        let inputSchema: [String: Any]
+        /// `true` → always present in tools/list, regardless of ability state.
+        /// `false` → only present when ability opts in via env var.
+        let alwaysOn: Bool
+        let handler: (
+            _ id: Any,
+            _ arguments: [String: Any],
+            _ processEnv: [String: String],
+            _ socketPath: String
+        ) -> [String: Any]
+    }
+
+    /// Single source of truth for TermLoop's built-in MCP tools. Add new
+    /// entries here; ability bundles only need to opt-in by listing the name.
+    private static let builtInTools: [BuiltInTool] = [
+        BuiltInTool(
+            name: setJiraTicketToolName,
+            description: "Tell TermLoop which Jira ticket the current workspace is working on. PURE TELEMETRY — does NOT touch Jira. Updates the sidebar chip and the per-workspace ticket binding. Call when the active ticket changes OR when its status/url changes (e.g. after a transition from In Progress to In Review or Done). Skip duplicate calls when nothing changed.",
+            inputSchema: [
+                "type": "object",
+                "properties": [
+                    "key": [
+                        "type": "string",
+                        "description": "Jira issue key (e.g. \"PROJ-123\"). Required."
+                    ],
+                    "status": [
+                        "type": "string",
+                        "description": "Optional Jira status (e.g. \"In Progress\", \"In Review\") appended after \" · \" in the chip."
+                    ],
+                    "url": [
+                        "type": "string",
+                        "description": "Optional Jira browse URL so the chip becomes a link."
+                    ]
+                ],
+                "required": ["key"]
+            ],
+            alwaysOn: false,
+            handler: runSetJiraTicket
+        ),
+        BuiltInTool(
+            name: getJiraTicketToolName,
+            description: "Read the Jira ticket previously set for this workspace via set_jira_ticket. Returns `set: false` when no ticket is bound. Use this instead of guessing from the branch name when picking up an in-progress workspace.",
+            inputSchema: [
+                "type": "object",
+                "properties": [:],
+                "additionalProperties": false
+            ],
+            alwaysOn: false,
+            handler: runGetJiraTicket
+        ),
+        BuiltInTool(
+            name: setRunTargetsToolName,
+            description: "Tell TermLoop what's running for this workspace right now (dev server URL, app bundle path, dashboard, log file). PURE TELEMETRY — does NOT start or stop anything. FULL REPLACE: send the complete set on every call; anything dropped from the array disappears from the sidebar chip. Each entry is one chip row in the worktree's Running popover. Call after starting/stopping the app or when status changes; skip duplicate calls when nothing changed.",
+            inputSchema: [
+                "type": "object",
+                "properties": [
+                    "targets": [
+                        "type": "array",
+                        "description": "All currently relevant run targets. Empty array clears the chip.",
+                        "items": [
+                            "type": "object",
+                            "properties": [
+                                "label": [
+                                    "type": "string",
+                                    "description": "Short display name for the chip row (e.g. \"Aspire dashboard\", \"AdminUi\", \"App\"). Used as stable identity across calls."
+                                ],
+                                "url": [
+                                    "type": "string",
+                                    "description": "Optional http(s) or file:// URL the row should open when clicked."
+                                ],
+                                "path": [
+                                    "type": "string",
+                                    "description": "Optional filesystem path. Converted to file:// for the row's link. Use for app bundles, log files."
+                                ],
+                                "status": [
+                                    "type": "string",
+                                    "description": "Optional status string. Recommended values: \"running\" (green), \"stopped\" (gray), \"error\" (red)."
+                                ]
+                            ],
+                            "required": ["label"]
+                        ]
+                    ]
+                ],
+                "required": ["targets"]
+            ],
+            alwaysOn: false,
+            handler: runSetRunTargets
+        ),
+        BuiltInTool(
+            name: getRunTargetsToolName,
+            description: "Read the current run targets bound to this workspace via set_run_targets. Returns the array as it appears in the sidebar chip. Use on workspace resume so you don't re-derive run state from scratch.",
+            inputSchema: [
+                "type": "object",
+                "properties": [:],
+                "additionalProperties": false
+            ],
+            alwaysOn: false,
+            handler: runGetRunTargets
+        ),
+        BuiltInTool(
+            name: askToToolName,
+            description: "Ask a helper agent (codex / claude / gemini) — use when the user wants to consult another agent. Reply lands on the source workspace's bridge cable.",
+            inputSchema: [
+                "type": "object",
+                "properties": [
+                    "target": [
+                        "type": "string",
+                        "enum": ["codex", "claude", "gemini"],
+                        "description": "Which agent should answer."
+                    ],
+                    "message": [
+                        "type": "string",
+                        "description": "The question / handoff verbatim. Sent as the helper's first user turn."
+                    ],
+                    "target_prompt": [
+                        "type": "string",
+                        "description": "Optional system-prompt override for the helper (extra persona / scope guidance). Empty for default."
+                    ]
+                ],
+                "required": ["target", "message"]
+            ],
+            alwaysOn: true,
+            handler: runAskTo
+        ),
+        BuiltInTool(
+            name: reportLinkToolName,
+            description: "Report a build, preview, or artifact link back to TermLoop so it appears in the sidebar.",
+            inputSchema: [
+                "type": "object",
+                "properties": [
+                    "url": [
+                        "type": "string",
+                        "description": "The absolute URL to show in the sidebar."
+                    ],
+                    "title": [
+                        "type": "string",
+                        "description": "Short label shown next to the link."
+                    ],
+                    "kind": [
+                        "type": "string",
+                        "description": "Optional category like build, preview, logs, artifact."
+                    ]
+                ],
+                "required": ["url"]
+            ],
+            alwaysOn: true,
+            handler: runReportLink
+        ),
+        BuiltInTool(
+            name: contextBankProposeToolName,
+            description: "Propose a single Context Bank suggestion. Call once per suggestion you want the user to review. The applier writes the same `add_text` to `target_path` plus every path in `mirror_paths` (only for `add`).",
+            inputSchema: [
+                "type": "object",
+                "properties": [
+                    "action": [
+                        "type": "string",
+                        "enum": ["add", "replace", "move"],
+                        "description": "Mutation kind. `add` appends text; `replace` swaps a verbatim block; `move` migrates a block from one file to another."
+                    ],
+                    "target_path": [
+                        "type": "string",
+                        "description": "Absolute path of the primary destination file."
+                    ],
+                    "mirror_paths": [
+                        "type": "array",
+                        "items": ["type": "string"],
+                        "description": "Additional absolute paths that should receive the identical `add_text` (only for `add`). Use when CLAUDE/AGENTS/GEMINI siblings are kept in lockstep — but verify with Read before grouping."
+                    ],
+                    "from_path": [
+                        "type": "string",
+                        "description": "Absolute source path for `move`."
+                    ],
+                    "add_text": [
+                        "type": "string",
+                        "description": "Markdown text to insert. Required for `add` and `replace`."
+                    ],
+                    "replace_old_text": [
+                        "type": "string",
+                        "description": "Verbatim text of the entry being replaced (required for `replace`)."
+                    ],
+                    "reasoning": [
+                        "type": "string",
+                        "description": "Why this matters and why this path. Shown to the user on the suggestion card."
+                    ],
+                    "source_quote": [
+                        "type": "string",
+                        "description": "Short excerpt from the analyzed session that motivated this suggestion."
+                    ],
+                    "confidence": [
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1,
+                        "description": "Calibrated 0–1 confidence in the suggestion."
+                    ]
+                ],
+                "required": ["action", "target_path", "reasoning", "confidence"]
+            ],
+            alwaysOn: true,
+            handler: runContextBankPropose
+        ),
+        BuiltInTool(
+            name: contextBankFinalizeToolName,
+            description: "Signal the Context Bank analysis is complete. Call exactly once after all `context_bank_propose_suggestion` calls (including zero — calling this with no prior proposals is the correct way to say 'nothing worth recording').",
+            inputSchema: [
+                "type": "object",
+                "properties": [
+                    "summary": [
+                        "type": "string",
+                        "description": "Optional one-line summary of what was decided. Visible in the analyze run history."
+                    ]
+                ]
+            ],
+            alwaysOn: true,
+            handler: runContextBankFinalize
+        )
+    ]
+
+    static func run(processEnv: [String: String], socketPath: String) throws {
+        while let line = readLine(strippingNewline: true) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { continue }
+            let payloads = parseMessages(from: trimmed)
+            for payload in payloads {
+                if let response = handle(
+                    payload,
+                    processEnv: processEnv,
+                    socketPath: socketPath
+                ) {
+                    try write(response: response)
+                }
+            }
+        }
+    }
+
+    private static func parseMessages(from line: String) -> [[String: Any]] {
+        guard let data = line.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) else {
+            return []
+        }
+        if let one = json as? [String: Any] {
+            return [one]
+        }
+        if let many = json as? [[String: Any]] {
+            return many
+        }
+        return []
+    }
+
+    private static func handle(
+        _ message: [String: Any],
+        processEnv: [String: String],
+        socketPath: String
+    ) -> [String: Any]? {
+        let method = message["method"] as? String
+        let id = message["id"]
+        let params = message["params"] as? [String: Any] ?? [:]
+
+        switch method {
+        case "initialize":
+            let requestedVersion = (params["protocolVersion"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let negotiatedVersion = requestedVersion
+                .flatMap { supportedProtocolVersions.contains($0) ? $0 : nil }
+                ?? supportedProtocolVersions[0]
+            return result(
+                id: id,
+                body: [
+                    "protocolVersion": negotiatedVersion,
+                    "capabilities": [
+                        "tools": [
+                            "listChanged": false
+                        ]
+                    ],
+                    "serverInfo": [
+                        "name": "TermLoop MCP",
+                        "version": "1.0.0"
+                    ]
+                ]
+            )
+        case "notifications/initialized":
+            return nil
+        case "ping":
+            return result(id: id, body: [:])
+        case "tools/list":
+            let enabled = enabledToolNameSet(env: processEnv)
+            let visible = builtInTools.filter { tool in
+                tool.alwaysOn || enabled.contains(tool.name)
+            }
+            let toolList: [[String: Any]] = visible.map { tool in
+                [
+                    "name": tool.name,
+                    "description": tool.description,
+                    "inputSchema": tool.inputSchema
+                ]
+            }
+            return result(id: id, body: ["tools": toolList])
+        case "tools/call":
+            guard let id else {
+                return error(
+                    id: nil,
+                    code: -32600,
+                    message: "tools/call requires id"
+                )
+            }
+            let requestedTool = (params["name"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let enabled = enabledToolNameSet(env: processEnv)
+            guard let tool = builtInTools.first(where: { $0.name == requestedTool }),
+                  tool.alwaysOn || enabled.contains(tool.name) else {
+                return error(
+                    id: id,
+                    code: -32601,
+                    message: "Unknown tool: \(requestedTool)"
+                )
+            }
+            let arguments = params["arguments"] as? [String: Any] ?? [:]
+            return tool.handler(id, arguments, processEnv, socketPath)
+        default:
+            guard let id else { return nil }
+            return error(
+                id: id,
+                code: -32601,
+                message: "Method not found: \(method ?? "unknown")"
+            )
+        }
+    }
+
+    /// Resolves the opt-in tool set. Prefers a fresh on-disk read of
+    /// `<cwd>/.termloop/abilities/*/ability.json` when that directory exists
+    /// — that path stays correct across ability toggles within a single MCP
+    /// server lifetime and works for agents that sandbox MCP subprocess env
+    /// (Codex). Falls back to `TERMLOOP_ENABLED_MCP_TOOLS` (set by TermLoop
+    /// at agent launch and inherited by env-propagating agents like Claude)
+    /// only when the abilities directory cannot be located — e.g. agent CWD
+    /// is not the project root.
+    private static func enabledToolNameSet(env: [String: String]) -> Set<String> {
+        if let disk = enabledToolNamesFromCWDIfAvailable() {
+            return disk
+        }
+        return enabledToolNamesFromEnv(env)
+    }
+
+    private static func enabledToolNamesFromEnv(_ env: [String: String]) -> Set<String> {
+        guard let raw = env[enabledToolsEnvKey], !raw.isEmpty else { return [] }
+        return Set(
+            raw.split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )
+    }
+
+    /// Mirrors the off-state token of `AbilityActivation` in the app target.
+    /// Kept inline because the CLI does not link the app's ability types.
+    private static let abilityActivationOffToken = "off"
+
+    /// Walks `<cwd>/.termloop/abilities/` for ability bundles. Returns the
+    /// union of `termLoopMCPTools` entries whose binding is enabled and whose
+    /// owning ability is not turned off. Tolerant of legacy bare-string
+    /// entries. Returns nil (not empty set) when the directory is missing so
+    /// the caller can distinguish "no abilities" from "can't see abilities".
+    ///
+    /// Mirrors `TerminalAgentRunner.enabledAbilityMCPToolNames`: the
+    /// `working-with-jira` ability auto-opts into `set_jira_ticket` whenever
+    /// it is active, so a bindings-only ability discovered via the disk
+    /// fallback (e.g., MCP server invoked outside the runner-launched env)
+    /// still sees the tool and the chip pipeline keeps working.
+    private static func enabledToolNamesFromCWDIfAvailable() -> Set<String>? {
+        let abilitiesDir = FileManager.default.currentDirectoryPath + "/.termloop/abilities"
+        guard let entries = try? FileManager.default.contentsOfDirectory(atPath: abilitiesDir) else {
+            return nil
+        }
+        var names: Set<String> = []
+        for entry in entries {
+            let manifestPath = abilitiesDir + "/" + entry + "/ability.json"
+            guard let data = FileManager.default.contents(atPath: manifestPath),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { continue }
+            if (json["activation"] as? String) == abilityActivationOffToken { continue }
+            if let tools = json["termLoopMCPTools"] as? [Any] {
+                for tool in tools {
+                    if let name = tool as? String {
+                        names.insert(name)
+                    } else if let obj = tool as? [String: Any],
+                              let name = obj["name"] as? String,
+                              (obj["enabled"] as? Bool) ?? true {
+                        names.insert(name)
+                    }
+                }
+            }
+            if (json["id"] as? String) == jiraAbilityId {
+                names.insert(setJiraTicketToolName)
+                names.insert(getJiraTicketToolName)
+            }
+            if (json["id"] as? String) == runningYourApplicationAbilityId {
+                names.insert(setRunTargetsToolName)
+                names.insert(getRunTargetsToolName)
+            }
+        }
+        return names
+    }
+
+    // MARK: Built-in tool handlers
+
+    /// Jira ticket telemetry. Maps `(key, status?, url?)` onto the underlying
+    /// V2 binding wire format with hardcoded ability/binding ids — keeps the
+    /// app-side storage and chip rendering pipeline unchanged.
+    private static func runSetJiraTicket(
+        id: Any,
+        arguments: [String: Any],
+        processEnv: [String: String],
+        socketPath: String
+    ) -> [String: Any] {
+        let key = ((arguments["key"] as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            return toolResult(id: id,
+                              text: "Missing required argument: key",
+                              isError: true)
+        }
+        let status = (arguments["status"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let url = (arguments["url"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let workspaceParams = workspaceTargetParams(env: processEnv)
+        guard !workspaceParams.isEmpty else {
+            return toolResult(id: id,
+                              text: "TermLoop daemon target unknown: TERMLOOP_WORKSPACE_ID env var is unset and current working directory is empty.",
+                              isError: true)
+        }
+
+        var params: [String: Any] = [
+            "ability_id": jiraAbilityId,
+            "binding_id": jiraBindingId,
+            "label": key,
+            "status": status as Any? ?? NSNull(),
+            "url": url as Any? ?? NSNull()
+        ]
+        for (k, v) in workspaceParams { params[k] = v }
+
+        let client = SocketClient(path: socketPath)
+        do {
+            try client.connect()
+            defer { client.close() }
+            let response = try client.sendV2(
+                method: "workspace.report_agent_binding",
+                params: params
+            )
+            if let errorText = extractErrorMessage(response) {
+                return toolResult(id: id, text: errorText, isError: true)
+            }
+            let suffix = (status?.isEmpty == false) ? " · \(status!)" : ""
+            return toolResult(id: id,
+                              text: "Reported Jira ticket \(key)\(suffix)",
+                              isError: false)
+        } catch {
+            return toolResult(id: id,
+                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(error.localizedDescription)",
+                              isError: true)
+        }
+    }
+
+    /// Read-side counterpart to `runSetJiraTicket`. Returns the previously
+    /// reported Jira ticket for this workspace, or "no ticket set yet".
+    private static func runGetJiraTicket(
+        id: Any,
+        arguments: [String: Any],
+        processEnv: [String: String],
+        socketPath: String
+    ) -> [String: Any] {
+        let workspaceParams = workspaceTargetParams(env: processEnv)
+        guard !workspaceParams.isEmpty else {
+            return toolResult(id: id,
+                              text: "TermLoop daemon target unknown: TERMLOOP_WORKSPACE_ID env var is unset and current working directory is empty.",
+                              isError: true)
+        }
+        let client = SocketClient(path: socketPath)
+        do {
+            try client.connect()
+            defer { client.close() }
+            let response = try client.sendV2(
+                method: "workspace.get_jira_ticket",
+                params: workspaceParams
+            )
+            if let errorText = extractErrorMessage(response) {
+                return toolResult(id: id, text: errorText, isError: true)
+            }
+            guard let result = (response["result"] as? [String: Any]) else {
+                return toolResult(id: id,
+                                  text: "TermLoop daemon returned no result for workspace.get_jira_ticket — daemon may not be running. Restart TermLoop and try again.",
+                                  isError: true)
+            }
+            let isSet = (result["set"] as? Bool) ?? false
+            guard isSet, let key = result["key"] as? String else {
+                return toolResult(id: id,
+                                  text: "No Jira ticket set for this workspace yet.",
+                                  isError: false)
+            }
+            let status = (result["status"] as? String).map { " · \($0)" } ?? ""
+            let url = (result["url"] as? String).map { " (\($0))" } ?? ""
+            return toolResult(id: id,
+                              text: "\(key)\(status)\(url)",
+                              isError: false)
+        } catch {
+            return toolResult(id: id,
+                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(error.localizedDescription)",
+                              isError: true)
+        }
+    }
+
+    /// Run targets telemetry. Maps `(targets: [{label, url?, path?, status?}])`
+    /// onto the `workspace.set_run_targets` V2 method, which atomically
+    /// replaces every binding under the `running-your-application` ability.
+    /// Full-replace semantics: anything dropped from `targets` is cleared
+    /// from the sidebar.
+    private static func runSetRunTargets(
+        id: Any,
+        arguments: [String: Any],
+        processEnv: [String: String],
+        socketPath: String
+    ) -> [String: Any] {
+        guard let targetsRaw = arguments["targets"] as? [[String: Any]] else {
+            return toolResult(id: id,
+                              text: "Missing required argument: targets (array)",
+                              isError: true)
+        }
+        let workspaceParams = workspaceTargetParams(env: processEnv)
+        guard !workspaceParams.isEmpty else {
+            return toolResult(id: id,
+                              text: "TermLoop daemon target unknown: TERMLOOP_WORKSPACE_ID env var is unset and current working directory is empty.",
+                              isError: true)
+        }
+        var params: [String: Any] = ["targets": targetsRaw]
+        for (k, v) in workspaceParams { params[k] = v }
+        let client = SocketClient(path: socketPath)
+        do {
+            try client.connect()
+            defer { client.close() }
+            let response = try client.sendV2(
+                method: "workspace.set_run_targets",
+                params: params
+            )
+            if let errorText = extractErrorMessage(response) {
+                return toolResult(id: id, text: errorText, isError: true)
+            }
+            let count = targetsRaw.count
+            let summary = count == 0
+                ? "Cleared run targets."
+                : "Reported \(count) run target\(count == 1 ? "" : "s")."
+            return toolResult(id: id, text: summary, isError: false)
+        } catch {
+            return toolResult(id: id,
+                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(error.localizedDescription)",
+                              isError: true)
+        }
+    }
+
+    /// Read-side counterpart. Returns the run targets currently bound to the
+    /// workspace's worktree as a one-line-per-target summary so the agent can
+    /// reason about what's already up before re-publishing.
+    private static func runGetRunTargets(
+        id: Any,
+        arguments: [String: Any],
+        processEnv: [String: String],
+        socketPath: String
+    ) -> [String: Any] {
+        let workspaceParams = workspaceTargetParams(env: processEnv)
+        guard !workspaceParams.isEmpty else {
+            return toolResult(id: id,
+                              text: "TermLoop daemon target unknown: TERMLOOP_WORKSPACE_ID env var is unset and current working directory is empty.",
+                              isError: true)
+        }
+        let client = SocketClient(path: socketPath)
+        do {
+            try client.connect()
+            defer { client.close() }
+            let response = try client.sendV2(
+                method: "workspace.get_run_targets",
+                params: workspaceParams
+            )
+            if let errorText = extractErrorMessage(response) {
+                return toolResult(id: id, text: errorText, isError: true)
+            }
+            guard let result = response["result"] as? [String: Any],
+                  let targets = result["targets"] as? [[String: Any]] else {
+                return toolResult(id: id,
+                                  text: "TermLoop daemon returned no result for workspace.get_run_targets.",
+                                  isError: true)
+            }
+            if targets.isEmpty {
+                return toolResult(id: id,
+                                  text: "No run targets set for this workspace yet.",
+                                  isError: false)
+            }
+            let lines: [String] = targets.map { target in
+                let label = (target["label"] as? String) ?? "(no label)"
+                let status = (target["status"] as? String).map { " · \($0)" } ?? ""
+                let url = (target["url"] as? String).map { " (\($0))" } ?? ""
+                return "- \(label)\(status)\(url)"
+            }
+            return toolResult(id: id,
+                              text: lines.joined(separator: "\n"),
+                              isError: false)
+        } catch {
+            return toolResult(id: id,
+                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(error.localizedDescription)",
+                              isError: true)
+        }
+    }
+
+    /// `ask_to` — programmatic Ask-To bridge launcher. Forwards
+    /// `(target, message, target_prompt)` plus the resolved workspace target
+    /// to the daemon's `bridge.ask_to` v2 method, which spawns a hidden
+    /// helper workspace running the chosen agent and kicks off `message`
+    /// as the helper's first user turn.
+    private static func runAskTo(
+        id: Any,
+        arguments: [String: Any],
+        processEnv: [String: String],
+        socketPath: String
+    ) -> [String: Any] {
+        let target = ((arguments["target"] as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard ["codex", "claude", "gemini"].contains(target) else {
+            return toolResult(id: id,
+                              text: "Invalid target: must be codex, claude, or gemini.",
+                              isError: true)
+        }
+        let message = ((arguments["message"] as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty else {
+            return toolResult(id: id,
+                              text: "Missing required argument: message",
+                              isError: true)
+        }
+        let targetPrompt = (arguments["target_prompt"] as? String) ?? ""
+
+        let workspaceParams = workspaceTargetParams(env: processEnv)
+        guard let workspaceId = workspaceParams["workspace_id"] as? String,
+              !workspaceId.isEmpty else {
+            return toolResult(id: id,
+                              text: "TermLoop daemon target unknown: TERMLOOP_WORKSPACE_ID env var is unset. ask_to requires a workspace-bound MCP session.",
+                              isError: true)
+        }
+
+        let params: [String: Any] = [
+            "workspace_id": workspaceId,
+            "target": target,
+            "message": message,
+            "target_prompt": targetPrompt
+        ]
+
+        let client = SocketClient(path: socketPath)
+        do {
+            try client.connect()
+            defer { client.close() }
+            // sendV2 unwraps the {"ok":true,"result":{...}} envelope and
+            // returns the inner result dict; on a v2 error it throws with
+            // the daemon's code/message embedded in the CLIError.
+            let result = try client.sendV2(method: "bridge.ask_to", params: params)
+            let bridgeId = (result["bridge_id"] as? String) ?? "?"
+            let helperId = (result["helper_workspace_id"] as? String) ?? "?"
+            return toolResult(
+                id: id,
+                text: "Sent to \(target). bridge_id=\(bridgeId), helper_workspace_id=\(helperId). The helper's reply will appear on the source workspace's bridge cable; forward it back manually with the cable's arrow button when ready.",
+                isError: false
+            )
+        } catch {
+            return toolResult(id: id,
+                              text: "ask_to failed: \(error.localizedDescription)",
+                              isError: true)
+        }
+    }
+
+    /// Mirror of the legacy V1 `report_link` flow on the structured V2 path.
+    /// Sends `(url, title, kind, agent_id)` to `workspace.report_agent_link` so
+    /// the sidebar chip pipeline can render the build link.
+    private static func runReportLink(
+        id: Any,
+        arguments: [String: Any],
+        processEnv: [String: String],
+        socketPath: String
+    ) -> [String: Any] {
+        let rawURL = ((arguments["url"] as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let parsedURL = URL(string: rawURL),
+              let scheme = parsedURL.scheme?.lowercased(),
+              !scheme.isEmpty else {
+            return toolResult(id: id, text: "Missing or invalid url", isError: true)
+        }
+        guard let workspaceId = trimmedEnv(processEnv, "TERMLOOP_WORKSPACE_ID") else {
+            return toolResult(id: id, text: "Missing TERMLOOP_WORKSPACE_ID", isError: true)
+        }
+        let title = (arguments["title"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let kind = (arguments["kind"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let agentId = trimmedEnv(processEnv, "TERMLOOP_AGENT_ID")
+
+        let client = SocketClient(path: socketPath)
+        do {
+            try client.connect()
+            defer { client.close() }
+            let response = try client.sendV2(
+                method: "workspace.report_agent_link",
+                params: [
+                    "workspace_id": workspaceId,
+                    "agent_id": agentId as Any? ?? NSNull(),
+                    "url": parsedURL.absoluteString,
+                    "title": title as Any? ?? NSNull(),
+                    "kind": kind as Any? ?? NSNull(),
+                ]
+            )
+            if let errorText = extractErrorMessage(response) {
+                return toolResult(id: id, text: errorText, isError: true)
+            }
+            return toolResult(id: id,
+                              text: "Reported \(parsedURL.absoluteString)",
+                              isError: false)
+        } catch {
+            return toolResult(id: id,
+                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(error.localizedDescription)",
+                              isError: true)
+        }
+    }
+
+    /// Forwards a curator suggestion to the daemon. Validation of the
+    /// action-specific shape (e.g. `.add` requires `add_text`) happens
+    /// app-side in `ContextBankAnalyzer.suggestion(from:sessionId:)`.
+    private static func runContextBankPropose(
+        id: Any,
+        arguments: [String: Any],
+        processEnv: [String: String],
+        socketPath: String
+    ) -> [String: Any] {
+        let action = ((arguments["action"] as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ["add", "replace", "move"].contains(action) else {
+            return toolResult(id: id,
+                              text: "Invalid action: must be add | replace | move",
+                              isError: true)
+        }
+        let targetPath = ((arguments["target_path"] as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !targetPath.isEmpty else {
+            return toolResult(id: id, text: "target_path is required", isError: true)
+        }
+        let reasoning = ((arguments["reasoning"] as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !reasoning.isEmpty else {
+            return toolResult(id: id, text: "reasoning is required", isError: true)
+        }
+        let workspaceId = trimmedEnv(processEnv, "TERMLOOP_WORKSPACE_ID")
+        let confidence = (arguments["confidence"] as? Double)
+            ?? Double(arguments["confidence"] as? Int ?? 0)
+
+        let client = SocketClient(path: socketPath)
+        do {
+            try client.connect()
+            defer { client.close() }
+            let response = try client.sendV2(
+                method: "workspace.context_bank_propose_suggestion",
+                params: [
+                    "workspace_id": workspaceId as Any? ?? NSNull(),
+                    "cwd": FileManager.default.currentDirectoryPath,
+                    "action": action,
+                    "target_path": targetPath,
+                    "mirror_paths": (arguments["mirror_paths"] as? [String]) ?? [],
+                    "from_path": arguments["from_path"] as Any? ?? NSNull(),
+                    "add_text": arguments["add_text"] as Any? ?? NSNull(),
+                    "replace_old_text": arguments["replace_old_text"] as Any? ?? NSNull(),
+                    "reasoning": reasoning,
+                    "source_quote": arguments["source_quote"] as Any? ?? NSNull(),
+                    "confidence": max(0, min(1, confidence)),
+                ]
+            )
+            if let errorText = extractErrorMessage(response) {
+                return toolResult(id: id, text: errorText, isError: true)
+            }
+            let suggestionId = ((response["result"] as? [String: Any])?["suggestion_id"] as? String) ?? ""
+            return toolResult(id: id,
+                              text: "Suggestion accepted (\(suggestionId)). Continue with more proposals or call context_bank_finalize_run.",
+                              isError: false)
+        } catch {
+            return toolResult(id: id,
+                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(error.localizedDescription)",
+                              isError: true)
+        }
+    }
+
+    /// Signals the daemon that the curator analysis is done. Always called
+    /// exactly once per fork — even if no proposals were emitted.
+    private static func runContextBankFinalize(
+        id: Any,
+        arguments: [String: Any],
+        processEnv: [String: String],
+        socketPath: String
+    ) -> [String: Any] {
+        let workspaceId = trimmedEnv(processEnv, "TERMLOOP_WORKSPACE_ID")
+        let summary = (arguments["summary"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let client = SocketClient(path: socketPath)
+        do {
+            try client.connect()
+            defer { client.close() }
+            let response = try client.sendV2(
+                method: "workspace.context_bank_finalize_run",
+                params: [
+                    "workspace_id": workspaceId as Any? ?? NSNull(),
+                    "cwd": FileManager.default.currentDirectoryPath,
+                    "summary": summary as Any? ?? NSNull(),
+                ]
+            )
+            if let errorText = extractErrorMessage(response) {
+                return toolResult(id: id, text: errorText, isError: true)
+            }
+            return toolResult(id: id, text: "Analysis finalized.", isError: false)
+        } catch {
+            return toolResult(id: id,
+                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(error.localizedDescription)",
+                              isError: true)
+        }
+    }
+
+    /// Reads a non-empty trimmed env var or returns nil. Tool handlers
+    /// rely on `TERMLOOP_WORKSPACE_ID` and `TERMLOOP_AGENT_ID`.
+    private static func trimmedEnv(_ env: [String: String], _ key: String) -> String? {
+        let trimmed = env[key]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    // MARK: JSON-RPC envelopes
+
+    private static func result(id: Any?, body: [String: Any]) -> [String: Any] {
+        [
+            "jsonrpc": "2.0",
+            "id": id as Any? ?? NSNull(),
+            "result": body
+        ]
+    }
+
+    private static func error(
+        id: Any?,
+        code: Int,
+        message: String
+    ) -> [String: Any] {
+        [
+            "jsonrpc": "2.0",
+            "id": id as Any? ?? NSNull(),
+            "error": [
+                "code": code,
+                "message": message
+            ]
+        ]
+    }
+
+    private static func toolResult(
+        id: Any,
+        text: String,
+        isError: Bool
+    ) -> [String: Any] {
+        result(
+            id: id,
+            body: [
+                "content": [
+                    [
+                        "type": "text",
+                        "text": text
+                    ]
+                ],
+                "isError": isError
+            ]
+        )
+    }
+
+    /// Builds the workspace-targeting params for a daemon call. Prefers the
+    /// canonical `TERMLOOP_WORKSPACE_ID` env injected by the runner; falls
+    /// back to the MCP subprocess's `cwd` so plain login-shell invocations
+    /// (`cd <worktree> && claude`) still resolve. Empty result means neither
+    /// route can identify a workspace.
+    private static func workspaceTargetParams(env: [String: String]) -> [String: Any] {
+        let envId = env["TERMLOOP_WORKSPACE_ID"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !envId.isEmpty {
+            return ["workspace_id": envId]
+        }
+        let cwd = FileManager.default.currentDirectoryPath
+        if !cwd.isEmpty {
+            return ["cwd": cwd]
+        }
+        return [:]
+    }
+
+    /// Pulls a human-readable error message out of a v2 socket response when
+    /// the daemon answered with `{"error": {"code": ..., "message": ...}}`
+    /// instead of `{"result": ...}`. Returns nil if the response shape is OK.
+    private static func extractErrorMessage(_ response: [String: Any]) -> String? {
+        guard let error = response["error"] as? [String: Any] else { return nil }
+        let code = (error["code"] as? String) ?? "unknown"
+        let message = (error["message"] as? String) ?? "TermLoop daemon returned an error."
+        return "TermLoop daemon: \(message) (code: \(code))"
+    }
+
+    private static func write(response: [String: Any]) throws {
+        guard JSONSerialization.isValidJSONObject(response) else {
+            return
+        }
+        let data = try JSONSerialization.data(withJSONObject: response, options: [])
+        FileHandle.standardOutput.write(data)
+        FileHandle.standardOutput.write(Data([0x0A]))
+    }
+}

@@ -1,0 +1,109 @@
+# macOS
+.DS_Store
+*.swp
+
+# Local env
+.env
+.env.local
+.env*.local
+.envrc
+
+# Editor / IDE
+.vscode/
+.idea/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+
+# Logs
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# Node / JS
+node_modules/
+.next/
+dist/
+web-build/
+*.tsbuildinfo
+.metro-health-check*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.hypothesis/
+.vercel
+
+# Zig
+.zig-cache/
+zig-out/
+
+# Xcode / Swift build artifacts
+.build/
+build/
+DerivedData/
+*.xcframework
+*.xcframework.bak-*/
+
+# CocoaPods
+Pods/
+
+# Expo / React Native generated native folders
+terminal-app/ios/
+terminal-app/android/
+.expo/
+expo-env.d.ts
+
+# Keys / certs
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.pem
+
+# termloop release artifacts
+termloop/GhosttyTabs-*.zip
+termloop/termloop-macos.dmg
+termloop/termloop-appcast.xml
+termloop/termloop-nightly-macos.dmg
+termloop/termloop-nightly-appcast.xml
+termloop/termloop-nightly-appcast-universal.xml
+
+# termloop test outputs / scratch
+termloop/tests/visual_output/
+termloop/tests/visual_report.html
+termloop/tmp/
+termloop/tmp-*/
+
+.superpowers/
+.planning/
+.agents/
+.termloop/
+.cmux-worktrees/
+.termloop-worktrees/
+.cmux/*
+!.cmux/AgentSystem/
+.cmux/
+.termloop/reviews/
+docs/superpowers/
+
+# Cloudflare Wrangler local cache (contains account id, project metadata)
+.wrangler/
+
+# Internal operational notes
+internaldocs/
+
+# Local-only project skill with private release/deploy context
+.claude/skills/termloop-release-ops/
+
+# Agent CLI per-dev state (hooks managed in user-scope ~/.claude etc. now).
+# .claude/skills/ stays tracked — shared team BMAD skills.
+.claude/settings.json
+.claude/settings.local.json
+.claude/*.bak*
+.codex/hooks.json
+.gemini/

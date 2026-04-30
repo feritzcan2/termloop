@@ -1,0 +1,614 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Termloop — Hosts / TermLoop · active agents</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    min-height: 100vh;
+    background: #131315;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+    font-feature-settings: "ss01", "cv11";
+  }
+  body {
+    padding: 72px 24px 120px;
+    background:
+      radial-gradient(900px 700px at 50% -10%, #1c1c1f 0%, #0e0e10 60%),
+      #0e0e10;
+    background-attachment: fixed;
+  }
+
+  .caption-top {
+    max-width: 920px; margin: 0 auto 36px;
+    text-align: center;
+    color: #6b6b72;
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+  .caption-top b { color: #e6e6ea; font-weight: 600; }
+  .caption-top .sep { color: #3a3a3f; margin: 0 8px; }
+
+  .stage {
+    max-width: 920px; margin: 0 auto;
+    display: flex; justify-content: center;
+    gap: 64px; flex-wrap: wrap;
+  }
+  .item { display: flex; flex-direction: column; align-items: center; gap: 22px; }
+  .item .tag {
+    font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    font-weight: 600; color: #8e8e93;
+  }
+  .item .tag b { color: #fff; }
+  .item .tag .dim { color: #3a3a3f; margin: 0 8px; }
+
+  /* ---------- iPhone frame ---------- */
+  .phone {
+    width: 390px; height: 844px;
+    border-radius: 54px;
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    box-shadow:
+      0 0 0 10px #1c1c1f,
+      0 0 0 11px #2d2d32,
+      0 60px 120px -40px rgba(0,0,0,0.85),
+      0 14px 30px rgba(0,0,0,0.45);
+  }
+  .notch {
+    position: absolute; top: 11px; left: 50%;
+    transform: translateX(-50%);
+    width: 115px; height: 33px;
+    background: #000; border-radius: 22px; z-index: 100;
+  }
+  .sb {
+    position: absolute; top: 17px; left: 0; right: 0;
+    padding: 0 34px;
+    display: flex; justify-content: space-between; align-items: center;
+    z-index: 99;
+    font-size: 15.5px; font-weight: 600;
+    color: #fff;
+    pointer-events: none;
+    letter-spacing: -0.01em;
+  }
+  .sb .r { display: flex; gap: 6px; align-items: center; }
+
+  .screen { position: absolute; inset: 0; background: #000; overflow: hidden; }
+  .scroll { position: absolute; inset: 0; padding: 60px 0 120px; overflow-y: auto; }
+
+  /* ---------- nav row ---------- */
+  .nav {
+    padding: 12px 18px 0;
+    display: flex; justify-content: space-between; align-items: center;
+    min-height: 44px;
+  }
+  .nav .back {
+    display: inline-flex; align-items: center; gap: 4px;
+    color: #fff; font-size: 17px; font-weight: 400;
+    letter-spacing: -0.01em; padding: 6px 4px;
+  }
+  .nav .more {
+    width: 34px; height: 34px;
+    display: grid; place-items: center;
+    color: #8e8e93; font-size: 21px; letter-spacing: 2px;
+    line-height: 1; padding-bottom: 10px;
+  }
+
+  /* ---------- title block ---------- */
+  .title { padding: 18px 24px 6px; }
+  .title h1 {
+    font-size: 34px; font-weight: 700;
+    letter-spacing: -0.022em; color: #fff; line-height: 1.05;
+  }
+  .title .sub {
+    margin-top: 8px;
+    color: #8e8e93;
+    font-size: 15px; font-weight: 400; letter-spacing: -0.01em;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .title .sub b { color: #fff; font-weight: 500; }
+  .title .sub .dot {
+    width: 7px; height: 7px; border-radius: 999px;
+    background: #30d158;
+    box-shadow: 0 0 10px rgba(48,209,88,0.55);
+    animation: pulse 1.8s ease-in-out infinite;
+  }
+  .title .proj {
+    margin-top: 18px;
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 14px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 999px;
+    color: #fff; font-size: 14.5px; font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  .title .proj svg { opacity: 0.55; }
+  .title .proj-sub {
+    margin-top: 10px;
+    color: #636366; font-size: 13px; font-weight: 400;
+    letter-spacing: -0.005em;
+  }
+
+  /* ---------- section ---------- */
+  .sec { padding-top: 26px; }
+  .sec-label {
+    padding: 0 24px 10px;
+    font-size: 12px; font-weight: 600;
+    color: #6b6b72;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .sec-label .n {
+    color: #48484d;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+  }
+  .sec-label .n .run { color: #ff9f0a; font-weight: 700; }
+  .sec-label .n .warn { color: #ffd60a; font-weight: 700; }
+
+  /* ---------- simple host rows (left phone) ---------- */
+  .row {
+    padding: 14px 24px;
+    display: flex; align-items: center; gap: 14px;
+    border-top: 0.5px solid rgba(255,255,255,0.07);
+  }
+  .row .main { flex: 1; min-width: 0; }
+  .row .name {
+    font-size: 17px; font-weight: 600;
+    color: #fff; letter-spacing: -0.015em; line-height: 1.2;
+  }
+  .row .host {
+    margin-top: 3px;
+    font-size: 13.5px; color: #8e8e93;
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .row .host .dim { color: #48484d; }
+  .row .aside {
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  }
+  .row .time {
+    font-size: 13.5px; color: #8e8e93;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+  .row.live .time { color: #fff; font-weight: 500; }
+  .row .dot {
+    width: 8px; height: 8px; border-radius: 999px;
+    background: transparent;
+  }
+  .row.live .dot {
+    background: #30d158;
+    box-shadow: 0 0 10px rgba(48,209,88,0.55);
+    animation: pulse 1.8s ease-in-out infinite;
+  }
+  .row .chev {
+    color: #48484d; font-size: 18px; line-height: 1;
+    margin-left: 2px; font-weight: 400;
+  }
+
+  /* ---------- agent rows (right phone) ---------- */
+  .agent {
+    padding: 14px 20px 14px 22px;
+    display: flex; align-items: flex-start; gap: 14px;
+    border-top: 0.5px solid rgba(255,255,255,0.07);
+  }
+  .agent .ico {
+    width: 20px; height: 20px;
+    flex-shrink: 0;
+    display: grid; place-items: center;
+    margin-top: 2px;
+  }
+  .agent .ico .circ {
+    width: 14px; height: 14px; border-radius: 999px;
+    display: grid; place-items: center;
+  }
+  .agent .ico .ring {
+    width: 12px; height: 12px; border-radius: 999px;
+    border: 1.5px solid #48484d;
+  }
+
+  .agent.running .circ {
+    background: #ff9f0a;
+    box-shadow: 0 0 10px rgba(255,159,10,0.55);
+    animation: pulse 1.8s ease-in-out infinite;
+  }
+  .agent.needs .ico {
+    color: #ffd60a;
+    filter: drop-shadow(0 0 6px rgba(255,214,10,0.4));
+  }
+  .agent.done .circ {
+    background: #30d158;
+    color: #0a2013;
+  }
+  .agent.done .circ svg { display: block; }
+
+  .agent .body { flex: 1; min-width: 0; padding-top: 0; }
+  .agent .task {
+    font-size: 15.5px;
+    font-weight: 500;
+    color: #fff;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    word-break: break-word;
+  }
+  .agent.idle .task { color: #8e8e93; font-weight: 400; }
+  .agent .meta {
+    margin-top: 4px;
+    font-size: 13px;
+    color: #8e8e93;
+    letter-spacing: -0.005em;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .agent .meta .sep { color: #48484d; }
+  .agent .meta .status { font-weight: 500; }
+  .agent.running .meta .status { color: #ff9f0a; }
+  .agent.needs .meta .status { color: #ffd60a; }
+  .agent.done .meta .status { color: #30d158; }
+  .agent.idle .meta .status { color: #636366; }
+
+  .agent .r {
+    text-align: right; flex-shrink: 0;
+    padding-top: 2px;
+  }
+  .agent .r .time {
+    font-size: 13.5px;
+    color: #8e8e93;
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+  }
+  .agent.running .r .time,
+  .agent.needs .r .time { color: #fff; font-weight: 500; }
+  .agent.done .r .time { color: #8e8e93; }
+
+  /* ---------- autoconnect banner ---------- */
+  .ac-banner {
+    position: absolute;
+    left: 14px; right: 14px; top: 52px;
+    padding: 10px 14px;
+    background: rgba(28,28,30,0.92);
+    -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+    border: 0.5px solid rgba(255,255,255,0.09);
+    border-radius: 14px;
+    color: #d1d1d6;
+    font-size: 13px;
+    letter-spacing: -0.01em;
+    display: flex; align-items: center; gap: 10px;
+    z-index: 50;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+  }
+  .ac-banner .spin {
+    width: 14px; height: 14px; border-radius: 999px;
+    border: 1.5px solid rgba(255,255,255,0.18);
+    border-top-color: #fff;
+    animation: spin 0.9s linear infinite;
+    flex-shrink: 0;
+  }
+  .ac-banner b { color: #fff; font-weight: 600; }
+  .ac-banner .cancel {
+    margin-left: auto; color: #8e8e93;
+    font-size: 13px; font-weight: 500;
+  }
+
+  /* ---------- FAB ---------- */
+  .fab {
+    position: absolute;
+    right: 22px; bottom: 34px;
+    width: 56px; height: 56px;
+    border-radius: 999px;
+    background: #fff; color: #000;
+    display: grid; place-items: center;
+    font-size: 28px; font-weight: 300; line-height: 1;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.3);
+    z-index: 10;
+  }
+  .home {
+    position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
+    width: 134px; height: 5px; border-radius: 999px;
+    background: rgba(255,255,255,0.22); z-index: 20;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .fade { animation: up 0.55s cubic-bezier(.2,.7,.2,1) both; }
+  .fade:nth-of-type(1) { animation-delay: 0.05s; }
+  .fade:nth-of-type(2) { animation-delay: 0.1s; }
+  .fade:nth-of-type(3) { animation-delay: 0.15s; }
+  .fade:nth-of-type(4) { animation-delay: 0.2s; }
+  .fade:nth-of-type(5) { animation-delay: 0.25s; }
+  .fade:nth-of-type(6) { animation-delay: 0.3s; }
+  @keyframes up {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+
+<div class="caption-top">
+  Termloop &nbsp;·&nbsp; Mobile <span class="sep">/</span> <b>Hosts</b> &nbsp;→&nbsp; <b>TermLoop · active agents</b>
+</div>
+
+<div class="stage">
+
+  <!-- =================== A · HOSTS ===================== -->
+  <div class="item">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="sb">
+        <span>9:41</span>
+        <span class="r">
+          <svg width="18" height="11" viewBox="0 0 18 11" fill="currentColor"><rect x="0" y="7" width="3" height="4" rx="0.5"/><rect x="5" y="5" width="3" height="6" rx="0.5"/><rect x="10" y="2.5" width="3" height="8.5" rx="0.5"/><rect x="15" y="0" width="3" height="11" rx="0.5"/></svg>
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M1 4.5 C 4 1, 12 1, 15 4.5"/><path d="M3 6.5 C 5 4, 11 4, 13 6.5"/><circle cx="8" cy="8.5" r="1" fill="currentColor" stroke="none"/></svg>
+          <svg width="24" height="11" viewBox="0 0 24 11"><rect x="0" y="0" width="22" height="11" rx="2.5" fill="none" stroke="currentColor" stroke-width="1" opacity="0.5"/><rect x="1.5" y="1.5" width="16" height="8" rx="1" fill="currentColor"/></svg>
+        </span>
+      </div>
+
+      <div class="screen">
+        <div class="ac-banner">
+          <span class="spin"></span>
+          <span>Reconnecting to <b>Highland</b>…</span>
+          <span class="cancel">Cancel</span>
+        </div>
+
+        <div class="scroll">
+          <div class="title" style="padding-top: 60px;">
+            <h1>Hosts</h1>
+            <div class="sub"><b>8</b> connections · <b>2</b> running</div>
+          </div>
+
+          <div class="sec">
+            <div class="sec-label"><span>TermLoop</span><span class="n">2</span></div>
+
+            <div class="row live fade">
+              <div class="main">
+                <div class="name">Highland</div>
+                <div class="host">100.64.0.10<span class="dim"> : </span>7878</div>
+              </div>
+              <div class="aside">
+                <span class="time">2m</span>
+                <span class="dot"></span>
+                <span class="chev">›</span>
+              </div>
+            </div>
+
+            <div class="row fade">
+              <div class="main">
+                <div class="name">Kiln</div>
+                <div class="host">kiln.tail.ts.net<span class="dim"> : </span>7878</div>
+              </div>
+              <div class="aside">
+                <span class="time">2d</span>
+                <span class="dot"></span>
+                <span class="chev">›</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="sec-label"><span>ssh</span><span class="n">3</span></div>
+
+            <div class="row live fade">
+              <div class="main">
+                <div class="name">Oak</div>
+                <div class="host">root@144.126.22.18<span class="dim"> : </span>22</div>
+              </div>
+              <div class="aside">
+                <span class="time">12m</span>
+                <span class="dot"></span>
+                <span class="chev">›</span>
+              </div>
+            </div>
+
+            <div class="row fade">
+              <div class="main">
+                <div class="name">Garden</div>
+                <div class="host">ferit@garden.local<span class="dim"> : </span>22</div>
+              </div>
+              <div class="aside">
+                <span class="time">3h</span>
+                <span class="dot"></span>
+                <span class="chev">›</span>
+              </div>
+            </div>
+
+            <div class="row fade">
+              <div class="main">
+                <div class="name">Coast</div>
+                <div class="host">ferit@coast.lan<span class="dim"> : </span>22</div>
+              </div>
+              <div class="aside">
+                <span class="time">5d</span>
+                <span class="dot"></span>
+                <span class="chev">›</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="fab">+</div>
+        <div class="home"></div>
+      </div>
+    </div>
+    <div class="tag"><b>Hosts</b> <span class="dim">·</span> autoconnect banner</div>
+  </div>
+
+  <!-- =================== B · CMUX ACTIVE AGENTS ===================== -->
+  <div class="item">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="sb">
+        <span>9:41</span>
+        <span class="r">
+          <svg width="18" height="11" viewBox="0 0 18 11" fill="currentColor"><rect x="0" y="7" width="3" height="4" rx="0.5"/><rect x="5" y="5" width="3" height="6" rx="0.5"/><rect x="10" y="2.5" width="3" height="8.5" rx="0.5"/><rect x="15" y="0" width="3" height="11" rx="0.5"/></svg>
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M1 4.5 C 4 1, 12 1, 15 4.5"/><path d="M3 6.5 C 5 4, 11 4, 13 6.5"/><circle cx="8" cy="8.5" r="1" fill="currentColor" stroke="none"/></svg>
+          <svg width="24" height="11" viewBox="0 0 24 11"><rect x="0" y="0" width="22" height="11" rx="2.5" fill="none" stroke="currentColor" stroke-width="1" opacity="0.5"/><rect x="1.5" y="1.5" width="16" height="8" rx="1" fill="currentColor"/></svg>
+        </span>
+      </div>
+
+      <div class="screen">
+        <div class="scroll">
+
+          <div class="nav">
+            <span class="back">
+              <svg width="11" height="18" viewBox="0 0 11 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 2 2 9 9 16"/></svg>
+              Hosts
+            </span>
+            <span class="more">···</span>
+          </div>
+
+          <div class="title">
+            <h1>Highland</h1>
+            <div class="sub">
+              <span class="dot"></span>
+              <b>Connected</b> · 100.64.0.10
+            </div>
+
+            <div class="proj">
+              bmadworkflowtest
+              <svg width="10" height="6" viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 1 5 5 9 1"/></svg>
+            </div>
+            <div class="proj-sub">4 projects</div>
+          </div>
+
+          <div class="sec">
+            <div class="sec-label">
+              <span>Active agents</span>
+              <span class="n"><span class="run">1</span>+<span class="warn">2</span></span>
+            </div>
+
+            <!-- RUNNING -->
+            <div class="agent running fade">
+              <div class="ico"><span class="circ"></span></div>
+              <div class="body">
+                <div class="task">session restore kısmında zat…</div>
+                <div class="meta">
+                  <span>Claude Code</span>
+                  <span class="sep">·</span>
+                  <span class="status">running</span>
+                </div>
+              </div>
+              <div class="r"><span class="time">4m</span></div>
+            </div>
+
+            <!-- NEEDS INPUT -->
+            <div class="agent needs fade">
+              <div class="ico">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+              </div>
+              <div class="body">
+                <div class="task">terminal appin mobil tasarım…</div>
+                <div class="meta">
+                  <span>Claude Code</span>
+                  <span class="sep">·</span>
+                  <span class="status">needs input</span>
+                </div>
+              </div>
+              <div class="r"><span class="time">45s</span></div>
+            </div>
+
+            <div class="agent needs fade">
+              <div class="ico">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+              </div>
+              <div class="body">
+                <div class="task">active agents kısmının yanı…</div>
+                <div class="meta">
+                  <span>Claude Code</span>
+                  <span class="sep">·</span>
+                  <span class="status">needs input</span>
+                </div>
+              </div>
+              <div class="r"><span class="time">13m</span></div>
+            </div>
+
+            <!-- COMPLETED -->
+            <div class="agent done fade">
+              <div class="ico">
+                <span class="circ">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 12 10 17 19 7"/></svg>
+                </span>
+              </div>
+              <div class="body">
+                <div class="task">şimdi kapatıp açtım cmuxu…</div>
+                <div class="meta">
+                  <span>Codex CLI</span>
+                  <span class="sep">·</span>
+                  <span class="status">completed</span>
+                </div>
+              </div>
+              <div class="r"><span class="time">14s</span></div>
+            </div>
+
+            <div class="agent done fade">
+              <div class="ico">
+                <span class="circ">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 12 10 17 19 7"/></svg>
+                </span>
+              </div>
+              <div class="body">
+                <div class="task">bi yolu var mı sen ne düşün…</div>
+                <div class="meta">
+                  <span>Codex CLI</span>
+                  <span class="sep">·</span>
+                  <span class="status">completed</span>
+                </div>
+              </div>
+              <div class="r"><span class="time">1m</span></div>
+            </div>
+
+            <!-- READY -->
+            <div class="agent idle fade">
+              <div class="ico"><span class="ring"></span></div>
+              <div class="body">
+                <div class="task">codex (2)</div>
+                <div class="meta">
+                  <span>Codex CLI</span>
+                  <span class="sep">·</span>
+                  <span class="status">ready</span>
+                </div>
+              </div>
+              <div class="r"><span class="time">36m</span></div>
+            </div>
+
+            <div class="agent idle fade">
+              <div class="ico"><span class="ring"></span></div>
+              <div class="body">
+                <div class="task">codex</div>
+                <div class="meta">
+                  <span>Codex CLI</span>
+                  <span class="sep">·</span>
+                  <span class="status">ready</span>
+                </div>
+              </div>
+              <div class="r"><span class="time">36m</span></div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="fab">+</div>
+        <div class="home"></div>
+      </div>
+    </div>
+    <div class="tag"><b>TermLoop · Highland</b> <span class="dim">·</span> active agents</div>
+  </div>
+
+</div>
+
+</body>
+</html>

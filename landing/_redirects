@@ -1,0 +1,7 @@
+# Placeholder redirects for launch. Swap targets as assets go live.
+/download https://github.com/termloopai 302
+/download/ https://github.com/termloopai 302
+/github https://github.com/termloopai 302
+/github/ https://github.com/termloopai 302
+/docs https://github.com/termloopai 302
+/docs/ https://github.com/termloopai 302

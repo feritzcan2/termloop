@@ -1,0 +1,56 @@
+{
+  "activation" : "worktree",
+  "termLoopMCPTools" : [
+    "set_jira_ticket",
+    "get_jira_ticket"
+  ],
+  "bindings" : [
+    {
+      "displayAs" : "chip",
+      "id" : "ticket",
+      "title" : "Jira Ticket"
+    }
+  ],
+  "description" : "Use when the task needs Jira issue lookup, transition discipline, estimate checks, or ticket-linked PR flow.",
+  "id" : "working-with-jira",
+  "instructionFile" : "instructions.md",
+  "items" : [
+    {
+      "type" : "requiredSkill",
+      "value" : "working-with-jira"
+    },
+    {
+      "aliases" : [
+        "jira-mcp",
+        "jira",
+        "mcp-atlassian"
+      ],
+      "id" : "atlassian",
+      "installHint" : "Register Atlassian's official remote MCP (https:\/\/mcp.atlassian.com\/v1\/mcp) under the server name `atlassian` in `~\/.claude.json`, `~\/.codex\/config.toml`, or `~\/.gemini\/settings.json` — or point the same name at any self-hosted Jira MCP package.",
+      "requiredFor" : [
+        "claude",
+        "codex",
+        "gemini"
+      ],
+      "title" : "Atlassian MCP (Jira\/Confluence)",
+      "type" : "requiredMCP"
+    },
+    {
+      "command" : "acli",
+      "installHint" : "Install Atlassian's official CLI (`brew tap atlassian\/homebrew-acli && brew install acli`, or download from https:\/\/developer.atlassian.com\/cloud\/acli\/) and run `acli auth login` so issue reads, fallback transitions, and verification commands work when MCP is unavailable.",
+      "required" : true,
+      "title" : "Atlassian CLI (acli)",
+      "type" : "requiredCLI",
+      "verificationArgs" : [
+        "--version"
+      ]
+    }
+  ],
+  "name" : "Working With Jira",
+  "tags" : [
+    "jira",
+    "tickets",
+    "workflow",
+    "pr"
+  ]
+}

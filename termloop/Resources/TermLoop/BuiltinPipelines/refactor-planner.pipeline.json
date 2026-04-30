@@ -1,0 +1,37 @@
+{
+  "id": "refactor-planner",
+  "name": "Refactor Planner",
+  "description": "Point at a folder or file — produce a refactor plan plus a risk map. No implementation.",
+  "scope": "workspace",
+  "triggers": [
+    { "type": "manual" }
+  ],
+  "variables": {
+    "brief": {
+      "required": true,
+      "prompt": "Hangi klasör/dosya + ne refactor edilecek?"
+    }
+  },
+  "nodes": [
+    {
+      "id": "planner",
+      "type": "solo",
+      "role": "agents/planner.md",
+      "inputs": ["brief.txt"],
+      "output": "PLAN.md"
+    },
+    {
+      "id": "risk_analyst",
+      "type": "solo",
+      "role": "agents/skeptical-critic.md",
+      "inputs": ["PLAN.md"],
+      "output": "RISKS.md"
+    },
+    {
+      "id": "approve",
+      "type": "gate",
+      "prompt": "Plan ve riskler tamam, onaylanıyor mu?",
+      "inputs": ["PLAN.md", "RISKS.md"]
+    }
+  ]
+}

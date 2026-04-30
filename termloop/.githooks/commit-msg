@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# TermLoop fork discipline — commit-msg runs the K3b stray-edit check,
+# which is the only rule that allows an `termloop-exception:` trailer
+# downgrade. Splitting the check here (vs pre-commit) lets us read the
+# actual pending commit message from "$1" and honor the trailer locally,
+# matching how CI --vs mode already behaves.
+
+set -e
+
+repo_root="$(git rev-parse --show-toplevel)"
+script="$repo_root/scripts/termloop-check.py"
+msg_file="$1"
+
+if [ ! -x "$script" ]; then
+    if [ -f "$script" ]; then
+        python3 "$script" --staged --msg-file "$msg_file"
+    else
+        echo "termloop commit-msg: $script missing — skipping." >&2
+    fi
+    exit 0
+fi
+
+"$script" --staged --msg-file "$msg_file"

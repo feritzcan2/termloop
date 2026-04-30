@@ -1,0 +1,6 @@
+{"type":"user","cwd":"/tmp/sample-repo","message":{"role":"user","content":"fix the tab lag issue"},"timestamp":"2026-04-14T10:00:00Z"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I will check ContentView first"}]},"timestamp":"2026-04-14T10:00:02Z"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"ContentView.swift"}}]},"timestamp":"2026-04-14T10:00:03Z"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"[file content]"}]},"timestamp":"2026-04-14T10:00:04Z"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Found it — TabItemView re-renders on every keystroke. Fixing Equatable now."}]},"timestamp":"2026-04-14T10:00:08Z"}
+{"type":"summary","summary":"Tab rendering lag fix"}

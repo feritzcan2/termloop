@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="mark" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0%" stop-color="#FFD2A1"/>
+      <stop offset="55%" stop-color="#FF8A65"/>
+      <stop offset="100%" stop-color="#E94B6A"/>
+    </linearGradient>
+    <filter id="glow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Chevron + loop ring -->
+  <g stroke="url(#mark)" stroke-width="78" stroke-linecap="round" stroke-linejoin="round" fill="none" filter="url(#glow)">
+    <polyline points="232,332 432,512 232,692"/>
+    <circle cx="640" cy="512" r="180"/>
+  </g>
+
+  <!-- Cursor blok -->
+  <rect x="616" y="448" width="48" height="128" rx="8" fill="url(#mark)" filter="url(#glow)"/>
+</svg>

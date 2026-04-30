@@ -1,0 +1,282 @@
+#!/usr/bin/env bash
+# termloop codex wrapper - keeps Codex reachable even when PATH is incomplete
+
+resolve_realpath() {
+    local target="$1"
+    if [[ -x /usr/bin/python3 ]]; then
+        /usr/bin/python3 - "$target" <<'PY'
+import os, sys
+print(os.path.realpath(sys.argv[1]))
+PY
+        return
+    fi
+
+    if [[ -x /usr/bin/perl ]]; then
+        /usr/bin/perl -MCwd=realpath -e '
+my $path = realpath($ARGV[0]);
+exit 1 unless defined $path;
+print $path;
+' "$target"
+        return
+    fi
+
+    return 1
+}
+
+resolve_explicit_codex_path() {
+    local candidate="${TERMLOOP_REAL_CODEX_PATH:-}"
+    candidate="${candidate#"${candidate%%[![:space:]]*}"}"
+    candidate="${candidate%"${candidate##*[![:space:]]}"}"
+    [[ -n "$candidate" && -f "$candidate" && -x "$candidate" ]] || return 1
+    [[ ! "$candidate" -ef "$0" ]] || return 1
+    printf '%s\n' "$candidate"
+}
+
+codex_target_triple() {
+    local os_name arch_name
+    os_name="$(uname -s)"
+    arch_name="$(uname -m)"
+    case "$os_name:$arch_name" in
+        Darwin:arm64) printf '%s\n' "aarch64-apple-darwin" ;;
+        Darwin:x86_64) printf '%s\n' "x86_64-apple-darwin" ;;
+        Linux:aarch64|Linux:arm64) printf '%s\n' "aarch64-unknown-linux-musl" ;;
+        Linux:x86_64) printf '%s\n' "x86_64-unknown-linux-musl" ;;
+        *) return 1 ;;
+    esac
+}
+
+codex_platform_package_name() {
+    case "$1" in
+        aarch64-apple-darwin) printf '%s\n' "codex-darwin-arm64" ;;
+        x86_64-apple-darwin) printf '%s\n' "codex-darwin-x64" ;;
+        aarch64-unknown-linux-musl) printf '%s\n' "codex-linux-arm64" ;;
+        x86_64-unknown-linux-musl) printf '%s\n' "codex-linux-x64" ;;
+        *) return 1 ;;
+    esac
+}
+
+prepend_path_dir() {
+    local path_dir="$1"
+    [[ -d "$path_dir" ]] || return 0
+    case ":${PATH:-}:" in
+        *":$path_dir:"*) ;;
+        *) export PATH="$path_dir${PATH:+:$PATH}" ;;
+    esac
+}
+
+find_real_codex() {
+    local explicit_codex=""
+    explicit_codex="$(resolve_explicit_codex_path 2>/dev/null || true)"
+    if [[ -n "$explicit_codex" ]]; then
+        printf '%s\n' "$explicit_codex"
+        return 0
+    fi
+
+    local self_dir
+    self_dir="$(cd "$(dirname "$0")" && pwd)"
+
+    local IFS=:
+    local d=""
+    for d in $PATH; do
+        [[ "$d" == "$self_dir" ]] && continue
+        [[ -x "$d/codex" ]] || continue
+        if head -2 "$d/codex" 2>/dev/null | grep -q "termloop codex wrapper"; then
+            continue
+        fi
+        printf '%s\n' "$d/codex"
+        return 0
+    done
+
+    local candidate=""
+    for candidate in \
+        "$HOME/.bun/bin/codex" \
+        "$HOME/.local/bin/codex" \
+        "$HOME/.codex/bin/codex" \
+        "/opt/homebrew/bin/codex" \
+        "/usr/local/bin/codex"; do
+        [[ -x "$candidate" ]] || continue
+        [[ ! "$candidate" -ef "$0" ]] || continue
+        printf '%s\n' "$candidate"
+        return 0
+    done
+
+    return 1
+}
+
+find_vendor_binary_for_entrypoint() {
+    local entrypoint="$1"
+    local resolved triple package_name package_root sibling_root
+    local binary_name="codex"
+    resolved="$(resolve_realpath "$entrypoint" 2>/dev/null || true)"
+    [[ -n "$resolved" ]] || return 1
+    [[ "${resolved##*/}" == "codex.js" ]] || return 1
+
+    triple="$(codex_target_triple)" || return 1
+    package_name="$(codex_platform_package_name "$triple")" || return 1
+    package_root="$(cd "$(dirname "$resolved")/.." && pwd)"
+    sibling_root="$(cd "$package_root/.." && pwd)/$package_name"
+
+    local local_vendor="$package_root/vendor/$triple/codex/$binary_name"
+    local local_path="$package_root/vendor/$triple/path"
+    if [[ -x "$local_vendor" ]]; then
+        printf '%s|%s\n' "$local_vendor" "$local_path"
+        return 0
+    fi
+
+    local sibling_vendor="$sibling_root/vendor/$triple/codex/$binary_name"
+    local sibling_path="$sibling_root/vendor/$triple/path"
+    if [[ -x "$sibling_vendor" ]]; then
+        printf '%s|%s\n' "$sibling_vendor" "$sibling_path"
+        return 0
+    fi
+
+    return 1
+}
+
+REAL_CODEX="$(find_real_codex)" || {
+    echo "Error: codex not found in PATH" >&2
+    exit 127
+}
+
+# Per-agent escape hatch — mirrors `bin/claude:115`. When the user (or a
+# downstream tool) sets `TERMLOOP_CODEX_HOOKS_DISABLED=1`, treat the
+# wrapper as a passthrough: no socket fetch, no instructions-file rewrite.
+# Without this, the new context-injection path keeps overwriting model
+# instructions even when the user has explicitly opted out for Codex.
+if [[ "${TERMLOOP_CODEX_HOOKS_DISABLED:-}" == "1" ]]; then
+    exec "$REAL_CODEX" "$@"
+fi
+
+# TermLoop live-context injection. Mirrors the Claude wrapper pattern:
+# every codex invocation pulls fresh abilities + reported context from the
+# socket so a session restarted inside the same workspace sees current state.
+# Codex uses `-c model_instructions_file=<path>` (single-file flag), so this
+# wrapper takes ownership of the final file: it reads any runner-supplied
+# instructions file from the existing args, appends socket content, and
+# replaces the `-c` value with the merged file path.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [[ -f "$SCRIPT_DIR/lib/termloop-context.sh" ]]; then
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/lib/termloop-context.sh"
+fi
+
+inject_codex_context() {
+    declare -F termloop_context_should_skip >/dev/null || return 0
+    termloop_context_should_skip && return 0
+
+    # Skip housekeeping subcommands that don't run an interactive session.
+    # Codex (clap-based) accepts global flags before the subcommand
+    # (e.g. `codex -c log_level=debug mcp-server`), so just looking at $1
+    # would miss the housekeeping verb and trigger a wasted socket fetch +
+    # a stray `-c model_instructions_file=…` on the housekeeping process.
+    #
+    # Walk argv for the first non-flag positional. For known value-taking
+    # global flags in separated form (`--model gpt-5`, `-c key=value`,
+    # `--profile dev`, …), also consume the following argv token so its
+    # value is not mistaken for the subcommand. The glued/equals form
+    # (`--model=gpt-5`) is handled by the `-*=*` branch as a single token.
+    # Unknown flags fall through to the bare `-*` skip; if a future Codex
+    # release adds a value-taking flag we don't list, the worst case is
+    # the same false-negative this whole block was already tolerating.
+    local subcmd=""
+    local skip_next=0
+    for arg in "$@"; do
+        if (( skip_next )); then
+            skip_next=0
+            continue
+        fi
+        case "$arg" in
+            -*=*) continue ;;
+            -c|--config|-m|--model|-p|--profile|-s|--sandbox|-C|--cd|-a|--ask-for-approval|-i|--image|--local-provider|--add-dir|--enable|--disable|--remote|--remote-auth-token-env|--approval-policy)
+                skip_next=1
+                continue
+                ;;
+            -*) continue ;;
+            *) subcmd="$arg"; break ;;
+        esac
+    done
+    case "$subcmd" in
+        login|logout|mcp|plugin|completion|debug|app-server|mcp-server)
+            return 0
+            ;;
+    esac
+
+    local fresh_context
+    fresh_context="$(termloop_context_fetch codex)"
+    [[ -n "$fresh_context" ]] || return 0
+
+    # Look for an existing runner-set `-c model_instructions_file=...` value.
+    # If present, prepend its contents (preserves user-override + reporting
+    # instruction); otherwise just write socket content alone.
+    local i n
+    n=${#CODEX_ARGS[@]}
+    local runner_file=""
+    for ((i=0; i<n; i++)); do
+        if [[ "${CODEX_ARGS[$i]}" == "-c" && "${CODEX_ARGS[$((i+1))]:-}" == model_instructions_file=* ]]; then
+            local raw="${CODEX_ARGS[$((i+1))]#model_instructions_file=}"
+            raw="${raw%\"}"
+            raw="${raw#\"}"
+            if [[ -f "$raw" ]]; then
+                runner_file="$raw"
+            fi
+            break
+        fi
+    done
+
+    local combined
+    if [[ -n "$runner_file" ]]; then
+        combined="$(cat "$runner_file" 2>/dev/null)"$'\n\n'"$fresh_context"
+    else
+        combined="$fresh_context"
+    fi
+
+    local merged_path
+    merged_path="$(termloop_context_write_tempfile "$combined")" || return 0
+
+    # Replace existing -c model_instructions_file= entry if present, else
+    # append new pair.
+    if [[ -n "$runner_file" ]]; then
+        for ((i=0; i<n; i++)); do
+            if [[ "${CODEX_ARGS[$i]}" == "-c" && "${CODEX_ARGS[$((i+1))]:-}" == model_instructions_file=* ]]; then
+                CODEX_ARGS[$((i+1))]="model_instructions_file=\"$merged_path\""
+                return 0
+            fi
+        done
+    fi
+    CODEX_ARGS+=("-c" "model_instructions_file=\"$merged_path\"")
+}
+
+# Detect user-supplied -c model_instructions_file=... — if the user is
+# explicitly setting their own instructions file, don't override.
+USER_INSTRUCTIONS_OVERRIDE=false
+prev_arg=""
+for arg in "$@"; do
+    if [[ "$prev_arg" == "-c" && "$arg" == model_instructions_file=* ]]; then
+        # Differentiate runner-set (lives in termloop temp dir) from
+        # user-set. Runner files live under "$TMPDIR/termloop-system-prompts/".
+        path_value="${arg#model_instructions_file=}"
+        path_value="${path_value%\"}"
+        path_value="${path_value#\"}"
+        case "$path_value" in
+            *termloop-system-prompts/*) ;;
+            *) USER_INSTRUCTIONS_OVERRIDE=true ;;
+        esac
+    fi
+    prev_arg="$arg"
+done
+
+CODEX_ARGS=("$@")
+if [[ "$USER_INSTRUCTIONS_OVERRIDE" != true ]]; then
+    inject_codex_context "$@"
+fi
+
+if vendor_info="$(find_vendor_binary_for_entrypoint "$REAL_CODEX" 2>/dev/null || true)"; then
+    if [[ -n "$vendor_info" ]]; then
+        vendor_binary="${vendor_info%%|*}"
+        vendor_path_dir="${vendor_info#*|}"
+        prepend_path_dir "$vendor_path_dir"
+        exec "$vendor_binary" "${CODEX_ARGS[@]}"
+    fi
+fi
+
+exec "$REAL_CODEX" "${CODEX_ARGS[@]}"

@@ -1,0 +1,787 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>termloop — D4 alternatives (free-prompt advanced table)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --page-bg:        #b8babf;
+    --panel-bg:       #1c1d22;
+    --panel-edge:     rgba(255,255,255,0.06);
+    --panel-edge-2:   rgba(255,255,255,0.09);
+    --ink-1:          #f1f2f5;
+    --ink-2:          #a9acb4;
+    --ink-3:          #70737b;
+    --ink-4:          #4a4c54;
+    --accent:         #6ea8ff;
+    --amber:          #ffb049;
+    --green:          #51d68a;
+    --red:            #ff6868;
+    --violet:         #b98dff;
+    --teal:           #4dd0c1;
+    --mono:           'JetBrains Mono', ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background:
+      radial-gradient(1400px 900px at 10% -10%, #dcdde1, transparent 55%),
+      radial-gradient(1100px 800px at 100% 110%, #a9aab0, transparent 55%),
+      var(--page-bg);
+    color: var(--ink-1);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    padding: 48px 32px 96px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page-head {
+    max-width: 1720px; margin: 0 auto 34px;
+    display: flex; align-items: baseline; justify-content: space-between; gap: 24px;
+    border-bottom: 1px solid rgba(0,0,0,0.12);
+    padding-bottom: 18px;
+  }
+  .page-head h1 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: 0.02em; color: #2a2b30; }
+  .page-head h1 b { color: #0a4ee4; font-weight: 700; }
+  .page-head .legend { font-size: 11px; color: #5a5d66; letter-spacing: 0.04em; text-transform: uppercase; }
+
+  .grid {
+    max-width: 1720px; margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(600px, 1fr));
+    gap: 40px 32px;
+  }
+  .card { display: flex; flex-direction: column; gap: 14px; }
+  .card .caption { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 0 2px; }
+  .card .caption .name { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #17181c; }
+  .card .caption .tag { font-size: 10px; font-weight: 500; color: #5a5d66; font-family: var(--mono); }
+  .card .note { font-size: 11.5px; color: #2a2b30; line-height: 1.6; padding: 0 2px; }
+  .card .note b { color: #0a4ee4; }
+  .card .note code { font-family: var(--mono); font-size: 11px; color: #6a3ec7; background: rgba(106,62,199,0.07); padding: 1px 5px; border-radius: 3px; }
+
+  .palette {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-edge-2);
+    border-radius: 14px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 40px 80px -20px rgba(0,0,0,0.55), 0 14px 32px -8px rgba(0,0,0,0.45);
+    overflow: hidden; color: var(--ink-1); position: relative;
+  }
+
+  /* top bar */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px; border-bottom: 1px solid var(--panel-edge);
+    background: linear-gradient(180deg, #22232a 0%, #1c1d22 100%); gap: 10px;
+  }
+  .tpl-picker {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 5px 9px 5px 8px; border: 1px solid var(--panel-edge-2);
+    background: rgba(255,255,255,0.04); border-radius: 8px;
+    font-size: 12.5px; color: var(--ink-1); font-weight: 500; cursor: pointer;
+  }
+  .tpl-picker .ri {
+    width: 20px; height: 20px; border-radius: 5px;
+    display: grid; place-items: center; font-size: 12px;
+    background: repeating-linear-gradient(45deg, rgba(255,255,255,0.06), rgba(255,255,255,0.06) 4px, rgba(255,255,255,0.12) 4px, rgba(255,255,255,0.12) 8px);
+    border: 1px solid rgba(255,255,255,0.14); color: #fff;
+  }
+  .tpl-picker .sub { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); font-weight: 400; padding-left: 6px; border-left: 1px solid var(--panel-edge-2); margin-left: 2px; }
+  .tpl-picker .caret { margin-left: 2px; color: var(--ink-3); font-size: 10px; }
+
+  .target {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 9px 4px 7px; background: rgba(110,168,255,0.12);
+    border: 1px solid rgba(110,168,255,0.22); border-radius: 7px;
+    font-size: 11.5px; font-weight: 500; color: #d2e1ff;
+    font-family: var(--mono); white-space: nowrap;
+  }
+  .target .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(110,168,255,0.18); }
+  .target .kbd-swap { font-size: 9.5px; color: #8eaaff; padding: 1px 4px; background: rgba(255,255,255,0.05); border-radius: 3px; margin-left: 2px; font-family: var(--mono); font-weight: 600; }
+
+  /* composer */
+  .composer { padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .cmp {
+    background: #0f1015; border: 1px solid rgba(110,168,255,0.35);
+    box-shadow: 0 0 0 3px rgba(42,100,255,0.10); border-radius: 10px;
+    padding: 12px 14px; font-family: var(--mono); font-size: 13.5px;
+    line-height: 1.6; color: var(--ink-1); white-space: pre-wrap;
+    min-height: 60px;
+  }
+  .cmp .caret { display: inline-block; width: 2px; height: 16px; background: var(--accent); vertical-align: -3px; animation: blink 1.1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* footer */
+  .pal-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 9px 14px 9px 16px;
+    border-top: 1px solid var(--panel-edge);
+    background: linear-gradient(180deg, #1c1d22 0%, #191a1f 100%);
+    font-size: 11px;
+  }
+  .pal-footer .left { display: flex; align-items: center; gap: 10px; }
+  .pal-footer .brand { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink-2); font-size: 11px; }
+  .pal-footer .brand .logo { width: 14px; height: 14px; border-radius: 3.5px; background: linear-gradient(135deg, #2a64ff, #6ea8ff); }
+  .pal-footer .sep { width: 1px; height: 12px; background: var(--panel-edge-2); }
+  .pal-footer .hint { color: var(--ink-3); font-size: 11px; font-family: var(--mono); }
+  .pal-footer .hint b { color: var(--ink-2); font-weight: 500; }
+  .pal-footer .right { display: flex; align-items: center; gap: 14px; }
+  .pal-footer .act { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-2); }
+  .pal-footer .act .lbl { color: var(--ink-3); }
+  .kbd {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px; padding: 0 5px;
+    border: 1px solid rgba(255,255,255,0.10);
+    background: rgba(255,255,255,0.04);
+    border-radius: 4px;
+    font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+    color: var(--ink-1);
+    box-shadow: inset 0 -1px 0 rgba(0,0,0,0.25);
+  }
+  .kbd.esc { min-width: 34px; font-size: 10px; }
+  .kbd.plus { border: 0; background: transparent; color: var(--ink-4); padding: 0; min-width: 0; font-weight: 400; }
+
+  /* ================================================================
+     D4a — STATE LEGEND + LOCK GLYPHS
+     ================================================================ */
+  .d4a {
+    border-top: 1px solid var(--panel-edge); background: #181a1f;
+  }
+  .d4a .legend-bar {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 8px 16px; background: #14151a;
+    border-bottom: 1px solid var(--panel-edge);
+    font-family: var(--mono); font-size: 10.5px; color: var(--ink-3);
+  }
+  .d4a .legend-bar .lg {
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .d4a .legend-bar .lg .glyph {
+    display: inline-grid; place-items: center;
+    width: 16px; height: 16px; border-radius: 4px;
+    font-size: 10px; font-weight: 600;
+  }
+  .d4a .legend-bar .glyph.saved { background: rgba(81,214,138,0.12); color: var(--green); border: 1px solid rgba(81,214,138,0.28); }
+  .d4a .legend-bar .glyph.session { background: rgba(110,168,255,0.12); color: var(--accent); border: 1px solid rgba(110,168,255,0.28); }
+  .d4a .legend-bar .glyph.once { background: rgba(255,255,255,0.03); color: var(--ink-3); border: 1px solid var(--panel-edge-2); }
+  .d4a table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  .d4a td {
+    padding: 8px 14px; border-bottom: 1px solid var(--panel-edge);
+    color: var(--ink-2); vertical-align: middle;
+  }
+  .d4a tr:last-child td { border-bottom: 0; }
+  .d4a tr:hover td { background: rgba(255,255,255,0.02); }
+  .d4a tr.sel td { background: rgba(110,168,255,0.07); color: var(--ink-1); }
+  .d4a tr.sel td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+  .d4a td.g { width: 28px; padding-right: 0; text-align: center; }
+  .d4a td.g .glyph {
+    display: inline-grid; place-items: center;
+    width: 18px; height: 18px; border-radius: 5px;
+    font-size: 10px; font-weight: 600;
+  }
+  .d4a td.g .glyph.saved { background: rgba(81,214,138,0.12); color: var(--green); border: 1px solid rgba(81,214,138,0.28); }
+  .d4a td.g .glyph.session { background: rgba(110,168,255,0.12); color: var(--accent); border: 1px solid rgba(110,168,255,0.28); }
+  .d4a td.g .glyph.once { background: rgba(255,255,255,0.03); color: var(--ink-3); border: 1px solid var(--panel-edge-2); }
+  .d4a td.k { color: var(--violet); width: 140px; }
+  .d4a td.v { color: var(--green); }
+  .d4a td.v.warn { color: var(--amber); }
+  .d4a td.v.teal { color: var(--teal); }
+  .d4a td.v.plain { color: var(--ink-1); }
+  .d4a td.v.dim { color: var(--ink-3); font-style: italic; }
+  .d4a td.action {
+    text-align: right; padding-right: 14px;
+    width: 80px;
+  }
+  .d4a td.action .kb {
+    display: inline-block; padding: 1px 5px;
+    border: 1px solid var(--panel-edge-2); border-radius: 3px;
+    font-size: 10px; color: var(--ink-3); background: rgba(255,255,255,0.03);
+  }
+  .d4a td .hint { color: var(--ink-4); font-weight: 400; }
+
+  /* ================================================================
+     D4b — GROUPED COLLAPSIBLE CARDS
+     ================================================================ */
+  .d4b {
+    border-top: 1px solid var(--panel-edge); background: #181a1f;
+    padding: 14px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .group {
+    background: #14161b; border: 1px solid var(--panel-edge-2);
+    border-radius: 10px; overflow: hidden;
+  }
+  .group .g-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; background: #16181d;
+    border-bottom: 1px solid var(--panel-edge);
+  }
+  .group .g-head .g-name {
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-2);
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .group .g-head .persist-tag {
+    font-family: var(--mono); font-size: 9.5px;
+    padding: 2px 7px; border-radius: 999px; letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .group .g-head .persist-tag.saved { color: var(--green); background: rgba(81,214,138,0.08); border: 1px solid rgba(81,214,138,0.28); }
+  .group .g-head .persist-tag.session { color: var(--accent); background: rgba(110,168,255,0.08); border: 1px solid rgba(110,168,255,0.28); }
+  .group .g-head .persist-tag.once { color: var(--ink-3); background: rgba(255,255,255,0.03); border: 1px solid var(--panel-edge-2); }
+  .group .g-body {
+    padding: 2px 0;
+    font-family: var(--mono); font-size: 12px;
+  }
+  .group .g-row {
+    display: grid; grid-template-columns: 140px 24px 1fr auto;
+    gap: 10px; align-items: center;
+    padding: 7px 14px;
+  }
+  .group .g-row + .g-row { border-top: 1px dashed var(--panel-edge); }
+  .group .g-row:hover { background: rgba(255,255,255,0.02); }
+  .group .g-row.sel { background: rgba(110,168,255,0.07); box-shadow: inset 2px 0 0 var(--accent); }
+  .group .g-row .k { color: var(--violet); }
+  .group .g-row .op { color: var(--ink-4); text-align: center; }
+  .group .g-row .v { color: var(--green); }
+  .group .g-row .v.warn { color: var(--amber); }
+  .group .g-row .v.teal { color: var(--teal); }
+  .group .g-row .v.plain { color: var(--ink-1); }
+  .group .g-row .v.dim { color: var(--ink-3); font-style: italic; }
+  .group .g-row .v .hint { color: var(--ink-4); font-weight: 400; }
+  .group .g-row .kb {
+    display: inline-block; padding: 1px 5px;
+    border: 1px solid var(--panel-edge-2); border-radius: 3px;
+    font-size: 10px; color: var(--ink-3); background: rgba(255,255,255,0.03);
+  }
+
+  /* ================================================================
+     D4c — INLINE-EDIT MODE (selected row expands)
+     ================================================================ */
+  .d4c { border-top: 1px solid var(--panel-edge); background: #181a1f; }
+  .d4c table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  .d4c th {
+    text-align: left; padding: 8px 14px;
+    font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-3); font-weight: 600;
+    background: #14151a; border-bottom: 1px solid var(--panel-edge);
+  }
+  .d4c td {
+    padding: 7px 14px; border-bottom: 1px solid var(--panel-edge);
+    color: var(--ink-2); vertical-align: middle;
+  }
+  .d4c tr:last-child td { border-bottom: 0; }
+  .d4c tr.sel td { background: rgba(110,168,255,0.07); box-shadow: inset 2px 0 0 var(--accent); }
+  .d4c td.k { color: var(--violet); width: 140px; }
+  .d4c td.op { color: var(--ink-4); width: 24px; text-align: center; }
+  .d4c td.v { color: var(--green); }
+  .d4c td.v.warn { color: var(--amber); }
+  .d4c td.v.teal { color: var(--teal); }
+  .d4c td.v.plain { color: var(--ink-1); }
+  .d4c .pill-row {
+    display: inline-flex; gap: 4px; flex-wrap: wrap;
+  }
+  .d4c .pill-row .p {
+    padding: 2px 9px; border-radius: 999px;
+    border: 1px solid var(--panel-edge-2);
+    background: rgba(255,255,255,0.03);
+    font-family: var(--mono); font-size: 11px;
+    color: var(--ink-3); cursor: pointer;
+  }
+  .d4c .pill-row .p.on {
+    background: rgba(255,176,73,0.10); color: var(--amber);
+    border-color: rgba(255,176,73,0.35);
+    box-shadow: 0 0 0 2px rgba(255,176,73,0.08);
+  }
+  .d4c .pill-row .p.on.teal { background: rgba(77,208,193,0.10); color: var(--teal); border-color: rgba(77,208,193,0.35); box-shadow: 0 0 0 2px rgba(77,208,193,0.08); }
+  .d4c .pill-row .p.on.violet { background: rgba(185,141,255,0.10); color: var(--violet); border-color: rgba(185,141,255,0.35); box-shadow: 0 0 0 2px rgba(185,141,255,0.08); }
+  .d4c .src { color: var(--ink-4); width: 84px; font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; }
+  .d4c td.action { text-align: right; padding-right: 14px; width: 52px; color: var(--ink-4); font-size: 10.5px; }
+  .d4c td.action .kb { display: inline-block; padding: 1px 5px; border: 1px solid var(--panel-edge-2); border-radius: 3px; font-size: 10px; color: var(--ink-2); background: rgba(255,255,255,0.03); }
+  .d4c .row-head { color: var(--ink-4); letter-spacing: 0.14em; text-transform: uppercase; font-size: 9.5px; background: #14151a; }
+
+  /* ================================================================
+     D4d — TWO-COLUMN (settings | live json)
+     ================================================================ */
+  .d4d {
+    border-top: 1px solid var(--panel-edge); background: #181a1f;
+    display: grid; grid-template-columns: 1.05fr 0.95fr;
+  }
+  .d4d .left { padding: 12px 0; }
+  .d4d .left .row {
+    display: grid; grid-template-columns: 130px 24px 1fr 20px;
+    gap: 10px; align-items: center;
+    padding: 7px 14px;
+    font-family: var(--mono); font-size: 12px;
+  }
+  .d4d .left .row + .row { border-top: 1px dashed var(--panel-edge); }
+  .d4d .left .row.sel { background: rgba(110,168,255,0.07); box-shadow: inset 2px 0 0 var(--accent); }
+  .d4d .left .row .k { color: var(--violet); }
+  .d4d .left .row .op { color: var(--ink-4); text-align: center; }
+  .d4d .left .row .v { color: var(--green); }
+  .d4d .left .row .v.warn { color: var(--amber); }
+  .d4d .left .row .v.teal { color: var(--teal); }
+  .d4d .left .row .v.plain { color: var(--ink-1); }
+  .d4d .left .row .persist {
+    width: 8px; height: 8px; border-radius: 50%; margin: 0 auto;
+    background: var(--ink-4);
+  }
+  .d4d .left .row .persist.saved { background: var(--green); box-shadow: 0 0 0 3px rgba(81,214,138,0.12); }
+  .d4d .left .row .persist.session { background: var(--accent); box-shadow: 0 0 0 3px rgba(110,168,255,0.12); }
+  .d4d .left .row .persist.once { background: var(--ink-4); }
+  .d4d .left .sep {
+    display: grid; grid-template-columns: 130px 1fr; gap: 10px;
+    padding: 10px 14px 4px;
+    font-size: 9.5px; color: var(--ink-4); letter-spacing: 0.14em; text-transform: uppercase;
+    font-family: 'Inter', sans-serif; font-weight: 600;
+  }
+  .d4d .right {
+    border-left: 1px solid var(--panel-edge);
+    background: #101116; padding: 14px;
+  }
+  .d4d .right h5 {
+    margin: 0 0 8px; font-size: 9.5px;
+    color: var(--ink-3); font-weight: 600;
+    letter-spacing: 0.14em; text-transform: uppercase;
+  }
+  .d4d .right pre {
+    margin: 0; font-family: var(--mono); font-size: 11.5px;
+    color: var(--ink-1); line-height: 1.7;
+    white-space: pre-wrap;
+  }
+  .d4d .right .k { color: #82b1ff; }
+  .d4d .right .s { color: var(--green); }
+  .d4d .right .p { color: var(--amber); }
+  .d4d .right .e { color: var(--teal); }
+  .d4d .right .c { color: var(--ink-4); font-style: italic; }
+  .d4d .right .v { color: var(--violet); }
+  .d4d .right .saved { background: rgba(81,214,138,0.08); padding: 0 2px; border-bottom: 1px dashed rgba(81,214,138,0.35); }
+  .d4d .right .session { background: rgba(110,168,255,0.08); padding: 0 2px; border-bottom: 1px dashed rgba(110,168,255,0.35); }
+
+  /* ================================================================
+     MINI helpers
+     ================================================================ */
+  .cm-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 1px 6px; border-radius: 4px;
+    font-family: var(--mono); font-size: 10px; font-weight: 500;
+    letter-spacing: 0.02em; vertical-align: 1px;
+  }
+  .cm-chip.saved { color: var(--green); background: rgba(81,214,138,0.08); border: 1px solid rgba(81,214,138,0.22); }
+  .cm-chip.session { color: var(--accent); background: rgba(110,168,255,0.08); border: 1px solid rgba(110,168,255,0.22); }
+  .cm-chip.once { color: var(--ink-3); background: rgba(255,255,255,0.03); border: 1px solid var(--panel-edge-2); }
+
+  .span-2 { grid-column: span 2; }
+  @media (max-width: 1260px) { .span-2 { grid-column: auto; } }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>termloop — <b>D4 alternatives</b> · free-prompt advanced table</h1>
+  <div class="legend">model · permission · mode · workspace · prompt · persistence contract shown 4 ways</div>
+</div>
+
+<div class="grid">
+
+  <!-- ================================================================
+       D4a — LOCK GLYPH column + legend bar
+       ================================================================ -->
+  <div class="card span-2">
+    <div class="caption">
+      <span class="name">D4a · Leading glyph · legend bar up top</span>
+      <span class="tag">⬛ persist · ⦾ session · ○ once</span>
+    </div>
+
+    <div class="palette">
+      <div class="topbar">
+        <div class="tpl-picker">
+          <span class="ri">✎</span>
+          <span>Free prompt</span>
+          <span class="sub">default</span>
+          <span class="caret">▾</span>
+        </div>
+        <div class="target"><span class="dot"></span> termloop · bridge <span class="kbd-swap">⌘T</span></div>
+      </div>
+
+      <div class="composer">
+        <div class="cmp">find why TerminalController drops writes on the TCP path and fix it<span class="caret"></span></div>
+      </div>
+
+      <div class="d4a">
+        <div class="legend-bar">
+          <span class="lg"><span class="glyph saved">◼</span> saved · next Shift-Shift restores</span>
+          <span class="lg"><span class="glyph session">◎</span> session · from active TermLoop tab</span>
+          <span class="lg"><span class="glyph once">○</span> once · this run only</span>
+          <span style="flex: 1;"></span>
+          <span style="color: var(--ink-4);">__free_prompt__ LRU slot</span>
+        </div>
+        <table>
+          <tbody>
+            <tr class="sel">
+              <td class="g"><span class="glyph saved">◼</span></td>
+              <td class="k">model</td>
+              <td class="v plain">claude-sonnet-4.6 <span class="hint">· ⌥↓ opus / haiku</span></td>
+              <td class="action"><span class="kb">⌘1</span></td>
+            </tr>
+            <tr>
+              <td class="g"><span class="glyph saved">◼</span></td>
+              <td class="k">permission</td>
+              <td class="v warn">acceptEdits <span class="hint">· default | plan | bypass</span></td>
+              <td class="action"><span class="kb">⌘2</span></td>
+            </tr>
+            <tr>
+              <td class="g"><span class="glyph saved">◼</span></td>
+              <td class="k">mode</td>
+              <td class="v teal">headless <span class="hint">· terminal</span></td>
+              <td class="action"><span class="kb">⌘3</span></td>
+            </tr>
+            <tr>
+              <td class="g"><span class="glyph session">◎</span></td>
+              <td class="k">workspace</td>
+              <td class="v" style="color: var(--accent);">bridge <span class="hint">· ⌘T switches</span></td>
+              <td class="action"><span class="kb">⌘T</span></td>
+            </tr>
+            <tr>
+              <td class="g"><span class="glyph session">◎</span></td>
+              <td class="k">cwd</td>
+              <td class="v">/Users/…/termloop/.cmux-worktrees/bridge</td>
+              <td class="action"></td>
+            </tr>
+            <tr>
+              <td class="g"><span class="glyph once">○</span></td>
+              <td class="k">prompt</td>
+              <td class="v plain">"find why TerminalController drops writes on the TCP path and fix it"</td>
+              <td class="action"><span class="kb">⌘E</span></td>
+            </tr>
+            <tr>
+              <td class="g"><span class="glyph once">○</span></td>
+              <td class="k">triggerReason</td>
+              <td class="v" style="color: var(--accent);">quickAction.freePrompt</td>
+              <td class="action"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pal-footer">
+        <div class="left"><span class="brand"><span class="logo"></span> termloop</span><span class="sep"></span><span class="hint">glyph column shows persistence at a glance</span></div>
+        <div class="right">
+          <span class="act"><span class="lbl">run</span><span class="kbd">↵</span></span>
+          <span class="act"><span class="lbl">row</span><span class="kbd">↑↓</span></span>
+          <span class="act"><span class="lbl">template</span><span class="kbd">⌘</span><span class="kbd plus">+</span><span class="kbd">K</span></span>
+          <span class="act"><span class="lbl">close pane</span><span class="kbd">⌘</span><span class="kbd plus">+</span><span class="kbd">↵</span></span>
+          <span class="act"><span class="lbl">dismiss</span><span class="kbd esc">esc</span></span>
+        </div>
+      </div>
+    </div>
+
+    <p class="note"><b>Why:</b> adds a persistence glyph to every row so saved vs session vs once is visible without hunting. Legend bar explains the three symbols, no tooltips needed.</p>
+  </div>
+
+  <!-- ================================================================
+       D4b — GROUPED CARDS with tag on group header
+       ================================================================ -->
+  <div class="card">
+    <div class="caption">
+      <span class="name">D4b · Grouped cards · tag on the group, not each row</span>
+      <span class="tag">cleaner row density</span>
+    </div>
+
+    <div class="palette">
+      <div class="topbar">
+        <div class="tpl-picker">
+          <span class="ri">✎</span>
+          <span>Free prompt</span>
+          <span class="sub">default</span>
+          <span class="caret">▾</span>
+        </div>
+        <div class="target"><span class="dot"></span> termloop · bridge <span class="kbd-swap">⌘T</span></div>
+      </div>
+
+      <div class="composer">
+        <div class="cmp">find why TerminalController drops writes on the TCP path and fix it<span class="caret"></span></div>
+      </div>
+
+      <div class="d4b">
+        <div class="group">
+          <div class="g-head">
+            <span class="g-name">Agent config</span>
+            <span class="persist-tag saved">◼ saved to free-prompt slot</span>
+          </div>
+          <div class="g-body">
+            <div class="g-row sel">
+              <span class="k">model</span><span class="op">=</span>
+              <span class="v plain">claude-sonnet-4.6 <span class="hint">· ⌥↓ opus / haiku</span></span>
+              <span class="kb">⌘1</span>
+            </div>
+            <div class="g-row">
+              <span class="k">permission</span><span class="op">=</span>
+              <span class="v warn">acceptEdits <span class="hint">· default | plan | bypass</span></span>
+              <span class="kb">⌘2</span>
+            </div>
+            <div class="g-row">
+              <span class="k">mode</span><span class="op">=</span>
+              <span class="v teal">headless <span class="hint">· terminal</span></span>
+              <span class="kb">⌘3</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="g-head">
+            <span class="g-name">Target</span>
+            <span class="persist-tag session">◎ session</span>
+          </div>
+          <div class="g-body">
+            <div class="g-row">
+              <span class="k">workspace</span><span class="op">=</span>
+              <span class="v" style="color: var(--accent);">bridge <span class="hint">· ⌘T switches</span></span>
+              <span class="kb">⌘T</span>
+            </div>
+            <div class="g-row">
+              <span class="k">cwd</span><span class="op">=</span>
+              <span class="v">/Users/…/termloop/.cmux-worktrees/bridge</span>
+              <span class="kb"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="g-head">
+            <span class="g-name">This run</span>
+            <span class="persist-tag once">○ not saved</span>
+          </div>
+          <div class="g-body">
+            <div class="g-row">
+              <span class="k">prompt</span><span class="op">=</span>
+              <span class="v plain">"find why TerminalController…"</span>
+              <span class="kb">⌘E</span>
+            </div>
+            <div class="g-row">
+              <span class="k">triggerReason</span><span class="op">=</span>
+              <span class="v" style="color: var(--accent);">quickAction.freePrompt</span>
+              <span class="kb"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pal-footer">
+        <div class="left"><span class="brand"><span class="logo"></span> termloop</span><span class="sep"></span><span class="hint">persist tag sits on each group header</span></div>
+        <div class="right">
+          <span class="act"><span class="lbl">run</span><span class="kbd">↵</span></span>
+          <span class="act"><span class="lbl">group</span><span class="kbd">⌘</span><span class="kbd plus">+</span><span class="kbd">↑↓</span></span>
+          <span class="act"><span class="lbl">dismiss</span><span class="kbd esc">esc</span></span>
+        </div>
+      </div>
+    </div>
+
+    <p class="note"><b>Why:</b> three groups (<span class="cm-chip saved">saved</span> <span class="cm-chip session">session</span> <span class="cm-chip once">once</span>) map 1:1 to the persistence contract. Rows themselves stay tag-free and dense.</p>
+  </div>
+
+  <!-- ================================================================
+       D4c — inline-edit mode (selected row expands to pill row)
+       ================================================================ -->
+  <div class="card">
+    <div class="caption">
+      <span class="name">D4c · Inline edit · current row shows pill choices</span>
+      <span class="tag">no hidden state · space cycles or click</span>
+    </div>
+
+    <div class="palette">
+      <div class="topbar">
+        <div class="tpl-picker">
+          <span class="ri">✎</span>
+          <span>Free prompt</span>
+          <span class="sub">default</span>
+          <span class="caret">▾</span>
+        </div>
+        <div class="target"><span class="dot"></span> termloop · bridge <span class="kbd-swap">⌘T</span></div>
+      </div>
+
+      <div class="composer">
+        <div class="cmp">find why TerminalController drops writes on the TCP path and fix it<span class="caret"></span></div>
+      </div>
+
+      <div class="d4c">
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th><th></th><th>Value</th><th>Persist</th><th style="text-align: right; padding-right: 14px;">Edit</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="row-head"><td colspan="5" style="padding-top: 10px; padding-bottom: 4px;">Agent</td></tr>
+            <tr>
+              <td class="k">model</td><td class="op">=</td>
+              <td class="v plain">sonnet-4.6</td>
+              <td class="src" style="color: var(--green);">saved</td>
+              <td class="action"><span class="kb">⌘1</span></td>
+            </tr>
+            <tr class="sel">
+              <td class="k">permission</td><td class="op">=</td>
+              <td>
+                <span class="pill-row">
+                  <span class="p">default</span>
+                  <span class="p on">acceptEdits</span>
+                  <span class="p">plan</span>
+                  <span class="p">bypass</span>
+                </span>
+              </td>
+              <td class="src" style="color: var(--green);">saved</td>
+              <td class="action"><span class="kb">⌘2</span></td>
+            </tr>
+            <tr>
+              <td class="k">mode</td><td class="op">=</td>
+              <td>
+                <span class="pill-row">
+                  <span class="p on teal">headless</span>
+                  <span class="p">terminal</span>
+                </span>
+              </td>
+              <td class="src" style="color: var(--green);">saved</td>
+              <td class="action"><span class="kb">⌘3</span></td>
+            </tr>
+
+            <tr class="row-head"><td colspan="5" style="padding-top: 10px; padding-bottom: 4px;">Target</td></tr>
+            <tr>
+              <td class="k">workspace</td><td class="op">=</td>
+              <td class="v" style="color: var(--accent);">bridge</td>
+              <td class="src" style="color: var(--accent);">session</td>
+              <td class="action"><span class="kb">⌘T</span></td>
+            </tr>
+            <tr>
+              <td class="k">cwd</td><td class="op">=</td>
+              <td class="v">/Users/…/.cmux-worktrees/bridge</td>
+              <td class="src">auto</td>
+              <td class="action"></td>
+            </tr>
+
+            <tr class="row-head"><td colspan="5" style="padding-top: 10px; padding-bottom: 4px;">Run</td></tr>
+            <tr>
+              <td class="k">prompt</td><td class="op">=</td>
+              <td class="v plain">"find why TerminalController…"</td>
+              <td class="src" style="color: var(--ink-3);">once</td>
+              <td class="action"><span class="kb">⌘E</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pal-footer">
+        <div class="left"><span class="brand"><span class="logo"></span> termloop</span><span class="sep"></span><span class="hint">selected row expands · space cycles options</span></div>
+        <div class="right">
+          <span class="act"><span class="lbl">cycle</span><span class="kbd">space</span></span>
+          <span class="act"><span class="lbl">run</span><span class="kbd">↵</span></span>
+          <span class="act"><span class="lbl">dismiss</span><span class="kbd esc">esc</span></span>
+        </div>
+      </div>
+    </div>
+
+    <p class="note"><b>Why:</b> focused row morphs into a pill selector — all choices visible, no dropdown menu popup. Other rows stay dense and readable. Best if you want one-glance discoverability of valid values.</p>
+  </div>
+
+  <!-- ================================================================
+       D4d — two-column: form + live JSON of AgentRunRequest
+       ================================================================ -->
+  <div class="card span-2">
+    <div class="caption">
+      <span class="name">D4d · Split · form left · live request JSON right</span>
+      <span class="tag">saved/session color-coded in both panes</span>
+    </div>
+
+    <div class="palette">
+      <div class="topbar">
+        <div class="tpl-picker">
+          <span class="ri">✎</span>
+          <span>Free prompt</span>
+          <span class="sub">default</span>
+          <span class="caret">▾</span>
+        </div>
+        <div class="target"><span class="dot"></span> termloop · bridge <span class="kbd-swap">⌘T</span></div>
+      </div>
+
+      <div class="composer" style="padding-bottom: 10px;">
+        <div class="cmp">find why TerminalController drops writes on the TCP path and fix it<span class="caret"></span></div>
+      </div>
+
+      <div class="d4d">
+        <div class="left">
+          <div class="sep"><span>Agent</span><span>persist</span></div>
+          <div class="row sel">
+            <span class="k">model</span><span class="op">=</span>
+            <span class="v plain">claude-sonnet-4.6</span>
+            <span class="persist saved" title="saved to free-prompt slot"></span>
+          </div>
+          <div class="row">
+            <span class="k">permission</span><span class="op">=</span>
+            <span class="v warn">acceptEdits</span>
+            <span class="persist saved"></span>
+          </div>
+          <div class="row">
+            <span class="k">mode</span><span class="op">=</span>
+            <span class="v teal">headless</span>
+            <span class="persist saved"></span>
+          </div>
+
+          <div class="sep"><span>Target</span><span></span></div>
+          <div class="row">
+            <span class="k">workspace</span><span class="op">=</span>
+            <span class="v" style="color: var(--accent);">bridge</span>
+            <span class="persist session"></span>
+          </div>
+          <div class="row">
+            <span class="k">cwd</span><span class="op">=</span>
+            <span class="v" style="font-size: 11px;">…/cmux-worktrees/bridge</span>
+            <span class="persist session"></span>
+          </div>
+
+          <div class="sep"><span>This run</span><span></span></div>
+          <div class="row">
+            <span class="k">prompt</span><span class="op">=</span>
+            <span class="v plain" style="font-size: 11px;">"find why…"</span>
+            <span class="persist once"></span>
+          </div>
+          <div class="row">
+            <span class="k">triggerReason</span><span class="op">=</span>
+            <span class="v" style="color: var(--accent);">quickAction.freePrompt</span>
+            <span class="persist once"></span>
+          </div>
+        </div>
+
+        <div class="right">
+          <h5>AgentRunRequest · preview</h5>
+<pre><span class="c">// green bg = saved · blue bg = session · no bg = this run</span>
+{
+  <span class="k">"model"</span>: <span class="s saved">"claude-sonnet-4.6"</span>,
+  <span class="k">"permission"</span>: <span class="p saved">"acceptEdits"</span>,
+  <span class="k">"mode"</span>: <span class="e saved">"headless"</span>,
+  <span class="k">"workspace"</span>: <span class="s session">"bridge"</span>,
+  <span class="k">"cwd"</span>: <span class="s session">"/.../cmux-worktrees/bridge"</span>,
+  <span class="k">"prompt"</span>: <span class="s">"find why…"</span>,
+  <span class="k">"promptOverride"</span>: <span class="s">true</span>,
+  <span class="k">"prelude"</span>: <span class="c">null</span>,
+  <span class="k">"triggerReason"</span>: <span class="s">"quickAction.freePrompt"</span>,
+  <span class="k">"vars"</span>: {}
+}</pre>
+        </div>
+      </div>
+
+      <div class="pal-footer">
+        <div class="left"><span class="brand"><span class="logo"></span> termloop</span><span class="sep"></span><span class="hint">persist dots mirror highlight color in JSON</span></div>
+        <div class="right">
+          <span class="act"><span class="lbl">run</span><span class="kbd">↵</span></span>
+          <span class="act"><span class="lbl">toggle json</span><span class="kbd">⌘</span><span class="kbd plus">+</span><span class="kbd">J</span></span>
+          <span class="act"><span class="lbl">dismiss</span><span class="kbd esc">esc</span></span>
+        </div>
+      </div>
+    </div>
+
+    <p class="note"><b>Why:</b> left pane is the C11-style form, right pane is the <code>AgentRunRequest</code> that will actually be dispatched. Saved/session colors carry across both — there's literally no ambiguity about what sticks after Enter.</p>
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,34 @@
+TermLoop
+Copyright (c) 2026-present Ferit özcan / TermLoop
+
+This product includes software developed by third parties:
+
+---
+
+cmux (upstream engine)
+  Copyright (c) 2024-present Manaflow, Inc.
+  License: GPL-3.0-or-later with commercial dual-license
+  Source: https://github.com/manaflow-ai/cmux
+  TermLoop is a fork of cmux. The upstream engine files under termloop/Sources/
+  (excluding Sources/TermLoop/ and CLI/TermLoop/) are copyright Manaflow, Inc.
+
+---
+
+Ghostty
+  Copyright (c) 2024 Mitchell Hashimoto, Ghostty contributors
+  License: MIT
+  Source: https://github.com/ghostty-org/ghostty
+  Vendored at: termloop/ghostty/
+
+---
+
+bonsplit
+  Copyright (c) 2026 Alasdair Monk
+  License: MIT
+  Vendored at: termloop/vendor/bonsplit/
+
+---
+
+SwiftTerm
+  License: MIT
+  Source: https://github.com/migueldeicaza/SwiftTerm

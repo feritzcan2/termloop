@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ask-to — Agents that consult each other · TermLoop</title>
+<meta name="description" content="Watch one TermLoop agent ask another for help — across models, across worktrees. Powered by the ask_to MCP tool.">
+<meta property="og:title" content="Ask-to — Agents that consult each other">
+<meta property="og:description" content="One agent stuck? It asks another. Cross-model, cross-worktree consults via ask_to MCP.">
+<meta property="og:type" content="website">
+<link rel="canonical" href="https://termloop.ai/demos/ask-to">
+<meta name="theme-color" content="#000000">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@300..600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg: #000000;
+    --bg-1: #09090b;
+    --bg-2: #18181b;
+    --bg-3: #27272a;
+    --border: #27272a;
+    --border-2: #3f3f46;
+    --fg: #fafafa;
+    --fg-2: #d4d4d8;
+    --fg-3: #a1a1aa;
+    --fg-4: #71717a;
+    --cyan: #06b6d4;
+    --cyan-2: #22d3ee;
+    --cyan-3: #67e8f9;
+    --cyan-dim: #164e63;
+    --purple: #9333ea;
+    --purple-2: #a855f7;
+    --purple-3: #c084fc;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  ::selection { background: var(--cyan); color: #000; }
+  a { color: inherit; text-decoration: none; }
+
+  /* Background grid */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    pointer-events: none; z-index: 0;
+    background-image:
+      linear-gradient(to right, rgba(255,255,255,0.035) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,0.035) 1px, transparent 1px);
+    background-size: 60px 60px;
+    mask-image: radial-gradient(ellipse at top, black 30%, transparent 72%);
+    -webkit-mask-image: radial-gradient(ellipse at top, black 30%, transparent 72%);
+  }
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    pointer-events: none; z-index: 0;
+    background:
+      radial-gradient(ellipse 70% 50% at 25% 10%, rgba(34, 211, 238, 0.08), transparent 60%),
+      radial-gradient(ellipse 70% 50% at 75% 30%, rgba(168, 85, 247, 0.08), transparent 60%);
+  }
+
+  main { position: relative; z-index: 1; }
+
+  /* Nav */
+  nav {
+    position: sticky; top: 0; z-index: 50;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    background: rgba(0,0,0,0.6);
+    border-bottom: 1px solid var(--border);
+  }
+  nav .row {
+    max-width: 1200px; margin: 0 auto;
+    padding: 16px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.02em; }
+  .brand .dot {
+    width: 22px; height: 22px; border-radius: 6px;
+    background: linear-gradient(135deg, var(--cyan-2), var(--purple-2));
+    box-shadow: 0 0 24px rgba(34,211,238,0.5);
+  }
+  .nav-links { display: flex; gap: 28px; font-size: 14px; color: var(--fg-3); }
+  .nav-links a:hover { color: var(--fg); }
+
+  /* Hero */
+  .hero {
+    max-width: 1100px; margin: 0 auto;
+    padding: 96px 24px 56px;
+    text-align: center;
+  }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--cyan-2);
+    padding: 6px 14px;
+    border: 1px solid var(--cyan-dim);
+    border-radius: 999px;
+    background: rgba(34,211,238,0.06);
+    margin-bottom: 28px;
+  }
+  .eyebrow .pulse {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--cyan-2);
+    box-shadow: 0 0 8px var(--cyan-2);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse { 50% { opacity: 0.4; } }
+
+  h1 {
+    font-size: clamp(40px, 6vw, 76px);
+    line-height: 1.02;
+    letter-spacing: -0.04em;
+    font-weight: 600;
+    margin-bottom: 24px;
+  }
+  h1 .grad {
+    background: linear-gradient(120deg, var(--cyan-2), var(--purple-3));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .hero p.lead {
+    font-size: clamp(17px, 1.6vw, 20px);
+    color: var(--fg-3);
+    max-width: 640px;
+    margin: 0 auto 40px;
+  }
+
+  /* Video stage */
+  .stage {
+    max-width: 1180px; margin: 0 auto;
+    padding: 0 24px 96px;
+  }
+  .video-frame {
+    position: relative;
+    border: 1px solid var(--border-2);
+    border-radius: 16px;
+    overflow: hidden;
+    background: var(--bg-1);
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.04),
+      0 30px 80px -20px rgba(0,0,0,0.8),
+      0 0 120px -20px rgba(34,211,238,0.25);
+  }
+  .video-frame::before {
+    content: '';
+    position: absolute; inset: 0;
+    pointer-events: none; z-index: 2;
+    border-radius: 16px;
+    box-shadow: inset 0 0 60px rgba(0,0,0,0.4);
+  }
+  .video-frame video {
+    display: block; width: 100%; height: auto;
+    border-radius: 16px;
+  }
+  .frame-bar {
+    position: absolute; top: 0; left: 0; right: 0;
+    z-index: 3;
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 16px;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent);
+  }
+  .frame-bar .dots { display: flex; gap: 6px; }
+  .frame-bar .dots span {
+    width: 11px; height: 11px; border-radius: 50%;
+    background: var(--bg-3);
+    border: 1px solid var(--border-2);
+  }
+  .frame-bar .dots span:nth-child(1) { background: #ef4444; }
+  .frame-bar .dots span:nth-child(2) { background: #f59e0b; }
+  .frame-bar .dots span:nth-child(3) { background: #22c55e; }
+  .frame-bar .title {
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px;
+    color: var(--fg-4);
+    margin-left: 8px;
+  }
+
+  /* Caption overlay synced to video.currentTime */
+  .captions {
+    position: absolute;
+    left: 50%; bottom: 28px;
+    transform: translateX(-50%);
+    z-index: 4;
+    display: flex; gap: 8px; align-items: center;
+    padding: 14px 22px;
+    background: rgba(9,9,11,0.88);
+    border: 1px solid var(--border-2);
+    border-radius: 999px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    font-size: 16px;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.35s ease;
+    box-shadow: 0 10px 40px -10px rgba(0,0,0,0.8);
+  }
+  .captions.show { opacity: 1; }
+  .captions .step-num {
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px;
+    color: var(--cyan-2);
+    padding: 3px 8px;
+    border: 1px solid var(--cyan-dim);
+    border-radius: 6px;
+    background: rgba(34,211,238,0.08);
+  }
+  .captions.purple .step-num {
+    color: var(--purple-3);
+    border-color: rgba(168,85,247,0.4);
+    background: rgba(168,85,247,0.1);
+  }
+
+  /* Spotlight rectangle that highlights active panel */
+  .spotlight {
+    position: absolute;
+    z-index: 3;
+    pointer-events: none;
+    border: 3px solid var(--cyan-2);
+    border-radius: 10px;
+    box-shadow:
+      0 0 0 9999px rgba(0,0,0,0.55),
+      0 0 0 1px rgba(255,255,255,0.15),
+      0 0 40px rgba(34,211,238,0.8),
+      inset 0 0 20px rgba(34,211,238,0.15);
+    opacity: 0;
+    transition: opacity 0.4s ease, all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .spotlight.show { opacity: 1; }
+  .spotlight.purple {
+    border-color: var(--purple-3);
+    box-shadow:
+      0 0 0 9999px rgba(0,0,0,0.55),
+      0 0 0 1px rgba(255,255,255,0.15),
+      0 0 40px rgba(192,132,252,0.8),
+      inset 0 0 20px rgba(192,132,252,0.15);
+  }
+  @media (max-width: 760px) {
+    .captions { font-size: 13px; padding: 10px 14px; bottom: 14px; }
+    .captions .step-num { font-size: 10px; padding: 2px 6px; }
+  }
+
+  /* Sections */
+  section {
+    max-width: 1100px; margin: 0 auto;
+    padding: 80px 24px;
+  }
+  .section-title {
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--fg-4);
+    margin-bottom: 16px;
+  }
+  h2 {
+    font-size: clamp(30px, 4vw, 48px);
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    font-weight: 600;
+    margin-bottom: 20px;
+    max-width: 760px;
+  }
+  section p {
+    color: var(--fg-3);
+    font-size: 17px;
+    max-width: 680px;
+    margin-bottom: 16px;
+  }
+
+  /* Steps */
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: 48px;
+  }
+  .step {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    background: var(--bg-1);
+    position: relative;
+    overflow: hidden;
+  }
+  .step::after {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyan-2), transparent);
+    opacity: 0.4;
+  }
+  .step .num {
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px;
+    color: var(--cyan-2);
+    margin-bottom: 12px;
+  }
+  .step h3 {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin-bottom: 8px;
+  }
+  .step p {
+    font-size: 14px;
+    color: var(--fg-3);
+    margin: 0;
+  }
+  @media (max-width: 760px) {
+    .steps { grid-template-columns: 1fr; }
+  }
+
+  /* Code block */
+  .code {
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--fg-2);
+    overflow-x: auto;
+    margin-top: 24px;
+  }
+  .code .c { color: var(--fg-4); }
+  .code .k { color: var(--purple-3); }
+  .code .s { color: var(--cyan-3); }
+  .code .f { color: var(--cyan-2); }
+
+  /* CTA */
+  .cta {
+    text-align: center;
+    padding: 96px 24px 120px;
+  }
+  .cta-row { display: inline-flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 14px 22px;
+    border-radius: 10px;
+    font-weight: 500;
+    font-size: 15px;
+    transition: transform 0.15s, background 0.15s, border 0.15s;
+    border: 1px solid transparent;
+  }
+  .btn-primary {
+    background: var(--fg);
+    color: #000;
+  }
+  .btn-primary:hover { transform: translateY(-1px); }
+  .btn-ghost {
+    border-color: var(--border-2);
+    color: var(--fg);
+  }
+  .btn-ghost:hover { background: var(--bg-2); border-color: var(--fg-4); }
+
+  /* Footer */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 32px 24px;
+    text-align: center;
+    color: var(--fg-4);
+    font-size: 13px;
+  }
+  footer a:hover { color: var(--fg-2); }
+</style>
+</head>
+<body>
+<main>
+
+<nav>
+  <div class="row">
+    <a href="/" class="brand">
+      <span class="dot"></span>
+      <span>TermLoop</span>
+    </a>
+    <div class="nav-links">
+      <a href="/#features">Features</a>
+      <a href="/demos/ask-to" style="color:var(--fg)">Demos</a>
+      <a href="/#download">Download</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="eyebrow"><span class="pulse"></span> New · ask_to MCP</div>
+  <h1>One agent gets stuck.<br><span class="grad">Another one helps.</span></h1>
+  <p class="lead">
+    Your Claude agent hits a wall. Instead of waiting for you, it asks Codex.
+    Cross-model, cross-worktree consults — built into TermLoop as a first-class MCP tool.
+  </p>
+</header>
+
+<div class="stage">
+  <div class="video-frame">
+    <div class="frame-bar">
+      <div class="dots"><span></span><span></span><span></span></div>
+      <div class="title">termloop · ask_to demo</div>
+    </div>
+    <video
+      id="askto-video"
+      autoplay muted loop playsinline
+      preload="metadata"
+      poster=""
+    >
+      <source src="/assets/videos/askto-edited.webm" type="video/webm">
+      <source src="/assets/videos/askto-edited.mp4" type="video/mp4">
+    </video>
+    <div class="spotlight" id="spotlight"></div>
+    <div class="captions" id="captions">
+      <span class="step-num" id="caption-num">1</span>
+      <span id="caption-text">Claude is working in the communication branch</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Caption / spotlight timeline keyed to edited video time (seconds).
+  // Spotlight coords are percentages relative to video frame.
+  const timeline = [
+    {
+      t0: 0, t1: 3.0,
+      num: '1', text: 'Claude is mid-task in the communication branch',
+      color: 'cyan',
+      spot: { left: '10.5%', top: '26%', width: '16%', height: '7%' }
+    },
+    {
+      t0: 3.0, t1: 6.5,
+      num: '2', text: 'Hits a question — calls ask_to(codex)',
+      color: 'cyan',
+      spot: { left: '10.5%', top: '31%', width: '16%', height: '5%' }
+    },
+    {
+      t0: 6.5, t1: 11.0,
+      num: '3', text: 'Codex receives — investigates in its own loop',
+      color: 'purple',
+      spot: { left: '35%', top: '4%', width: '64%', height: '88%' }
+    },
+    {
+      t0: 11.0, t1: 99,
+      num: '4', text: 'Answer flows back inline',
+      color: 'cyan',
+      spot: { left: '10.5%', top: '44%', width: '16%', height: '8%' }
+    },
+  ];
+
+  const v = document.getElementById('askto-video');
+  const cap = document.getElementById('captions');
+  const capNum = document.getElementById('caption-num');
+  const capText = document.getElementById('caption-text');
+  const spot = document.getElementById('spotlight');
+
+  let lastIdx = -1;
+  function tick() {
+    if (!v || v.duration === 0) { requestAnimationFrame(tick); return; }
+    const t = v.currentTime;
+    const idx = timeline.findIndex(s => t >= s.t0 && t < s.t1);
+    if (idx !== lastIdx && idx !== -1) {
+      const step = timeline[idx];
+      capNum.textContent = step.num;
+      capText.textContent = step.text;
+      cap.classList.toggle('purple', step.color === 'purple');
+      cap.classList.add('show');
+      spot.classList.toggle('purple', step.color === 'purple');
+      spot.style.left = step.spot.left;
+      spot.style.top = step.spot.top;
+      spot.style.width = step.spot.width;
+      spot.style.height = step.spot.height;
+      spot.classList.add('show');
+      lastIdx = idx;
+    }
+    requestAnimationFrame(tick);
+  }
+  v.addEventListener('loadedmetadata', () => { cap.classList.add('show'); });
+  v.addEventListener('seeked', () => { lastIdx = -1; });
+  v.addEventListener('ended', () => { lastIdx = -1; });
+  // Reset caption on loop restart
+  v.addEventListener('timeupdate', () => {
+    if (v.currentTime < 0.2) lastIdx = -1;
+  });
+  requestAnimationFrame(tick);
+</script>
+
+<section>
+  <div class="section-title">How it works</div>
+  <h2>An MCP tool for agent-to-agent consults.</h2>
+  <p>
+    Every running agent in TermLoop exposes <code style="color:var(--cyan-2);font-family:'Geist Mono',monospace;">mcp__termloop__ask_to</code>.
+    When an agent calls it, the target agent receives a message in its own loop,
+    answers in its own context, and the response flows back — no copy-paste, no context juggling.
+  </p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="num">01</div>
+      <h3>Agent A asks</h3>
+      <p>Claude calls <code style="font-family:'Geist Mono',monospace;color:var(--fg-2)">ask_to(target: "codex", question: "...")</code> with full context.</p>
+    </div>
+    <div class="step">
+      <div class="num">02</div>
+      <h3>Agent B answers</h3>
+      <p>Codex receives the prompt in its own session, thinks with its own model and tools, replies.</p>
+    </div>
+    <div class="step">
+      <div class="num">03</div>
+      <h3>A keeps going</h3>
+      <p>The response returns inline. Claude continues the task with a second opinion already in hand.</p>
+    </div>
+  </div>
+
+<pre class="code"><span class="c">// Inside any TermLoop agent</span>
+<span class="k">await</span> <span class="f">mcp__termloop__ask_to</span>({
+  target: <span class="s">"codex"</span>,
+  question: <span class="s">"Does this migration look safe under concurrent writes?"</span>,
+  context: { files: [<span class="s">"db/0042_users.sql"</span>] }
+});</pre>
+</section>
+
+<section>
+  <div class="section-title">Why it matters</div>
+  <h2>Stop being the message bus between your agents.</h2>
+  <p>
+    Most multi-agent setups fall apart because <em>you</em> end up routing context by hand —
+    paste this, summarize that, switch tabs. <strong>ask_to</strong> turns that into one tool call.
+  </p>
+  <p>
+    Different models excel at different things. Claude reasons through ambiguity well; Codex hammers compile errors;
+    Gemini is fast on long context. Let them play to type — and let them ask each other instead of you.
+  </p>
+</section>
+
+<div class="cta">
+  <h2 style="margin: 0 auto 24px; text-align: center;">See the rest of TermLoop.</h2>
+  <div class="cta-row">
+    <a class="btn btn-primary" href="/#download">Download for macOS</a>
+    <a class="btn btn-ghost" href="/#features">All features</a>
+  </div>
+</div>
+
+<footer>
+  <p>© 2026 TermLoop · <a href="/">termloop.ai</a></p>
+</footer>
+
+</main>
+</body>
+</html>

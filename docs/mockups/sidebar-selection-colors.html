@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>termloop — sidebar selection color explorations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --page-bg:        #d9d9dc;
+    --sidebar-bg:     #e9e9ec;
+    --sidebar-bg-2:   #e2e2e5;
+    --header-bg:      #d3d3d7;
+    --ink-1:          #1a1a1f;
+    --ink-2:          #5a5d66;
+    --ink-3:          #8c8f97;
+    --line:           rgba(0,0,0,0.07);
+    --line-soft:      rgba(0,0,0,0.04);
+
+    /* mac system blue baseline (current) */
+    --mac-blue:       #0a6cff;
+    --mac-blue-edge:  #2f83ff;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background:
+      radial-gradient(1200px 800px at 20% 0%, #e6e6ea, transparent 60%),
+      radial-gradient(1000px 700px at 100% 100%, #cdced2, transparent 60%),
+      #c8c9cd;
+    color: var(--ink-1);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    padding: 48px 32px 96px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page-head {
+    max-width: 1480px; margin: 0 auto 32px;
+    display: flex; align-items: baseline; justify-content: space-between; gap: 24px;
+    border-bottom: 1px solid rgba(0,0,0,0.1);
+    padding-bottom: 18px;
+  }
+  .page-head h1 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: 0.02em; color: var(--ink-2); }
+  .page-head h1 b { color: #0a6cff; font-weight: 700; }
+  .page-head .legend { font-size: 11px; color: var(--ink-3); letter-spacing: 0.04em; text-transform: uppercase; }
+
+  .grid {
+    max-width: 1480px; margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 28px;
+  }
+
+  .card {
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .card .caption {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 0 2px;
+  }
+  .card .caption .name {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--ink-1);
+  }
+  .card .caption .tag {
+    font-size: 10px; font-weight: 500; color: var(--ink-3);
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  }
+
+  /* sidebar chrome — matches screenshot */
+  .sb {
+    background: var(--sidebar-bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.08), 0 1px 0 rgba(255,255,255,0.4) inset;
+  }
+
+  .titlebar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px 8px;
+    background: linear-gradient(#eaeaee, #dfdfe3);
+    border-bottom: 1px solid var(--line);
+  }
+  .dots { display: flex; gap: 6px; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .dot.r { background: #ff5f57; }
+  .dot.y { background: #febc2e; }
+  .dot.g { background: #28c840; }
+  .tb-ico {
+    width: 18px; height: 16px; margin-left: 8px;
+    border-radius: 3px; border: 1.3px solid #5c5f66;
+    position: relative;
+  }
+  .tb-ico::before { content: ""; position: absolute; left: 5px; top: 0; bottom: 0; border-left: 1.3px solid #5c5f66; }
+  .tb-bell { width: 12px; height: 13px; margin-left: 4px; border: 1.3px solid #5c5f66; border-radius: 5px 5px 2px 2px; border-bottom: none; position: relative; }
+  .tb-bell::after { content: ""; position: absolute; left: -2px; right: -2px; bottom: -3px; height: 1.3px; background: #5c5f66; }
+  .tb-plus { margin-left: 6px; font-size: 16px; line-height: 14px; color: #3a3d44; font-weight: 400; }
+
+  .tabs {
+    display: grid; grid-template-columns: 1fr 1fr 1fr;
+    padding: 8px 0 0;
+    background: linear-gradient(#dfdfe3, #d7d7db);
+    border-bottom: 1px solid rgba(0,0,0,0.09);
+  }
+  .tab {
+    text-align: center; padding: 8px 0 10px;
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.16em;
+    color: #8a8d95; cursor: default;
+  }
+  .tab.active { color: #1a1a1f; box-shadow: inset 0 -2px 0 0 var(--mac-blue); }
+
+  .section-head {
+    padding: 7px 14px;
+    background: #cfcfd3;
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+    text-align: center;
+    font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+    color: #5a5d66;
+  }
+
+  .epic {
+    padding: 9px 12px; display: flex; align-items: center; gap: 6px;
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+    color: #2a2d34; border-bottom: 1px solid var(--line-soft);
+    background: var(--sidebar-bg-2);
+  }
+  .epic.collapsed { color: #6a6d75; font-weight: 600; }
+  .epic .caret { width: 10px; color: #6a6d75; font-size: 9px; }
+  .epic .count { margin-left: auto; font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-weight: 500; color: #8a8d95; font-size: 10px; letter-spacing: 0; }
+
+  .ws-list { padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 4px; }
+
+  .ws {
+    position: relative;
+    padding: 8px 10px;
+    border-radius: 6px;
+    display: flex; flex-direction: column; gap: 2px;
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    cursor: default;
+  }
+  .ws .title { font-size: 11.5px; font-weight: 600; color: #15161a; display: flex; align-items: center; gap: 8px; }
+  .ws .sub   { font-size: 10.5px; color: #6a6d75; }
+  .ws .title .x { margin-left: auto; width: 14px; height: 14px; display: grid; place-items: center; color: #8a8d95; font-size: 12px; border-radius: 3px; }
+
+  /* unselected state is consistent across variants */
+  .ws.is-rest:hover { background: rgba(0,0,0,0.03); }
+
+  .newepic {
+    padding: 11px 14px; display: flex; align-items: center; gap: 8px;
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+    color: #6a6d75; border-top: 1px solid var(--line);
+  }
+  .newepic .plus { font-weight: 400; font-size: 14px; }
+
+  /* ================================================================ */
+  /* VARIANT STYLES — only the selected workspace row differs          */
+  /* ================================================================ */
+
+  /* 0 — current: macOS system blue */
+  .v-blue .ws.is-sel {
+    background: linear-gradient(var(--mac-blue-edge), var(--mac-blue));
+    box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 1px 2px rgba(0,0,0,0.14);
+  }
+  .v-blue .ws.is-sel .title, .v-blue .ws.is-sel .sub { color: #fff; }
+  .v-blue .ws.is-sel .title .x { color: rgba(255,255,255,0.85); }
+
+  /* 1 — graphite: neutral, high contrast */
+  .v-graphite .ws.is-sel {
+    background: linear-gradient(#3e4048, #2a2c33);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.1) inset, 0 1px 2px rgba(0,0,0,0.2);
+  }
+  .v-graphite .ws.is-sel .title { color: #f4f4f6; }
+  .v-graphite .ws.is-sel .sub   { color: #b8bac2; }
+  .v-graphite .ws.is-sel .title .x { color: rgba(255,255,255,0.7); }
+
+  /* 2 — accent bar: subtle tint + left keyline */
+  .v-accent .ws.is-sel {
+    background: rgba(10,108,255,0.09);
+    box-shadow: inset 3px 0 0 0 var(--mac-blue);
+    padding-left: 13px;
+  }
+  .v-accent .ws.is-sel .title { color: #0a3d8a; }
+  .v-accent .ws.is-sel .sub   { color: #3661a8; }
+  .v-accent .ws.is-sel .title .x { color: #0a6cff; }
+
+  /* 3 — amber (agent / warm) */
+  .v-amber .ws.is-sel {
+    background: linear-gradient(#ffb94d, #ef8f1a);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.3) inset, 0 1px 2px rgba(134,77,0,0.25);
+  }
+  .v-amber .ws.is-sel .title { color: #2a1300; }
+  .v-amber .ws.is-sel .sub   { color: rgba(42,19,0,0.68); }
+  .v-amber .ws.is-sel .title .x { color: rgba(42,19,0,0.7); }
+
+  /* 4 — violet / indigo */
+  .v-violet .ws.is-sel {
+    background: linear-gradient(#8a6cff, #5a3ce6);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.22) inset, 0 1px 2px rgba(40,20,90,0.3);
+  }
+  .v-violet .ws.is-sel .title, .v-violet .ws.is-sel .sub { color: #fff; }
+  .v-violet .ws.is-sel .sub { color: rgba(255,255,255,0.82); }
+  .v-violet .ws.is-sel .title .x { color: rgba(255,255,255,0.85); }
+
+  /* 5 — teal / mint */
+  .v-teal .ws.is-sel {
+    background: linear-gradient(#2cc5b8, #149687);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.24) inset, 0 1px 2px rgba(0,60,55,0.25);
+  }
+  .v-teal .ws.is-sel .title, .v-teal .ws.is-sel .sub { color: #fff; }
+  .v-teal .ws.is-sel .sub { color: rgba(255,255,255,0.86); }
+  .v-teal .ws.is-sel .title .x { color: rgba(255,255,255,0.85); }
+
+  /* 6 — outline: no fill, just a frame */
+  .v-outline .ws.is-sel {
+    background: rgba(255,255,255,0.55);
+    box-shadow: inset 0 0 0 1.5px #1a1a1f;
+  }
+  .v-outline .ws.is-sel .title { color: #0a0a0d; }
+  .v-outline .ws.is-sel .sub   { color: #4a4d55; }
+
+  /* 7 — elevated card: neutral but lifted */
+  .v-elev .ws.is-sel {
+    background: #fbfbfd;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.08);
+  }
+  .v-elev .ws.is-sel .title { color: #0a0a0d; }
+  .v-elev .ws.is-sel .sub   { color: #5a5d66; }
+  .v-elev .ws.is-sel::before {
+    content: ""; position: absolute; left: -8px; top: 10px; bottom: 10px;
+    width: 3px; border-radius: 2px; background: #0a0a0d;
+  }
+
+  /* 8 — soft blue tint (less punchy than mac blue) */
+  .v-softblue .ws.is-sel {
+    background: linear-gradient(#cfe0ff, #a9c5ff);
+    box-shadow: inset 0 0 0 1px rgba(10,108,255,0.35);
+  }
+  .v-softblue .ws.is-sel .title { color: #0b2a66; }
+  .v-softblue .ws.is-sel .sub   { color: #335aa5; }
+  .v-softblue .ws.is-sel .title .x { color: #0a6cff; }
+
+  /* 9 — rose / pink */
+  .v-rose .ws.is-sel {
+    background: linear-gradient(#ff7aa2, #e14a78);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 1px 2px rgba(110,20,50,0.25);
+  }
+  .v-rose .ws.is-sel .title, .v-rose .ws.is-sel .sub { color: #fff; }
+  .v-rose .ws.is-sel .sub { color: rgba(255,255,255,0.86); }
+  .v-rose .ws.is-sel .title .x { color: rgba(255,255,255,0.85); }
+
+  /* notes row */
+  .notes {
+    max-width: 1480px; margin: 44px auto 0;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px 28px;
+    border-top: 1px solid rgba(0,0,0,0.1); padding-top: 20px;
+  }
+  .notes h3 { font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; margin: 0 0 4px; color: #3a3d44; }
+  .notes p { font-size: 12px; line-height: 1.5; margin: 0; color: var(--ink-2); }
+  .notes code { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: #3a3d44; background: rgba(0,0,0,0.05); padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>termloop — <b>sidebar selection</b> / renk keşifleri</h1>
+  <div class="legend">10 varyant · aynı içerik, sadece seçim stili değişiyor</div>
+</div>
+
+<div class="grid">
+
+  <!-- ===================== BLUE (current) ===================== -->
+  <div class="card">
+    <div class="caption"><span class="name">00 · Mac Blue (mevcut)</span><span class="tag">#0a6cff</span></div>
+    <div class="sb v-blue">
+      <div class="titlebar">
+        <div class="dots"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
+        <div class="tb-ico"></div><div class="tb-bell"></div><div class="tb-plus">+</div>
+      </div>
+      <div class="tabs"><div class="tab active">WORK</div><div class="tab">BMAD</div><div class="tab">AGENTS</div></div>
+      <div class="section-head">TERMLOOP</div>
+      <div class="epic"><span class="caret">▾</span>PROJECCT<span class="count">3</span></div>
+      <div class="ws-list">
+        <div class="ws is-sel"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master* · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master · ~/Projects/bmadworkflowtest</div></div>
+      </div>
+      <div class="epic collapsed"><span class="caret">▸</span>MOBILEAPP<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>WORKTREE<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>PLUGINSYSTEM<span class="count">2</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>UI<span class="count">1</span></div>
+      <div class="newepic"><span class="plus">+</span>NEW EPIC</div>
+    </div>
+  </div>
+
+  <!-- ===================== GRAPHITE ===================== -->
+  <div class="card">
+    <div class="caption"><span class="name">01 · Graphite</span><span class="tag">#2a2c33</span></div>
+    <div class="sb v-graphite">
+      <div class="titlebar">
+        <div class="dots"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
+        <div class="tb-ico"></div><div class="tb-bell"></div><div class="tb-plus">+</div>
+      </div>
+      <div class="tabs"><div class="tab active">WORK</div><div class="tab">BMAD</div><div class="tab">AGENTS</div></div>
+      <div class="section-head">TERMLOOP</div>
+      <div class="epic"><span class="caret">▾</span>PROJECCT<span class="count">3</span></div>
+      <div class="ws-list">
+        <div class="ws is-sel"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master* · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master · ~/Projects/bmadworkflowtest</div></div>
+      </div>
+      <div class="epic collapsed"><span class="caret">▸</span>MOBILEAPP<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>WORKTREE<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>PLUGINSYSTEM<span class="count">2</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>UI<span class="count">1</span></div>
+      <div class="newepic"><span class="plus">+</span>NEW EPIC</div>
+    </div>
+  </div>
+
+  <!-- ===================== ACCENT BAR ===================== -->
+  <div class="card">
+    <div class="caption"><span class="name">02 · Accent Bar (low-noise)</span><span class="tag">tint 9%</span></div>
+    <div class="sb v-accent">
+      <div class="titlebar">
+        <div class="dots"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
+        <div class="tb-ico"></div><div class="tb-bell"></div><div class="tb-plus">+</div>
+      </div>
+      <div class="tabs"><div class="tab active">WORK</div><div class="tab">BMAD</div><div class="tab">AGENTS</div></div>
+      <div class="section-head">TERMLOOP</div>
+      <div class="epic"><span class="caret">▾</span>PROJECCT<span class="count">3</span></div>
+      <div class="ws-list">
+        <div class="ws is-sel"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master* · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master · ~/Projects/bmadworkflowtest</div></div>
+      </div>
+      <div class="epic collapsed"><span class="caret">▸</span>MOBILEAPP<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>WORKTREE<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>PLUGINSYSTEM<span class="count">2</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>UI<span class="count">1</span></div>
+      <div class="newepic"><span class="plus">+</span>NEW EPIC</div>
+    </div>
+  </div>
+
+  <!-- ===================== SOFT BLUE ===================== -->
+  <div class="card">
+    <div class="caption"><span class="name">03 · Soft Blue</span><span class="tag">#a9c5ff</span></div>
+    <div class="sb v-softblue">
+      <div class="titlebar">
+        <div class="dots"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
+        <div class="tb-ico"></div><div class="tb-bell"></div><div class="tb-plus">+</div>
+      </div>
+      <div class="tabs"><div class="tab active">WORK</div><div class="tab">BMAD</div><div class="tab">AGENTS</div></div>
+      <div class="section-head">TERMLOOP</div>
+      <div class="epic"><span class="caret">▾</span>PROJECCT<span class="count">3</span></div>
+      <div class="ws-list">
+        <div class="ws is-sel"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master* · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master · ~/Projects/bmadworkflowtest</div></div>
+      </div>
+      <div class="epic collapsed"><span class="caret">▸</span>MOBILEAPP<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>WORKTREE<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>PLUGINSYSTEM<span class="count">2</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>UI<span class="count">1</span></div>
+      <div class="newepic"><span class="plus">+</span>NEW EPIC</div>
+    </div>
+  </div>
+
+  <!-- ===================== AMBER ===================== -->
+  <div class="card">
+    <div class="caption"><span class="name">04 · Amber (agent-warm)</span><span class="tag">#ef8f1a</span></div>
+    <div class="sb v-amber">
+      <div class="titlebar">
+        <div class="dots"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
+        <div class="tb-ico"></div><div class="tb-bell"></div><div class="tb-plus">+</div>
+      </div>
+      <div class="tabs"><div class="tab active">WORK</div><div class="tab">BMAD</div><div class="tab">AGENTS</div></div>
+      <div class="section-head">TERMLOOP</div>
+      <div class="epic"><span class="caret">▾</span>PROJECCT<span class="count">3</span></div>
+      <div class="ws-list">
+        <div class="ws is-sel"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master* · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master · ~/Projects/bmadworkflowtest</div></div>
+      </div>
+      <div class="epic collapsed"><span class="caret">▸</span>MOBILEAPP<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>WORKTREE<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>PLUGINSYSTEM<span class="count">2</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>UI<span class="count">1</span></div>
+      <div class="newepic"><span class="plus">+</span>NEW EPIC</div>
+    </div>
+  </div>
+
+  <!-- ===================== VIOLET ===================== -->
+  <div class="card">
+    <div class="caption"><span class="name">05 · Violet</span><span class="tag">#5a3ce6</span></div>
+    <div class="sb v-violet">
+      <div class="titlebar">
+        <div class="dots"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
+        <div class="tb-ico"></div><div class="tb-bell"></div><div class="tb-plus">+</div>
+      </div>
+      <div class="tabs"><div class="tab active">WORK</div><div class="tab">BMAD</div><div class="tab">AGENTS</div></div>
+      <div class="section-head">TERMLOOP</div>
+      <div class="epic"><span class="caret">▾</span>PROJECCT<span class="count">3</span></div>
+      <div class="ws-list">
+        <div class="ws is-sel"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master* · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master · ~/Projects/bmadworkflowtest</div></div>
+      </div>
+      <div class="epic collapsed"><span class="caret">▸</span>MOBILEAPP<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>WORKTREE<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>PLUGINSYSTEM<span class="count">2</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>UI<span class="count">1</span></div>
+      <div class="newepic"><span class="plus">+</span>NEW EPIC</div>
+    </div>
+  </div>
+
+  <!-- ===================== TEAL ===================== -->
+  <div class="card">
+    <div class="caption"><span class="name">06 · Teal</span><span class="tag">#149687</span></div>
+    <div class="sb v-teal">
+      <div class="titlebar">
+        <div class="dots"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
+        <div class="tb-ico"></div><div class="tb-bell"></div><div class="tb-plus">+</div>
+      </div>
+      <div class="tabs"><div class="tab active">WORK</div><div class="tab">BMAD</div><div class="tab">AGENTS</div></div>
+      <div class="section-head">TERMLOOP</div>
+      <div class="epic"><span class="caret">▾</span>PROJECCT<span class="count">3</span></div>
+      <div class="ws-list">
+        <div class="ws is-sel"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master* · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master · ~/Projects/bmadworkflowtest</div></div>
+      </div>
+      <div class="epic collapsed"><span class="caret">▸</span>MOBILEAPP<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>WORKTREE<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>PLUGINSYSTEM<span class="count">2</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>UI<span class="count">1</span></div>
+      <div class="newepic"><span class="plus">+</span>NEW EPIC</div>
+    </div>
+  </div>
+
+  <!-- ===================== ROSE ===================== -->
+  <div class="card">
+    <div class="caption"><span class="name">07 · Rose</span><span class="tag">#e14a78</span></div>
+    <div class="sb v-rose">
+      <div class="titlebar">
+        <div class="dots"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
+        <div class="tb-ico"></div><div class="tb-bell"></div><div class="tb-plus">+</div>
+      </div>
+      <div class="tabs"><div class="tab active">WORK</div><div class="tab">BMAD</div><div class="tab">AGENTS</div></div>
+      <div class="section-head">TERMLOOP</div>
+      <div class="epic"><span class="caret">▾</span>PROJECCT<span class="count">3</span></div>
+      <div class="ws-list">
+        <div class="ws is-sel"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master* · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master · ~/Projects/bmadworkflowtest</div></div>
+      </div>
+      <div class="epic collapsed"><span class="caret">▸</span>MOBILEAPP<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>WORKTREE<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>PLUGINSYSTEM<span class="count">2</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>UI<span class="count">1</span></div>
+      <div class="newepic"><span class="plus">+</span>NEW EPIC</div>
+    </div>
+  </div>
+
+  <!-- ===================== OUTLINE ===================== -->
+  <div class="card">
+    <div class="caption"><span class="name">08 · Outline (no fill)</span><span class="tag">1.5px frame</span></div>
+    <div class="sb v-outline">
+      <div class="titlebar">
+        <div class="dots"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
+        <div class="tb-ico"></div><div class="tb-bell"></div><div class="tb-plus">+</div>
+      </div>
+      <div class="tabs"><div class="tab active">WORK</div><div class="tab">BMAD</div><div class="tab">AGENTS</div></div>
+      <div class="section-head">TERMLOOP</div>
+      <div class="epic"><span class="caret">▾</span>PROJECCT<span class="count">3</span></div>
+      <div class="ws-list">
+        <div class="ws is-sel"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master* · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master · ~/Projects/bmadworkflowtest</div></div>
+      </div>
+      <div class="epic collapsed"><span class="caret">▸</span>MOBILEAPP<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>WORKTREE<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>PLUGINSYSTEM<span class="count">2</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>UI<span class="count">1</span></div>
+      <div class="newepic"><span class="plus">+</span>NEW EPIC</div>
+    </div>
+  </div>
+
+  <!-- ===================== ELEVATED ===================== -->
+  <div class="card">
+    <div class="caption"><span class="name">09 · Elevated Card + Rail</span><span class="tag">shadow</span></div>
+    <div class="sb v-elev">
+      <div class="titlebar">
+        <div class="dots"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
+        <div class="tb-ico"></div><div class="tb-bell"></div><div class="tb-plus">+</div>
+      </div>
+      <div class="tabs"><div class="tab active">WORK</div><div class="tab">BMAD</div><div class="tab">AGENTS</div></div>
+      <div class="section-head">TERMLOOP</div>
+      <div class="epic"><span class="caret">▾</span>PROJECCT<span class="count">3</span></div>
+      <div class="ws-list">
+        <div class="ws is-sel"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master* · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master · ~/Projects/bmadworkflowtest</div></div>
+        <div class="ws is-rest"><div class="title">feritzcan@Mac:~/Projects/bmad… <span class="x">×</span></div><div class="sub">master · ~/Projects/bmadworkflowtest</div></div>
+      </div>
+      <div class="epic collapsed"><span class="caret">▸</span>MOBILEAPP<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>WORKTREE<span class="count">1</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>PLUGINSYSTEM<span class="count">2</span></div>
+      <div class="epic collapsed"><span class="caret">▸</span>UI<span class="count">1</span></div>
+      <div class="newepic"><span class="plus">+</span>NEW EPIC</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="notes">
+  <div>
+    <h3>Öneri</h3>
+    <p><b>02 · Accent Bar</b> veya <b>01 · Graphite</b> en düşük gürültüyü verir — sidebar'da 10+ satır varken seçili satır yine göze çarpar ama gözü yormaz. Mevcut parlak mavi, liste uzadıkça pattern halini alıyor.</p>
+  </div>
+  <div>
+    <h3>Eğer marka rengi lazımsa</h3>
+    <p><b>05 · Violet</b> terminal/agent dünyasında daha ayırt edici; macOS native mavi ile karışmaz. <b>06 · Teal</b> "çalışıyor" durumuyla anlam taşıyabilir ama running göstergesiyle çakışmamalı.</p>
+  </div>
+  <div>
+    <h3>Kaçınılması iyi</h3>
+    <p><b>04 · Amber</b> ve <b>07 · Rose</b> termloop'ta "needs input" / "error" sinyalleriyle çakışma riski taşır — seçim rengi olarak durum kodlamasını kirletir.</p>
+  </div>
+  <div>
+    <h3>Açmak için</h3>
+    <p><code>open /Users/example/Projects/termloop-workspace/docs/mockups/sidebar-selection-colors.html</code></p>
+  </div>
+</div>
+
+</body>
+</html>

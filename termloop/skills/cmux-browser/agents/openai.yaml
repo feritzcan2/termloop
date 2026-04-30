@@ -1,0 +1,4 @@
+interface:
+  display_name: "cmux Browser"
+  short_description: "Automate termloop webview surfaces with snapshot/ref workflows."
+  default_prompt: "Use this skill for browser automation via termloop CLI: identify target surface, snapshot interactive refs, perform actions, wait for state changes, and re-snapshot to avoid stale refs."

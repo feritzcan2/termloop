@@ -1,0 +1,187 @@
+# Ghostty Fork Changes (`feritzcan2/ghostty`)
+
+This repo uses a fork of Ghostty for local patches that aren't upstream yet.
+When we change the fork, update this document and sync the vendored snapshot in the parent repo.
+
+## Fork update checklist
+
+1) Make changes in `ghostty/`.
+2) Commit and push to `feritzcan2/ghostty`.
+3) Update this file with the new change summary + conflict notes.
+4) In the parent repo: run `./scripts/sync-upstreams.sh ghostty`, then commit `ghostty/` and `upstreams.lock`.
+
+## Current fork changes
+
+Fork main has advanced beyond the March 30, 2026 rebase onto upstream `main`
+at `3509ccf78` (`v1.3.1-457-g3509ccf78`).
+Current termloop pinned fork head: `3b684a085` (`tip-1717-g3b684a085`).
+
+### 1) macOS display link restart on display changes
+
+- Commit: `05cf31b38` (macos: restart display link after display ID change)
+- Files:
+  - `src/renderer/generic.zig`
+- Summary:
+  - Restarts the CVDisplayLink when `setMacOSDisplayID` updates the current CGDisplay.
+  - Prevents a rare state where vsync is "running" but no callbacks arrive, which can look like a frozen surface until focus/occlusion changes.
+
+### 2) macOS resize stale-frame mitigation
+
+The resize commits are grouped by feature because they touch the same stale-frame replay path and
+tend to conflict together during rebases.
+
+- Commits:
+  - `a3588ac53` (macos: reduce transient blank/scaled frames during resize)
+  - `9ba54a68c` (macos: keep top-left gravity for stale-frame replay)
+- Files:
+  - `pkg/macos/animation.zig`
+  - `src/Surface.zig`
+  - `src/apprt/embedded.zig`
+  - `src/renderer/Metal.zig`
+  - `src/renderer/generic.zig`
+  - `src/renderer/metal/IOSurfaceLayer.zig`
+- Summary:
+  - Replays the last rendered frame during resize and keeps its geometry anchored correctly.
+  - Reduces transient blank or scaled frames while a macOS window is being resized.
+
+### 3) OSC 99 (kitty) notification parser
+
+- Commits:
+  - `2033ffebc` (Add OSC 99 notification parser)
+  - `a75615992` (Fix OSC 99 parser for upstream API changes)
+- Files:
+  - `src/terminal/osc.zig`
+  - `src/terminal/osc/parsers.zig`
+  - `src/terminal/osc/parsers/kitty_notification.zig`
+- Summary:
+  - Adds a parser for kitty OSC 99 notifications and wires it into the OSC dispatcher.
+  - Adapts the parser to upstream's newer capture API so the termloop OSC 99 hook survives the March 30 upstream sync.
+
+### 4) termloop theme picker helper hooks
+
+- Commits:
+  - `1da7281fd` (Add termloop theme picker helper hooks)
+  - `ea482b73e` (Fix termloop theme picker preview writes)
+  - `c7ab66056` (Improve termloop theme picker footer contrast)
+  - `c49f69f7b` (Respect system theme in termloop picker)
+  - `599b0ff43` (Skip theme detection in termloop picker)
+  - `b75388d95` (Match Ghostty theme picker startup)
+  - `f985d2d04` (Harden termloop theme override writes)
+- Files:
+  - `build.zig`
+  - `src/cli/list_themes.zig`
+  - `src/main_ghostty.zig`
+- Summary:
+  - Adds a `zig build cli-helper` step so termloop can bundle Ghostty's CLI helper binary on macOS.
+  - Lets `+list-themes` switch into a cmux-managed mode via env vars, writing the termloop theme override file and posting the existing termloop reload notification for live app-wide preview.
+  - Keeps the preview UI readable in light mode, matches upstream picker startup behavior, and hardens writes to the cmux-managed theme override file.
+
+### 5) Color scheme mode 2031 reporting
+
+- Commits:
+  - `2be58ee0e` (Fix DECRPM mode 2031 reporting wrong color scheme)
+  - `74709c29b` (Send initial color scheme report when mode 2031 is enabled)
+- Files:
+  - `src/Surface.zig`
+  - `src/termio/stream_handler.zig`
+- Summary:
+  - Keeps Ghostty's mode 2031 color-scheme response aligned with the surface's actual conditional state after config reloads.
+  - Sends the initial DSR 997 report as soon as mode 2031 is enabled, which termloop relies on for immediate color-scheme awareness.
+
+### 6) Keyboard copy mode selection C API
+
+- Commit: `0b231db94` (Re-export termloop selection APIs removed from upstream)
+- Files:
+  - `include/ghostty.h`
+  - `src/Surface.zig`
+  - `src/apprt/embedded.zig`
+- Summary:
+  - Restores `ghostty_surface_select_cursor_cell` and `ghostty_surface_clear_selection`.
+  - Keeps termloop keyboard copy mode working against the refreshed Ghostty base after upstream removed those exports.
+
+### 7) macos-background-from-layer config flag
+
+- Commit: `ae3cc5d29` (Restore macOS layer background hook)
+- Files:
+  - `src/config/Config.zig`
+  - `src/renderer/generic.zig`
+- Summary:
+  - Adds a `macos-background-from-layer` bool config (default false).
+  - When true, sets `bg_color[3] = 0` in the per-frame uniform update so the Metal renderer skips the full-screen background fill.
+  - Allows the host app to provide the terminal background via `CALayer.backgroundColor` for instant coverage during view resizes, avoiding alpha double-stacking.
+  - Replays the layer-background restore on top of the refreshed Ghostty base so termloop keeps the resize-coverage fix after the upstream sync.
+
+### 8) TerminalStream kitty graphics APC handling
+
+- Commit: `a8e92c9c5` (terminal: add APC handler to stream_terminal)
+- Files:
+  - `src/terminal/stream_terminal.zig`
+- Summary:
+  - Wires `.apc_start`, `.apc_put`, and `.apc_end` through the shared APC parser in `TerminalStream`.
+  - Restores kitty graphics execution and APC OK/error replies for the non-termio stream path used by cmux/libghostty integrations.
+
+Fork main now carries the section 8 APC handling fix plus later upstream merges;
+the current termloop pin is the head listed above.
+
+## Upstreamed fork changes
+
+### cursor-click-to-move respects OSC 133 click-to-move
+
+- Was local in the fork as `10a585754`.
+- Landed upstream as `bb646926f`, so it is no longer carried as a fork-only patch.
+
+### zsh prompt redraw follow-ups
+
+- Were local in the fork as `8ade43ce5`, `0cf559581`, `312c7b23a`, and `404a3f175`.
+- Dropped during the March 30, 2026 rebase because newer Ghostty prompt-marking changes on the refreshed base superseded these fork-only zsh redraw patches, so termloop no longer carries them separately.
+
+### initial focus seeding and DECSET 1004 startup behavior
+
+- Was local in the fork as `c19c82bfd`.
+- Dropped from the current pinned fork head when termloop removed the corresponding
+  app-side initial focus seed and went back to post-create focus sync.
+
+## Merge conflict notes
+
+These files change frequently upstream; be careful when rebasing the fork:
+
+- `src/terminal/osc.zig`
+  - OSC dispatch logic moves often. Re-check the integration points for the OSC 99 parser and keep
+    the newer `capture`/`captureTrailing()` API usage intact.
+
+- `src/terminal/osc/parsers.zig`
+  - Ensure `kitty_notification` stays imported after upstream parser reorganizations.
+
+- `src/cli/list_themes.zig`
+  - termloop now relies on the upstream picker UI plus local env-driven hooks for live preview and restore.
+    If upstream reorganizes the preview loop or key handling, re-check the termloop mode path and keep the
+    stock Ghostty behavior unchanged when the termloop env vars are absent.
+
+- `build.zig`
+  - Upstream's new wasm/libghostty work touched the same build graph. Keep the cmux-only `cli-helper`
+    step wired in without regressing the upstream `lib-vt` or wasm build paths.
+
+- `include/ghostty.h`, `src/Surface.zig`, `src/apprt/embedded.zig`
+  - Upstream removed cmux-used selection exports. Preserve the re-exported
+    `ghostty_surface_select_cursor_cell` and `ghostty_surface_clear_selection` functions.
+
+- `src/renderer/generic.zig`
+  - The `macos-background-from-layer` check sits next to the glass-style check in `updateFrame`.
+    If upstream refactors the bg_color uniform update or the glass conditional, re-check that both
+    paths still zero out `bg_color[3]` correctly.
+
+- `src/Surface.zig`, `src/apprt/embedded.zig`, `macos/Sources/Ghostty/Surface View/SurfaceView.swift`
+  - The initial `focused` plumbing has to stay aligned across the C config, embedded runtime surface,
+    and macOS wrapper. If upstream refactors surface creation or post-create focus sync, re-check that
+    background panes can start unfocused without synthesizing a focus-loss transition during creation.
+
+- `src/termio/stream_handler.zig`
+  - Keep DECSET 1004 enablement side-effect free. xterm-compatible focus reporting should only emit
+    `CSI I` / `CSI O` on actual focus transitions, not immediately when the mode is enabled.
+
+- `src/terminal/stream_terminal.zig`
+  - Keep the APC handler wired into `.apc_start`, `.apc_put`, `.apc_end`, and preserve the
+    `apcEnd()` response path so kitty graphics still reach `Terminal.kittyGraphics()` and reply via
+    `write_pty`.
+
+If you resolve a conflict, update this doc with what changed.
