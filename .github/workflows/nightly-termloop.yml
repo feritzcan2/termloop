@@ -1,9 +1,6 @@
 name: TermLoop nightly build
 
 on:
-  push:
-    branches:
-      - "**"
   workflow_dispatch:
     inputs:
       force:
