@@ -8,8 +8,8 @@ import SwiftUI
 /// view its terminal." Centralises the three side-effects that must travel
 /// together so no caller forgets one:
 ///
-///   1. Close every main-area overlay (DocEditor, ContextBank file viewer,
-///      GitChanges, AbilityDetail). Otherwise the overlay outlives the row
+///   1. Close every main-area overlay (Markdown document, GitChanges,
+///      AbilityDetail). Otherwise the overlay outlives the row
 ///      tap and the user is forced to hit an explicit close button.
 ///   2. If the top sidebar tab is `.agents` (catalog), flip it back to
 ///      `.work + .loop` so the terminal can actually surface — the catalog
@@ -46,8 +46,7 @@ enum MainAreaActivation {
     /// `close()` short-circuits when already closed, so paranoid cleanup
     /// from context-change observers stays free of cost.
     static func closeAllMainAreaOverlays() {
-        DocEditorStore.shared.close()
-        ContextBankFileViewerStore.shared.close()
+        MarkdownDocumentStore.shared.close()
         GitChangesMainAreaStore.shared.close()
         AbilityDetailUIState.shared.close()
     }

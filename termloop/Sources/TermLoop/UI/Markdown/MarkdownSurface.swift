@@ -9,7 +9,7 @@ import SwiftUI
 /// Used by the full-screen document surfaces so
 /// both share the same chrome, typography, and Esc-to-close behavior.
 struct MarkdownSurface: View {
-    enum Mode { case preview, edit }
+    enum Mode: Equatable { case preview, edit }
 
     let title: String
     let subtitle: String?
@@ -50,7 +50,8 @@ struct MarkdownSurface: View {
             Divider()
             content
         }
-        .background(Color(nsColor: .textBackgroundColor))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(MarkdownTheme.surfaceBg)
     }
 
     private var toolbar: some View {
@@ -69,8 +70,6 @@ struct MarkdownSurface: View {
                 }
             }
 
-            Spacer()
-
             if allowEdit {
                 Picker("", selection: $mode) {
                     Text(String(localized: "markdown.mode.preview",
@@ -85,15 +84,7 @@ struct MarkdownSurface: View {
                 .frame(width: 140)
             }
 
-            if let fileURL {
-                Button { NSWorkspace.shared.open(fileURL) } label: {
-                    Text(String(localized: "markdown.button.openInEditor",
-                                defaultValue: "OPEN IN EDITOR", table: "TermLoop"))
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
+            Spacer()
 
             Button(action: onClose) {
                 HStack(spacing: 4) {
@@ -116,17 +107,23 @@ struct MarkdownSurface: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(Color(NSColor.windowBackgroundColor))
+        .background(MarkdownTheme.toolbarBg)
     }
 
     @ViewBuilder
     private var content: some View {
         switch mode {
         case .preview:
-            ScrollView {
-                MarkdownRenderer(content: String(text.characters))
-                    .padding(.horizontal, MarkdownTheme.containerPaddingH)
-                    .padding(.vertical, MarkdownTheme.containerPaddingV)
+            ZStack {
+                MarkdownTheme.surfaceBg
+                    .ignoresSafeArea()
+                ScrollView {
+                    MarkdownRenderer(content: String(text.characters))
+                        .padding(.horizontal, MarkdownTheme.containerPaddingH)
+                        .padding(.vertical, MarkdownTheme.containerPaddingV)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .background(MarkdownTheme.surfaceBg)
             }
         case .edit:
             MarkdownEditor(

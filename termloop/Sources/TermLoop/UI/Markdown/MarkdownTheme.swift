@@ -1,6 +1,7 @@
 // Copyright (c) 2026-present Ferit özcan. All rights reserved.
 // Part of TermLoop — GPL-3.0-or-later
 
+import AppKit
 import SwiftUI
 
 /// Typography + spacing tokens shared by every markdown surface in TermLoop.
@@ -30,11 +31,50 @@ enum MarkdownTheme {
     static let containerPaddingV: CGFloat = 18
     static let codePadding: CGFloat = 10
 
-    // Surfaces.
-    static let codeBg: Color = Color.primary.opacity(0.06)
-    static let codeBorder: Color = Color.primary.opacity(0.15)
-    static let frontmatterBg: Color = Color.primary.opacity(0.05)
-    static let rule: Color = Color.primary.opacity(0.15)
+    // Surfaces. Keep markdown/editor panes off pure black in dark mode and
+    // give light mode enough structure without turning every block into a card.
+    static let surfaceBg: Color = adaptiveColor(
+        light: NSColor(red: 0.965, green: 0.972, blue: 0.982, alpha: 1.0),
+        dark: NSColor(red: 0.255, green: 0.270, blue: 0.285, alpha: 1.0)
+    )
+    static let toolbarBg: Color = adaptiveColor(
+        light: NSColor(red: 0.935, green: 0.945, blue: 0.958, alpha: 1.0),
+        dark: NSColor(red: 0.205, green: 0.218, blue: 0.232, alpha: 1.0)
+    )
+    static let editorBg: Color = adaptiveColor(
+        light: NSColor(red: 0.985, green: 0.988, blue: 0.992, alpha: 1.0),
+        dark: NSColor(red: 0.255, green: 0.270, blue: 0.285, alpha: 1.0)
+    )
+    static let insetBg: Color = adaptiveColor(
+        light: NSColor(red: 0.945, green: 0.952, blue: 0.965, alpha: 1.0),
+        dark: NSColor(red: 0.190, green: 0.205, blue: 0.220, alpha: 1.0)
+    )
+    static let codeBg: Color = insetBg
+    static let codeBorder: Color = adaptiveColor(
+        light: NSColor(red: 0.70, green: 0.73, blue: 0.78, alpha: 0.55),
+        dark: NSColor.white.withAlphaComponent(0.18)
+    )
+    static let frontmatterBg: Color = adaptiveColor(
+        light: NSColor(red: 0.930, green: 0.940, blue: 0.955, alpha: 1.0),
+        dark: NSColor(red: 0.225, green: 0.240, blue: 0.255, alpha: 1.0)
+    )
+    static let bodyFg: Color = adaptiveColor(
+        light: NSColor(red: 0.090, green: 0.100, blue: 0.115, alpha: 1.0),
+        dark: NSColor(red: 0.880, green: 0.895, blue: 0.910, alpha: 1.0)
+    )
+    static let secondaryFg: Color = adaptiveColor(
+        light: NSColor(red: 0.360, green: 0.390, blue: 0.430, alpha: 1.0),
+        dark: NSColor(red: 0.700, green: 0.730, blue: 0.760, alpha: 1.0)
+    )
+    static let rule: Color = codeBorder
+
+    static var nsEditorBackground: NSColor {
+        NSColor(name: nil) { appearance in
+            isDark(appearance)
+                ? NSColor(red: 0.255, green: 0.270, blue: 0.285, alpha: 1.0)
+                : NSColor(red: 0.985, green: 0.988, blue: 0.992, alpha: 1.0)
+        }
+    }
 
     static func heading(level: Int) -> Font {
         switch level {
@@ -47,5 +87,15 @@ enum MarkdownTheme {
 
     static func headingTopPadding(level: Int) -> CGFloat {
         level <= 2 ? 8 : 4
+    }
+
+    private static func adaptiveColor(light: NSColor, dark: NSColor) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            isDark(appearance) ? dark : light
+        })
+    }
+
+    private static func isDark(_ appearance: NSAppearance) -> Bool {
+        appearance.bestMatch(from: [.darkAqua, .vibrantDark]) != nil
     }
 }

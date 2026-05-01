@@ -4,6 +4,7 @@
 import Foundation
 
 enum IntegrationKind: String, CaseIterable, Codable, Hashable {
+    case agent
     case mcp
     case cli
     case webhook
@@ -13,6 +14,9 @@ enum IntegrationKind: String, CaseIterable, Codable, Hashable {
 
     var displayTitle: String {
         switch self {
+        case .agent:
+            return String(localized: "integrations.category.agent",
+                          defaultValue: "Agents", table: "TermLoop")
         case .mcp:
             return String(localized: "integrations.category.mcp",
                           defaultValue: "MCP", table: "TermLoop")
@@ -36,6 +40,7 @@ enum IntegrationKind: String, CaseIterable, Codable, Hashable {
 
     var shortTag: String {
         switch self {
+        case .agent: return "AGENT"
         case .mcp: return "MCP"
         case .cli: return "CLI"
         case .webhook: return "HOOK"
@@ -47,12 +52,13 @@ enum IntegrationKind: String, CaseIterable, Codable, Hashable {
 
     var orderIndex: Int {
         switch self {
-        case .mcp: return 0
-        case .cli: return 1
-        case .webhook: return 2
-        case .claudeHook: return 3
-        case .codexHook: return 4
-        case .geminiHook: return 5
+        case .agent: return 0
+        case .mcp: return 1
+        case .cli: return 2
+        case .webhook: return 3
+        case .claudeHook: return 4
+        case .codexHook: return 5
+        case .geminiHook: return 6
         }
     }
 }

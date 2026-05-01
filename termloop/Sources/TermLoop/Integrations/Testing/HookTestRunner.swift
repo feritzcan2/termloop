@@ -25,6 +25,13 @@ struct HookTestRunner: TestRunner {
                                          capabilities: [],
                                          logPath: nil)
         }
+        if Self.isInlineShellCommand(command) {
+            return IntegrationTestResult(success: true,
+                                         message: "shell-wrapped hook",
+                                         durationMs: ms,
+                                         capabilities: [],
+                                         logPath: nil)
+        }
 
         let resolved: URL? = {
             if probe.hasPrefix("/") {
@@ -53,6 +60,19 @@ struct HookTestRunner: TestRunner {
 
     private static func isShellConstruct(_ probe: String) -> Bool {
         shellConstructs.contains(probe)
+    }
+
+    private static func isInlineShellCommand(_ command: String) -> Bool {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if trimmed.contains("&&") || trimmed.contains("||") || trimmed.contains(";") {
+            return true
+        }
+        let firstToken = trimmed
+            .components(separatedBy: .whitespacesAndNewlines)
+            .first ?? ""
+        let assignmentPattern = #"^[A-Za-z_][A-Za-z0-9_]*="#
+        return firstToken.range(of: assignmentPattern, options: .regularExpression) != nil
     }
 
     private func primaryExecutableProbe(in command: String) -> String? {

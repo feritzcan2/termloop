@@ -952,24 +952,13 @@
         }
       }
     },
-    "doc.editor.closeToTerminal": {
+    "markdown.button.closeToTerminal": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "TERMINAL"
-          }
-        }
-      }
-    },
-    "doc.editor.openInEditor": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "OPEN IN EDITOR"
           }
         }
       }
@@ -1095,13 +1084,13 @@
         }
       }
     },
-    "docs.menu.openInEditor": {
+    "docs.menu.openInTermLoop": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open in Editor"
+            "value": "Open in TermLoop"
           }
         }
       }
@@ -2305,13 +2294,13 @@
         }
       }
     },
-    "plan.contextMenu.openInExternalEditor": {
+    "plan.contextMenu.openInTermLoop": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open in External Editor"
+            "value": "Open in TermLoop"
           }
         }
       }
@@ -2415,13 +2404,13 @@
         }
       }
     },
-    "planPicker.openInEditor": {
+    "planPicker.openInTermLoop": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open in editor"
+            "value": "Open in TermLoop"
           }
         }
       }

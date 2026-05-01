@@ -5,7 +5,7 @@ import Foundation
 
 struct GeminiCliPreset: IntegrationPreset {
     let id = "cli.gemini"
-    let kind: IntegrationKind = .cli
+    let kind: IntegrationKind = .agent
     let displayName = "gemini"
     let summary = "Google Gemini CLI"
     let fields: [ConfigField] = [

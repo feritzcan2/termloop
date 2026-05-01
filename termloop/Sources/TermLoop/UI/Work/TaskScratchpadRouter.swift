@@ -5,8 +5,8 @@ import SwiftUI
 
 /// Invisible SwiftUI subscriber that forwards
 /// `Notification.Name.termLoopOpenFileInMainPanel` payloads into the
-/// shared `ScratchpadStore`, which drives the main-panel markdown editor
-/// overlay (same mechanism used by folder docs and PlanTab).
+/// shared markdown document store, which drives the main-panel markdown
+/// preview/editor overlay (same mechanism used by Context Bank and PlanTab).
 ///
 /// Mount this once somewhere that is alive whenever the Tasks sub-tab is
 /// visible. It renders as a zero-sized `Color.clear` so it has no layout
@@ -26,7 +26,7 @@ struct TaskScratchpadRouter: View {
                 // to open even on first click. Write an empty file if missing.
                 ensureFileExists(at: url)
                 let folderName = url.deletingLastPathComponent().lastPathComponent
-                DocEditorStore.shared.select(fileURL: url, folderName: folderName)
+                MarkdownDocumentStore.shared.open(fileURL: url, folderName: folderName)
             }
     }
 

@@ -25,7 +25,37 @@ final class ClaudeHookInstallerCommandTests: XCTestCase {
                 command.contains("TERMLOOP_SURFACE_ID") || command.contains("TERMLOOP_WORKSPACE_ID"),
                 "Command missing workspace/surface guard: \(command)"
             )
+            XCTAssertFalse(
+                command.contains("exec "),
+                "Hook command must not exec because failures need to fall back to '{}': \(command)"
+            )
+            XCTAssertTrue(
+                command.contains(">/dev/null 2>/dev/null"),
+                "Hook command must keep hook failures out of agent stderr/stdout: \(command)"
+            )
         }
+    }
+
+    func test_hookTestRunner_treatsTermLoopInlineShellHooksAsShellWrapped() async {
+        let command = ClaudeHookInstaller.requiredHooks.first { $0.event == "Stop" }?.command
+        let result = await HookTestRunner().run(IntegrationItem(
+            id: "test",
+            kind: .claudeHook,
+            displayName: "Stop",
+            summary: command ?? "",
+            source: .userScope,
+            status: .idle,
+            lastTestedAt: nil,
+            lastTestDurationMs: nil,
+            capabilities: [],
+            configRef: nil,
+            attachedToActiveSpawn: false,
+            binaryPath: nil,
+            version: nil,
+            authSubject: nil
+        ))
+        XCTAssertTrue(result.success, result.message)
+        XCTAssertEqual(result.message, "shell-wrapped hook")
     }
 
     func test_requiredHooks_noLegacyBundlePaths() {

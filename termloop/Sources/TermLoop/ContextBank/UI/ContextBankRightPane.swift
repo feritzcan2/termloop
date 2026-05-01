@@ -7,7 +7,7 @@ import SwiftUI
 /// Right-hand detail pane of the Context Bank tab. Renders one of three
 /// states based on `ContextBankStore.selection`:
 /// - `.none` → empty state (instructional copy).
-/// - `.file(url)` → raw monospace contents of the selected context file.
+/// - `.file(url)` → shared markdown preview/editor for the selected file.
 /// - `.suggestion(id)` → diff preview + reasoning + Accept / Reject.
 struct ContextBankRightPane: View {
     @ObservedObject var store: ContextBankStore
@@ -18,7 +18,10 @@ struct ContextBankRightPane: View {
             case .none:
                 emptyState
             case .file(let url):
-                FileViewer(url: url)
+                FileViewer(
+                    url: url,
+                    onClose: { store.selection = .none }
+                )
             case .suggestion(let id):
                 if let suggestion = store.suggestions.first(where: { $0.id == id && $0.status == .pending }) {
                     SuggestionViewer(
@@ -82,22 +85,26 @@ struct ContextBankRightPane: View {
 
 private struct FileViewer: View {
     let url: URL
+    let onClose: () -> Void
 
-    @State private var content: String = ""
+    @State private var text: AttributedString = AttributedString("")
     @State private var loadError: String?
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            ScrollView([.horizontal, .vertical]) {
-                Text(content.isEmpty ? "(empty)" : content)
-                    .font(.system(size: 11, design: .monospaced))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-                    .padding(12)
+        MarkdownSurface(
+            title: url.lastPathComponent,
+            subtitle: url.deletingLastPathComponent().path,
+            fileURL: resolvedURL,
+            text: $text,
+            mode: .preview,
+            allowEdit: true,
+            autosaveDebounce: .milliseconds(500),
+            onCommit: { save($0) },
+            onClose: {
+                save(String(text.characters))
+                onClose()
             }
-        }
+        )
         .onAppear(perform: load)
         .onChange(of: url) { _ in load() }
         .overlay(alignment: .topTrailing) {
@@ -110,46 +117,28 @@ private struct FileViewer: View {
         }
     }
 
-    private var header: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "doc.text")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-            Text(url.lastPathComponent)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-            Text(url.deletingLastPathComponent().path)
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-                .truncationMode(.head)
-            Spacer()
-            Button {
-                NSWorkspace.shared.open(url)
-            } label: {
-                Image(systemName: "arrow.up.right.square")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .padding(4)
-            }
-            .buttonStyle(.plain)
-            .help(String(
-                localized: "contextBank.right.openExternal",
-                defaultValue: "Open in external editor",
-                table: "TermLoop"
-            ))
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color(NSColor.windowBackgroundColor))
+    private var resolvedURL: URL {
+        URL(fileURLWithPath: (url.path as NSString).resolvingSymlinksInPath)
     }
 
     private func load() {
         do {
-            let resolved = (url.path as NSString).resolvingSymlinksInPath
-            content = try String(contentsOfFile: resolved, encoding: .utf8)
+            let content = try String(contentsOf: resolvedURL, encoding: .utf8)
+            if String(text.characters) != content {
+                text = AttributedString(content)
+            }
             loadError = nil
         } catch {
-            content = ""
+            text = AttributedString("")
+            loadError = error.localizedDescription
+        }
+    }
+
+    private func save(_ content: String) {
+        do {
+            try content.write(to: resolvedURL, atomically: true, encoding: .utf8)
+            loadError = nil
+        } catch {
             loadError = error.localizedDescription
         }
     }

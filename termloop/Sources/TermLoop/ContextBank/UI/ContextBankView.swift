@@ -6,9 +6,8 @@ import SwiftUI
 
 /// Sub-tab entry point. Rendered inside the sidebar column, so everything is
 /// stacked vertically: toolbar → file tree → pending suggestions.
-/// Per-file preview opens the file in the system editor via
-/// `NSWorkspace.shared.open` — the curator flow is AI-only and doesn't need an
-/// in-app editor.
+/// Per-file open routes through the shared markdown document surface so
+/// Context Bank, Plan, Abilities, and scratchpads all share one reader/editor.
 struct ContextBankView: View {
     let projectRoot: URL?
 
@@ -52,7 +51,14 @@ struct ContextBankView: View {
                 files: store.files,
                 tree: store.tree,
                 selection: $store.selection,
-                onOpen: { file in NSWorkspace.shared.open(file.url) }
+                onOpen: { file in
+                    let folderName = (file.relativePath as NSString).deletingLastPathComponent
+                    MarkdownDocumentStore.shared.open(
+                        fileURL: file.url.resolvingSymlinksInPath(),
+                        folderName: folderName.isEmpty ? "/" : folderName,
+                        displayTitle: file.kind.displayName
+                    )
+                }
             )
             .frame(maxHeight: .infinity)
             Divider()

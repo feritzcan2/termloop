@@ -60,7 +60,6 @@ enum IntegrationPresetRegistry {
         GcloudCliPreset(),
         CodexCliPreset(),
         GeminiCliPreset(),
-        JiraCliPreset(),
         AtlassianMCPPreset(),
     ]
 

@@ -2050,6 +2050,15 @@ struct CMUXCLI {
             if !didConnect {
                 cliTelemetry.breadcrumb("socket.connect.failure", data: ["path": activeSocketPath])
                 cliTelemetry.captureError(stage: "socket_connect", error: lastError)
+                if shouldRetry {
+                    logHookFailureAndNoop(
+                        command: command,
+                        stage: "socket_connect",
+                        error: lastError,
+                        socketPath: activeSocketPath
+                    )
+                    return
+                }
                 throw lastError
             }
         }
@@ -2865,7 +2874,8 @@ struct CMUXCLI {
             } catch {
                 cliTelemetry.breadcrumb("claude-hook.failure")
                 cliTelemetry.captureError(stage: "claude_hook_dispatch", error: error)
-                throw error
+                logHookFailureAndNoop(command: command, stage: "claude_hook_dispatch", error: error, socketPath: activeSocketPath)
+                return
             }
 
         case "codex-hook":
@@ -2876,7 +2886,8 @@ struct CMUXCLI {
             } catch {
                 cliTelemetry.breadcrumb("codex-hook.failure")
                 cliTelemetry.captureError(stage: "codex_hook_dispatch", error: error)
-                throw error
+                logHookFailureAndNoop(command: command, stage: "codex_hook_dispatch", error: error, socketPath: activeSocketPath)
+                return
             }
 
         case "cursor-hook":
@@ -2887,7 +2898,8 @@ struct CMUXCLI {
             } catch {
                 cliTelemetry.breadcrumb("cursor-hook.failure")
                 cliTelemetry.captureError(stage: "cursor_hook_dispatch", error: error)
-                throw error
+                logHookFailureAndNoop(command: command, stage: "cursor_hook_dispatch", error: error, socketPath: activeSocketPath)
+                return
             }
 
         case "gemini-hook":
@@ -2898,7 +2910,8 @@ struct CMUXCLI {
             } catch {
                 cliTelemetry.breadcrumb("gemini-hook.failure")
                 cliTelemetry.captureError(stage: "gemini_hook_dispatch", error: error)
-                throw error
+                logHookFailureAndNoop(command: command, stage: "gemini_hook_dispatch", error: error, socketPath: activeSocketPath)
+                return
             }
 
         case "opencode-hook":
@@ -2909,7 +2922,8 @@ struct CMUXCLI {
             } catch {
                 cliTelemetry.breadcrumb("opencode-hook.failure")
                 cliTelemetry.captureError(stage: "opencode_hook_dispatch", error: error)
-                throw error
+                logHookFailureAndNoop(command: command, stage: "opencode_hook_dispatch", error: error, socketPath: activeSocketPath)
+                return
             }
 
         case "copilot-hook", "codebuddy-hook", "factory-hook", "qoder-hook":
@@ -2924,7 +2938,8 @@ struct CMUXCLI {
             } catch {
                 cliTelemetry.breadcrumb("\(command).failure")
                 cliTelemetry.captureError(stage: "\(agentName)_hook_dispatch", error: error)
-                throw error
+                logHookFailureAndNoop(command: command, stage: "\(agentName)_hook_dispatch", error: error, socketPath: activeSocketPath)
+                return
             }
 
         case "set-app-focus":
@@ -5517,6 +5532,12 @@ struct CMUXCLI {
             return
         }
 #endif
+    }
+
+    private func logHookFailureAndNoop(command: String, stage: String, error: Error, socketPath: String? = nil) {
+        let socketPart = socketPath.map { " socket=\($0)" } ?? ""
+        cliDebugLog("hook.noop command=\(command) stage=\(stage)\(socketPart) error=\(String(describing: error))")
+        print("{}")
     }
 
     private func runProcess(
@@ -13975,7 +13996,7 @@ struct CMUXCLI {
         && [ "$TERMLOOP_HOOKS_DISABLED" != "1" ] \
         && [ "$\(def.disableEnvVar)" != "1" ] \
         && [ -n "$CMUX_BIN" ] && [ -x "$CMUX_BIN" ] \
-        && exec "$CMUX_BIN" \(def.name)-hook \(event.cmuxSubcommand) \
+        && { "$CMUX_BIN" \(def.name)-hook \(event.cmuxSubcommand) >/dev/null 2>/dev/null || true; echo '{}'; } \
         || echo '{}'
         """
     }
@@ -13983,6 +14004,15 @@ struct CMUXCLI {
     private func isOwnedHookCommand(_ command: String, for def: AgentHookDef) -> Bool {
         let lowercase = command.lowercased()
         if lowercase.contains(def.hookMarker.lowercased()) {
+            return true
+        }
+        if lowercase.contains("\(def.name)-hook")
+            && (
+                lowercase.contains("termloop_bundled_cli_path")
+                    || lowercase.contains("cmux_bin")
+                    || lowercase.contains("command -v termloop")
+                    || lowercase.contains("/termloophooks/")
+            ) {
             return true
         }
         return false

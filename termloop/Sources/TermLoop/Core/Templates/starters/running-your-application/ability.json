@@ -1,5 +1,5 @@
 {
-  "activation" : "worktree",
+  "activation" : "listed",
   "termLoopMCPTools" : [
     "set_run_targets",
     "get_run_targets"

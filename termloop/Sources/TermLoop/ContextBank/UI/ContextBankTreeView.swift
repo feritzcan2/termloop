@@ -209,8 +209,8 @@ private struct FileRow: View {
                     .padding(.vertical, 4)
             }
             .buttonStyle(.plain)
-            .help(String(localized: "contextBank.tree.openInEditor",
-                         defaultValue: "Open in external editor",
+            .help(String(localized: "contextBank.tree.openInTermLoop",
+                         defaultValue: "Open in TermLoop",
                          table: "TermLoop"))
         }
         .contextMenu {
@@ -246,8 +246,8 @@ private struct FileRow: View {
                 NSWorkspace.shared.activateFileViewerSelecting([file.url])
             }
             Button(String(
-                localized: "contextBank.tree.menu.openInEditor",
-                defaultValue: "Open in External Editor",
+                localized: "contextBank.tree.menu.openInTermLoop",
+                defaultValue: "Open in TermLoop",
                 table: "TermLoop"
             )) {
                 onOpen()

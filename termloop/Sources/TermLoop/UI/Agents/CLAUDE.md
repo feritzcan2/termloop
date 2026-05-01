@@ -1,176 +1,164 @@
-# Agent Rows & Panels — Context
+# Terminal App — Claude Context
 
-This folder owns every sidebar row that represents an "agent running in a
-workspace" (terminal agents, bridges, tickets, worktrees) plus the data layer
-that feeds them. If you are about to change how a row renders, reads truth, or
-subscribes to updates — start here.
+Cross-platform terminal app for monitoring AI agents (Claude Code) over SSH. Built with Expo + React Native, xterm.js in a WebView, and a native Expo Module wrapping Citadel (iOS, pure-Swift SSH via SwiftNIO) / JSch (Android).
 
-Cross-cut references:
-- Truth: `Sources/TermLoop/Core/TerminalAgentActivityStore.swift` (+ `+Queries`).
-- Row data contract: `Sources/TermLoop/Core/TerminalAgentPresentationState.swift`.
-- Bridge domain: `Sources/TermLoop/Bridge/`.
-- Fork discipline (K/Y rules, upstream markers): `termloop/CLAUDE.md`.
+## Status
 
----
+- **Simulator (iOS):** App runs and builds. SSH functional via Citadel (pure Swift).
+- **Device (iOS):** Working end-to-end. SSH tested on real iPhone to Mac over Tailscale with password auth via `Alert.prompt`. TermLoop TCP bridge also working — project list, project switch, workspace list over Tailscale.
+- **Android:** SSH module code exists (JSch) but not yet built/tested. TermLoop module is a stub — throws "not implemented".
+- **Tests:** 44/44 passing (themes + connections + agent-loop client + secrets + owned-claude-sessions + terminal-command).
+- **iOS deployment target:** 17.0 (Citadel + Network.framework conventions).
 
-## Single row renderer
-
-`AgentRowCoreView` is the only agent-row renderer. Five consumers use it:
-
-| Consumer | File | Dismiss | Trailing slot |
-|---|---|---|---|
-| ActiveAgents | `ActiveAgentsSessionRows.swift` | `.confirmClose` | `.collapseButton` |
-| Worktree | `WorktreeAgentsPanel.workspaceRow` | `.none` | `.gitChangeBadgeExpandableWithCollapse` |
-| Ticket | `TicketWorktreesPanelRows.workspaceRow` | `.none` | `.none` |
-| Bridge (active) | `ActiveBridgeRowView.swift` | `.confirmClose` | `.none` |
-| Bridge (extras) | `WorkspaceRowBridgeExtras.swift` | `.confirmClose` | `.none` |
-
-Rules:
-
-- Do **not** hand-roll a new row. Add a typed slot to `AgentRowTrailingSlot` or
-  extend `AgentRowDismissBehavior` and route through `AgentRowCoreView`.
-- Closures on the view (`onActivate`, `onTrailingSlotTap`, `onDismissLink`,
-  `.confirmClose(onConfirm:)`) are **intentionally excluded from Equatable** —
-  presence-only checks. Closure identity can churn per parent render;
-  including it would defeat `.equatable()` memoization on the sidebar hot
-  path.
-- Activation gesture is attached to `mainRow` and the link-chip HStack only,
-  **never the root VStack**. The link chip's own Button and the dismiss
-  Button must consume their own taps without racing a root gesture.
-
----
-
-## Snapshot contract
-
-`AgentRowPresentationSnapshot` is the single data contract. Panels build it
-via:
-
-- `AgentRowSnapshotBuilder.build(workspace:branchLabel:policy:)` — normal path.
-- `BridgeTargetRowSnapshotBuilder.build(bridge:rightTitle:rightWorkspace:)` —
-  bridge right endpoint (real workspace or synthetic fallback).
-
-When a panel needs field overrides, use `snapshot.with(title:branchLabel:since:)`
-— hand-copying every field silently regresses when new fields are added.
-
-Display-state policy:
-
-- `.presentation` — honors sticky restore states (ActiveAgents, Bridge). After
-  relaunch, a settled `completed`/`needsInput`/`error` must not flash to
-  pendingRestore.
-- `.livePreferred` — collapses sticky back to raw activity when raw is
-  available (Worktree, Ticket).
-
----
-
-## Dismiss semantics
-
-The × in the row's popover is **ActiveAgents-style panel semantic** only.
-Worktree and Ticket rows deliberately use `.none` — workspace closure there
-flows through the tab context menu / sidebar header, not per-row ×.
-
-Bridge rows: × = **full teardown**.
-`BridgeCoordinator.dismissAndCloseRight(bridgeId:)`:
-
-1. `dismiss(bridgeId:)` — force-closes askAgent hidden helper workspaces via
-   `cleanupHelperWorkspaceIfNeeded`, then removes the bridge from the store.
-2. `tabManager.closeWorkspaceFromSidebarPopover(rightWs)` — closes a
-   non-helper right workspace through the hook-guarded path so
-`TermLoopHooks.workspaceWillClose` still gets to confirm running-agent
-shutdown.
-
-Context-menu semantics are now intentionally split:
-- **Fork Conversation** = provider-native same-agent conversation fork
-  (currently Claude→Claude, Codex→Codex when a source session exists)
-- **Handoff to New Agent** = transcript/context handoff into a fresh session
-Do not collapse these labels back into a generic "Fork" unless the launch
-semantics are also identical again.
-
----
-
-## Subscription discipline
-
-Row views must subscribe narrowly. In particular:
-
-- **Do not** `@ObservedObject WorkspaceBridgeStore.shared` on a row view.
-  `appendMessage` mutates `@Published var bridges` on every turn (no
-  `overviewVersion` bump), which would re-render every bridge row on every
-  transcript turn. Instead:
-  - Hold a plain `let store = WorkspaceBridgeStore.shared`.
-  - `@State private var overviewTick: Int` + `.onReceive(store.$overviewVersion)`
-    with an equality guard.
-  - Let `InlineBridgeTranscript(bridgeId:)` own its own `@ObservedObject`
-    subscription — it is only mounted when expanded, so per-turn re-renders
-    stay scoped there.
-
-- **Do** observe `TerminalAgentActivityStore.shared` when the row reads
-  presentation fields. `presentationVersion` is coalesced via
-  `markPresentationDirty` / `flushPresentationIfNeeded`, so the frequency is
-  safe. `WorkspaceRowBridgeExtras` specifically needs this because the right
-  endpoint isn't in the parent panel's `allWorkspaceIds` subscription set.
-
-- WorktreeAgentsPanel's per-workspace subscription block keys off
-  `renderSnapshot.allWorkspaceIds` (precomputed on the snapshot). Do not
-  recompute `groups.flatMap(\.workspaces).map(\.id)` inline in `.onChange(of:)`
-  — it doubles the allocation per body eval.
-
----
-
-## Performance instrumentation
-
-`PanelRenderInstrumentation.measure(_:_:)` wraps snapshot builders. DEBUG logs
-every 2s via `dlog`:
+## Architecture
 
 ```
-panel.render <id> total=N delta=M avg=Xus max=Yus window=2s
+UI (React Native) ─┬─ xterm.js (inside WebView via react-native-webview)
+                   ├─ KeyboardBar (Esc/Tab/Ctrl toggle/arrows/Alt)
+                   └─ TerminalView ←→ ExpoSsh native module (Swift/Kotlin)
+                                            ↓
+                                   Citadel (iOS) / JSch (Android)
+                                            ↓
+                                       SSH server
 ```
 
-Greppable tag: `panel.render`. Panel IDs:
-`PanelRenderID.{activeAgents, worktreeAgents, ticketWorktrees}`.
+Data flow:
+- User types → xterm.js `onData` → WebView postMessage → RN → `Ssh.writeToShell(sessionId, data)`
+- Server output → Swift/Kotlin read loop → `onShellData` event → RN → WebView `write`
 
-In Release, `measure` collapses to a direct passthrough — the closure is
-non-escaping and inlines away. No guards at call sites.
+## Tech Stack
 
-When perf-tuning:
+- Expo SDK 54, Expo Router (file-based routing)
+- React Native 0.81, React 19
+- `react-native-webview` hosting xterm.js v5 (loaded from jsdelivr CDN inside WebView HTML)
+- Native: Swift (Expo Modules API) + Citadel (SwiftPM, via `cocoapods-spm`) on iOS; Kotlin + JSch on Android
+- AsyncStorage for connection config, expo-secure-store for secrets (not wired yet)
+- Jest + jest-expo for unit tests
 
-1. Start by reading real numbers from the tagged debug log — do **not**
-   tighten memo signatures speculatively. Each signature input maps to a
-   real content-change source; dropping one means stale UI.
-2. Cheap precompute first (lookup maps, dedup, snapshot-side projections).
-3. Subscription narrowing second (see the bridge-store case above).
-4. Signature tightening last, and only with data.
+## Directory Layout
 
----
+```
+terminal-app/
+├── app/                               # Expo Router screens
+│   ├── _layout.tsx                    # Root stack
+│   ├── (tabs)/
+│   │   ├── _layout.tsx                # Tab bar (Connections, Settings)
+│   │   ├── index.tsx                  # Mixed SSH+TermLoop list, FAB action sheet
+│   │   └── settings.tsx               # Theme/font/haptics
+│   ├── connection/
+│   │   ├── new.tsx                    # SSH form (modal)
+│   │   └── new-termloop.tsx               # TermLoop form (label/host/port/password) (modal)
+│   ├── terminal/[id].tsx              # SSH terminal screen
+│   └── termloop/[id].tsx                  # TermLoop project list + workspaces + switch
+├── components/
+│   ├── TerminalView.tsx               # WebView + xterm.js bridge
+│   ├── KeyboardBar.tsx                # Special keys
+│   └── ConnectionCard.tsx             # SSH/TermLoop pill + label
+├── lib/
+│   ├── types.ts                       # Unified Connection (host + ssh{port,user} + termloop{port})
+│   ├── themes.ts                      # 4 themes (Dracula/Nord/Solarized/Monokai)
+│   ├── connections.ts                 # AsyncStorage CRUD (overload-typed createNewConnection)
+│   ├── secrets.ts                     # expo-secure-store wrapper for TermLoop passwords
+│   ├── termloop-client.ts                 # NDJSON id-correlated RPC client for TermLoop
+│   └── terminal-html.ts               # xterm.js HTML as a JS string
+├── modules/
+│   ├── expo-ssh/                      # SSH module (Citadel/JSch)
+│   └── expo-termloop/                     # TermLoop TCP module (NWConnection/stub)
+│       ├── expo-module.config.json
+│       ├── index.ts                   # connect/send/disconnect + onMessage/onState/onDisconnect
+│       ├── src/ExpoTermLoopModule.ts      # requireNativeModule with try/catch fallback Proxy
+│       ├── ios/
+│       │   ├── ExpoTermLoop.podspec       # only ExpoModulesCore dep, ios 17.0
+│       │   └── ExpoTermLoopModule.swift   # NWConnection (plain TCP) + NDJSON framer
+│       └── android/                   # stub: throws IllegalStateException
+├── __tests__/                         # Jest unit tests (22 total)
+└── ios/, android/                     # Generated by expo prebuild
+```
 
-## File map
+## Common Commands
 
-Row renderers & snapshot plumbing:
+```bash
+# Install deps (use legacy-peer-deps because of React 19 / testing-library mismatch)
+npm install --legacy-peer-deps
 
-- `AgentRowCoreView.swift` — the renderer.
-- `AgentRowSnapshotBuilder.swift` — `(workspace, policy) → snapshot`.
-- `ActiveAgentsSessionRows.swift` — terminal + ability rows.
-- `ActiveBridgeRowView.swift` — bridge row (active panel).
-- `TicketWorktreesPanelRows.swift` — ticket workspace rows.
-- `WorktreeAgentsPanel.swift` — contains the worktree `workspaceRow` inline.
+# Run tests
+npx jest
 
-Panel data / subscriptions:
+# Start Metro bundler (for dev build on device or simulator)
+npx expo start --dev-client
 
-- `ActiveAgentsPanelData.swift`, `ActiveAgentsPanelView.swift`,
-  `ActiveAgentsPanelInteractions.swift`, `ActiveAgentsPanelFormatting.swift`,
-  `ActiveAgentsPanelSupport.swift`.
-- `WorktreeAgentsPanel.swift` (panel + data in one file by design).
-- `TicketWorktreesPanel.swift`, `TicketWorktreesPanelData.swift`.
+# Prebuild native projects (destroys ios/ and android/; rerun after native changes)
+npx expo prebuild --clean
 
-Bridge-side presentation:
+# Build & run on iOS simulator
+npx expo run:ios
 
-- `../../Bridge/BridgeTargetRowSnapshotBuilder.swift` — synthetic + real.
-- `../../Bridge/WorkspaceRowBridgeExtras.swift` — extras below left endpoint.
-- `../../Bridge/InlineBridgeTranscript.swift` — `@ObservedObject` store
-  owner; mounted only when expanded.
-- `../../Bridge/BridgeCoordinator.swift` — owns `dismissAndCloseRight`.
+# Build & run on iOS device
+npx expo run:ios --device
 
-Shared:
+# Install pods after editing Podfile or expo-ssh podspec
+cd ios && pod install
+```
 
-- `../PanelRenderInstrumentation.swift` — render counter + duration sampler.
-- `../TermLoopSidebarTheme.swift` — `iconName(for:)`, `color(for:)`,
-  `elapsedLabel(since:)`. All row icons/colors/elapsed must route through
-  these; do not re-add per-file switches.
+## Citadel SSH (iOS)
+
+iOS SSH is now provided by [orlandos-nl/Citadel](https://github.com/orlandos-nl/Citadel) 0.12.1 — pure Swift on SwiftNIO + SwiftNIO-SSH. Speaks `rsa-sha2-256/512`, `curve25519-sha256`, `ed25519`, `chacha20-poly1305`. No server-side downgrade needed for modern OpenSSH.
+
+### Why not NMSSH anymore
+NMSSH vendors libssh2 1.8.0 (2017) as device-only static libs; it can only sign with `ssh-rsa` (SHA-1) and negotiate SHA-1 KEX. Modern OpenSSH 10.2+ has dropped those code paths entirely — even server-side `HostKeyAlgorithms +ssh-rsa` doesn't help. NMSSH's public API also has no algorithm preference hook.
+
+### SPM integration
+Citadel is SwiftPM-only (no CocoaPods podspec). We bridge via the `cocoapods-spm` gem plugin because the module's Swift source lives in the `ExpoSsh` pod target (which can't see app-target-only SPM deps). See `cocoapods_spm_setup.md` memory for the Homebrew-sandbox install dance.
+
+Layout:
+- `modules/expo-ssh/plugin/withCitadelSPM.js` is an Expo config plugin that:
+  1. Writes `ios.deploymentTarget: "17.0"` into `Podfile.properties.json` (Citadel requires iOS 17)
+  2. Injects `plugin 'cocoapods-spm'` + `spm_pkg` declarations (Citadel / swift-nio-ssh / swift-nio / swift-nio-transport-services) at the top of the Podfile
+  3. Injects an `at_exit` block inside the existing `post_install` that:
+     - Rewrites `${GENERATED_MODULEMAP_DIR}/CCitadelBcrypt.modulemap` → `${SOURCE_PACKAGES_CHECKOUTS_DIR}/Citadel/Sources/CCitadelBcrypt/include/module.modulemap` in every xcconfig. Needed because cocoapods-spm mis-wires C targets that ship an explicit `include/module.modulemap`.
+     - Patches Citadel's `SSHClient.connect(on:settings:)` to wrap `SSHClientSession.addHandlers(...)` in `channel.eventLoop.flatSubmit { ... }` so the `syncOperations.addHandlers` call runs on the event loop thread. Without the hop the call traps with EXC_BREAKPOINT (NIO precondition fail) when invoked from a Swift async Task. Targets both the cocoapods-spm and the Xcode DerivedData SourcePackages checkouts (Xcode's SwiftPM integration clones the package to its own DerivedData path, which is what actually gets compiled).
+     - `at_exit` is used because cocoapods-spm rewrites xcconfigs AFTER Podfile's `post_install` runs.
+  4. Overwrites `IPHONEOS_DEPLOYMENT_TARGET` in all build configs of `TerminalApp.xcodeproj` to `17.0` (Expo prebuild defaults to 15.1)
+- `modules/expo-ssh/app.plugin.js` re-exports the plugin; `app.json` references it as `"./modules/expo-ssh/app.plugin.js"`
+- `ios/ExpoSsh.podspec` declares `s.spm_dependency` for `Citadel/Citadel`, `swift-nio-ssh/NIOSSH`, `swift-nio/NIO`, `swift-nio/NIOCore`, `swift-nio-transport-services/NIOTransportServices`. Platform is `:ios => '17.0'`
+
+### Swift module shape
+- One `SSHClient` per sessionId, stored in `clients: [String: SSHClient]`
+- Connect uses `NIOTSConnectionBootstrap` (Network.framework transport) to establish the TCP channel, then calls `SSHClient.connect(on: channel, settings: settings)` to install SSH handlers on the already-connected channel. NIOTS is required because Citadel's own `connect(to: settings)` path uses `ClientBootstrap(group:)` which only accepts `MultiThreadedEventLoopGroup` — iOS BSD sockets also hit EPERM on Tailscale utun interfaces.
+- `startShell` spawns a `Task<Void, Never>` that calls `client.withPTY(...)`. The `withPTY` closure is long-lived — it holds the shell open. The `TTYStdinWriter` is captured out of the closure via an `AsyncStream<TTYStdinWriter>.makeStream()` and stored in `writers: [String: TTYStdinWriter]`
+- `writeToShell` converts `String` → `ByteBuffer` and calls `writer.write(buffer)`
+- `resizeShell` calls `writer.changeSize(cols:rows:pixelWidth:0 pixelHeight:0)`
+- Reads happen inside the closure via `for try await event in inbound`, emitting `onShellData` for both `.stdout` and `.stderr`
+- Disconnect cancels the task and calls `client.close()`
+- `stateQueue` (a serial DispatchQueue) guards the three dictionaries — accessed from multiple async contexts
+- No `#if !targetEnvironment(simulator)` guards — Citadel is pure Swift, works everywhere
+
+Extremely important pre-install step (on this dev Mac): see `cocoapods_spm_setup.md`. The `cocoapods-spm` gem must live in Homebrew CocoaPods' sandbox, AND the `update_script.rb` helper needs a small patch.
+
+## Dev Server Connection Notes
+
+- The dev Mac and test iPhone are both on Tailscale; Mac IP `100.64.0.10`, iPhone `100.64.0.11`.
+- When running `npx expo run:ios --device`, Metro bundler must be reachable from the iPhone. If the device shows "No script URL provided", start Metro with `npx expo start --dev-client` on the Mac while the phone has Tailscale running.
+- `Info.plist` has `NSLocalNetworkUsageDescription` + `NSAllowsLocalNetworking: true` + `NSAllowsArbitraryLoads: true` (the last is debatable for production but fine for dev builds over Tailscale).
+- Bundle identifier is `com.feritzcan.sshterminal`.
+
+## TermLoop TCP module (iOS)
+
+`modules/expo-termloop/ios/ExpoTermLoopModule.swift` wraps `NWConnection` (plain TCP, no TLS — Tailscale provides transport encryption) and surfaces NDJSON line events. `lib/termloop-client.ts` builds an id-correlated RPC client on top, auto-sending `auth.login` after connect. `Connection` is a single shape (`host` + nested `ssh{port,user}` + `termloop{port}`); legacy discriminated-union rows are migrated on read and flagged `incomplete: true` until the user edits+saves. TermLoop passwords live in `expo-secure-store` keyed `termloop_token_${id}`.
+
+### Non-obvious
+
+- **`src/ExpoTermLoopModule.ts` does eager `requireNativeModule` inside try/catch.** On failure a stub Proxy is exported instead, so a JS-only Metro reload doesn't crash the route tree before the native module is linked. Lazy/Proxy-everywhere broke `EventEmitter` wiring — don't go back to that.
+- **Setup:** Mac side needs Settings → Automation → Socket Control Mode = Password (with a password set) AND TCP port = 7878 AND Bind to all interfaces ON. Password file: `~/Library/Application Support/termloop/socket-control-password` — no trailing newline (use `echo -n` if writing manually).
+- **Smoke test:** `printf '{"method":"auth.login","params":{"password":"PASS"},"id":1}\n' | nc -w 2 127.0.0.1 7878` → expect `{"ok":true,...}`.
+
+## Known Issues & Future Work
+
+1. **Password auth in terminal screen uses `Alert.prompt`** — iOS-only. Android needs a proper modal TextInput.
+2. **Passwords not stored.** Currently passed through memory only (via `Alert.prompt` → state). `expo-secure-store` is installed but not used yet.
+3. **Android SSH module** is written but untested. No device build has been run against it.
+4. **Settings propagation is per-screen and one-shot.** `terminal/[id].tsx` reads `terminal_settings` on mount and applies `fontSize`, `defaultTheme` (if connection has no override), and `hapticEnabled`. Changes made in Settings while a terminal is open don't live-update — you have to re-enter the screen.
+5. **Backgrounding survival via tmux wrap (shipped).** `terminal/[id].tsx` now wraps `claude --resume <id>` in `tmux new-session -A -s claude-<id>` with full-scrollback replay via `capture-pane` on reattach. iOS can still freeze the socket, but the Claude process outlives the disconnect; on reconnect the user sees the full gap history. See `docs/superpowers/specs/2026-04-14-mobile-terminal-persistence-design.md`. Requires tmux installed on the Mac; no onboarding check yet.
+6. **Host key validation** is `SSHHostKeyValidator.acceptAnything()` — fine for dev, needs a `known_hosts`-equivalent before any production use.
+7. **Test runner warnings:** Node v23 triggers engine warnings from Jest 30 internal packages. Tests pass regardless.
+8. **TermLoop MVP scope:** read + switch only. No project CRUD, no workspace terminal mirroring, no auto-reconnect (manual pull-to-refresh).

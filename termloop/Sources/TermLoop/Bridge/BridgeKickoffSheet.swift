@@ -49,11 +49,7 @@ struct BridgeKickoffSheet: View {
                         defaultValue: "Kickoff message",
                         table: "TermLoop"))
                 .font(.subheadline)
-            TextEditor(text: $kickoff)
-                .font(.system(.body, design: .monospaced))
-                .frame(minHeight: 80)
-                .overlay(RoundedRectangle(cornerRadius: 4)
-                    .stroke(Color.secondary.opacity(0.3)))
+            PromptTextEditor(text: $kickoff, minHeight: 80, maxHeight: 160)
 
             Text(String(localized: "bridge.kickoff.firstSpeaker",
                         defaultValue: "Who speaks first",
@@ -70,11 +66,7 @@ struct BridgeKickoffSheet: View {
                         defaultValue: "Role prompt (optional)",
                         table: "TermLoop"))
                 .font(.subheadline)
-            TextEditor(text: $rolePrompt)
-                .font(.system(.body, design: .monospaced))
-                .frame(minHeight: 60)
-                .overlay(RoundedRectangle(cornerRadius: 4)
-                    .stroke(Color.secondary.opacity(0.3)))
+            PromptTextEditor(text: $rolePrompt, minHeight: 60, maxHeight: 130)
 
             HStack {
                 Spacer()
@@ -398,8 +390,7 @@ struct AskToSheet: View {
                 }
                 Spacer(minLength: 0)
             }
-            TextEditor(text: binding)
-                .termLoopPromptEditorBox(minHeight: minHeight)
+            PromptTextEditor(text: binding, minHeight: minHeight)
         }
     }
 

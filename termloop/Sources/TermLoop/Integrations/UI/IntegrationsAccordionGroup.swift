@@ -26,6 +26,19 @@ struct IntegrationsAccordionGroup: View {
                     Text(kind.displayTitle)
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                         .tracking(1.4)
+                    if kind.isRecommendedHeader {
+                        Text(String(localized: "integrations.group.recommended",
+                                    defaultValue: "Recommended",
+                                    table: "TermLoop"))
+                            .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.accentColor)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(
+                                RoundedRectangle(cornerRadius: 3)
+                                    .stroke(Color.accentColor.opacity(0.45), lineWidth: 1)
+                            )
+                    }
                     Spacer()
                     Text(summaryBadge)
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -67,5 +80,11 @@ struct IntegrationsAccordionGroup: View {
         if items.isEmpty { return "0" }
         if okCount > 0 { return "\(items.count) · \(okCount) ok" }
         return "\(items.count)"
+    }
+}
+
+private extension IntegrationKind {
+    var isRecommendedHeader: Bool {
+        self == .claudeHook || self == .codexHook
     }
 }

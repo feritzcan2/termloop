@@ -474,6 +474,83 @@ final class AbilityStoreTests: XCTestCase {
         )
     }
 
+    func testResolveReferencedSkillsFindsCanonicalProjectSkillBeforeNativeSync() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let repo = tmp.appendingPathComponent("repo")
+        let canonical = repo
+            .appendingPathComponent(".termloop/skills/running-your-application", isDirectory: true)
+        try FileManager.default.createDirectory(at: canonical, withIntermediateDirectories: true)
+        let skillFile = canonical.appendingPathComponent("SKILL.md")
+        try "canonical".write(to: skillFile, atomically: true, encoding: .utf8)
+
+        let ability = Ability(
+            id: "running-your-application",
+            name: "Running Your Application",
+            description: "Use when running.",
+            activation: .listed,
+            body: "",
+            items: [
+                .requiredSkill("running-your-application")
+            ],
+            filePath: URL(fileURLWithPath: "/tmp/running.md"),
+            metadataFilePath: URL(fileURLWithPath: "/tmp/running.json")
+        )
+
+        let skills = ProjectInstructionStore.resolveReferencedSkills(
+            abilities: [ability],
+            projectFolderPath: repo.path
+        )
+
+        XCTAssertEqual(skills.map(\.name), ["running-your-application"])
+        XCTAssertEqual(skills.first?.fileURL.standardizedFileURL.path, skillFile.standardizedFileURL.path)
+    }
+
+    func testProjectSkillMaterializerCopiesCanonicalSkillIntoWorktreeAgentCatalogs() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let repo = tmp.appendingPathComponent("repo")
+        let canonical = repo
+            .appendingPathComponent(".termloop/skills/running-your-application", isDirectory: true)
+        try FileManager.default.createDirectory(at: canonical, withIntermediateDirectories: true)
+        try "canonical".write(
+            to: canonical.appendingPathComponent("SKILL.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let worktreePath = try XCTUnwrap(
+            WorktreeResolver.path(projectFolder: repo.path, branch: "feature/run")
+        )
+        try FileManager.default.createDirectory(atPath: worktreePath, withIntermediateDirectories: true)
+        let ability = Ability(
+            id: "running-your-application",
+            name: "Running Your Application",
+            description: "Use when running.",
+            activation: .listed,
+            body: "",
+            items: [
+                .requiredSkill("running-your-application")
+            ],
+            filePath: URL(fileURLWithPath: "/tmp/running.md"),
+            metadataFilePath: URL(fileURLWithPath: "/tmp/running.json")
+        )
+
+        ProjectSkillMaterializer.materialize(
+            projectFolderPath: repo.path,
+            agentCwdPath: worktreePath,
+            abilities: [ability]
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: repo.appendingPathComponent(".codex/skills/running-your-application/SKILL.md").path
+        ))
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: URL(fileURLWithPath: worktreePath)
+                .appendingPathComponent(".codex/skills/running-your-application/SKILL.md")
+                .path
+        ))
+    }
+
     func testComposeAbilityBlockFallsBackToBodyWhenRequiredSkillIsMissing() {
         let ability = Ability(
             id: "working-with-jira",

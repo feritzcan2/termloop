@@ -57,8 +57,7 @@ struct AbilityLaunchEditSheet: View {
                 .font(TermLoopSidebarTheme.tinyMono)
                 .foregroundStyle(TermLoopSidebarTheme.dimmer)
 
-            TextEditor(text: $prompt)
-                .termLoopPromptEditorBox(minHeight: 260, maxHeight: 420)
+            PromptTextEditor(text: $prompt, minHeight: 260, maxHeight: 420)
 
             HStack(spacing: 6) {
                 Spacer()

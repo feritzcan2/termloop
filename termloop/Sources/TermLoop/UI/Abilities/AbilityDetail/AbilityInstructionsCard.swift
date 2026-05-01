@@ -127,7 +127,7 @@ struct AbilityRequiredSkillsCard: View {
                 MarkdownRenderer(content: preview.body)
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.primary.opacity(0.025))
+                    .background(MarkdownTheme.insetBg)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             } else if probe.exists {
                 Text("Skill file exists but has no body yet. Use Customize skill with agent or Edit skill.")
@@ -262,7 +262,7 @@ struct AbilityRequiredSkillsCard: View {
     }
 
     private func openSkillFile(_ url: URL, title: String) {
-        DocEditorStore.shared.select(
+        MarkdownDocumentStore.shared.open(
             fileURL: url.resolvingSymlinksInPath(),
             folderName: "SKILLS",
             displayTitle: title

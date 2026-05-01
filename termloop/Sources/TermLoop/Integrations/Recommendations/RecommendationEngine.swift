@@ -22,17 +22,17 @@ final class RecommendationEngine: ObservableObject {
 
         // Always-on curated recommendations.
         out.append(contentsOf: Self.essentialCLI(byId: byId,
+                                                  kind: .agent,
                                                   name: "claude",
                                                   presetId: nil))
         out.append(contentsOf: Self.essentialCLI(byId: byId,
+                                                  kind: .agent,
                                                   name: "codex",
                                                   presetId: "cli.codex"))
         out.append(contentsOf: Self.essentialCLI(byId: byId,
+                                                  kind: .agent,
                                                   name: "gemini",
                                                   presetId: "cli.gemini"))
-        out.append(contentsOf: Self.essentialCLI(byId: byId,
-                                                  name: "jira",
-                                                  presetId: "cli.jira"))
         out.append(contentsOf: Self.essentialCLI(byId: byId,
                                                   name: "aws",
                                                   presetId: "cli.aws"))
@@ -53,13 +53,14 @@ final class RecommendationEngine: ObservableObject {
     /// Returns an "install / fix / configure" recommendation for a core
     /// CLI. Emits nothing if the CLI tested OK — no point nagging.
     private static func essentialCLI(byId: [String: IntegrationItem],
+                                     kind: IntegrationKind = .cli,
                                      name: String,
                                      presetId: String?) -> [Recommendation] {
-        let id = IntegrationItem.makeId(kind: .cli, name: name)
+        let id = IntegrationItem.makeId(kind: kind, name: name)
         guard let item = byId[id] else {
             return [Recommendation(
-                id: "rec.essential.cli.\(name).missing",
-                kind: .cli,
+                id: "rec.essential.\(kind.rawValue).\(name).missing",
+                kind: kind,
                 itemName: name,
                 reason: "Essential CLI — not detected on PATH.",
                 action: .add(presetId: presetId),
@@ -71,8 +72,8 @@ final class RecommendationEngine: ObservableObject {
             return []
         case .fail:
             return [Recommendation(
-                id: "rec.essential.cli.\(name).fix",
-                kind: .cli,
+                id: "rec.essential.\(kind.rawValue).\(name).fix",
+                kind: kind,
                 itemName: name,
                 reason: "Essential CLI — install or authenticate it.",
                 action: .add(presetId: presetId),
@@ -80,8 +81,8 @@ final class RecommendationEngine: ObservableObject {
             )]
         case .notConfigured:
             return [Recommendation(
-                id: "rec.essential.cli.\(name).configure",
-                kind: .cli,
+                id: "rec.essential.\(kind.rawValue).\(name).configure",
+                kind: kind,
                 itemName: name,
                 reason: "Essential CLI — needs configuration.",
                 action: .configure,

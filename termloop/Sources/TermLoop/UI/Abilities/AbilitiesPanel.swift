@@ -306,7 +306,7 @@ struct AbilitiesPanel: View {
     }
 
     private func openInMarkdownEditor(_ ability: Ability) {
-        DocEditorStore.shared.select(
+        MarkdownDocumentStore.shared.open(
             fileURL: ability.filePath,
             folderName: String(localized: "abilities.section.title",
                                defaultValue: "ABILITIES", table: "TermLoop"),
@@ -470,8 +470,8 @@ struct AbilitiesPanel: View {
             store.initializeDirectory()
         }
         let projectFolderPath = projectStore.activeProjectId.flatMap { projectStore.project(id: $0)?.folderPath }
-        if shouldCloseDocEditor(projectFolderPath: projectFolderPath, abilityId: starter.id) {
-            DocEditorStore.shared.close()
+        if shouldCloseMarkdownDocument(projectFolderPath: projectFolderPath, abilityId: starter.id) {
+            MarkdownDocumentStore.shared.close()
         }
         guard let ability = store.installStarter(starter) else {
             errorMessage = "Could not reset the starter ability."
@@ -480,11 +480,11 @@ struct AbilitiesPanel: View {
         detailState.show(ability.id)
     }
 
-    private func shouldCloseDocEditor(
+    private func shouldCloseMarkdownDocument(
         projectFolderPath: String?,
         abilityId: String
     ) -> Bool {
-        guard let selected = DocEditorStore.shared.selectedFileURL?.standardizedFileURL.path else {
+        guard let selected = MarkdownDocumentStore.shared.selectedFileURL?.standardizedFileURL.path else {
             return false
         }
         if let projectFolderPath {
@@ -811,7 +811,7 @@ struct AbilityDetailPage: View {
     }
 
     private func open(_ url: URL, title: String) {
-        DocEditorStore.shared.select(
+        MarkdownDocumentStore.shared.open(
             fileURL: url,
             folderName: String(
                 localized: "abilities.section.title",

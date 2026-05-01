@@ -210,13 +210,14 @@ struct PlanPickerSheet: View {
                         .truncationMode(.middle)
                     Spacer(minLength: 0)
                     Button {
-                        NSWorkspace.shared.open(entry.url)
+                        openInMarkdownEditor(entry: entry)
+                        dismiss()
                     } label: {
                         Image(systemName: "arrow.up.forward.square")
                     }
                     .buttonStyle(.plain)
-                    .help(String(localized: "planPicker.openInEditor",
-                                 defaultValue: "Open in editor", table: "TermLoop"))
+                    .help(String(localized: "planPicker.openInTermLoop",
+                                 defaultValue: "Open in TermLoop", table: "TermLoop"))
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -227,9 +228,7 @@ struct PlanPickerSheet: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
-                        Text(previewText)
-                            .font(TermLoopSidebarTheme.bodyMono)
-                            .textSelection(.enabled)
+                        MarkdownRenderer(content: previewText)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(12)
                     }
@@ -284,6 +283,14 @@ struct PlanPickerSheet: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func openInMarkdownEditor(entry: PlanFileEntry) {
+        MarkdownDocumentStore.shared.open(
+            fileURL: entry.url,
+            folderName: entry.folder.sectionTitle,
+            displayTitle: entry.displayTitle
+        )
     }
 
     private func refresh() async {

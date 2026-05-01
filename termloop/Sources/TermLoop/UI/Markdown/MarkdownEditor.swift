@@ -26,7 +26,7 @@ struct MarkdownEditor: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             MarkdownTextView(text: $text)
-                .background(Color(nsColor: .textBackgroundColor))
+                .background(MarkdownTheme.editorBg)
                 .onAppear { isLoaded = true }
                 .onChange(of: text) { newValue in
                     guard isLoaded else { return }
@@ -77,6 +77,9 @@ private struct MarkdownTextView: NSViewRepresentable {
         textView.highlightSelectedLine = false
         textView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
         textView.textColor = .labelColor
+        textView.backgroundColor = MarkdownTheme.nsEditorBackground
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = MarkdownTheme.nsEditorBackground
 
         context.coordinator.isApplyingExternal = true
         textView.setAttributedString(NSAttributedString(string: String(text.characters),
@@ -93,6 +96,8 @@ private struct MarkdownTextView: NSViewRepresentable {
         let textView = scrollView.documentView as! STTextView
 
         let incoming = String(text.characters)
+        textView.backgroundColor = MarkdownTheme.nsEditorBackground
+        scrollView.backgroundColor = MarkdownTheme.nsEditorBackground
 
         // Crucial guard: if the content hasn't actually changed, do nothing.
         // This prevents SwiftUI re-renders (driven by agent terminal ticks,

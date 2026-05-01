@@ -66,7 +66,7 @@ enum ClaudeHookInstaller {
         CMUX_BIN="\(bin)"; \
         \(insideCmuxGuard) && \(globalDisableGuard) && \(perAgentDisableGuard) \
         && [ -n "$CMUX_BIN" ] && [ -x "$CMUX_BIN" ] \
-        && exec "$CMUX_BIN" \(subcommand) \
+        && { "$CMUX_BIN" \(subcommand) >/dev/null 2>/dev/null || true; echo '{}'; } \
         || echo '{}'
         """
     }

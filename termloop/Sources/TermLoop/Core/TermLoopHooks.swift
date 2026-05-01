@@ -2427,9 +2427,8 @@ enum AgentMainAreaOverlayMode: Equatable {
     case content
     case agents
     case ability(String)
-    case scratchpad(URL)
+    case markdownDocument(URL)
     case gitChanges(UUID)
-    case contextBankFile(URL)
     /// Full-area Context Bank right pane — file viewer or suggestion
     /// diff + Accept/Reject. Active when the TermLoop sidebar is on
     /// `.work + .contextBank` AND no higher-priority overlay is up.
@@ -2442,9 +2441,8 @@ enum AgentMainAreaOverlayMode: Equatable {
         case .content: return "content"
         case .agents: return "agents"
         case let .ability(id): return "ability:\(id)"
-        case let .scratchpad(url): return "scratchpad:\(url.path)"
+        case let .markdownDocument(url): return "markdownDocument:\(url.path)"
         case let .gitChanges(workspaceId): return "gitChanges:\(workspaceId.uuidString)"
-        case let .contextBankFile(url): return "contextBankFile:\(url.path)"
         case .contextBank: return "contextBank"
         case .settings: return "settings"
         case .projectEmpty: return "projectEmpty"
@@ -2469,13 +2467,12 @@ enum AgentMainAreaOverlayMode: Equatable {
         // regardless of sidebar tab or active overlay underneath.
         if TermLoopSettingsPageStore.shared.isOpen { return .settings }
         if sidebarTab == .agents { return .agents }
-        // Scratchpad/DocEditor takes precedence over ability detail so that
+        // Markdown documents take precedence over ability detail so that
         // clicking "Open" on a skill file from inside an ability page swaps
         // the main pane to the editor instead of being shadowed by the
         // ability route. (See commit 84652769.)
-        if DocEditorStore.shared.showEditor,
-           let url = DocEditorStore.shared.selectedFileURL {
-            return .scratchpad(url)
+        if let url = MarkdownDocumentStore.shared.selectedFileURL {
+            return .markdownDocument(url)
         }
         if sidebarTab == .work,
            workSubTab == .agents,
@@ -2484,9 +2481,6 @@ enum AgentMainAreaOverlayMode: Equatable {
         }
         if let presentation = GitChangesMainAreaStore.shared.presentation {
             return .gitChanges(presentation.workspaceId)
-        }
-        if let file = ContextBankFileViewerStore.shared.openFile {
-            return .contextBankFile(file.url)
         }
         // Context Bank sub-tab owns the main area when it's active. The
         // file/suggestion viewer renders here so the previously-selected
@@ -2526,9 +2520,8 @@ enum AgentMainAreaOverlayMode: Equatable {
 }
 
 private struct AgentMainAreaOverlaySwap<Content: View>: View {
-    @ObservedObject private var scratchpad = DocEditorStore.shared
+    @ObservedObject private var markdownDocument = MarkdownDocumentStore.shared
     @ObservedObject private var gitChanges = GitChangesMainAreaStore.shared
-    @ObservedObject private var contextBankFileViewer = ContextBankFileViewerStore.shared
     @ObservedObject private var abilityDetail = AbilityDetailUIState.shared
     @ObservedObject private var projectStore = ProjectStore.shared
     @ObservedObject private var workspaceMetadata = WorkspaceMetadataStore.shared
@@ -2576,7 +2569,7 @@ private struct AgentMainAreaOverlaySwap<Content: View>: View {
             return true
         case .ability(let id):
             return shouldSplitAbilityDetail(abilityId: id)
-        case .agents, .scratchpad, .gitChanges, .contextBankFile, .contextBank, .settings, .projectEmpty:
+        case .agents, .markdownDocument, .gitChanges, .contextBank, .settings, .projectEmpty:
             return false
         }
     }
@@ -2615,36 +2608,21 @@ private struct AgentMainAreaOverlaySwap<Content: View>: View {
                 } else {
                     overlayContainer { AbilityDetailPage(abilityId: id) }
                 }
-            case let .scratchpad(url):
-                overlayContainer {
-                    DocEditorView(
-                        fileURL: url,
-                        folderName: scratchpad.folderName,
-                        displayTitle: scratchpad.displayTitle,
-                        onClose: { scratchpad.close() }
-                    )
+            case .markdownDocument:
+                if let document = markdownDocument.document {
+                    overlayContainer {
+                        MarkdownDocumentSurface(
+                            document: document,
+                            onClose: { markdownDocument.close() }
+                        )
+                        .id(document.id)
+                    }
+                } else {
+                    content()
                 }
             case .gitChanges:
                 overlayContainer {
                     GitChangesMainAreaHost()
-                }
-            case .contextBankFile:
-                if let file = contextBankFileViewer.openFile {
-                    overlayContainer {
-                        DocEditorView(
-                            fileURL: file.url,
-                            folderName: String(
-                                localized: "contextBank.overlay.folderName",
-                                defaultValue: "Context Bank",
-                                table: "TermLoop"
-                            ),
-                            displayTitle: file.relativePath,
-                            onClose: { contextBankFileViewer.close() }
-                        )
-                        .id(file.id)
-                    }
-                } else {
-                    content()
                 }
             case .contextBank:
                 overlayContainer {
@@ -2677,14 +2655,13 @@ private struct AgentMainAreaOverlaySwap<Content: View>: View {
             dismissAbilityDetailIfContextChanged()
             // Top-tab change is a strong "user moved on" signal — none of
             // these overlays should outlive their originating context.
-            scratchpad.close()
-            contextBankFileViewer.close()
+            markdownDocument.close()
             gitChanges.close()
         }
         .onChange(of: workSubTabRaw) { _ in
             // Sub-tab change is in-`.work` navigation (filter switching),
-            // not an application-level context switch — keep DocEditor /
-            // ContextBank / GitChanges open so the user can flip between
+            // not an application-level context switch — keep Markdown
+            // documents and GitChanges open so the user can flip between
             // sub-tabs without losing what they were viewing. Only the
             // ability detail is dismissed because its visibility is
             // gated on `.work + .agents` by the factory.
@@ -2813,8 +2790,8 @@ extension TermLoopHooks {
         guard let appDelegate = AppDelegate.shared else { return }
         guard let targetTM = appDelegate.tabManagerFor(tabId: workspaceId) else { return }
         // Always run through the helper — even when this workspace is
-        // already selected, an open overlay (AbilityDetail / DocEditor /
-        // ContextBank / GitChanges) would otherwise outlive the focus
+        // already selected, an open overlay (AbilityDetail / Markdown
+        // document / GitChanges) would otherwise outlive the focus
         // intent. The helper dedupes `selectedTabId` internally.
         MainAreaActivation.activateWorkspaceTerminal(workspaceId, on: targetTM)
         if let wid = appDelegate.windowId(for: targetTM) {

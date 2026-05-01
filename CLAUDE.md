@@ -1,74 +1,164 @@
-# bmadworkflowtest — Claude Context
+# Terminal App — Claude Context
 
-## TermLoop
-TermLoop is a terminal editor with agentic side bar. Developers are our target users who uses coding agents in termloop. 
-You are also, running inside termloop now while we develop termloop. Everyfeature we develop, must target every possible project type. 
+Cross-platform terminal app for monitoring AI agents (Claude Code) over SSH. Built with Expo + React Native, xterm.js in a WebView, and a native Expo Module wrapping Citadel (iOS, pure-Swift SSH via SwiftNIO) / JSch (Android).
 
-Two sibling projects under one workspace, plus supporting material:
+## Status
 
-- `terminal-app/` — Expo/React Native mobile SSH terminal (iOS/Android). See its own `terminal-app/CLAUDE.md` for mobile stack details.
-- `termloop/` — **TermLoop**, our AI-first macOS terminal product built on top of `manaflow-ai/cmux`. All product code lives under `Sources/TermLoop/`; upstream termloop and nested dependencies are vendored into this repo and synced via `./scripts/sync-upstreams.sh`. See `termloop/CLAUDE.md` for fork discipline and `termloop/docs/termloop/` for deep-dive references.
-- `docs/` — local notes.
+- **Simulator (iOS):** App runs and builds. SSH functional via Citadel (pure Swift).
+- **Device (iOS):** Working end-to-end. SSH tested on real iPhone to Mac over Tailscale with password auth via `Alert.prompt`. TermLoop TCP bridge also working — project list, project switch, workspace list over Tailscale.
+- **Android:** SSH module code exists (JSch) but not yet built/tested. TermLoop module is a stub — throws "not implemented".
+- **Tests:** 44/44 passing (themes + connections + agent-loop client + secrets + owned-claude-sessions + terminal-command).
+- **iOS deployment target:** 17.0 (Citadel + Network.framework conventions).
 
-## Upstream Sync Model
+## Architecture
 
-This repo is the only working repo. `termloop/`, `termloop/ghostty/`, `termloop/homebrew-cmux/`, and `termloop/vendor/bonsplit/` are tracked as normal directories, not submodules.
+```
+UI (React Native) ─┬─ xterm.js (inside WebView via react-native-webview)
+                   ├─ KeyboardBar (Esc/Tab/Ctrl toggle/arrows/Alt)
+                   └─ TerminalView ←→ ExpoSsh native module (Swift/Kotlin)
+                                            ↓
+                                   Citadel (iOS) / JSch (Android)
+                                            ↓
+                                       SSH server
+```
 
-Treat the configured fork/upstream repos as read-only sync sources. To refresh vendored code, use `./scripts/sync-upstreams.sh` from the repo root; that script pulls the configured refs into the tracked directories and updates `upstreams.lock`.
+Data flow:
+- User types → xterm.js `onData` → WebView postMessage → RN → `Ssh.writeToShell(sessionId, data)`
+- Server output → Swift/Kotlin read loop → `onShellData` event → RN → WebView `write`
 
-| Path | Upstream source | Discipline |
-|---|---|---|
-| `termloop/` | `feritzcan2/cmux-fork` (integration fork over `manaflow-ai/cmux`) | **K/Y rules apply** to upstream termloop Swift/CLI files. TermLoop code under `termloop/Sources/TermLoop/` and `termloop/CLI/TermLoop/` is ours to shape freely. |
-| `termloop/ghostty/` | `feritzcan2/ghostty` | K/Y does NOT apply. Modifying ghostty Zig/C is supported when Swift hits an opaque C API wall. Sync changes back upstream manually when needed. |
-| `termloop/homebrew-cmux/` | `manaflow-ai/homebrew-cmux` | Vendored support repo; sync via the root script when required. |
-| `termloop/vendor/bonsplit/` | `feritzcan2/bonsplit` | Vendored dependency; free to modify, but keep upstream commit provenance in `upstreams.lock`. |
+## Tech Stack
 
-When designing: if Swift only sees an opaque C API and the feature needs more, check whether the source lives in `termloop/ghostty/`. If it does, modifying it is on the table. The working copy is local to this repo, so there is no nested remote to push from in-place.
+- Expo SDK 54, Expo Router (file-based routing)
+- React Native 0.81, React 19
+- `react-native-webview` hosting xterm.js v5 (loaded from jsdelivr CDN inside WebView HTML)
+- Native: Swift (Expo Modules API) + Citadel (SwiftPM, via `cocoapods-spm`) on iOS; Kotlin + JSch on Android
+- AsyncStorage for connection config, expo-secure-store for secrets (not wired yet)
+- Jest + jest-expo for unit tests
 
-The end goal: the mobile app connects to a running `termloop` session and drives it over the socket, with a "Project" layer on top for organizing workspaces by folder.
+## Directory Layout
 
-## TermLoop terminal-agent presentation contract
+```
+terminal-app/
+├── app/                               # Expo Router screens
+│   ├── _layout.tsx                    # Root stack
+│   ├── (tabs)/
+│   │   ├── _layout.tsx                # Tab bar (Connections, Settings)
+│   │   ├── index.tsx                  # Mixed SSH+TermLoop list, FAB action sheet
+│   │   └── settings.tsx               # Theme/font/haptics
+│   ├── connection/
+│   │   ├── new.tsx                    # SSH form (modal)
+│   │   └── new-termloop.tsx               # TermLoop form (label/host/port/password) (modal)
+│   ├── terminal/[id].tsx              # SSH terminal screen
+│   └── termloop/[id].tsx                  # TermLoop project list + workspaces + switch
+├── components/
+│   ├── TerminalView.tsx               # WebView + xterm.js bridge
+│   ├── KeyboardBar.tsx                # Special keys
+│   └── ConnectionCard.tsx             # SSH/TermLoop pill + label
+├── lib/
+│   ├── types.ts                       # Unified Connection (host + ssh{port,user} + termloop{port})
+│   ├── themes.ts                      # 4 themes (Dracula/Nord/Solarized/Monokai)
+│   ├── connections.ts                 # AsyncStorage CRUD (overload-typed createNewConnection)
+│   ├── secrets.ts                     # expo-secure-store wrapper for TermLoop passwords
+│   ├── termloop-client.ts                 # NDJSON id-correlated RPC client for TermLoop
+│   └── terminal-html.ts               # xterm.js HTML as a JS string
+├── modules/
+│   ├── expo-ssh/                      # SSH module (Citadel/JSch)
+│   └── expo-termloop/                     # TermLoop TCP module (NWConnection/stub)
+│       ├── expo-module.config.json
+│       ├── index.ts                   # connect/send/disconnect + onMessage/onState/onDisconnect
+│       ├── src/ExpoTermLoopModule.ts      # requireNativeModule with try/catch fallback Proxy
+│       ├── ios/
+│       │   ├── ExpoTermLoop.podspec       # only ExpoModulesCore dep, ios 17.0
+│       │   └── ExpoTermLoopModule.swift   # NWConnection (plain TCP) + NDJSON framer
+│       └── android/                   # stub: throws IllegalStateException
+├── __tests__/                         # Jest unit tests (22 total)
+└── ios/, android/                     # Generated by expo prebuild
+```
 
-For `termloop` / TermLoop work, terminal-agent UI state now follows one structure and should stay there:
+## Common Commands
 
-- **Source of truth:** `TerminalAgentActivityStore`
-- **Truth access / predicates:** `TerminalAgentActivityStore` + `TerminalAgentActivityStore+Queries`
-- **Formatting only:** `TerminalAgentDisplayFormatting`
-- **Status-key lookup only:** `TerminalAgentStatusKeys`
-- **No resolver layer:** `TerminalAgentActivityResolver` was removed on purpose; do not reintroduce a replacement facade.
+```bash
+# Install deps (use legacy-peer-deps because of React 19 / testing-library mismatch)
+npm install --legacy-peer-deps
 
-Rules:
+# Run tests
+npx jest
 
-- UI must read **presentation state** (`presentation(forWorkspaceId:)`, `displayState(...)`, query helpers), not raw activity state, `workspace.statusEntries`, `workspace.agentPIDs`, or ad-hoc metadata fallbacks for agent presentation.
-- Panel-style consumers should prefer **parent-built snapshots** and pure row renderers.
-- If you need new agent UI behavior, put it in the store/query layer if it changes truth, or in formatting helpers if it is display-only.Prefer using existing one over creating new store all time.
-- Do not add a new "easy" wrapper namespace that hides the store as the real source of truth.
+# Start Metro bundler (for dev build on device or simulator)
+npx expo start --dev-client
 
-## TermLoop agent-input contract
+# Prebuild native projects (destroys ios/ and android/; rerun after native changes)
+npx expo prebuild --clean
 
-For agent launch/input work under `termloop/Sources/TermLoop/AgentInputs/`,
-follow the local rules in:
-- `termloop/Sources/TermLoop/AgentInputs/CLAUDE.md`
-- `termloop/Sources/TermLoop/AgentInputs/AGENTS.md`
+# Build & run on iOS simulator
+npx expo run:ios
 
-That folder owns the invocation input plane: catalog truth, composition,
-delivery preview, and Quick Action authoring rules.
+# Build & run on iOS device
+npx expo run:ios --device
 
-## Mobile ↔ termloop TCP bridge (shipped)
+# Install pods after editing Podfile or expo-ssh podspec
+cd ios && pod install
+```
 
-iPhone can't reach Unix sockets, so `termloop` exposes a second listener (TCP, AF_INET, default `:7878`, bind `0.0.0.0`) that shares the same v2 NDJSON pipeline as the Unix socket. MVP methods on mobile: `project.list / current / switch`, `workspace.list`.
+## Citadel SSH (iOS)
 
-- Server: `termloop/Sources/TerminalController.swift` (`handleClient(isTcpClient:)` — TCP skips cmuxOnly ancestry check, requires password auth), `SocketControlSettings.resolvedTcpPort()` / `resolvedTcpBindHost()`.
-- Mobile: `terminal-app/modules/expo-termloop` (iOS `NWConnection`, Android stub), `lib/termloop-client.ts` (RPC), `app/termloop/[id].tsx`, `app/connection/new-cmux.tsx`.
-- Password file: `~/Library/Application Support/termloop/socket-control-password` (shared across all tagged builds; each build has its own UserDefaults).
+iOS SSH is now provided by [orlandos-nl/Citadel](https://github.com/orlandos-nl/Citadel) 0.12.1 — pure Swift on SwiftNIO + SwiftNIO-SSH. Speaks `rsa-sha2-256/512`, `curve25519-sha256`, `ed25519`, `chacha20-poly1305`. No server-side downgrade needed for modern OpenSSH.
 
-## Worktrees
+### Why not NMSSH anymore
+NMSSH vendors libssh2 1.8.0 (2017) as device-only static libs; it can only sign with `ssh-rsa` (SHA-1) and negotiate SHA-1 KEX. Modern OpenSSH 10.2+ has dropped those code paths entirely — even server-side `HostKeyAlgorithms +ssh-rsa` doesn't help. NMSSH's public API also has no algorithm preference hook.
 
-TermLoop owns worktree lifecycle in `termloop/` — `WorktreeCoordinator` creates them at `<project>/.termloop-worktrees/<sanitized-branch>/` and keeps `WorkspaceMetadataStore` in sync. Path is gitignored at `.gitignore:85`, so no ignore-verification step is needed. Don't run `git worktree add` by hand in `termloop/` unless you're debugging — go through the app/CLI so metadata stays consistent.
+### SPM integration
+Citadel is SwiftPM-only (no CocoaPods podspec). We bridge via the `cocoapods-spm` gem plugin because the module's Swift source lives in the `ExpoSsh` pod target (which can't see app-target-only SPM deps). See `cocoapods_spm_setup.md` memory for the Homebrew-sandbox install dance.
 
-## TermLoop ability starter authoring
+Layout:
+- `modules/expo-ssh/plugin/withCitadelSPM.js` is an Expo config plugin that:
+  1. Writes `ios.deploymentTarget: "17.0"` into `Podfile.properties.json` (Citadel requires iOS 17)
+  2. Injects `plugin 'cocoapods-spm'` + `spm_pkg` declarations (Citadel / swift-nio-ssh / swift-nio / swift-nio-transport-services) at the top of the Podfile
+  3. Injects an `at_exit` block inside the existing `post_install` that:
+     - Rewrites `${GENERATED_MODULEMAP_DIR}/CCitadelBcrypt.modulemap` → `${SOURCE_PACKAGES_CHECKOUTS_DIR}/Citadel/Sources/CCitadelBcrypt/include/module.modulemap` in every xcconfig. Needed because cocoapods-spm mis-wires C targets that ship an explicit `include/module.modulemap`.
+     - Patches Citadel's `SSHClient.connect(on:settings:)` to wrap `SSHClientSession.addHandlers(...)` in `channel.eventLoop.flatSubmit { ... }` so the `syncOperations.addHandlers` call runs on the event loop thread. Without the hop the call traps with EXC_BREAKPOINT (NIO precondition fail) when invoked from a Swift async Task. Targets both the cocoapods-spm and the Xcode DerivedData SourcePackages checkouts (Xcode's SwiftPM integration clones the package to its own DerivedData path, which is what actually gets compiled).
+     - `at_exit` is used because cocoapods-spm rewrites xcconfigs AFTER Podfile's `post_install` runs.
+  4. Overwrites `IPHONEOS_DEPLOYMENT_TARGET` in all build configs of `TerminalApp.xcodeproj` to `17.0` (Expo prebuild defaults to 15.1)
+- `modules/expo-ssh/app.plugin.js` re-exports the plugin; `app.json` references it as `"./modules/expo-ssh/app.plugin.js"`
+- `ios/ExpoSsh.podspec` declares `s.spm_dependency` for `Citadel/Citadel`, `swift-nio-ssh/NIOSSH`, `swift-nio/NIO`, `swift-nio/NIOCore`, `swift-nio-transport-services/NIOTransportServices`. Platform is `:ios => '17.0'`
 
-For customizer-based starters under `termloop/Sources/TermLoop/Core/Templates/starters/<id>/` (empty runtime + `prompt-customizer.md` that fills in project-specific content):
+### Swift module shape
+- One `SSHClient` per sessionId, stored in `clients: [String: SSHClient]`
+- Connect uses `NIOTSConnectionBootstrap` (Network.framework transport) to establish the TCP channel, then calls `SSHClient.connect(on: channel, settings: settings)` to install SSH handlers on the already-connected channel. NIOTS is required because Citadel's own `connect(to: settings)` path uses `ClientBootstrap(group:)` which only accepts `MultiThreadedEventLoopGroup` — iOS BSD sockets also hit EPERM on Tailscale utun interfaces.
+- `startShell` spawns a `Task<Void, Never>` that calls `client.withPTY(...)`. The `withPTY` closure is long-lived — it holds the shell open. The `TTYStdinWriter` is captured out of the closure via an `AsyncStream<TTYStdinWriter>.makeStream()` and stored in `writers: [String: TTYStdinWriter]`
+- `writeToShell` converts `String` → `ByteBuffer` and calls `writer.write(buffer)`
+- `resizeShell` calls `writer.changeSize(cols:rows:pixelWidth:0 pixelHeight:0)`
+- Reads happen inside the closure via `for try await event in inbound`, emitting `onShellData` for both `.stdout` and `.stderr`
+- Disconnect cancels the task and calls `client.close()`
+- `stateQueue` (a serial DispatchQueue) guards the three dictionaries — accessed from multiple async contexts
+- No `#if !targetEnvironment(simulator)` guards — Citadel is pure Swift, works everywhere
 
-- The customizer must write to `.termloop/skills/<id>/SKILL.md`. That is the runtime "Project canonical" path; `.termloop/abilities/<id>/instructions.md` is silently ignored, even when an ability declares `instructionFile`.
-- Set `activation: "listed"` in `ability.json`. `worktree` forces a pseudo-installed state where the UI exposes "Open agent" with nothing to launch into; `listed` gives the correct STARTER badge plus "Create with agent | Install" actions.
+Extremely important pre-install step (on this dev Mac): see `cocoapods_spm_setup.md`. The `cocoapods-spm` gem must live in Homebrew CocoaPods' sandbox, AND the `update_script.rb` helper needs a small patch.
+
+## Dev Server Connection Notes
+
+- The dev Mac and test iPhone are both on Tailscale; Mac IP `100.64.0.10`, iPhone `100.64.0.11`.
+- When running `npx expo run:ios --device`, Metro bundler must be reachable from the iPhone. If the device shows "No script URL provided", start Metro with `npx expo start --dev-client` on the Mac while the phone has Tailscale running.
+- `Info.plist` has `NSLocalNetworkUsageDescription` + `NSAllowsLocalNetworking: true` + `NSAllowsArbitraryLoads: true` (the last is debatable for production but fine for dev builds over Tailscale).
+- Bundle identifier is `com.feritzcan.sshterminal`.
+
+## TermLoop TCP module (iOS)
+
+`modules/expo-termloop/ios/ExpoTermLoopModule.swift` wraps `NWConnection` (plain TCP, no TLS — Tailscale provides transport encryption) and surfaces NDJSON line events. `lib/termloop-client.ts` builds an id-correlated RPC client on top, auto-sending `auth.login` after connect. `Connection` is a single shape (`host` + nested `ssh{port,user}` + `termloop{port}`); legacy discriminated-union rows are migrated on read and flagged `incomplete: true` until the user edits+saves. TermLoop passwords live in `expo-secure-store` keyed `termloop_token_${id}`.
+
+### Non-obvious
+
+- **`src/ExpoTermLoopModule.ts` does eager `requireNativeModule` inside try/catch.** On failure a stub Proxy is exported instead, so a JS-only Metro reload doesn't crash the route tree before the native module is linked. Lazy/Proxy-everywhere broke `EventEmitter` wiring — don't go back to that.
+- **Setup:** Mac side needs Settings → Automation → Socket Control Mode = Password (with a password set) AND TCP port = 7878 AND Bind to all interfaces ON. Password file: `~/Library/Application Support/termloop/socket-control-password` — no trailing newline (use `echo -n` if writing manually).
+- **Smoke test:** `printf '{"method":"auth.login","params":{"password":"PASS"},"id":1}\n' | nc -w 2 127.0.0.1 7878` → expect `{"ok":true,...}`.
+
+## Known Issues & Future Work
+
+1. **Password auth in terminal screen uses `Alert.prompt`** — iOS-only. Android needs a proper modal TextInput.
+2. **Passwords not stored.** Currently passed through memory only (via `Alert.prompt` → state). `expo-secure-store` is installed but not used yet.
+3. **Android SSH module** is written but untested. No device build has been run against it.
+4. **Settings propagation is per-screen and one-shot.** `terminal/[id].tsx` reads `terminal_settings` on mount and applies `fontSize`, `defaultTheme` (if connection has no override), and `hapticEnabled`. Changes made in Settings while a terminal is open don't live-update — you have to re-enter the screen.
+5. **Backgrounding survival via tmux wrap (shipped).** `terminal/[id].tsx` now wraps `claude --resume <id>` in `tmux new-session -A -s claude-<id>` with full-scrollback replay via `capture-pane` on reattach. iOS can still freeze the socket, but the Claude process outlives the disconnect; on reconnect the user sees the full gap history. See `docs/superpowers/specs/2026-04-14-mobile-terminal-persistence-design.md`. Requires tmux installed on the Mac; no onboarding check yet.
+6. **Host key validation** is `SSHHostKeyValidator.acceptAnything()` — fine for dev, needs a `known_hosts`-equivalent before any production use.
+7. **Test runner warnings:** Node v23 triggers engine warnings from Jest 30 internal packages. Tests pass regardless.
+8. **TermLoop MVP scope:** read + switch only. No project CRUD, no workspace terminal mirroring, no auto-reconnect (manual pull-to-refresh).

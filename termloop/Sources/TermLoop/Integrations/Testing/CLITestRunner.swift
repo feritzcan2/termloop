@@ -38,11 +38,6 @@ struct CLITestRunner: TestRunner {
         "gemini":   (["--version"], { out in
             out.trimmingCharacters(in: .whitespacesAndNewlines)
         }),
-        "jira":     (["me"], { out in
-            // ankitpokhrel/jira-cli prints logged-in user on `jira me`
-            out.trimmingCharacters(in: .whitespacesAndNewlines)
-                .components(separatedBy: .newlines).first
-        }),
     ]
 
     func run(_ item: IntegrationItem) async -> IntegrationTestResult {
@@ -112,25 +107,6 @@ struct CLITestRunner: TestRunner {
 
     private func configuredEnv(for key: String) -> [String: String] {
         switch key {
-        case "jira":
-            let nonSecrets = IntegrationConfigStore.shared.loadNonSecrets()["cli.jira"] ?? [:]
-            var env: [String: String] = [:]
-            if let server = nonSecrets["server"], !server.isEmpty {
-                env["JIRA_SERVER"] = server
-            }
-            if let login = nonSecrets["login"], !login.isEmpty {
-                env["JIRA_LOGIN"] = login
-            }
-            if let authType = nonSecrets["authType"], !authType.isEmpty {
-                env["JIRA_AUTH_TYPE"] = authType
-            }
-            if let token = IntegrationConfigStore.shared.loadSecret(
-                presetId: "cli.jira",
-                key: "apiToken"
-            ), !token.isEmpty {
-                env["JIRA_API_TOKEN"] = token
-            }
-            return env
         default:
             return [:]
         }

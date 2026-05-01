@@ -1071,9 +1071,12 @@ enum TermLoopSocketCommands {
     /// creates an `.askAgent` bridge from the source workspace, and kicks
     /// off `message` as the helper's first user turn.
     private static func bridgeAskTo(_ params: [String: Any]) -> TerminalController.V2CallResult {
-        guard let sourceId = uuid(params, "workspace_id") else {
-            return .err(code: "invalid_params",
-                        message: "Missing or invalid workspace_id", data: nil)
+        let sourceId: UUID
+        switch resolveWorkspaceId(from: params) {
+        case .found(let id, _):
+            sourceId = id
+        case .missing(let error):
+            return error
         }
         guard let targetRaw = nonEmptyString(params, "target")?.lowercased(),
               let target = AskTargetAgent(rawValue: targetRaw) else {

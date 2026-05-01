@@ -234,6 +234,9 @@ extension TermLoopSocketCommands {
             if let wsId = WorkspaceMetadataStore.shared.workspaceId(forCwd: cwd) {
                 return .found(id: wsId, idString: wsId.uuidString)
             }
+            if let liveLookup = resolveLiveWorkspaceId(forCwd: cwd) {
+                return liveLookup
+            }
             return .missing(.err(code: "no_workspace_for_cwd",
                                  message: "No open workspace owns the cwd \(cwd)",
                                  data: ["cwd": cwd]))
@@ -241,6 +244,67 @@ extension TermLoopSocketCommands {
         return .missing(.err(code: "invalid_params",
                              message: "Missing workspace_id (or cwd for env-less callers)",
                              data: nil))
+    }
+
+    /// Fallback for env-less MCP callers launched from a normal project root
+    /// rather than a TermLoop-managed worktree. Worktree roots are handled by
+    /// `WorkspaceMetadataStore.workspaceId(forCwd:)`; this live scan covers
+    /// generic root workspaces and uses the selected/recently-prompted
+    /// workspace to avoid guessing when several tabs share the same cwd.
+    private static func resolveLiveWorkspaceId(forCwd cwd: String) -> WorkspaceLookup? {
+        guard let tabManager = AppDelegate.shared?.tabManager else { return nil }
+        let normalizedCwd = canonicalPath(cwd)
+        guard !normalizedCwd.isEmpty else { return nil }
+        let matches = tabManager.tabs.filter { workspace in
+            liveWorkspace(workspace, ownsCanonicalCwd: normalizedCwd)
+        }
+        guard !matches.isEmpty else { return nil }
+        if matches.count == 1, let only = matches.first {
+            return .found(id: only.id, idString: only.id.uuidString)
+        }
+        if let selected = tabManager.selectedWorkspace,
+           matches.contains(where: { $0.id == selected.id }) {
+            return .found(id: selected.id, idString: selected.id.uuidString)
+        }
+
+        let ranked = matches.sorted { lhs, rhs in
+            let lhsDate = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: lhs.id).lastUserPromptAt
+            let rhsDate = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: rhs.id).lastUserPromptAt
+            return (lhsDate ?? .distantPast) > (rhsDate ?? .distantPast)
+        }
+        if let first = ranked.first {
+            let firstDate = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: first.id).lastUserPromptAt
+            let secondDate = ranked.dropFirst().first.map {
+                WorkspaceMetadataStore.shared.metadata(forWorkspaceId: $0.id).lastUserPromptAt
+            } ?? nil
+            if firstDate != nil, firstDate != secondDate {
+                return .found(id: first.id, idString: first.id.uuidString)
+            }
+        }
+
+        return .missing(.err(
+            code: "ambiguous_workspace_for_cwd",
+            message: "Multiple open workspaces match cwd \(cwd); TERMLOOP_WORKSPACE_ID is required.",
+            data: [
+                "cwd": cwd,
+                "workspace_ids": matches.map { $0.id.uuidString }
+            ]
+        ))
+    }
+
+    private static func liveWorkspace(_ workspace: Workspace, ownsCanonicalCwd cwd: String) -> Bool {
+        let candidates = [workspace.currentDirectory] + Array(workspace.panelDirectories.values)
+        return candidates.contains { raw in
+            let candidate = canonicalPath(raw)
+            guard !candidate.isEmpty else { return false }
+            return cwd == candidate || cwd.hasPrefix(candidate + "/")
+        }
+    }
+
+    private static func canonicalPath(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        return URL(fileURLWithPath: trimmed).resolvingSymlinksInPath().path
     }
 
     /// Generic ability binding telemetry. Stores the opaque payload

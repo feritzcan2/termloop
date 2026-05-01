@@ -449,6 +449,12 @@ final class QuickActionViewModel: ObservableObject {
                 self?.refreshPreview()
             }
             .store(in: &cancellables)
+        AbilityStore.shared.$abilities
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.refreshPreview()
+            }
+            .store(in: &cancellables)
 
         $targetWorkspaceId
             .sink { [weak self] _ in self?.refreshPreview() }

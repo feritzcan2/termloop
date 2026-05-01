@@ -10,6 +10,7 @@ final class IntegrationTester {
     static let shared = IntegrationTester()
 
     private var runners: [IntegrationKind: TestRunner] = [
+        .agent: CLITestRunner(),
         .mcp: MCPTestRunner(),
         .cli: CLITestRunner(),
         .webhook: WebhookTestRunner(),

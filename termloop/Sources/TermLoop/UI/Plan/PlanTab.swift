@@ -78,11 +78,11 @@ struct PlanTab: View {
                         .buttonStyle(.plain)
                         .contextMenu {
                             Button(String(
-                                localized: "plan.contextMenu.openInExternalEditor",
-                                defaultValue: "Open in External Editor",
+                                localized: "plan.contextMenu.openInTermLoop",
+                                defaultValue: "Open in TermLoop",
                                 table: "TermLoop"
                             )) {
-                                NSWorkspace.shared.open(entry.url)
+                                openInMarkdownEditor(entry: entry)
                             }
                             Button(String(
                                 localized: "plan.contextMenu.revealInFinder",
@@ -149,7 +149,7 @@ struct PlanTab: View {
     }
 
     private func openInMarkdownEditor(entry: PlanFileEntry) {
-        DocEditorStore.shared.select(
+        MarkdownDocumentStore.shared.open(
             fileURL: entry.url,
             folderName: entry.folder.sectionTitle
         )

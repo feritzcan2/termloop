@@ -302,6 +302,7 @@ enum ProjectInstructionStore {
         AbilityInjector.resolvedProjectFolderPath(forWorkspaceId: workspaceId, runCwd: runCwd)
     }
 
+    @MainActor
     static func resolvedProjectFolderPath(projectFolderPath: String?, runCwd: String?) -> String? {
         AbilityInjector.resolveProjectFolderPath(projectFolderPath: projectFolderPath, runCwd: runCwd)
     }
@@ -460,7 +461,9 @@ enum ProjectInstructionStore {
         let probeRoots: [(URL, SkillSource)]
         if let projectRoot {
             probeRoots = [
+                (projectRoot.appendingPathComponent(".termloop", isDirectory: true), .project),
                 (projectRoot.appendingPathComponent(".claude", isDirectory: true), .project),
+                (projectRoot.appendingPathComponent(".codex", isDirectory: true), .project),
                 (projectRoot.appendingPathComponent(".agents", isDirectory: true), .project)
             ]
         } else if let homeRoot {

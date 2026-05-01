@@ -6,22 +6,13 @@ import SwiftUI
 struct IntegrationsTab: View {
     let projectRoot: URL?
     @StateObject private var store = IntegrationsStore.shared
-    @StateObject private var engine = RecommendationEngine.shared
     @State private var selectedItemId: String?
     @State private var expandedKinds: Set<IntegrationKind> = Set(IntegrationKind.allCases)
-    @State private var recommendedExpanded: Bool = true
     @State private var configSheet: ConfigSheetContext? = nil
-    @State private var installGuideSheet: InstallGuideContext? = nil
 
     private struct ConfigSheetContext: Identifiable {
         let id = UUID()
         let presetId: String
-    }
-
-    private struct InstallGuideContext: Identifiable {
-        let id = UUID()
-        let recommendation: Recommendation
-        let presetId: String?
     }
 
     var body: some View {
@@ -33,12 +24,6 @@ struct IntegrationsTab: View {
             )
             ScrollView {
                 VStack(spacing: 0) {
-                    IntegrationsRecommendedGroup(
-                        recommendations: engine.recommendations,
-                        expanded: $recommendedExpanded,
-                        onDismiss: { id in engine.dismiss(id: id) },
-                        onActivate: { rec in activate(rec) }
-                    )
                     ForEach(IntegrationKind.allCases, id: \.rawValue) { kind in
                         IntegrationsAccordionGroup(
                             kind: kind,
@@ -75,30 +60,14 @@ struct IntegrationsTab: View {
         .onAppear {
             store.setActiveProjectRoot(projectRoot)
             store.refresh()
-            engine.recompute(projectRoot: projectRoot, items: store.items)
         }
         .onChange(of: projectRoot) { newRoot in
             store.setActiveProjectRoot(newRoot)
-        }
-        .onReceive(store.$items) { items in
-            engine.recompute(projectRoot: projectRoot, items: items)
         }
         .sheet(item: $configSheet) { ctx in
             if let preset = IntegrationPresetRegistry.preset(id: ctx.presetId) {
                 IntegrationsConfigSheet(preset: preset, onDismiss: { configSheet = nil })
             }
-        }
-        .sheet(item: $installGuideSheet) { ctx in
-            IntegrationsInstallGuideSheet(
-                guide: .make(for: ctx.recommendation, projectRoot: projectRoot),
-                canConfigure: ctx.presetId != nil,
-                onDismiss: { installGuideSheet = nil },
-                onConfigure: {
-                    guard let presetId = ctx.presetId else { return }
-                    installGuideSheet = nil
-                    configSheet = ConfigSheetContext(presetId: presetId)
-                }
-            )
         }
     }
 
@@ -106,22 +75,6 @@ struct IntegrationsTab: View {
         store.updateItem(id: id) { $0.attachedToActiveSpawn.toggle() }
     }
 
-    private func activate(_ rec: Recommendation) {
-        switch rec.action {
-        case .add(let presetId):
-            installGuideSheet = InstallGuideContext(recommendation: rec, presetId: presetId)
-        case .configure:
-            let itemId = IntegrationItem.makeId(kind: rec.kind, name: rec.itemName)
-            if let item = store.item(id: itemId),
-               let presetId = IntegrationPresetRegistry.presets(for: item.kind)
-                   .first(where: { $0.displayName == item.displayName })?.id {
-                configSheet = ConfigSheetContext(presetId: presetId)
-            }
-        case .fix:
-            let itemId = IntegrationItem.makeId(kind: rec.kind, name: rec.itemName)
-            Task { await IntegrationTester.shared.test(id: itemId) }
-        }
-    }
 }
 
 struct IntegrationsHeader: View {

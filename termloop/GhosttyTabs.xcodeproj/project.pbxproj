@@ -45,8 +45,8 @@
 		35E3ECA29E41FFE8CE21D260 /* SidebarInlineCreateCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79A78B7DCA1B1576A9B5C281 /* SidebarInlineCreateCoordinator.swift */; };
 		360C1889BB0468A3BFA3B365 /* TabManager+TermLoopPrune.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3047859637D21DD6871E11DF /* TabManager+TermLoopPrune.swift */; };
 		36102CD71581C6AE58F1AD40 /* TermLoopSettingsPageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 571E2A8FB5D32E054C372483 /* TermLoopSettingsPageStore.swift */; };
-		DCED57051E0A411F11111111 /* DocEditorStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCED57051E0A411F22222222 /* DocEditorStore.swift */; };
-		DCED57051E0A411F33333333 /* DocEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCED57051E0A411F44444444 /* DocEditorView.swift */; };
+		DCED57051E0A411F11111111 /* MarkdownDocumentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCED57051E0A411F22222222 /* MarkdownDocumentStore.swift */; };
+		DCED57051E0A411F33333333 /* MarkdownDocumentSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCED57051E0A411F44444444 /* MarkdownDocumentSurface.swift */; };
 		36A6AFA1B8556068A8F27B87 /* FrontmatterParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00E1E4550C54F96C9409FC64 /* FrontmatterParserTests.swift */; };
 		3800DE3340B858A62F2538E7 /* QuickActionAdvancedRawTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E20C67F1FE9ACEBA3ED50D3 /* QuickActionAdvancedRawTab.swift */; };
 		3B3E48F5E902D444037353DD /* QuickActionAdvancedPreviewTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125C3E319E2D4D8996B775EE /* QuickActionAdvancedPreviewTab.swift */; };
@@ -77,7 +77,6 @@
 		4C2396DEFE9BB247135A9693 /* TermLoopHooksRestorePruneTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F74A553933047EB0BB143BD /* TermLoopHooksRestorePruneTests.swift */; };
 		4C6544F0AF9FD2D46B657CC3 /* IntegrationsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA8CF110CD92B2CCAA34B4D0 /* IntegrationsStore.swift */; };
 		4D518B76CCF5C59B2846B0A9 /* MarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E148D08046F7CE114A9D852C /* MarkdownRenderer.swift */; };
-		4E6F69D41BB66C1772F52B3E /* JiraCliPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE45AFBC1A31BBB1A85A996B /* JiraCliPreset.swift */; };
 		5085AE0229DFE9920565825C /* APNsConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCF2EFA4A693DFB011E49A41 /* APNsConfig.swift */; };
 		5629362A6C62FFF4E05E6BAA /* ContextBankPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61D437A637636429D1C39369 /* ContextBankPrompt.swift */; };
 		5661D9171917AD6D053E7C2C /* Workspace+MainAreaPortalVisibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18202AB16C41E91A7F05791A /* Workspace+MainAreaPortalVisibility.swift */; };
@@ -455,7 +454,6 @@
 		CCB21182958B3A34BF8217CB /* InlineBridgeTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AF056CF819472E794BEB913 /* InlineBridgeTranscript.swift */; };
 		D0E0F0B0A1B2C3D4E5F60718 /* BrowserPaneNavigationKeybindUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E0F0B1A1B2C3D4E5F60718 /* BrowserPaneNavigationKeybindUITests.swift */; };
 		D0E0F0B2A1B2C3D4E5F60718 /* BrowserOmnibarSuggestionsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E0F0B3A1B2C3D4E5F60718 /* BrowserOmnibarSuggestionsUITests.swift */; };
-		D0F243BA034E2FECA5A062A8 /* ContextBankFileViewerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C20D70E3093330CB7D8ECBB /* ContextBankFileViewerStore.swift */; };
 		D1236FF988EB6887018881D0 /* IntegrationSet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D601FD4A764B0941BC576828 /* IntegrationSet.swift */; };
 		D1320AA0D1320AA0D1320AA1 /* AppIconDockTilePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1320AA0D1320AA0D1320AA4 /* AppIconDockTilePlugin.swift */; };
 		D1320AA0D1320AA0D1320AA2 /* TermLoopDockTilePlugin.plugin in Copy Dock Tile Plugin */ = {isa = PBXBuildFile; fileRef = D1320AA0D1320AA0D1320AA5 /* TermLoopDockTilePlugin.plugin */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -658,15 +656,14 @@
 		52ADC271E06D103B0F01D03A /* QuickActionAbilityChip.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickActionAbilityChip.swift; sourceTree = "<group>"; };
 		56FDC12A3F7F15766D417844 /* AgentInvocationComposer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentInvocationComposer.swift; sourceTree = "<group>"; };
 		571E2A8FB5D32E054C372483 /* TermLoopSettingsPageStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TermLoopSettingsPageStore.swift; sourceTree = "<group>"; };
-		DCED57051E0A411F22222222 /* DocEditorStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DocEditorStore.swift; sourceTree = "<group>"; };
-		DCED57051E0A411F44444444 /* DocEditorView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DocEditorView.swift; sourceTree = "<group>"; };
+		DCED57051E0A411F22222222 /* MarkdownDocumentStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MarkdownDocumentStore.swift; sourceTree = "<group>"; };
+		DCED57051E0A411F44444444 /* MarkdownDocumentSurface.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MarkdownDocumentSurface.swift; sourceTree = "<group>"; };
 		58C7B1B978620BE162CC057E /* BrowserPanelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPanelTests.swift; sourceTree = "<group>"; };
 		5F74A553933047EB0BB143BD /* TermLoopHooksRestorePruneTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TermLoopHooksRestorePruneTests.swift; sourceTree = "<group>"; };
 		6083A7DAD962E287FC2FFE94 /* ShortcutAndCommandPaletteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutAndCommandPaletteTests.swift; sourceTree = "<group>"; };
 		61D437A637636429D1C39369 /* ContextBankPrompt.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextBankPrompt.swift; sourceTree = "<group>"; };
 		6331BF777ACD88AB13CD6AF3 /* TermLoopSidebarTab.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Sidebar/TermLoopSidebarTab.swift; sourceTree = "<group>"; };
 		64AC844CC32CD39498EDD524 /* TaggedBuildSharedState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaggedBuildSharedState.swift; sourceTree = "<group>"; };
-		6C20D70E3093330CB7D8ECBB /* ContextBankFileViewerStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextBankFileViewerStore.swift; sourceTree = "<group>"; };
 		6FCF8B056DF7E603E553F545 /* AbilityInjectorOverrideTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AbilityInjectorOverrideTests.swift; sourceTree = "<group>"; };
 		70B770B770B770B770B770B7 /* TermLoopHooks */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; path = TermLoopHooks; sourceTree = "<group>"; };
 		71F8ED91A4B55D34BE6A0668 /* WorkspaceUnitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceUnitTests.swift; sourceTree = "<group>"; };
@@ -919,7 +916,6 @@
 		AC71009AA1B2C3D4E5F6ABCD /* WorktreeGroupRunTargetsBadge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorktreeGroupRunTargetsBadge.swift; sourceTree = "<group>"; };
 		ACF7EA12F6E9F582091F6482 /* ClaudeProjectFiles.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClaudeProjectFiles.swift; sourceTree = "<group>"; };
 		AD9206AEB3F3DE61E89020F1 /* RestoreClaudeSessionMenuItem.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RestoreClaudeSessionMenuItem.swift; sourceTree = "<group>"; };
-		AE45AFBC1A31BBB1A85A996B /* JiraCliPreset.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = JiraCliPreset.swift; sourceTree = "<group>"; };
 		B09C007F42697761B5F1A2AB /* OmnibarAndToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmnibarAndToolsTests.swift; sourceTree = "<group>"; };
 		B2E7294509CC42FE9191870E /* xterm-ghostty */ = {isa = PBXFileReference; lastKnownFileType = file; path = "ghostty/terminfo/78/xterm-ghostty"; sourceTree = "<group>"; };
 		B35821AFEC6905A821C1B53C /* PermissionModeContextMenu.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PermissionModeContextMenu.swift; sourceTree = "<group>"; };
@@ -1232,7 +1228,6 @@
 				ABCB00101100101100110F12 /* ContextBankSelection.swift */,
 				7F23EF81276FD33440DD43D0 /* ContextBankStore.swift */,
 				FDE6F2D6F1592049BD47477B /* ContextBankTreeNode.swift */,
-				6C20D70E3093330CB7D8ECBB /* ContextBankFileViewerStore.swift */,
 				F96E3FD276CB1CD037C5ABAD /* ContextBankSymlink.swift */,
 			);
 			name = ContextBank;
@@ -1319,7 +1314,6 @@
 				A46D64B8471B3FF1A776FC71 /* GcloudCliPreset.swift */,
 				131357A3C0E97550FD3B82EC /* CodexCliPreset.swift */,
 				47AC9A50FA00FF218B84A218 /* GeminiCliPreset.swift */,
-				AE45AFBC1A31BBB1A85A996B /* JiraCliPreset.swift */,
 				CDD43A7966611CFB48533E86 /* JiraMCPPreset.swift */,
 			);
 			name = Presets;
@@ -1454,8 +1448,8 @@
 				FC68FE009F31E791E66E9F54 /* SidebarDeleteConfirmationPopover.swift */,
 				BF66DDCC42FF756FC7AF4BF7 /* TermLoopSettingsPage.swift */,
 				571E2A8FB5D32E054C372483 /* TermLoopSettingsPageStore.swift */,
-				DCED57051E0A411F22222222 /* DocEditorStore.swift */,
-				DCED57051E0A411F44444444 /* DocEditorView.swift */,
+				DCED57051E0A411F22222222 /* MarkdownDocumentStore.swift */,
+				DCED57051E0A411F44444444 /* MarkdownDocumentSurface.swift */,
 			);
 			name = UI;
 			path = UI;
@@ -2604,7 +2598,6 @@
 				9877FDCF99B152D76289F046 /* IntegrationsConfigSheet.swift in Sources */,
 				19E36B49517265CF334E50CF /* CodexCliPreset.swift in Sources */,
 				B988CD8E09078754C798CA46 /* GeminiCliPreset.swift in Sources */,
-				4E6F69D41BB66C1772F52B3E /* JiraCliPreset.swift in Sources */,
 				267CDDBEC770DB4E37501C7D /* JiraMCPPreset.swift in Sources */,
 				4A77A7749C574361480EE64C /* PermissionModeCatalog.swift in Sources */,
 				43A128AE1235C8D60F7A4FE8 /* PermissionModePersistence.swift in Sources */,
@@ -2649,7 +2642,6 @@
 				8594B9B7B9D80D21C7FB8707 /* ContextBankView.swift in Sources */,
 				886C622337FA6152ED20D433 /* ContextBankTreeView.swift in Sources */,
 				C58664EA5250BD40684ED3C6 /* ContextBankTreeNode.swift in Sources */,
-				D0F243BA034E2FECA5A062A8 /* ContextBankFileViewerStore.swift in Sources */,
 				ADB40F7E462EDC392E0B70A1 /* ContextBankSymlink.swift in Sources */,
 				5D7E7D2449A1EDC3B7B96DC1 /* ContextBankSymlinkSheet.swift in Sources */,
 				81D32B3883F8C0E9604C1C0F /* TermLoopSocketIO.swift in Sources */,
@@ -2657,8 +2649,8 @@
 				EE9DC847590BF5F168E0D238 /* ClaudeCredentialEnvResolver.swift in Sources */,
 				6892E777DF35D17DE65EAD04 /* TermLoopSettingsPage.swift in Sources */,
 				36102CD71581C6AE58F1AD40 /* TermLoopSettingsPageStore.swift in Sources */,
-				DCED57051E0A411F11111111 /* DocEditorStore.swift in Sources */,
-				DCED57051E0A411F33333333 /* DocEditorView.swift in Sources */,
+				DCED57051E0A411F11111111 /* MarkdownDocumentStore.swift in Sources */,
+				DCED57051E0A411F33333333 /* MarkdownDocumentSurface.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -265,8 +265,7 @@ struct AgentsCatalogDetailPane: View {
             if template.source != .project {
                 codeBlock(entry.body)
             } else {
-                TextEditor(text: $draftBody)
-                    .termLoopPromptEditorBox(minHeight: 280)
+                PromptTextEditor(text: $draftBody, minHeight: 280)
             }
 
             if let systemDocument = linkedPromptDocument(id: template.systemPromptDocumentId) {
@@ -341,8 +340,7 @@ struct AgentsCatalogDetailPane: View {
             if document.scope == .builtin {
                 codeBlock(entry.body)
             } else {
-                TextEditor(text: $draftBody)
-                    .termLoopPromptEditorBox(minHeight: 260)
+                PromptTextEditor(text: $draftBody, minHeight: 260)
             }
         }
     }
@@ -372,11 +370,11 @@ struct AgentsCatalogDetailPane: View {
             .padding(10)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.primary.opacity(0.035))
+                    .fill(MarkdownTheme.insetBg)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                    .stroke(MarkdownTheme.codeBorder, lineWidth: 1)
             )
             .textSelection(.enabled)
     }

@@ -132,13 +132,11 @@ struct QuickActionAdvancedTable: View {
             persist: .saved,
             value: AnyView(
                 VStack(alignment: .leading, spacing: 4) {
-                    TextEditor(text: $viewModel.advancedSystemPrompt)
-                        .font(.system(size: 11, design: .monospaced))
-                        .frame(minHeight: 48, maxHeight: 120)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-                        )
+                    PromptTextEditor(
+                        text: $viewModel.advancedSystemPrompt,
+                        minHeight: 48,
+                        maxHeight: 120
+                    )
                     Text(String(
                         localized: "quickAction.advanced.systemPrompt.hint",
                         defaultValue: "Injected before the user's message. Claude → --append-system-prompt · Codex → developer_instructions · others → prepended to the prompt.",

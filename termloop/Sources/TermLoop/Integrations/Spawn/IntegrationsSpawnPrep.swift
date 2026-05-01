@@ -54,7 +54,7 @@ enum IntegrationsSpawnPrep {
                     .uppercased()
                     .replacingOccurrences(of: "-", with: "_")
                 env["TERMLOOP_WEBHOOK_\(upperName)_URL"] = item.summary
-            case .cli, .claudeHook, .codexHook, .geminiHook:
+            case .agent, .cli, .claudeHook, .codexHook, .geminiHook:
                 break
             }
         }

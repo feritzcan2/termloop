@@ -677,19 +677,20 @@ enum TermLoopMCPServer {
         let targetPrompt = (arguments["target_prompt"] as? String) ?? ""
 
         let workspaceParams = workspaceTargetParams(env: processEnv)
-        guard let workspaceId = workspaceParams["workspace_id"] as? String,
-              !workspaceId.isEmpty else {
+        guard !workspaceParams.isEmpty else {
             return toolResult(id: id,
-                              text: "TermLoop daemon target unknown: TERMLOOP_WORKSPACE_ID env var is unset. ask_to requires a workspace-bound MCP session.",
+                              text: "TermLoop daemon target unknown: TERMLOOP_WORKSPACE_ID env var is unset and current working directory is empty. ask_to requires a workspace-bound MCP session.",
                               isError: true)
         }
 
-        let params: [String: Any] = [
-            "workspace_id": workspaceId,
+        var params: [String: Any] = [
             "target": target,
             "message": message,
             "target_prompt": targetPrompt
         ]
+        for (key, value) in workspaceParams {
+            params[key] = value
+        }
 
         let client = SocketClient(path: socketPath)
         do {

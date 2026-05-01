@@ -12,8 +12,9 @@ import SwiftUI
 /// `setAllWorkspaceTerminalsVisible(...)` from the unified
 /// `shouldShowWorkspaceTerminals(for:)` reducer, so a manual call here would
 /// race that reducer and create a terminal-visible flicker when closing
-/// Settings while another overlay (Scratchpad / Git Changes / Context Bank /
-/// Agents) is still active. Match the `ScratchpadStore` pattern: just flip
+/// Settings while another overlay (Markdown Document / Git Changes /
+/// Context Bank / Agents) is still active. Match the overlay-store pattern:
+/// just flip
 /// the `@Published` flag and let the swap reconcile.
 ///
 /// Replaces the legacy standalone settings NSWindow — the menu shortcut

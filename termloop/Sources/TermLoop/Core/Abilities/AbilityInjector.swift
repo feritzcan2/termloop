@@ -82,6 +82,7 @@ enum AbilityInjector {
     /// a workspace has already been attached into `.termloop-worktrees/<branch>`,
     /// the project metadata may be missing or stale; in that case infer the
     /// owning project by stripping the `.termloop-worktrees/...` suffix.
+    @MainActor
     static func resolveProjectFolderPath(projectFolderPath: String?, runCwd: String?) -> String? {
         if let projectFolderPath,
            !projectFolderPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -96,13 +97,25 @@ enum AbilityInjector {
             return nil
         }
         let normalizedCwd = (runCwd as NSString).standardizingPath
-        return owningProjectFolder(fromWorktreePath: normalizedCwd)
+        guard let owningProject = owningProjectFolder(fromWorktreePath: normalizedCwd) else {
+            return nil
+        }
+        return registeredProjectFolder(matching: owningProject)
     }
 
     private static func owningProjectFolder(fromWorktreePath path: String) -> String? {
         let marker = "/\(WorktreeResolver.worktreesDirName)/"
         guard let range = path.range(of: marker, options: .backwards) else { return nil }
         return String(path[..<range.lowerBound])
+    }
+
+    @MainActor
+    private static func registeredProjectFolder(matching folderPath: String) -> String? {
+        let normalized = (folderPath as NSString).standardizingPath
+        return ProjectStore.shared.projects
+            .map(\.folderPath)
+            .map { ($0 as NSString).standardizingPath }
+            .first { $0 == normalized }
     }
 
     @MainActor
@@ -129,7 +142,9 @@ enum AbilityInjector {
 
     @MainActor
     static func resolvedProjectFolderPath(for workspace: Workspace, runCwd: String?) -> String? {
-        projectFolderPath(for: workspace)
+        projectFolderPath(for: workspace).flatMap {
+            resolveProjectFolderPath(projectFolderPath: $0, runCwd: runCwd)
+        }
             ?? resolveProjectFolderPath(projectFolderPath: nil, runCwd: runCwd)
             ?? projectFolderPath(matchingRunCwd: runCwd)
     }
@@ -142,7 +157,8 @@ enum AbilityInjector {
         let metadata = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: workspaceId)
         if let projectId = metadata.projectId,
            let folderPath = ProjectStore.shared.project(id: projectId)?.folderPath {
-            return folderPath
+            return resolveProjectFolderPath(projectFolderPath: folderPath, runCwd: runCwd)
+                ?? folderPath
         }
         return resolveProjectFolderPath(projectFolderPath: nil, runCwd: runCwd)
             ?? projectFolderPath(matchingRunCwd: runCwd)

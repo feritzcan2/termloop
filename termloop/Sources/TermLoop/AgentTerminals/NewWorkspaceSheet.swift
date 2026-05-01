@@ -487,16 +487,14 @@ struct NewWorkspaceWithWorktreeForm: View {
                     defaultValue: "Initial Prompt",
                     table: "TermLoop"
                 )) {
-                    TextEditor(text: $initialPromptText)
-                        .termLoopPromptEditorBox(minHeight: 72, maxHeight: 160)
+                    PromptTextEditor(text: $initialPromptText, minHeight: 72, maxHeight: 160)
                 }
                 GroupBox(String(
                     localized: "workspace.worktree.sheet.systemPrompt",
                     defaultValue: "System Prompt",
                     table: "TermLoop"
                 )) {
-                    TextEditor(text: $systemPromptText)
-                        .termLoopPromptEditorBox(minHeight: 72, maxHeight: 160)
+                    PromptTextEditor(text: $systemPromptText, minHeight: 72, maxHeight: 160)
                 }
             }
 
@@ -807,36 +805,59 @@ struct NewWorkspaceWithWorktreeForm: View {
         authoredPrompt: String,
         authoredSystemPrompt: String?
     ) throws -> AgentInvocationPlan? {
-        guard let templateId = request.templateId else { return nil }
-        guard let template = AgentTemplateStore.shared.template(id: templateId) else {
-            throw QuickActionError.noTemplate
-        }
-
         let preparedURL = URL(fileURLWithPath: prepared.path, isDirectory: true)
-        let context = QuickActionRunResolver.ResolvedContext(
-            workspaceId: nil,
-            projectId: request.projectId,
-            workspaceCwd: preparedURL,
-            branchName: branch,
-            repoRootPath: prepared.path
-        )
+        let projectFolderPath = ProjectStore.shared.project(id: request.projectId)?.folderPath
+        let repoRootPath = projectFolderPath ?? prepared.path
         let trimmedPrompt = authoredPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedSystem = authoredSystemPrompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let invocation = try QuickActionRunResolver.resolve(
-            template: template,
-            context: context,
-            agentId: selectedAgentId,
-            promptOverride: trimmedPrompt.isEmpty ? nil : authoredPrompt,
-            promptDocumentIdOverride: request.promptDocumentIdOverride,
-            permissionOverride: request.permissionOverride,
-            variableOverrides: request.variableValues,
-            source: request.launchSource ?? .manualWorkspaceCreate,
-            modelOverride: request.modelOverride,
-            reasoningOverride: request.reasoningOverride,
-            systemPromptOverride: trimmedSystem.isEmpty ? nil : authoredSystemPrompt,
-            systemPromptDocumentIdOverride: request.systemPromptDocumentIdOverride,
-            reasonTag: request.reasonTag
-        )
+
+        let invocation: AgentInvocationRequest
+        if let templateId = request.templateId {
+            guard let template = AgentTemplateStore.shared.template(id: templateId) else {
+                throw QuickActionError.noTemplate
+            }
+            let context = QuickActionRunResolver.ResolvedContext(
+                workspaceId: nil,
+                projectId: request.projectId,
+                workspaceCwd: preparedURL,
+                branchName: branch,
+                repoRootPath: repoRootPath
+            )
+            invocation = try QuickActionRunResolver.resolve(
+                template: template,
+                context: context,
+                agentId: selectedAgentId,
+                promptOverride: trimmedPrompt.isEmpty ? nil : authoredPrompt,
+                promptDocumentIdOverride: request.promptDocumentIdOverride,
+                permissionOverride: request.permissionOverride,
+                variableOverrides: request.variableValues,
+                source: request.launchSource ?? .manualWorkspaceCreate,
+                modelOverride: request.modelOverride,
+                reasoningOverride: request.reasoningOverride,
+                systemPromptOverride: trimmedSystem.isEmpty ? nil : authoredSystemPrompt,
+                systemPromptDocumentIdOverride: request.systemPromptDocumentIdOverride,
+                reasonTag: request.reasonTag
+            )
+        } else {
+            invocation = AgentInvocationRequest(
+                agentId: selectedAgentId,
+                userPrompt: trimmedPrompt.isEmpty ? nil : authoredPrompt,
+                workspaceId: nil,
+                projectId: request.projectId,
+                runCwd: preparedURL,
+                branchName: branch,
+                repoRootPath: repoRootPath,
+                promptDocumentIdOverride: request.promptDocumentIdOverride,
+                systemPromptOverride: trimmedSystem.isEmpty ? nil : authoredSystemPrompt,
+                systemPromptDocumentIdOverride: request.systemPromptDocumentIdOverride,
+                permissionOverride: request.permissionOverride,
+                modelOverride: request.modelOverride,
+                reasoningOverride: request.reasoningOverride,
+                variableValues: request.variableValues,
+                source: request.launchSource ?? .manualWorkspaceCreate,
+                reasonTag: request.reasonTag
+            )
+        }
         return try AgentInvocationComposer.compose(invocation)
     }
 

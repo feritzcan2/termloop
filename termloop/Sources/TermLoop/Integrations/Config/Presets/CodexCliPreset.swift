@@ -5,7 +5,7 @@ import Foundation
 
 struct CodexCliPreset: IntegrationPreset {
     let id = "cli.codex"
-    let kind: IntegrationKind = .cli
+    let kind: IntegrationKind = .agent
     let displayName = "codex"
     let summary = "OpenAI Codex CLI"
     let fields: [ConfigField] = [

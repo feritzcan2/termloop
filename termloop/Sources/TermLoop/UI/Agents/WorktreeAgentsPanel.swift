@@ -1654,11 +1654,9 @@ struct WorktreeAgentsPanel: View {
                             pullRequestLookupTick: pullRequestLookupTick
                         )
                     }
-                    // Compact fallback for narrow sidebars: keep PR status,
-                    // hide optional binding/git metadata instead of crushing
-                    // branch titles or count tokens. Full details are still
-                    // available from the PR popover and git summary is visible
-                    // when the user widens the panel / cycles section size.
+                    // Compact fallbacks for narrow sidebars: keep PR status
+                    // and persistent ticket bindings visible, then drop git
+                    // metadata instead of crushing branch titles/count tokens.
                     HStack(alignment: .center, spacing: 4) {
                         WorktreeGroupPullRequestBadge(
                             summary: pullRequestSummary,
@@ -1672,20 +1670,17 @@ struct WorktreeAgentsPanel: View {
                                 .equatable()
                         }
                     }
-                    HStack(alignment: .center, spacing: 4) {
-                        if compactPersistentBindingBadges.isEmpty {
-                            WorktreeGroupPullRequestBadge(
-                                summary: pullRequestSummary,
-                                allPullRequests: allBranchPullRequests,
-                                openPullRequests: openPullRequests,
-                                openSinglePullRequest: { NSWorkspace.shared.open($0) }
-                            )
-                            .equatable()
-                        } else {
-                            ForEach(compactPersistentBindingBadges) { snapshot in
-                                WorktreeGroupBindingBadge(snapshot: snapshot)
-                                    .equatable()
-                            }
+                    VStack(alignment: .trailing, spacing: 2) {
+                        WorktreeGroupPullRequestBadge(
+                            summary: pullRequestSummary,
+                            allPullRequests: allBranchPullRequests,
+                            openPullRequests: openPullRequests,
+                            openSinglePullRequest: { NSWorkspace.shared.open($0) }
+                        )
+                        .equatable()
+                        ForEach(compactPersistentBindingBadges) { snapshot in
+                            WorktreeGroupBindingBadge(snapshot: snapshot)
+                                .equatable()
                         }
                     }
                 }

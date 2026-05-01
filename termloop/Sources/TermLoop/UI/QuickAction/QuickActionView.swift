@@ -129,7 +129,13 @@ struct QuickActionView: View {
                     || ProjectStore.shared.activeProjectId != nil,
                 onOpenAdvancedPreview: { viewModel.openAdvanced() },
                 onEditAbility: { ability in
-                    NSWorkspace.shared.open(ability.filePath)
+                    MarkdownDocumentStore.shared.open(
+                        fileURL: ability.filePath,
+                        folderName: String(localized: "abilities.section.title",
+                                           defaultValue: "ABILITIES",
+                                           table: "TermLoop"),
+                        displayTitle: ability.name
+                    )
                 },
                 onRevealAbility: { ability in
                     NSWorkspace.shared.activateFileViewerSelecting([ability.filePath])
