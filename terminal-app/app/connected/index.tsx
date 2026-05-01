@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -16,13 +17,13 @@ import {
   getActiveClient,
 } from "../../lib/session";
 import {
-  pickPrimarySurface,
+  pickTerminalSurface,
   workspaceLabel,
   workspaceProjectId,
   type ProjectSummary,
   type WorkspaceSummary,
 } from "../../lib/termloop-client";
-import { colors } from "../../lib/theme";
+import { colors, radii } from "../../lib/theme";
 
 type ProjectState = ProjectSummary | null | "loading";
 
@@ -33,6 +34,9 @@ export default function ConnectedScreen() {
   const [current, setCurrent] = useState<ProjectState>("loading");
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[] | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
+  const [switchingId, setSwitchingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!client) {
@@ -64,16 +68,61 @@ export default function ConnectedScreen() {
     router.replace("/");
   };
 
+  const openProjectPicker = async () => {
+    if (!client) return;
+    setPickerOpen(true);
+    if (projects === null) {
+      try {
+        const list = await client.listProjects();
+        setProjects(list);
+      } catch (err) {
+        Alert.alert(
+          "Failed to load projects",
+          String((err as Error).message ?? err)
+        );
+        setProjects([]);
+      }
+    }
+  };
+
+  const onPickProject = async (p: ProjectSummary) => {
+    if (!client) return;
+    if (current !== "loading" && current?.id === p.id) {
+      setPickerOpen(false);
+      return;
+    }
+    setSwitchingId(p.id);
+    try {
+      await client.switchProject(p.id);
+      const [cur, ws] = await Promise.all([
+        client.currentProject(),
+        client.listWorkspaces(),
+      ]);
+      setCurrent(cur);
+      setWorkspaces(ws);
+      setPickerOpen(false);
+    } catch (err) {
+      Alert.alert(
+        "Failed to switch project",
+        String((err as Error).message ?? err)
+      );
+    } finally {
+      setSwitchingId(null);
+    }
+  };
+
   const onOpenWorkspace = async (ws: WorkspaceSummary) => {
     if (!client) return;
     setOpeningId(ws.id);
     try {
       const surfaces = await client.listSurfaces(ws.id);
-      const surface = pickPrimarySurface(surfaces);
+      const surface = pickTerminalSurface(surfaces);
       if (!surface) {
         Alert.alert(
-          "No surfaces",
-          `Workspace "${workspaceLabel(ws)}" has no surfaces yet.`
+          "No terminal surface",
+          surfaces.length === 0
+            ? `Workspace "${workspaceLabel(ws)}" has no surfaces yet.`
+            : `Workspace "${workspaceLabel(ws)}" has no terminal surface to open.`
         );
         return;
       }
@@ -110,26 +159,48 @@ export default function ConnectedScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={["bottom"]}>
-      {auth?.server_name ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Server</Text>
-          <Text style={styles.bigText}>{auth.server_name}</Text>
-        </View>
-      ) : null}
-
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Current project</Text>
-        <Text style={styles.bigText}>
-          {current === "loading" ? "…" : current ? current.name : "(none)"}
-        </Text>
+      <View style={styles.headerCard}>
+        {auth?.server_name ? (
+          <View style={styles.headerRow}>
+            <View style={styles.statusDot} />
+            <View style={styles.headerTextWrap}>
+              <Text style={styles.sectionLabel}>Connected to</Text>
+              <Text style={styles.bigText} numberOfLines={1}>
+                {auth.server_name}
+              </Text>
+            </View>
+          </View>
+        ) : null}
       </View>
 
-      <View style={[styles.section, { flex: 1 }]}>
+      <Pressable
+        style={({ pressed }) => [
+          styles.projectCard,
+          pressed && styles.projectCardPressed,
+        ]}
+        onPress={openProjectPicker}
+        disabled={current === "loading"}
+      >
+        <View style={styles.projectLabelRow}>
+          <Text style={styles.sectionLabel}>Current project</Text>
+          <Text style={styles.projectChevron}>Change ›</Text>
+        </View>
+        <Text style={styles.bigText} numberOfLines={1}>
+          {current === "loading" ? "…" : current ? current.name : "(none)"}
+        </Text>
+        {current !== "loading" && current?.path ? (
+          <Text style={styles.projectPath} numberOfLines={1}>
+            {current.path}
+          </Text>
+        ) : null}
+      </Pressable>
+
+      <View style={styles.workspacesWrap}>
         <View style={styles.workspacesHeader}>
           <Text style={styles.sectionLabel}>Workspaces</Text>
           {projectFilterId && workspaces && visibleWorkspaces ? (
             <Text style={styles.workspacesHint}>
-              {visibleWorkspaces.length} of {workspaces.length} for current project
+              {visibleWorkspaces.length} of {workspaces.length} in current project
             </Text>
           ) : null}
         </View>
@@ -171,44 +242,199 @@ export default function ConnectedScreen() {
       <Pressable style={styles.disconnectBtn} onPress={onDisconnect}>
         <Text style={styles.disconnectText}>Disconnect</Text>
       </Pressable>
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={pickerOpen}
+        onRequestClose={() => setPickerOpen(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setPickerOpen(false)}
+        >
+          <Pressable style={styles.modalSheet} onPress={() => {}}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Switch project</Text>
+            {projects === null ? (
+              <ActivityIndicator style={{ marginVertical: 24 }} />
+            ) : projects.length === 0 ? (
+              <Text style={styles.empty}>No projects available.</Text>
+            ) : (
+              <FlatList
+                data={projects}
+                keyExtractor={(p) => p.id}
+                renderItem={({ item }) => {
+                  const isCurrent =
+                    current !== "loading" && current?.id === item.id;
+                  const isSwitching = switchingId === item.id;
+                  return (
+                    <Pressable
+                      style={styles.projectItem}
+                      onPress={() => onPickProject(item)}
+                      disabled={switchingId !== null}
+                    >
+                      <View style={styles.wsTextWrap}>
+                        <Text style={styles.wsName} numberOfLines={1}>
+                          {item.name}
+                        </Text>
+                        {item.path ? (
+                          <Text style={styles.wsSub} numberOfLines={1}>
+                            {item.path}
+                          </Text>
+                        ) : null}
+                      </View>
+                      {isSwitching ? (
+                        <ActivityIndicator />
+                      ) : isCurrent ? (
+                        <Text style={styles.projectCurrent}>Current</Text>
+                      ) : null}
+                    </Pressable>
+                  );
+                }}
+              />
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg, padding: 16 },
-  section: { marginBottom: 16 },
+  root: { flex: 1, backgroundColor: colors.bg, padding: 16, gap: 12 },
+
   sectionLabel: {
     color: colors.label,
     fontSize: 11,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 6,
+    letterSpacing: 0.6,
   },
-  bigText: { color: colors.text, fontSize: 18, fontWeight: "500" },
+  bigText: { color: colors.text, fontSize: 18, fontWeight: "600" },
+
+  headerCard: {
+    backgroundColor: colors.bgElevated,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  headerRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.success,
+  },
+  headerTextWrap: { flex: 1, gap: 2 },
+
+  projectCard: {
+    backgroundColor: colors.bgElevated,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 4,
+  },
+  projectCardPressed: {
+    backgroundColor: colors.bgRaised,
+    borderColor: colors.borderStrong,
+  },
+  projectLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  projectChevron: { color: colors.primary, fontSize: 13, fontWeight: "500" },
+  projectPath: { color: colors.sub, fontSize: 12 },
+
+  workspacesWrap: { flex: 1, gap: 8 },
   workspacesHeader: {
     flexDirection: "row",
     alignItems: "baseline",
     justifyContent: "space-between",
-    marginBottom: 6,
   },
   workspacesHint: { color: colors.hint, fontSize: 11 },
+
   empty: { color: colors.hint, fontSize: 13, paddingVertical: 12 },
+
   wsRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    backgroundColor: colors.inputBg,
-    borderRadius: 8,
-    paddingHorizontal: 12,
+    backgroundColor: colors.bgElevated,
+    borderRadius: radii.md,
+    paddingHorizontal: 14,
     paddingVertical: 12,
     marginBottom: 8,
     borderWidth: 1,
     borderColor: colors.border,
   },
   wsTextWrap: { flex: 1, minWidth: 0 },
-  wsName: { color: colors.text, fontSize: 15, fontWeight: "500" },
+  wsName: { color: colors.text, fontSize: 15, fontWeight: "600" },
   wsSub: { color: colors.sub, fontSize: 12, marginTop: 2 },
-  disconnectBtn: { paddingVertical: 12, alignItems: "center" },
-  disconnectText: { color: colors.danger, fontSize: 14 },
+
+  disconnectBtn: {
+    paddingVertical: 12,
+    alignItems: "center",
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.dangerDim,
+    backgroundColor: colors.dangerDim,
+  },
+  disconnectText: { color: colors.danger, fontSize: 14, fontWeight: "500" },
+
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    backgroundColor: colors.bgElevated,
+    borderTopLeftRadius: radii.xl,
+    borderTopRightRadius: radii.xl,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 24,
+    maxHeight: "70%",
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  modalHandle: {
+    alignSelf: "center",
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.borderStrong,
+    marginBottom: 12,
+  },
+  modalTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 12,
+  },
+  projectItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  projectCurrent: {
+    color: colors.success,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: colors.successDim,
+    borderWidth: 1,
+    borderColor: colors.success + "55",
+    overflow: "hidden",
+  },
 });

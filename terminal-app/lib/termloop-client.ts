@@ -68,17 +68,17 @@ export interface SurfaceSummary {
   focused?: boolean;
 }
 
-export function pickPrimarySurface(
+function isTerminalSurface(s: SurfaceSummary): boolean {
+  return s.kind === "terminal" || s.type === "terminal";
+}
+
+/** Returns the focused terminal, else the first terminal, else null. */
+export function pickTerminalSurface(
   surfaces: SurfaceSummary[]
 ): SurfaceSummary | null {
-  if (surfaces.length === 0) return null;
-  const isTerminal = (s: SurfaceSummary) =>
-    s.kind === "terminal" || s.type === "terminal";
-  return (
-    surfaces.find(isTerminal) ??
-    surfaces.find((s) => s.focused) ??
-    surfaces[0]
-  );
+  const terminals = surfaces.filter(isTerminalSurface);
+  if (terminals.length === 0) return null;
+  return terminals.find((s) => s.focused) ?? terminals[0];
 }
 
 export interface SurfaceText {

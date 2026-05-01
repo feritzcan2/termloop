@@ -94,6 +94,22 @@ via QR, talks to it over newline-delimited JSON on a raw TCP socket.
 | `surface.send_text` | `{ workspace_id, text, surface_id? }` | `{ ok: true }` |
 | `surface.send_key` | `{ workspace_id, key, surface_id? }` | `{ ok: true }` |
 
+### Key names sent via `surface.send_key`
+
+The terminal accessory row sends these `key` values. If the backend
+rejects a name, the client falls back to the literal text where one is
+defined; otherwise the call surfaces an inline error.
+
+| Key | `key` value | Text fallback |
+|---|---|---|
+| Esc | `Escape` | – |
+| Tab | `Tab` | `\t` |
+| Enter | `Enter` | `\n` |
+| Up arrow | `ArrowUp` | – |
+| Down arrow | `ArrowDown` | – |
+| Ctrl-C | `Ctrl-C` | – |
+| Ctrl-D | `Ctrl-D` | – |
+
 Pairing QR payload (validated by `parsePairingPayload`):
 ```json
 { "type": "termloop.pairing", "version": 1, "server_name": "...",

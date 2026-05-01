@@ -14,10 +14,12 @@ import {
   deleteConnection,
   listConnections,
   markConnected,
+  upsertConnection,
   type SavedConnection,
 } from "../lib/connections";
 import { openSession } from "../lib/session";
-import { colors } from "../lib/theme";
+import { colors, radii } from "../lib/theme";
+import { RpcCallError } from "../lib/termloop-client";
 
 interface Row {
   conn: SavedConnection;
@@ -67,7 +69,27 @@ export default function ConnectionListScreen() {
         await markConnected(conn.id);
         router.push("/connected");
       } catch (err) {
-        Alert.alert("Connection failed", String((err as Error).message ?? err));
+        const tokenRejected =
+          err instanceof RpcCallError &&
+          (err.code === "invalid_token" ||
+            err.code === "unauthorized" ||
+            err.code === "not_found");
+
+        if (tokenRejected && (conn.deviceId || conn.accessToken)) {
+          await upsertConnection({
+            ...conn,
+            deviceId: undefined,
+            accessToken: undefined,
+          });
+          setItems(await listConnections());
+          Alert.alert(
+            "Pairing expired",
+            `${conn.serverName || conn.name} no longer recognizes this device. ` +
+              `Re-pair via Scan pairing QR.`
+          );
+        } else {
+          Alert.alert("Connection failed", friendlyConnectError(err));
+        }
       } finally {
         setConnectingId(null);
       }
@@ -118,6 +140,9 @@ export default function ConnectionListScreen() {
 
       {empty ? (
         <View style={styles.empty}>
+          <View style={styles.emptyBadge}>
+            <Text style={styles.emptyBadgeText}>QR</Text>
+          </View>
           <Text style={styles.emptyTitle}>Pair with TermLoop on your Mac</Text>
           <Text style={styles.emptyHint}>
             Open TermLoop, choose Pair Mobile, and scan the QR code shown there.
@@ -129,32 +154,60 @@ export default function ConnectionListScreen() {
           <FlatList
             data={rows}
             keyExtractor={(r) => r.conn.id}
+            ItemSeparatorComponent={() => <View style={styles.cardGap} />}
             renderItem={({ item }) => {
               const isConnecting = connectingId === item.conn.id;
+              const paired = !!(item.conn.deviceId && item.conn.accessToken);
               return (
-                <View style={styles.row}>
-                  <Pressable
-                    style={styles.rowMain}
-                    onPress={() => onConnect(item.conn)}
-                    disabled={connectingId !== null}
-                  >
-                    <Text style={styles.rowName}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.card,
+                    pressed && styles.cardPressed,
+                  ]}
+                  onPress={() => onConnect(item.conn)}
+                  disabled={connectingId !== null}
+                >
+                  <View style={styles.cardHeader}>
+                    <Text style={styles.rowName} numberOfLines={1}>
                       {item.conn.serverName || item.conn.name}
                     </Text>
-                    <Text style={styles.rowSub}>
-                      {item.conn.host}:{item.conn.port}
-                      {item.lastLabel}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => onDelete(item.conn)}
-                    style={styles.rowDelete}
-                    hitSlop={8}
-                  >
-                    <Text style={styles.rowDeleteText}>Delete</Text>
-                  </Pressable>
-                  {isConnecting && <ActivityIndicator style={styles.rowSpinner} />}
-                </View>
+                    <View
+                      style={[
+                        styles.statusPill,
+                        paired ? styles.statusPaired : styles.statusPassword,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.statusPillText,
+                          paired
+                            ? styles.statusPairedText
+                            : styles.statusPasswordText,
+                        ]}
+                      >
+                        {paired ? "PAIRED" : "PASSWORD"}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.rowSub} numberOfLines={1}>
+                    {item.conn.host}:{item.conn.port}
+                    {item.lastLabel}
+                  </Text>
+                  <View style={styles.cardActions}>
+                    {isConnecting ? (
+                      <ActivityIndicator color={colors.primary} />
+                    ) : (
+                      <Text style={styles.connectHint}>Tap to connect</Text>
+                    )}
+                    <Pressable
+                      onPress={() => onDelete(item.conn)}
+                      style={styles.rowDelete}
+                      hitSlop={8}
+                    >
+                      <Text style={styles.rowDeleteText}>Delete</Text>
+                    </Pressable>
+                  </View>
+                </Pressable>
               );
             }}
           />
@@ -162,6 +215,23 @@ export default function ConnectionListScreen() {
       )}
     </SafeAreaView>
   );
+}
+
+function friendlyConnectError(err: unknown): string {
+  const msg = String((err as Error)?.message ?? err);
+  if (/connect timeout/i.test(msg)) {
+    return "Couldn't reach the Mac. Check that it's on the same Wi-Fi and TermLoop is running.";
+  }
+  if (/ECONNREFUSED/i.test(msg)) {
+    return "Connection refused. Is TermLoop running and listening on this port?";
+  }
+  if (/EHOSTUNREACH|ENETUNREACH/i.test(msg)) {
+    return "Host unreachable. Check Wi-Fi and that the Mac is awake.";
+  }
+  if (/TCP transport unavailable/i.test(msg)) {
+    return msg;
+  }
+  return msg;
 }
 
 function sameIds(
@@ -185,44 +255,120 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: colors.bg,
   },
-  ctaWrap: { padding: 16, gap: 8 },
+  ctaWrap: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, gap: 10 },
   primaryBtn: {
-    paddingVertical: 14,
-    borderRadius: 10,
+    paddingVertical: 16,
+    borderRadius: radii.md,
     backgroundColor: colors.primary,
     alignItems: "center",
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
   },
-  primaryBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  primaryBtnText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
+    letterSpacing: 0.2,
+  },
   secondaryBtn: {
     paddingVertical: 12,
-    borderRadius: 10,
+    borderRadius: radii.md,
     borderWidth: 1,
     borderColor: colors.borderStrong,
     alignItems: "center",
+    backgroundColor: colors.bgElevated,
   },
   secondaryBtnText: { color: colors.label, fontSize: 14, fontWeight: "500" },
-  empty: { alignItems: "center", padding: 24, gap: 6 },
-  emptyTitle: { color: colors.text, fontSize: 15, fontWeight: "500" },
-  emptyHint: { color: colors.sub, fontSize: 13, textAlign: "center" },
-  listWrap: { flex: 1, paddingHorizontal: 16 },
+
+  empty: { alignItems: "center", paddingHorizontal: 24, paddingTop: 32, gap: 12 },
+  emptyBadge: {
+    width: 64,
+    height: 64,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.borderAccent,
+    backgroundColor: colors.primaryDim,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyBadgeText: {
+    color: colors.primary,
+    fontSize: 18,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  emptyTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "600",
+    marginTop: 4,
+  },
+  emptyHint: {
+    color: colors.sub,
+    fontSize: 13,
+    textAlign: "center",
+    lineHeight: 18,
+  },
+
+  listWrap: { flex: 1, paddingHorizontal: 16, paddingTop: 8 },
   listLabel: {
     color: colors.label,
     fontSize: 11,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
-    paddingVertical: 8,
+    letterSpacing: 0.6,
+    paddingBottom: 8,
   },
-  row: {
+
+  cardGap: { height: 10 },
+  card: {
+    backgroundColor: colors.bgElevated,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 4,
+  },
+  cardPressed: { backgroundColor: colors.bgRaised, borderColor: colors.borderStrong },
+  cardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    gap: 8,
   },
-  rowMain: { flex: 1 },
-  rowName: { color: colors.text, fontSize: 15, fontWeight: "500" },
-  rowSub: { color: colors.sub, fontSize: 12, marginTop: 2 },
-  rowDelete: { paddingHorizontal: 8, paddingVertical: 6 },
-  rowDeleteText: { color: colors.danger, fontSize: 13 },
-  rowSpinner: { marginLeft: 8 },
+
+  rowName: { color: colors.text, fontSize: 15, fontWeight: "600", flex: 1 },
+  rowSub: { color: colors.sub, fontSize: 12 },
+
+  cardActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  connectHint: { color: colors.primary, fontSize: 12, fontWeight: "500" },
+  rowDelete: { paddingHorizontal: 8, paddingVertical: 4 },
+  rowDeleteText: { color: colors.danger, fontSize: 12, fontWeight: "500" },
+
+  statusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  statusPaired: {
+    backgroundColor: colors.successDim,
+    borderColor: colors.success + "55",
+  },
+  statusPassword: {
+    backgroundColor: colors.bgRaised,
+    borderColor: colors.border,
+  },
+  statusPillText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
+  statusPairedText: { color: colors.success },
+  statusPasswordText: { color: colors.sub },
 });

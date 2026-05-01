@@ -14,7 +14,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { upsertConnection } from "../../lib/connections";
+import { markConnected, upsertConnection } from "../../lib/connections";
+import { openSession } from "../../lib/session";
 import { TcpTransport } from "../../lib/tcp-transport";
 import {
   createTermLoopClient,
@@ -53,7 +54,7 @@ export default function ScanPairingScreen() {
           await client.close();
         }
 
-        await upsertConnection({
+        const saved = await upsertConnection({
           name: result.server_name || payload.server_name || `${payload.host}`,
           host: payload.host,
           port: payload.port,
@@ -62,14 +63,22 @@ export default function ScanPairingScreen() {
           serverName: result.server_name,
         });
 
-        Alert.alert(
-          "Paired",
-          `Saved ${result.server_name || payload.server_name}.`
-        );
-        router.back();
+        try {
+          await openSession(saved);
+          await markConnected(saved.id);
+          router.replace("/connected");
+        } catch (err) {
+          Alert.alert(
+            "Paired but couldn't connect",
+            `${result.server_name || payload.server_name} saved. ` +
+              `Open it from the connection list to retry.\n\n` +
+              `Reason: ${(err as Error).message ?? err}`
+          );
+          router.replace("/");
+        }
       } catch (err) {
         lastScanRef.current = null;
-        Alert.alert("Pairing failed", String((err as Error).message ?? err));
+        Alert.alert("Pairing failed", friendlyError(err));
       } finally {
         setBusy(false);
       }
@@ -202,6 +211,20 @@ function permissionToState(
 
 function defaultDeviceName(): string {
   return Platform.OS === "ios" ? "iPhone" : "Mobile";
+}
+
+function friendlyError(err: unknown): string {
+  const msg = String((err as Error)?.message ?? err);
+  if (/expired/i.test(msg)) {
+    return "This pairing QR has expired. Generate a new one on your Mac.";
+  }
+  if (/\binvalid_token\b|\bunauthorized\b/i.test(msg)) {
+    return "Pairing token rejected. Generate a new QR on your Mac.";
+  }
+  if (/connect timeout|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH/i.test(msg)) {
+    return "Couldn't reach the Mac. Check that it's on the same Wi-Fi and TermLoop is running.";
+  }
+  return msg;
 }
 
 const styles = StyleSheet.create({
