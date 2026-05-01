@@ -2467,10 +2467,14 @@ enum AgentMainAreaOverlayMode: Equatable {
         // regardless of sidebar tab or active overlay underneath.
         if TermLoopSettingsPageStore.shared.isOpen { return .settings }
         if sidebarTab == .agents { return .agents }
+        if sidebarTab == .work, workSubTab == .contextBank {
+            return .contextBank
+        }
         // Markdown documents take precedence over ability detail so that
         // clicking "Open" on a skill file from inside an ability page swaps
         // the main pane to the editor instead of being shadowed by the
-        // ability route. (See commit 84652769.)
+        // ability route. Context Bank is excluded above because its tree
+        // selection owns the right pane and must stay responsive.
         if let url = MarkdownDocumentStore.shared.selectedFileURL {
             return .markdownDocument(url)
         }
@@ -2488,9 +2492,6 @@ enum AgentMainAreaOverlayMode: Equatable {
         // SwiftUI `.overlay` cannot cover the Ghostty portal — the swap
         // path + setAllWorkspaceTerminalsVisible(false) is the only thing
         // that actually hides the terminal NSView).
-        if sidebarTab == .work, workSubTab == .contextBank {
-            return .contextBank
-        }
         if shouldShowProjectEmptyState() {
             return .projectEmpty
         }

@@ -9,7 +9,7 @@ extension TermLoopSidebar {
     /// `TermLoopSidebar.Root`. One tight row with:
     ///
     ///   • sparkle — Skills + Commands popover (TermLoop-owned).
-    ///   • `tcp:7878` — live TCP bridge status pill (TermLoop-owned).
+    ///   • Connect Mobile — enables on-demand mobile pairing (TermLoop-owned).
     ///   • flex spacer.
     ///   • `?`   — "Send feedback" quick action (calls the upstream closure).
     ///   • update pill — upstream pill, only rendered when `showsPill`.
@@ -32,7 +32,7 @@ extension TermLoopSidebar {
                 HStack(spacing: 10) {
                     SidebarSkillsCommandsButton()
 
-                    TCPStatusPill()
+                    MobilePairingButton()
 
                     // Visible only while a `git submodule update --init
                     // --recursive` task is in flight (or failed). Opens a

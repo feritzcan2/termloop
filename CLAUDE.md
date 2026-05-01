@@ -1,164 +1,114 @@
-# Terminal App — Claude Context
+# AgentInputs — Context
 
-Cross-platform terminal app for monitoring AI agents (Claude Code) over SSH. Built with Expo + React Native, xterm.js in a WebView, and a native Expo Module wrapping Citadel (iOS, pure-Swift SSH via SwiftNIO) / JSch (Android).
+Truth owners, composer, transport adapter, and Quick Action authoring
+contract for agent-invocation input assembly. Depth reference:
+`termloop/docs/termloop/agent-inputs.md`.
 
-## Status
+## What lives here
 
-- **Simulator (iOS):** App runs and builds. SSH functional via Citadel (pure Swift).
-- **Device (iOS):** Working end-to-end. SSH tested on real iPhone to Mac over Tailscale with password auth via `Alert.prompt`. TermLoop TCP bridge also working — project list, project switch, workspace list over Tailscale.
-- **Android:** SSH module code exists (JSch) but not yet built/tested. TermLoop module is a stub — throws "not implemented".
-- **Tests:** 44/44 passing (themes + connections + agent-loop client + secrets + owned-claude-sessions + terminal-command).
-- **iOS deployment target:** 17.0 (Citadel + Network.framework conventions).
+| File | Role |
+|---|---|
+| `AgentInputTypes.swift` | `AgentInvocationSource`, `AgentModelOption`, `AgentInvocationRequest`, `AgentInvocationPlan`, `ProjectInstructionSnapshot` |
+| `AgentCatalogStore.swift` | Terminal-agent identity + per-agent model validity |
+| `AgentTemplateStore.swift` | Template catalog (builtin / user / project, FSEvents reload) |
+| `ProjectInstructionStore.swift` | Abilities + bundled prompts + system-ability templates (skills deferred) |
+| `AgentInvocationComposer.swift` | `compose(_:)` — semantic plan, single public entry |
+| `AgentInvocationTransportAdapter.swift` | Semantic plan → argv / prefix / initial prompt |
+| `AgentInputQueries.swift` | Pure selectors over a plan |
+| `PreviewOverrides.swift` | D1(B) per-run preview override layer (mute / force-include) |
+| `BridgePromptCatalog.swift` | Ask-agent presets + bridge helper prompt content |
 
-## Architecture
+Quick Action is now the default **authoring surface** for user-authored
+create-agent flows. Sheet/popover entry points may collect intent or
+small prompt edits, but they should hand off to Quick Action prefill for
+the final user-visible launch review.
 
-```
-UI (React Native) ─┬─ xterm.js (inside WebView via react-native-webview)
-                   ├─ KeyboardBar (Esc/Tab/Ctrl toggle/arrows/Alt)
-                   └─ TerminalView ←→ ExpoSsh native module (Swift/Kotlin)
-                                            ↓
-                                   Citadel (iOS) / JSch (Android)
-                                            ↓
-                                       SSH server
-```
+## Invariants (do not break)
 
-Data flow:
-- User types → xterm.js `onData` → WebView postMessage → RN → `Ssh.writeToShell(sessionId, data)`
-- Server output → Swift/Kotlin read loop → `onShellData` event → RN → WebView `write`
+1. **Transport-agnostic plan.** `AgentInvocationPlan.resolvedSystemInstructions`
+   is one agent-agnostic string. No argv / tempfile / flag choice in the
+   composer or plan. Delivery lives in the transport adapter only.
+2. **Catalog has model authority.** Templates *suggest*; `AgentCatalogStore.
+   resolveModel(_:for:)` decides. A `.opus` request against an agent that
+   only supports `.default` must return `.default`.
+3. **Disk/watcher truth.** `ProjectInstructionStore` reads abilities from
+   disk per call. No in-memory cache. The old `AbilityInjector` cache-
+   bypass workaround is now the design — not a comment.
+4. **Preview ⇄ launch share the base plan.** Both read from
+   `AgentInvocationPlan`. Preview is allowed to layer *local* per-run
+   overrides (ability mutes, force-includes — D1(B) side channel); those
+   do not flow into launch. Any disagreement on non-override fields is a
+   composer bug — fix the composer, not the consumer.
+5. **Nothing hidden ships.** If text or flags reach the agent, the user
+   must be able to see that exact payload in Quick Action preview/raw or
+   the socket preview endpoint. Authored text and delivered text are not
+   the same thing; preview must surface the delivered form.
+5. **No resolver/facade layer.** Stores own truth, composer composes,
+   queries select, adapter delivers. If you feel like adding
+   `AgentInputResolver` or `BridgePromptResolver`, stop.
+6. **`AgentInvocationSource` is a typed enum.** Use `reasonTag: String?`
+   for free-form classifier suffixes (e.g. `"quickAction.freePrompt"`).
+   Don't stuff runtime intent into `reasonTag`.
 
-## Tech Stack
+## When adding code
 
-- Expo SDK 54, Expo Router (file-based routing)
-- React Native 0.81, React 19
-- `react-native-webview` hosting xterm.js v5 (loaded from jsdelivr CDN inside WebView HTML)
-- Native: Swift (Expo Modules API) + Citadel (SwiftPM, via `cocoapods-spm`) on iOS; Kotlin + JSch on Android
-- AsyncStorage for connection config, expo-secure-store for secrets (not wired yet)
-- Jest + jest-expo for unit tests
+- **New agent-capability bit** (model, flag, env): `AgentCatalogStore`. Not
+  the template, not the composer.
+- **New template field**: `AgentTemplate` + `AgentTemplateStore`. Composer
+  reads through the store.
+- **New instruction source** (abilities, bundled prompts, later skills):
+  `ProjectInstructionStore`. Snapshot returns one merged view; composer
+  joins it into `resolvedSystemInstructions`.
+- **New agent-specific CLI quirk** (flag shape, tempfile, prefix):
+  `AgentInvocationTransportAdapter` or the backing
+  `AgentSystemPromptInjector`. Do not teach the composer about CLIs.
+- **New caller wanting a plan**: build an `AgentInvocationRequest`, call
+  `AgentInvocationComposer.compose(_:)`. Don't re-implement variable
+  substitution or system-prompt stitching at the call site.
+- **New user-authored create flow**: present Quick Action with a
+  prefilled request. Do not add a second final-authoring UI unless the
+  flow is explicitly no-prompt.
+- **Pure UI slice of a plan**: `AgentInputQueries`.
 
-## Directory Layout
+## When NOT adding code here
 
-```
-terminal-app/
-├── app/                               # Expo Router screens
-│   ├── _layout.tsx                    # Root stack
-│   ├── (tabs)/
-│   │   ├── _layout.tsx                # Tab bar (Connections, Settings)
-│   │   ├── index.tsx                  # Mixed SSH+TermLoop list, FAB action sheet
-│   │   └── settings.tsx               # Theme/font/haptics
-│   ├── connection/
-│   │   ├── new.tsx                    # SSH form (modal)
-│   │   └── new-termloop.tsx               # TermLoop form (label/host/port/password) (modal)
-│   ├── terminal/[id].tsx              # SSH terminal screen
-│   └── termloop/[id].tsx                  # TermLoop project list + workspaces + switch
-├── components/
-│   ├── TerminalView.tsx               # WebView + xterm.js bridge
-│   ├── KeyboardBar.tsx                # Special keys
-│   └── ConnectionCard.tsx             # SSH/TermLoop pill + label
-├── lib/
-│   ├── types.ts                       # Unified Connection (host + ssh{port,user} + termloop{port})
-│   ├── themes.ts                      # 4 themes (Dracula/Nord/Solarized/Monokai)
-│   ├── connections.ts                 # AsyncStorage CRUD (overload-typed createNewConnection)
-│   ├── secrets.ts                     # expo-secure-store wrapper for TermLoop passwords
-│   ├── termloop-client.ts                 # NDJSON id-correlated RPC client for TermLoop
-│   └── terminal-html.ts               # xterm.js HTML as a JS string
-├── modules/
-│   ├── expo-ssh/                      # SSH module (Citadel/JSch)
-│   └── expo-termloop/                     # TermLoop TCP module (NWConnection/stub)
-│       ├── expo-module.config.json
-│       ├── index.ts                   # connect/send/disconnect + onMessage/onState/onDisconnect
-│       ├── src/ExpoTermLoopModule.ts      # requireNativeModule with try/catch fallback Proxy
-│       ├── ios/
-│       │   ├── ExpoTermLoop.podspec       # only ExpoModulesCore dep, ios 17.0
-│       │   └── ExpoTermLoopModule.swift   # NWConnection (plain TCP) + NDJSON framer
-│       └── android/                   # stub: throws IllegalStateException
-├── __tests__/                         # Jest unit tests (22 total)
-└── ios/, android/                     # Generated by expo prebuild
-```
+- **Bridge runtime** (`WorkspaceBridgeStore`, `BridgeCoordinator`,
+  `BridgeMessageExtractor`) is out of this folder. Only bridge **input**
+  composition (presets, kickoff prompts, helper launch) lives here.
+  `BridgeKickoffSheet.submit()` just links two existing workspaces and
+  kicks off forwarding — that stays in bridge runtime.
+- **Terminal-agent presentation state** lives under `Core/` per the
+  `TerminalAgentActivityStore` architecture. Do not mix run-state with
+  invocation-input.
+- **Workspace lifecycle** lives in `AgentTerminals/TerminalAgentLifecycle`.
+  Composer/adapter produce inputs; Lifecycle orchestrates the create/
+  restore/fork ordering.
 
-## Common Commands
+## Phase status
 
-```bash
-# Install deps (use legacy-peer-deps because of React 19 / testing-library mismatch)
-npm install --legacy-peer-deps
+The legacy seam is gone. `AgentRunRequest` + `AgentInvocationRequest+
+Legacy.swift` were deleted in `d1dea210`. QuickAction launch and
+preview both flow through the composer, fresh-launch semantics are
+preserved by the `resolvedUserSystemPrompt` vs joined
+`resolvedSystemInstructions` split on the plan, and socket preview now
+returns the same plan/transport delivery view that Quick Action raw
+preview reads.
 
-# Run tests
-npx jest
+Phase 6 landed. `AgentTemplateStore` owns watching/reload, production
+consumers read templates through the store, `AbilityInjector`
+composition helpers are gone, and typed `modelOverride` persistence is
+in place. Quick Action prefill unification for user-authored
+create-agent flows has landed.
 
-# Start Metro bundler (for dev build on device or simulator)
-npx expo start --dev-client
+## Hard rules
 
-# Prebuild native projects (destroys ios/ and android/; rerun after native changes)
-npx expo prebuild --clean
-
-# Build & run on iOS simulator
-npx expo run:ios
-
-# Build & run on iOS device
-npx expo run:ios --device
-
-# Install pods after editing Podfile or expo-ssh podspec
-cd ios && pod install
-```
-
-## Citadel SSH (iOS)
-
-iOS SSH is now provided by [orlandos-nl/Citadel](https://github.com/orlandos-nl/Citadel) 0.12.1 — pure Swift on SwiftNIO + SwiftNIO-SSH. Speaks `rsa-sha2-256/512`, `curve25519-sha256`, `ed25519`, `chacha20-poly1305`. No server-side downgrade needed for modern OpenSSH.
-
-### Why not NMSSH anymore
-NMSSH vendors libssh2 1.8.0 (2017) as device-only static libs; it can only sign with `ssh-rsa` (SHA-1) and negotiate SHA-1 KEX. Modern OpenSSH 10.2+ has dropped those code paths entirely — even server-side `HostKeyAlgorithms +ssh-rsa` doesn't help. NMSSH's public API also has no algorithm preference hook.
-
-### SPM integration
-Citadel is SwiftPM-only (no CocoaPods podspec). We bridge via the `cocoapods-spm` gem plugin because the module's Swift source lives in the `ExpoSsh` pod target (which can't see app-target-only SPM deps). See `cocoapods_spm_setup.md` memory for the Homebrew-sandbox install dance.
-
-Layout:
-- `modules/expo-ssh/plugin/withCitadelSPM.js` is an Expo config plugin that:
-  1. Writes `ios.deploymentTarget: "17.0"` into `Podfile.properties.json` (Citadel requires iOS 17)
-  2. Injects `plugin 'cocoapods-spm'` + `spm_pkg` declarations (Citadel / swift-nio-ssh / swift-nio / swift-nio-transport-services) at the top of the Podfile
-  3. Injects an `at_exit` block inside the existing `post_install` that:
-     - Rewrites `${GENERATED_MODULEMAP_DIR}/CCitadelBcrypt.modulemap` → `${SOURCE_PACKAGES_CHECKOUTS_DIR}/Citadel/Sources/CCitadelBcrypt/include/module.modulemap` in every xcconfig. Needed because cocoapods-spm mis-wires C targets that ship an explicit `include/module.modulemap`.
-     - Patches Citadel's `SSHClient.connect(on:settings:)` to wrap `SSHClientSession.addHandlers(...)` in `channel.eventLoop.flatSubmit { ... }` so the `syncOperations.addHandlers` call runs on the event loop thread. Without the hop the call traps with EXC_BREAKPOINT (NIO precondition fail) when invoked from a Swift async Task. Targets both the cocoapods-spm and the Xcode DerivedData SourcePackages checkouts (Xcode's SwiftPM integration clones the package to its own DerivedData path, which is what actually gets compiled).
-     - `at_exit` is used because cocoapods-spm rewrites xcconfigs AFTER Podfile's `post_install` runs.
-  4. Overwrites `IPHONEOS_DEPLOYMENT_TARGET` in all build configs of `TerminalApp.xcodeproj` to `17.0` (Expo prebuild defaults to 15.1)
-- `modules/expo-ssh/app.plugin.js` re-exports the plugin; `app.json` references it as `"./modules/expo-ssh/app.plugin.js"`
-- `ios/ExpoSsh.podspec` declares `s.spm_dependency` for `Citadel/Citadel`, `swift-nio-ssh/NIOSSH`, `swift-nio/NIO`, `swift-nio/NIOCore`, `swift-nio-transport-services/NIOTransportServices`. Platform is `:ios => '17.0'`
-
-### Swift module shape
-- One `SSHClient` per sessionId, stored in `clients: [String: SSHClient]`
-- Connect uses `NIOTSConnectionBootstrap` (Network.framework transport) to establish the TCP channel, then calls `SSHClient.connect(on: channel, settings: settings)` to install SSH handlers on the already-connected channel. NIOTS is required because Citadel's own `connect(to: settings)` path uses `ClientBootstrap(group:)` which only accepts `MultiThreadedEventLoopGroup` — iOS BSD sockets also hit EPERM on Tailscale utun interfaces.
-- `startShell` spawns a `Task<Void, Never>` that calls `client.withPTY(...)`. The `withPTY` closure is long-lived — it holds the shell open. The `TTYStdinWriter` is captured out of the closure via an `AsyncStream<TTYStdinWriter>.makeStream()` and stored in `writers: [String: TTYStdinWriter]`
-- `writeToShell` converts `String` → `ByteBuffer` and calls `writer.write(buffer)`
-- `resizeShell` calls `writer.changeSize(cols:rows:pixelWidth:0 pixelHeight:0)`
-- Reads happen inside the closure via `for try await event in inbound`, emitting `onShellData` for both `.stdout` and `.stderr`
-- Disconnect cancels the task and calls `client.close()`
-- `stateQueue` (a serial DispatchQueue) guards the three dictionaries — accessed from multiple async contexts
-- No `#if !targetEnvironment(simulator)` guards — Citadel is pure Swift, works everywhere
-
-Extremely important pre-install step (on this dev Mac): see `cocoapods_spm_setup.md`. The `cocoapods-spm` gem must live in Homebrew CocoaPods' sandbox, AND the `update_script.rb` helper needs a small patch.
-
-## Dev Server Connection Notes
-
-- The dev Mac and test iPhone are both on Tailscale; Mac IP `100.64.0.10`, iPhone `100.64.0.11`.
-- When running `npx expo run:ios --device`, Metro bundler must be reachable from the iPhone. If the device shows "No script URL provided", start Metro with `npx expo start --dev-client` on the Mac while the phone has Tailscale running.
-- `Info.plist` has `NSLocalNetworkUsageDescription` + `NSAllowsLocalNetworking: true` + `NSAllowsArbitraryLoads: true` (the last is debatable for production but fine for dev builds over Tailscale).
-- Bundle identifier is `com.feritzcan.sshterminal`.
-
-## TermLoop TCP module (iOS)
-
-`modules/expo-termloop/ios/ExpoTermLoopModule.swift` wraps `NWConnection` (plain TCP, no TLS — Tailscale provides transport encryption) and surfaces NDJSON line events. `lib/termloop-client.ts` builds an id-correlated RPC client on top, auto-sending `auth.login` after connect. `Connection` is a single shape (`host` + nested `ssh{port,user}` + `termloop{port}`); legacy discriminated-union rows are migrated on read and flagged `incomplete: true` until the user edits+saves. TermLoop passwords live in `expo-secure-store` keyed `termloop_token_${id}`.
-
-### Non-obvious
-
-- **`src/ExpoTermLoopModule.ts` does eager `requireNativeModule` inside try/catch.** On failure a stub Proxy is exported instead, so a JS-only Metro reload doesn't crash the route tree before the native module is linked. Lazy/Proxy-everywhere broke `EventEmitter` wiring — don't go back to that.
-- **Setup:** Mac side needs Settings → Automation → Socket Control Mode = Password (with a password set) AND TCP port = 7878 AND Bind to all interfaces ON. Password file: `~/Library/Application Support/termloop/socket-control-password` — no trailing newline (use `echo -n` if writing manually).
-- **Smoke test:** `printf '{"method":"auth.login","params":{"password":"PASS"},"id":1}\n' | nc -w 2 127.0.0.1 7878` → expect `{"ok":true,...}`.
-
-## Known Issues & Future Work
-
-1. **Password auth in terminal screen uses `Alert.prompt`** — iOS-only. Android needs a proper modal TextInput.
-2. **Passwords not stored.** Currently passed through memory only (via `Alert.prompt` → state). `expo-secure-store` is installed but not used yet.
-3. **Android SSH module** is written but untested. No device build has been run against it.
-4. **Settings propagation is per-screen and one-shot.** `terminal/[id].tsx` reads `terminal_settings` on mount and applies `fontSize`, `defaultTheme` (if connection has no override), and `hapticEnabled`. Changes made in Settings while a terminal is open don't live-update — you have to re-enter the screen.
-5. **Backgrounding survival via tmux wrap (shipped).** `terminal/[id].tsx` now wraps `claude --resume <id>` in `tmux new-session -A -s claude-<id>` with full-scrollback replay via `capture-pane` on reattach. iOS can still freeze the socket, but the Claude process outlives the disconnect; on reconnect the user sees the full gap history. See `docs/superpowers/specs/2026-04-14-mobile-terminal-persistence-design.md`. Requires tmux installed on the Mac; no onboarding check yet.
-6. **Host key validation** is `SSHHostKeyValidator.acceptAnything()` — fine for dev, needs a `known_hosts`-equivalent before any production use.
-7. **Test runner warnings:** Node v23 triggers engine warnings from Jest 30 internal packages. Tests pass regardless.
-8. **TermLoop MVP scope:** read + switch only. No project CRUD, no workspace terminal mirroring, no auto-reconnect (manual pull-to-refresh).
+- New files in this folder only for the 7 roles above. If your new file
+  doesn't fit one of those, you're probably adding a resolver — don't.
+- Composer is transport-agnostic. Never import `AgentSystemPromptInjector`
+  from it (injector may reverse-import the composer's reporting constant;
+  the dependency direction is composer ← injector only via the constant).
+- Consumer migrations land one call-site per commit, not as sweeping
+  rewrites. The seam exists so each can prove out independently.
+- Native same-agent conversation fork now has explicit source cases:
+  `.claudeNativeFork` and `.codexNativeFork`. Keep `.workspaceFork`
+  reserved for context handoff/new-session semantics.

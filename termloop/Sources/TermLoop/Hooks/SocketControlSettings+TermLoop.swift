@@ -9,10 +9,9 @@ extension SocketControlSettings {
     static let tcpPortEnvKey = "TERMLOOP_SOCKET_TCP_PORT"
     static let tcpBindEnvKey = "TERMLOOP_SOCKET_TCP_BIND"
 
-    /// Built-in TCP port used when the user has not configured one. Chosen to
-    /// match what the mobile client expects out of the box so the bridge is
-    /// on by default and new installs (or fresh tagged debug builds) don't
-    /// need a Settings visit to start accepting connections.
+    /// Built-in TCP port used when the user explicitly enables mobile pairing.
+    /// The bridge is off by default; Connect Mobile writes this port before
+    /// starting the listener.
     static let tcpPortDefault: UInt16 = 7878
 
     /// Returns configured TCP port (env overrides UserDefaults).
@@ -22,9 +21,7 @@ extension SocketControlSettings {
     ///    disables (returns nil).
     /// 2. `socketControl.tcpPort` UserDefaults — if the key exists the user
     ///    has an opinion: positive = port, 0 = "disable bridge".
-    /// 3. Key absent → fall back to `tcpPortDefault` so the bridge is on by
-    ///    default. This is what the "Leave empty to disable" copy in the
-    ///    Settings card refers to — the user explicitly writes 0 to disable.
+    /// 3. Key absent → disabled. Mobile pairing enables it explicitly.
     static func resolvedTcpPort(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         defaults: UserDefaults = .standard
@@ -34,9 +31,7 @@ extension SocketControlSettings {
             if let v = UInt16(raw), v > 0 { return v }
             return nil
         }
-        guard defaults.object(forKey: tcpPortDefaultsKey) != nil else {
-            return tcpPortDefault
-        }
+        guard defaults.object(forKey: tcpPortDefaultsKey) != nil else { return nil }
         let stored = defaults.integer(forKey: tcpPortDefaultsKey)
         guard stored > 0, stored <= Int(UInt16.max) else { return nil }
         return UInt16(stored)

@@ -6,8 +6,9 @@ import SwiftUI
 
 /// Sub-tab entry point. Rendered inside the sidebar column, so everything is
 /// stacked vertically: toolbar → file tree → pending suggestions.
-/// Per-file open routes through the shared markdown document surface so
-/// Context Bank, Plan, Abilities, and scratchpads all share one reader/editor.
+/// Per-file open keeps the user inside Context Bank. The right pane owns
+/// selected file/suggestion display; opening a row must not create a separate
+/// markdown overlay that would shadow later tree selections.
 struct ContextBankView: View {
     let projectRoot: URL?
 
@@ -52,12 +53,8 @@ struct ContextBankView: View {
                 tree: store.tree,
                 selection: $store.selection,
                 onOpen: { file in
-                    let folderName = (file.relativePath as NSString).deletingLastPathComponent
-                    MarkdownDocumentStore.shared.open(
-                        fileURL: file.url.resolvingSymlinksInPath(),
-                        folderName: folderName.isEmpty ? "/" : folderName,
-                        displayTitle: file.kind.displayName
-                    )
+                    MarkdownDocumentStore.shared.close()
+                    store.selection = .file(file.url)
                 }
             )
             .frame(maxHeight: .infinity)

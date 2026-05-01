@@ -1345,9 +1345,39 @@ class TerminalController {
         return v2Ok(id: id, result: ["authenticated": true])
     }
 
+    private func mobileCredentialV2ResponseIfNeeded(for command: String, authenticated: inout Bool) -> String? {
+        guard command.hasPrefix("{"),
+              let data = command.data(using: .utf8),
+              let dict = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
+            return nil
+        }
+        let id = dict["id"]
+        let method = (dict["method"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard method == "auth.token" || method == "pairing.claim" else {
+            return nil
+        }
+        let params = dict["params"] as? [String: Any] ?? [:]
+        let response: V2CallResult
+        switch method {
+        case "auth.token":
+            response = TermLoopMobilePairingStore.authenticate(params: params)
+        case "pairing.claim":
+            response = TermLoopMobilePairingStore.claim(params: params)
+        default:
+            return nil
+        }
+        if case .ok = response {
+            authenticated = true
+        }
+        return v2Result(id: id, response)
+    }
+
     private func authResponseIfNeeded(for command: String, authenticated: inout Bool) -> String? {
         guard accessMode.requiresPasswordAuth else {
             return nil
+        }
+        if let mobileResponse = mobileCredentialV2ResponseIfNeeded(for: command, authenticated: &authenticated) {
+            return mobileResponse
         }
         if let v2Response = passwordLoginV2ResponseIfNeeded(for: command, authenticated: &authenticated) {
             return v2Response
@@ -2533,6 +2563,11 @@ class TerminalController {
             "system.identify",
             "system.tree",
             "auth.login",
+            "auth.token",
+            "pairing.claim",
+            "pairing.create",
+            "pairing.list_devices",
+            "pairing.revoke_device",
             "window.list",
             "window.current",
             "window.focus",

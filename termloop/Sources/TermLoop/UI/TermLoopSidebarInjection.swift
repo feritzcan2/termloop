@@ -3,6 +3,8 @@
 
 import AppKit
 import Combine
+import CoreImage.CIFilterBuiltins
+import Darwin
 import SwiftUI
 
 private enum TermLoopPasteboard {
@@ -83,24 +85,19 @@ enum TermLoopSidebar {
         var body: some View {
             HStack(spacing: 6) {
                 SidebarSkillsCommandsButton()
-                TCPStatusPill()
+                MobilePairingButton()
             }
         }
     }
 
-    /// Compact status pill showing the TermLoop TCP bridge listener state.
-    /// Polls the bridge once a second; renders one of:
-    ///   • green `tcp:7878` (mono, lower) when the listener is bound
-    ///   • red `tcp:off` when no listener (UserDefaults unset or bind failed)
-    ///
-    /// **Locale fix:** port uses `Text(verbatim:)` because SwiftUI's default
-    /// `Text("...\(Int)...")` interpolation runs the integer through a
-    /// locale-aware `NumberFormatter`, which for Turkish adds a grouping
-    /// separator → the earlier build rendered port 7878 as `:7.878`.
-    struct TCPStatusPill: View {
+    /// Opens a mobile pairing sheet. TCP stays off by default; this button
+    /// enables the mobile bridge on demand and creates a short-lived QR token.
+    struct MobilePairingButton: View {
         private static let refreshInterval: TimeInterval = 5.0
+        @EnvironmentObject private var tabManager: TabManager
         @State private var status: TermLoopTCPBridge.StatusSnapshot =
             TermLoopTCPBridge.shared.currentStatus()
+        @State private var showingSheet = false
         private let timer = Timer.publish(
             every: refreshInterval,
             on: .main,
@@ -108,13 +105,34 @@ enum TermLoopSidebar {
         ).autoconnect()
 
         private var label: String {
-            status.isRunning ? "tcp:\(status.port)" : "tcp:off"
+            status.isRunning ? "mobile:\(status.port)" : "Connect Mobile"
+        }
+
+        var body: some View {
+            Button {
+                enableMobileBridge()
+                showingSheet = true
+            } label: {
+                pill
+            }
+            .buttonStyle(.plain)
+            .help(status.isRunning
+                  ? "Pair a mobile app. Mobile bridge listening on \(status.bindHost):\(status.port)."
+                  : "Enable the mobile bridge and show a pairing QR code.")
+            .sheet(isPresented: $showingSheet) {
+                MobilePairingSheet()
+            }
+            .onReceive(timer) { _ in
+                let nextStatus = TermLoopTCPBridge.shared.currentStatus()
+                guard nextStatus != status else { return }
+                status = nextStatus
+            }
         }
 
         private var pill: some View {
             HStack(spacing: 4) {
                 Circle()
-                    .fill(status.isRunning ? Color.green : Color.red.opacity(0.78))
+                    .fill(status.isRunning ? Color.green : Color.blue.opacity(0.85))
                     .frame(width: 5, height: 5)
                 Text(verbatim: label)
                     .font(TermLoopSidebarTheme.tinyMono)
@@ -128,31 +146,166 @@ enum TermLoopSidebar {
             )
         }
 
+        private func enableMobileBridge() {
+            UserDefaults.standard.set(Int(SocketControlSettings.tcpPortDefault),
+                                      forKey: SocketControlSettings.tcpPortDefaultsKey)
+            UserDefaults.standard.set(true, forKey: SocketControlSettings.tcpBindAllDefaultsKey)
+            UserDefaults.standard.set(SocketControlMode.password.rawValue,
+                                      forKey: SocketControlSettings.appStorageKey)
+            TerminalController.shared.stop()
+            TerminalController.shared.start(
+                tabManager: tabManager,
+                socketPath: SocketControlSettings.socketPath(),
+                accessMode: .password
+            )
+            TermLoopTCPBridge.shared.reload()
+            status = TermLoopTCPBridge.shared.currentStatus()
+        }
+    }
+
+    private struct MobilePairingSheet: View {
+        @Environment(\.dismiss) private var dismiss
+        @State private var pairing: PairingDisplay?
+        @State private var errorMessage: String?
+
         var body: some View {
-            Group {
-                if status.isRunning {
-                    pill
-                        .help("TermLoop TCP bridge listening on \(status.bindHost):\(status.port)")
-                } else {
-                    Button {
-                        TermLoopTCPBridge.shared.forceTakePort()
-                    } label: {
-                        HStack(spacing: 4) {
-                            pill
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(TermLoopSidebarTheme.dim)
-                        }
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Connect Mobile")
+                            .font(.title2.weight(.semibold))
+                        Text("Scan this QR from the TermLoop mobile app.")
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
-                    .help("TCP bridge off — click to kill other termloop builds holding the port and re-bind here")
+                    Spacer()
+                    Button("Done") { dismiss() }
+                        .keyboardShortcut(.defaultAction)
+                }
+
+                Group {
+                    if let pairing {
+                        HStack(alignment: .top, spacing: 18) {
+                            if let image = pairing.qrImage {
+                                Image(nsImage: image)
+                                    .interpolation(.none)
+                                    .resizable()
+                                    .frame(width: 220, height: 220)
+                                    .background(Color.white)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(pairing.serverName)
+                                    .font(.headline)
+                                Text("\(pairing.host):\(pairing.port)")
+                                    .font(.system(.body, design: .monospaced))
+                                Text("Expires in about 2 minutes. Keep this window open while pairing.")
+                                    .foregroundStyle(.secondary)
+                                Button("Copy pairing payload") {
+                                    TermLoopPasteboard.copy(pairing.payloadString)
+                                }
+                            }
+                        }
+                    } else if let errorMessage {
+                        Text(errorMessage)
+                            .foregroundStyle(.red)
+                    } else {
+                        ProgressView()
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(22)
+            .frame(width: 560, height: 330)
+            .onAppear(perform: createPairing)
+        }
+
+        private func createPairing() {
+            let serverName = Host.current().localizedName ?? "TermLoop Mac"
+            let result = TermLoopMobilePairingStore.createPairing(params: [
+                "server_name": serverName
+            ])
+            guard case .ok(let rawPayload) = result,
+                  let payload = rawPayload as? [String: Any],
+                  let token = payload["token"] as? String,
+                  let expiresAt = payload["expires_at"] as? TimeInterval else {
+                errorMessage = "Could not create a mobile pairing token."
+                return
+            }
+            let host = Self.localIPv4Address() ?? "127.0.0.1"
+            let port = Int(SocketControlSettings.resolvedTcpPort() ?? SocketControlSettings.tcpPortDefault)
+            let qrPayload: [String: Any] = [
+                "type": "termloop.pairing",
+                "version": 1,
+                "server_name": serverName,
+                "host": host,
+                "port": port,
+                "token": token,
+                "expires_at": expiresAt
+            ]
+            guard let data = try? JSONSerialization.data(withJSONObject: qrPayload, options: []),
+                  let payloadString = String(data: data, encoding: .utf8) else {
+                errorMessage = "Could not encode the pairing QR payload."
+                return
+            }
+            pairing = PairingDisplay(
+                serverName: serverName,
+                host: host,
+                port: port,
+                payloadString: payloadString,
+                qrImage: Self.qrImage(for: payloadString)
+            )
+        }
+
+        private static func qrImage(for string: String) -> NSImage? {
+            let filter = CIFilter.qrCodeGenerator()
+            filter.message = Data(string.utf8)
+            filter.correctionLevel = "M"
+            guard let output = filter.outputImage else { return nil }
+            let scaled = output.transformed(by: CGAffineTransform(scaleX: 10, y: 10))
+            let rep = NSCIImageRep(ciImage: scaled)
+            let image = NSImage(size: rep.size)
+            image.addRepresentation(rep)
+            return image
+        }
+
+        private static func localIPv4Address() -> String? {
+            var ifaddr: UnsafeMutablePointer<ifaddrs>?
+            guard getifaddrs(&ifaddr) == 0 else { return nil }
+            defer { freeifaddrs(ifaddr) }
+
+            var pointer = ifaddr
+            while pointer != nil {
+                defer { pointer = pointer?.pointee.ifa_next }
+                guard let interface = pointer?.pointee,
+                      interface.ifa_addr.pointee.sa_family == UInt8(AF_INET) else { continue }
+                let name = String(cString: interface.ifa_name)
+                guard name == "en0" || name == "en1" || name.hasPrefix("utun") else { continue }
+                var addr = interface.ifa_addr.pointee
+                var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                let result = getnameinfo(
+                    &addr,
+                    socklen_t(interface.ifa_addr.pointee.sa_len),
+                    &hostname,
+                    socklen_t(hostname.count),
+                    nil,
+                    0,
+                    NI_NUMERICHOST
+                )
+                guard result == 0 else { continue }
+                let ip = String(cString: hostname)
+                if ip != "127.0.0.1" {
+                    return ip
                 }
             }
-            .onReceive(timer) { _ in
-                let nextStatus = TermLoopTCPBridge.shared.currentStatus()
-                guard nextStatus != status else { return }
-                status = nextStatus
-            }
+            return nil
+        }
+
+        private struct PairingDisplay {
+            let serverName: String
+            let host: String
+            let port: Int
+            let payloadString: String
+            let qrImage: NSImage?
         }
     }
 

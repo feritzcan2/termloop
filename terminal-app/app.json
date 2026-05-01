@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "TermLoop",
+    "slug": "termloop-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "termloop",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ai.agentloop.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "TermLoop uses the camera to scan pairing QR codes shown by the desktop app."
+      }
+    },
+    "android": {
+      "package": "ai.agentloop.mobile",
+      "permissions": ["android.permission.CAMERA"]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "TermLoop uses the camera to scan pairing QR codes shown by the desktop app."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

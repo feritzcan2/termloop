@@ -7,7 +7,7 @@ import SwiftUI
 @MainActor
 struct TermLoopSettingsView: View {
     @AppStorage(SocketControlSettings.tcpPortDefaultsKey)
-    private var socketControlTcpPort = Int(SocketControlSettings.tcpPortDefault)
+    private var socketControlTcpPort = 0
     @AppStorage(SocketControlSettings.tcpBindAllDefaultsKey) private var socketControlTcpBindAll = true
     @AppStorage(TermLoopHooks.claudeAutoRestoreDefaultsKey) private var claudeAutoRestore = true
     @AppStorage(TermLoopHooks.claudeAutoRestoreAskedDefaultsKey) private var claudeAutoRestoreAsked = false
@@ -114,18 +114,18 @@ struct TermLoopSettingsView: View {
                     TermLoopSettingsCardRow(
                         title: String(
                             localized: "tcpBridge.port.label",
-                            defaultValue: "TCP port",
+                            defaultValue: "Mobile bridge port",
                             table: "TermLoop"
                         ),
                         subtitle: socketControlTcpPort > 0
                             ? String(
                                 localized: "tcpBridge.port.subtitleOn",
-                                defaultValue: "Accepting TCP connections on this port. Requires password access mode.",
+                                defaultValue: "Mobile clients can connect on this port. Connect Mobile enables it automatically.",
                                 table: "TermLoop"
                               )
                             : String(
                                 localized: "tcpBridge.port.subtitleOff",
-                                defaultValue: "Leave empty to disable the TCP bridge.",
+                                defaultValue: "Disabled. Use Connect Mobile in the sidebar footer to enable pairing.",
                                 table: "TermLoop"
                               )
                     ) {
@@ -173,7 +173,7 @@ struct TermLoopSettingsView: View {
                     TermLoopSettingsCardNote(
                         String(
                             localized: "tcpBridge.hint",
-                            defaultValue: "The TCP bridge requires Password access mode. For remote access, prefer a private network such as Tailscale.",
+                            defaultValue: "The mobile bridge is off by default. Pairing turns on Password access mode and opens this port; use a trusted LAN or Tailscale.",
                             table: "TermLoop"
                         )
                     )

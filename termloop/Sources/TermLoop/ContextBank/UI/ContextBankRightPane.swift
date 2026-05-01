@@ -22,6 +22,7 @@ struct ContextBankRightPane: View {
                     url: url,
                     onClose: { store.selection = .none }
                 )
+                .id((url.path as NSString).resolvingSymlinksInPath)
             case .suggestion(let id):
                 if let suggestion = store.suggestions.first(where: { $0.id == id && $0.status == .pending }) {
                     SuggestionViewer(
@@ -89,12 +90,14 @@ private struct FileViewer: View {
 
     @State private var text: AttributedString = AttributedString("")
     @State private var loadError: String?
+    @State private var loadedURL: URL?
+    @State private var loadedContent: String = ""
 
     var body: some View {
         MarkdownSurface(
             title: url.lastPathComponent,
             subtitle: url.deletingLastPathComponent().path,
-            fileURL: resolvedURL,
+            fileURL: displayURL,
             text: $text,
             mode: .preview,
             allowEdit: true,
@@ -107,6 +110,7 @@ private struct FileViewer: View {
         )
         .onAppear(perform: load)
         .onChange(of: url) { _ in load() }
+        .onDisappear { save(String(text.characters)) }
         .overlay(alignment: .topTrailing) {
             if let loadError {
                 Text(loadError)
@@ -117,29 +121,56 @@ private struct FileViewer: View {
         }
     }
 
-    private var resolvedURL: URL {
-        URL(fileURLWithPath: (url.path as NSString).resolvingSymlinksInPath)
+    private var displayURL: URL {
+        readableURL ?? url
+    }
+
+    private var readableURL: URL? {
+        let fm = FileManager.default
+        let resolvedPath = (url.path as NSString).resolvingSymlinksInPath
+        if fm.fileExists(atPath: resolvedPath) {
+            return URL(fileURLWithPath: resolvedPath)
+        }
+        if fm.fileExists(atPath: url.path) {
+            return url
+        }
+        return nil
     }
 
     private func load() {
+        guard let target = readableURL else {
+            loadedURL = nil
+            loadedContent = ""
+            text = AttributedString("")
+            loadError = "Unable to open \(url.path)"
+            return
+        }
         do {
-            let content = try String(contentsOf: resolvedURL, encoding: .utf8)
+            let content = try String(contentsOf: target, encoding: .utf8)
             if String(text.characters) != content {
                 text = AttributedString(content)
             }
+            loadedURL = target
+            loadedContent = content
             loadError = nil
         } catch {
+            loadedURL = nil
+            loadedContent = ""
             text = AttributedString("")
-            loadError = error.localizedDescription
+            loadError = "Unable to open \(target.path): \(error.localizedDescription)"
         }
     }
 
     private func save(_ content: String) {
+        guard let target = loadedURL else { return }
+        guard loadError == nil else { return }
+        guard content != loadedContent else { return }
         do {
-            try content.write(to: resolvedURL, atomically: true, encoding: .utf8)
+            try content.write(to: target, atomically: true, encoding: .utf8)
+            loadedContent = content
             loadError = nil
         } catch {
-            loadError = error.localizedDescription
+            loadError = "Unable to save \(target.path): \(error.localizedDescription)"
         }
     }
 }

@@ -1,89 +1,114 @@
-# Git infrastructure
+# AgentInputs — Context
 
-Central git invocation, presentation stores, and invalidation pub/sub. UI
-panels and feature code do not shell out to git themselves — they call
-`GitCommandRunner` and read the presentation stores in this folder.
+Truth owners, composer, transport adapter, and Quick Action authoring
+contract for agent-invocation input assembly. Depth reference:
+`termloop/docs/termloop/agent-inputs.md`.
 
----
+## What lives here
 
-## Use GitCommandRunner
+| File | Role |
+|---|---|
+| `AgentInputTypes.swift` | `AgentInvocationSource`, `AgentModelOption`, `AgentInvocationRequest`, `AgentInvocationPlan`, `ProjectInstructionSnapshot` |
+| `AgentCatalogStore.swift` | Terminal-agent identity + per-agent model validity |
+| `AgentTemplateStore.swift` | Template catalog (builtin / user / project, FSEvents reload) |
+| `ProjectInstructionStore.swift` | Abilities + bundled prompts + system-ability templates (skills deferred) |
+| `AgentInvocationComposer.swift` | `compose(_:)` — semantic plan, single public entry |
+| `AgentInvocationTransportAdapter.swift` | Semantic plan → argv / prefix / initial prompt |
+| `AgentInputQueries.swift` | Pure selectors over a plan |
+| `PreviewOverrides.swift` | D1(B) per-run preview override layer (mute / force-include) |
+| `BridgePromptCatalog.swift` | Ask-agent presets + bridge helper prompt content |
 
-Call `GitCommandRunner.runThrowing(_:in:kind:caller:timeout:)` for reads or
-`runMutation(_:in:kind:caller:invalidates:timeout:)` when the command writes.
-Don't spawn git via `Process()` directly. Reasons:
+Quick Action is now the default **authoring surface** for user-authored
+create-agent flows. Sheet/popover entry points may collect intent or
+small prompt edits, but they should hand off to Quick Action prefill for
+the final user-visible launch review.
 
-- **Optional locks off for reads.** Read kinds (status, diff, branch,
-  revParse, remote, history, genericRead) inject `GIT_OPTIONAL_LOCKS=0` and
-  prepend `--no-optional-locks`. Read commands never contend with a concurrent
-  `git add`/`commit`/PR script.
-- **Bounded drains.** stdout/stderr drains have a per-call timeout (1–5s); a
-  stuck child cannot freeze the app.
-- **No terminationHandler race.** The handler is set before `process.run()`,
-  so fast-exiting children never deadlock the wait.
-- **Mutation invalidation.** `runMutation` broadcasts to
-  `GitPresentationInvalidationCenter` with the right `GitInvalidationTarget`s
-  so the UI refreshes without manual prodding.
-- **Telemetry.** Every call carries a `caller` string used by the
-  `com.termloop.git:*` log subsystems for triage.
+## Invariants (do not break)
 
-Pick the right `CommandKind`. The runner classifies if you pass nil, but
-explicit is better when you know.
+1. **Transport-agnostic plan.** `AgentInvocationPlan.resolvedSystemInstructions`
+   is one agent-agnostic string. No argv / tempfile / flag choice in the
+   composer or plan. Delivery lives in the transport adapter only.
+2. **Catalog has model authority.** Templates *suggest*; `AgentCatalogStore.
+   resolveModel(_:for:)` decides. A `.opus` request against an agent that
+   only supports `.default` must return `.default`.
+3. **Disk/watcher truth.** `ProjectInstructionStore` reads abilities from
+   disk per call. No in-memory cache. The old `AbilityInjector` cache-
+   bypass workaround is now the design — not a comment.
+4. **Preview ⇄ launch share the base plan.** Both read from
+   `AgentInvocationPlan`. Preview is allowed to layer *local* per-run
+   overrides (ability mutes, force-includes — D1(B) side channel); those
+   do not flow into launch. Any disagreement on non-override fields is a
+   composer bug — fix the composer, not the consumer.
+5. **Nothing hidden ships.** If text or flags reach the agent, the user
+   must be able to see that exact payload in Quick Action preview/raw or
+   the socket preview endpoint. Authored text and delivered text are not
+   the same thing; preview must surface the delivered form.
+5. **No resolver/facade layer.** Stores own truth, composer composes,
+   queries select, adapter delivers. If you feel like adding
+   `AgentInputResolver` or `BridgePromptResolver`, stop.
+6. **`AgentInvocationSource` is a typed enum.** Use `reasonTag: String?`
+   for free-form classifier suffixes (e.g. `"quickAction.freePrompt"`).
+   Don't stuff runtime intent into `reasonTag`.
 
-## Pipe rules for raw `Process()`
+## When adding code
 
-Sometimes a non-git tool (`lsof`, `gh`, `az`, `git credential fill`) needs a
-raw `Process()`. Follow these or you reintroduce the hangs we just paid
-for:
+- **New agent-capability bit** (model, flag, env): `AgentCatalogStore`. Not
+  the template, not the composer.
+- **New template field**: `AgentTemplate` + `AgentTemplateStore`. Composer
+  reads through the store.
+- **New instruction source** (abilities, bundled prompts, later skills):
+  `ProjectInstructionStore`. Snapshot returns one merged view; composer
+  joins it into `resolvedSystemInstructions`.
+- **New agent-specific CLI quirk** (flag shape, tempfile, prefix):
+  `AgentInvocationTransportAdapter` or the backing
+  `AgentSystemPromptInjector`. Do not teach the composer about CLIs.
+- **New caller wanting a plan**: build an `AgentInvocationRequest`, call
+  `AgentInvocationComposer.compose(_:)`. Don't re-implement variable
+  substitution or system-prompt stitching at the call site.
+- **New user-authored create flow**: present Quick Action with a
+  prefilled request. Do not add a second final-authoring UI unless the
+  flow is explicitly no-prompt.
+- **Pure UI slice of a plan**: `AgentInputQueries`.
 
-- **Close parent write ends right after `try process.run()`.** Otherwise
-  `readDataToEndOfFile` waits forever for an EOF that already happened on the
-  child side. Same for stderr.
-- **Use `FileHandle.nullDevice` for streams you don't read.** Don't attach a
-  `Pipe()` you never drain — the 64 KB pipe buffer fills, the child blocks
-  writing, your wait blocks reading.
-- **Set `terminationHandler` BEFORE `run()`.** Foundation's `Process` will
-  silently miss the handler if the child exits before you assign it, and your
-  semaphore will never signal.
-- **Bound every wait.** `semaphore.wait(timeout:)` or
-  `group.wait(timeout:)` plus a fallback close. No bare `wait()`.
+## When NOT adding code here
 
-`GitHostAuthResolver.runCommand` is the canonical example following all four
-rules. Copy that shape when `GitCommandRunner` doesn't fit.
+- **Bridge runtime** (`WorkspaceBridgeStore`, `BridgeCoordinator`,
+  `BridgeMessageExtractor`) is out of this folder. Only bridge **input**
+  composition (presets, kickoff prompts, helper launch) lives here.
+  `BridgeKickoffSheet.submit()` just links two existing workspaces and
+  kicks off forwarding — that stays in bridge runtime.
+- **Terminal-agent presentation state** lives under `Core/` per the
+  `TerminalAgentActivityStore` architecture. Do not mix run-state with
+  invocation-input.
+- **Workspace lifecycle** lives in `AgentTerminals/TerminalAgentLifecycle`.
+  Composer/adapter produce inputs; Lifecycle orchestrates the create/
+  restore/fork ordering.
 
-## Never block the main thread on git
+## Phase status
 
-Restore, startup, terminal-surface creation, and SwiftUI body code must not
-shell out to git, even via `GitCommandRunner`. A stuck git process freezes
-the entire app for as long as the wait runs. We've shipped this regression
-twice — don't ship it a third time.
+The legacy seam is gone. `AgentRunRequest` + `AgentInvocationRequest+
+Legacy.swift` were deleted in `d1dea210`. QuickAction launch and
+preview both flow through the composer, fresh-launch semantics are
+preserved by the `resolvedUserSystemPrompt` vs joined
+`resolvedSystemInstructions` split on the plan, and socket preview now
+returns the same plan/transport delivery view that Quick Action raw
+preview reads.
 
-For path resolution from the main actor:
+Phase 6 landed. `AgentTemplateStore` owns watching/reload, production
+consumers read templates through the store, `AbilityInjector`
+composition helpers are gone, and typed `modelOverride` persistence is
+in place. Quick Action prefill unification for user-authored
+create-agent flows has landed.
 
-- Use `WorkspaceMetadataStore.Metadata.worktreePath` as the physical checkout
-  source. `WorktreeResolver.path(projectFolder:branch:)` +
-  `FileManager.fileExists` is only the pure fallback for legacy metadata or
-  new worktree creation. No subprocess.
-- For "what branch is this checkout on?" read `.git/HEAD` directly.
-  `TermLoopWorktreeBindingResolver.currentBranchWithoutGit` shows the shape
-  — handles both `.git` directories and `.git` files with `gitdir:`
-  redirects.
+## Hard rules
 
-If you genuinely need git output for a UI decision, do it on a background
-queue and update presentation state asynchronously. The presentation stores
-in this folder already follow that pattern.
-
-## Worktree path convention
-
-Worktrees live at `<project>/.termloop-worktrees/<sanitized-branch>/`.
-`WorktreeCoordinator` is the only writer. Once a workspace is attached,
-persist the real path in `WorkspaceMetadataStore.Metadata.worktreePath` and
-read that everywhere. Branch names are logical identity; they are not the
-source of truth for reused folder names.
-
-## Auth ladder
-
-`GitHostAuthResolver` resolves credentials in order: `gitCredential` →
-`azCLI` (ADO, 240s cache TTL, per-org scope) → `ghCLI` (GitHub, 300s cache
-TTL) → PAT. Don't add new direct calls to `gh` / `az` / `git credential
-fill` from feature code; route through the resolver so caching, timeouts,
-and the `auth.*` log subsystem stay consistent.
+- New files in this folder only for the 7 roles above. If your new file
+  doesn't fit one of those, you're probably adding a resolver — don't.
+- Composer is transport-agnostic. Never import `AgentSystemPromptInjector`
+  from it (injector may reverse-import the composer's reporting constant;
+  the dependency direction is composer ← injector only via the constant).
+- Consumer migrations land one call-site per commit, not as sweeping
+  rewrites. The seam exists so each can prove out independently.
+- Native same-agent conversation fork now has explicit source cases:
+  `.claudeNativeFork` and `.codexNativeFork`. Keep `.workspaceFork`
+  reserved for context handoff/new-session semantics.
