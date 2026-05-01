@@ -14,7 +14,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { getActiveClient } from "../../lib/session";
 import { colors, monoFont, radii } from "../../lib/theme";
 
@@ -37,14 +37,12 @@ interface KeyDef {
   text?: string;
 }
 
-// Documented key names sent via surface.send_key. If the backend rejects a
-// name, we fall back to the literal text where defined.
 const KEYS: KeyDef[] = [
-  { label: "Esc", key: "Escape", text: "" },
-  { label: "Tab", key: "Tab", text: "\t" },
-  { label: "↑", key: "ArrowUp" },
-  { label: "↓", key: "ArrowDown" },
-  { label: "Enter", key: "Enter", text: "\n" },
+  { label: "Esc", key: "escape", text: "" },
+  { label: "Tab", key: "tab", text: "\t" },
+  { label: "↑", key: "up" },
+  { label: "↓", key: "down" },
+  { label: "Enter", key: "enter", text: "\r" },
   { label: "Ctrl-C", key: "Ctrl-C", text: "" },
   { label: "Ctrl-D", key: "Ctrl-D", text: "" },
 ];
@@ -57,7 +55,6 @@ export default function TerminalScreen() {
   }>();
   const router = useRouter();
   const headerHeight = useHeaderHeight();
-  const insets = useSafeAreaInsets();
   const workspaceId = params.workspaceId;
   const surfaceId = params.surfaceId;
   const client = getActiveClient();
@@ -167,7 +164,14 @@ export default function TerminalScreen() {
     const line = draft;
     setDraft("");
     try {
-      await client.sendText(workspaceId, line + "\n", surfaceId);
+      await client.sendText(workspaceId, line, surfaceId);
+      // TUIs listen for a real Enter key event; "\r" / "\n" alone is
+      // treated as a literal char inside the input box.
+      try {
+        await client.sendKey(workspaceId, "enter", surfaceId);
+      } catch {
+        await client.sendText(workspaceId, "\n", surfaceId);
+      }
       await refresh();
     } catch (err) {
       if (aliveRef.current) {
@@ -271,12 +275,7 @@ export default function TerminalScreen() {
           ))}
         </ScrollView>
 
-        <View
-          style={[
-            styles.inputRow,
-            { paddingBottom: 8 + (insets.bottom ? 0 : 0) },
-          ]}
-        >
+        <View style={styles.inputRow}>
           <TextInput
             style={styles.input}
             value={draft}
@@ -335,7 +334,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     backgroundColor: colors.dangerDim,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.danger + "55",
+    borderBottomColor: colors.dangerBorder,
   },
   errorText: { color: colors.danger, fontSize: 12, flex: 1 },
   errorDismiss: { color: colors.danger, fontSize: 11, fontWeight: "700" },

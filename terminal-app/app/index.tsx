@@ -11,12 +11,14 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
+  clearConnectionSecrets,
+  connectionNeedsReauth,
   deleteConnection,
   listConnections,
   markConnected,
-  upsertConnection,
   type SavedConnection,
 } from "../lib/connections";
+import { friendlyTransportError } from "../lib/errors";
 import { openSession } from "../lib/session";
 import { colors, radii } from "../lib/theme";
 import { RpcCallError } from "../lib/termloop-client";
@@ -25,6 +27,16 @@ interface Row {
   conn: SavedConnection;
   lastLabel: string;
 }
+
+type ConnectionStatus = "paired" | "password" | "reauth";
+
+const STATUS_LABEL: Record<ConnectionStatus, string> = {
+  paired: "PAIRED",
+  password: "PASSWORD",
+  reauth: "NEEDS RE-PAIRING",
+};
+
+const ItemSep = () => <View style={styles.cardGap} />;
 
 export default function ConnectionListScreen() {
   const router = useRouter();
@@ -61,6 +73,18 @@ export default function ConnectionListScreen() {
 
   const onConnect = useCallback(
     async (conn: SavedConnection) => {
+      if (connectionNeedsReauth(conn)) {
+        Alert.alert(
+          conn.deviceId ? "Needs re-pairing" : "No password saved",
+          conn.deviceId
+            ? `${conn.serverName || conn.name} was paired but the access token is missing from this device. ` +
+                `Re-pair from Mac to restore access.`
+            : `${conn.name} has no saved password. Use Manual setup to enter it again, ` +
+                `or pair via QR.`
+        );
+        return;
+      }
+
       setConnectingId(conn.id);
       try {
         const { client } = await openSession(conn);
@@ -75,20 +99,16 @@ export default function ConnectionListScreen() {
             err.code === "unauthorized" ||
             err.code === "not_found");
 
-        if (tokenRejected && (conn.deviceId || conn.accessToken)) {
-          await upsertConnection({
-            ...conn,
-            deviceId: undefined,
-            accessToken: undefined,
-          });
+        if (tokenRejected && conn.accessToken) {
+          await clearConnectionSecrets(conn.id);
           setItems(await listConnections());
           Alert.alert(
-            "Pairing expired",
+            "Pairing revoked",
             `${conn.serverName || conn.name} no longer recognizes this device. ` +
-              `Re-pair via Scan pairing QR.`
+              `Re-pair from Mac via Scan pairing QR. The connection entry is kept for convenience.`
           );
         } else {
-          Alert.alert("Connection failed", friendlyConnectError(err));
+          Alert.alert("Connection failed", friendlyTransportError(err));
         }
       } finally {
         setConnectingId(null);
@@ -154,10 +174,14 @@ export default function ConnectionListScreen() {
           <FlatList
             data={rows}
             keyExtractor={(r) => r.conn.id}
-            ItemSeparatorComponent={() => <View style={styles.cardGap} />}
+            ItemSeparatorComponent={ItemSep}
             renderItem={({ item }) => {
               const isConnecting = connectingId === item.conn.id;
-              const paired = !!(item.conn.deviceId && item.conn.accessToken);
+              const status: ConnectionStatus = connectionNeedsReauth(item.conn)
+                ? "reauth"
+                : item.conn.deviceId
+                  ? "paired"
+                  : "password";
               return (
                 <Pressable
                   style={({ pressed }) => [
@@ -174,18 +198,20 @@ export default function ConnectionListScreen() {
                     <View
                       style={[
                         styles.statusPill,
-                        paired ? styles.statusPaired : styles.statusPassword,
+                        status === "paired" && styles.statusPaired,
+                        status === "password" && styles.statusPassword,
+                        status === "reauth" && styles.statusReauth,
                       ]}
                     >
                       <Text
                         style={[
                           styles.statusPillText,
-                          paired
-                            ? styles.statusPairedText
-                            : styles.statusPasswordText,
+                          status === "paired" && styles.statusPairedText,
+                          status === "password" && styles.statusPasswordText,
+                          status === "reauth" && styles.statusReauthText,
                         ]}
                       >
-                        {paired ? "PAIRED" : "PASSWORD"}
+                        {STATUS_LABEL[status]}
                       </Text>
                     </View>
                   </View>
@@ -196,6 +222,10 @@ export default function ConnectionListScreen() {
                   <View style={styles.cardActions}>
                     {isConnecting ? (
                       <ActivityIndicator color={colors.primary} />
+                    ) : status === "reauth" ? (
+                      <Text style={styles.reauthHint}>
+                        Tap for re-pair instructions
+                      </Text>
                     ) : (
                       <Text style={styles.connectHint}>Tap to connect</Text>
                     )}
@@ -215,23 +245,6 @@ export default function ConnectionListScreen() {
       )}
     </SafeAreaView>
   );
-}
-
-function friendlyConnectError(err: unknown): string {
-  const msg = String((err as Error)?.message ?? err);
-  if (/connect timeout/i.test(msg)) {
-    return "Couldn't reach the Mac. Check that it's on the same Wi-Fi and TermLoop is running.";
-  }
-  if (/ECONNREFUSED/i.test(msg)) {
-    return "Connection refused. Is TermLoop running and listening on this port?";
-  }
-  if (/EHOSTUNREACH|ENETUNREACH/i.test(msg)) {
-    return "Host unreachable. Check Wi-Fi and that the Mac is awake.";
-  }
-  if (/TCP transport unavailable/i.test(msg)) {
-    return msg;
-  }
-  return msg;
 }
 
 function sameIds(
@@ -362,13 +375,19 @@ const styles = StyleSheet.create({
   },
   statusPaired: {
     backgroundColor: colors.successDim,
-    borderColor: colors.success + "55",
+    borderColor: colors.successBorder,
   },
   statusPassword: {
     backgroundColor: colors.bgRaised,
     borderColor: colors.border,
   },
+  statusReauth: {
+    backgroundColor: colors.dangerDim,
+    borderColor: colors.dangerBorder,
+  },
   statusPillText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
   statusPairedText: { color: colors.success },
   statusPasswordText: { color: colors.sub },
+  statusReauthText: { color: colors.danger },
+  reauthHint: { color: colors.danger, fontSize: 12, fontWeight: "500" },
 });

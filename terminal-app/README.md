@@ -19,9 +19,10 @@ npm run android       # Android emulator (or device)
 ```
 
 > **Expo Go is not supported.** The app uses `react-native-tcp-socket`
-> (raw TCP) and `expo-camera` — both require a development build, an EAS
-> build, or `npx expo run:ios|android`. Expo Go's sandbox cannot open raw
-> TCP sockets.
+> (raw TCP), `expo-camera`, and `expo-secure-store` — all require a
+> development build, an EAS build, or `npx expo run:ios|android`. Expo
+> Go's sandbox cannot open raw TCP sockets or access the platform
+> keychain.
 
 ## Pairing flow (primary)
 
@@ -40,8 +41,8 @@ npm run android       # Android emulator (or device)
    ```
 
 2. The mobile app's home screen has **Scan pairing QR** as the primary CTA.
-3. Scanning (or pasting, while the camera scanner is pending) parses the
-   payload and calls `pairing.claim` with `{ token, device_name }`.
+3. Scanning or pasting parses the payload and calls `pairing.claim` with
+   `{ token, device_name }`.
 4. The backend returns `{ device_id, access_token, server_name, capabilities }`.
    The app saves a `SavedConnection` and uses `auth.token` on future
    connects.
@@ -60,11 +61,12 @@ app/
   connected/index.tsx      Server + project + workspace overview
   connected/terminal.tsx   Terminal surface (read/send via client)
 lib/
-  termloop-client.ts       Typed RPC envelope + pairing/auth + MockTransport (tests only)
+  termloop-client.ts       Typed RPC envelope + pairing/auth/client helpers
   tcp-transport.ts         Real transport: NDJSON over TCP via react-native-tcp-socket
-  qr-scanner.ts            Scanner capability flag (live camera in scan screen)
+  errors.ts                User-facing connection/pairing error messages
   connections.ts           AsyncStorage-backed connection catalog
   session.ts               Module-scope active client (one connection at a time)
+  theme.ts                 Shared colors + fonts
 ```
 
 ## Transport
@@ -75,8 +77,8 @@ Real connections use **newline-delimited JSON over TCP**:
 - Responses are correlated to requests by `id`.
 - Default request timeout 10s; default connect timeout 8s.
 
-`MockTransport` in `lib/termloop-client.ts` is reserved for tests and is
-**not used** by the normal app flow.
+There is no mock transport in the normal app flow. `lib/session.ts` always
+uses `TcpTransport` for saved/scanned connections.
 
 ## Protocol envelope
 
@@ -102,17 +104,32 @@ single line terminated by `\n`.
 | `pairing.claim` | `{ token, device_name }` | `{ authenticated, device_id, device_name, access_token, server_name, capabilities }` |
 | `auth.token` | `{ device_id, access_token }` | `{ authenticated, device_id, device_name, server_name, capabilities }` |
 | `auth.login` | `{ password }` | `{ authenticated, server_name, capabilities }` |
-| `project.list` | – | `ProjectSummary[]` |
+| `project.list` | – | `{ projects: ProjectSummary[] }` |
 | `project.current` | – | `ProjectSummary \| null` (returned directly, not wrapped) |
 | `project.switch` | `{ project_id }` | `{ ok: true }` |
-| `workspace.list` | – | `WorkspaceSummary[]` |
-| `surface.list` | `{ workspace_id }` | `Surface[]` |
-| `surface.read_text` | `{ workspace_id, surface_id? }` | `{ workspaceId, text, cursor?, rev? }` |
+| `workspace.list` | – | `{ workspaces: WorkspaceSummary[] }` |
+| `surface.list` | `{ workspace_id }` | `{ surfaces: SurfaceSummary[] }` |
+| `surface.read_text` | `{ workspace_id, surface_id? }` | `{ text, base64?, workspace_id, workspace_ref?, surface_id, surface_ref?, window_id?, window_ref? }` |
 | `surface.send_text` | `{ workspace_id, text, surface_id? }` | `{ ok: true }` |
 | `surface.send_key` | `{ workspace_id, key, surface_id? }` | `{ ok: true }` |
 
 `surface.resize` does not exist on the backend yet — `client.resize()` is a
 no-op until a real PTY resize API lands.
+
+The terminal Send button sends command text with `surface.send_text`, then
+sends `surface.send_key` with `key: "enter"`; if the key call fails it falls
+back to `surface.send_text` with `"\r"`.
+
+## Storage
+
+| Field type | Where | Notes |
+|---|---|---|
+| Connection metadata | AsyncStorage `termloop.connections.v2` | id, name, host, port, deviceId, serverName, lastConnectedAt |
+| Secrets (`accessToken`, `password`) | `expo-secure-store` (Keychain on iOS / EncryptedSharedPreferences on Android) | One key per connection: `termloop.access_token.<id>` and `termloop.password.<id>` |
+
+Legacy v1 records (`termloop.connections.v1`) where secrets sat in
+AsyncStorage are migrated lazily on first load and the v1 entry is
+removed.
 
 ## Native modules
 
@@ -120,18 +137,44 @@ no-op until a real PTY resize API lands.
 |---|---|---|
 | `react-native-tcp-socket` | Real NDJSON-over-TCP transport for backend | Dev build only — not Expo Go |
 | `expo-camera` | Live QR scanner in pairing screen | Dev build only — not Expo Go |
+| `expo-secure-store` | Hardware-backed storage for `accessToken` / `password` | Dev build only — not Expo Go |
+| `expo-dev-client` | EAS development builds | Required for `developmentClient` profiles |
+| `expo-updates` | OTA JS/assets updates by EAS channel | Required for `eas:update:*` scripts |
 
 Run `npx expo prebuild --clean` after install. Autolinking handles native
 linking on both platforms.
+
+## Deployment
+
+EAS build profiles live in `eas.json`; operational notes live in
+[`docs/deployment.md`](docs/deployment.md).
+
+Common commands:
+
+```bash
+npm run eas:build:dev       # native dev build for iOS device
+npm run eas:build:preview   # internal QA/ad hoc build
+npm run eas:build:staging   # TestFlight + auto-submit
+npm run eas:build:production
+```
+
+GitHub Actions runs `npm run typecheck` for mobile changes and has a manual
+EAS build job that requires the `EXPO_TOKEN` secret.
+
+## V1 smoke test
+
+Use [`docs/v1-smoke.md`](docs/v1-smoke.md) before treating V1 as releasable.
+It covers Mac pairing, secure token persistence, revoke/reauth, project
+filtering, terminal read/send, and the current polling-based terminal update
+behavior.
 
 ## Pending backend / mobile work
 
 - Live terminal event stream (incremental surface updates / cursor / dirty rows)
 - Terminal PTY resize API (`client.resize()` is a no-op until then)
-- Token storage hardening — currently AsyncStorage cleartext. **Move to
-  `expo-secure-store` before any non-dev build.**
 - Reconnect / backoff on socket drop
 - ANSI/xterm parsing for the terminal view (currently a scrolling text view)
+- Polished terminal renderer/input model beyond the V1 accessory row
 
 ## Swapping the transport
 

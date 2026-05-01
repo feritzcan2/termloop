@@ -166,7 +166,11 @@ enum TermLoopSidebar {
     private struct MobilePairingSheet: View {
         @Environment(\.dismiss) private var dismiss
         @State private var pairing: PairingDisplay?
+        @State private var devices: [MobileDeviceDisplay] = []
         @State private var errorMessage: String?
+        @State private var now = Date()
+        @State private var lastDeviceReload = Date.distantPast
+        private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
         var body: some View {
             VStack(alignment: .leading, spacing: 16) {
@@ -198,28 +202,109 @@ enum TermLoopSidebar {
                                     .font(.headline)
                                 Text("\(pairing.host):\(pairing.port)")
                                     .font(.system(.body, design: .monospaced))
-                                Text("Expires in about 2 minutes. Keep this window open while pairing.")
-                                    .foregroundStyle(.secondary)
-                                Button("Copy pairing payload") {
-                                    TermLoopPasteboard.copy(pairing.payloadString)
+                                Text(pairingStatusText(pairing))
+                                    .foregroundStyle(pairing.isExpired(at: now) ? .red : .secondary)
+                                HStack(spacing: 8) {
+                                    Button("Copy payload") {
+                                        TermLoopPasteboard.copy(pairing.payloadString)
+                                    }
+                                    Button(pairing.isExpired(at: now) ? "Regenerate QR" : "New QR") {
+                                        createPairing()
+                                    }
                                 }
+                                Text("Keep this window open while pairing. Only the TermLoop mobile app can claim this QR token.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                         }
                     } else if let errorMessage {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(errorMessage)
+                                .foregroundStyle(.red)
+                            Button("Try again") { createPairing() }
+                        }
                     } else {
                         ProgressView()
+                    }
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Paired Devices")
+                            .font(.headline)
+                        Spacer()
+                        Button("Refresh") { loadDevices() }
+                    }
+                    if devices.isEmpty {
+                        Text("No paired devices yet.")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 10)
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: 8) {
+                                ForEach(devices) { device in
+                                    deviceRow(device)
+                                }
+                            }
+                        }
+                        .frame(maxHeight: 170)
                     }
                 }
                 Spacer(minLength: 0)
             }
             .padding(22)
-            .frame(width: 560, height: 330)
-            .onAppear(perform: createPairing)
+            .frame(width: 680, height: 540)
+            .onAppear {
+                createPairing()
+                loadDevices()
+            }
+            .onReceive(timer) { date in
+                now = date
+                if date.timeIntervalSince(lastDeviceReload) >= 3 {
+                    loadDevices()
+                }
+            }
+        }
+
+        @ViewBuilder
+        private func deviceRow(_ device: MobileDeviceDisplay) -> some View {
+            HStack(spacing: 12) {
+                Circle()
+                    .fill(device.revoked ? Color.red.opacity(0.7) : Color.green)
+                    .frame(width: 8, height: 8)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(device.deviceName)
+                        .font(.body.weight(.medium))
+                    Text(deviceSubtitle(device))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if device.revoked {
+                    Text("Revoked")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Button("Revoke") {
+                        revoke(device)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .background(Color(nsColor: .controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
         }
 
         private func createPairing() {
+            errorMessage = nil
+            pairing = nil
             let serverName = Host.current().localizedName ?? "TermLoop Mac"
             let result = TermLoopMobilePairingStore.createPairing(params: [
                 "server_name": serverName
@@ -251,9 +336,61 @@ enum TermLoopSidebar {
                 serverName: serverName,
                 host: host,
                 port: port,
+                expiresAt: Date(timeIntervalSince1970: expiresAt),
                 payloadString: payloadString,
                 qrImage: Self.qrImage(for: payloadString)
             )
+        }
+
+        private func loadDevices() {
+            lastDeviceReload = Date()
+            let result = TermLoopMobilePairingStore.listDevices()
+            guard case .ok(let rawPayload) = result,
+                  let payload = rawPayload as? [String: Any],
+                  let rawDevices = payload["devices"] as? [[String: Any]] else {
+                return
+            }
+            devices = rawDevices.compactMap(MobileDeviceDisplay.init(payload:))
+                .sorted { lhs, rhs in
+                    if lhs.revoked != rhs.revoked { return !lhs.revoked }
+                    return lhs.sortDate > rhs.sortDate
+                }
+        }
+
+        private func revoke(_ device: MobileDeviceDisplay) {
+            let result = TermLoopMobilePairingStore.revokeDevice(params: [
+                "device_id": device.id
+            ])
+            guard case .ok = result else {
+                NSSound.beep()
+                return
+            }
+            loadDevices()
+        }
+
+        private func pairingStatusText(_ pairing: PairingDisplay) -> String {
+            let remaining = max(0, Int(pairing.expiresAt.timeIntervalSince(now).rounded(.down)))
+            guard remaining > 0 else { return "Expired. Generate a new QR to pair another device." }
+            return "Expires in \(remaining / 60):\(String(format: "%02d", remaining % 60))"
+        }
+
+        private func deviceSubtitle(_ device: MobileDeviceDisplay) -> String {
+            let created = Self.shortDate(device.createdAt)
+            let seen = device.lastSeenAt.map { Self.relativeDate($0) } ?? "never seen"
+            return "Created \(created) - last seen \(seen)"
+        }
+
+        private static func shortDate(_ date: Date) -> String {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+            return formatter.string(from: date)
+        }
+
+        private static func relativeDate(_ date: Date) -> String {
+            let formatter = RelativeDateTimeFormatter()
+            formatter.unitsStyle = .short
+            return formatter.localizedString(for: date, relativeTo: Date())
         }
 
         private static func qrImage(for string: String) -> NSImage? {
@@ -304,8 +441,58 @@ enum TermLoopSidebar {
             let serverName: String
             let host: String
             let port: Int
+            let expiresAt: Date
             let payloadString: String
             let qrImage: NSImage?
+
+            func isExpired(at date: Date) -> Bool {
+                expiresAt <= date
+            }
+        }
+
+        private struct MobileDeviceDisplay: Identifiable {
+            let id: String
+            let deviceName: String
+            let createdAt: Date
+            let lastSeenAt: Date?
+            let revokedAt: Date?
+            let revoked: Bool
+
+            var sortDate: Date {
+                lastSeenAt ?? createdAt
+            }
+
+            init?(payload: [String: Any]) {
+                guard let id = payload["device_id"] as? String,
+                      let deviceName = payload["device_name"] as? String,
+                      let created = Self.time(payload["created_at"]) else {
+                    return nil
+                }
+                self.id = id
+                self.deviceName = deviceName
+                self.createdAt = Date(timeIntervalSince1970: created)
+                if let lastSeen = Self.time(payload["last_seen_at"]) {
+                    self.lastSeenAt = Date(timeIntervalSince1970: lastSeen)
+                } else {
+                    self.lastSeenAt = nil
+                }
+                if let revokedAt = Self.time(payload["revoked_at"]) {
+                    self.revokedAt = Date(timeIntervalSince1970: revokedAt)
+                } else {
+                    self.revokedAt = nil
+                }
+                self.revoked = (payload["revoked"] as? Bool) ?? (self.revokedAt != nil)
+            }
+
+            private static func time(_ raw: Any?) -> TimeInterval? {
+                if let value = raw as? TimeInterval {
+                    return value
+                }
+                if let number = raw as? NSNumber {
+                    return number.doubleValue
+                }
+                return nil
+            }
         }
     }
 

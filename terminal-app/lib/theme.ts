@@ -25,9 +25,14 @@ export const colors = {
   primaryDim: "#5b8dff22",
   success: "#5acf8a",
   successDim: "#5acf8a1f",
+  successBorder: "#5acf8a55",
   danger: "#e57373",
   dangerDim: "#e573731f",
+  dangerBorder: "#e5737355",
   warn: "#e6b347",
+
+  // Overlays
+  overlay: "rgba(0,0,0,0.55)",
 } as const;
 
 export const radii = {

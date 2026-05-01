@@ -100,6 +100,9 @@ export default function ConnectedScreen() {
       ]);
       setCurrent(cur);
       setWorkspaces(ws);
+      // Force a fresh project list on next picker open — the Mac may have
+      // added/renamed projects since first fetch.
+      setProjects(null);
       setPickerOpen(false);
     } catch (err) {
       Alert.alert(
@@ -388,7 +391,7 @@ const styles = StyleSheet.create({
 
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
+    backgroundColor: colors.overlay,
     justifyContent: "flex-end",
   },
   modalSheet: {
@@ -434,7 +437,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: colors.successDim,
     borderWidth: 1,
-    borderColor: colors.success + "55",
+    borderColor: colors.successBorder,
     overflow: "hidden",
   },
 });

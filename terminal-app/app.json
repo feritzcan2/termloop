@@ -11,12 +11,15 @@
       "supportsTablet": true,
       "bundleIdentifier": "ai.agentloop.mobile",
       "infoPlist": {
-        "NSCameraUsageDescription": "TermLoop uses the camera to scan pairing QR codes shown by the desktop app."
+        "NSCameraUsageDescription": "TermLoop uses the camera to scan pairing QR codes shown by the desktop app.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "ai.agentloop.mobile",
-      "permissions": ["android.permission.CAMERA"]
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "plugins": [
       "expo-router",
@@ -25,10 +28,24 @@
         {
           "cameraPermission": "TermLoop uses the camera to scan pairing QR codes shown by the desktop app."
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "853cde14-00f1-446b-bd84-410e70663a8e"
+      }
+    },
+    "owner": "feritzcan",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/853cde14-00f1-446b-bd84-410e70663a8e"
     }
   }
 }

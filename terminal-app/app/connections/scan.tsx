@@ -14,7 +14,12 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { markConnected, upsertConnection } from "../../lib/connections";
+import {
+  findConnectionMetaByEndpoint,
+  markConnected,
+  upsertConnection,
+} from "../../lib/connections";
+import { friendlyTransportError } from "../../lib/errors";
 import { openSession } from "../../lib/session";
 import { TcpTransport } from "../../lib/tcp-transport";
 import {
@@ -54,8 +59,17 @@ export default function ScanPairingScreen() {
           await client.close();
         }
 
+        const existing = await findConnectionMetaByEndpoint(
+          payload.host,
+          payload.port
+        );
         const saved = await upsertConnection({
-          name: result.server_name || payload.server_name || `${payload.host}`,
+          id: existing?.id,
+          name:
+            existing?.name ||
+            result.server_name ||
+            payload.server_name ||
+            `${payload.host}`,
           host: payload.host,
           port: payload.port,
           deviceId: result.device_id,
@@ -78,7 +92,7 @@ export default function ScanPairingScreen() {
         }
       } catch (err) {
         lastScanRef.current = null;
-        Alert.alert("Pairing failed", friendlyError(err));
+        Alert.alert("Pairing failed", friendlyTransportError(err));
       } finally {
         setBusy(false);
       }
@@ -213,20 +227,6 @@ function defaultDeviceName(): string {
   return Platform.OS === "ios" ? "iPhone" : "Mobile";
 }
 
-function friendlyError(err: unknown): string {
-  const msg = String((err as Error)?.message ?? err);
-  if (/expired/i.test(msg)) {
-    return "This pairing QR has expired. Generate a new one on your Mac.";
-  }
-  if (/\binvalid_token\b|\bunauthorized\b/i.test(msg)) {
-    return "Pairing token rejected. Generate a new QR on your Mac.";
-  }
-  if (/connect timeout|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH/i.test(msg)) {
-    return "Couldn't reach the Mac. Check that it's on the same Wi-Fi and TermLoop is running.";
-  }
-  return msg;
-}
-
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 16, gap: 16 },
@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
   permissionBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" },
   busyOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: colors.overlay,
     alignItems: "center",
     justifyContent: "center",
   },

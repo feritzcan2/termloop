@@ -1,0 +1,112 @@
+name: TermLoop mobile app
+
+on:
+  pull_request:
+    paths:
+      - "terminal-app/**"
+      - ".github/workflows/mobile-app.yml"
+  push:
+    branches:
+      - master
+    paths:
+      - "terminal-app/**"
+      - ".github/workflows/mobile-app.yml"
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: EAS build profile
+        required: true
+        default: preview
+        type: choice
+        options:
+          - development
+          - development-simulator
+          - preview
+          - staging
+          - production
+      platform:
+        description: EAS platform
+        required: true
+        default: ios
+        type: choice
+        options:
+          - ios
+          - android
+          - all
+      auto_submit:
+        description: Submit store builds after build
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-app-${{ github.event_name }}-${{ github.ref_name }}-${{ inputs.profile || 'check' }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terminal-app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: terminal-app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+  eas-build:
+    if: github.event_name == 'workflow_dispatch'
+    needs: typecheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terminal-app
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: terminal-app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify Expo token
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "EXPO_TOKEN secret is required for EAS builds." >&2
+            exit 1
+          fi
+
+      - name: Run EAS build
+        run: |
+          extra_args=""
+          if [ "${{ inputs.auto_submit }}" = "true" ]; then
+            extra_args="--auto-submit"
+          fi
+          npx eas-cli build \
+            --non-interactive \
+            --profile "${{ inputs.profile }}" \
+            --platform "${{ inputs.platform }}" \
+            $extra_args

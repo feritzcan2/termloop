@@ -16,8 +16,10 @@ via QR, talks to it over newline-delimited JSON on a raw TCP socket.
 | `lib/termloop-client.ts` | Typed RPC envelope, `TermLoopClient` interface, `parsePairingPayload`, `RpcCallError` |
 | `lib/tcp-transport.ts` | `TcpTransport` — NDJSON over TCP via `react-native-tcp-socket` |
 | `lib/session.ts` | Module-scope active session (one connection at a time) |
-| `lib/connections.ts` | AsyncStorage-backed `SavedConnection` catalog |
+| `lib/connections.ts` | Catalog: metadata in AsyncStorage, secrets in expo-secure-store |
 | `lib/theme.ts` | Colors + mono font — single source for dark theme |
+| `eas.json` | EAS Build profiles for development / preview / staging / production |
+| `docs/deployment.md` | Mobile deployment runbook and release guardrails |
 
 ## Invariants (do not break)
 
@@ -34,16 +36,22 @@ via QR, talks to it over newline-delimited JSON on a raw TCP socket.
    `{ id, ok: true, result }` / `{ id, ok: false, error: { code, ... } }`
    response. No `jsonrpc: "2.0"` field. Error code is a string. Each
    envelope is one line ending with `\n`.
-5. **Dev build only.** `react-native-tcp-socket` and `expo-camera` both
-   need native code. The app does not run in Expo Go — `lib/tcp-transport.ts`
-   intentionally throws a clear "development build required" error if the
-   native module is missing. Don't add an Expo Go fallback.
+5. **Dev build only.** `react-native-tcp-socket`, `expo-camera`, and
+   `expo-secure-store` all need native code. EAS development builds also
+   require `expo-dev-client`; OTA channels require `expo-updates`. The app
+   does not run in Expo Go — `lib/tcp-transport.ts` intentionally throws a
+   clear "development build required" error if the native module is missing.
+   Don't add an Expo Go fallback.
 6. **Theme through `lib/theme.ts`.** No new hex literals in screens.
    Add a token to `theme.ts` if a new color is needed.
 7. **No half-finished features.** If you stub a method, mark it TODO on
    the `TermLoopClient` interface, not silently in the body. The
    `client.resize()` no-op is the only sanctioned exception until PTY
    resize lands backend-side.
+8. **Deployment profiles are intentional.** `development` and `preview`
+   are internal builds; `staging` and `production` are store builds with
+   auto-submit. Do not change channels/profile names without updating
+   `docs/deployment.md` and `.github/workflows/mobile-app.yml`.
 
 ## When adding code
 
@@ -55,14 +63,21 @@ via QR, talks to it over newline-delimited JSON on a raw TCP socket.
   follow the `SafeAreaView + KeyboardAvoidingView + ScrollView` shell
   used by `connections/scan.tsx` and `connections/new.tsx`.
 - **New persisted field on a connection** → extend `SavedConnection` in
-  `lib/connections.ts`. AsyncStorage version key is
-  `termloop.connections.v1`; bump to `v2` if the shape changes
-  incompatibly and write a one-shot migration in `load()`.
+  `lib/connections.ts`. Decide whether the field is sensitive:
+  - **Secret** (token, password, key) → SecureStore via `writeSecret` /
+    `readSecret`. Do not add to the persisted metadata shape.
+  - **Metadata** (id, name, host, port, deviceId, server name, timestamps)
+    → AsyncStorage. Current key is `termloop.connections.v2`; bump to
+    `v3` and write a one-shot migration if the metadata shape changes
+    incompatibly.
 - **New transport-level concern** (timeouts, framing, backpressure) →
   `lib/tcp-transport.ts`. Don't bypass the transport from screens.
 - **New active-session-derived state** → expose a getter from
   `lib/session.ts` (see `getActiveAuth`). Don't read from `active`
   directly outside `session.ts`.
+- **New deployment behavior** → update `eas.json`, npm scripts, and
+  `docs/deployment.md` together. Keep CI typecheck-only on PRs unless the
+  workflow is manually dispatched.
 
 ## When NOT to add code
 
@@ -90,7 +105,7 @@ via QR, talks to it over newline-delimited JSON on a raw TCP socket.
 | `project.switch` | `{ project_id }` | `{ ok: true }` |
 | `workspace.list` | – | `{ workspaces: WorkspaceSummary[] }` |
 | `surface.list` | `{ workspace_id }` | `{ surfaces: ... }` |
-| `surface.read_text` | `{ workspace_id, surface_id? }` | `{ workspaceId, text, cursor?, rev? }` |
+| `surface.read_text` | `{ workspace_id, surface_id? }` | `{ text, base64?, workspace_id, workspace_ref?, surface_id, surface_ref?, window_id?, window_ref? }` |
 | `surface.send_text` | `{ workspace_id, text, surface_id? }` | `{ ok: true }` |
 | `surface.send_key` | `{ workspace_id, key, surface_id? }` | `{ ok: true }` |
 
@@ -102,13 +117,13 @@ defined; otherwise the call surfaces an inline error.
 
 | Key | `key` value | Text fallback |
 |---|---|---|
-| Esc | `Escape` | – |
-| Tab | `Tab` | `\t` |
-| Enter | `Enter` | `\n` |
-| Up arrow | `ArrowUp` | – |
-| Down arrow | `ArrowDown` | – |
-| Ctrl-C | `Ctrl-C` | – |
-| Ctrl-D | `Ctrl-D` | – |
+| Esc | `escape` | `\x1b` |
+| Tab | `tab` | `\t` |
+| Enter | `enter` | `\r` |
+| Up arrow | `up` | – |
+| Down arrow | `down` | – |
+| Ctrl-C | `Ctrl-C` | `\x03` |
+| Ctrl-D | `Ctrl-D` | `\x04` |
 
 Pairing QR payload (validated by `parsePairingPayload`):
 ```json
@@ -116,10 +131,52 @@ Pairing QR payload (validated by `parsePairingPayload`):
   "host": "...", "port": 7878, "token": "...", "expires_at": 1700000000 }
 ```
 
+The terminal Send button sends command text with `surface.send_text`, then
+sends `surface.send_key` with `key: "enter"`. If that key call fails, it
+falls back to `surface.send_text` with `"\r"`. Do not collapse this back to
+`line + "\n"` in one `surface.send_text` call; that can echo text without
+submitting it on some terminal surfaces.
+
+## V1 release boundary
+
+V1 is considered the QR-paired thin-client baseline:
+
+- Mac `Connect Mobile` enables TCP, shows QR, lists paired devices, and can revoke.
+- Mobile scans QR, claims a device token, stores secrets in SecureStore, and reauths with `auth.token`.
+- Connected screen loads current project, filters workspaces by active project, and opens terminal surfaces.
+- Terminal screen supports read/send/key accessory row and focused polling only while mounted/focused.
+
+Before calling V1 done, run the smoke checklist in `docs/v1-smoke.md`.
+
+## Storage layout
+
+| Field type | Where | Key shape |
+|---|---|---|
+| Connection metadata | AsyncStorage | `termloop.connections.v2` (single JSON list) |
+| `accessToken` | SecureStore | `termloop.access_token.<id>` |
+| `password` | SecureStore | `termloop.password.<id>` |
+
+`listConnections()` hydrates secrets from SecureStore; never assume
+metadata read from disk has them. `connectionNeedsReauth(conn)` is the
+canonical predicate for the "Needs re-pairing" UI state.
+
+Legacy `termloop.connections.v1` (where secrets sat alongside metadata
+in AsyncStorage) is migrated lazily on first load.
+
+### Re-pairing
+
+QR pairing matches existing connections by `host:port` via
+`findConnectionByEndpoint`. If a saved entry exists for that endpoint,
+the new `device_id` / `access_token` overwrite it (preserving the user's
+custom name and `lastConnectedAt`); password is cleared. This avoids
+duplicate rows when a user re-pairs after the Mac revokes their token.
+
+Manual setup does **not** dedupe by endpoint — running it again with the
+same host:port creates a new entry. Users wanting to update manual
+credentials should edit/delete the existing row.
+
 ## Pending / known gaps
 
-- Token storage is AsyncStorage cleartext. **Migrate to
-  `expo-secure-store` before any non-developer build.**
 - `client.resize()` is a no-op until backend exposes a PTY resize API.
 - Live terminal event stream not yet wired (`terminal.tsx` reads on
   mount; no streaming updates).
