@@ -27,8 +27,6 @@ import {
 } from "../lib/last-connection";
 import {
   clearLastTerminal,
-  getLastTerminal,
-  validateLastTerminal,
 } from "../lib/last-terminal";
 import { openSession } from "../lib/session";
 import { colors, radii } from "../lib/theme";
@@ -157,33 +155,9 @@ export default function ConnectionListScreen() {
 
       setConnectingId(conn.id);
       try {
-        const { client } = await openSession(conn);
+        await openSession(conn);
         await markConnected(conn.id);
         await saveLastConnection(conn.id).catch(() => {});
-
-        const last = await getLastTerminal(conn.id).catch(() => null);
-        if (last) {
-          const valid = await validateLastTerminal(client, last);
-          if (valid) {
-            const project = await client.currentProject().catch(() => null);
-            // Push /connected first so the terminal screen's back button
-            // returns to the workspace list, not the connection list.
-            router.push("/connected");
-            router.push({
-              pathname: "/connected/terminal",
-              params: {
-                workspaceId: last.workspaceId,
-                surfaceId: last.surfaceId,
-                name: last.workspaceName,
-                surfaceName: last.surfaceName,
-                projectName: project?.name ?? "",
-                projectPath: project?.path ?? "",
-              },
-            });
-            return;
-          }
-          await clearLastTerminal(conn.id).catch(() => {});
-        }
         router.push("/connected");
       } catch (err) {
         const tokenRejected =

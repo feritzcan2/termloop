@@ -81,6 +81,42 @@ export interface SurfaceSummary {
   focused?: boolean;
 }
 
+export interface TerminalAgentSummary {
+  id: string;
+  display_name: string;
+  icon?: string;
+  executable_name?: string;
+  argv?: string[];
+}
+
+export interface CreateWorkspaceParams {
+  title?: string;
+  cwd?: string;
+  projectId?: string;
+  terminalAgentId?: string;
+}
+
+export interface CreateWorkspaceResult {
+  window_id?: string | null;
+  workspace_id: string;
+  workspace_ref?: string;
+}
+
+export interface JiraTicketSummary {
+  workspace_id?: string;
+  key: string;
+  status?: string | null;
+  url?: string | null;
+  reported_at?: string | null;
+}
+
+export interface WorkspaceRunTargetSummary {
+  label: string;
+  status?: string | null;
+  url?: string | null;
+  reported_at?: string | null;
+}
+
 function isTerminalSurface(s: SurfaceSummary): boolean {
   return s.kind === "terminal" || s.type === "terminal";
 }
@@ -203,6 +239,10 @@ export interface TermLoopClient {
   currentProject(): Promise<ProjectSummary | null>;
   switchProject(projectId: string): Promise<void>;
   listWorkspaces(): Promise<WorkspaceSummary[]>;
+  createWorkspace(params: CreateWorkspaceParams): Promise<CreateWorkspaceResult>;
+  listTerminalAgents(): Promise<TerminalAgentSummary[]>;
+  getJiraTicket(workspaceId: string): Promise<JiraTicketSummary | null>;
+  getRunTargets(workspaceId: string): Promise<WorkspaceRunTargetSummary[]>;
   listSurfaces(workspaceId: string): Promise<SurfaceSummary[]>;
   readSurface(
     workspaceId: string,
@@ -367,6 +407,67 @@ export function createTermLoopClient(opts: {
         "workspace.list"
       );
       return out?.workspaces ?? [];
+    },
+    async createWorkspace(params) {
+      return call<CreateWorkspaceResult>("workspace.create", {
+        ...(params.title ? { title: params.title } : {}),
+        ...(params.cwd ? { cwd: params.cwd } : {}),
+        ...(params.projectId ? { project_id: params.projectId } : {}),
+        ...(params.terminalAgentId
+          ? { terminal_agent_id: params.terminalAgentId }
+          : {}),
+      });
+    },
+    async listTerminalAgents() {
+      const out = await call<{ agents?: TerminalAgentSummary[] }>(
+        "termloop.list_terminal_agents"
+      );
+      return out?.agents ?? [];
+    },
+    async getJiraTicket(workspaceId) {
+      try {
+        const out = await call<{
+          set?: boolean;
+          workspace_id?: string;
+          key?: string;
+          status?: string | null;
+          url?: string | null;
+          reported_at?: string | null;
+        }>("workspace.get_jira_ticket", { workspace_id: workspaceId });
+        if (out?.set === false || !out?.key) return null;
+        return {
+          workspace_id: out.workspace_id,
+          key: out.key,
+          status: out.status ?? null,
+          url: out.url ?? null,
+          reported_at: out.reported_at ?? null,
+        };
+      } catch (err) {
+        if (
+          err instanceof RpcCallError &&
+          (err.code === "not_found" || err.code === "no_worktree")
+        ) {
+          return null;
+        }
+        throw err;
+      }
+    },
+    async getRunTargets(workspaceId) {
+      try {
+        const out = await call<{ targets?: WorkspaceRunTargetSummary[] }>(
+          "workspace.get_run_targets",
+          { workspace_id: workspaceId }
+        );
+        return out?.targets ?? [];
+      } catch (err) {
+        if (
+          err instanceof RpcCallError &&
+          (err.code === "not_found" || err.code === "no_worktree")
+        ) {
+          return [];
+        }
+        throw err;
+      }
     },
     async listSurfaces(workspaceId) {
       const out = await call<{ surfaces?: SurfaceSummary[] }>("surface.list", {

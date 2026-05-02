@@ -42,8 +42,8 @@ Expected result: pairing succeeds without manual host/port entry.
 2. Confirm the app attempts the last successful connection automatically.
 3. If auto-connect is skipped or fails, tap the saved connection.
 4. Confirm it authenticates with `auth.token`.
-5. If the last terminal is still valid, confirm it resumes directly to that
-   terminal; otherwise confirm it opens `Connected`.
+5. Confirm reconnect opens the `Connected` worktree/session list instead of
+   jumping directly into the last terminal.
 
 Expected result: no QR scan is needed after the first pairing.
 
