@@ -49,6 +49,19 @@ export interface WorkspaceSummary {
   projectId?: string;
   project_id?: string;
   agent?: string;
+  branch?: string | null;
+  worktree_path?: string | null;
+  terminal_agent_id?: string | null;
+  permission_mode?: string | null;
+  awaiting_input_since?: string | number | null;
+  last_message_preview?: string | null;
+  last_attention_kind?: string | null;
+  agent_activity_phase?: string | null;
+  agent_attention_kind?: string | null;
+  agent_activity_preview?: string | null;
+  agent_activity_updated_at?: number | null;
+  git_dirty?: boolean;
+  git_change_count?: number;
 }
 
 export function workspaceLabel(ws: WorkspaceSummary): string {

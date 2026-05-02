@@ -263,7 +263,7 @@ const styles = StyleSheet.create({
     color: colors.label,
     fontSize: 11,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0,
   },
   input: {
     backgroundColor: colors.inputBg,

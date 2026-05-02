@@ -16,6 +16,7 @@ runtime for the app.
 | Android package | `ai.termloop.mobile` |
 | App icon | `assets/icon.png` |
 | Splash icon | `assets/splash-icon.png` |
+| App Store Connect App ID | `6765898303` |
 
 The app may keep accepting the legacy `termloop` URL scheme in native iOS
 builds for local/dev compatibility, but new links should use
@@ -125,6 +126,11 @@ Required GitHub secret:
 EAS must also have iOS build credentials and App Store Connect submission
 credentials configured for the `staging` profile. The automatic path uses
 the same command as `npm run eas:build:staging`.
+
+`eas.json` pins `submit.staging.ios.ascAppId` and
+`submit.production.ios.ascAppId` to `6765898303`, so CI submits to the
+existing `TermLoop Mobile` App Store Connect record instead of trying to
+discover or create one during every run.
 
 Optional manual input:
 

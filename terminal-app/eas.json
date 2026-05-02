@@ -44,10 +44,14 @@
   },
   "submit": {
     "staging": {
-      "ios": {}
+      "ios": {
+        "ascAppId": "6765898303"
+      }
     },
     "production": {
-      "ios": {}
+      "ios": {
+        "ascAppId": "6765898303"
+      }
     }
   }
 }
