@@ -144,14 +144,51 @@ enum AskAgentPreset: String, CaseIterable, Identifiable {
 /// the source as noise. Keep the text terse — appended after Claude's
 /// default system prompt via `--append-system-prompt`.
 enum BridgeHelperSystemPrompt {
-    static let antiPreamble: String = """
-    Answer the incoming message directly in one reply. No preamble, no acknowledgments, no "I'll do X first" — lead with the substantive answer. If the question needs code inspection, do it silently and return the conclusion in the same turn.
-    """
+    static func defaultInstructionsTemplate(target: AskTargetAgent) -> String {
+        """
+        Answer the incoming Ask-To request directly in one final reply as {{target_name}}.
 
-    static func compose(requestId: UUID, userOverride: String) -> String {
-        let trimmed = userOverride.trimmingCharacters(in: .whitespacesAndNewlines)
-        let base = "\(antiPreamble)\n\n\(requestProtocol(requestId: requestId))"
-        return trimmed.isEmpty ? base : "\(base)\n\n\(trimmed)"
+        No preamble, no acknowledgments, no "I'll do X first" — lead with the substantive answer. If the question needs code inspection, do it silently and return the conclusion in the same turn.
+        """
+    }
+
+    @MainActor
+    static func instructions(
+        target: AskTargetAgent,
+        projectFolderPath: String?
+    ) -> String {
+        let template = AgentPromptStore.body(
+            id: AgentPromptStore.askToHelperInstructionsDocumentID(target),
+            projectFolderPath: projectFolderPath
+        ) ?? defaultInstructionsTemplate(target: target)
+        return AgentPromptStore.render(
+            template: template,
+            replacements: [
+                "target_name": target.title,
+                "target_agent": target.agentId
+            ]
+        )
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    @MainActor
+    static func compose(
+        requestId: UUID,
+        target: AskTargetAgent,
+        userOverride: String,
+        projectFolderPath: String?
+    ) -> String {
+        let helperInstructions = instructions(
+            target: target,
+            projectFolderPath: projectFolderPath
+        )
+        let trimmedOverride = userOverride.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = """
+        \(helperInstructions)
+
+        \(requestProtocol(requestId: requestId))
+        """
+        return trimmedOverride.isEmpty ? base : "\(base)\n\n\(trimmedOverride)"
     }
 
     static func kickoffMessage(

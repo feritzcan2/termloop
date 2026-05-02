@@ -52,15 +52,18 @@ enum AskToBridgeLauncher {
         let requestId = UUID()
         let sourceAgentId = resolveSourceAgentId(workspaceId: sourceWorkspaceId)
 
+        let projectFolderPath = ProjectStore.shared.activeProjectId
+            .flatMap { ProjectStore.shared.project(id: $0)?.folderPath }
+
         // Delivery mode comes from the catalog-backed injector, not a hard-
         // coded agent-id split. Claude (flag) / Codex (instructions file)
-        // can ship the antiPreamble + user override without it touching the
-        // helper's first user turn. Prompt-prefix agents (Gemini / OpenCode)
+        // can ship the Ask-To helper instructions + user override without it
+        // touching the helper's first user turn. Prompt-prefix agents (Gemini / OpenCode)
         // have no such mechanism — anything we'd inject would arrive as the
         // helper's first input and get "answered" before the source's real
         // handoff. So for prompt-prefix targets we drop targetPrompt entirely
         // and rely on the forwarded handoff to carry context. The kickoff
-        // template already mirrors the antiPreamble's "do all your research
+        // template already mirrors the helper prompt's "do all your research
         // in one go and reply once" guidance.
         let deliveryMode = AgentSystemPromptInjector.deliveryMode(forAgentId: target.agentId)
         let trimmedTargetPrompt = targetPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -69,7 +72,9 @@ enum AskToBridgeLauncher {
             case .appendSystemPromptFlag, .instructionsFile:
                 return BridgeHelperSystemPrompt.compose(
                     requestId: requestId,
-                    userOverride: targetPrompt
+                    target: target,
+                    userOverride: targetPrompt,
+                    projectFolderPath: projectFolderPath
                 )
             case .promptPrefix, .none:
                 #if DEBUG
