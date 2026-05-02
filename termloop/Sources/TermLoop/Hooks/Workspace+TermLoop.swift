@@ -15,7 +15,7 @@ private func workspaceTermLoopDebugLog(_ message: String) {
 }
 #endif
 
-struct TermLoopWorktreeExpectation: Equatable {
+struct TermLoopWorktreeExpectation: Equatable, Sendable {
     let path: String
     let branch: String
 

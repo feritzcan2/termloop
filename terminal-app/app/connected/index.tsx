@@ -34,6 +34,7 @@ import { colors, monoFont, radii } from "../../lib/theme";
 
 type ProjectState = ProjectSummary | null | "loading";
 type WorkspaceSectionKind = "worktree" | "workspace";
+type WorkspaceViewMode = "active" | "worktrees";
 
 interface WorkspaceRow {
   ws: WorkspaceSummary;
@@ -97,6 +98,7 @@ export default function ConnectedScreen() {
     Record<string, WorkspaceContextState>
   >({});
   const [contextRefreshKey, setContextRefreshKey] = useState(0);
+  const [selectedView, setSelectedView] = useState<WorkspaceViewMode>("active");
 
   const loadOverview = useCallback(async () => {
     if (!client) return;
@@ -329,6 +331,21 @@ export default function ConnectedScreen() {
     return out;
   }, [visibleWorkspaces]);
 
+  const activeSections = useMemo<WorkspaceSection[]>(() => {
+    if (visibleWorkspaces === null) return [];
+    return buildActiveSections(visibleWorkspaces.map(buildWorkspaceRow));
+  }, [visibleWorkspaces]);
+
+  const worktreeSections = useMemo(
+    () => sections.filter((section) => section.kind === "worktree"),
+    [sections]
+  );
+  const displaySections =
+    selectedView === "active" ? activeSections : worktreeSections;
+  const activeCount = sectionItemCount(activeSections);
+  const worktreeCount = worktreeSections.length;
+  const visibleCount = visibleWorkspaces?.length ?? 0;
+
   const agentTargets = useMemo<AgentTarget[]>(() => {
     const activeProject =
       current !== "loading" && current !== null ? current : null;
@@ -497,13 +514,41 @@ export default function ConnectedScreen() {
         </Pressable>
       ) : null}
 
-      <View style={styles.workspacesHeader}>
-        <Text style={styles.eyebrow}>Worktrees</Text>
-        {projectFilterId && workspaces && visibleWorkspaces ? (
-          <Text style={styles.workspacesHint} numberOfLines={1}>
-            {visibleWorkspaces.length} of {workspaces.length}
+      <View style={styles.viewTabs}>
+        <Pressable
+          style={[
+            styles.viewTab,
+            selectedView === "active" && styles.viewTabActive,
+          ]}
+          onPress={() => setSelectedView("active")}
+        >
+          <Text
+            style={[
+              styles.viewTabText,
+              selectedView === "active" && styles.viewTabTextActive,
+            ]}
+          >
+            Project
           </Text>
-        ) : null}
+          <Text style={styles.viewTabCount}>{activeCount}</Text>
+        </Pressable>
+        <Pressable
+          style={[
+            styles.viewTab,
+            selectedView === "worktrees" && styles.viewTabActive,
+          ]}
+          onPress={() => setSelectedView("worktrees")}
+        >
+          <Text
+            style={[
+              styles.viewTabText,
+              selectedView === "worktrees" && styles.viewTabTextActive,
+            ]}
+          >
+            Worktrees
+          </Text>
+          <Text style={styles.viewTabCount}>{worktreeCount}</Text>
+        </Pressable>
       </View>
 
       {visibleWorkspaces === null ? (
@@ -513,16 +558,24 @@ export default function ConnectedScreen() {
         </View>
       ) : (
         <SectionList
-          sections={sections}
+          sections={displaySections}
           style={styles.list}
           keyExtractor={(item) => item.ws.id}
           contentContainerStyle={styles.listContent}
           stickySectionHeadersEnabled={false}
           ListEmptyComponent={
             <View style={styles.emptyPane}>
-              <Text style={styles.emptyTitle}>No sessions in this project</Text>
+              <Text style={styles.emptyTitle}>
+                {selectedView === "active"
+                  ? "No project agents"
+                  : "No worktrees in this project"}
+              </Text>
               <Text style={styles.emptyText}>
-                Start a workspace in TermLoop on your Mac, then refresh.
+                {selectedView === "active"
+                  ? visibleCount > 0
+                    ? "Worktree agents are grouped in Worktrees."
+                    : "Start an agent here or from TermLoop on your Mac."
+                  : "Start or attach a worktree in TermLoop, then refresh."}
               </Text>
               <Pressable style={styles.emptyRefresh} onPress={loadOverview}>
                 <Text style={styles.emptyRefreshText}>Refresh</Text>
@@ -531,6 +584,8 @@ export default function ConnectedScreen() {
           }
           renderSectionHeader={({ section }) => {
             const context = sectionContextSummary(section, workspaceContexts);
+            const showContext =
+              selectedView === "worktrees" && hasSectionContext(context);
             return (
               <View style={styles.sectionHeader}>
                 <View style={styles.sectionHeaderTop}>
@@ -550,7 +605,7 @@ export default function ConnectedScreen() {
                 <Text style={styles.sectionSubtitle} numberOfLines={1}>
                   {section.subtitle}
                 </Text>
-                {hasSectionContext(context) ? (
+                {showContext ? (
                   <View style={styles.sectionContextLine}>
                     {context.jira ? (
                       <Text style={styles.jiraChip} numberOfLines={1}>
@@ -583,6 +638,26 @@ export default function ConnectedScreen() {
           }}
           renderItem={({ item }) => {
             const isOpening = openingId === item.ws.id;
+            const itemContext = workspaceContexts[item.ws.id];
+            const showRowContext = selectedView === "active";
+            const locationLabel = showRowContext
+              ? workspaceLocationLabel(item)
+              : null;
+            const rowJiraLabel =
+              showRowContext && itemContext?.jira
+                ? jiraChipLabel(itemContext.jira)
+                : null;
+            const rowTargetLabel =
+              showRowContext && itemContext?.runTargets[0]
+                ? runTargetChipLabel(itemContext.runTargets[0])
+                : null;
+            const showMeta =
+              locationLabel ||
+              item.statusLabel ||
+              item.activityLabel ||
+              item.changeLabel ||
+              rowJiraLabel ||
+              rowTargetLabel;
             return (
               <Pressable
                 style={({ pressed }) => [
@@ -607,8 +682,13 @@ export default function ConnectedScreen() {
                       {item.toolLabel}
                     </Text>
                   ) : null}
-                  {item.statusLabel || item.activityLabel || item.changeLabel ? (
+                  {showMeta ? (
                     <View style={styles.workspaceMetaLine}>
+                      {locationLabel ? (
+                        <Text style={styles.workspaceMetaChip} numberOfLines={1}>
+                          {locationLabel}
+                        </Text>
+                      ) : null}
                       {item.statusLabel ? (
                         <Text style={styles.workspaceMetaChip} numberOfLines={1}>
                           {item.statusLabel}
@@ -622,6 +702,19 @@ export default function ConnectedScreen() {
                       {item.changeLabel ? (
                         <Text style={styles.workspaceMetaChip} numberOfLines={1}>
                           {item.changeLabel}
+                        </Text>
+                      ) : null}
+                      {rowJiraLabel ? (
+                        <Text style={styles.workspaceJiraMetaChip} numberOfLines={1}>
+                          {rowJiraLabel}
+                        </Text>
+                      ) : null}
+                      {rowTargetLabel ? (
+                        <Text
+                          style={styles.workspaceTargetMetaChip}
+                          numberOfLines={1}
+                        >
+                          {rowTargetLabel}
                         </Text>
                       ) : null}
                     </View>
@@ -808,6 +901,86 @@ function buildWorkspaceRow(ws: WorkspaceSummary): WorkspaceRow {
     activityLabel: workspaceActivityLabel(ws),
     changeLabel: workspaceChangeLabel(ws),
   };
+}
+
+function buildActiveSections(rows: WorkspaceRow[]): WorkspaceSection[] {
+  const attention: WorkspaceRow[] = [];
+  const agents: WorkspaceRow[] = [];
+  const recent: WorkspaceRow[] = [];
+
+  for (const row of rows) {
+    if (row.worktreeKey) continue;
+    if (!isActiveWorkspaceRow(row)) continue;
+    if (workspaceNeedsAttention(row.ws)) {
+      attention.push(row);
+    } else if (workspaceHasAgent(row)) {
+      agents.push(row);
+    } else {
+      recent.push(row);
+    }
+  }
+
+  return [
+    activeSection("active:attention", "Needs attention", attention),
+    activeSection("active:agents", "Agents", agents),
+    activeSection("active:recent", "Recent sessions", recent),
+  ].filter((section): section is WorkspaceSection => section !== null);
+}
+
+function activeSection(
+  key: string,
+  title: string,
+  data: WorkspaceRow[]
+): WorkspaceSection | null {
+  if (data.length === 0) return null;
+  return {
+    key,
+    kind: "workspace",
+    title,
+    subtitle: activeSectionSubtitle(data),
+    data,
+  };
+}
+
+function activeSectionSubtitle(rows: WorkspaceRow[]): string {
+  const count = rows.length;
+  const unit = count === 1 ? "session" : "sessions";
+  return `${count} ${unit}`;
+}
+
+function isActiveWorkspaceRow(row: WorkspaceRow): boolean {
+  return (
+    workspaceNeedsAttention(row.ws) ||
+    workspaceHasAgent(row) ||
+    Boolean(row.statusLabel || row.activityLabel)
+  );
+}
+
+function workspaceNeedsAttention(ws: WorkspaceSummary): boolean {
+  return Boolean(
+    ws.awaiting_input_since || ws.last_attention_kind || ws.agent_attention_kind
+  );
+}
+
+function workspaceHasAgent(row: WorkspaceRow): boolean {
+  const ws = row.ws;
+  return Boolean(
+    row.toolLabel ||
+      ws.agent ||
+      ws.terminal_agent_id ||
+      ws.agent_activity_phase ||
+      ws.agent_activity_updated_at
+  );
+}
+
+function sectionItemCount(sections: WorkspaceSection[]): number {
+  return sections.reduce((sum, section) => sum + section.data.length, 0);
+}
+
+function workspaceLocationLabel(row: WorkspaceRow): string | null {
+  const path = firstWorkspaceString(row.ws, ["current_directory"]);
+  const base = basename(path);
+  return base ? `Path ${base}` : null;
 }
 
 function workspaceCanHaveBindings(ws: WorkspaceSummary): boolean {
@@ -1054,6 +1227,43 @@ const styles = StyleSheet.create({
   },
   errorText: { color: colors.danger, fontSize: 12, lineHeight: 16 },
 
+  viewTabs: {
+    flexDirection: "row",
+    gap: 4,
+    padding: 3,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgElevated,
+  },
+  viewTab: {
+    flex: 1,
+    minHeight: 32,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.bgElevated,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  viewTabActive: {
+    borderColor: colors.borderAccent,
+    backgroundColor: colors.bgRaised,
+  },
+  viewTabText: {
+    color: colors.sub,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  viewTabTextActive: { color: colors.text },
+  viewTabCount: {
+    color: colors.hint,
+    fontSize: 11,
+    fontWeight: "800",
+    fontFamily: monoFont,
+  },
+
   workspacesHeader: {
     flexDirection: "row",
     alignItems: "baseline",
@@ -1235,6 +1445,18 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
     maxWidth: 140,
+  },
+  workspaceJiraMetaChip: {
+    color: colors.warn,
+    fontSize: 10,
+    fontWeight: "800",
+    maxWidth: 150,
+  },
+  workspaceTargetMetaChip: {
+    color: colors.success,
+    fontSize: 10,
+    fontWeight: "800",
+    maxWidth: 150,
   },
   openCol: {
     minWidth: 46,
