@@ -171,10 +171,62 @@ jobs:
             exit 1
           fi
 
-      - name: Build and submit staging to TestFlight
+      - name: Build staging iOS app
+        id: eas_build
         run: |
+          set -euo pipefail
+          BUILD_JSON="$RUNNER_TEMP/termloop-mobile-eas-build.json"
+
           npx eas-cli build \
-            --non-interactive \
             --profile staging \
             --platform ios \
-            --auto-submit
+            --wait \
+            --json \
+            > "$BUILD_JSON"
+
+          BUILD_ID="$(node - "$BUILD_JSON" <<'NODE'
+          const fs = require("fs");
+          const path = process.argv[2];
+          const parsed = JSON.parse(fs.readFileSync(path, "utf8"));
+          const build = Array.isArray(parsed) ? parsed[0] : parsed;
+          if (!build || typeof build.id !== "string" || build.id.length === 0) {
+            console.error("Could not find EAS build id in JSON output");
+            process.exit(1);
+          }
+          console.log(build.id);
+          NODE
+          )"
+
+          echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
+          echo "Built EAS iOS staging build: $BUILD_ID"
+
+      - name: Submit staging build to TestFlight
+        run: |
+          set -euo pipefail
+          BUILD_ID="${{ steps.eas_build.outputs.build_id }}"
+          if [ -z "$BUILD_ID" ]; then
+            echo "Missing EAS build id." >&2
+            exit 1
+          fi
+
+          for attempt in 1 2 3; do
+            echo "Submitting EAS build $BUILD_ID to TestFlight (attempt $attempt/3)"
+            if npx eas-cli submit \
+              --platform ios \
+              --profile staging \
+              --id "$BUILD_ID" \
+              --wait \
+              --non-interactive; then
+              echo "Submitted EAS build $BUILD_ID to TestFlight"
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 3 ]; then
+              sleep_seconds=$((attempt * 120))
+              echo "Submit failed; retrying in ${sleep_seconds}s"
+              sleep "$sleep_seconds"
+            fi
+          done
+
+          echo "Failed to submit EAS build $BUILD_ID after 3 attempts." >&2
+          exit 1

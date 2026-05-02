@@ -112,8 +112,9 @@ The repository workflow `.github/workflows/mobile-app.yml` does two things:
 
 - PR/push validation: install dependencies and run `npm run typecheck`.
 - Automatic TestFlight release: on `master` pushes with changes under
-  `terminal-app/`, run the `staging` EAS profile for iOS with
-  `--auto-submit`.
+  `terminal-app/`, run the `staging` EAS profile for iOS, wait for the
+  build to finish, then submit that exact build id to TestFlight with
+  retry.
 - Manual EAS builds: run the workflow manually and choose
   `development`, `development-simulator`, `preview`, `staging`, or
   `production`.
@@ -124,8 +125,9 @@ Required GitHub secret:
   project.
 
 EAS must also have iOS build credentials and App Store Connect submission
-credentials configured for the `staging` profile. The automatic path uses
-the same command as `npm run eas:build:staging`.
+credentials configured for the `staging` profile. The automatic path does
+not use `--auto-submit`; it separates build and submit so transient Apple
+submission failures can retry without creating a second build.
 
 `eas.json` pins `submit.staging.ios.ascAppId` and
 `submit.production.ios.ascAppId` to `6765898303`, so CI submits to the
