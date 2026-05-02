@@ -18,6 +18,7 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
         let workspaceId: String
         let surfaceId: String?
         let format: String
+        let historyLines: Int
         let timer: DispatchSourceTimer
         var lastText: String
 
@@ -27,6 +28,7 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
             workspaceId: String,
             surfaceId: String?,
             format: String,
+            historyLines: Int,
             lastText: String,
             timer: DispatchSourceTimer
         ) {
@@ -35,6 +37,7 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
             self.workspaceId = workspaceId
             self.surfaceId = surfaceId
             self.format = format
+            self.historyLines = historyLines
             self.lastText = lastText
             self.timer = timer
         }
@@ -59,6 +62,7 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
         guard let format else {
             return .err(code: "invalid_params", message: "format must be plain or vt", data: nil)
         }
+        let historyLines = normalizedHistoryLines(params["history_lines"] ?? params["lines"])
         let socket = socketFd >= 0 ? socketFd : TermLoopTCPBridge.currentSocketFd()
         guard socket >= 0 else {
             return .err(code: "unavailable", message: "No active socket for subscription", data: nil)
@@ -67,7 +71,8 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
         let initial = TerminalController.shared.termLoopMobileReadSurfaceText(
             workspaceId: workspaceId,
             surfaceId: surfaceId,
-            format: format
+            format: format,
+            lineLimit: historyLines
         )
         let initialText: String
         if case .ok(let payload) = initial,
@@ -89,6 +94,7 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
             workspaceId: workspaceId,
             surfaceId: surfaceId,
             format: format,
+            historyLines: historyLines,
             lastText: initialText,
             timer: timer
         )
@@ -110,7 +116,11 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
         if !entry.lastText.isEmpty {
             push(type: "surface.snapshot", subscriptionId: id, text: entry.lastText, socket: socket)
         }
-        return .ok(["subscription_id": id.uuidString, "format": format])
+        return .ok([
+            "subscription_id": id.uuidString,
+            "format": format,
+            "history_lines": historyLines
+        ])
     }
 
     func unsubscribe(params: [String: Any], socketFd: Int32 = -1) -> TerminalController.V2CallResult {
@@ -158,10 +168,10 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
     }
 
     private func poll(subscriptionId: UUID) {
-        let snapshot: (workspaceId: String, surfaceId: String?, format: String)? = {
+        let snapshot: (workspaceId: String, surfaceId: String?, format: String, historyLines: Int)? = {
             lock.lock(); defer { lock.unlock() }
             guard let entry = entries[subscriptionId] else { return nil }
-            return (entry.workspaceId, entry.surfaceId, entry.format)
+            return (entry.workspaceId, entry.surfaceId, entry.format, entry.historyLines)
         }()
         guard let snapshot else { return }
 
@@ -169,7 +179,8 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
             let result = TerminalController.shared.termLoopMobileReadSurfaceText(
                 workspaceId: snapshot.workspaceId,
                 surfaceId: snapshot.surfaceId,
-                format: snapshot.format
+                format: snapshot.format,
+                lineLimit: snapshot.historyLines
             )
             TermLoopMobileSurfaceStreamStore.shared.deliverPollResult(
                 subscriptionId: subscriptionId,
@@ -295,5 +306,22 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
         default:
             return nil
         }
+    }
+
+    private func normalizedHistoryLines(_ raw: Any?) -> Int {
+        let defaultLines = 500
+        let maxLines = 2_000
+        let parsed: Int?
+        if let intValue = raw as? Int {
+            parsed = intValue
+        } else if let number = raw as? NSNumber {
+            parsed = number.intValue
+        } else if let string = normalizedString(raw) {
+            parsed = Int(string)
+        } else {
+            parsed = nil
+        }
+        guard let parsed, parsed > 0 else { return defaultLines }
+        return min(parsed, maxLines)
     }
 }

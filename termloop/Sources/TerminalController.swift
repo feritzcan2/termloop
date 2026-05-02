@@ -6045,13 +6045,16 @@ class TerminalController {
     /// Narrow bridge for the mobile streaming backend. The stream registry
     /// lives under `TermLoop/Mobile`; this method keeps the actual terminal
     /// text read path single-sourced in the existing v2 surface reader.
-    func termLoopMobileReadSurfaceText(workspaceId: String, surfaceId: String?, format: String = "plain") -> V2CallResult {
+    func termLoopMobileReadSurfaceText(workspaceId: String, surfaceId: String?, format: String = "plain", lineLimit: Int? = nil) -> V2CallResult {
         var params: [String: Any] = [
             "workspace_id": workspaceId,
             "format": format
         ]
         if let surfaceId {
             params["surface_id"] = surfaceId
+        }
+        if let lineLimit {
+            params["lines"] = lineLimit
         }
         return v2SurfaceReadText(params: params)
     }
