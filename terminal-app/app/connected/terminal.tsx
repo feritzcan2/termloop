@@ -20,10 +20,13 @@ import { getActiveClient } from "../../lib/session";
 import type { SurfaceSubscription } from "../../lib/termloop-client";
 import { colors, monoFont, radii } from "../../lib/theme";
 
-const MAX_BUFFER_LINES = 1200;
+const MAX_BUFFER_LINES = 600;
+const MAX_BUFFER_CHARS = 90_000;
+const MAX_RENDER_SEGMENTS = 2200;
 const HISTORY_LINES = 500;
 const POLL_INTERVAL_MS = 1800;
 const RECONNECT_INTERVAL_MS = 3000;
+const OUTPUT_FLUSH_MS = 90;
 const SEND_SETTLE_MS = 60;
 const NEAR_BOTTOM_PX = 80;
 const MAX_COMMAND_HISTORY = 50;
@@ -49,8 +52,10 @@ const FONT_SIZES = [11, 13, 15] as const;
 type FontIndex = 0 | 1 | 2;
 
 function capTerminalBuffer(text: string): string {
-  const lines = text.split("\n");
-  if (lines.length <= MAX_BUFFER_LINES) return text;
+  const capped =
+    text.length > MAX_BUFFER_CHARS ? text.slice(-MAX_BUFFER_CHARS) : text;
+  const lines = capped.split("\n");
+  if (lines.length <= MAX_BUFFER_LINES) return capped;
   return lines.slice(lines.length - MAX_BUFFER_LINES).join("\n");
 }
 
@@ -101,19 +106,71 @@ export default function TerminalScreen() {
   const [sending, setSending] = useState(false);
 
   const aliveRef = useRef(true);
+  const liveStateRef = useRef<LiveState>("connecting");
+  const streamReasonRef = useRef<string | null>(null);
   const inFlightRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
   const subscriptionRef = useRef<SurfaceSubscription | null>(null);
   const inputRef = useRef<TextInput>(null);
   const nearBottomRef = useRef(true);
   const reconnectRef = useRef<() => void>(() => {});
+  const pendingOutputRef = useRef("");
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearOutputFlushTimer = useCallback(() => {
+    if (!flushTimerRef.current) return;
+    clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = null;
+  }, []);
+
+  const flushPendingOutput = useCallback(() => {
+    flushTimerRef.current = null;
+    const text = pendingOutputRef.current;
+    if (!text || !aliveRef.current) return;
+    pendingOutputRef.current = "";
+    setBuffer((current) => capTerminalBuffer(current + text));
+  }, []);
+
+  const queueSurfaceOutput = useCallback(
+    (text: string) => {
+      pendingOutputRef.current += text;
+      if (flushTimerRef.current) return;
+      flushTimerRef.current = setTimeout(flushPendingOutput, OUTPUT_FLUSH_MS);
+    },
+    [flushPendingOutput]
+  );
+
+  const replaceSurfaceBuffer = useCallback(
+    (text: string) => {
+      pendingOutputRef.current = "";
+      clearOutputFlushTimer();
+      if (aliveRef.current) setBuffer(capTerminalBuffer(text));
+    },
+    [clearOutputFlushTimer]
+  );
+
+  const setStreamStatus = useCallback(
+    (state: LiveState, reason: string | null = null) => {
+      if (liveStateRef.current !== state) {
+        liveStateRef.current = state;
+        setLiveState(state);
+      }
+      if (streamReasonRef.current !== reason) {
+        streamReasonRef.current = reason;
+        setStreamReason(reason);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     aliveRef.current = true;
     return () => {
       aliveRef.current = false;
+      pendingOutputRef.current = "";
+      clearOutputFlushTimer();
     };
-  }, []);
+  }, [clearOutputFlushTimer]);
 
   const refresh = useCallback(async () => {
     if (!client || !workspaceId) return;
@@ -128,7 +185,7 @@ export default function TerminalScreen() {
         HISTORY_LINES
       );
       if (aliveRef.current) {
-        setBuffer(capTerminalBuffer(s.text));
+        replaceSurfaceBuffer(s.text);
         setInlineError(null);
       }
     } catch (err) {
@@ -139,7 +196,7 @@ export default function TerminalScreen() {
       inFlightRef.current = false;
       if (aliveRef.current) setRefreshing(false);
     }
-  }, [client, workspaceId, surfaceId]);
+  }, [client, workspaceId, surfaceId, replaceSurfaceBuffer]);
 
   useEffect(() => {
     if (!client || !workspaceId) {
@@ -192,28 +249,28 @@ export default function TerminalScreen() {
               if (cancelled || !aliveRef.current) return;
               switch (event.type) {
                 case "surface.snapshot":
-                  setBuffer(capTerminalBuffer(event.text));
-                  setLiveState("live");
-                  setStreamReason(null);
+                  replaceSurfaceBuffer(event.text);
+                  setStreamStatus("live");
                   stopPolling();
                   clearReconnect();
                   return;
                 case "surface.output":
-                  setBuffer((b) => capTerminalBuffer(b + event.text));
-                  setLiveState("live");
-                  setStreamReason(null);
+                  queueSurfaceOutput(event.text);
+                  setStreamStatus("live");
                   stopPolling();
                   clearReconnect();
                   return;
                 case "surface.closed":
-                  setLiveState("closed");
+                  setStreamStatus("closed");
                   stopPolling();
                   clearReconnect();
                   dropSubscription();
                   return;
                 case "surface.error":
-                  setLiveState("degraded");
-                  setStreamReason(friendlyTransportError(new Error(event.message)));
+                  setStreamStatus(
+                    "degraded",
+                    friendlyTransportError(new Error(event.message))
+                  );
                   dropSubscription();
                   startPolling();
                   scheduleReconnect();
@@ -229,14 +286,12 @@ export default function TerminalScreen() {
           }
           subscription = sub;
           subscriptionRef.current = sub;
-          setLiveState("live");
-          setStreamReason(null);
+          setStreamStatus("live");
           stopPolling();
           clearReconnect();
         } catch (err) {
           if (cancelled) return;
-          setLiveState("degraded");
-          setStreamReason(friendlyTransportError(err));
+          setStreamStatus("degraded", friendlyTransportError(err));
           startPolling();
           scheduleReconnect();
           refresh().catch(() => {});
@@ -250,8 +305,7 @@ export default function TerminalScreen() {
           if (cancelled || subscription || AppState.currentState !== "active") {
             return;
           }
-          setLiveState("connecting");
-          setStreamReason(null);
+          setStreamStatus("connecting");
           trySubscribe();
         }, RECONNECT_INTERVAL_MS);
       };
@@ -264,7 +318,7 @@ export default function TerminalScreen() {
           clearReconnect();
           if (subscription) {
             dropSubscription();
-            setLiveState("connecting");
+            setStreamStatus("connecting");
           }
         }
       };
@@ -275,8 +329,7 @@ export default function TerminalScreen() {
         if (cancelled) return;
         if (subscription) return;
         clearReconnect();
-        setLiveState("connecting");
-        setStreamReason(null);
+        setStreamStatus("connecting");
         trySubscribe();
       };
 
@@ -287,9 +340,20 @@ export default function TerminalScreen() {
         appStateSub.remove();
         dropSubscription();
         reconnectRef.current = () => {};
-        setLiveState("connecting");
+        pendingOutputRef.current = "";
+        clearOutputFlushTimer();
+        setStreamStatus("connecting");
       };
-    }, [client, workspaceId, surfaceId, refresh])
+    }, [
+      client,
+      workspaceId,
+      surfaceId,
+      refresh,
+      queueSurfaceOutput,
+      replaceSurfaceBuffer,
+      clearOutputFlushTimer,
+      setStreamStatus,
+    ])
   );
 
   const sendKey = useCallback(
@@ -463,7 +527,7 @@ export default function TerminalScreen() {
 
   const segments = useMemo(() => {
     try {
-      return parseAnsi(buffer);
+      return parseAnsi(buffer, { maxSegments: MAX_RENDER_SEGMENTS });
     } catch {
       return null;
     }

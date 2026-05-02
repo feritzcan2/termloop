@@ -150,6 +150,7 @@ export interface PairingPayload {
   version: number;
   server_name: string;
   host: string;
+  alternate_hosts?: string[];
   port: number;
   token: string;
   expires_at: number;
@@ -560,6 +561,13 @@ export function parsePairingPayload(raw: string): PairingPayload {
   if (typeof o.host !== "string" || !o.host) {
     throw new Error("Pairing payload missing host.");
   }
+  if (
+    o.alternate_hosts !== undefined &&
+    (!Array.isArray(o.alternate_hosts) ||
+      o.alternate_hosts.some((item) => typeof item !== "string"))
+  ) {
+    throw new Error("Pairing payload has invalid alternate_hosts.");
+  }
   if (typeof o.port !== "number" || !Number.isFinite(o.port)) {
     throw new Error("Pairing payload missing/invalid port.");
   }
@@ -575,5 +583,24 @@ export function parsePairingPayload(raw: string): PairingPayload {
   if (o.expires_at * 1000 < Date.now()) {
     throw new Error("Pairing token has expired.");
   }
-  return o as unknown as PairingPayload;
+  return {
+    ...(o as unknown as PairingPayload),
+    alternate_hosts: normalizeHostCandidates(
+      o.host,
+      o.alternate_hosts as string[] | undefined
+    ).slice(1),
+  };
+}
+
+export function pairingHostCandidates(payload: PairingPayload): string[] {
+  return normalizeHostCandidates(payload.host, payload.alternate_hosts);
+}
+
+function normalizeHostCandidates(host: string, alternateHosts?: string[]): string[] {
+  const out: string[] = [];
+  for (const candidate of [host, ...(alternateHosts ?? [])]) {
+    const value = candidate.trim();
+    if (value && !out.includes(value)) out.push(value);
+  }
+  return out;
 }

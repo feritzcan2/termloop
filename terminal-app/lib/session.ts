@@ -1,4 +1,4 @@
-import type { SavedConnection } from "./connections";
+import { connectionHostCandidates, type SavedConnection } from "./connections";
 import { TcpTransport } from "./tcp-transport";
 import {
   createTermLoopClient,
@@ -40,22 +40,28 @@ export async function openSession(
   conn: SavedConnection
 ): Promise<OpenSessionResult> {
   await closeSession();
-  const transport: Transport = new TcpTransport({
-    host: conn.host,
-    port: conn.port,
-  });
-  const client = createTermLoopClient({ transport });
+  const hosts = connectionHostCandidates(conn);
+  let lastErr: unknown = null;
 
-  let auth: AuthResult | undefined;
-  try {
-    ({ auth } = await applyAuth(client, conn));
-  } catch (err) {
-    await client.close();
-    throw err;
+  for (const host of hosts) {
+    const transport: Transport = new TcpTransport({
+      host,
+      port: conn.port,
+      connectTimeoutMs: hosts.length > 1 ? 3500 : undefined,
+    });
+    const client = createTermLoopClient({ transport });
+
+    try {
+      const { auth } = await applyAuth(client, conn);
+      active = { connectionId: conn.id, client, transport, auth };
+      return { client, auth };
+    } catch (err) {
+      lastErr = err;
+      await client.close().catch(() => {});
+    }
   }
 
-  active = { connectionId: conn.id, client, transport, auth };
-  return { client, auth };
+  throw lastErr ?? new Error("Connection failed.");
 }
 
 export function getActiveClient(): TermLoopClient | null {
