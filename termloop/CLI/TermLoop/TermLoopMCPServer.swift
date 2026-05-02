@@ -21,6 +21,7 @@ enum TermLoopMCPServer {
     private static let jiraAbilityId = "working-with-jira"
     private static let jiraBindingId = "ticket"
     private static let askToToolName = "ask_to"
+    private static let replyToRequestToolName = "reply_to_request"
     private static let reportLinkToolName = "report_link"
     private static let contextBankProposeToolName = "context_bank_propose_suggestion"
     private static let contextBankFinalizeToolName = "context_bank_finalize_run"
@@ -139,7 +140,7 @@ enum TermLoopMCPServer {
         ),
         BuiltInTool(
             name: askToToolName,
-            description: "Ask a helper agent (codex / claude / gemini) — use when the user wants to consult another agent. Reply lands on the source workspace's bridge cable.",
+            description: "Ask a helper agent (codex / claude / gemini) — use when the user wants to consult another agent. Returns a request_id; the helper should answer with reply_to_request when finished.",
             inputSchema: [
                 "type": "object",
                 "properties": [
@@ -161,6 +162,26 @@ enum TermLoopMCPServer {
             ],
             alwaysOn: true,
             handler: runAskTo
+        ),
+        BuiltInTool(
+            name: replyToRequestToolName,
+            description: "Deliver the final answer for a TermLoop ask_to request. Call exactly once, only after all investigation/work for that request is complete; do not use for interim status updates.",
+            inputSchema: [
+                "type": "object",
+                "properties": [
+                    "request_id": [
+                        "type": "string",
+                        "description": "The request_id returned by ask_to. This is single-use."
+                    ],
+                    "message": [
+                        "type": "string",
+                        "description": "The final report or completed result to send back to the source agent."
+                    ]
+                ],
+                "required": ["request_id", "message"]
+            ],
+            alwaysOn: true,
+            handler: runReplyToRequest
         ),
         BuiltInTool(
             name: reportLinkToolName,
@@ -495,7 +516,7 @@ enum TermLoopMCPServer {
                               isError: false)
         } catch {
             return toolResult(id: id,
-                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(error.localizedDescription)",
+                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(mcpErrorDescription(error))",
                               isError: true)
         }
     }
@@ -543,7 +564,7 @@ enum TermLoopMCPServer {
                               isError: false)
         } catch {
             return toolResult(id: id,
-                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(error.localizedDescription)",
+                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(mcpErrorDescription(error))",
                               isError: true)
         }
     }
@@ -590,7 +611,7 @@ enum TermLoopMCPServer {
             return toolResult(id: id, text: summary, isError: false)
         } catch {
             return toolResult(id: id,
-                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(error.localizedDescription)",
+                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(mcpErrorDescription(error))",
                               isError: true)
         }
     }
@@ -643,7 +664,7 @@ enum TermLoopMCPServer {
                               isError: false)
         } catch {
             return toolResult(id: id,
-                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(error.localizedDescription)",
+                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(mcpErrorDescription(error))",
                               isError: true)
         }
     }
@@ -701,15 +722,73 @@ enum TermLoopMCPServer {
             // the daemon's code/message embedded in the CLIError.
             let result = try client.sendV2(method: "bridge.ask_to", params: params)
             let bridgeId = (result["bridge_id"] as? String) ?? "?"
+            let requestId = (result["request_id"] as? String) ?? bridgeId
             let helperId = (result["helper_workspace_id"] as? String) ?? "?"
             return toolResult(
                 id: id,
-                text: "Sent to \(target). bridge_id=\(bridgeId), helper_workspace_id=\(helperId). The helper's reply will appear on the source workspace's bridge cable; forward it back manually with the cable's arrow button when ready.",
+                text: "Sent to \(target). request_id=\(requestId), bridge_id=\(bridgeId), helper_workspace_id=\(helperId). The helper must call reply_to_request exactly once with this request_id when the final answer is ready.",
                 isError: false
             )
         } catch {
             return toolResult(id: id,
-                              text: "ask_to failed: \(error.localizedDescription)",
+                              text: "ask_to failed: \(mcpErrorDescription(error))",
+                              isError: true)
+        }
+    }
+
+    /// `reply_to_request` — final, single-use Ask-To answer delivery. The
+    /// daemon enforces that the caller is the helper workspace for the
+    /// request and rejects duplicate replies.
+    private static func runReplyToRequest(
+        id: Any,
+        arguments: [String: Any],
+        processEnv: [String: String],
+        socketPath: String
+    ) -> [String: Any] {
+        let requestId = ((arguments["request_id"] as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard UUID(uuidString: requestId) != nil else {
+            return toolResult(id: id,
+                              text: "Missing or invalid required argument: request_id",
+                              isError: true)
+        }
+        let message = ((arguments["message"] as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty else {
+            return toolResult(id: id,
+                              text: "Missing required argument: message",
+                              isError: true)
+        }
+
+        let workspaceParams = workspaceTargetParams(env: processEnv)
+        guard !workspaceParams.isEmpty else {
+            return toolResult(id: id,
+                              text: "TermLoop daemon target unknown: TERMLOOP_WORKSPACE_ID env var is unset and current working directory is empty. reply_to_request must run from the helper workspace.",
+                              isError: true)
+        }
+
+        var params: [String: Any] = [
+            "request_id": requestId,
+            "message": message
+        ]
+        for (key, value) in workspaceParams {
+            params[key] = value
+        }
+
+        let client = SocketClient(path: socketPath)
+        do {
+            try client.connect()
+            defer { client.close() }
+            let result = try client.sendV2(method: "bridge.reply_to_request", params: params)
+            let deliveredId = (result["request_id"] as? String) ?? requestId
+            return toolResult(
+                id: id,
+                text: "Reply delivered for request_id=\(deliveredId). Do not continue this request; follow-up requires a new ask_to request.",
+                isError: false
+            )
+        } catch {
+            return toolResult(id: id,
+                              text: "reply_to_request failed: \(mcpErrorDescription(error))",
                               isError: true)
         }
     }
@@ -761,7 +840,7 @@ enum TermLoopMCPServer {
                               isError: false)
         } catch {
             return toolResult(id: id,
-                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(error.localizedDescription)",
+                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(mcpErrorDescription(error))",
                               isError: true)
         }
     }
@@ -825,7 +904,7 @@ enum TermLoopMCPServer {
                               isError: false)
         } catch {
             return toolResult(id: id,
-                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(error.localizedDescription)",
+                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(mcpErrorDescription(error))",
                               isError: true)
         }
     }
@@ -860,7 +939,7 @@ enum TermLoopMCPServer {
             return toolResult(id: id, text: "Analysis finalized.", isError: false)
         } catch {
             return toolResult(id: id,
-                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(error.localizedDescription)",
+                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(mcpErrorDescription(error))",
                               isError: true)
         }
     }
@@ -942,6 +1021,15 @@ enum TermLoopMCPServer {
         let code = (error["code"] as? String) ?? "unknown"
         let message = (error["message"] as? String) ?? "TermLoop daemon returned an error."
         return "TermLoop daemon: \(message) (code: \(code))"
+    }
+
+    private static func mcpErrorDescription(_ error: Error) -> String {
+        let localized = error.localizedDescription
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !localized.isEmpty {
+            return localized
+        }
+        return String(describing: error)
     }
 
     private static func write(response: [String: Any]) throws {

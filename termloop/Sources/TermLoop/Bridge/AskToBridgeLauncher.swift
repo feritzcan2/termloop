@@ -49,6 +49,7 @@ enum AskToBridgeLauncher {
             throw LaunchError.targetAgentNotInCatalog
         }
 
+        let requestId = UUID()
         let sourceAgentId = resolveSourceAgentId(workspaceId: sourceWorkspaceId)
 
         // Delivery mode comes from the catalog-backed injector, not a hard-
@@ -66,7 +67,10 @@ enum AskToBridgeLauncher {
         let systemPromptOverride: String? = {
             switch deliveryMode {
             case .appendSystemPromptFlag, .instructionsFile:
-                return BridgeHelperSystemPrompt.compose(userOverride: targetPrompt)
+                return BridgeHelperSystemPrompt.compose(
+                    requestId: requestId,
+                    userOverride: targetPrompt
+                )
             case .promptPrefix, .none:
                 #if DEBUG
                 if !trimmedTargetPrompt.isEmpty {
@@ -120,13 +124,18 @@ enum AskToBridgeLauncher {
         // helper would "answer" its own system prompt before the real
         // handoff arrives.
         let bridge = WorkspaceBridge(
+            id: requestId,
             leftWorkspaceId: sourceWorkspaceId,
             rightWorkspaceId: helperWorkspace.id,
             intent: .askAgent,
             leftAgentId: sourceAgentId,
             rightAgentId: target.agentId,
             rightWorkspaceTitleOverride: target.title,
-            kickoffMessage: sourcePrompt,
+            kickoffMessage: BridgeHelperSystemPrompt.kickoffMessage(
+                sourcePrompt,
+                requestId: requestId,
+                firstSpeaker: firstSpeaker
+            ),
             firstSpeaker: firstSpeaker
         )
         guard WorkspaceBridgeStore.shared.add(bridge) else {

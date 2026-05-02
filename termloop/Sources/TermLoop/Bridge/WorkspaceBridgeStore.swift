@@ -17,6 +17,14 @@ final class WorkspaceBridgeStore: ObservableObject {
 
     private static let maxMessagesPerBridge = 40
 
+    enum FinalReplyRecordResult: Equatable {
+        case recorded(messageId: UUID)
+        case notFound
+        case notAskAgent
+        case notRunning
+        case alreadyReplied
+    }
+
     @Published private(set) var bridges: [WorkspaceBridge] = []
     /// Narrow subscription channel for views that only care about bridge
     /// membership / lifecycle. Transcript appends do NOT bump this — rows
@@ -39,6 +47,15 @@ final class WorkspaceBridgeStore: ObservableObject {
 
     init() {
         self.fileURL = Self.defaultFileURL()
+        finishInit()
+    }
+
+    init(fileURL: URL) {
+        self.fileURL = fileURL
+        finishInit()
+    }
+
+    private func finishInit() {
         BridgeDebugTrace.log("store.init file=\(fileURL.path)")
         load()
         BridgeDebugTrace.log("store.init.done loaded=\(bridges.count)")
@@ -49,8 +66,16 @@ final class WorkspaceBridgeStore: ObservableObject {
     }
 
     func bridge(forWorkspaceId wsId: UUID) -> WorkspaceBridge? {
-        bridges.first {
+        let matches = bridges.filter {
             $0.leftWorkspaceId == wsId || $0.rightWorkspaceId == wsId
+        }
+        return matches.first(where: { $0.state == .running }) ?? matches.last
+    }
+
+    func activeBridge(forWorkspaceId wsId: UUID) -> WorkspaceBridge? {
+        bridges.first {
+            $0.state == .running
+                && ($0.leftWorkspaceId == wsId || $0.rightWorkspaceId == wsId)
         }
     }
 
@@ -65,7 +90,7 @@ final class WorkspaceBridgeStore: ObservableObject {
             source: bridge.leftWorkspaceId,
             target: bridge.rightWorkspaceId,
             metadata: { WorkspaceMetadataStore.shared.metadata(forWorkspaceId: $0) },
-            existingBridgeFor: { self.bridge(forWorkspaceId: $0) }
+            existingBridgeFor: { self.activeBridge(forWorkspaceId: $0) }
         )
         guard case .ok = result else { return false }
         // Persist the agent id on both endpoints so the next launch's
@@ -109,6 +134,38 @@ final class WorkspaceBridgeStore: ObservableObject {
                 bridge.messages.removeFirst(bridge.messages.count - Self.maxMessagesPerBridge)
             }
         }
+    }
+
+    /// Records the one final helper reply for an Ask-To request and closes the
+    /// request id. Follow-up work must create a new ask_to request.
+    func recordFinalReply(bridgeId: UUID, text: String) -> FinalReplyRecordResult {
+        guard let idx = bridges.firstIndex(where: { $0.id == bridgeId }) else {
+            return .notFound
+        }
+        guard bridges[idx].intent == .askAgent else {
+            return .notAskAgent
+        }
+        guard bridges[idx].finalReply == nil else {
+            return .alreadyReplied
+        }
+        guard bridges[idx].state == .running else {
+            return .notRunning
+        }
+
+        let message = BridgeMessage(sender: .right, text: text)
+        bridges[idx].messages.append(message)
+        if bridges[idx].messages.count > Self.maxMessagesPerBridge {
+            bridges[idx].messages.removeFirst(bridges[idx].messages.count - Self.maxMessagesPerBridge)
+        }
+        bridges[idx].finalReply = BridgeFinalReply(
+            messageId: message.id,
+            text: text,
+            timestamp: message.timestamp
+        )
+        bridges[idx].state = .stopped(.replied)
+        overviewVersion &+= 1
+        save()
+        return .recorded(messageId: message.id)
     }
 
     /// Completely removes the bridge from the store and clears the
