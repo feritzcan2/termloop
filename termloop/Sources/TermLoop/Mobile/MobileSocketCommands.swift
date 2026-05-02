@@ -37,6 +37,10 @@ enum TermLoopMobileSocketCommands {
             return TermLoopMobilePairingStore.listDevices()
         case "pairing.revoke_device":
             return TermLoopMobilePairingStore.revokeDevice(params: params)
+        case "surface.subscribe":
+            return TermLoopMobileSurfaceStreamStore.shared.subscribe(params: params)
+        case "surface.unsubscribe":
+            return TermLoopMobileSurfaceStreamStore.shared.unsubscribe(params: params)
         default:
             return nil
         }

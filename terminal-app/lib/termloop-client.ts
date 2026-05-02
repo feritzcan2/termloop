@@ -120,7 +120,49 @@ export interface AuthResult {
 
 export interface Transport {
   send<R = unknown>(req: RpcRequest): Promise<RpcResponse<R>>;
+  /** Optional: receive server-pushed event lines (no `id`/`ok` field). */
+  setEventHandler?(handler: (event: unknown) => void): void;
+  /**
+   * Optional: notified when the underlying socket drops. `err === null`
+   * means a clean close initiated by `close()`; an Error indicates an
+   * unexpected drop. The client uses this to fail outstanding stream
+   * subscriptions, since silent socket loss otherwise leaves the UI
+   * "live but frozen".
+   */
+  setCloseHandler?(handler: (err: Error | null) => void): void;
   close?(): Promise<void>;
+}
+
+// ---- Server events -------------------------------------------------------
+
+export type SurfaceEvent =
+  | { type: "surface.output"; subscription_id: string; text: string }
+  | { type: "surface.snapshot"; subscription_id: string; text: string }
+  | { type: "surface.closed"; subscription_id: string }
+  | { type: "surface.error"; subscription_id: string; message: string };
+
+export interface SurfaceSubscription {
+  subscriptionId: string;
+  unsubscribe(): Promise<void>;
+}
+
+function parseSurfaceEvent(raw: unknown): SurfaceEvent | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.type !== "string" || typeof o.subscription_id !== "string") {
+    return null;
+  }
+  switch (o.type) {
+    case "surface.output":
+    case "surface.snapshot":
+      return typeof o.text === "string" ? (o as SurfaceEvent) : null;
+    case "surface.closed":
+      return o as SurfaceEvent;
+    case "surface.error":
+      return typeof o.message === "string" ? (o as SurfaceEvent) : null;
+    default:
+      return null;
+  }
 }
 
 // ---- Client --------------------------------------------------------------
@@ -141,6 +183,17 @@ export interface TermLoopClient {
   readSurface(workspaceId: string, surfaceId?: string): Promise<SurfaceText>;
   sendText(workspaceId: string, text: string, surfaceId?: string): Promise<void>;
   sendKey(workspaceId: string, key: string, surfaceId?: string): Promise<void>;
+  /**
+   * Subscribe to live surface events. Resolves once the backend assigns a
+   * subscription_id; events for that id are routed to `listener` until
+   * `unsubscribe()` is called or the transport closes. Throws if the
+   * backend rejects the subscribe call (caller should fall back to polling).
+   */
+  subscribeSurface(
+    workspaceId: string,
+    surfaceId: string | undefined,
+    listener: (event: SurfaceEvent) => void
+  ): Promise<SurfaceSubscription>;
   /** No real backend support yet — TODO once PTY resize lands. */
   resize(_params: { workspaceId: string; cols: number; rows: number }): Promise<void>;
   close(): Promise<void>;
@@ -187,6 +240,57 @@ export function createTermLoopClient(opts: {
     const resp = await transport.send<R>({ id: newId(), method, params });
     return unwrap(resp);
   };
+
+  const listeners = new Map<string, (e: SurfaceEvent) => void>();
+  const orphans = new Map<string, SurfaceEvent[]>();
+  // Misbehaving backend could spew events for unknown subscription_ids;
+  // bound the orphan cache so it can't grow without limit.
+  const MAX_ORPHAN_EVENTS_PER_SUB = 32;
+  const MAX_ORPHAN_SUBSCRIPTIONS = 16;
+
+  transport.setEventHandler?.((raw: unknown) => {
+    const event = parseSurfaceEvent(raw);
+    if (!event) return;
+    const listener = listeners.get(event.subscription_id);
+    if (listener) {
+      listener(event);
+      return;
+    }
+    let buf = orphans.get(event.subscription_id);
+    if (!buf) {
+      if (orphans.size >= MAX_ORPHAN_SUBSCRIPTIONS) {
+        const oldestKey = orphans.keys().next().value;
+        if (oldestKey !== undefined) orphans.delete(oldestKey);
+      }
+      buf = [];
+      orphans.set(event.subscription_id, buf);
+    }
+    buf.push(event);
+    if (buf.length > MAX_ORPHAN_EVENTS_PER_SUB) buf.shift();
+  });
+
+  transport.setCloseHandler?.((err) => {
+    // Tell every active stream subscriber that the pipe is gone. They
+    // can react (degrade to polling, surface a banner) rather than
+    // silently freezing.
+    const message = err
+      ? `Transport closed: ${err.message}`
+      : "Transport closed";
+    const snapshot = Array.from(listeners.entries());
+    listeners.clear();
+    orphans.clear();
+    for (const [subId, listener] of snapshot) {
+      try {
+        listener({
+          type: "surface.error",
+          subscription_id: subId,
+          message,
+        });
+      } catch {
+        /* ignore listener errors */
+      }
+    }
+  });
 
   return {
     async ping() {
@@ -256,7 +360,36 @@ export function createTermLoopClient(opts: {
     async resize(_params) {
       // No-op until backend exposes a PTY resize API.
     },
+    async subscribeSurface(workspaceId, surfaceId, listener) {
+      const out = await call<{ subscription_id: string }>(
+        "surface.subscribe",
+        withSurface(workspaceId, surfaceId)
+      );
+      const subId = out.subscription_id;
+      listeners.set(subId, listener);
+      const drained = orphans.get(subId);
+      if (drained) {
+        orphans.delete(subId);
+        for (const e of drained) listener(e);
+      }
+      return {
+        subscriptionId: subId,
+        unsubscribe: async () => {
+          listeners.delete(subId);
+          orphans.delete(subId);
+          try {
+            await call<{ ok: true }>("surface.unsubscribe", {
+              subscription_id: subId,
+            });
+          } catch {
+            /* best effort — transport may already be closed */
+          }
+        },
+      };
+    },
     async close() {
+      listeners.clear();
+      orphans.clear();
       await transport.close?.();
     },
   };

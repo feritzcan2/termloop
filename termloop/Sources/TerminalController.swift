@@ -2607,6 +2607,8 @@ class TerminalController {
             "debug.terminals",
             "surface.send_text",
             "surface.send_key",
+            "surface.subscribe",
+            "surface.unsubscribe",
             "surface.report_tty",
             "surface.ports_kick",
             "surface.read_text",
@@ -6024,6 +6026,19 @@ class TerminalController {
         }
         return result
     }
+
+    // MARK: termloop-hook
+    /// Narrow bridge for the mobile streaming backend. The stream registry
+    /// lives under `TermLoop/Mobile`; this method keeps the actual terminal
+    /// text read path single-sourced in the existing v2 surface reader.
+    func termLoopMobileReadSurfaceText(workspaceId: String, surfaceId: String?) -> V2CallResult {
+        var params: [String: Any] = ["workspace_id": workspaceId]
+        if let surfaceId {
+            params["surface_id"] = surfaceId
+        }
+        return v2SurfaceReadText(params: params)
+    }
+    // MARK: /termloop-hook
 
     private func readTerminalTextBase64(terminalPanel: TerminalPanel, includeScrollback: Bool = false, lineLimit: Int? = nil) -> String {
         guard let surface = terminalPanel.surface.surface else { return "ERROR: Terminal surface not found" }

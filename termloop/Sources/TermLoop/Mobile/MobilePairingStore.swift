@@ -182,7 +182,9 @@ enum TermLoopMobilePairingStore {
             "surface.list",
             "surface.read_text",
             "surface.send_text",
-            "surface.send_key"
+            "surface.send_key",
+            "surface.subscribe",
+            "surface.unsubscribe"
         ]
     }
 

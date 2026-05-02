@@ -57,7 +57,10 @@ export class TcpTransport implements Transport {
   private connectPromise: Promise<void> | null = null;
   private rxBuffer = "";
   private pending = new Map<string, PendingCall>();
+  private eventHandler: ((event: unknown) => void) | null = null;
+  private closeHandler: ((err: Error | null) => void) | null = null;
   private closed = false;
+  private closeNotified = false;
   private readonly requestTimeoutMs: number;
   private readonly connectTimeoutMs: number;
   private readonly maxRxBufferBytes: number;
@@ -114,9 +117,16 @@ export class TcpTransport implements Transport {
       sock.on("error", (err: Error) => {
         finish(err);
         this.failAll(err);
+        this.notifyClose(err);
       });
       sock.on("close", () => {
-        if (!this.closed) this.failAll(new Error("Connection closed"));
+        if (!this.closed) {
+          const err = new Error("Connection closed");
+          this.failAll(err);
+          this.notifyClose(err);
+        } else {
+          this.notifyClose(null);
+        }
         this.socket = null;
       });
     });
@@ -144,18 +154,45 @@ export class TcpTransport implements Transport {
   }
 
   private handleLine(line: string): void {
-    let resp: RpcResponse;
+    let parsed: unknown;
     try {
-      resp = JSON.parse(line) as RpcResponse;
+      parsed = JSON.parse(line);
     } catch {
       return;
     }
-    if (!resp || typeof resp !== "object" || typeof resp.id !== "string") return;
-    const call = this.pending.get(resp.id);
-    if (!call) return;
-    this.pending.delete(resp.id);
-    clearTimeout(call.timer);
-    call.resolve(resp);
+    if (!parsed || typeof parsed !== "object") return;
+    const obj = parsed as Record<string, unknown>;
+
+    if (typeof obj.id === "string" && "ok" in obj) {
+      const call = this.pending.get(obj.id);
+      if (!call) return;
+      this.pending.delete(obj.id);
+      clearTimeout(call.timer);
+      call.resolve(obj as unknown as RpcResponse);
+      return;
+    }
+
+    if (typeof obj.type === "string") {
+      this.eventHandler?.(obj);
+    }
+  }
+
+  setEventHandler(handler: (event: unknown) => void): void {
+    this.eventHandler = handler;
+  }
+
+  setCloseHandler(handler: (err: Error | null) => void): void {
+    this.closeHandler = handler;
+  }
+
+  private notifyClose(err: Error | null): void {
+    if (this.closeNotified) return;
+    this.closeNotified = true;
+    try {
+      this.closeHandler?.(err);
+    } catch {
+      /* ignore */
+    }
   }
 
   private failAll(err: Error): void {
@@ -202,6 +239,7 @@ export class TcpTransport implements Transport {
   async close(): Promise<void> {
     this.closed = true;
     this.failAll(new Error("Transport closed by client"));
+    this.notifyClose(null);
     const sock = this.socket;
     this.socket = null;
     this.connectPromise = null;

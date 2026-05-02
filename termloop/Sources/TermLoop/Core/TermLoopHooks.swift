@@ -407,6 +407,7 @@ enum TermLoopHooks {
     /// ordering is LIFO, so this runs first. Nonisolated for the same reason
     /// as `handleAcceptedClient(socket:)`.
     nonisolated static func handleClientDisconnect(socket fd: Int32) {
+        TermLoopMobileSurfaceStreamStore.shared.disposeConnection(for: fd)
         TermLoopSubscriptionTracker.shared.disposeConnection(for: fd)
     }
 

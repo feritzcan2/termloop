@@ -5,10 +5,10 @@ import Foundation
 
 /// Which files participate in the mirror and which of them is canonical.
 ///
-/// `canonical == nil` means "per folder": whichever tracked file exists
-/// in a given folder becomes canonical; the rest are created as relative
-/// symlinks to it. When multiple tracked files exist as regular files with
-/// identical content, the one with the newest mtime wins.
+/// `canonical == nil` means "per folder": whichever tracked regular file
+/// exists in a given folder becomes canonical; the rest are created as
+/// relative symlinks to it. When multiple tracked files exist as regular
+/// files with identical content, the one with the newest mtime wins.
 struct ContextBankSymlinkConfig: Equatable {
     var tracked: Set<String>
     var canonical: String?
@@ -165,6 +165,9 @@ enum ContextBankSymlinker {
             switch item.action {
             case .create:
                 guard !fm.fileExists(atPath: item.absoluteLinkPath) else { continue }
+                let targetPath = (item.directoryPath as NSString)
+                    .appendingPathComponent(item.targetName)
+                guard Self.isRegularFile(at: targetPath) else { continue }
                 if (try? fm.createSymbolicLink(
                     atPath: item.absoluteLinkPath,
                     withDestinationPath: item.targetName
@@ -176,6 +179,9 @@ enum ContextBankSymlinker {
                 let targetPath = (item.directoryPath as NSString)
                     .appendingPathComponent(item.targetName)
                 // Defense in depth: confirm identity at apply time.
+                guard Self.isRegularFile(at: targetPath) else {
+                    continue
+                }
                 guard Self.contentIdentical(item.absoluteLinkPath, targetPath) else {
                     continue
                 }
@@ -193,6 +199,9 @@ enum ContextBankSymlinker {
                 // Trash the existing file/symlink so the user can recover it,
                 // then create a fresh symlink to the canonical sibling. If the
                 // trash step fails, abort this row — never silently delete.
+                let targetPath = (item.directoryPath as NSString)
+                    .appendingPathComponent(item.targetName)
+                guard Self.isRegularFile(at: targetPath) else { continue }
                 let url = URL(fileURLWithPath: item.absoluteLinkPath)
                 guard (try? fm.trashItem(at: url, resultingItemURL: nil)) != nil else {
                     continue
@@ -221,22 +230,20 @@ enum ContextBankSymlinker {
         let tracked = config.tracked
 
         let regulars = tracked.filter { (kinds[$0] ?? .missing).isRegular }
-        let symlinks = tracked.filter { (kinds[$0] ?? .missing).isSymlink }
 
         // Pick canonical per the user's config.
         let canonical: String?
         if let fixed = config.canonical, tracked.contains(fixed) {
-            canonical = [regulars, symlinks]
-                .flatMap { $0 }
-                .contains(fixed) ? fixed : nil
+            canonical = regulars.contains(fixed) ? fixed : nil
         } else {
             canonical = Self.pickCanonicalByMtime(among: Array(regulars), dir: dir)
                 ?? Array(regulars).sorted().first
-                ?? Array(symlinks).sorted().first
         }
 
         guard let canonical else {
-            // Chosen canonical isn't here — nothing to link against.
+            // Chosen canonical isn't here as a regular file — nothing safe to
+            // link against. A symlink-only folder may already be dangling or
+            // part of a chain, so never create more links to it.
             var items: [ContextBankSymlinkPlanItem] = []
             if let fixed = config.canonical, !fixed.isEmpty {
                 for name in tracked.sorted() where kinds[name] != .missing {
@@ -352,6 +359,13 @@ enum ContextBankSymlinker {
             return .symlink(target: target)
         }
         return .regular
+    }
+
+    private static func isRegularFile(at path: String) -> Bool {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+              let type = attrs[.type] as? FileAttributeType
+        else { return false }
+        return type == .typeRegular
     }
 
     private static func contentIdentical(_ lhs: String, _ rhs: String) -> Bool {

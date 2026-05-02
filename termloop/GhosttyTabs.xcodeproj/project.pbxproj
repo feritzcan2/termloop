@@ -55,6 +55,7 @@
 		3E2E7061CA5E41259BA3A084 /* WorkspaceMetadataStoreTaskIdTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C943D8A1DC104A19B7ED31AF /* WorkspaceMetadataStoreTaskIdTests.swift */; };
 		3E70B7BCA4CAB2A50DA19AB8 /* QuickActionPreviewViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D686D0016E06B161DBD503D /* QuickActionPreviewViewModelTests.swift */; };
 		3EDF7DCA458CF5E077BDF922 /* AgentInputTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D830A6038111E9253D7BFDE /* AgentInputTypes.swift */; };
+		CB5AFE001111222233334443 /* ContextBankSymlinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB5AFE001111222233334444 /* ContextBankSymlinkTests.swift */; };
 		3FF508246D32E2D4079A222A /* AgentTemplateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C642BE53F1142CBB60F62C8 /* AgentTemplateStore.swift */; };
 		402793233AA01DC131D05EEC /* AbilityInjectorOverrideTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FCF8B056DF7E603E553F545 /* AbilityInjectorOverrideTests.swift */; };
 		40B0FEEB56AC2A868D31E508 /* IntegrationConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 472EEED229F875BAA9D1D691 /* IntegrationConfigStore.swift */; };
@@ -229,6 +230,7 @@
 		A9E70005A6EAC0DE00000101 /* MobilePairingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70005A6EAC0DE00000102 /* MobilePairingStore.swift */; };
 		A9E70005A6EAC0DE00000103 /* MobileSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70005A6EAC0DE00000104 /* MobileSocketCommands.swift */; };
 		A9E70005A6EAC0DE00000105 /* MobilePairingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70005A6EAC0DE00000106 /* MobilePairingViews.swift */; };
+		A9E70005A6EAC0DE00000107 /* MobileSurfaceStreamStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70005A6EAC0DE00000108 /* MobileSurfaceStreamStore.swift */; };
 		A9E70006A6EAC0DE00000001 /* TermLoopSidebarInjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70006A6EAC0DE00000002 /* TermLoopSidebarInjection.swift */; };
 		A9E70007A6EAC0DE00000001 /* SocketControlSettings+TermLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70007A6EAC0DE00000002 /* SocketControlSettings+TermLoop.swift */; };
 		A9E70008A6EAC0DE00000001 /* TermLoopTCPBridgeCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70008A6EAC0DE00000002 /* TermLoopTCPBridgeCoordinator.swift */; };
@@ -807,6 +809,7 @@
 		A9E70005A6EAC0DE00000102 /* MobilePairingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Mobile/MobilePairingStore.swift; sourceTree = "<group>"; };
 		A9E70005A6EAC0DE00000104 /* MobileSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Mobile/MobileSocketCommands.swift; sourceTree = "<group>"; };
 		A9E70005A6EAC0DE00000106 /* MobilePairingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Mobile/UI/MobilePairingViews.swift; sourceTree = "<group>"; };
+		A9E70005A6EAC0DE00000108 /* MobileSurfaceStreamStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Mobile/MobileSurfaceStreamStore.swift; sourceTree = "<group>"; };
 		A9E70006A6EAC0DE00000002 /* TermLoopSidebarInjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/TermLoopSidebarInjection.swift; sourceTree = "<group>"; };
 		A9E70007A6EAC0DE00000002 /* SocketControlSettings+TermLoop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TermLoop/Hooks/SocketControlSettings+TermLoop.swift"; sourceTree = "<group>"; };
 		A9E70008A6EAC0DE00000002 /* TermLoopTCPBridgeCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/TermLoopTCPBridgeCoordinator.swift; sourceTree = "<group>"; };
@@ -1000,6 +1003,7 @@
 		C776A8EF46831DAA57422170 /* WebhookDiscovery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WebhookDiscovery.swift; sourceTree = "<group>"; };
 		C8A4F59338C541AFB7CC0DAB /* TabManagerAddWorkspaceTaskIdTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabManagerAddWorkspaceTaskIdTests.swift; sourceTree = "<group>"; };
 		C943D8A1DC104A19B7ED31AF /* WorkspaceMetadataStoreTaskIdTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorkspaceMetadataStoreTaskIdTests.swift; sourceTree = "<group>"; };
+		CB5AFE001111222233334444 /* ContextBankSymlinkTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextBankSymlinkTests.swift; sourceTree = "<group>"; };
 		C9A10001A6EAC0DE00000002 /* TermLoopMCPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoopMCPServer.swift; sourceTree = "<group>"; };
 		C9A10004A6EAC0DE00000002 /* TermLoopBuiltInMCP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TermLoop/Integrations/TermLoopBuiltInMCP.swift; sourceTree = "<group>"; };
 		C9A10007A6EAC0DE00000002 /* AgentReportedContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TermLoop/Core/AgentReportedContext.swift; sourceTree = "<group>"; };
@@ -1679,6 +1683,7 @@
 				AA0080A6EAC0DE12345672 /* WorkspaceBridge.swift */,
 				A9E70005A6EAC0DE00000102 /* MobilePairingStore.swift */,
 				A9E70005A6EAC0DE00000104 /* MobileSocketCommands.swift */,
+				A9E70005A6EAC0DE00000108 /* MobileSurfaceStreamStore.swift */,
 				A9E70005A6EAC0DE00000106 /* MobilePairingViews.swift */,
 				A9E70005A6EAC0DE00000002 /* TermLoopSocketCommands.swift */,
 				AAB2001EA6EAC0DE00000002 /* TermLoopHooks+Events.swift */,
@@ -1999,6 +2004,7 @@
 				18FC6989889E7918B4611617 /* AgentSocketCommandsTests.swift */,
 				7FCC2D822DEC2ADC3B4ADE6E /* AbilityStoreTests.swift */,
 				5F74A553933047EB0BB143BD /* TermLoopHooksRestorePruneTests.swift */,
+				CB5AFE001111222233334444 /* ContextBankSymlinkTests.swift */,
 				3BC41841A0027C5FCF28E38F /* AgentWorkspaceKindTests.swift */,
 				2C479F506025F66A68BE483F /* WorkspaceBridgeStoreTests.swift */,
 				F0D8FC7225FF21696C5669C2 /* BridgeMessageExtractorTests.swift */,
@@ -2465,6 +2471,7 @@
 				AA0080A6EAC0DE12345671 /* WorkspaceBridge.swift in Sources */,
 				A9E70005A6EAC0DE00000101 /* MobilePairingStore.swift in Sources */,
 				A9E70005A6EAC0DE00000103 /* MobileSocketCommands.swift in Sources */,
+				A9E70005A6EAC0DE00000107 /* MobileSurfaceStreamStore.swift in Sources */,
 				A9E70005A6EAC0DE00000105 /* MobilePairingViews.swift in Sources */,
 				A9E70005A6EAC0DE00000001 /* TermLoopSocketCommands.swift in Sources */,
 				AAB2001EA6EAC0DE00000001 /* TermLoopHooks+Events.swift in Sources */,
@@ -2781,6 +2788,7 @@
 				1455A834FB638DA1024FBACD /* AgentSocketCommandsTests.swift in Sources */,
 				02451E50F192AF65292A8B30 /* AbilityStoreTests.swift in Sources */,
 				4C2396DEFE9BB247135A9693 /* TermLoopHooksRestorePruneTests.swift in Sources */,
+				CB5AFE001111222233334443 /* ContextBankSymlinkTests.swift in Sources */,
 				23D2FF5D5CACFBBB0CC38058 /* AgentWorkspaceKindTests.swift in Sources */,
 				2D78DED16C79E7421F23B21B /* WorkspaceBridgeStoreTests.swift in Sources */,
 				DA48BD17DD120EE78FDF5B25 /* BridgeMessageExtractorTests.swift in Sources */,

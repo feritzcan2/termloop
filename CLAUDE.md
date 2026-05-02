@@ -1,114 +1,74 @@
-# AgentInputs — Context
+# bmadworkflowtest — Claude Context
 
-Truth owners, composer, transport adapter, and Quick Action authoring
-contract for agent-invocation input assembly. Depth reference:
-`termloop/docs/termloop/agent-inputs.md`.
+## TermLoop
+TermLoop is a terminal editor with agentic side bar. Developers are our target users who uses coding agents in termloop. 
+You are also, running inside termloop now while we develop termloop. Everyfeature we develop, must target every possible project type. 
 
-## What lives here
+Two sibling projects under one workspace, plus supporting material:
 
-| File | Role |
-|---|---|
-| `AgentInputTypes.swift` | `AgentInvocationSource`, `AgentModelOption`, `AgentInvocationRequest`, `AgentInvocationPlan`, `ProjectInstructionSnapshot` |
-| `AgentCatalogStore.swift` | Terminal-agent identity + per-agent model validity |
-| `AgentTemplateStore.swift` | Template catalog (builtin / user / project, FSEvents reload) |
-| `ProjectInstructionStore.swift` | Abilities + bundled prompts + system-ability templates (skills deferred) |
-| `AgentInvocationComposer.swift` | `compose(_:)` — semantic plan, single public entry |
-| `AgentInvocationTransportAdapter.swift` | Semantic plan → argv / prefix / initial prompt |
-| `AgentInputQueries.swift` | Pure selectors over a plan |
-| `PreviewOverrides.swift` | D1(B) per-run preview override layer (mute / force-include) |
-| `BridgePromptCatalog.swift` | Ask-agent presets + bridge helper prompt content |
+- `terminal-app/` — Expo/React Native mobile SSH terminal (iOS/Android). See its own `terminal-app/CLAUDE.md` for mobile stack details.
+- `termloop/` — **TermLoop**, our AI-first macOS terminal product built on top of `manaflow-ai/cmux`. All product code lives under `Sources/TermLoop/`; upstream termloop and nested dependencies are vendored into this repo and synced via `./scripts/sync-upstreams.sh`. See `termloop/CLAUDE.md` for fork discipline and `termloop/docs/termloop/` for deep-dive references.
+- `docs/` — local notes.
 
-Quick Action is now the default **authoring surface** for user-authored
-create-agent flows. Sheet/popover entry points may collect intent or
-small prompt edits, but they should hand off to Quick Action prefill for
-the final user-visible launch review.
+## Upstream Sync Model
 
-## Invariants (do not break)
+This repo is the only working repo. `termloop/`, `termloop/ghostty/`, `termloop/homebrew-cmux/`, and `termloop/vendor/bonsplit/` are tracked as normal directories, not submodules.
 
-1. **Transport-agnostic plan.** `AgentInvocationPlan.resolvedSystemInstructions`
-   is one agent-agnostic string. No argv / tempfile / flag choice in the
-   composer or plan. Delivery lives in the transport adapter only.
-2. **Catalog has model authority.** Templates *suggest*; `AgentCatalogStore.
-   resolveModel(_:for:)` decides. A `.opus` request against an agent that
-   only supports `.default` must return `.default`.
-3. **Disk/watcher truth.** `ProjectInstructionStore` reads abilities from
-   disk per call. No in-memory cache. The old `AbilityInjector` cache-
-   bypass workaround is now the design — not a comment.
-4. **Preview ⇄ launch share the base plan.** Both read from
-   `AgentInvocationPlan`. Preview is allowed to layer *local* per-run
-   overrides (ability mutes, force-includes — D1(B) side channel); those
-   do not flow into launch. Any disagreement on non-override fields is a
-   composer bug — fix the composer, not the consumer.
-5. **Nothing hidden ships.** If text or flags reach the agent, the user
-   must be able to see that exact payload in Quick Action preview/raw or
-   the socket preview endpoint. Authored text and delivered text are not
-   the same thing; preview must surface the delivered form.
-5. **No resolver/facade layer.** Stores own truth, composer composes,
-   queries select, adapter delivers. If you feel like adding
-   `AgentInputResolver` or `BridgePromptResolver`, stop.
-6. **`AgentInvocationSource` is a typed enum.** Use `reasonTag: String?`
-   for free-form classifier suffixes (e.g. `"quickAction.freePrompt"`).
-   Don't stuff runtime intent into `reasonTag`.
+Treat the configured fork/upstream repos as read-only sync sources. To refresh vendored code, use `./scripts/sync-upstreams.sh` from the repo root; that script pulls the configured refs into the tracked directories and updates `upstreams.lock`.
 
-## When adding code
+| Path | Upstream source | Discipline |
+|---|---|---|
+| `termloop/` | `feritzcan2/cmux-fork` (integration fork over `manaflow-ai/cmux`) | **K/Y rules apply** to upstream termloop Swift/CLI files. TermLoop code under `termloop/Sources/TermLoop/` and `termloop/CLI/TermLoop/` is ours to shape freely. |
+| `termloop/ghostty/` | `feritzcan2/ghostty` | K/Y does NOT apply. Modifying ghostty Zig/C is supported when Swift hits an opaque C API wall. Sync changes back upstream manually when needed. |
+| `termloop/homebrew-cmux/` | `manaflow-ai/homebrew-cmux` | Vendored support repo; sync via the root script when required. |
+| `termloop/vendor/bonsplit/` | `feritzcan2/bonsplit` | Vendored dependency; free to modify, but keep upstream commit provenance in `upstreams.lock`. |
 
-- **New agent-capability bit** (model, flag, env): `AgentCatalogStore`. Not
-  the template, not the composer.
-- **New template field**: `AgentTemplate` + `AgentTemplateStore`. Composer
-  reads through the store.
-- **New instruction source** (abilities, bundled prompts, later skills):
-  `ProjectInstructionStore`. Snapshot returns one merged view; composer
-  joins it into `resolvedSystemInstructions`.
-- **New agent-specific CLI quirk** (flag shape, tempfile, prefix):
-  `AgentInvocationTransportAdapter` or the backing
-  `AgentSystemPromptInjector`. Do not teach the composer about CLIs.
-- **New caller wanting a plan**: build an `AgentInvocationRequest`, call
-  `AgentInvocationComposer.compose(_:)`. Don't re-implement variable
-  substitution or system-prompt stitching at the call site.
-- **New user-authored create flow**: present Quick Action with a
-  prefilled request. Do not add a second final-authoring UI unless the
-  flow is explicitly no-prompt.
-- **Pure UI slice of a plan**: `AgentInputQueries`.
+When designing: if Swift only sees an opaque C API and the feature needs more, check whether the source lives in `termloop/ghostty/`. If it does, modifying it is on the table. The working copy is local to this repo, so there is no nested remote to push from in-place.
 
-## When NOT adding code here
+The end goal: the mobile app connects to a running `termloop` session and drives it over the socket, with a "Project" layer on top for organizing workspaces by folder.
 
-- **Bridge runtime** (`WorkspaceBridgeStore`, `BridgeCoordinator`,
-  `BridgeMessageExtractor`) is out of this folder. Only bridge **input**
-  composition (presets, kickoff prompts, helper launch) lives here.
-  `BridgeKickoffSheet.submit()` just links two existing workspaces and
-  kicks off forwarding — that stays in bridge runtime.
-- **Terminal-agent presentation state** lives under `Core/` per the
-  `TerminalAgentActivityStore` architecture. Do not mix run-state with
-  invocation-input.
-- **Workspace lifecycle** lives in `AgentTerminals/TerminalAgentLifecycle`.
-  Composer/adapter produce inputs; Lifecycle orchestrates the create/
-  restore/fork ordering.
+## TermLoop terminal-agent presentation contract
 
-## Phase status
+For `termloop` / TermLoop work, terminal-agent UI state now follows one structure and should stay there:
 
-The legacy seam is gone. `AgentRunRequest` + `AgentInvocationRequest+
-Legacy.swift` were deleted in `d1dea210`. QuickAction launch and
-preview both flow through the composer, fresh-launch semantics are
-preserved by the `resolvedUserSystemPrompt` vs joined
-`resolvedSystemInstructions` split on the plan, and socket preview now
-returns the same plan/transport delivery view that Quick Action raw
-preview reads.
+- **Source of truth:** `TerminalAgentActivityStore`
+- **Truth access / predicates:** `TerminalAgentActivityStore` + `TerminalAgentActivityStore+Queries`
+- **Formatting only:** `TerminalAgentDisplayFormatting`
+- **Status-key lookup only:** `TerminalAgentStatusKeys`
+- **No resolver layer:** `TerminalAgentActivityResolver` was removed on purpose; do not reintroduce a replacement facade.
 
-Phase 6 landed. `AgentTemplateStore` owns watching/reload, production
-consumers read templates through the store, `AbilityInjector`
-composition helpers are gone, and typed `modelOverride` persistence is
-in place. Quick Action prefill unification for user-authored
-create-agent flows has landed.
+Rules:
 
-## Hard rules
+- UI must read **presentation state** (`presentation(forWorkspaceId:)`, `displayState(...)`, query helpers), not raw activity state, `workspace.statusEntries`, `workspace.agentPIDs`, or ad-hoc metadata fallbacks for agent presentation.
+- Panel-style consumers should prefer **parent-built snapshots** and pure row renderers.
+- If you need new agent UI behavior, put it in the store/query layer if it changes truth, or in formatting helpers if it is display-only.Prefer using existing one over creating new store all time.
+- Do not add a new "easy" wrapper namespace that hides the store as the real source of truth.
 
-- New files in this folder only for the 7 roles above. If your new file
-  doesn't fit one of those, you're probably adding a resolver — don't.
-- Composer is transport-agnostic. Never import `AgentSystemPromptInjector`
-  from it (injector may reverse-import the composer's reporting constant;
-  the dependency direction is composer ← injector only via the constant).
-- Consumer migrations land one call-site per commit, not as sweeping
-  rewrites. The seam exists so each can prove out independently.
-- Native same-agent conversation fork now has explicit source cases:
-  `.claudeNativeFork` and `.codexNativeFork`. Keep `.workspaceFork`
-  reserved for context handoff/new-session semantics.
+## TermLoop agent-input contract
+
+For agent launch/input work under `termloop/Sources/TermLoop/AgentInputs/`,
+follow the local rules in:
+- `termloop/Sources/TermLoop/AgentInputs/CLAUDE.md`
+- `termloop/Sources/TermLoop/AgentInputs/AGENTS.md`
+
+That folder owns the invocation input plane: catalog truth, composition,
+delivery preview, and Quick Action authoring rules.
+
+## Mobile ↔ termloop TCP bridge (shipped)
+
+iPhone can't reach Unix sockets, so `termloop` exposes a second listener (TCP, AF_INET, default `:7878`, bind `0.0.0.0`) that shares the same v2 NDJSON pipeline as the Unix socket. MVP methods on mobile: `project.list / current / switch`, `workspace.list`.
+
+- Server: `termloop/Sources/TerminalController.swift` (`handleClient(isTcpClient:)` — TCP skips cmuxOnly ancestry check, requires password auth), `SocketControlSettings.resolvedTcpPort()` / `resolvedTcpBindHost()`.
+- Mobile: `terminal-app/modules/expo-termloop` (iOS `NWConnection`, Android stub), `lib/termloop-client.ts` (RPC), `app/termloop/[id].tsx`, `app/connection/new-cmux.tsx`.
+- Password file: `~/Library/Application Support/termloop/socket-control-password` (shared across all tagged builds; each build has its own UserDefaults).
+
+## Worktrees
+
+TermLoop owns worktree lifecycle in `termloop/` — `WorktreeCoordinator` creates them at `<project>/.termloop-worktrees/<sanitized-branch>/` and keeps `WorkspaceMetadataStore` in sync. Path is gitignored at `.gitignore:85`, so no ignore-verification step is needed. Don't run `git worktree add` by hand in `termloop/` unless you're debugging — go through the app/CLI so metadata stays consistent.
+
+## TermLoop ability starter authoring
+
+For customizer-based starters under `termloop/Sources/TermLoop/Core/Templates/starters/<id>/` (empty runtime + `prompt-customizer.md` that fills in project-specific content):
+
+- The customizer must write to `.termloop/skills/<id>/SKILL.md`. That is the runtime "Project canonical" path; `.termloop/abilities/<id>/instructions.md` is silently ignored, even when an ability declares `instructionFile`.
+- Set `activation: "listed"` in `ability.json`. `worktree` forces a pseudo-installed state where the UI exposes "Open agent" with nothing to launch into; `listed` gives the correct STARTER badge plus "Create with agent | Install" actions.

@@ -108,6 +108,25 @@ via QR, talks to it over newline-delimited JSON on a raw TCP socket.
 | `surface.read_text` | `{ workspace_id, surface_id? }` | `{ text, base64?, workspace_id, workspace_ref?, surface_id, surface_ref?, window_id?, window_ref? }` |
 | `surface.send_text` | `{ workspace_id, text, surface_id? }` | `{ ok: true }` |
 | `surface.send_key` | `{ workspace_id, key, surface_id? }` | `{ ok: true }` |
+| `surface.subscribe` | `{ workspace_id, surface_id? }` | `{ subscription_id }` |
+| `surface.unsubscribe` | `{ subscription_id }` | `{ ok: true }` |
+
+### Server-pushed events (V2 streaming)
+
+Events arrive as separate NDJSON lines on the same socket. They have no
+`id` / `ok` field; the transport demuxes by `type` and the client routes
+by `subscription_id`.
+
+| Event type | Payload | Mobile handling |
+|---|---|---|
+| `surface.snapshot` | `{ subscription_id, text }` | Replace buffer; mark stream `live` |
+| `surface.output` | `{ subscription_id, text }` | Append to buffer; mark `live` |
+| `surface.closed` | `{ subscription_id }` | Mark stream `closed`; show banner |
+| `surface.error` | `{ subscription_id, message }` | Mark `degraded`; resume polling |
+
+Polling is the fallback: terminal screen polls every 1800ms only when the
+subscription has not been established or has degraded. While the
+subscription is `live`, polling is off.
 
 ### Key names sent via `surface.send_key`
 
@@ -178,8 +197,6 @@ credentials should edit/delete the existing row.
 ## Pending / known gaps
 
 - `client.resize()` is a no-op until backend exposes a PTY resize API.
-- Live terminal event stream not yet wired (`terminal.tsx` reads on
-  mount; no streaming updates).
 - No reconnect/backoff on socket drop.
 - ANSI/xterm not parsed; `terminal.tsx` is a scrolling text view with a
   64K char cap.

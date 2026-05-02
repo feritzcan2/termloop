@@ -16,10 +16,13 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getActiveClient } from "../../lib/session";
+import type { SurfaceSubscription } from "../../lib/termloop-client";
 import { colors, monoFont, radii } from "../../lib/theme";
 
 const MAX_BUFFER_CHARS = 64_000;
 const POLL_INTERVAL_MS = 1800;
+
+type LiveState = "connecting" | "live" | "degraded" | "closed";
 
 const FONT_SIZES = [11, 13, 15] as const;
 type FontIndex = 0 | 1 | 2;
@@ -64,10 +67,12 @@ export default function TerminalScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [fontIndex, setFontIndex] = useState<FontIndex>(1);
+  const [liveState, setLiveState] = useState<LiveState>("connecting");
 
   const aliveRef = useRef(true);
   const inFlightRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
+  const subscriptionRef = useRef<SurfaceSubscription | null>(null);
 
   useEffect(() => {
     aliveRef.current = true;
@@ -108,31 +113,105 @@ export default function TerminalScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!client || !workspaceId) return;
+
+      let cancelled = false;
       let intervalId: ReturnType<typeof setInterval> | null = null;
-      const start = () => {
+      let subscription: SurfaceSubscription | null = null;
+
+      const startPolling = () => {
         if (intervalId) return;
         intervalId = setInterval(() => {
           refresh().catch(() => {});
         }, POLL_INTERVAL_MS);
       };
-      const stop = () => {
+      const stopPolling = () => {
         if (!intervalId) return;
         clearInterval(intervalId);
         intervalId = null;
       };
-      if (AppState.currentState === "active") start();
-      const appStateSub = AppState.addEventListener(
-        "change",
-        (next: AppStateStatus) => {
-          if (next === "active") start();
-          else stop();
-        }
-      );
-      return () => {
-        stop();
-        appStateSub.remove();
+
+      const dropSubscription = () => {
+        const sub = subscription;
+        subscription = null;
+        subscriptionRef.current = null;
+        if (sub) sub.unsubscribe().catch(() => {});
       };
-    }, [client, workspaceId, refresh])
+
+      const trySubscribe = async () => {
+        try {
+          const sub = await client.subscribeSurface(
+            workspaceId,
+            surfaceId,
+            (event) => {
+              if (cancelled || !aliveRef.current) return;
+              switch (event.type) {
+                case "surface.snapshot":
+                  setBuffer(capLeft(event.text));
+                  setLiveState("live");
+                  setInlineError(null);
+                  stopPolling();
+                  return;
+                case "surface.output":
+                  setBuffer((b) => capLeft(b + event.text));
+                  setLiveState("live");
+                  setInlineError(null);
+                  stopPolling();
+                  return;
+                case "surface.closed":
+                  setLiveState("closed");
+                  stopPolling();
+                  dropSubscription();
+                  return;
+                case "surface.error":
+                  setLiveState("degraded");
+                  setInlineError(`Stream error: ${event.message}`);
+                  // Subscription is dead from the client's POV; the next
+                  // resume / focus will try a fresh subscribe.
+                  dropSubscription();
+                  startPolling();
+                  return;
+              }
+            }
+          );
+          if (cancelled) {
+            sub.unsubscribe().catch(() => {});
+            return;
+          }
+          subscription = sub;
+          subscriptionRef.current = sub;
+          setLiveState("live");
+          stopPolling();
+        } catch (err) {
+          if (cancelled) return;
+          setLiveState("degraded");
+          setInlineError(`Subscribe failed: ${(err as Error).message}`);
+          startPolling();
+          refresh().catch(() => {});
+        }
+      };
+
+      const onAppState = (next: AppStateStatus) => {
+        if (next === "active") {
+          if (!subscription) trySubscribe();
+        } else {
+          stopPolling();
+          if (subscription) {
+            dropSubscription();
+            setLiveState("connecting");
+          }
+        }
+      };
+      if (AppState.currentState === "active") trySubscribe();
+      const appStateSub = AppState.addEventListener("change", onAppState);
+
+      return () => {
+        cancelled = true;
+        stopPolling();
+        appStateSub.remove();
+        dropSubscription();
+        setLiveState("connecting");
+      };
+    }, [client, workspaceId, surfaceId, refresh])
   );
 
   const sendKey = useCallback(
@@ -217,6 +296,16 @@ export default function TerminalScreen() {
             )}
           </Pressable>
         </View>
+
+        {liveState === "degraded" || liveState === "closed" ? (
+          <View style={styles.streamBanner}>
+            <Text style={styles.streamBannerText}>
+              {liveState === "closed"
+                ? "Surface closed by server"
+                : "Live updates unavailable — polling"}
+            </Text>
+          </View>
+        ) : null}
 
         {inlineError ? (
           <Pressable
@@ -326,6 +415,14 @@ const styles = StyleSheet.create({
   },
   toolbarBtnText: { color: colors.text, fontSize: 13, fontWeight: "500" },
 
+  streamBanner: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: colors.bgRaised,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  streamBannerText: { color: colors.warn, fontSize: 11, fontWeight: "500" },
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
