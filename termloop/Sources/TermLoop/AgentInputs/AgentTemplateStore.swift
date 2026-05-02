@@ -30,6 +30,11 @@ final class AgentTemplateStore: ObservableObject {
         templates.first { $0.id == id }
     }
 
+    func hasDefaultTemplate(id: String) -> Bool {
+        templateInDirectory(id: id, dir: latestUser, source: .user) != nil
+            || templateInDirectory(id: id, dir: latestBuiltin, source: .builtin) != nil
+    }
+
     func startWatching(builtinDir: URL?, userDir: URL?, projectDir: URL?) {
         latestBuiltin = builtinDir
         latestUser = userDir
@@ -126,35 +131,30 @@ final class AgentTemplateStore: ObservableObject {
         reloadWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
     }
+
+    private func templateInDirectory(
+        id: String,
+        dir: URL?,
+        source: AgentTemplate.Source
+    ) -> AgentTemplate? {
+        guard let dir, FileManager.default.fileExists(atPath: dir.path) else { return nil }
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: nil
+        ) else { return nil }
+        for file in files where file.pathExtension == "md" {
+            guard let template = try? AgentTemplate.load(from: file, source: source),
+                  template.id == id else { continue }
+            return template
+        }
+        return nil
+    }
 }
 
 extension AgentTemplateStore {
     static func projectTemplatesDir(projectFolderPath: String?) -> URL? {
         guard let projectFolderPath else { return nil }
         return AgentPaths.projectLocalTemplatesDir(near: URL(fileURLWithPath: projectFolderPath, isDirectory: true))
-    }
-
-    func duplicateTemplateToProject(id: String, projectFolderPath: String) throws {
-        guard let template = templates.first(where: { $0.id == id && $0.source != .project }) else {
-            throw NSError(domain: "AgentTemplateStore", code: 1, userInfo: [NSLocalizedDescriptionKey: "Template not found."])
-        }
-        try saveProjectTemplate(
-            template,
-            projectFolderPath: projectFolderPath,
-            name: template.name,
-            description: template.description,
-            model: template.model,
-            permissionMode: template.permissionMode,
-            lifecycle: template.lifecycle,
-            scope: template.scope,
-            promptDocumentId: template.promptDocumentId,
-            systemPromptDocumentId: template.systemPromptDocumentId,
-            body: template.body
-        )
-    }
-
-    func duplicateBuiltInToProject(id: String, projectFolderPath: String) throws {
-        try duplicateTemplateToProject(id: id, projectFolderPath: projectFolderPath)
     }
 
     @discardableResult
@@ -168,56 +168,97 @@ extension AgentTemplateStore {
             id: id,
             name: resolvedName,
             description: "",
+            icon: "",
+            agentId: nil,
             model: .default,
+            reasoning: nil,
             permissionMode: .bypassPermissions,
             lifecycle: .detached,
             scope: .workspace,
+            logging: .file,
+            triggers: [.manual],
+            defaultAttach: false,
+            cleanup: .none,
+            variables: [],
+            timeoutSeconds: 600,
             promptDocumentId: nil,
             systemPromptDocumentId: nil,
             body: body
         )
         try text.write(to: url, atomically: true, encoding: .utf8)
-        reloadSynchronously(builtinDir: latestBuiltin, userDir: latestUser, projectDir: latestProject)
+        reloadSynchronously(
+            builtinDir: latestBuiltin,
+            userDir: latestUser,
+            projectDir: url.deletingLastPathComponent()
+        )
         guard let created = templates.first(where: { $0.id == id }) else {
             throw NSError(domain: "AgentTemplateStore", code: 2, userInfo: [NSLocalizedDescriptionKey: "Created template not found after save."])
         }
         return created
     }
 
+    @discardableResult
     func saveProjectTemplate(
         _ template: AgentTemplate,
         projectFolderPath: String,
         name: String,
         description: String,
-        model: AgentTemplate.Model,
+        icon: String = "",
+        agentId: String? = nil,
+        model: AgentModelOption,
+        reasoning: AgentReasoningOption? = nil,
         permissionMode: AgentTemplate.PermissionMode,
         lifecycle: AgentTemplate.Lifecycle,
         scope: AgentTemplate.Scope,
+        logging: AgentTemplate.Logging = .file,
+        triggers: [AgentTemplate.Trigger] = [.manual],
+        defaultAttach: Bool = false,
+        cleanup: AgentTemplate.Cleanup = .none,
+        variables: [String] = [],
+        timeoutSeconds: Int = 600,
         promptDocumentId: String? = nil,
         systemPromptDocumentId: String? = nil,
         body: String
-    ) throws {
+    ) throws -> AgentTemplate {
         let url = try projectTemplateURL(id: template.id, projectFolderPath: projectFolderPath)
         let text = serializeTemplate(
             id: template.id,
             name: name,
             description: description,
+            icon: icon,
+            agentId: agentId,
             model: model,
+            reasoning: reasoning,
             permissionMode: permissionMode,
             lifecycle: lifecycle,
             scope: scope,
+            logging: logging,
+            triggers: triggers,
+            defaultAttach: defaultAttach,
+            cleanup: cleanup,
+            variables: variables,
+            timeoutSeconds: timeoutSeconds,
             promptDocumentId: promptDocumentId,
             systemPromptDocumentId: systemPromptDocumentId,
             body: body
         )
         try text.write(to: url, atomically: true, encoding: .utf8)
-        reloadSynchronously(builtinDir: latestBuiltin, userDir: latestUser, projectDir: latestProject)
+        reloadSynchronously(
+            builtinDir: latestBuiltin,
+            userDir: latestUser,
+            projectDir: url.deletingLastPathComponent()
+        )
+        guard let saved = templates.first(where: { $0.id == template.id && $0.source == .project }) else {
+            throw NSError(domain: "AgentTemplateStore", code: 4, userInfo: [NSLocalizedDescriptionKey: "Project template was written but not found after reload."])
+        }
+        return saved
     }
 
     func deleteProjectTemplate(_ template: AgentTemplate) throws {
         guard template.source == .project else { return }
+        let projectDir = template.sourceURL.deletingLastPathComponent()
         try FileManager.default.removeItem(at: template.sourceURL)
-        reloadSynchronously(builtinDir: latestBuiltin, userDir: latestUser, projectDir: latestProject)
+        reloadSynchronously(builtinDir: latestBuiltin, userDir: latestUser, projectDir: projectDir)
     }
 
     private func uniqueProjectTemplateID(name: String) -> String {
@@ -249,32 +290,47 @@ extension AgentTemplateStore {
         id: String,
         name: String,
         description: String,
-        model: AgentTemplate.Model,
+        icon: String,
+        agentId: String?,
+        model: AgentModelOption,
+        reasoning: AgentReasoningOption?,
         permissionMode: AgentTemplate.PermissionMode,
         lifecycle: AgentTemplate.Lifecycle,
         scope: AgentTemplate.Scope,
+        logging: AgentTemplate.Logging,
+        triggers: [AgentTemplate.Trigger],
+        defaultAttach: Bool,
+        cleanup: AgentTemplate.Cleanup,
+        variables: [String],
+        timeoutSeconds: Int,
         promptDocumentId: String? = nil,
         systemPromptDocumentId: String? = nil,
         body: String
     ) -> String {
         let promptDocumentLine = yamlLine(key: "promptDocumentId", value: promptDocumentId)
         let systemPromptDocumentLine = yamlLine(key: "systemPromptDocumentId", value: systemPromptDocumentId)
+        let agentIdLine = yamlLine(key: "agentId", value: agentId)
+        let reasoningLine = yamlLine(key: "reasoning", value: reasoning?.rawValue)
+        let triggerLines = yamlStringList(key: "triggers", values: triggers.map(\.rawValue))
+        let variableLines = yamlStringList(key: "variables", values: variables)
         return [
             "---",
             "id: \(id)",
             "name: \"\(escapeYAML(name))\"",
             "description: \"\(escapeYAML(description))\"",
+            "icon: \"\(escapeYAML(icon))\"",
+            agentIdLine,
             "scope: \(scope.rawValue)",
             "permissionMode: \(permissionMode.rawValue)",
             "lifecycle: \(lifecycle.rawValue)",
-            "logging: file",
-            "triggers:",
-            "  - manual",
-            "defaultAttach: false",
+            "logging: \(logging.rawValue)",
+            triggerLines,
+            "defaultAttach: \(defaultAttach ? "true" : "false")",
             "model: \(model.rawValue)",
-            "cleanup: none",
-            "variables: []",
-            "timeoutSeconds: 600",
+            reasoningLine,
+            "cleanup: \(cleanup.rawValue)",
+            variableLines,
+            "timeoutSeconds: \(max(1, timeoutSeconds))",
             promptDocumentLine,
             systemPromptDocumentLine,
             "---",
@@ -291,5 +347,14 @@ extension AgentTemplateStore {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !trimmed.isEmpty else { return "\(key):" }
         return "\(key): \"\(escapeYAML(trimmed))\""
+    }
+
+    private func yamlStringList(key: String, values: [String]) -> String {
+        let cleaned = values.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty }
+        guard !cleaned.isEmpty else { return "\(key): []" }
+        let lines = cleaned.map { "  - \"\(escapeYAML($0))\"" }
+        return ([ "\(key):" ] + lines).joined(separator: "\n")
     }
 }

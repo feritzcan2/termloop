@@ -7,6 +7,8 @@
  *   error   : { id, ok: false, error: { code: string, message, data? } }
  */
 
+import { connectionHostCandidates } from "./connections";
+
 export type RequestId = string;
 
 export interface RpcRequest<M extends string = string, P = unknown> {
@@ -585,22 +587,16 @@ export function parsePairingPayload(raw: string): PairingPayload {
   }
   return {
     ...(o as unknown as PairingPayload),
-    alternate_hosts: normalizeHostCandidates(
-      o.host,
-      o.alternate_hosts as string[] | undefined
-    ).slice(1),
+    alternate_hosts: connectionHostCandidates({
+      host: o.host as string,
+      alternateHosts: o.alternate_hosts as string[] | undefined,
+    }).slice(1),
   };
 }
 
 export function pairingHostCandidates(payload: PairingPayload): string[] {
-  return normalizeHostCandidates(payload.host, payload.alternate_hosts);
-}
-
-function normalizeHostCandidates(host: string, alternateHosts?: string[]): string[] {
-  const out: string[] = [];
-  for (const candidate of [host, ...(alternateHosts ?? [])]) {
-    const value = candidate.trim();
-    if (value && !out.includes(value)) out.push(value);
-  }
-  return out;
+  return connectionHostCandidates({
+    host: payload.host,
+    alternateHosts: payload.alternate_hosts,
+  });
 }

@@ -557,7 +557,7 @@ struct QuickActionView: View {
 
     private var agentPill: some View {
         Menu {
-            ForEach(TerminalAgentRegistry.shared.agents, id: \.id) { agent in
+            ForEach(AgentCatalogStore.shared.agents, id: \.id) { agent in
                 Button(agent.displayName) {
                     viewModel.advancedTerminalAgentId = agent.id
                 }
@@ -618,7 +618,7 @@ struct QuickActionView: View {
     }
 
     private var agentPillLabel: String {
-        TerminalAgentRegistry.shared.agent(id: viewModel.advancedTerminalAgentId)?.id
+        AgentCatalogStore.shared.agent(id: viewModel.advancedTerminalAgentId)?.id
             ?? viewModel.advancedTerminalAgentId
     }
 

@@ -266,7 +266,7 @@ final class TerminalAgentRegistryTests: XCTestCase {
             for: codex,
             parentSessionId: "codex-session-123",
             initialPrompt: "Continue from here",
-            cwd: "/tmp/forked",
+            cwd: "/tmp/forked worktree",
             permission: .bypassPermissions,
             systemPrompt: nil
         )
@@ -274,7 +274,13 @@ final class TerminalAgentRegistryTests: XCTestCase {
         assertCommand(
             command,
             invokesExecutableNamed: "codex",
-            containsAll: ["fork", "--dangerously-bypass-approvals-and-sandbox", "codex-session-123"]
+            containsAll: [
+                "fork",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--cd",
+                "'/tmp/forked worktree'",
+                "codex-session-123"
+            ]
         )
         XCTAssertTrue(command.contains("'Continue from here'"), command)
     }

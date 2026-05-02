@@ -78,8 +78,11 @@ in upstream-owned Swift files. Regenerate with `scripts/generate-hooks-inventory
 | `Sources/TerminalController.swift` | 14904 | `if TerminalAgentRegistry.shared.statusKeys.contains(key) {` |
 | `Sources/Update/UpdateTitlebarAccessory.swift` | 411 | `TermLoopHooks.titlebarSettingsButton(config: config)` |
 | `Sources/Workspace.swift` | 454 | `TermLoopHooks.ensurePanelDirectoryBeforeSnapshot(workspace: self, panelId: panelId)` |
-| `Sources/Workspace.swift` | 9254 | `TermLoopHooks.seedSpawnPanelDirectory(workspace: self, panelId: newPanel.id, directory: workingDirectory)` |
-| `Sources/Workspace.swift` | 10451 | `return newTerminalSurface(inPane: focusedPaneId, focus: focus, workingDirectory: termLoopNewTabCwd)` |
+| `Sources/Workspace.swift` | 7637 | `TermLoopHooks.workspaceTitleDidChange(workspace: self)` |
+| `Sources/Workspace.swift` | 7668 | `TermLoopHooks.workspaceTitleDidChange(workspace: self)` |
+| `Sources/Workspace.swift` | 8045 | `TermLoopHooks.workspaceTitleDidChange(workspace: self)` |
+| `Sources/Workspace.swift` | 9263 | `TermLoopHooks.seedSpawnPanelDirectory(workspace: self, panelId: newPanel.id, directory: workingDirectory)` |
+| `Sources/Workspace.swift` | 10460 | `return newTerminalSurface(inPane: focusedPaneId, focus: focus, workingDirectory: termLoopNewTabCwd)` |
 | `Sources/WorkspaceContentView.swift` | 396 | `.modifier(TermLoopHooks.submoduleInitGate(for: workspace.id))` |
 | `Sources/termloopApp.swift` | 167 | `TermLoopHooks.prepareSharedTaggedBuildState()` |
 | `Sources/termloopApp.swift` | 170 | `TermLoopHooks.migrateSidebarWorkSubTabDefaultIfNeeded()` |
@@ -93,4 +96,4 @@ in upstream-owned Swift files. Regenerate with `scripts/generate-hooks-inventory
 | `Sources/termloopApp.swift` | 645 | `Button(String(localized: "termloop.deleteAllData.menu.label", defaultValue: "Delete All Data (This Build)…", table: "TermLoop")) { TermLoopHooks.promptDeleteAllBuildData() }` |
 | `Sources/termloopApp.swift` | 1245 | `"cmux.debugEventLog",` |
 
-Total hook blocks: **87**.
+Total hook blocks: **90**.

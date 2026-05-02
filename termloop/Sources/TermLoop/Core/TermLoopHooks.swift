@@ -2400,7 +2400,18 @@ export const CmuxTermLoop = async ({ $, directory }) => {
     static func workspaceDidClose(workspaceId: UUID) {
         TermLoopDeferredWorkspaceRestore.discard(workspaceId: workspaceId)
         BridgeCoordinator.shared.workspaceDidClose(workspaceId: workspaceId)
+        WorkspaceMetadataStore.shared.forgetObservedWorkspaceTitle(workspaceId: workspaceId)
         WorkspaceMetadataStore.shared.clearAgentSession(forWorkspaceId: workspaceId)
+    }
+
+    static func workspaceTitleDidChange(workspace: Workspace) {
+        let custom = workspace.customTitle?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let title = custom.isEmpty ? workspace.title : custom
+        WorkspaceMetadataStore.shared.noteWorkspaceTitleDidChange(
+            workspaceId: workspace.id,
+            displayTitle: title
+        )
     }
 
     /// Sidebar cable view rendered directly below the LEFT endpoint of a bridge.

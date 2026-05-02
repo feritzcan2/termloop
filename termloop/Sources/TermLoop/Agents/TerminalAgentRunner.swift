@@ -564,9 +564,16 @@ enum TerminalAgentRunner {
                     + injection.extraArgv
             )
         case "codex":
+            let trimmedCwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cwdArgv: [String]
+            if let trimmedCwd, !trimmedCwd.isEmpty {
+                cwdArgv = ["--cd", trimmedCwd]
+            } else {
+                cwdArgv = []
+            }
             baseCommand = commandLine(
                 for: agent,
-                argv: ["fork"] + effectiveArgv + injection.extraArgv + [sessionId]
+                argv: ["fork"] + effectiveArgv + injection.extraArgv + cwdArgv + [sessionId]
             )
         default:
             baseCommand = commandLine(for: agent, argv: effectiveArgv + injection.extraArgv)

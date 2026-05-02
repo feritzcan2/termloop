@@ -28,8 +28,8 @@ import { getActiveClient } from "../../lib/session";
 import { type SurfaceSubscription } from "../../lib/termloop-client";
 import { colors, monoFont, radii } from "../../lib/theme";
 
-const MAX_BUFFER_LINES = 1200;
-const MAX_BUFFER_CHARS = 180_000;
+const MAX_BUFFER_LINES = 3000;
+const MAX_BUFFER_CHARS = 450_000;
 const MAX_RENDER_SEGMENTS = 2200;
 const HISTORY_LINES = 500;
 const POLL_INTERVAL_MS = 1800;

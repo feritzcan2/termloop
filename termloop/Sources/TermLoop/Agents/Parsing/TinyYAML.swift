@@ -7,6 +7,9 @@ import Foundation
 ///   - top-level `key: value` pairs
 ///   - scalar values: string (optionally quoted), bool (true/false), int
 ///   - inline array: `[a, b, c]`
+///   - top-level block array:
+///       key:
+///         - value
 ///   - `#` comments, blank lines
 /// Throws on anything else (block scalars, nested maps, anchors, flow maps).
 enum TinyYAML {
@@ -27,10 +30,15 @@ enum TinyYAML {
     static func parse(_ text: String) throws -> [String: Any] {
         var out: [String: Any] = [:]
         let lines = text.components(separatedBy: "\n")
-        for (idx, raw) in lines.enumerated() {
+        var idx = 0
+        while idx < lines.count {
+            let raw = lines[idx]
             let line = idx + 1
             let trimmed = raw.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
+            if trimmed.isEmpty || trimmed.hasPrefix("#") {
+                idx += 1
+                continue
+            }
             if raw.first == " " || raw.first == "\t" {
                 throw Error.nestedMappingUnsupported(line: line)
             }
@@ -43,17 +51,49 @@ enum TinyYAML {
                 throw Error.blockScalarUnsupported(line: line)
             }
             if valuePart.isEmpty {
-                // bare key implies nested mapping on next line — unsupported
+                if let list = try parseBlockArrayIfPresent(lines: lines, startIndex: idx + 1) {
+                    out[key] = list.values
+                    idx = list.nextIndex
+                    continue
+                }
+                // bare key implies nested mapping on next line — unsupported,
+                // except an empty final scalar such as `promptDocumentId:`.
                 if idx + 1 < lines.count,
                    let next = lines[idx + 1].first, next == " " || next == "\t" {
                     throw Error.nestedMappingUnsupported(line: line)
                 }
                 out[key] = ""
+                idx += 1
                 continue
             }
             out[key] = parseScalar(valuePart)
+            idx += 1
         }
         return out
+    }
+
+    private static func parseBlockArrayIfPresent(
+        lines: [String],
+        startIndex: Int
+    ) throws -> (values: [String], nextIndex: Int)? {
+        var values: [String] = []
+        var idx = startIndex
+        while idx < lines.count {
+            let raw = lines[idx]
+            let trimmed = raw.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty || trimmed.hasPrefix("#") {
+                idx += 1
+                continue
+            }
+            guard raw.first == " " || raw.first == "\t" else { break }
+            guard trimmed.hasPrefix("-") else {
+                throw Error.nestedMappingUnsupported(line: idx + 1)
+            }
+            let afterDash = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+            values.append(unquote(afterDash))
+            idx += 1
+        }
+        return values.isEmpty ? nil : (values, idx)
     }
 
     private static func parseScalar(_ raw: String) -> Any {

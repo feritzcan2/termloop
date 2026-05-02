@@ -33,6 +33,9 @@ enum AgentSocketCommands {
                 "triggers": t.triggers.map(\.rawValue),
                 "permissionMode": t.permissionMode.rawValue,
                 "defaultAttach": t.defaultAttach,
+                "agentId": t.agentId ?? "",
+                "model": t.model.rawValue,
+                "reasoning": t.reasoning?.rawValue ?? "",
                 "source": t.source.rawValue,
                 "sourcePath": t.sourceURL.path
             ]
@@ -52,7 +55,8 @@ enum AgentSocketCommands {
             "scope": t.scope.rawValue, "triggers": t.triggers.map(\.rawValue),
             "permissionMode": t.permissionMode.rawValue,
             "lifecycle": t.lifecycle.rawValue, "logging": t.logging.rawValue,
-            "defaultAttach": t.defaultAttach, "model": t.model.rawValue,
+            "defaultAttach": t.defaultAttach, "agentId": t.agentId ?? "",
+            "model": t.model.rawValue, "reasoning": t.reasoning?.rawValue ?? "",
             "cleanup": t.cleanup.rawValue, "variables": t.variables,
             "timeoutSeconds": t.timeoutSeconds,
             "source": t.source.rawValue, "sourcePath": t.sourceURL.path

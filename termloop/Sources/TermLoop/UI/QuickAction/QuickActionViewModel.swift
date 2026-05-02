@@ -769,10 +769,8 @@ final class QuickActionViewModel: ObservableObject {
 
     private func buildRequest() throws -> AgentInvocationRequest {
         let effectivePermission = advancedPermission
-        let effectiveModel = advancedModel != .default ? advancedModel : nil
-        let effectiveReasoning = advancedReasoning != .default
-            ? advancedReasoning
-            : nil
+        let effectiveModel = advancedModel
+        let effectiveReasoning = advancedReasoning
         let source = effectiveLaunchSource()
         let reasonTag = presentedReasonTag
         let effectiveSystemPrompt: String? = {
@@ -896,8 +894,8 @@ final class QuickActionViewModel: ObservableObject {
             promptDocumentIdOverride: promptDocumentOverrideForCurrentSelection(),
             systemPromptDocumentIdOverride: systemPromptDocumentOverrideForCurrentSelection(),
             permissionOverride: advancedPermission,
-            modelOverride: advancedModel == .default ? nil : advancedModel,
-            reasoningOverride: advancedReasoning == .default ? nil : advancedReasoning,
+            modelOverride: advancedModel,
+            reasoningOverride: advancedReasoning,
             variableValues: advancedVariableValues,
             launchSource: .manualWorkspaceCreate,
             reasonTag: presentedReasonTag,
@@ -917,8 +915,8 @@ final class QuickActionViewModel: ObservableObject {
             promptDocumentIdOverride: promptDocumentOverrideForCurrentSelection(),
             systemPromptDocumentIdOverride: systemPromptDocumentOverrideForCurrentSelection(),
             permissionOverride: advancedPermission,
-            modelOverride: advancedModel == .default ? nil : advancedModel,
-            reasoningOverride: advancedReasoning == .default ? nil : advancedReasoning,
+            modelOverride: advancedModel,
+            reasoningOverride: advancedReasoning,
             variableValues: advancedVariableValues,
             launchSource: .manualWorkspaceCreate,
             reasonTag: presentedReasonTag,
@@ -978,8 +976,8 @@ final class QuickActionViewModel: ObservableObject {
 
     private func resolvedDefaultTerminalAgentId() -> String? {
         let defaultId = TermLoopSettings.shared.defaultTerminalAgentId
-        return TerminalAgentRegistry.shared.agent(id: defaultId)?.id
-            ?? TerminalAgentRegistry.shared.agents.first?.id
+        return AgentCatalogStore.shared.agent(id: defaultId)?.id
+            ?? AgentCatalogStore.shared.agents.first?.id
     }
 
     private func launchTerminal(request: AgentInvocationRequest) throws {
@@ -1143,20 +1141,34 @@ final class QuickActionViewModel: ObservableObject {
         return all.map(\.id).sorted().first
     }
 
-    private func modelFromLRU(_ stored: AgentModelOption?) -> AgentModelOption {
-        AgentCatalogStore.shared.resolveModel(stored, for: advancedTerminalAgentId)
+    private func resolvedModelSelection(
+        _ stored: AgentModelOption?,
+        forAgentId agentId: String
+    ) -> AgentModelOption {
+        AgentCatalogStore.shared.resolveModel(stored, for: agentId)
     }
 
     private func applyAdvancedMemory(_ memory: QuickActionAdvancedMemory?) {
+        if let templateAgentId = activeTemplate?.agentId,
+           AgentCatalogStore.shared.agent(id: templateAgentId) != nil {
+            advancedTerminalAgentId = templateAgentId
+        }
         advancedPermission =
             PermissionModePersistence.lastUsedMode(forAgentId: advancedTerminalAgentId)
             ?? permissionMode(from: memory?.permissionMode)
             ?? .bypassPermissions
         advancedVariableValues = memory?.variableValues ?? [:]
         let agentMemory = lru.agentAdvancedMemory(forAgentId: advancedTerminalAgentId)
-        advancedModel = modelFromLRU(agentMemory?.modelOverride ?? memory?.modelOverride)
+        advancedModel = resolvedModelSelection(
+            agentMemory?.modelOverride
+                ?? memory?.modelOverride
+                ?? activeTemplate?.model,
+            forAgentId: advancedTerminalAgentId
+        )
         advancedReasoning = reasoningFromLRU(
-            agentMemory?.reasoningOverride ?? memory?.reasoningOverride,
+            agentMemory?.reasoningOverride
+                ?? memory?.reasoningOverride
+                ?? activeTemplate?.reasoning,
             forAgentId: advancedTerminalAgentId
         )
         advancedSystemPrompt = memory?.systemPrompt ?? ""
@@ -1414,8 +1426,8 @@ final class QuickActionViewModel: ObservableObject {
     // MARK: Preview
 
     func refreshPreview() {
-        guard let agent = TerminalAgentRegistry.shared.agent(id: advancedTerminalAgentId)
-            ?? TerminalAgentRegistry.shared.agents.first else {
+        guard let agent = AgentCatalogStore.shared.agent(id: advancedTerminalAgentId)
+            ?? AgentCatalogStore.shared.agents.first else {
             preview.setPlan(nil)
             return
         }
@@ -1444,8 +1456,8 @@ final class QuickActionViewModel: ObservableObject {
                 permissionOverride: advancedPermission,
                 variableOverrides: advancedVariableValues,
                 source: source,
-                modelOverride: advancedModel == .default ? nil : advancedModel,
-                reasoningOverride: advancedReasoning == .default ? nil : advancedReasoning,
+                modelOverride: advancedModel,
+                reasoningOverride: advancedReasoning,
                 systemPromptOverride: effectiveSystemPrompt,
                 systemPromptDocumentIdOverride: systemPromptDocumentIdOverride,
                 reasonTag: presentedReasonTag,
@@ -1478,8 +1490,8 @@ final class QuickActionViewModel: ObservableObject {
                         permissionOverride: advancedPermission,
                         variableOverrides: advancedVariableValues,
                         source: source,
-                        modelOverride: advancedModel == .default ? nil : advancedModel,
-                        reasoningOverride: advancedReasoning == .default ? nil : advancedReasoning,
+                        modelOverride: advancedModel,
+                        reasoningOverride: advancedReasoning,
                         systemPromptOverride: effectiveSystemPrompt,
                         systemPromptDocumentIdOverride: systemPromptDocumentIdOverride,
                         reasonTag: presentedReasonTag
@@ -1497,8 +1509,8 @@ final class QuickActionViewModel: ObservableObject {
                     permissionOverride: advancedPermission,
                     variableOverrides: advancedVariableValues,
                     source: source,
-                    modelOverride: advancedModel == .default ? nil : advancedModel,
-                    reasoningOverride: advancedReasoning == .default ? nil : advancedReasoning,
+                    modelOverride: advancedModel,
+                    reasoningOverride: advancedReasoning,
                     systemPromptOverride: effectiveSystemPrompt,
                     systemPromptDocumentIdOverride: systemPromptDocumentIdOverride,
                     reasonTag: presentedReasonTag,
@@ -1571,9 +1583,16 @@ final class QuickActionViewModel: ObservableObject {
             ?? advancedPermission
         let templateMemory = currentAdvancedMemory()
         let agentMemory = lru.agentAdvancedMemory(forAgentId: agentId)
-        advancedModel = modelFromLRU(agentMemory?.modelOverride ?? templateMemory?.modelOverride)
+        advancedModel = resolvedModelSelection(
+            agentMemory?.modelOverride
+                ?? templateMemory?.modelOverride
+                ?? activeTemplate?.model,
+            forAgentId: agentId
+        )
         advancedReasoning = reasoningFromLRU(
-            agentMemory?.reasoningOverride ?? templateMemory?.reasoningOverride,
+            agentMemory?.reasoningOverride
+                ?? templateMemory?.reasoningOverride
+                ?? activeTemplate?.reasoning,
             forAgentId: agentId
         )
         normalizeAdvancedSelectionsForCurrentAgent()

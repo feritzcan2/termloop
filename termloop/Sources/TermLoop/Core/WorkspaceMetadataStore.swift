@@ -139,6 +139,11 @@ final class WorkspaceMetadataStore: ObservableObject {
     /// re-rendering on every metadata write.
     @Published private(set) var hiddenVersion: Int = 0
 
+    /// Incremented when a workspace's visible title changes. Sidebar panels
+    /// use this narrow signal because `TabManager.tabs` does not republish
+    /// when a referenced `Workspace` mutates its own `@Published` title.
+    @Published private(set) var titleVersion: Int = 0
+
     /// Incremented whenever any presentation-relevant metadata field actually
     /// changes for a workspace (terminal agent id, persisted session,
     /// awaiting-input state, preview, attention kind, last prompt). Feeds
@@ -155,6 +160,18 @@ final class WorkspaceMetadataStore: ObservableObject {
     private func bumpAgentPresentation(for id: UUID) {
         agentPresentationVersion &+= 1
         agentPresentationDidChange.send(id)
+    }
+
+    private var observedWorkspaceTitlesById: [UUID: String] = [:]
+
+    func noteWorkspaceTitleDidChange(workspaceId: UUID, displayTitle: String) {
+        guard observedWorkspaceTitlesById[workspaceId] != displayTitle else { return }
+        observedWorkspaceTitlesById[workspaceId] = displayTitle
+        titleVersion &+= 1
+    }
+
+    func forgetObservedWorkspaceTitle(workspaceId: UUID) {
+        observedWorkspaceTitlesById.removeValue(forKey: workspaceId)
     }
 
     struct EphemeralClaudeSession: Equatable {
