@@ -4259,9 +4259,8 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
         setManagedEnvironmentValue("TERMLOOP_SURFACE_ID", id.uuidString)
         setManagedEnvironmentValue("TERMLOOP_WORKSPACE_ID", tabId.uuidString)
-        // Backward-compatible shell integration keys used by existing scripts/tests.
+        // Backward-compatible shell integration key used by existing scripts/tests.
         setManagedEnvironmentValue("TERMLOOP_PANEL_ID", id.uuidString)
-        setManagedEnvironmentValue("TERMLOOP_TAB_ID", tabId.uuidString)
         let socketPath = SocketControlSettings.socketPath()
         setManagedEnvironmentValue("TERMLOOP_SOCKET_PATH", socketPath)
         // Backward-compatible alias expected by older scripts and third-party integrations.

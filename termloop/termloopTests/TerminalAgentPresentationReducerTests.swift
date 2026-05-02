@@ -11,18 +11,16 @@ final class TerminalAgentPresentationReducerTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
 
     func testActiveAgentsSortPriorityPutsActionableStatesFirst() {
-        let ordered: [TerminalAgentDisplayState] = [
-            .needsInput,
-            .error,
-            .running,
-            .completed,
-            .ready,
-            .idle
-        ]
-
         XCTAssertEqual(
-            ordered.map(\.activeAgentsSortPriority),
-            Array(0..<ordered.count)
+            [
+                TerminalAgentDisplayState.needsInput.activeAgentsSortPriority,
+                TerminalAgentDisplayState.error.activeAgentsSortPriority,
+                TerminalAgentDisplayState.running.activeAgentsSortPriority,
+                TerminalAgentDisplayState.completed.activeAgentsSortPriority,
+                TerminalAgentDisplayState.ready.activeAgentsSortPriority,
+                TerminalAgentDisplayState.idle.activeAgentsSortPriority
+            ],
+            [0, 1, 2, 2, 2, 3]
         )
     }
 
