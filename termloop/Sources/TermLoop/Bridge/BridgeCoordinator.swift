@@ -16,6 +16,28 @@ import Foundation
 final class BridgeCoordinator {
     static let shared = BridgeCoordinator()
 
+    enum FinalReplyDeliveryResult: Equatable {
+        case delivered(messageId: UUID)
+        case notFound
+        case notAskAgent
+        case notRunning
+        case alreadyReplied
+        case wrongCaller(expectedWorkspaceId: UUID, actualWorkspaceId: UUID)
+        case sourceWorkspaceUnavailable
+    }
+
+    private struct HelperReadyWait {
+        var activityCancellable: AnyCancellable?
+        var pollWorkItem: DispatchWorkItem?
+        var timeoutWorkItem: DispatchWorkItem?
+
+        func cancel() {
+            activityCancellable?.cancel()
+            pollWorkItem?.cancel()
+            timeoutWorkItem?.cancel()
+        }
+    }
+
     /// Tolerance for filtering pre-bridge sessions in the shared cwd. The
     /// askAgent helper inherits the source workspace's cwd, so the cwd-fallback
     /// in the scanner could otherwise pick up the user's own pre-existing
@@ -64,6 +86,10 @@ final class BridgeCoordinator {
     /// the source side's latest assistant message on a `running → settled`
     /// edge. Removed when the bridge stops, is dismissed, or flips to manual.
     private var autoForwardCancellables: [UUID: AnyCancellable] = [:]
+    /// Pending first-turn sends for freshly launched Ask-To helpers. These
+    /// wait for the helper agent to report ready (or show a prompt marker)
+    /// instead of blindly pasting into the boot splash.
+    private var helperReadyWaits: [UUID: HelperReadyWait] = [:]
     /// Last seen display state per workspace, used by the auto subscription
     /// to detect a `running → settled` edge instead of firing on every level
     /// signal. Workspace ids may be referenced by multiple bridges (relay /
@@ -138,15 +164,12 @@ final class BridgeCoordinator {
 
     // MARK: - Bridge lifecycle
 
-    /// Extra wait when the kickoff is going to a fresh helper workspace —
-    /// PTY surface comes up ~instantly, but Codex/Gemini's boot splash
-    /// hasn't drawn its prompt yet. Without this the kickoff text dumps
-    /// into the splash and gets fragmented (half the message ends up
-    /// somewhere, half lost). 5s covers cold launches, background-throttled
-    /// processes, and slower Codex/Gemini boot times. Still a heuristic —
-    /// a real readiness signal (prompt-character detection on screen text)
-    /// would replace this; tracked as a follow-up.
-    private let freshHelperBootDelay: TimeInterval = 5
+    /// Fresh helpers need two gates: the terminal surface must exist and the
+    /// agent TUI must have finished its boot splash. Prefer the activity hook,
+    /// fall back to prompt-marker detection, and only time out as a last resort.
+    private let freshHelperReadyTimeout: TimeInterval = 25
+    private let freshHelperPromptPollInterval: TimeInterval = 0.35
+    private let freshHelperReadySettleDelay: TimeInterval = 0.25
 
     /// Pastes rolePrompt + rightPrompt + kickoffMessage. No subscription, no
     /// baseline seeding — subsequent forwarding is manual via
@@ -162,8 +185,8 @@ final class BridgeCoordinator {
         #if DEBUG
         dlog("bridge.kickoff id=\(bridgeId.uuidString.prefix(8)) intent=\(bridge.intent) first=\(bridge.firstSpeaker) kickoffLen=\(bridge.kickoffMessage.count)")
         #endif
-        let send = { (text: String, wsId: UUID) in
-            self.sendBridgeInput(text, toWorkspaceId: wsId, tabManager: tabManager, bridgeId: bridgeId)
+        let send: (String, UUID) -> Void = { (text: String, wsId: UUID) in
+            _ = self.sendBridgeInput(text, toWorkspaceId: wsId, tabManager: tabManager, bridgeId: bridgeId)
         }
         if let role = bridge.rolePrompt?.trimmingCharacters(in: .whitespacesAndNewlines),
            !role.isEmpty {
@@ -182,10 +205,12 @@ final class BridgeCoordinator {
         let kickoffIsToFreshHelper = bridge.intent == .askAgent
             && bridge.firstSpeaker == .right
         if kickoffIsToFreshHelper {
-            DispatchQueue.main.asyncAfter(deadline: .now() + freshHelperBootDelay) { [bridgeId] in
-                guard self.store.bridge(id: bridgeId)?.state == .running else { return }
-                send(bridge.kickoffMessage, targetId)
-            }
+            sendFreshHelperKickoffWhenReady(
+                bridge: bridge,
+                targetWorkspaceId: targetId,
+                text: bridge.kickoffMessage,
+                tabManager: tabManager
+            )
         } else {
             send(bridge.kickoffMessage, targetId)
         }
@@ -195,6 +220,7 @@ final class BridgeCoordinator {
     }
 
     func stop(bridgeId: UUID) {
+        cancelPendingHelperReadySend(bridgeId: bridgeId)
         detachAutoForwardSubscription(bridgeId: bridgeId)
         cleanupHelperWorkspaceIfNeeded(bridgeId: bridgeId, force: false)
     }
@@ -204,6 +230,7 @@ final class BridgeCoordinator {
         // remove the cancellable first, do the helper close, then mutate the
         // store, and only then prune orphaned display-state entries — at
         // that point `store.bridges` reflects the post-dismiss truth.
+        cancelPendingHelperReadySend(bridgeId: bridgeId)
         autoForwardCancellables.removeValue(forKey: bridgeId)
         cleanupHelperWorkspaceIfNeeded(bridgeId: bridgeId, force: true)
         store.dismiss(id: bridgeId)
@@ -351,6 +378,338 @@ final class BridgeCoordinator {
 
         store.appendMessage(bridgeId: current.id, sender: sender, text: snapshot.text)
         sendBridgeInput(snapshot.text, toWorkspaceId: targetWsId, tabManager: tabManager, bridgeId: current.id)
+    }
+
+    /// Delivers the helper's single final Ask-To reply back to the source
+    /// workspace and closes the request id. The server validates that the
+    /// caller is the helper side so arbitrary workspaces cannot answer a
+    /// request by guessing its UUID.
+    func deliverFinalReply(
+        requestId: UUID,
+        callerWorkspaceId: UUID,
+        text: String
+    ) -> FinalReplyDeliveryResult {
+        guard let bridge = store.bridge(id: requestId) else {
+            return .notFound
+        }
+        guard bridge.intent == .askAgent else {
+            return .notAskAgent
+        }
+        guard callerWorkspaceId == bridge.rightWorkspaceId else {
+            return .wrongCaller(
+                expectedWorkspaceId: bridge.rightWorkspaceId,
+                actualWorkspaceId: callerWorkspaceId
+            )
+        }
+        guard let tabManager,
+              tabManager.tabs.contains(where: { $0.id == bridge.leftWorkspaceId })
+        else {
+            return .sourceWorkspaceUnavailable
+        }
+
+        let recordResult = store.recordFinalReply(bridgeId: requestId, text: text)
+        switch recordResult {
+        case .recorded(let messageId):
+            detachAutoForwardSubscription(bridgeId: requestId)
+            _ = sendBridgeInput(
+                Self.finalReplyInput(text),
+                toWorkspaceId: bridge.leftWorkspaceId,
+                tabManager: tabManager,
+                bridgeId: requestId
+            )
+            return .delivered(messageId: messageId)
+        case .notFound:
+            return .notFound
+        case .notAskAgent:
+            return .notAskAgent
+        case .notRunning:
+            return .notRunning
+        case .alreadyReplied:
+            return .alreadyReplied
+        }
+    }
+
+    private static func finalReplyInput(_ text: String) -> String {
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return "" }
+        return "TermLoop Ask-To final reply:\n\n\(body)"
+    }
+
+    // MARK: - Fresh helper readiness
+
+    private func sendFreshHelperKickoffWhenReady(
+        bridge: WorkspaceBridge,
+        targetWorkspaceId: UUID,
+        text: String,
+        tabManager: TabManager
+    ) {
+        let bridgeId = bridge.id
+        let agentId = bridge.rightAgentId
+        cancelPendingHelperReadySend(bridgeId: bridgeId)
+        helperReadyWaits[bridgeId] = HelperReadyWait()
+        BridgeDebugTrace.log(
+            "bridge.input.wait start id=\(bridgeId.uuidString.prefix(8)) ws=\(targetWorkspaceId.uuidString.prefix(8)) agent=\(agentId ?? "nil")"
+        )
+
+        let finish: (String) -> Void = { [weak self, weak tabManager] reason in
+            guard let self,
+                  let tabManager,
+                  self.helperReadyWaits[bridgeId] != nil
+            else { return }
+            self.cancelPendingHelperReadySend(bridgeId: bridgeId)
+            BridgeDebugTrace.log(
+                "bridge.input.wait ready id=\(bridgeId.uuidString.prefix(8)) reason=\(reason)"
+            )
+            DispatchQueue.main.asyncAfter(deadline: .now() + self.freshHelperReadySettleDelay) { [weak self, weak tabManager] in
+                guard let self,
+                      let tabManager,
+                      self.store.bridge(id: bridgeId)?.state == .running
+                else { return }
+                _ = self.sendBridgeInput(
+                    text,
+                    toWorkspaceId: targetWorkspaceId,
+                    tabManager: tabManager,
+                    bridgeId: bridgeId
+                )
+            }
+        }
+
+        if helperAgentLooksReadyForInput(
+            workspaceId: targetWorkspaceId,
+            expectedAgentId: agentId,
+            tabManager: tabManager
+        ) {
+            finish("initial")
+            return
+        }
+
+        setHelperReadyActivityCancellable(
+            TerminalAgentActivityStore.shared
+            .workspacePresentationDidChange
+            .filter { $0 == targetWorkspaceId }
+            .sink { [weak self, weak tabManager] _ in
+                guard let self,
+                      let tabManager,
+                      self.helperAgentLooksReadyForInput(
+                          workspaceId: targetWorkspaceId,
+                          expectedAgentId: agentId,
+                          tabManager: tabManager
+                      )
+                else { return }
+                finish("activity")
+            },
+            bridgeId: bridgeId
+        )
+
+        scheduleHelperPromptPoll(
+            bridgeId: bridgeId,
+            workspaceId: targetWorkspaceId,
+            agentId: agentId,
+            tabManager: tabManager,
+            onReady: finish
+        )
+
+        let timeoutWorkItem = DispatchWorkItem { [weak self] in
+            guard let self,
+                  self.helperReadyWaits[bridgeId] != nil
+            else { return }
+            BridgeDebugTrace.log(
+                "bridge.input.wait timeout id=\(bridgeId.uuidString.prefix(8)) seconds=\(self.freshHelperReadyTimeout)"
+            )
+            finish("timeout")
+        }
+        setHelperReadyTimeoutWorkItem(timeoutWorkItem, bridgeId: bridgeId)
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + freshHelperReadyTimeout,
+            execute: timeoutWorkItem
+        )
+    }
+
+    private func scheduleHelperPromptPoll(
+        bridgeId: UUID,
+        workspaceId: UUID,
+        agentId: String?,
+        tabManager: TabManager,
+        onReady: @escaping (String) -> Void
+    ) {
+        let workItem = DispatchWorkItem { [weak self, weak tabManager] in
+            guard let self,
+                  let tabManager,
+                  self.helperReadyWaits[bridgeId] != nil
+            else { return }
+            if self.helperPromptLooksReadyForInput(
+                workspaceId: workspaceId,
+                agentId: agentId,
+                tabManager: tabManager
+            ) {
+                onReady("prompt")
+                return
+            }
+            self.scheduleHelperPromptPoll(
+                bridgeId: bridgeId,
+                workspaceId: workspaceId,
+                agentId: agentId,
+                tabManager: tabManager,
+                onReady: onReady
+            )
+        }
+        setHelperReadyPollWorkItem(workItem, bridgeId: bridgeId)
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + freshHelperPromptPollInterval,
+            execute: workItem
+        )
+    }
+
+    private func cancelPendingHelperReadySend(bridgeId: UUID) {
+        helperReadyWaits.removeValue(forKey: bridgeId)?.cancel()
+    }
+
+    private func setHelperReadyActivityCancellable(
+        _ cancellable: AnyCancellable,
+        bridgeId: UUID
+    ) {
+        updateHelperReadyWait(bridgeId: bridgeId) {
+            $0.activityCancellable = cancellable
+        }
+    }
+
+    private func setHelperReadyPollWorkItem(
+        _ workItem: DispatchWorkItem,
+        bridgeId: UUID
+    ) {
+        updateHelperReadyWait(bridgeId: bridgeId) {
+            $0.pollWorkItem?.cancel()
+            $0.pollWorkItem = workItem
+        }
+    }
+
+    private func setHelperReadyTimeoutWorkItem(
+        _ workItem: DispatchWorkItem,
+        bridgeId: UUID
+    ) {
+        updateHelperReadyWait(bridgeId: bridgeId) {
+            $0.timeoutWorkItem?.cancel()
+            $0.timeoutWorkItem = workItem
+        }
+    }
+
+    private func updateHelperReadyWait(
+        bridgeId: UUID,
+        _ update: (inout HelperReadyWait) -> Void
+    ) {
+        guard var wait = helperReadyWaits[bridgeId] else { return }
+        update(&wait)
+        helperReadyWaits[bridgeId] = wait
+    }
+
+    private func helperAgentLooksReadyForInput(
+        workspaceId: UUID,
+        expectedAgentId: String?,
+        tabManager: TabManager
+    ) -> Bool {
+        if helperActivityLooksReadyForInput(
+            workspaceId: workspaceId,
+            expectedAgentId: expectedAgentId
+        ) {
+            return true
+        }
+        return helperPromptLooksReadyForInput(
+            workspaceId: workspaceId,
+            agentId: expectedAgentId,
+            tabManager: tabManager
+        )
+    }
+
+    private func helperActivityLooksReadyForInput(
+        workspaceId: UUID,
+        expectedAgentId: String?
+    ) -> Bool {
+        guard let presentation = TerminalAgentActivityStore.shared
+            .presentation(forWorkspaceId: workspaceId)
+        else { return false }
+        if let expectedAgentId,
+           let actualAgentId = presentation.agentId,
+           actualAgentId != expectedAgentId {
+            return false
+        }
+        switch presentation.displayState {
+        case .ready, .needsInput:
+            return true
+        case .idle, .running, .completed, .error:
+            return false
+        }
+    }
+
+    private func helperPromptLooksReadyForInput(
+        workspaceId: UUID,
+        agentId: String?,
+        tabManager: TabManager
+    ) -> Bool {
+        guard let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }),
+              let panel = sendableTerminalPanel(in: workspace),
+              let text = visibleTerminalText(in: panel)
+        else { return false }
+        return terminalTextLooksReadyForInput(text, agentId: agentId)
+    }
+
+    private func visibleTerminalText(in panel: TerminalPanel) -> String? {
+        guard let surface = panel.surface.surface else { return nil }
+        let topLeft = ghostty_point_s(
+            tag: GHOSTTY_POINT_VIEWPORT,
+            coord: GHOSTTY_POINT_COORD_TOP_LEFT,
+            x: 0,
+            y: 0
+        )
+        let bottomRight = ghostty_point_s(
+            tag: GHOSTTY_POINT_VIEWPORT,
+            coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT,
+            x: 0,
+            y: 0
+        )
+        let selection = ghostty_selection_s(
+            top_left: topLeft,
+            bottom_right: bottomRight,
+            rectangle: false
+        )
+        var text = ghostty_text_s()
+        guard ghostty_surface_read_text(surface, selection, &text) else {
+            return nil
+        }
+        defer {
+            ghostty_surface_free_text(surface, &text)
+        }
+        guard let ptr = text.text, text.text_len > 0 else {
+            return ""
+        }
+        return String(decoding: Data(bytes: ptr, count: Int(text.text_len)), as: UTF8.self)
+    }
+
+    private func terminalTextLooksReadyForInput(_ text: String, agentId: String?) -> Bool {
+        let tailLines = text
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .suffix(10)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !tailLines.isEmpty else { return false }
+
+        let normalizedAgent = agentId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return tailLines.contains { line in
+            switch normalizedAgent {
+            case .some(let value) where value == TerminalAgent.claudeId:
+                return line.hasPrefix("❯")
+            case .some("codex"):
+                return line.hasPrefix("›")
+            case .some("gemini"):
+                return line == ">" || line.hasPrefix("> ")
+            default:
+                return line.hasPrefix("❯")
+                    || line.hasPrefix("›")
+                    || line == ">"
+                    || line.hasPrefix("> ")
+            }
+        }
     }
 
     // MARK: - Send
@@ -519,7 +878,7 @@ final class BridgeCoordinator {
             switch reason {
             case .workspaceClosed, .sendTimeout:
                 return true
-            case .manual:
+            case .manual, .replied:
                 return false
             }
         }()

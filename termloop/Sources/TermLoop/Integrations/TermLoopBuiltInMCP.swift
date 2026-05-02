@@ -5,6 +5,8 @@ import Foundation
 
 enum TermLoopBuiltInMCP {
     static let serverName = "termloop"
+    static let askToToolName = "ask_to"
+    static let replyToRequestToolName = "reply_to_request"
 
     /// Tool names that other modules need to spell. Keep them as named
     /// constants so refactors and grep stay aligned across the runner, the
@@ -56,6 +58,8 @@ enum TermLoopBuiltInMCP {
             lastTestedAt: nil,
             lastTestDurationMs: nil,
             capabilities: [
+                "ask_to",
+                "reply_to_request",
                 "report_link",
                 "set_jira_ticket",
                 "get_jira_ticket",
@@ -73,19 +77,28 @@ enum TermLoopBuiltInMCP {
     }
 
     static func configEntry(workspaceId: String? = nil) -> [String: Any] {
-        var entry: [String: Any] = [
+        let socketPath = SocketControlSettings.socketPath()
+        let bundledCLIPath = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Resources/bin/termloop", isDirectory: false)
+            .path
+        var env: [String: String] = [
+            "TERMLOOP_SOCKET_PATH": socketPath,
+            "TERMLOOP_SOCKET": socketPath,
+            "TERMLOOP_BUNDLED_CLI_PATH": bundledCLIPath
+        ]
+        if let workspaceId = workspaceId?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !workspaceId.isEmpty {
+            env["TERMLOOP_WORKSPACE_ID"] = workspaceId
+        }
+
+        let entry: [String: Any] = [
             "command": "/bin/sh",
             "args": [
                 "-lc",
                 "exec \"${TERMLOOP_BUNDLED_CLI_PATH:-$(command -v termloop)}\" termloop-mcp"
-            ]
+            ],
+            "env": env
         ]
-        if let workspaceId = workspaceId?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !workspaceId.isEmpty {
-            entry["env"] = [
-                "TERMLOOP_WORKSPACE_ID": workspaceId
-            ]
-        }
         return entry
     }
 }
@@ -110,6 +123,48 @@ struct TermLoopBuiltInToolMeta {
     }
 
     static let all: [TermLoopBuiltInToolMeta] = [
+        TermLoopBuiltInToolMeta(
+            name: TermLoopBuiltInMCP.askToToolName,
+            description: "Ask a helper agent (codex / claude / gemini). Returns a request_id; the helper should answer with reply_to_request when finished.",
+            inputSchemaJSON: """
+            {
+              "type": "object",
+              "properties": {
+                "target": {
+                  "type": "string",
+                  "enum": ["codex", "claude", "gemini"]
+                },
+                "message": {
+                  "type": "string"
+                },
+                "target_prompt": {
+                  "type": "string"
+                }
+              },
+              "required": ["target", "message"]
+            }
+            """,
+            alwaysOn: true
+        ),
+        TermLoopBuiltInToolMeta(
+            name: TermLoopBuiltInMCP.replyToRequestToolName,
+            description: "Deliver the final answer for a TermLoop ask_to request. Call exactly once, only after all investigation/work for that request is complete.",
+            inputSchemaJSON: """
+            {
+              "type": "object",
+              "properties": {
+                "request_id": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": ["request_id", "message"]
+            }
+            """,
+            alwaysOn: true
+        ),
         TermLoopBuiltInToolMeta(
             name: TermLoopBuiltInMCP.getJiraTicketToolName,
             description: "Read the Jira ticket previously set for this workspace via set_jira_ticket. Returns `set: false` when no ticket is bound. Use this instead of guessing from the branch name when picking up an in-progress workspace.",

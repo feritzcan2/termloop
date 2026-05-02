@@ -24,10 +24,11 @@ private func agentLifecycleCLILog(_ message: @autoclosure () -> String) {
     #endif
 }
 
-struct CLIError: Error, CustomStringConvertible {
+struct CLIError: Error, CustomStringConvertible, LocalizedError {
     let message: String
 
     var description: String { message }
+    var errorDescription: String? { message }
 }
 
 private final class CLISocketSentryTelemetry {
