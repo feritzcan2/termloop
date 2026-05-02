@@ -51,6 +51,7 @@ export interface WorkspaceSummary {
   agent?: string;
   branch?: string | null;
   worktree_path?: string | null;
+  current_directory?: string | null;
   terminal_agent_id?: string | null;
   permission_mode?: string | null;
   awaiting_input_since?: string | number | null;

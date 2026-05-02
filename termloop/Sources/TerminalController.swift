@@ -3547,6 +3547,7 @@ class TerminalController {
                         message: "Unknown terminal_agent_id: \(id)",
                         data: ["terminal_agent_id": id])
         }
+        let termLoopWorkspaceCreateContext = self.termLoopWorkspaceCreateContext(cwd: cwd, projectId: explicitProjectId, initialEnv: initialEnv)
         // MARK: /termloop-hook
 
         var newId: UUID?
@@ -3556,14 +3557,17 @@ class TerminalController {
                 title: title,
                 workingDirectory: cwd,
                 initialTerminalCommand: initialCommand,
-                initialTerminalEnvironment: initialEnv,
+                initialTerminalEnvironment: termLoopWorkspaceCreateContext.launchEnvironment,
                 select: shouldFocus,
                 eagerLoadTerminal: !shouldFocus,
                 // MARK: termloop-hook
-                projectId: explicitProjectId,
+                projectId: explicitProjectId ?? termLoopWorkspaceCreateContext.projectId,
                 terminalAgentId: (explicitTerminalAgentId?.isEmpty == false) ? explicitTerminalAgentId : nil
                 // MARK: /termloop-hook
             )
+            // MARK: termloop-hook
+            self.termLoopApplyWorkspaceCreateContext(termLoopWorkspaceCreateContext, to: ws)
+            // MARK: /termloop-hook
             if initialCommand == nil,
                let agentId = explicitTerminalAgentId,
                !agentId.isEmpty,
@@ -3571,7 +3575,8 @@ class TerminalController {
                 _ = TerminalAgentLifecycle.launchInExistingWorkspace(
                     in: ws,
                     agent: agent,
-                    cwd: cwd
+                    cwd: cwd,
+                    env: termLoopWorkspaceCreateContext.launchEnvironment
                 )
             }
             ws.setCustomDescription(description)

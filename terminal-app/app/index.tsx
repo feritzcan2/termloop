@@ -25,9 +25,7 @@ import {
   getLastConnection,
   saveLastConnection,
 } from "../lib/last-connection";
-import {
-  clearLastTerminal,
-} from "../lib/last-terminal";
+import { clearLastTerminal } from "../lib/last-terminal";
 import { openSession } from "../lib/session";
 import { colors, radii } from "../lib/theme";
 import { RpcCallError } from "../lib/termloop-client";
