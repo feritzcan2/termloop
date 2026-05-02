@@ -1353,19 +1353,14 @@ class TerminalController {
         }
         let id = dict["id"]
         let method = (dict["method"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard method == "auth.token" || method == "pairing.claim" else {
+        guard TermLoopMobileSocketCommands.preAuthCredentialMethods.contains(method) else {
             return nil
         }
         let params = dict["params"] as? [String: Any] ?? [:]
-        let response: V2CallResult
-        switch method {
-        case "auth.token":
-            response = TermLoopMobilePairingStore.authenticate(params: params)
-        case "pairing.claim":
-            response = TermLoopMobilePairingStore.claim(params: params)
-        default:
-            return nil
-        }
+        guard let response = TermLoopMobileSocketCommands.handlePreAuthCredential(
+            method: method,
+            params: params
+        ) else { return nil }
         if case .ok = response {
             authenticated = true
         }

@@ -226,6 +226,9 @@
 		A9E70005A6EAC0DE00000001 /* TermLoopSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70005A6EAC0DE00000002 /* TermLoopSocketCommands.swift */; };
 		A9E70005A6EAC0DE00000003 /* TerminalController+TermLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70005A6EAC0DE00000004 /* TerminalController+TermLoop.swift */; };
 		A9E70005A6EAC0DE00000011 /* TermLoopCLICommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70005A6EAC0DE00000012 /* TermLoopCLICommands.swift */; };
+		A9E70005A6EAC0DE00000101 /* MobilePairingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70005A6EAC0DE00000102 /* MobilePairingStore.swift */; };
+		A9E70005A6EAC0DE00000103 /* MobileSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70005A6EAC0DE00000104 /* MobileSocketCommands.swift */; };
+		A9E70005A6EAC0DE00000105 /* MobilePairingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70005A6EAC0DE00000106 /* MobilePairingViews.swift */; };
 		A9E70006A6EAC0DE00000001 /* TermLoopSidebarInjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70006A6EAC0DE00000002 /* TermLoopSidebarInjection.swift */; };
 		A9E70007A6EAC0DE00000001 /* SocketControlSettings+TermLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70007A6EAC0DE00000002 /* SocketControlSettings+TermLoop.swift */; };
 		A9E70008A6EAC0DE00000001 /* TermLoopTCPBridgeCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70008A6EAC0DE00000002 /* TermLoopTCPBridgeCoordinator.swift */; };
@@ -801,6 +804,9 @@
 		A9E70005A6EAC0DE00000002 /* TermLoopSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Socket/TermLoopSocketCommands.swift; sourceTree = "<group>"; };
 		A9E70005A6EAC0DE00000004 /* TerminalController+TermLoop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TermLoop/Hooks/TerminalController+TermLoop.swift"; sourceTree = "<group>"; };
 		A9E70005A6EAC0DE00000012 /* TermLoopCLICommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/TermLoopCLICommands.swift; sourceTree = "<group>"; };
+		A9E70005A6EAC0DE00000102 /* MobilePairingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Mobile/MobilePairingStore.swift; sourceTree = "<group>"; };
+		A9E70005A6EAC0DE00000104 /* MobileSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Mobile/MobileSocketCommands.swift; sourceTree = "<group>"; };
+		A9E70005A6EAC0DE00000106 /* MobilePairingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Mobile/UI/MobilePairingViews.swift; sourceTree = "<group>"; };
 		A9E70006A6EAC0DE00000002 /* TermLoopSidebarInjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/TermLoopSidebarInjection.swift; sourceTree = "<group>"; };
 		A9E70007A6EAC0DE00000002 /* SocketControlSettings+TermLoop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TermLoop/Hooks/SocketControlSettings+TermLoop.swift"; sourceTree = "<group>"; };
 		A9E70008A6EAC0DE00000002 /* TermLoopTCPBridgeCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/TermLoopTCPBridgeCoordinator.swift; sourceTree = "<group>"; };
@@ -1671,6 +1677,9 @@
 				AA006DA6EAC0DE12345672 /* ForkHandoffPromptDefaults.swift */,
 				AA00F0A6EAC0DE12345672 /* TerminalAgentLifecycle.swift */,
 				AA0080A6EAC0DE12345672 /* WorkspaceBridge.swift */,
+				A9E70005A6EAC0DE00000102 /* MobilePairingStore.swift */,
+				A9E70005A6EAC0DE00000104 /* MobileSocketCommands.swift */,
+				A9E70005A6EAC0DE00000106 /* MobilePairingViews.swift */,
 				A9E70005A6EAC0DE00000002 /* TermLoopSocketCommands.swift */,
 				AAB2001EA6EAC0DE00000002 /* TermLoopHooks+Events.swift */,
 				A9E70005A6EAC0DE00000004 /* TerminalController+TermLoop.swift */,
@@ -2454,6 +2463,9 @@
 				AA006DA6EAC0DE12345671 /* ForkHandoffPromptDefaults.swift in Sources */,
 				AA00F0A6EAC0DE12345671 /* TerminalAgentLifecycle.swift in Sources */,
 				AA0080A6EAC0DE12345671 /* WorkspaceBridge.swift in Sources */,
+				A9E70005A6EAC0DE00000101 /* MobilePairingStore.swift in Sources */,
+				A9E70005A6EAC0DE00000103 /* MobileSocketCommands.swift in Sources */,
+				A9E70005A6EAC0DE00000105 /* MobilePairingViews.swift in Sources */,
 				A9E70005A6EAC0DE00000001 /* TermLoopSocketCommands.swift in Sources */,
 				AAB2001EA6EAC0DE00000001 /* TermLoopHooks+Events.swift in Sources */,
 				A9E70005A6EAC0DE00000003 /* TerminalController+TermLoop.swift in Sources */,
