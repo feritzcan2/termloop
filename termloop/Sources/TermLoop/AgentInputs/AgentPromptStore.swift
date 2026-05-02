@@ -242,6 +242,10 @@ extension AgentPromptStore {
         "bridge.target.\(preset.rawValue).\(target.rawValue)"
     }
 
+    static func askToHelperInstructionsDocumentID(_ target: AskTargetAgent) -> String {
+        "bridge.target.ask-to-helper.\(target.rawValue)"
+    }
+
     static let forkHandoffDocumentID = "fork.handoff.default"
 
     static func abilityDocumentID(_ kind: ProjectInstructionStore.BundledAbilityPrompt) -> String {
@@ -343,6 +347,24 @@ extension AgentPromptStore {
                     sourceURL: nil,
                     metadata: [
                         .init(label: "Preset", value: preset.rawValue),
+                        .init(label: "Source", value: "BridgePromptCatalog")
+                    ]
+                )
+            )
+        }
+
+        for target in AskTargetAgent.allCases where target.isRuntimeSupported {
+            docs.append(
+                AgentPromptDocument(
+                    id: askToHelperInstructionsDocumentID(target),
+                    title: "Ask-To helper instructions — \(target.title)",
+                    kind: .bridgeTargetPrompt,
+                    subtitle: "Default helper-side instructions for Ask-To requests sent to \(target.title).",
+                    body: BridgeHelperSystemPrompt.defaultInstructionsTemplate(target: target),
+                    scope: .builtin,
+                    sourceURL: nil,
+                    metadata: [
+                        .init(label: "Target", value: target.rawValue),
                         .init(label: "Source", value: "BridgePromptCatalog")
                     ]
                 )

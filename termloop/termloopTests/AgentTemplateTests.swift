@@ -65,4 +65,68 @@ final class AgentTemplateTests: XCTestCase {
         XCTAssertEqual(tpl.variables, [])
         XCTAssertEqual(tpl.timeoutSeconds, 600)
     }
+
+    @MainActor
+    func testAskToHelperInstructionsAreBuiltinPromptDocuments() {
+        let docs = AgentPromptStore.loadDocuments(projectDir: nil).documents
+        let doc = docs.first {
+            $0.id == AgentPromptStore.askToHelperInstructionsDocumentID(.claude)
+        }
+
+        XCTAssertEqual(doc?.kind, .bridgeTargetPrompt)
+        XCTAssertEqual(doc?.scope, .builtin)
+        XCTAssertTrue(doc?.body.contains("{{target_name}}") == true)
+        XCTAssertFalse(doc?.body.contains("reply_to_request") == true)
+    }
+
+    @MainActor
+    func testAskToHelperPromptKeepsProtocolOutsideEditableTemplate() {
+        let requestId = UUID()
+        let prompt = BridgeHelperSystemPrompt.compose(
+            requestId: requestId,
+            target: .claude,
+            userOverride: "Extra reviewer guidance.",
+            projectFolderPath: nil
+        )
+
+        XCTAssertTrue(prompt.contains("Answer the incoming Ask-To request directly"))
+        XCTAssertTrue(prompt.contains("Claude"))
+        XCTAssertTrue(prompt.contains("reply_to_request"))
+        XCTAssertTrue(prompt.contains(requestId.uuidString))
+        XCTAssertTrue(prompt.contains("Extra reviewer guidance."))
+    }
+
+    @MainActor
+    func testAskToHelperPromptUsesProjectOverrideButKeepsProtocol() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AskToHelperPromptTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        guard let promptsDir = AgentPromptStore.projectPromptsDir(projectFolderPath: root.path) else {
+            return XCTFail("Expected project prompts dir")
+        }
+        try AgentPromptStore.saveProjectDocument(
+            id: AgentPromptStore.askToHelperInstructionsDocumentID(.codex),
+            title: "Project Ask-To Helper",
+            kind: .bridgeTargetPrompt,
+            subtitle: "Project override",
+            body: "Custom helper for {{target_name}} / {{target_agent}}.",
+            projectDir: promptsDir
+        )
+
+        let requestId = UUID()
+        let prompt = BridgeHelperSystemPrompt.compose(
+            requestId: requestId,
+            target: .codex,
+            userOverride: "Extra guard.",
+            projectFolderPath: root.path
+        )
+
+        XCTAssertTrue(prompt.contains("Custom helper for Codex / codex."))
+        XCTAssertFalse(prompt.contains("No preamble"))
+        XCTAssertTrue(prompt.contains("reply_to_request"))
+        XCTAssertTrue(prompt.contains(requestId.uuidString))
+        XCTAssertTrue(prompt.contains("Extra guard."))
+    }
 }
