@@ -185,8 +185,8 @@ extension ActiveAgentsPanel {
             if $0.phaseSortOrder != $1.phaseSortOrder {
                 return $0.phaseSortOrder < $1.phaseSortOrder
             }
-            let lhsRecency = $0.core.lastUserPromptAt ?? $0.updatedAt
-            let rhsRecency = $1.core.lastUserPromptAt ?? $1.updatedAt
+            let lhsRecency = $0.core.lastUserPromptAt ?? $0.core.since ?? $0.updatedAt
+            let rhsRecency = $1.core.lastUserPromptAt ?? $1.core.since ?? $1.updatedAt
             if lhsRecency != rhsRecency {
                 return lhsRecency > rhsRecency
             }

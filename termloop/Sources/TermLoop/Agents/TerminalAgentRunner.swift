@@ -1117,6 +1117,11 @@ enum TerminalAgentRunner {
         for (key, value) in baseEnv {
             mergedEnv[key] = value
         }
+        let workspaceIdString = workspaceId.uuidString
+        // Snapshot restore can carry a stale TermLoop identity env from the
+        // previous app process. The current workspace id is authoritative for
+        // hook routing.
+        mergedEnv["TERMLOOP_WORKSPACE_ID"] = workspaceIdString
         return (mergedEnv, prepared)
     }
 
@@ -1649,7 +1654,8 @@ enum TerminalAgentRunner {
     /// Adds TermLoop-managed env vars on top of any caller-supplied ones.
     /// `TERMLOOP_WORKSPACE_ID` lets hook scripts (claude/codex/...) call
     /// `workspace.report_agent_activity` directly without a session-id
-    /// reverse lookup. Caller-supplied keys win.
+    /// reverse lookup. TermLoop-owned identity keys are always refreshed from
+    /// the current workspace so restored sessions cannot report to stale ids.
     private static func agentEnvironment(
         base: [String: String],
         workspaceId: UUID,
@@ -1657,9 +1663,8 @@ enum TerminalAgentRunner {
         launchProvidedContext: Bool = false
     ) -> [String: String] {
         var merged = base
-        if merged["TERMLOOP_WORKSPACE_ID"] == nil {
-            merged["TERMLOOP_WORKSPACE_ID"] = workspaceId.uuidString
-        }
+        let workspaceIdString = workspaceId.uuidString
+        merged["TERMLOOP_WORKSPACE_ID"] = workspaceIdString
         if let agentId,
            !agentId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            merged["TERMLOOP_AGENT_ID"] == nil {

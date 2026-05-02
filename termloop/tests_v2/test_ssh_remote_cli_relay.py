@@ -61,7 +61,6 @@ def _run_cli_json(cli: str, args: list[str]) -> dict:
     env.pop("TERMLOOP_SOCKET_PATH", None)
     env.pop("TERMLOOP_WORKSPACE_ID", None)
     env.pop("TERMLOOP_SURFACE_ID", None)
-    env.pop("TERMLOOP_TAB_ID", None)
 
     proc = _run([cli, "--socket", SOCKET_PATH, "--json", "--id-format", "both", *args], env=env)
     try:

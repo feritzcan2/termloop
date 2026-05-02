@@ -161,7 +161,6 @@ cmux sets these in child shells:
 | Variable | Description |
 |----------|-------------|
 | `TERMLOOP_SOCKET_PATH` | Path to control socket |
-| `TERMLOOP_TAB_ID` | UUID of the current tab |
 | `TERMLOOP_PANEL_ID` | UUID of the current panel |
 
 ## CLI Commands

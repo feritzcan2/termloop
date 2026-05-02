@@ -4135,7 +4135,7 @@ struct CMUXCLI {
         let tabArg = tabOpt
             ?? surfaceOpt
             ?? (workspaceOpt == nil && windowOverride == nil
-                ? (ProcessInfo.processInfo.environment["TERMLOOP_TAB_ID"] ?? ProcessInfo.processInfo.environment["TERMLOOP_SURFACE_ID"])
+                ? ProcessInfo.processInfo.environment["TERMLOOP_SURFACE_ID"]
                 : nil)
 
         let workspaceId = try normalizeWorkspaceHandle(workspaceArg, client: client, allowCurrent: true)
@@ -4761,7 +4761,6 @@ struct CMUXCLI {
         let shellStateDir = shellStateDirForRemoteRelayPort(remoteRelayPort)
         let remoteCallerExportLines = [
             "if [ -n '__TERMLOOP_WORKSPACE_ID__' ]; then export TERMLOOP_WORKSPACE_ID='__TERMLOOP_WORKSPACE_ID__'; fi",
-            "if [ -n '__TERMLOOP_WORKSPACE_ID__' ]; then export TERMLOOP_TAB_ID='__TERMLOOP_WORKSPACE_ID__'; fi",
             "if [ -n '__TERMLOOP_SURFACE_ID__' ]; then export TERMLOOP_SURFACE_ID='__TERMLOOP_SURFACE_ID__'; export TERMLOOP_PANEL_ID='__TERMLOOP_SURFACE_ID__'; fi",
         ]
         let relaySocket = remoteRelayPort > 0 ? "127.0.0.1:\(remoteRelayPort)" : nil
@@ -7405,7 +7404,7 @@ struct CMUXCLI {
 
             Flags:
               --action <name>              Action name (required if not positional)
-              --tab <id|ref|index>         Target tab (accepts tab:<n> or surface:<n>; default: $TERMLOOP_TAB_ID, then $TERMLOOP_SURFACE_ID, then focused tab)
+              --tab <id|ref|index>         Target tab (accepts tab:<n> or surface:<n>; default: $TERMLOOP_SURFACE_ID, then focused tab)
               --surface <id|ref|index>     Alias for --tab (backward compatibility)
               --workspace <id|ref|index>   Workspace context (default: current/$TERMLOOP_WORKSPACE_ID)
               --title <text>               Title for rename (or pass trailing title text)
@@ -7425,7 +7424,7 @@ struct CMUXCLI {
             Resolution order for target tab:
             1) --tab
             2) --surface
-            3) $TERMLOOP_TAB_ID / $TERMLOOP_SURFACE_ID
+            3) $TERMLOOP_SURFACE_ID
             4) currently focused tab (optionally within --workspace)
 
             Flags:
@@ -15058,7 +15057,6 @@ struct CMUXCLI {
         Environment:
           TERMLOOP_WORKSPACE_ID   Auto-set in termloop terminals. Used as default --workspace for
                               ALL commands (send, list-panels, new-split, notify, etc.).
-          TERMLOOP_TAB_ID         Optional alias used by `tab-action`/`rename-tab` as default --tab.
           TERMLOOP_SURFACE_ID     Auto-set in termloop terminals. Used as default --surface.
           TERMLOOP_SOCKET_PATH    Override the Unix socket path. Without this, the CLI defaults
                               to ~/Library/Application Support/termloop/termloop.sock and auto-discovers tagged/debug sockets.

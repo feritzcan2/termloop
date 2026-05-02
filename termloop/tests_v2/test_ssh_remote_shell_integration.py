@@ -65,7 +65,6 @@ def _run_cli_json(cli: str, args: list[str]) -> dict:
     env = dict(os.environ)
     env.pop("TERMLOOP_WORKSPACE_ID", None)
     env.pop("TERMLOOP_SURFACE_ID", None)
-    env.pop("TERMLOOP_TAB_ID", None)
 
     proc = _run([cli, "--socket", SOCKET_PATH, "--json", *args], env=env)
     try:
@@ -279,7 +278,6 @@ def _launch_startup_command_pty(startup_command: str, workspace_id: str, surface
     env.pop("TERMLOOP_SOCKET_PATH", None)
     env["TERMLOOP_WORKSPACE_ID"] = workspace_id
     env["TERMLOOP_SURFACE_ID"] = surface_id
-    env["TERMLOOP_TAB_ID"] = workspace_id
     env["TERMLOOP_PANEL_ID"] = surface_id
 
     master_fd, slave_fd = pty.openpty()

@@ -103,12 +103,8 @@ _cmux_relay_rpc() {
 }
 
 _cmux_relay_workspace_id() {
-    if [[ -n "$TERMLOOP_WORKSPACE_ID" ]]; then
-        print -r -- "$TERMLOOP_WORKSPACE_ID"
-        return 0
-    fi
-    [[ -n "$TERMLOOP_TAB_ID" ]] || return 1
-    print -r -- "$TERMLOOP_TAB_ID"
+    [[ -n "$TERMLOOP_WORKSPACE_ID" ]] || return 1
+    print -r -- "$TERMLOOP_WORKSPACE_ID"
 }
 
 _cmux_report_tty_via_relay() {
@@ -249,7 +245,6 @@ typeset -ga _TERMLOOP_TMUX_SYNC_KEYS=(
     TERMLOOP_SOCKET_ENABLE
     TERMLOOP_SOCKET_MODE
     TERMLOOP_SOCKET_PATH
-    TERMLOOP_TAB_ID
     TERMLOOP_TAG
     TERMLOOP_WORKSPACE_ID
 )
@@ -434,7 +429,7 @@ _cmux_install_winch_guard() {
     fi
 
     TRAPWINCH() {
-        [[ -n "$TERMLOOP_TAB_ID" ]] || return 0
+        [[ -n "$TERMLOOP_WORKSPACE_ID" ]] || return 0
         [[ -n "$TERMLOOP_PANEL_ID" ]] || return 0
 
         # Ghostty already marks prompt redraws on SIGWINCH. Writing to the PTY
@@ -485,10 +480,10 @@ _cmux_git_head_signature() {
 }
 
 _cmux_report_tty_payload() {
-    [[ -n "$TERMLOOP_TAB_ID" ]] || return 0
+    [[ -n "$TERMLOOP_WORKSPACE_ID" ]] || return 0
     [[ -n "$_TERMLOOP_TTY_NAME" ]] || return 0
 
-    local payload="report_tty $_TERMLOOP_TTY_NAME --tab=$TERMLOOP_TAB_ID"
+    local payload="report_tty $_TERMLOOP_TTY_NAME --workspace=$TERMLOOP_WORKSPACE_ID"
     if [[ -z "$TMUX" ]]; then
         [[ -n "$TERMLOOP_PANEL_ID" ]] || return 0
         payload+=" --panel=$TERMLOOP_PANEL_ID"
@@ -522,11 +517,11 @@ _cmux_report_shell_activity_state() {
     local state="$1"
     [[ -n "$state" ]] || return 0
     [[ -S "$TERMLOOP_SOCKET_PATH" ]] || return 0
-    [[ -n "$TERMLOOP_TAB_ID" ]] || return 0
+    [[ -n "$TERMLOOP_WORKSPACE_ID" ]] || return 0
     [[ -n "$TERMLOOP_PANEL_ID" ]] || return 0
     [[ "$_TERMLOOP_SHELL_ACTIVITY_LAST" == "$state" ]] && return 0
     _TERMLOOP_SHELL_ACTIVITY_LAST="$state"
-    _cmux_send_bg "report_shell_state $state --tab=$TERMLOOP_TAB_ID --panel=$TERMLOOP_PANEL_ID"
+    _cmux_send_bg "report_shell_state $state --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID"
 }
 
 _cmux_ports_kick() {
@@ -534,13 +529,13 @@ _cmux_ports_kick() {
     # Lightweight: just tell the app to run a batched scan for this panel.
     # The app coalesces kicks across all panels and runs a single ps+lsof.
     _cmux_has_port_scan_transport || return 0
-    [[ -n "$TERMLOOP_TAB_ID" ]] || return 0
+    [[ -n "$TERMLOOP_WORKSPACE_ID" ]] || return 0
     if _cmux_socket_is_unix; then
         [[ -n "$TERMLOOP_PANEL_ID" ]] || return 0
     fi
     _TERMLOOP_PORTS_LAST_RUN="$(_cmux_now)"
     if _cmux_socket_is_unix; then
-        _cmux_send_bg "ports_kick --tab=$TERMLOOP_TAB_ID --panel=$TERMLOOP_PANEL_ID --reason=$reason"
+        _cmux_send_bg "ports_kick --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID --reason=$reason"
     else
         _cmux_ports_kick_via_relay "$reason"
     fi
@@ -550,7 +545,7 @@ _cmux_report_git_branch_for_path() {
     local repo_path="$1"
     [[ -n "$repo_path" ]] || return 0
     [[ -S "$TERMLOOP_SOCKET_PATH" ]] || return 0
-    [[ -n "$TERMLOOP_TAB_ID" ]] || return 0
+    [[ -n "$TERMLOOP_WORKSPACE_ID" ]] || return 0
     [[ -n "$TERMLOOP_PANEL_ID" ]] || return 0
 
     # Skip git operations if not in a git repository to avoid TCC prompts
@@ -561,9 +556,9 @@ _cmux_report_git_branch_for_path() {
     if [[ -n "$branch" ]]; then
         first="$(git -C "$repo_path" status --porcelain -uno 2>/dev/null | head -1)"
         [[ -n "$first" ]] && dirty_opt="--status=dirty"
-        _cmux_send "report_git_branch $branch $dirty_opt --tab=$TERMLOOP_TAB_ID --panel=$TERMLOOP_PANEL_ID"
+        _cmux_send "report_git_branch $branch $dirty_opt --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID"
     else
-        _cmux_send "clear_git_branch --tab=$TERMLOOP_TAB_ID --panel=$TERMLOOP_PANEL_ID"
+        _cmux_send "clear_git_branch --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID"
     fi
 }
 
@@ -639,11 +634,11 @@ _cmux_record_pr_command_hint() {
 
 _cmux_emit_pr_command_hint() {
     [[ -S "$TERMLOOP_SOCKET_PATH" ]] || return 0
-    [[ -n "$TERMLOOP_TAB_ID" ]] || return 0
+    [[ -n "$TERMLOOP_WORKSPACE_ID" ]] || return 0
     [[ -n "$TERMLOOP_PANEL_ID" ]] || return 0
     [[ -n "$_TERMLOOP_LAST_PR_ACTION" ]] || return 0
 
-    local payload="report_pr_action $_TERMLOOP_LAST_PR_ACTION --tab=$TERMLOOP_TAB_ID --panel=$TERMLOOP_PANEL_ID"
+    local payload="report_pr_action $_TERMLOOP_LAST_PR_ACTION --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID"
     if [[ -n "$_TERMLOOP_LAST_PR_TARGET" ]]; then
         local quoted_target="${_TERMLOOP_LAST_PR_TARGET//\"/\\\"}"
         payload+=" --target=\"$quoted_target\""
@@ -655,9 +650,9 @@ _cmux_emit_pr_command_hint() {
 
 _cmux_clear_pr_for_panel() {
     [[ -S "$TERMLOOP_SOCKET_PATH" ]] || return 0
-    [[ -n "$TERMLOOP_TAB_ID" ]] || return 0
+    [[ -n "$TERMLOOP_WORKSPACE_ID" ]] || return 0
     [[ -n "$TERMLOOP_PANEL_ID" ]] || return 0
-    _cmux_send_bg "clear_pr --tab=$TERMLOOP_TAB_ID --panel=$TERMLOOP_PANEL_ID"
+    _cmux_send_bg "clear_pr --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID"
 }
 
 _cmux_pr_output_indicates_no_pull_request() {
@@ -759,7 +754,7 @@ _cmux_report_pr_for_path() {
         return 0
     }
     [[ -S "$TERMLOOP_SOCKET_PATH" ]] || return 0
-    [[ -n "$TERMLOOP_TAB_ID" ]] || return 0
+    [[ -n "$TERMLOOP_WORKSPACE_ID" ]] || return 0
     [[ -n "$TERMLOOP_PANEL_ID" ]] || return 0
 
     local branch repo_slug="" gh_output="" gh_error="" err_file="" number state url status_opt="" gh_status
@@ -875,7 +870,7 @@ _cmux_report_pr_for_path() {
     _TERMLOOP_PR_NO_PR_BRANCH=""
 
     local quoted_branch="${branch//\"/\\\"}"
-    _cmux_send "report_pr $number $url $status_opt --branch=\"$quoted_branch\" --tab=$TERMLOOP_TAB_ID --panel=$TERMLOOP_PANEL_ID"
+    _cmux_send "report_pr $number $url $status_opt --branch=\"$quoted_branch\" --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID"
 }
 
 _cmux_child_pids() {
@@ -952,7 +947,7 @@ _cmux_stop_pr_poll_loop() {
 
 _cmux_start_pr_poll_loop() {
     [[ -S "$TERMLOOP_SOCKET_PATH" ]] || return 0
-    [[ -n "$TERMLOOP_TAB_ID" ]] || return 0
+    [[ -n "$TERMLOOP_WORKSPACE_ID" ]] || return 0
     [[ -n "$TERMLOOP_PANEL_ID" ]] || return 0
 
     local watch_pwd="${1:-$PWD}"
@@ -1007,7 +1002,7 @@ _cmux_stop_git_head_watch() {
 
 _cmux_start_git_head_watch() {
     [[ -S "$TERMLOOP_SOCKET_PATH" ]] || return 0
-    [[ -n "$TERMLOOP_TAB_ID" ]] || return 0
+    [[ -n "$TERMLOOP_WORKSPACE_ID" ]] || return 0
     [[ -n "$TERMLOOP_PANEL_ID" ]] || return 0
 
     local watch_pwd="$PWD"
@@ -1138,7 +1133,7 @@ _cmux_precmd() {
     local cmux_has_unix_socket=0
     _cmux_socket_is_unix && cmux_has_unix_socket=1
     (( cmux_has_unix_socket )) || _cmux_has_port_scan_transport || return 0
-    [[ -n "$TERMLOOP_TAB_ID" ]] || return 0
+    [[ -n "$TERMLOOP_WORKSPACE_ID" ]] || return 0
     if [[ -n "$TERMLOOP_PANEL_ID" ]]; then
         _cmux_report_shell_activity_state prompt
     fi
@@ -1193,7 +1188,7 @@ _cmux_precmd() {
     if [[ "$pwd" != "$_TERMLOOP_PWD_LAST_PWD" ]]; then
         _TERMLOOP_PWD_LAST_PWD="$pwd"
         local qpwd="${pwd//\"/\\\"}"
-        _cmux_send_bg "report_pwd \"${qpwd}\" --tab=$TERMLOOP_TAB_ID --panel=$TERMLOOP_PANEL_ID"
+        _cmux_send_bg "report_pwd \"${qpwd}\" --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID"
     fi
 
     # Git branch/dirty: update immediately on directory change, otherwise every ~3s.

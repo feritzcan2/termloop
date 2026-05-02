@@ -42,7 +42,6 @@ def _run_cli(cli: str, args: List[str]) -> str:
     env = dict(os.environ)
     env.pop("TERMLOOP_WORKSPACE_ID", None)
     env.pop("TERMLOOP_SURFACE_ID", None)
-    env.pop("TERMLOOP_TAB_ID", None)
 
     cmd = [cli, "--socket", SOCKET_PATH] + args
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)
