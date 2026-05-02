@@ -1,11 +1,12 @@
-import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { Stack, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Modal,
   Pressable,
+  SectionList,
   StyleSheet,
   Text,
   View,
@@ -26,9 +27,31 @@ import {
   type ProjectSummary,
   type WorkspaceSummary,
 } from "../../lib/termloop-client";
-import { colors, radii } from "../../lib/theme";
+import { colors, monoFont, radii } from "../../lib/theme";
 
 type ProjectState = ProjectSummary | null | "loading";
+type WorkspaceSectionKind = "worktree" | "workspace";
+
+interface WorkspaceRow {
+  ws: WorkspaceSummary;
+  title: string;
+  sectionKind: WorkspaceSectionKind;
+  worktreeKey: string | null;
+  worktreeLabel: string | null;
+  worktreePath: string | null;
+  toolLabel: string | null;
+  statusLabel: string | null;
+  activityLabel: string | null;
+  changeLabel: string | null;
+}
+
+interface WorkspaceSection {
+  key: string;
+  kind: WorkspaceSectionKind;
+  title: string;
+  subtitle: string;
+  data: WorkspaceRow[];
+}
 
 export default function ConnectedScreen() {
   const router = useRouter();
@@ -40,31 +63,36 @@ export default function ConnectedScreen() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [switchingId, setSwitchingId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const loadOverview = useCallback(async () => {
+    if (!client) return;
+    setRefreshing(true);
+    setLoadError(null);
+    try {
+      const [cur, ws] = await Promise.all([
+        client.currentProject(),
+        client.listWorkspaces(),
+      ]);
+      setCurrent(cur);
+      setWorkspaces(ws);
+    } catch (err) {
+      const message = String((err as Error).message ?? err);
+      setLoadError(message);
+      Alert.alert("Failed to load", message);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [client]);
 
   useEffect(() => {
     if (!client) {
       router.replace("/");
       return;
     }
-    let alive = true;
-    (async () => {
-      try {
-        const [cur, ws] = await Promise.all([
-          client.currentProject(),
-          client.listWorkspaces(),
-        ]);
-        if (!alive) return;
-        setCurrent(cur);
-        setWorkspaces(ws);
-      } catch (err) {
-        if (alive)
-          Alert.alert("Failed to load", String((err as Error).message ?? err));
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [client, router]);
+    loadOverview();
+  }, [client, loadOverview, router]);
 
   const onDisconnect = async () => {
     await closeSession();
@@ -103,8 +131,6 @@ export default function ConnectedScreen() {
       ]);
       setCurrent(cur);
       setWorkspaces(ws);
-      // Force a fresh project list on next picker open — the Mac may have
-      // added/renamed projects since first fetch.
       setProjects(null);
       setPickerOpen(false);
     } catch (err) {
@@ -144,6 +170,8 @@ export default function ConnectedScreen() {
           surfaceName,
         }).catch(() => {});
       }
+      const projectName = current !== "loading" ? current?.name ?? "" : "";
+      const projectPath = current !== "loading" ? current?.path ?? "" : "";
       router.push({
         pathname: "/connected/terminal",
         params: {
@@ -151,13 +179,12 @@ export default function ConnectedScreen() {
           surfaceId: surface.id,
           name: wsName,
           surfaceName,
+          projectName,
+          projectPath,
         },
       });
     } catch (err) {
-      Alert.alert(
-        "Failed to open",
-        String((err as Error).message ?? err)
-      );
+      Alert.alert("Failed to open", String((err as Error).message ?? err));
     } finally {
       setOpeningId(null);
     }
@@ -174,93 +201,207 @@ export default function ConnectedScreen() {
     );
   }, [workspaces, projectFilterId]);
 
+  const sections = useMemo<WorkspaceSection[]>(() => {
+    if (visibleWorkspaces === null) return [];
+    const worktreeSections = new Map<string, WorkspaceSection>();
+    const workspaceRows: WorkspaceRow[] = [];
+
+    for (const ws of visibleWorkspaces) {
+      const row = buildWorkspaceRow(ws);
+      if (row.worktreeKey) {
+        const existing = worktreeSections.get(row.worktreeKey);
+        if (existing) {
+          existing.data.push(row);
+        } else {
+          worktreeSections.set(row.worktreeKey, {
+            key: row.worktreeKey,
+            kind: "worktree",
+            title: row.worktreeLabel ?? "Worktree",
+            subtitle: "",
+            data: [row],
+          });
+        }
+      } else {
+        workspaceRows.push(row);
+      }
+    }
+
+    const out = Array.from(worktreeSections.values()).map((section) => ({
+      ...section,
+      subtitle: worktreeSectionSubtitle(section),
+    }));
+    if (workspaceRows.length > 0) {
+      out.push({
+        key: "workspace:default",
+        kind: "workspace",
+        title: "Other sessions",
+        subtitle: "Not attached to a worktree",
+        data: workspaceRows,
+      });
+    }
+    return out;
+  }, [visibleWorkspaces]);
+
   if (!client) return null;
+
+  const projectName =
+    current === "loading" ? "Loading project…" : current ? current.name : "No project";
+  const projectPath =
+    current !== "loading" && current?.path ? current.path : "No project path";
 
   return (
     <SafeAreaView style={styles.root} edges={["bottom"]}>
-      <View style={styles.headerCard}>
-        {auth?.server_name ? (
-          <View style={styles.headerRow}>
-            <View style={styles.statusDot} />
-            <View style={styles.headerTextWrap}>
-              <Text style={styles.sectionLabel}>Connected to</Text>
-              <Text style={styles.bigText} numberOfLines={1}>
-                {auth.server_name}
+      <Stack.Screen
+        options={{
+          headerTitleAlign: "left",
+          headerTitle: () => (
+            <Pressable
+              style={({ pressed }) => [
+                styles.headerProject,
+                pressed && styles.headerProjectPressed,
+              ]}
+              onPress={openProjectPicker}
+              disabled={current === "loading"}
+            >
+              <Text style={styles.headerProjectName} numberOfLines={1}>
+                {projectName}
               </Text>
+              <Text style={styles.headerProjectPath} numberOfLines={1}>
+                {projectPath}
+              </Text>
+            </Pressable>
+          ),
+          headerRight: () => (
+            <View style={styles.headerActions}>
+              <Pressable
+                style={[styles.headerAction, refreshing && styles.controlDisabled]}
+                onPress={loadOverview}
+                disabled={refreshing}
+                hitSlop={8}
+              >
+                {refreshing ? (
+                  <ActivityIndicator color={colors.sub} />
+                ) : (
+                  <Text style={styles.headerActionText}>↻</Text>
+                )}
+              </Pressable>
+              <Pressable style={styles.headerExit} onPress={onDisconnect}>
+                <Text style={styles.headerExitText}>Exit</Text>
+              </Pressable>
             </View>
-          </View>
-        ) : null}
-      </View>
+          ),
+        }}
+      />
 
-      <Pressable
-        style={({ pressed }) => [
-          styles.projectCard,
-          pressed && styles.projectCardPressed,
-        ]}
-        onPress={openProjectPicker}
-        disabled={current === "loading"}
-      >
-        <View style={styles.projectLabelRow}>
-          <Text style={styles.sectionLabel}>Current project</Text>
-          <Text style={styles.projectChevron}>Change ›</Text>
-        </View>
-        <Text style={styles.bigText} numberOfLines={1}>
-          {current === "loading" ? "…" : current ? current.name : "(none)"}
-        </Text>
-        {current !== "loading" && current?.path ? (
-          <Text style={styles.projectPath} numberOfLines={1}>
-            {current.path}
+      {loadError ? (
+        <Pressable style={styles.errorBanner} onPress={loadOverview}>
+          <Text style={styles.errorText} numberOfLines={2}>
+            Load failed. Tap to retry. {loadError}
+          </Text>
+        </Pressable>
+      ) : null}
+
+      <View style={styles.workspacesHeader}>
+        <Text style={styles.eyebrow}>Worktrees</Text>
+        {projectFilterId && workspaces && visibleWorkspaces ? (
+          <Text style={styles.workspacesHint} numberOfLines={1}>
+            {visibleWorkspaces.length} of {workspaces.length}
           </Text>
         ) : null}
-      </Pressable>
-
-      <View style={styles.workspacesWrap}>
-        <View style={styles.workspacesHeader}>
-          <Text style={styles.sectionLabel}>Workspaces</Text>
-          {projectFilterId && workspaces && visibleWorkspaces ? (
-            <Text style={styles.workspacesHint}>
-              {visibleWorkspaces.length} of {workspaces.length} in current project
-            </Text>
-          ) : null}
-        </View>
-        {visibleWorkspaces === null ? (
-          <ActivityIndicator />
-        ) : (
-          <FlatList
-            data={visibleWorkspaces}
-            keyExtractor={(w) => w.id}
-            ListEmptyComponent={
-              <Text style={styles.empty}>No workspaces.</Text>
-            }
-            renderItem={({ item }) => {
-              const isOpening = openingId === item.id;
-              return (
-                <Pressable
-                  style={styles.wsRow}
-                  onPress={() => onOpenWorkspace(item)}
-                  disabled={openingId !== null}
-                >
-                  <View style={styles.wsTextWrap}>
-                    <Text style={styles.wsName} numberOfLines={1}>
-                      {workspaceLabel(item)}
-                    </Text>
-                    {item.agent ? (
-                      <Text style={styles.wsSub} numberOfLines={1}>
-                        {item.agent}
-                      </Text>
-                    ) : null}
-                  </View>
-                  {isOpening && <ActivityIndicator />}
-                </Pressable>
-              );
-            }}
-          />
-        )}
       </View>
 
-      <Pressable style={styles.disconnectBtn} onPress={onDisconnect}>
-        <Text style={styles.disconnectText}>Disconnect</Text>
-      </Pressable>
+      {visibleWorkspaces === null ? (
+        <View style={styles.loadingPane}>
+          <ActivityIndicator color={colors.primary} />
+          <Text style={styles.loadingText}>Loading sessions…</Text>
+        </View>
+      ) : (
+        <SectionList
+          sections={sections}
+          style={styles.list}
+          keyExtractor={(item) => item.ws.id}
+          contentContainerStyle={styles.listContent}
+          stickySectionHeadersEnabled={false}
+          ListEmptyComponent={
+            <View style={styles.emptyPane}>
+              <Text style={styles.emptyTitle}>No sessions in this project</Text>
+              <Text style={styles.emptyText}>
+                Start a workspace in TermLoop on your Mac, then refresh.
+              </Text>
+              <Pressable style={styles.emptyRefresh} onPress={loadOverview}>
+                <Text style={styles.emptyRefreshText}>Refresh</Text>
+              </Pressable>
+            </View>
+          }
+          renderSectionHeader={({ section }) => (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>{section.title}</Text>
+              <Text style={styles.sectionSubtitle} numberOfLines={1}>
+                {section.subtitle}
+              </Text>
+            </View>
+          )}
+          renderItem={({ item }) => {
+            const isOpening = openingId === item.ws.id;
+            return (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.workspaceRow,
+                  item.toolLabel && styles.workspaceRowAgent,
+                  pressed && styles.workspaceRowPressed,
+                ]}
+                onPress={() => onOpenWorkspace(item.ws)}
+                disabled={openingId !== null}
+              >
+                <View style={styles.workspaceIcon}>
+                  <Text style={styles.workspaceIconText}>
+                    {item.toolLabel ? "AI" : item.sectionKind === "worktree" ? "WT" : "WS"}
+                  </Text>
+                </View>
+                <View style={styles.workspaceBody}>
+                  <Text style={styles.workspaceTitle} numberOfLines={1}>
+                    {item.title}
+                  </Text>
+                  {item.toolLabel ? (
+                    <Text style={styles.toolPill} numberOfLines={1}>
+                      {item.toolLabel}
+                    </Text>
+                  ) : null}
+                  {item.statusLabel || item.activityLabel || item.changeLabel ? (
+                    <View style={styles.workspaceMetaLine}>
+                      {item.statusLabel ? (
+                        <Text style={styles.workspaceMetaChip} numberOfLines={1}>
+                          {item.statusLabel}
+                        </Text>
+                      ) : null}
+                      {item.activityLabel ? (
+                        <Text style={styles.workspaceMetaChip} numberOfLines={1}>
+                          {item.activityLabel}
+                        </Text>
+                      ) : null}
+                      {item.changeLabel ? (
+                        <Text style={styles.workspaceMetaChip} numberOfLines={1}>
+                          {item.changeLabel}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ) : null}
+                </View>
+                <View style={styles.openCol}>
+                  {isOpening ? (
+                    <ActivityIndicator color={colors.primary} />
+                  ) : (
+                    <>
+                      <Text style={styles.openText}>Open</Text>
+                      <Text style={styles.openChevron}>›</Text>
+                    </>
+                  )}
+                </View>
+              </Pressable>
+            );
+          }}
+        />
+      )}
 
       <Modal
         animationType="slide"
@@ -276,9 +417,9 @@ export default function ConnectedScreen() {
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Switch project</Text>
             {projects === null ? (
-              <ActivityIndicator style={{ marginVertical: 24 }} />
+              <ActivityIndicator style={styles.modalSpinner} />
             ) : projects.length === 0 ? (
-              <Text style={styles.empty}>No projects available.</Text>
+              <Text style={styles.emptyText}>No projects available.</Text>
             ) : (
               <FlatList
                 data={projects}
@@ -293,18 +434,18 @@ export default function ConnectedScreen() {
                       onPress={() => onPickProject(item)}
                       disabled={switchingId !== null}
                     >
-                      <View style={styles.wsTextWrap}>
-                        <Text style={styles.wsName} numberOfLines={1}>
+                      <View style={styles.projectItemText}>
+                        <Text style={styles.projectItemName} numberOfLines={1}>
                           {item.name}
                         </Text>
                         {item.path ? (
-                          <Text style={styles.wsSub} numberOfLines={1}>
+                          <Text style={styles.projectItemPath} numberOfLines={1}>
                             {item.path}
                           </Text>
                         ) : null}
                       </View>
                       {isSwitching ? (
-                        <ActivityIndicator />
+                        <ActivityIndicator color={colors.primary} />
                       ) : isCurrent ? (
                         <Text style={styles.projectCurrent}>Current</Text>
                       ) : null}
@@ -320,56 +461,228 @@ export default function ConnectedScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg, padding: 16, gap: 12 },
+function buildWorkspaceRow(ws: WorkspaceSummary): WorkspaceRow {
+  const toolLabel = inferToolLabel(ws);
+  const worktreePath = ws.worktree_path?.trim() || null;
+  const branch = ws.branch?.trim() || null;
+  const worktreeKey = worktreePath
+    ? `worktree:path:${worktreePath}`
+    : branch
+      ? `worktree:branch:${branch}`
+      : null;
+  return {
+    ws,
+    title: workspaceLabel(ws),
+    sectionKind: worktreeKey ? "worktree" : "workspace",
+    worktreeKey,
+    worktreeLabel: branch || basename(worktreePath) || null,
+    worktreePath,
+    toolLabel,
+    statusLabel: workspaceStatusLabel(ws),
+    activityLabel: workspaceActivityLabel(ws),
+    changeLabel: workspaceChangeLabel(ws),
+  };
+}
 
-  sectionLabel: {
+function inferToolLabel(ws: WorkspaceSummary): string | null {
+  const sources = [ws.agent, ws.title, ws.name];
+  for (const source of sources) {
+    if (!source) continue;
+    const known = knownToolLabel(source);
+    if (known) return known;
+  }
+  return ws.agent?.trim() || null;
+}
+
+function knownToolLabel(value: string): string | null {
+  const v = value.toLowerCase();
+  if (v.includes("codex")) return "Codex";
+  if (v.includes("claude")) return "Claude";
+  if (v.includes("gemini")) return "Gemini";
+  if (v.includes("cursor")) return "Cursor";
+  if (v.includes("aider")) return "Aider";
+  if (v.includes("opencode")) return "OpenCode";
+  if (v.includes("agent")) return "Agent";
+  return null;
+}
+
+function workspaceStatusLabel(ws: WorkspaceSummary): string | null {
+  const value =
+    firstWorkspaceString(ws, [
+      "agent_activity_phase",
+      "last_attention_kind",
+      "agent_attention_kind",
+      "status",
+      "state",
+      "phase",
+    ]) ?? (ws.terminal_agent_id ? "agent" : null);
+  if (!value) return null;
+  return value.replace(/[_-]+/g, " ");
+}
+
+function workspaceActivityLabel(ws: WorkspaceSummary): string | null {
+  const value =
+    firstWorkspaceString(ws, [
+      "awaiting_input_since",
+      "lastActiveAt",
+      "last_active_at",
+      "lastActivityAt",
+      "last_activity_at",
+      "updatedAt",
+      "updated_at",
+    ]) ??
+    firstWorkspaceNumber(ws, [
+      "agent_activity_updated_at",
+      "awaiting_input_since",
+      "lastActiveAt",
+      "last_active_at",
+      "updatedAt",
+    ]);
+  if (value === null) return null;
+  const date = typeof value === "number" ? dateFromNumber(value) : new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  return relativeTime(date);
+}
+
+function workspaceChangeLabel(ws: WorkspaceSummary): string | null {
+  if (typeof ws.git_change_count !== "number" || ws.git_change_count <= 0) {
+    return null;
+  }
+  return ws.git_change_count === 1
+    ? "1 changed file"
+    : `${ws.git_change_count} changed files`;
+}
+
+function firstWorkspaceString(
+  ws: WorkspaceSummary,
+  keys: string[]
+): string | null {
+  const record = ws as unknown as Record<string, unknown>;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function firstWorkspaceNumber(
+  ws: WorkspaceSummary,
+  keys: string[]
+): number | null {
+  const record = ws as unknown as Record<string, unknown>;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+function relativeTime(date: Date): string {
+  const diffMs = Date.now() - date.getTime();
+  if (diffMs < 60_000) return "active now";
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function dateFromNumber(value: number): Date {
+  return new Date(value < 10_000_000_000 ? value * 1000 : value);
+}
+
+function basename(path: string | null): string | null {
+  if (!path) return null;
+  const trimmed = path.replace(/\/+$/, "");
+  return trimmed.slice(trimmed.lastIndexOf("/") + 1) || null;
+}
+
+function worktreeSectionSubtitle(section: WorkspaceSection): string {
+  const count = section.data.length;
+  const unit = count === 1 ? "session" : "sessions";
+  const path = section.data.find((row) => row.worktreePath)?.worktreePath;
+  return path ? `Worktree · ${count} ${unit} · ${path}` : `Worktree · ${count} ${unit}`;
+}
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    gap: 8,
+  },
+
+  eyebrow: {
     color: colors.label,
     fontSize: 11,
     textTransform: "uppercase",
-    letterSpacing: 0.6,
+    letterSpacing: 0,
   },
-  bigText: { color: colors.text, fontSize: 18, fontWeight: "600" },
 
-  headerCard: {
-    backgroundColor: colors.bgElevated,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+  headerProject: {
+    minWidth: 0,
+    maxWidth: 210,
+    paddingVertical: 2,
   },
-  headerRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.success,
+  headerProjectPressed: { opacity: 0.72 },
+  headerProjectName: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "700",
   },
-  headerTextWrap: { flex: 1, gap: 2 },
-
-  projectCard: {
-    backgroundColor: colors.bgElevated,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 4,
+  headerProjectPath: {
+    color: colors.sub,
+    fontSize: 10,
+    fontFamily: monoFont,
+    marginTop: 1,
   },
-  projectCardPressed: {
-    backgroundColor: colors.bgRaised,
-    borderColor: colors.borderStrong,
-  },
-  projectLabelRow: {
+  headerActions: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: 6,
   },
-  projectChevron: { color: colors.primary, fontSize: 13, fontWeight: "500" },
-  projectPath: { color: colors.sub, fontSize: 12 },
+  headerAction: {
+    minWidth: 30,
+    minHeight: 30,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgElevated,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerActionText: {
+    color: colors.primary,
+    fontSize: 17,
+    fontWeight: "800",
+    lineHeight: 19,
+  },
+  controlDisabled: { opacity: 0.5 },
+  headerExit: {
+    minHeight: 30,
+    paddingHorizontal: 8,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.dangerBorder,
+    backgroundColor: colors.dangerDim,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerExitText: { color: colors.danger, fontSize: 12, fontWeight: "800" },
 
-  workspacesWrap: { flex: 1, gap: 8 },
+  errorBanner: {
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.dangerBorder,
+    backgroundColor: colors.dangerDim,
+  },
+  errorText: { color: colors.danger, fontSize: 12, lineHeight: 16 },
+
   workspacesHeader: {
     flexDirection: "row",
     alignItems: "baseline",
@@ -377,33 +690,124 @@ const styles = StyleSheet.create({
   },
   workspacesHint: { color: colors.hint, fontSize: 11 },
 
-  empty: { color: colors.hint, fontSize: 13, paddingVertical: 12 },
+  loadingPane: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  loadingText: { color: colors.sub, fontSize: 13 },
+  list: { flex: 1 },
+  listContent: { paddingBottom: 14, gap: 6 },
+  emptyPane: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 36,
+    paddingHorizontal: 20,
+    gap: 8,
+  },
+  emptyTitle: { color: colors.text, fontSize: 15, fontWeight: "700" },
+  emptyText: {
+    color: colors.sub,
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: "center",
+  },
+  emptyRefresh: {
+    marginTop: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.borderAccent,
+    backgroundColor: colors.primaryDim,
+  },
+  emptyRefreshText: { color: colors.primary, fontSize: 12, fontWeight: "700" },
 
-  wsRow: {
+  sectionHeader: {
+    paddingTop: 6,
+    paddingBottom: 5,
+  },
+  sectionTitle: { color: colors.text, fontSize: 13, fontWeight: "700" },
+  sectionSubtitle: { color: colors.hint, fontSize: 11, marginTop: 1 },
+
+  workspaceRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    backgroundColor: colors.bgElevated,
+    gap: 10,
+    minHeight: 56,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
     borderRadius: radii.md,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 8,
     borderWidth: 1,
     borderColor: colors.border,
+    backgroundColor: colors.bgElevated,
+    marginBottom: 7,
   },
-  wsTextWrap: { flex: 1, minWidth: 0 },
-  wsName: { color: colors.text, fontSize: 15, fontWeight: "600" },
-  wsSub: { color: colors.sub, fontSize: 12, marginTop: 2 },
-
-  disconnectBtn: {
-    paddingVertical: 12,
-    alignItems: "center",
-    borderRadius: radii.md,
+  workspaceRowAgent: {
+    borderColor: colors.borderAccent,
+    backgroundColor: colors.primaryDim,
+  },
+  workspaceRowPressed: {
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.bgRaised,
+  },
+  workspaceIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: radii.sm,
     borderWidth: 1,
-    borderColor: colors.dangerDim,
-    backgroundColor: colors.dangerDim,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.bgRaised,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  disconnectText: { color: colors.danger, fontSize: 14, fontWeight: "500" },
+  workspaceIconText: {
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: "800",
+    fontFamily: monoFont,
+  },
+  workspaceBody: { flex: 1, minWidth: 0, gap: 4 },
+  workspaceTitle: { color: colors.text, fontSize: 15, fontWeight: "700" },
+  toolPill: {
+    color: colors.primary,
+    fontSize: 10,
+    fontWeight: "800",
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.borderAccent,
+    backgroundColor: colors.primaryDim,
+    overflow: "hidden",
+    alignSelf: "flex-start",
+    maxWidth: 120,
+  },
+  workspaceMetaLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 5,
+  },
+  workspaceMetaChip: {
+    color: colors.hint,
+    fontSize: 10,
+    fontWeight: "700",
+    maxWidth: 140,
+  },
+  openCol: {
+    minWidth: 46,
+    alignItems: "flex-end",
+    justifyContent: "center",
+  },
+  openText: { color: colors.primary, fontSize: 12, fontWeight: "700" },
+  openChevron: {
+    color: colors.primary,
+    fontSize: 22,
+    lineHeight: 22,
+    marginTop: -2,
+  },
 
   modalBackdrop: {
     flex: 1,
@@ -417,7 +821,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 24,
-    maxHeight: "70%",
+    maxHeight: "72%",
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
@@ -432,9 +836,10 @@ const styles = StyleSheet.create({
   modalTitle: {
     color: colors.text,
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
     marginBottom: 12,
   },
+  modalSpinner: { marginVertical: 24 },
   projectItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -443,11 +848,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
+  projectItemText: { flex: 1, minWidth: 0 },
+  projectItemName: { color: colors.text, fontSize: 15, fontWeight: "700" },
+  projectItemPath: {
+    color: colors.sub,
+    fontSize: 12,
+    marginTop: 2,
+    fontFamily: monoFont,
+  },
   projectCurrent: {
     color: colors.success,
     fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 0.5,
+    fontWeight: "800",
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 999,

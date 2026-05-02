@@ -25,6 +25,7 @@ struct ActiveAgentsPanel: View {
     @State var bridgeOverviewTick: Int = 0
     @State var branchTick: Int = 0
     @State var attentionMuteTick: Int = 0
+    @State var workspaceTitleTick: Int = 0
     /// Re-render trigger for `ContextBankStore.activeRuns` changes. The
     /// Loop snapshot filter reads `activeCuratorForkWorkspaceIds`; without
     /// this tick a brand-new curator fork would leak into the Loop tab

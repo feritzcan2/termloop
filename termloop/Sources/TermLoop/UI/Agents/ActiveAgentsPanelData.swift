@@ -72,6 +72,16 @@ extension ActiveAgentsPanel {
         }
     }
 
+    func workspaceTitleSignatures(for tabs: [Workspace]) -> [ActiveAgentsWorkspaceTitleSignature] {
+        tabs.map { workspace in
+            ActiveAgentsWorkspaceTitleSignature(
+                workspaceId: workspace.id,
+                title: workspace.title,
+                customTitle: workspace.customTitle
+            )
+        }
+    }
+
     func makeActiveAgentsWorkspaceSnapshot(tabs scopedTabs: [Workspace]? = nil) -> ActiveAgentsWorkspaceSnapshot {
         let tabs = scopedTabs ?? projectScopedTabs()
         let workspaceById = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
@@ -346,6 +356,22 @@ extension ActiveAgentsPanel {
 
 
 extension ActiveAgentsPanel {
+    func activeAgentsWorkspaceTitleObservationPublisher(tabs: [Workspace]) -> AnyPublisher<Void, Never> {
+        let publishers = tabs.map { workspace in
+            workspace.$title
+                .combineLatest(workspace.$customTitle)
+                .dropFirst()
+                .map { _ in () }
+                .eraseToAnyPublisher()
+        }
+        guard !publishers.isEmpty else {
+            return Empty().eraseToAnyPublisher()
+        }
+        return Publishers.MergeMany(publishers)
+            .throttle(for: .milliseconds(33), scheduler: RunLoop.main, latest: true)
+            .eraseToAnyPublisher()
+    }
+
     func activeAgentsActivityObservationPublisher() -> AnyPublisher<[ActiveAgentsActivityObservationKey], Never> {
         let relevantWorkspaceIds = Array(NSOrderedSet(array: projectScopedTabs().map(\.id))) as? [UUID] ?? []
         return Publishers.CombineLatest(

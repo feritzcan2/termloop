@@ -80,6 +80,8 @@ export default function TerminalScreen() {
     surfaceId?: string;
     name?: string;
     surfaceName?: string;
+    projectName?: string;
+    projectPath?: string;
   }>();
   const router = useRouter();
   const workspaceId = params.workspaceId;
@@ -96,6 +98,7 @@ export default function TerminalScreen() {
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
+  const [sending, setSending] = useState(false);
 
   const aliveRef = useRef(true);
   const inFlightRef = useRef(false);
@@ -314,9 +317,10 @@ export default function TerminalScreen() {
   );
 
   const onSend = useCallback(async () => {
-    if (!client || !workspaceId || !draft) return;
+    if (!client || !workspaceId || !draft || sending) return;
     const line = draft;
     setDraft("");
+    setSending(true);
     setHistoryIndex(null);
     if (line.trim()) {
       setCommandHistory((items) => {
@@ -336,7 +340,7 @@ export default function TerminalScreen() {
       try {
         await client.sendKey(workspaceId, "enter", surfaceId);
       } catch {
-        await client.sendText(workspaceId, "\n", surfaceId);
+        await client.sendText(workspaceId, "\r", surfaceId);
       }
       await refresh();
       setTimeout(() => inputRef.current?.focus(), 0);
@@ -344,8 +348,10 @@ export default function TerminalScreen() {
       if (aliveRef.current) {
         setInlineError(`Send failed: ${friendlyTransportError(err)}`);
       }
+    } finally {
+      if (aliveRef.current) setSending(false);
     }
-  }, [client, workspaceId, surfaceId, draft, refresh]);
+  }, [client, workspaceId, surfaceId, draft, sending, refresh]);
 
   const navigateCommandHistory = useCallback(
     (direction: "older" | "newer") => {
@@ -474,6 +480,16 @@ export default function TerminalScreen() {
     typeof params.surfaceName === "string" && params.surfaceName.trim()
       ? params.surfaceName.trim()
       : "Terminal";
+  const projectName =
+    typeof params.projectName === "string" ? params.projectName.trim() : "";
+  const projectPath =
+    typeof params.projectPath === "string" ? params.projectPath.trim() : "";
+  const projectDescriptor = projectName
+    ? projectPath
+      ? `${projectName} · ${projectPath}`
+      : projectName
+    : "TermLoop session";
+  const canSend = Boolean(draft) && !sending;
 
   return (
     <SafeAreaView style={styles.root} edges={["top", "bottom"]}>
@@ -483,40 +499,49 @@ export default function TerminalScreen() {
         style={{ flex: 1 }}
       >
         <View style={styles.toolbar}>
-          <Pressable
-            onPress={() => router.back()}
-            style={styles.backBtn}
-            hitSlop={10}
-          >
-            <Text style={styles.backChevron}>‹</Text>
-          </Pressable>
-          <View style={styles.titleBlock}>
-            <Text style={styles.toolbarTitle} numberOfLines={1}>
-              {workspaceTitle}
-              <Text style={styles.toolbarTitleSub}> · {surfaceTitle}</Text>
-            </Text>
+          <View style={styles.toolbarTop}>
+            <Pressable
+              onPress={() => router.back()}
+              style={styles.backBtn}
+              hitSlop={10}
+            >
+              <Text style={styles.backChevron}>‹</Text>
+            </Pressable>
+            <View style={styles.titleBlock}>
+              <Text style={styles.toolbarTitle} numberOfLines={1}>
+                {workspaceTitle}
+              </Text>
+              <Text style={styles.toolbarSurface} numberOfLines={1}>
+                {surfaceTitle}
+              </Text>
+            </View>
+            <View style={styles.toolbarActions}>
+              <View style={styles.statusPill}>
+                <View style={[styles.statusDot, statusDotStyles[liveState]]} />
+                <Text style={styles.statusLabel} numberOfLines={1}>
+                  {STATUS_LABEL[liveState]}
+                </Text>
+              </View>
+              <Pressable style={styles.fontBtn} onPress={cycleFont} hitSlop={6}>
+                <Text style={styles.fontBtnText}>Aa {fontSize}</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.refreshBtn, refreshing && styles.refreshBtnBusy]}
+                onPress={refresh}
+                disabled={refreshing}
+                hitSlop={6}
+              >
+                {refreshing ? (
+                  <ActivityIndicator color={colors.sub} />
+                ) : (
+                  <Text style={styles.refreshBtnText}>↻</Text>
+                )}
+              </Pressable>
+            </View>
           </View>
-          <View style={styles.toolbarStatus}>
-            <View style={[styles.statusDot, statusDotStyles[liveState]]} />
-            <Text style={styles.statusLabel} numberOfLines={1}>
-              {STATUS_LABEL[liveState]}
-            </Text>
-          </View>
-          <Pressable style={styles.fontBtn} onPress={cycleFont} hitSlop={6}>
-            <Text style={styles.fontBtnText}>{fontSize}px</Text>
-          </Pressable>
-          <Pressable
-            style={styles.refreshLink}
-            onPress={refresh}
-            disabled={refreshing}
-            hitSlop={6}
-          >
-            {refreshing ? (
-              <ActivityIndicator color={colors.sub} />
-            ) : (
-              <Text style={styles.refreshLinkText}>Refresh</Text>
-            )}
-          </Pressable>
+          <Text style={styles.projectContext} numberOfLines={1}>
+            {projectDescriptor}
+          </Text>
         </View>
 
         {liveState === "degraded" || liveState === "closed" ? (
@@ -608,64 +633,71 @@ export default function TerminalScreen() {
           ) : null}
         </View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          keyboardShouldPersistTaps="always"
-          style={styles.keyRowScroll}
-          contentContainerStyle={styles.keyRow}
-        >
-          {accessoryItems.map((item) =>
-            item.kind === "key" ? (
-              <Pressable
-                key={`k:${item.def.label}`}
-                style={({ pressed }) => [
-                  styles.keyBtn,
-                  pressed && styles.keyBtnPressed,
-                ]}
-                onPress={() => sendKey(item.def)}
-              >
-                <Text style={styles.keyBtnText}>{item.def.label}</Text>
-              </Pressable>
-            ) : (
-              <Pressable
-                key={`a:${item.label}`}
-                style={[
-                  styles.actionBtn,
-                  item.disabled && styles.actionBtnDisabled,
-                ]}
-                onPress={item.onPress}
-                disabled={item.disabled}
-              >
-                <Text style={styles.actionBtnText}>{item.label}</Text>
-              </Pressable>
-            )
-          )}
-        </ScrollView>
-
-        <View style={styles.inputRow}>
-          <TextInput
-            ref={inputRef}
-            style={styles.input}
-            value={draft}
-            onChangeText={setDraft}
-            placeholder="Type a command or prompt…"
-            placeholderTextColor={colors.placeholder}
-            autoCapitalize="none"
-            autoCorrect={false}
-            multiline
-            scrollEnabled
-            textAlignVertical="top"
-            returnKeyType="default"
-            blurOnSubmit={false}
-          />
-          <Pressable
-            style={[styles.sendBtn, !draft && styles.sendBtnDisabled]}
-            onPress={onSend}
-            disabled={!draft}
+        <View style={styles.composer}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="always"
+            style={styles.keyRowScroll}
+            contentContainerStyle={styles.keyRow}
           >
-            <Text style={styles.sendBtnText}>Send</Text>
-          </Pressable>
+            {accessoryItems.map((item) =>
+              item.kind === "key" ? (
+                <Pressable
+                  key={`k:${item.def.label}`}
+                  style={({ pressed }) => [
+                    styles.keyBtn,
+                    pressed && styles.keyBtnPressed,
+                  ]}
+                  onPress={() => sendKey(item.def)}
+                >
+                  <Text style={styles.keyBtnText}>{item.def.label}</Text>
+                </Pressable>
+              ) : (
+                <Pressable
+                  key={`a:${item.label}`}
+                  style={[
+                    styles.actionBtn,
+                    item.disabled && styles.actionBtnDisabled,
+                  ]}
+                  onPress={item.onPress}
+                  disabled={item.disabled}
+                >
+                  <Text style={styles.actionBtnText}>{item.label}</Text>
+                </Pressable>
+              )
+            )}
+          </ScrollView>
+
+          <View style={styles.inputRow}>
+            <View style={styles.inputShell}>
+              <Text style={styles.composerLabel}>Command</Text>
+              <TextInput
+                ref={inputRef}
+                style={styles.input}
+                value={draft}
+                onChangeText={setDraft}
+                placeholder="Type a command or prompt…"
+                placeholderTextColor={colors.placeholder}
+                autoCapitalize="none"
+                autoCorrect={false}
+                multiline
+                scrollEnabled
+                textAlignVertical="top"
+                returnKeyType="default"
+                blurOnSubmit={false}
+              />
+            </View>
+            <Pressable
+              style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
+              onPress={onSend}
+              disabled={!canSend}
+            >
+              <Text style={styles.sendBtnText}>
+                {sending ? "Sending" : "Send"}
+              </Text>
+            </Pressable>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -676,18 +708,22 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
 
   toolbar: {
-    flexDirection: "row",
-    alignItems: "center",
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    gap: 6,
+    paddingTop: 6,
+    paddingBottom: 7,
+    gap: 5,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
     backgroundColor: colors.bg,
   },
+  toolbarTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
   backBtn: {
-    width: 28,
-    height: 28,
+    width: 30,
+    height: 34,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: radii.sm,
@@ -699,40 +735,66 @@ const styles = StyleSheet.create({
     lineHeight: 28,
     marginTop: -2,
   },
-  titleBlock: { flex: 1, minWidth: 0 },
+  titleBlock: { flex: 1, minWidth: 0, gap: 1 },
   toolbarTitle: {
     color: colors.text,
-    fontSize: 13,
-    fontWeight: "600",
+    fontSize: 14,
+    fontWeight: "700",
   },
-  toolbarTitleSub: {
+  toolbarSurface: {
     color: colors.sub,
     fontSize: 12,
-    fontWeight: "400",
     fontFamily: monoFont,
   },
-  fontBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+  toolbarActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    flexShrink: 0,
+  },
+  statusPill: {
+    minHeight: 28,
+    maxWidth: 82,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 7,
     borderRadius: radii.sm,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.bgElevated,
   },
-  fontBtnText: { color: colors.text, fontSize: 11, fontWeight: "500" },
-  toolbarStatus: {
-    flexDirection: "row",
+  fontBtn: {
+    minHeight: 28,
+    paddingHorizontal: 7,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgElevated,
     alignItems: "center",
-    gap: 4,
+    justifyContent: "center",
   },
+  fontBtnText: { color: colors.text, fontSize: 11, fontWeight: "700" },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusLabel: { color: colors.sub, fontSize: 10, fontWeight: "500" },
-  refreshLink: {
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    alignItems: "flex-end",
+  statusLabel: { color: colors.sub, fontSize: 10, fontWeight: "700" },
+  refreshBtn: {
+    width: 30,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgElevated,
   },
-  refreshLinkText: { color: colors.primary, fontSize: 12, fontWeight: "500" },
+  refreshBtnBusy: { opacity: 0.65 },
+  refreshBtnText: { color: colors.primary, fontSize: 18, fontWeight: "700" },
+  projectContext: {
+    color: colors.hint,
+    fontSize: 11,
+    fontFamily: monoFont,
+    paddingLeft: 36,
+  },
 
   streamBanner: {
     flexDirection: "row",
@@ -816,16 +878,20 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
 
-  keyRowScroll: {
-    flexGrow: 0,
+  composer: {
     flexShrink: 0,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  keyRowScroll: {
+    flexGrow: 0,
+    flexShrink: 0,
     backgroundColor: colors.bgElevated,
   },
   keyRow: {
-    paddingHorizontal: 6,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
     gap: 4,
     alignItems: "center",
   },
@@ -867,15 +933,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-end",
     paddingHorizontal: 8,
-    paddingTop: 8,
+    paddingTop: 7,
     paddingBottom: 8,
     gap: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
     backgroundColor: colors.bg,
   },
-  input: {
+  inputShell: {
     flex: 1,
+    minWidth: 0,
+    gap: 5,
+  },
+  composerLabel: {
+    color: colors.hint,
+    fontSize: 10,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0,
+  },
+  input: {
     minHeight: 44,
     maxHeight: COMPOSER_MAX_HEIGHT,
     backgroundColor: colors.inputBg,
@@ -889,13 +966,13 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   sendBtn: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: colors.primary,
     borderRadius: radii.md,
     minHeight: 44,
-    minWidth: 64,
+    minWidth: 72,
   },
   sendBtnDisabled: { opacity: 0.45 },
   sendBtnText: { color: colors.onPrimary, fontWeight: "600" },

@@ -31,6 +31,7 @@ struct ActiveAgentsWorkspaceSnapshot {
 
 struct ActiveAgentsExpandedRenderSignature: Equatable {
     let workspaceIds: [UUID]
+    let workspaceTitles: [ActiveAgentsWorkspaceTitleSignature]
     let selectedTabId: UUID?
     let agentSessionTick: Int
     let projectScopeTick: Int
@@ -38,6 +39,12 @@ struct ActiveAgentsExpandedRenderSignature: Equatable {
     let bridgeOverviewTick: Int
     let branchTick: Int
     let attentionMuteTick: Int
+}
+
+struct ActiveAgentsWorkspaceTitleSignature: Equatable {
+    let workspaceId: UUID
+    let title: String
+    let customTitle: String?
 }
 
 @MainActor

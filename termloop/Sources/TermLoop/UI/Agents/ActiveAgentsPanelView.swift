@@ -12,6 +12,7 @@ extension ActiveAgentsPanel {
         let _ = activityTick
         let _ = bridgeOverviewTick
         let _ = curatorForkTick
+        let _ = workspaceTitleTick
         return Group {
             if !isHidden {
                 if isCollapsed {
@@ -39,6 +40,9 @@ extension ActiveAgentsPanel {
             guard nextKeys != observedBranchKeys else { return }
             observedBranchKeys = nextKeys
             branchTick &+= 1
+        }
+        .onReceive(activeAgentsWorkspaceTitleObservationPublisher(tabs: scopedTabs)) { _ in
+            workspaceTitleTick &+= 1
         }
         .onReceive(bridgeStore.$overviewVersion) { newValue in
             guard newValue != bridgeOverviewTick else { return }
@@ -91,6 +95,7 @@ extension ActiveAgentsPanel {
         let renderSnapshot = expandedRenderMemo.value(
             for: ActiveAgentsExpandedRenderSignature(
                 workspaceIds: scopedTabs.map(\.id),
+                workspaceTitles: workspaceTitleSignatures(for: scopedTabs),
                 selectedTabId: tabManager.selectedTabId,
                 agentSessionTick: agentSessionTick,
                 projectScopeTick: projectScopeTick,

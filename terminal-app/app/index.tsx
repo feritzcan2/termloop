@@ -69,8 +69,7 @@ export default function ConnectionListScreen() {
   const [items, setItems] = useState<SavedConnection[] | null>(null);
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const [health, setHealth] = useState<Record<string, HealthStatus>>({});
-  // Auto-connect runs at most once per screen mount, even if the user
-  // bounces back and re-focuses, so a failure never flips into a retry loop.
+  // Once per mount: a failed auto-connect must not retry on re-focus.
   const autoTriedRef = useRef(false);
   const onConnectRef = useRef<(c: SavedConnection) => void>(() => {});
   const connectingIdRef = useRef<string | null>(null);
@@ -83,17 +82,24 @@ export default function ConnectionListScreen() {
         .then(async (list) => {
           if (!alive) return;
           setItems((prev) => (sameIds(prev, list) ? prev : list));
-          // Probes run in parallel so a slow/unreachable Mac never
-          // blocks rendering of the other rows.
           for (const c of list) {
             if (connectionNeedsReauth(c)) continue;
-            pingConnection(c).then((res) => {
-              if (!alive) return;
-              const next: HealthStatus = res.ok ? "online" : "offline";
-              setHealth((prev) =>
-                prev[c.id] === next ? prev : { ...prev, [c.id]: next }
-              );
-            });
+            pingConnection(c)
+              .then((res) => {
+                if (!alive) return;
+                const next: HealthStatus = res.ok ? "online" : "offline";
+                setHealth((prev) =>
+                  prev[c.id] === next ? prev : { ...prev, [c.id]: next }
+                );
+              })
+              .catch(() => {
+                if (!alive) return;
+                setHealth((prev) =>
+                  prev[c.id] === "offline"
+                    ? prev
+                    : { ...prev, [c.id]: "offline" }
+                );
+              });
           }
           if (autoTriedRef.current) return;
           const lastId = await getLastConnection().catch(() => null);
@@ -122,8 +128,8 @@ export default function ConnectionListScreen() {
       (items ?? []).map((conn) => ({
         conn,
         lastLabel: conn.lastConnectedAt
-          ? ` · last ${new Date(conn.lastConnectedAt).toLocaleString()}`
-          : "",
+          ? `Last connected ${formatConnectionTime(conn.lastConnectedAt)}`
+          : "Never connected",
         health: connectionNeedsReauth(conn)
           ? "needs_reauth"
           : (health[conn.id] ?? "unknown"),
@@ -159,6 +165,7 @@ export default function ConnectionListScreen() {
         if (last) {
           const valid = await validateLastTerminal(client, last);
           if (valid) {
+            const project = await client.currentProject().catch(() => null);
             // Push /connected first so the terminal screen's back button
             // returns to the workspace list, not the connection list.
             router.push("/connected");
@@ -169,6 +176,8 @@ export default function ConnectionListScreen() {
                 surfaceId: last.surfaceId,
                 name: last.workspaceName,
                 surfaceName: last.surfaceName,
+                projectName: project?.name ?? "",
+                projectPath: project?.path ?? "",
               },
             });
             return;
@@ -216,7 +225,6 @@ export default function ConnectionListScreen() {
           const lastId = await getLastConnection().catch(() => null);
           if (lastId === conn.id) {
             await clearLastConnection().catch(() => {});
-            // Allow auto-connect to fire again if the user re-pairs.
             autoTriedRef.current = false;
           }
           setItems(await listConnections());
@@ -237,7 +245,14 @@ export default function ConnectionListScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={["bottom"]}>
-      <View style={styles.ctaWrap}>
+      <View style={styles.pairingPanel}>
+        <View style={styles.pairingCopy}>
+          <Text style={styles.eyebrow}>TermLoop Mobile</Text>
+          <Text style={styles.pairingTitle}>Connect to your Mac</Text>
+          <Text style={styles.pairingHint}>
+            Scan the QR from TermLoop to pair this device and resume sessions.
+          </Text>
+        </View>
         <Pressable
           style={[styles.primaryBtn, connectingId && styles.controlDisabled]}
           onPress={() => router.push("/connections/scan")}
@@ -246,11 +261,11 @@ export default function ConnectionListScreen() {
           <Text style={styles.primaryBtnText}>Scan pairing QR</Text>
         </Pressable>
         <Pressable
-          style={[styles.secondaryBtn, connectingId && styles.controlDisabled]}
+          style={[styles.manualLink, connectingId && styles.controlDisabled]}
           onPress={() => router.push("/connections/new")}
           disabled={connectingId !== null}
         >
-          <Text style={styles.secondaryBtnText}>Manual setup</Text>
+          <Text style={styles.manualLinkText}>Manual setup fallback</Text>
         </Pressable>
       </View>
 
@@ -291,6 +306,8 @@ export default function ConnectionListScreen() {
                 <Pressable
                   style={({ pressed }) => [
                     styles.card,
+                    item.health === "offline" && styles.cardOffline,
+                    item.health === "needs_reauth" && styles.cardReauth,
                     isConnecting && styles.cardConnecting,
                     pressed && styles.cardPressed,
                   ]}
@@ -298,9 +315,22 @@ export default function ConnectionListScreen() {
                   disabled={connectingId !== null}
                 >
                   <View style={styles.cardHeader}>
-                    <Text style={styles.rowName} numberOfLines={1}>
-                      {item.conn.serverName || item.conn.name}
-                    </Text>
+                    <View style={styles.rowTitleWrap}>
+                      <View style={styles.rowTitleLine}>
+                        <View
+                          style={[
+                            styles.healthDot,
+                            { backgroundColor: HEALTH_DOT[item.health] },
+                          ]}
+                        />
+                        <Text style={styles.rowName} numberOfLines={1}>
+                          {item.conn.serverName || item.conn.name}
+                        </Text>
+                      </View>
+                      <Text style={styles.rowSub} numberOfLines={1}>
+                        {item.conn.host}:{item.conn.port}
+                      </Text>
+                    </View>
                     <View
                       style={[
                         styles.statusPill,
@@ -321,19 +351,12 @@ export default function ConnectionListScreen() {
                       </Text>
                     </View>
                   </View>
-                  <Text style={styles.rowSub} numberOfLines={1}>
-                    {item.conn.host}:{item.conn.port}
-                    {item.lastLabel}
-                  </Text>
                   <View style={styles.healthRow}>
-                    <View
-                      style={[
-                        styles.healthDot,
-                        { backgroundColor: HEALTH_DOT[item.health] },
-                      ]}
-                    />
                     <Text style={styles.healthLabel}>
                       {HEALTH_LABEL[item.health]}
+                    </Text>
+                    <Text style={styles.healthHint} numberOfLines={1}>
+                      · {item.lastLabel}
                     </Text>
                     {item.health === "offline" ? (
                       <Text style={styles.healthHint} numberOfLines={1}>
@@ -387,6 +410,20 @@ function sameIds(
   return true;
 }
 
+function formatConnectionTime(value: string): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return value;
+  const diffMs = Date.now() - date.getTime();
+  if (diffMs < 60_000) return "just now";
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   center: {
@@ -395,9 +432,25 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: colors.bg,
   },
-  ctaWrap: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, gap: 10 },
+  pairingPanel: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 10,
+    gap: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  pairingCopy: { gap: 3 },
+  eyebrow: {
+    color: colors.label,
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0,
+  },
+  pairingTitle: { color: colors.text, fontSize: 20, fontWeight: "700" },
+  pairingHint: { color: colors.sub, fontSize: 12, lineHeight: 17 },
   primaryBtn: {
-    paddingVertical: 16,
+    paddingVertical: 14,
     borderRadius: radii.md,
     backgroundColor: colors.primary,
     alignItems: "center",
@@ -410,21 +463,23 @@ const styles = StyleSheet.create({
     color: colors.onPrimary,
     fontSize: 15,
     fontWeight: "600",
-    letterSpacing: 0.2,
+    letterSpacing: 0,
   },
-  secondaryBtn: {
-    paddingVertical: 12,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    alignItems: "center",
-    backgroundColor: colors.bgElevated,
+  manualLink: {
+    alignSelf: "flex-start",
+    paddingVertical: 6,
+    paddingHorizontal: 2,
   },
-  secondaryBtnText: { color: colors.label, fontSize: 14, fontWeight: "500" },
+  manualLinkText: {
+    color: colors.label,
+    fontSize: 12,
+    fontWeight: "600",
+  },
   controlDisabled: { opacity: 0.55 },
   connectingBanner: {
     marginHorizontal: 16,
-    marginBottom: 8,
+    marginTop: 10,
+    marginBottom: 2,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: radii.md,
@@ -442,14 +497,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  empty: { alignItems: "center", paddingHorizontal: 24, paddingTop: 32, gap: 12 },
+  empty: { alignItems: "center", paddingHorizontal: 24, paddingTop: 36, gap: 10 },
   emptyBadge: {
-    width: 64,
-    height: 64,
-    borderRadius: radii.lg,
+    width: 54,
+    height: 54,
+    borderRadius: radii.md,
     borderWidth: 1,
     borderColor: colors.borderAccent,
-    backgroundColor: colors.primaryDim,
+    backgroundColor: colors.bgElevated,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -457,13 +512,12 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 18,
     fontWeight: "700",
-    letterSpacing: 0.5,
+    letterSpacing: 0,
   },
   emptyTitle: {
     color: colors.text,
     fontSize: 16,
     fontWeight: "600",
-    marginTop: 4,
   },
   emptyHint: {
     color: colors.sub,
@@ -477,7 +531,7 @@ const styles = StyleSheet.create({
     color: colors.label,
     fontSize: 11,
     textTransform: "uppercase",
-    letterSpacing: 0.6,
+    letterSpacing: 0,
     paddingBottom: 8,
   },
 
@@ -495,6 +549,13 @@ const styles = StyleSheet.create({
     borderColor: colors.borderAccent,
     backgroundColor: colors.bgRaised,
   },
+  cardOffline: {
+    borderColor: colors.dangerBorder,
+  },
+  cardReauth: {
+    borderColor: colors.dangerBorder,
+    backgroundColor: colors.dangerDim,
+  },
   cardPressed: { backgroundColor: colors.bgRaised, borderColor: colors.borderStrong },
   cardHeader: {
     flexDirection: "row",
@@ -502,7 +563,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 
-  rowName: { color: colors.text, fontSize: 15, fontWeight: "600", flex: 1 },
+  rowTitleWrap: { flex: 1, minWidth: 0, gap: 2 },
+  rowTitleLine: { flexDirection: "row", alignItems: "center", gap: 7 },
+  rowName: { color: colors.text, fontSize: 15, fontWeight: "700", flex: 1 },
   rowSub: { color: colors.sub, fontSize: 12 },
 
   cardActions: {
@@ -542,7 +605,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.dangerDim,
     borderColor: colors.dangerBorder,
   },
-  statusPillText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
+  statusPillText: { fontSize: 10, fontWeight: "700", letterSpacing: 0 },
   statusPairedText: { color: colors.success },
   statusPasswordText: { color: colors.sub },
   statusReauthText: { color: colors.danger },
