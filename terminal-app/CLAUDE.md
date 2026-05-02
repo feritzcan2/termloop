@@ -19,7 +19,7 @@ TCP socket.
 | `lib/session.ts` | Module-scope active session (one connection at a time) |
 | `lib/connections.ts` | Catalog: metadata in AsyncStorage, secrets in expo-secure-store |
 | `lib/last-connection.ts` | Last successful connection id for launch auto-connect |
-| `lib/last-terminal.ts` | Last opened terminal per connection for resume |
+| `lib/last-terminal.ts` | Last opened terminal per connection for contextual recall |
 | `lib/connection-health.ts` | Short-lived authenticated online/offline probe |
 | `lib/theme.ts` | Colors + mono font — single source for dark theme |
 | `eas.json` | EAS Build profiles for development / preview / staging / production |
@@ -118,12 +118,16 @@ TCP socket.
 | `project.current` | – | `ProjectSummary \| null` (returns directly; `not_found` mapped to `null` in client) |
 | `project.switch` | `{ project_id }` | `{ ok: true }` |
 | `workspace.list` | – | `{ workspaces: WorkspaceSummary[] }` |
+| `workspace.create` | `{ title?, cwd?, project_id?, terminal_agent_id? }` | `{ workspace_id, workspace_ref?, window_id?, window_ref? }` |
+| `workspace.get_jira_ticket` | `{ workspace_id }` | `{ set, key?, status?, url?, reported_at? }` |
+| `workspace.get_run_targets` | `{ workspace_id }` | `{ targets: { label, status?, url?, reported_at? }[] }` |
 | `surface.list` | `{ workspace_id }` | `{ surfaces: ... }` |
 | `surface.read_text` | `{ workspace_id, surface_id?, format?, history_lines? }` | `{ text, base64?, workspace_id, workspace_ref?, surface_id, surface_ref?, window_id?, window_ref? }` |
 | `surface.send_text` | `{ workspace_id, text, surface_id? }` | `{ ok: true }` |
 | `surface.send_key` | `{ workspace_id, key, surface_id? }` | `{ ok: true }` |
 | `surface.subscribe` | `{ workspace_id, surface_id?, format?, history_lines? }` | `{ subscription_id, format?, history_lines? }` |
 | `surface.unsubscribe` | `{ subscription_id }` | `{ ok: true }` |
+| `termloop.list_terminal_agents` | – | `{ agents: TerminalAgentSummary[] }` |
 
 ### Server-pushed events (V2 streaming)
 
@@ -180,7 +184,7 @@ V1 is considered the QR-paired thin-client baseline:
 - Mobile scans QR, claims a device token, stores secrets in SecureStore, and reauths with `auth.token`.
 - Connected screen loads current project, filters workspaces by active project, and opens terminal surfaces.
 - Connections screen can auto-connect to the last successful connection once per launch/focus cycle.
-- Connected screen saves the last opened terminal per connection; reconnect resumes it when still valid.
+- Connected screen saves the last opened terminal per connection, but reconnect lands on the worktree/session list.
 - Terminal screen supports live `surface.subscribe`, `format: "vt"`, `history_lines: 500`, ANSI SGR rendering, read/send/key accessory row, and polling fallback only when live streaming degrades.
 
 Before calling V1 done, run the smoke checklist in `docs/v1-smoke.md`.
@@ -215,6 +219,11 @@ same host:port creates a new entry. Users wanting to update manual
 credentials should edit/delete the existing row.
 
 ## Pending / known gaps
+
+- PR badges in the mobile workspace/worktree list need backend exposure
+  of the desktop PR summary state. Current mobile RPCs expose Jira tickets,
+  run targets, git change counts, branch, and worktree path, but no pull
+  request summary.
 
 - `client.resize()` is a no-op until backend exposes a PTY resize API.
 - `terminal.tsx` is a scrollback view with a 1200-line client ring buffer.

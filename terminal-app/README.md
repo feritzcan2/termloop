@@ -75,7 +75,7 @@ lib/
   errors.ts                User-facing connection/pairing error messages
   connections.ts           AsyncStorage-backed connection catalog
   last-connection.ts       Last successful connection id for auto-connect
-  last-terminal.ts         Last opened terminal per connection for resume
+  last-terminal.ts         Last opened terminal per connection for contextual recall
   connection-health.ts     Short-lived authenticated online/offline probe
   session.ts               Module-scope active client (one connection at a time)
   theme.ts                 Shared colors + fonts
@@ -120,12 +120,16 @@ single line terminated by `\n`.
 | `project.current` | – | `ProjectSummary \| null` (returned directly, not wrapped) |
 | `project.switch` | `{ project_id }` | `{ ok: true }` |
 | `workspace.list` | – | `{ workspaces: WorkspaceSummary[] }` |
+| `workspace.create` | `{ title?, cwd?, project_id?, terminal_agent_id? }` | `{ workspace_id, workspace_ref?, window_id?, window_ref? }` |
+| `workspace.get_jira_ticket` | `{ workspace_id }` | `{ set, key?, status?, url?, reported_at? }` |
+| `workspace.get_run_targets` | `{ workspace_id }` | `{ targets: { label, status?, url?, reported_at? }[] }` |
 | `surface.list` | `{ workspace_id }` | `{ surfaces: SurfaceSummary[] }` |
 | `surface.read_text` | `{ workspace_id, surface_id?, format?, history_lines? }` | `{ text, base64?, workspace_id, workspace_ref?, surface_id, surface_ref?, window_id?, window_ref? }` |
 | `surface.send_text` | `{ workspace_id, text, surface_id? }` | `{ ok: true }` |
 | `surface.send_key` | `{ workspace_id, key, surface_id? }` | `{ ok: true }` |
 | `surface.subscribe` | `{ workspace_id, surface_id?, format?, history_lines? }` | `{ subscription_id, format?, history_lines? }` |
 | `surface.unsubscribe` | `{ subscription_id }` | `{ ok: true }` |
+| `termloop.list_terminal_agents` | – | `{ agents: TerminalAgentSummary[] }` |
 
 `surface.resize` does not exist on the backend yet — `client.resize()` is a
 no-op until a real PTY resize API lands.
@@ -195,6 +199,8 @@ behavior.
 ## Pending backend / mobile work
 
 - Terminal PTY resize API (`client.resize()` is a no-op until then)
+- PR badges in the mobile workspace/worktree list need a backend payload or
+  read RPC for the desktop PR summary state.
 - Full terminal emulation for cursor-addressing TUIs (vim/top/htop) is out
   of scope for the current scrollback renderer.
 - Polished terminal renderer/input model beyond the current accessory row

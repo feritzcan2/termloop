@@ -6,6 +6,7 @@ import {
   FlatList,
   Modal,
   Pressable,
+  ScrollView,
   SectionList,
   StyleSheet,
   Text,
@@ -15,7 +16,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { saveLastTerminal } from "../../lib/last-terminal";
 import {
   closeSession,
-  getActiveAuth,
   getActiveClient,
   getActiveConnectionId,
 } from "../../lib/session";
@@ -24,7 +24,10 @@ import {
   surfaceLabel,
   workspaceLabel,
   workspaceProjectId,
+  type JiraTicketSummary,
   type ProjectSummary,
+  type TerminalAgentSummary,
+  type WorkspaceRunTargetSummary,
   type WorkspaceSummary,
 } from "../../lib/termloop-client";
 import { colors, monoFont, radii } from "../../lib/theme";
@@ -53,10 +56,30 @@ interface WorkspaceSection {
   data: WorkspaceRow[];
 }
 
+interface AgentTarget {
+  key: string;
+  kind: WorkspaceSectionKind;
+  label: string;
+  detail: string;
+  cwd?: string;
+  projectId?: string;
+}
+
+interface WorkspaceContextState {
+  loading: boolean;
+  jira: JiraTicketSummary | null;
+  runTargets: WorkspaceRunTargetSummary[];
+}
+
+interface WorkspaceContextSummary {
+  loading: boolean;
+  jira: JiraTicketSummary | null;
+  runTargets: WorkspaceRunTargetSummary[];
+}
+
 export default function ConnectedScreen() {
   const router = useRouter();
   const client = getActiveClient();
-  const auth = getActiveAuth();
   const [current, setCurrent] = useState<ProjectState>("loading");
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[] | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null);
@@ -65,6 +88,15 @@ export default function ConnectedScreen() {
   const [switchingId, setSwitchingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
+  const [agents, setAgents] = useState<TerminalAgentSummary[] | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [selectedTargetKey, setSelectedTargetKey] = useState("project");
+  const [startingAgent, setStartingAgent] = useState(false);
+  const [workspaceContexts, setWorkspaceContexts] = useState<
+    Record<string, WorkspaceContextState>
+  >({});
+  const [contextRefreshKey, setContextRefreshKey] = useState(0);
 
   const loadOverview = useCallback(async () => {
     if (!client) return;
@@ -77,6 +109,7 @@ export default function ConnectedScreen() {
       ]);
       setCurrent(cur);
       setWorkspaces(ws);
+      setContextRefreshKey((value) => value + 1);
     } catch (err) {
       const message = String((err as Error).message ?? err);
       setLoadError(message);
@@ -131,6 +164,7 @@ export default function ConnectedScreen() {
       ]);
       setCurrent(cur);
       setWorkspaces(ws);
+      setContextRefreshKey((value) => value + 1);
       setProjects(null);
       setPickerOpen(false);
     } catch (err) {
@@ -201,6 +235,59 @@ export default function ConnectedScreen() {
     );
   }, [workspaces, projectFilterId]);
 
+  const visibleWorkspaceKey = useMemo(() => {
+    return visibleWorkspaces?.map((ws) => ws.id).join("|") ?? "";
+  }, [visibleWorkspaces]);
+
+  useEffect(() => {
+    if (!client || visibleWorkspaces === null) return;
+    const candidates = visibleWorkspaces.filter(workspaceCanHaveBindings);
+    if (candidates.length === 0) {
+      setWorkspaceContexts({});
+      return;
+    }
+
+    let cancelled = false;
+    setWorkspaceContexts((currentMap) => {
+      const next: Record<string, WorkspaceContextState> = {};
+      for (const ws of candidates) {
+        const previous = currentMap[ws.id];
+        next[ws.id] = {
+          loading: true,
+          jira: previous?.jira ?? null,
+          runTargets: previous?.runTargets ?? [],
+        };
+      }
+      return next;
+    });
+
+    for (const ws of candidates) {
+      Promise.all([client.getJiraTicket(ws.id), client.getRunTargets(ws.id)])
+        .then(([jira, runTargets]) => {
+          if (cancelled) return;
+          setWorkspaceContexts((currentMap) => ({
+            ...currentMap,
+            [ws.id]: { loading: false, jira, runTargets },
+          }));
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setWorkspaceContexts((currentMap) => ({
+            ...currentMap,
+            [ws.id]: {
+              loading: false,
+              jira: currentMap[ws.id]?.jira ?? null,
+              runTargets: currentMap[ws.id]?.runTargets ?? [],
+            },
+          }));
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [client, visibleWorkspaces, visibleWorkspaceKey, contextRefreshKey]);
+
   const sections = useMemo<WorkspaceSection[]>(() => {
     if (visibleWorkspaces === null) return [];
     const worktreeSections = new Map<string, WorkspaceSection>();
@@ -242,12 +329,114 @@ export default function ConnectedScreen() {
     return out;
   }, [visibleWorkspaces]);
 
+  const agentTargets = useMemo<AgentTarget[]>(() => {
+    const activeProject =
+      current !== "loading" && current !== null ? current : null;
+    const targets: AgentTarget[] = [
+      {
+        key: "project",
+        kind: "workspace",
+        label: activeProject?.name ?? "Current project",
+        detail: activeProject?.path ?? "New workspace",
+        cwd: activeProject?.path,
+        projectId: activeProject?.id,
+      },
+    ];
+    for (const section of sections) {
+      if (section.kind !== "worktree") continue;
+      const first = section.data[0];
+      targets.push({
+        key: section.key,
+        kind: "worktree",
+        label: section.title,
+        detail: first?.worktreePath ?? section.subtitle,
+        cwd: first?.worktreePath ?? undefined,
+        projectId: activeProject?.id,
+      });
+    }
+    return targets;
+  }, [current, sections]);
+
   if (!client) return null;
 
   const projectName =
     current === "loading" ? "Loading project…" : current ? current.name : "No project";
   const projectPath =
     current !== "loading" && current?.path ? current.path : "No project path";
+
+  const openAgentPicker = async (targetKey = "project") => {
+    if (!client) return;
+    setSelectedTargetKey(
+      agentTargets.some((target) => target.key === targetKey)
+        ? targetKey
+        : "project"
+    );
+    setAgentPickerOpen(true);
+    if (agents === null) {
+      try {
+        const list = await client.listTerminalAgents();
+        setAgents(list);
+        setSelectedAgentId((currentId) => currentId ?? list[0]?.id ?? null);
+      } catch (err) {
+        Alert.alert(
+          "Failed to load agents",
+          String((err as Error).message ?? err)
+        );
+        setAgents([]);
+      }
+    }
+  };
+
+  const startAgent = async () => {
+    if (!client || !selectedAgentId) return;
+    const agent = agents?.find((item) => item.id === selectedAgentId);
+    const target =
+      agentTargets.find((item) => item.key === selectedTargetKey) ??
+      agentTargets[0];
+    if (!agent || !target) return;
+    setStartingAgent(true);
+    try {
+      const created = await client.createWorkspace({
+        title: agent.display_name,
+        cwd: target.cwd,
+        projectId: target.projectId,
+        terminalAgentId: agent.id,
+      });
+      setAgentPickerOpen(false);
+      await loadOverview();
+      setOpeningId(created.workspace_id);
+      const surfaces = await client.listSurfaces(created.workspace_id);
+      const surface = pickTerminalSurface(surfaces);
+      if (!surface) return;
+      const surfaceName = surfaceLabel(surface);
+      const connectionId = getActiveConnectionId();
+      if (connectionId) {
+        await saveLastTerminal({
+          connectionId,
+          workspaceId: created.workspace_id,
+          surfaceId: surface.id,
+          workspaceName: agent.display_name,
+          surfaceName,
+        }).catch(() => {});
+      }
+      router.push({
+        pathname: "/connected/terminal",
+        params: {
+          workspaceId: created.workspace_id,
+          surfaceId: surface.id,
+          name: agent.display_name,
+          surfaceName,
+          projectName: current !== "loading" ? current?.name ?? "" : "",
+          projectPath: current !== "loading" ? current?.path ?? "" : "",
+        },
+      });
+    } catch (err) {
+      Alert.alert("Failed to start agent", String((err as Error).message ?? err));
+    } finally {
+      setStartingAgent(false);
+      setOpeningId(null);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.root} edges={["bottom"]}>
@@ -273,6 +462,13 @@ export default function ConnectedScreen() {
           ),
           headerRight: () => (
             <View style={styles.headerActions}>
+              <Pressable
+                style={styles.headerAction}
+                onPress={() => openAgentPicker()}
+                hitSlop={8}
+              >
+                <Text style={styles.headerActionText}>+</Text>
+              </Pressable>
               <Pressable
                 style={[styles.headerAction, refreshing && styles.controlDisabled]}
                 onPress={loadOverview}
@@ -333,14 +529,58 @@ export default function ConnectedScreen() {
               </Pressable>
             </View>
           }
-          renderSectionHeader={({ section }) => (
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>{section.title}</Text>
-              <Text style={styles.sectionSubtitle} numberOfLines={1}>
-                {section.subtitle}
-              </Text>
-            </View>
-          )}
+          renderSectionHeader={({ section }) => {
+            const context = sectionContextSummary(section, workspaceContexts);
+            return (
+              <View style={styles.sectionHeader}>
+                <View style={styles.sectionHeaderTop}>
+                  <Text style={styles.sectionTitle} numberOfLines={1}>
+                    {section.title}
+                  </Text>
+                  {section.kind === "worktree" ? (
+                    <Pressable
+                      style={styles.sectionAgentBtn}
+                      onPress={() => openAgentPicker(section.key)}
+                      hitSlop={6}
+                    >
+                      <Text style={styles.sectionAgentBtnText}>+ Agent</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+                <Text style={styles.sectionSubtitle} numberOfLines={1}>
+                  {section.subtitle}
+                </Text>
+                {hasSectionContext(context) ? (
+                  <View style={styles.sectionContextLine}>
+                    {context.jira ? (
+                      <Text style={styles.jiraChip} numberOfLines={1}>
+                        {jiraChipLabel(context.jira)}
+                      </Text>
+                    ) : null}
+                    {context.runTargets.slice(0, 2).map((target) => (
+                      <Text
+                        key={`${target.label}:${target.status ?? ""}`}
+                        style={styles.runTargetChip}
+                        numberOfLines={1}
+                      >
+                        {runTargetChipLabel(target)}
+                      </Text>
+                    ))}
+                    {context.runTargets.length > 2 ? (
+                      <Text style={styles.contextMoreChip}>
+                        +{context.runTargets.length - 2}
+                      </Text>
+                    ) : null}
+                    {context.loading &&
+                    !context.jira &&
+                    context.runTargets.length === 0 ? (
+                      <Text style={styles.contextLoadingChip}>syncing</Text>
+                    ) : null}
+                  </View>
+                ) : null}
+              </View>
+            );
+          }}
           renderItem={({ item }) => {
             const isOpening = openingId === item.ws.id;
             return (
@@ -457,6 +697,92 @@ export default function ConnectedScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={agentPickerOpen}
+        onRequestClose={() => setAgentPickerOpen(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setAgentPickerOpen(false)}
+        >
+          <Pressable style={styles.modalSheet} onPress={() => {}}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Start agent</Text>
+            <ScrollView contentContainerStyle={styles.agentSheetContent}>
+              <Text style={styles.sheetLabel}>Target</Text>
+              {agentTargets.map((target) => {
+                const selected = selectedTargetKey === target.key;
+                return (
+                  <Pressable
+                    key={target.key}
+                    style={[
+                      styles.optionRow,
+                      selected && styles.optionRowSelected,
+                    ]}
+                    onPress={() => setSelectedTargetKey(target.key)}
+                  >
+                    <View style={styles.optionText}>
+                      <Text style={styles.optionTitle} numberOfLines={1}>
+                        {target.kind === "worktree" ? "Worktree" : "Project"} · {target.label}
+                      </Text>
+                      <Text style={styles.optionSub} numberOfLines={1}>
+                        {target.detail}
+                      </Text>
+                    </View>
+                    {selected ? <Text style={styles.optionSelected}>Selected</Text> : null}
+                  </Pressable>
+                );
+              })}
+
+              <Text style={styles.sheetLabel}>Agent</Text>
+              {agents === null ? (
+                <ActivityIndicator style={styles.modalSpinner} />
+              ) : agents.length === 0 ? (
+                <Text style={styles.emptyText}>No terminal agents available.</Text>
+              ) : (
+                agents.map((agent) => {
+                  const selected = selectedAgentId === agent.id;
+                  return (
+                    <Pressable
+                      key={agent.id}
+                      style={[
+                        styles.optionRow,
+                        selected && styles.optionRowSelected,
+                      ]}
+                      onPress={() => setSelectedAgentId(agent.id)}
+                    >
+                      <View style={styles.optionText}>
+                        <Text style={styles.optionTitle} numberOfLines={1}>
+                          {agent.display_name}
+                        </Text>
+                        <Text style={styles.optionSub} numberOfLines={1}>
+                          {agent.executable_name || agent.id}
+                        </Text>
+                      </View>
+                      {selected ? <Text style={styles.optionSelected}>Selected</Text> : null}
+                    </Pressable>
+                  );
+                })
+              )}
+            </ScrollView>
+            <Pressable
+              style={[
+                styles.startAgentBtn,
+                (!selectedAgentId || startingAgent) && styles.controlDisabled,
+              ]}
+              onPress={startAgent}
+              disabled={!selectedAgentId || startingAgent}
+            >
+              <Text style={styles.startAgentBtnText}>
+                {startingAgent ? "Starting…" : "Start agent"}
+              </Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -482,6 +808,51 @@ function buildWorkspaceRow(ws: WorkspaceSummary): WorkspaceRow {
     activityLabel: workspaceActivityLabel(ws),
     changeLabel: workspaceChangeLabel(ws),
   };
+}
+
+function workspaceCanHaveBindings(ws: WorkspaceSummary): boolean {
+  return Boolean(ws.worktree_path?.trim() || ws.branch?.trim());
+}
+
+function sectionContextSummary(
+  section: WorkspaceSection,
+  contexts: Record<string, WorkspaceContextState>
+): WorkspaceContextSummary {
+  let jira: JiraTicketSummary | null = null;
+  let loading = false;
+  const runTargets: WorkspaceRunTargetSummary[] = [];
+  const seenTargets = new Set<string>();
+
+  for (const row of section.data) {
+    const context = contexts[row.ws.id];
+    if (!context) continue;
+    loading = loading || context.loading;
+    if (!jira && context.jira) jira = context.jira;
+    for (const target of context.runTargets) {
+      const key = `${target.label}:${target.status ?? ""}:${target.url ?? ""}`;
+      if (seenTargets.has(key)) continue;
+      seenTargets.add(key);
+      runTargets.push(target);
+    }
+  }
+
+  return { loading, jira, runTargets };
+}
+
+function hasSectionContext(context: WorkspaceContextSummary): boolean {
+  return (
+    context.loading || context.jira !== null || context.runTargets.length > 0
+  );
+}
+
+function jiraChipLabel(ticket: JiraTicketSummary): string {
+  const status = ticket.status?.trim();
+  return status ? `Jira ${ticket.key} · ${status}` : `Jira ${ticket.key}`;
+}
+
+function runTargetChipLabel(target: WorkspaceRunTargetSummary): string {
+  const status = target.status?.trim();
+  return status ? `${target.label} · ${status}` : target.label;
 }
 
 function inferToolLabel(ws: WorkspaceSummary): string | null {
@@ -728,8 +1099,77 @@ const styles = StyleSheet.create({
     paddingTop: 6,
     paddingBottom: 5,
   },
+  sectionHeaderTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   sectionTitle: { color: colors.text, fontSize: 13, fontWeight: "700" },
   sectionSubtitle: { color: colors.hint, fontSize: 11, marginTop: 1 },
+  sectionContextLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 5,
+    marginTop: 5,
+  },
+  jiraChip: {
+    color: colors.warn,
+    fontSize: 10,
+    fontWeight: "800",
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.warn,
+    backgroundColor: colors.bgRaised,
+    overflow: "hidden",
+    maxWidth: 170,
+  },
+  runTargetChip: {
+    color: colors.success,
+    fontSize: 10,
+    fontWeight: "800",
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.successBorder,
+    backgroundColor: colors.successDim,
+    overflow: "hidden",
+    maxWidth: 150,
+  },
+  contextMoreChip: {
+    color: colors.hint,
+    fontSize: 10,
+    fontWeight: "800",
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgRaised,
+    overflow: "hidden",
+  },
+  contextLoadingChip: {
+    color: colors.hint,
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  sectionAgentBtn: {
+    marginLeft: "auto",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.borderAccent,
+    backgroundColor: colors.primaryDim,
+  },
+  sectionAgentBtnText: {
+    color: colors.primary,
+    fontSize: 11,
+    fontWeight: "800",
+  },
 
   workspaceRow: {
     flexDirection: "row",
@@ -867,5 +1307,54 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.successBorder,
     overflow: "hidden",
+  },
+  agentSheetContent: { gap: 8, paddingBottom: 12 },
+  sheetLabel: {
+    color: colors.label,
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0,
+    marginTop: 6,
+  },
+  optionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  optionRowSelected: {
+    borderColor: colors.borderAccent,
+    backgroundColor: colors.primaryDim,
+  },
+  optionText: { flex: 1, minWidth: 0 },
+  optionTitle: { color: colors.text, fontSize: 13, fontWeight: "700" },
+  optionSub: {
+    color: colors.sub,
+    fontSize: 11,
+    marginTop: 2,
+    fontFamily: monoFont,
+  },
+  optionSelected: {
+    color: colors.primary,
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  startAgentBtn: {
+    paddingVertical: 13,
+    borderRadius: radii.md,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    marginTop: 8,
+  },
+  startAgentBtnText: {
+    color: colors.onPrimary,
+    fontSize: 14,
+    fontWeight: "800",
   },
 });
