@@ -11,6 +11,8 @@ host/port/password setup remains as a fallback for development and recovery.
 - Expo slug: `termloop-mobile`
 - URL scheme: `termloop-mobile`
 - iOS bundle id / Android package: `ai.termloop.mobile`
+- App icon / splash assets: `assets/icon.png`, `assets/adaptive-icon.png`,
+  `assets/splash-icon.png`
 
 ## Run
 

@@ -14,6 +14,8 @@ runtime for the app.
 | URL scheme | `termloop-mobile` |
 | iOS bundle identifier | `ai.termloop.mobile` |
 | Android package | `ai.termloop.mobile` |
+| App icon | `assets/icon.png` |
+| Splash icon | `assets/splash-icon.png` |
 
 The app may keep accepting the legacy `termloop` URL scheme in native iOS
 builds for local/dev compatibility, but new links should use
@@ -128,6 +130,8 @@ Optional manual input:
 - iOS `Info.plist` and `app.json` must agree on `TermLoop Mobile`,
   `ai.termloop.mobile`, camera, local-network, and encryption declarations.
 - Android package id must stay `ai.termloop.mobile`.
+- App icon must remain an opaque 1024x1024 PNG. Adaptive/splash images can
+  keep transparency.
 - `npm run typecheck` must pass before any build.
 - Use `preview` for internal QA before `staging`.
 - Use `staging`/TestFlight before `production`.

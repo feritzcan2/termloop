@@ -130,6 +130,10 @@ export default function ConnectionListScreen() {
       })),
     [items, health]
   );
+  const connectingConn = useMemo(
+    () => rows.find((row) => row.conn.id === connectingId)?.conn ?? null,
+    [connectingId, rows]
+  );
 
   const onConnect = useCallback(
     async (conn: SavedConnection) => {
@@ -235,18 +239,29 @@ export default function ConnectionListScreen() {
     <SafeAreaView style={styles.root} edges={["bottom"]}>
       <View style={styles.ctaWrap}>
         <Pressable
-          style={styles.primaryBtn}
+          style={[styles.primaryBtn, connectingId && styles.controlDisabled]}
           onPress={() => router.push("/connections/scan")}
+          disabled={connectingId !== null}
         >
           <Text style={styles.primaryBtnText}>Scan pairing QR</Text>
         </Pressable>
         <Pressable
-          style={styles.secondaryBtn}
+          style={[styles.secondaryBtn, connectingId && styles.controlDisabled]}
           onPress={() => router.push("/connections/new")}
+          disabled={connectingId !== null}
         >
           <Text style={styles.secondaryBtnText}>Manual setup</Text>
         </Pressable>
       </View>
+
+      {connectingConn ? (
+        <View style={styles.connectingBanner}>
+          <ActivityIndicator color={colors.primary} />
+          <Text style={styles.connectingBannerText} numberOfLines={1}>
+            Connecting to {connectingConn.serverName || connectingConn.name}
+          </Text>
+        </View>
+      ) : null}
 
       {empty ? (
         <View style={styles.empty}>
@@ -276,6 +291,7 @@ export default function ConnectionListScreen() {
                 <Pressable
                   style={({ pressed }) => [
                     styles.card,
+                    isConnecting && styles.cardConnecting,
                     pressed && styles.cardPressed,
                   ]}
                   onPress={() => onConnect(item.conn)}
@@ -327,7 +343,12 @@ export default function ConnectionListScreen() {
                   </View>
                   <View style={styles.cardActions}>
                     {isConnecting ? (
-                      <ActivityIndicator color={colors.primary} />
+                      <View style={styles.connectingInline}>
+                        <ActivityIndicator color={colors.primary} />
+                        <Text style={styles.connectingInlineText}>
+                          Connecting…
+                        </Text>
+                      </View>
                     ) : status === "reauth" ? (
                       <Text style={styles.reauthHint}>
                         Tap for re-pair instructions
@@ -400,6 +421,26 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgElevated,
   },
   secondaryBtnText: { color: colors.label, fontSize: 14, fontWeight: "500" },
+  controlDisabled: { opacity: 0.55 },
+  connectingBanner: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderAccent,
+    backgroundColor: colors.primaryDim,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  connectingBannerText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
+    flex: 1,
+  },
 
   empty: { alignItems: "center", paddingHorizontal: 24, paddingTop: 32, gap: 12 },
   emptyBadge: {
@@ -450,6 +491,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     gap: 4,
   },
+  cardConnecting: {
+    borderColor: colors.borderAccent,
+    backgroundColor: colors.bgRaised,
+  },
   cardPressed: { backgroundColor: colors.bgRaised, borderColor: colors.borderStrong },
   cardHeader: {
     flexDirection: "row",
@@ -468,6 +513,12 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
+  },
+  connectingInline: { flexDirection: "row", alignItems: "center", gap: 8 },
+  connectingInlineText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "600",
   },
   connectHint: { color: colors.primary, fontSize: 12, fontWeight: "500" },
   rowDelete: { paddingHorizontal: 8, paddingVertical: 4 },

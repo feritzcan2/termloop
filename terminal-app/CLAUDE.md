@@ -64,6 +64,8 @@ TCP socket.
    access is for the Mac TCP bridge, Android network permissions are for
    the same bridge. Do not add microphone permission unless a microphone
    feature exists.
+11. **Assets are product identity.** App icon and splash assets live under
+    `assets/`; keep `assets/icon.png` opaque 1024x1024 for store builds.
 
 ## When adding code
 
