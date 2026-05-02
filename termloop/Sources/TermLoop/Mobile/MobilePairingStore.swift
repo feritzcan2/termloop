@@ -172,6 +172,25 @@ enum TermLoopMobilePairingStore {
         return .ok(["revoked": true, "device_id": deviceId])
     }
 
+    static func restoreBridgeSettingsForPairedDevicesIfNeeded(defaults: UserDefaults = .standard) {
+        guard defaults.object(forKey: SocketControlSettings.tcpPortDefaultsKey) == nil else {
+            return
+        }
+
+        lock.lock()
+        let hasActiveDevice = loadDevicesLocked().contains { $0.revokedAt == nil }
+        lock.unlock()
+        guard hasActiveDevice else { return }
+
+        defaults.set(Int(SocketControlSettings.tcpPortDefault),
+                     forKey: SocketControlSettings.tcpPortDefaultsKey)
+        defaults.set(true, forKey: SocketControlSettings.tcpBindAllDefaultsKey)
+        if defaults.object(forKey: SocketControlSettings.appStorageKey) == nil {
+            defaults.set(SocketControlMode.password.rawValue,
+                         forKey: SocketControlSettings.appStorageKey)
+        }
+    }
+
     private static func mobileCapabilities() -> [String] {
         [
             "system.ping",

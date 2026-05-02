@@ -404,6 +404,9 @@ struct cmuxApp: App {
                     }
 #endif
                     // Start the Unix socket controller for programmatic access
+                    // MARK: termloop-hook
+                    TermLoopMobilePairingStore.restoreBridgeSettingsForPairedDevicesIfNeeded()
+                    // MARK: /termloop-hook
                     updateSocketController()
                     appDelegate.configure(tabManager: tabManager, notificationStore: notificationStore, sidebarState: sidebarState)
                     appDelegate.fileExplorerState = fileExplorerState
