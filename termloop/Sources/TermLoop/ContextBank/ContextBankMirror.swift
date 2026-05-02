@@ -7,17 +7,17 @@ import Foundation
 ///
 /// `canonical == nil` means "per folder": whichever tracked regular file
 /// exists in a given folder becomes canonical; the rest are created as
-/// relative symlinks to it. When multiple tracked files exist as regular
+/// real file copies from it. When multiple tracked files exist as regular
 /// files with identical content, the one with the newest mtime wins.
-struct ContextBankSymlinkConfig: Equatable {
+struct ContextBankMirrorConfig: Equatable {
     var tracked: Set<String>
     var canonical: String?
-    /// When true, divergent regular files and stale symlinks are replaced with
-    /// fresh symlinks to the canonical sibling. Originals are moved to the
-    /// system Trash so the user can recover them if the override was wrong.
+    /// When true, divergent regular files are replaced with fresh copies of
+    /// the canonical sibling. Originals are moved to the system Trash so the
+    /// user can recover them if the override was wrong.
     var forceOverwriteDivergent: Bool
 
-    static let defaultConfig = ContextBankSymlinkConfig(
+    static let defaultConfig = ContextBankMirrorConfig(
         tracked: Set(ContextBankFile.Kind.allFileNames),
         canonical: nil,
         forceOverwriteDivergent: false
@@ -29,20 +29,17 @@ struct ContextBankSymlinkConfig: Equatable {
     }
 }
 
-struct ContextBankSymlinkPlanItem: Identifiable, Equatable {
+struct ContextBankMirrorPlanItem: Identifiable, Equatable {
     enum Action: Equatable {
-        /// Create a new symlink at `linkName` pointing to `targetName`.
-        case create
-        /// Both files are regular with identical content — delete the
-        /// non-canonical file and replace it with a symlink to the canonical
-        /// sibling.
-        case convertToSymlink
-        /// User opted into force fix: divergent regular file or stale symlink
-        /// is moved to Trash and replaced with a symlink to the canonical
-        /// sibling.
+        /// Create a new real file at `linkName` by copying `targetName`.
+        case createCopy
+        /// Replace an existing symlink with a real file copy of `targetName`.
+        case replaceWithCopy
+        /// User opted into force fix: divergent regular file is moved to
+        /// Trash and replaced with a real file copy of the canonical sibling.
         case forceOverwriteDivergent
-        /// A symlink pointing to the canonical sibling is already in place.
-        case skipAlreadyLinked
+        /// A regular file with identical content is already in place.
+        case skipAlreadyMirrored
         /// Two or more regular files exist with divergent content. The user
         /// must reconcile manually.
         case skipDivergentPair
@@ -51,10 +48,10 @@ struct ContextBankSymlinkPlanItem: Identifiable, Equatable {
 
         var symbolName: String {
             switch self {
-            case .create: return "plus.circle.fill"
-            case .convertToSymlink: return "arrow.triangle.2.circlepath"
+            case .createCopy: return "plus.circle.fill"
+            case .replaceWithCopy: return "arrow.triangle.2.circlepath"
             case .forceOverwriteDivergent: return "trash.fill"
-            case .skipAlreadyLinked: return "link"
+            case .skipAlreadyMirrored: return "doc.on.doc"
             case .skipDivergentPair: return "exclamationmark.triangle.fill"
             case .skipDirectionMismatch: return "minus.circle"
             }
@@ -78,21 +75,21 @@ struct ContextBankSymlinkPlanItem: Identifiable, Equatable {
     }
 }
 
-struct ContextBankSymlinkPlan {
-    let items: [ContextBankSymlinkPlanItem]
+struct ContextBankMirrorPlan {
+    let items: [ContextBankMirrorPlanItem]
 
-    var createCount: Int { items.filter { $0.action == .create }.count }
-    var convertCount: Int { items.filter { $0.action == .convertToSymlink }.count }
+    var createCount: Int { items.filter { $0.action == .createCopy }.count }
+    var convertCount: Int { items.filter { $0.action == .replaceWithCopy }.count }
     var forceCount: Int { items.filter { $0.action == .forceOverwriteDivergent }.count }
     var actionableCount: Int { createCount + convertCount + forceCount }
-    var alreadyLinkedCount: Int { items.filter { $0.action == .skipAlreadyLinked }.count }
+    var alreadyMirroredCount: Int { items.filter { $0.action == .skipAlreadyMirrored }.count }
     var divergentCount: Int { items.filter { $0.action == .skipDivergentPair }.count }
     var mismatchCount: Int { items.filter { $0.action == .skipDirectionMismatch }.count }
     var isEmpty: Bool { items.isEmpty }
     var hasWork: Bool { actionableCount > 0 }
 }
 
-enum ContextBankSymlinker {
+enum ContextBankMirrorPlanner {
     private enum FileKind: Equatable {
         case missing
         case regular
@@ -102,19 +99,14 @@ enum ContextBankSymlinker {
             if case .regular = self { return true }
             return false
         }
-
-        var isSymlink: Bool {
-            if case .symlink = self { return true }
-            return false
-        }
     }
 
     static func plan(
         projectRoot: URL,
-        config: ContextBankSymlinkConfig
-    ) -> ContextBankSymlinkPlan {
+        config: ContextBankMirrorConfig
+    ) -> ContextBankMirrorPlan {
         guard !config.tracked.isEmpty else {
-            return ContextBankSymlinkPlan(items: [])
+            return ContextBankMirrorPlan(items: [])
         }
         let tracked = config.tracked
 
@@ -129,7 +121,7 @@ enum ContextBankSymlinker {
         )
 
         while let url = enumerator?.nextObject() as? URL {
-            if Task.isCancelled { return ContextBankSymlinkPlan(items: []) }
+            if Task.isCancelled { return ContextBankMirrorPlan(items: []) }
             let values = try? url.resourceValues(forKeys: Set(keys))
             let name = values?.name ?? url.lastPathComponent
             let isDir = values?.isDirectory ?? false
@@ -145,7 +137,7 @@ enum ContextBankSymlinker {
             }
         }
 
-        var items: [ContextBankSymlinkPlanItem] = []
+        var items: [ContextBankMirrorPlanItem] = []
         for dir in dirs.sorted() {
             var kinds: [String: FileKind] = [:]
             for name in tracked {
@@ -154,51 +146,41 @@ enum ContextBankSymlinker {
             }
             items.append(contentsOf: Self.itemsFor(dir: dir, kinds: kinds, config: config))
         }
-        return ContextBankSymlinkPlan(items: items)
+        return ContextBankMirrorPlan(items: items)
     }
 
     @discardableResult
-    static func apply(_ plan: ContextBankSymlinkPlan) -> Int {
+    static func apply(_ plan: ContextBankMirrorPlan) -> Int {
         var applied = 0
         let fm = FileManager.default
         for item in plan.items {
             switch item.action {
-            case .create:
+            case .createCopy:
                 guard !fm.fileExists(atPath: item.absoluteLinkPath) else { continue }
                 let targetPath = (item.directoryPath as NSString)
                     .appendingPathComponent(item.targetName)
                 guard Self.isRegularFile(at: targetPath) else { continue }
-                if (try? fm.createSymbolicLink(
-                    atPath: item.absoluteLinkPath,
-                    withDestinationPath: item.targetName
-                )) != nil {
+                if Self.copyRegularFile(from: targetPath, to: item.absoluteLinkPath) {
                     applied += 1
                 }
 
-            case .convertToSymlink:
+            case .replaceWithCopy:
                 let targetPath = (item.directoryPath as NSString)
                     .appendingPathComponent(item.targetName)
-                // Defense in depth: confirm identity at apply time.
                 guard Self.isRegularFile(at: targetPath) else {
-                    continue
-                }
-                guard Self.contentIdentical(item.absoluteLinkPath, targetPath) else {
                     continue
                 }
                 guard (try? fm.removeItem(atPath: item.absoluteLinkPath)) != nil else {
                     continue
                 }
-                if (try? fm.createSymbolicLink(
-                    atPath: item.absoluteLinkPath,
-                    withDestinationPath: item.targetName
-                )) != nil {
+                if Self.copyRegularFile(from: targetPath, to: item.absoluteLinkPath) {
                     applied += 1
                 }
 
             case .forceOverwriteDivergent:
-                // Trash the existing file/symlink so the user can recover it,
-                // then create a fresh symlink to the canonical sibling. If the
-                // trash step fails, abort this row — never silently delete.
+                // Trash the existing file so the user can recover it, then
+                // create a fresh copy of the canonical sibling. If the trash
+                // step fails, abort this row — never silently delete.
                 let targetPath = (item.directoryPath as NSString)
                     .appendingPathComponent(item.targetName)
                 guard Self.isRegularFile(at: targetPath) else { continue }
@@ -206,14 +188,11 @@ enum ContextBankSymlinker {
                 guard (try? fm.trashItem(at: url, resultingItemURL: nil)) != nil else {
                     continue
                 }
-                if (try? fm.createSymbolicLink(
-                    atPath: item.absoluteLinkPath,
-                    withDestinationPath: item.targetName
-                )) != nil {
+                if Self.copyRegularFile(from: targetPath, to: item.absoluteLinkPath) {
                     applied += 1
                 }
 
-            case .skipAlreadyLinked, .skipDivergentPair, .skipDirectionMismatch:
+            case .skipAlreadyMirrored, .skipDivergentPair, .skipDirectionMismatch:
                 continue
             }
         }
@@ -225,8 +204,8 @@ enum ContextBankSymlinker {
     private static func itemsFor(
         dir: String,
         kinds: [String: FileKind],
-        config: ContextBankSymlinkConfig
-    ) -> [ContextBankSymlinkPlanItem] {
+        config: ContextBankMirrorConfig
+    ) -> [ContextBankMirrorPlanItem] {
         let tracked = config.tracked
 
         let regulars = tracked.filter { (kinds[$0] ?? .missing).isRegular }
@@ -244,10 +223,10 @@ enum ContextBankSymlinker {
             // Chosen canonical isn't here as a regular file — nothing safe to
             // link against. A symlink-only folder may already be dangling or
             // part of a chain, so never create more links to it.
-            var items: [ContextBankSymlinkPlanItem] = []
+            var items: [ContextBankMirrorPlanItem] = []
             if let fixed = config.canonical, !fixed.isEmpty {
                 for name in tracked.sorted() where kinds[name] != .missing {
-                    items.append(ContextBankSymlinkPlanItem(
+                    items.append(ContextBankMirrorPlanItem(
                         directoryPath: dir,
                         linkName: name,
                         targetName: fixed,
@@ -269,13 +248,13 @@ enum ContextBankSymlinker {
             }
         }
 
-        var items: [ContextBankSymlinkPlanItem] = []
+        var items: [ContextBankMirrorPlanItem] = []
 
         if !divergentPartners.isEmpty {
-            let divergentAction: ContextBankSymlinkPlanItem.Action =
+            let divergentAction: ContextBankMirrorPlanItem.Action =
                 config.forceOverwriteDivergent ? .forceOverwriteDivergent : .skipDivergentPair
             for name in divergentPartners.sorted() {
-                items.append(ContextBankSymlinkPlanItem(
+                items.append(ContextBankMirrorPlanItem(
                     directoryPath: dir,
                     linkName: name,
                     targetName: canonical,
@@ -290,34 +269,29 @@ enum ContextBankSymlinker {
             let kind = kinds[name] ?? .missing
             switch kind {
             case .missing:
-                items.append(ContextBankSymlinkPlanItem(
+                items.append(ContextBankMirrorPlanItem(
                     directoryPath: dir,
                     linkName: name,
                     targetName: canonical,
-                    action: .create
+                    action: .createCopy
                 ))
             case .regular:
-                // Identical to canonical (already filtered above) — convert.
-                items.append(ContextBankSymlinkPlanItem(
+                // Identical to canonical (already filtered above).
+                items.append(ContextBankMirrorPlanItem(
                     directoryPath: dir,
                     linkName: name,
                     targetName: canonical,
-                    action: .convertToSymlink
+                    action: .skipAlreadyMirrored
                 ))
-            case .symlink(let target):
-                // A stale symlink pointing somewhere other than the chosen
-                // canonical shouldn't be reported as "already linked" — it's
-                // a mismatch that needs reconciliation. With force on, we
-                // retarget it to the canonical (the link itself goes to Trash
-                // before we recreate it).
-                let action: ContextBankSymlinkPlanItem.Action =
-                    (target == canonical) ? .skipAlreadyLinked
-                    : (config.forceOverwriteDivergent ? .forceOverwriteDivergent : .skipDivergentPair)
-                items.append(ContextBankSymlinkPlanItem(
+            case .symlink:
+                // Legacy symlinks are always migrated to real files. A copied
+                // mirror is robust across repo renames, archive tools, and
+                // tools that do not preserve symlink targets.
+                items.append(ContextBankMirrorPlanItem(
                     directoryPath: dir,
                     linkName: name,
-                    targetName: action == .forceOverwriteDivergent ? canonical : target,
-                    action: action
+                    targetName: canonical,
+                    action: .replaceWithCopy
                 ))
             }
         }
@@ -366,6 +340,16 @@ enum ContextBankSymlinker {
               let type = attrs[.type] as? FileAttributeType
         else { return false }
         return type == .typeRegular
+    }
+
+    private static func copyRegularFile(from sourcePath: String, to destinationPath: String) -> Bool {
+        guard isRegularFile(at: sourcePath) else { return false }
+        do {
+            try FileManager.default.copyItem(atPath: sourcePath, toPath: destinationPath)
+            return isRegularFile(at: destinationPath)
+        } catch {
+            return false
+        }
     }
 
     private static func contentIdentical(_ lhs: String, _ rhs: String) -> Bool {

@@ -15,6 +15,8 @@
 		BD4B91DEBE110000A0CE001B /* BridgeDebugTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4B91DEBE110000A0CE001A /* BridgeDebugTrace.swift */; };
 		BD4B91DEBE110000A0CE002B /* AskToBridgeLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4B91DEBE110000A0CE002A /* AskToBridgeLauncher.swift */; };
 		070E7AFD17D3EE28A1E37FDE /* ContextBankDecisionLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16FB12B3682EEF72B115BFB9 /* ContextBankDecisionLog.swift */; };
+		CB1E00001111222233334445 /* ContextBankIntegrity.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1E00001111222233334446 /* ContextBankIntegrity.swift */; };
+		CB1E00001111222233334447 /* ContextBankIntegrityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1E00001111222233334448 /* ContextBankIntegrityTests.swift */; };
 		0760A3F2FA71FE7C25C07CA9 /* TaggedBuildSharedStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04C23F010C262B740E4823D /* TaggedBuildSharedStateTests.swift */; };
 		079C164886E44DBE97B0F044 /* TabManagerAddWorkspaceTaskIdTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8A4F59338C541AFB7CC0DAB /* TabManagerAddWorkspaceTaskIdTests.swift */; };
 		0D9DF0CD8A570B95D5DD8F5F /* MCPTestRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A01C5C5903DCB777A0B88EC /* MCPTestRunner.swift */; };
@@ -55,7 +57,7 @@
 		3E2E7061CA5E41259BA3A084 /* WorkspaceMetadataStoreTaskIdTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C943D8A1DC104A19B7ED31AF /* WorkspaceMetadataStoreTaskIdTests.swift */; };
 		3E70B7BCA4CAB2A50DA19AB8 /* QuickActionPreviewViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D686D0016E06B161DBD503D /* QuickActionPreviewViewModelTests.swift */; };
 		3EDF7DCA458CF5E077BDF922 /* AgentInputTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D830A6038111E9253D7BFDE /* AgentInputTypes.swift */; };
-		CB5AFE001111222233334443 /* ContextBankSymlinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB5AFE001111222233334444 /* ContextBankSymlinkTests.swift */; };
+		CB5AFE001111222233334443 /* ContextBankMirrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB5AFE001111222233334444 /* ContextBankMirrorTests.swift */; };
 		3FF508246D32E2D4079A222A /* AgentTemplateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C642BE53F1142CBB60F62C8 /* AgentTemplateStore.swift */; };
 		402793233AA01DC131D05EEC /* AbilityInjectorOverrideTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FCF8B056DF7E603E553F545 /* AbilityInjectorOverrideTests.swift */; };
 		40B0FEEB56AC2A868D31E508 /* IntegrationConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 472EEED229F875BAA9D1D691 /* IntegrationConfigStore.swift */; };
@@ -84,7 +86,7 @@
 		5857C2177302897A99ACE683 /* WorktreeError.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD994C07167BC290DA4FA005 /* WorktreeError.swift */; };
 		59055F30F95EB21EEBBAFA55 /* TaggedBuildSharedState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64AC844CC32CD39498EDD524 /* TaggedBuildSharedState.swift */; };
 		5B19B08DA4074410763E3EC6 /* WorktreeChangesSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C5E8498088B19D4A2D70906 /* WorktreeChangesSupport.swift */; };
-		5D7E7D2449A1EDC3B7B96DC1 /* ContextBankSymlinkSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF965E071F199593E39F3E0D /* ContextBankSymlinkSheet.swift */; };
+		5D7E7D2449A1EDC3B7B96DC1 /* ContextBankMirrorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF965E071F199593E39F3E0D /* ContextBankMirrorSheet.swift */; };
 		5FB9BC3E0780C30C43FA2DFA /* ExternalLinkParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12A73F500EDFC72B568236DE /* ExternalLinkParserTests.swift */; };
 		613FB6911DAC2075A81A9C04 /* ClaudeProjectFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACF7EA12F6E9F582091F6482 /* ClaudeProjectFiles.swift */; };
 		61A16AA27AC0B26ED58363D9 /* GhCliPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBE74E9A4EED7B866FDFF23E /* GhCliPreset.swift */; };
@@ -349,7 +351,7 @@
 		AC71001AA1B2C3D4E5F60719 /* ActiveBridgeRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC71000AA1B2C3D4E5F60719 /* ActiveBridgeRowView.swift */; };
 		AC710099A1B2C3D4E5F6ABCD /* WorktreeAgentsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC710098A1B2C3D4E5F6ABCD /* WorktreeAgentsPanel.swift */; };
 		AC71009BA1B2C3D4E5F6ABCD /* WorktreeGroupRunTargetsBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC71009AA1B2C3D4E5F6ABCD /* WorktreeGroupRunTargetsBadge.swift */; };
-		ADB40F7E462EDC392E0B70A1 /* ContextBankSymlink.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96E3FD276CB1CD037C5ABAD /* ContextBankSymlink.swift */; };
+		ADB40F7E462EDC392E0B70A1 /* ContextBankMirror.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96E3FD276CB1CD037C5ABAD /* ContextBankMirror.swift */; };
 		AF34EE6989206364FC849784 /* BridgeCreationValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B4DD757CC19811DD5233F60 /* BridgeCreationValidator.swift */; };
 		B41C7A8041D1F6A5E9111001 /* TrackedBranchesResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = B41C7A8041D1F6A5E9111000 /* TrackedBranchesResolver.swift */; };
 		B41C7A8041D1F6A5E9111003 /* ProjectTrackedBranchesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B41C7A8041D1F6A5E9111002 /* ProjectTrackedBranchesTests.swift */; };
@@ -1003,7 +1005,9 @@
 		C776A8EF46831DAA57422170 /* WebhookDiscovery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WebhookDiscovery.swift; sourceTree = "<group>"; };
 		C8A4F59338C541AFB7CC0DAB /* TabManagerAddWorkspaceTaskIdTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabManagerAddWorkspaceTaskIdTests.swift; sourceTree = "<group>"; };
 		C943D8A1DC104A19B7ED31AF /* WorkspaceMetadataStoreTaskIdTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorkspaceMetadataStoreTaskIdTests.swift; sourceTree = "<group>"; };
-		CB5AFE001111222233334444 /* ContextBankSymlinkTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextBankSymlinkTests.swift; sourceTree = "<group>"; };
+		CB5AFE001111222233334444 /* ContextBankMirrorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextBankMirrorTests.swift; sourceTree = "<group>"; };
+		CB1E00001111222233334446 /* ContextBankIntegrity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextBankIntegrity.swift; sourceTree = "<group>"; };
+		CB1E00001111222233334448 /* ContextBankIntegrityTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextBankIntegrityTests.swift; sourceTree = "<group>"; };
 		C9A10001A6EAC0DE00000002 /* TermLoopMCPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoopMCPServer.swift; sourceTree = "<group>"; };
 		C9A10004A6EAC0DE00000002 /* TermLoopBuiltInMCP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TermLoop/Integrations/TermLoopBuiltInMCP.swift; sourceTree = "<group>"; };
 		C9A10007A6EAC0DE00000002 /* AgentReportedContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TermLoop/Core/AgentReportedContext.swift; sourceTree = "<group>"; };
@@ -1033,7 +1037,7 @@
 		CCF2EFA4A693DFB011E49A41 /* APNsConfig.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = APNsConfig.swift; sourceTree = "<group>"; };
 		CDD43A7966611CFB48533E86 /* JiraMCPPreset.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = JiraMCPPreset.swift; sourceTree = "<group>"; };
 		CEC82B7E6651D0AC127F2EA4 /* PushTokenStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PushTokenStore.swift; sourceTree = "<group>"; };
-		CF965E071F199593E39F3E0D /* ContextBankSymlinkSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextBankSymlinkSheet.swift; sourceTree = "<group>"; };
+		CF965E071F199593E39F3E0D /* ContextBankMirrorSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextBankMirrorSheet.swift; sourceTree = "<group>"; };
 		D089989C926B690A05A34D30 /* ClaudeHookDiscovery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClaudeHookDiscovery.swift; sourceTree = "<group>"; };
 		D0E0F0B1A1B2C3D4E5F60718 /* BrowserPaneNavigationKeybindUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPaneNavigationKeybindUITests.swift; sourceTree = "<group>"; };
 		D0E0F0B3A1B2C3D4E5F60718 /* BrowserOmnibarSuggestionsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserOmnibarSuggestionsUITests.swift; sourceTree = "<group>"; };
@@ -1088,7 +1092,7 @@
 		F8000001A1B2C3D4E5F60718 /* SocketControlPasswordStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocketControlPasswordStoreTests.swift; sourceTree = "<group>"; };
 		F9000001A1B2C3D4E5F60718 /* GhosttyEnsureFocusWindowActivationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyEnsureFocusWindowActivationTests.swift; sourceTree = "<group>"; };
 		F935897229585174F4CB2014 /* AgentSocketCommands.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentSocketCommands.swift; sourceTree = "<group>"; };
-		F96E3FD276CB1CD037C5ABAD /* ContextBankSymlink.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextBankSymlink.swift; sourceTree = "<group>"; };
+		F96E3FD276CB1CD037C5ABAD /* ContextBankMirror.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextBankMirror.swift; sourceTree = "<group>"; };
 		FA000001A1B2C3D4E5F60718 /* WorkspaceStressProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceStressProfileTests.swift; sourceTree = "<group>"; };
 		FA100001A1B2C3D4E5F60718 /* BrowserImportMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserImportMappingTests.swift; sourceTree = "<group>"; };
 		FA8CF110CD92B2CCAA34B4D0 /* IntegrationsStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = IntegrationsStore.swift; sourceTree = "<group>"; };
@@ -1214,7 +1218,7 @@
 				ABB89E290D1EF26DD07182D5 /* ContextBankTreeView.swift */,
 				ABCB00101100101100110E12 /* ContextBankAgentsPanel.swift */,
 				ABCB00101100101100111012 /* ContextBankRightPane.swift */,
-				CF965E071F199593E39F3E0D /* ContextBankSymlinkSheet.swift */,
+				CF965E071F199593E39F3E0D /* ContextBankMirrorSheet.swift */,
 			);
 			name = UI;
 			path = UI;
@@ -1227,6 +1231,7 @@
 				367F329C321243F22462D541 /* ContextBankFile.swift */,
 				E42BEC660B196341EDD04312 /* ContextBankSuggestion.swift */,
 				0BC0CB3656896721870069E7 /* ContextBankIndexer.swift */,
+				CB1E00001111222233334446 /* ContextBankIntegrity.swift */,
 				16FB12B3682EEF72B115BFB9 /* ContextBankDecisionLog.swift */,
 				61D437A637636429D1C39369 /* ContextBankPrompt.swift */,
 				458604546AB3183BE64550D0 /* ContextBankAnalyzer.swift */,
@@ -1238,7 +1243,7 @@
 				ABCB00101100101100110F12 /* ContextBankSelection.swift */,
 				7F23EF81276FD33440DD43D0 /* ContextBankStore.swift */,
 				FDE6F2D6F1592049BD47477B /* ContextBankTreeNode.swift */,
-				F96E3FD276CB1CD037C5ABAD /* ContextBankSymlink.swift */,
+				F96E3FD276CB1CD037C5ABAD /* ContextBankMirror.swift */,
 			);
 			name = ContextBank;
 			path = ContextBank;
@@ -2004,7 +2009,8 @@
 				18FC6989889E7918B4611617 /* AgentSocketCommandsTests.swift */,
 				7FCC2D822DEC2ADC3B4ADE6E /* AbilityStoreTests.swift */,
 				5F74A553933047EB0BB143BD /* TermLoopHooksRestorePruneTests.swift */,
-				CB5AFE001111222233334444 /* ContextBankSymlinkTests.swift */,
+				CB5AFE001111222233334444 /* ContextBankMirrorTests.swift */,
+				CB1E00001111222233334448 /* ContextBankIntegrityTests.swift */,
 				3BC41841A0027C5FCF28E38F /* AgentWorkspaceKindTests.swift */,
 				2C479F506025F66A68BE483F /* WorkspaceBridgeStoreTests.swift */,
 				F0D8FC7225FF21696C5669C2 /* BridgeMessageExtractorTests.swift */,
@@ -2646,6 +2652,7 @@
 				A181F058DF39F34D6FA71AE8 /* ContextBankFile.swift in Sources */,
 				9241DB1F3423E00A8EB133CD /* ContextBankSuggestion.swift in Sources */,
 				A69B5F967860B538535EC3A7 /* ContextBankIndexer.swift in Sources */,
+				CB1E00001111222233334445 /* ContextBankIntegrity.swift in Sources */,
 				070E7AFD17D3EE28A1E37FDE /* ContextBankDecisionLog.swift in Sources */,
 				5629362A6C62FFF4E05E6BAA /* ContextBankPrompt.swift in Sources */,
 				CB2EBBA481488576A18BD2DE /* ContextBankAnalyzer.swift in Sources */,
@@ -2661,8 +2668,8 @@
 				8594B9B7B9D80D21C7FB8707 /* ContextBankView.swift in Sources */,
 				886C622337FA6152ED20D433 /* ContextBankTreeView.swift in Sources */,
 				C58664EA5250BD40684ED3C6 /* ContextBankTreeNode.swift in Sources */,
-				ADB40F7E462EDC392E0B70A1 /* ContextBankSymlink.swift in Sources */,
-				5D7E7D2449A1EDC3B7B96DC1 /* ContextBankSymlinkSheet.swift in Sources */,
+				ADB40F7E462EDC392E0B70A1 /* ContextBankMirror.swift in Sources */,
+				5D7E7D2449A1EDC3B7B96DC1 /* ContextBankMirrorSheet.swift in Sources */,
 				81D32B3883F8C0E9604C1C0F /* TermLoopSocketIO.swift in Sources */,
 				647017B48E110B37F9C314E7 /* ClaudeCredentialStore.swift in Sources */,
 				EE9DC847590BF5F168E0D238 /* ClaudeCredentialEnvResolver.swift in Sources */,
@@ -2788,7 +2795,8 @@
 				1455A834FB638DA1024FBACD /* AgentSocketCommandsTests.swift in Sources */,
 				02451E50F192AF65292A8B30 /* AbilityStoreTests.swift in Sources */,
 				4C2396DEFE9BB247135A9693 /* TermLoopHooksRestorePruneTests.swift in Sources */,
-				CB5AFE001111222233334443 /* ContextBankSymlinkTests.swift in Sources */,
+				CB5AFE001111222233334443 /* ContextBankMirrorTests.swift in Sources */,
+				CB1E00001111222233334447 /* ContextBankIntegrityTests.swift in Sources */,
 				23D2FF5D5CACFBBB0CC38058 /* AgentWorkspaceKindTests.swift in Sources */,
 				2D78DED16C79E7421F23B21B /* WorkspaceBridgeStoreTests.swift in Sources */,
 				DA48BD17DD120EE78FDF5B25 /* BridgeMessageExtractorTests.swift in Sources */,

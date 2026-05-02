@@ -15,14 +15,31 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { friendlyTransportError } from "../../lib/errors";
 import { getActiveClient } from "../../lib/session";
 import type { SurfaceSubscription } from "../../lib/termloop-client";
 import { colors, monoFont, radii } from "../../lib/theme";
 
 const MAX_BUFFER_CHARS = 64_000;
 const POLL_INTERVAL_MS = 1800;
+const SEND_SETTLE_MS = 60;
+const NEAR_BOTTOM_PX = 80;
 
 type LiveState = "connecting" | "live" | "degraded" | "closed";
+
+const STATUS_LABEL: Record<LiveState, string> = {
+  connecting: "Connecting…",
+  live: "Live",
+  degraded: "Polling",
+  closed: "Closed",
+};
+
+const statusDotStyles: Record<LiveState, { backgroundColor: string }> = {
+  connecting: { backgroundColor: colors.warn },
+  live: { backgroundColor: colors.success },
+  degraded: { backgroundColor: colors.warn },
+  closed: { backgroundColor: colors.danger },
+};
 
 const FONT_SIZES = [11, 13, 15] as const;
 type FontIndex = 0 | 1 | 2;
@@ -68,11 +85,15 @@ export default function TerminalScreen() {
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [fontIndex, setFontIndex] = useState<FontIndex>(1);
   const [liveState, setLiveState] = useState<LiveState>("connecting");
+  const [streamReason, setStreamReason] = useState<string | null>(null);
 
   const aliveRef = useRef(true);
   const inFlightRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
   const subscriptionRef = useRef<SurfaceSubscription | null>(null);
+  const inputRef = useRef<TextInput>(null);
+  const nearBottomRef = useRef(true);
+  const reconnectRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     aliveRef.current = true;
@@ -94,7 +115,7 @@ export default function TerminalScreen() {
       }
     } catch (err) {
       if (aliveRef.current) {
-        setInlineError(`Read failed: ${(err as Error).message}`);
+        setInlineError(`Read failed: ${friendlyTransportError(err)}`);
       }
     } finally {
       inFlightRef.current = false;
@@ -148,13 +169,13 @@ export default function TerminalScreen() {
                 case "surface.snapshot":
                   setBuffer(capLeft(event.text));
                   setLiveState("live");
-                  setInlineError(null);
+                  setStreamReason(null);
                   stopPolling();
                   return;
                 case "surface.output":
                   setBuffer((b) => capLeft(b + event.text));
                   setLiveState("live");
-                  setInlineError(null);
+                  setStreamReason(null);
                   stopPolling();
                   return;
                 case "surface.closed":
@@ -164,9 +185,7 @@ export default function TerminalScreen() {
                   return;
                 case "surface.error":
                   setLiveState("degraded");
-                  setInlineError(`Stream error: ${event.message}`);
-                  // Subscription is dead from the client's POV; the next
-                  // resume / focus will try a fresh subscribe.
+                  setStreamReason(friendlyTransportError(new Error(event.message)));
                   dropSubscription();
                   startPolling();
                   return;
@@ -180,11 +199,12 @@ export default function TerminalScreen() {
           subscription = sub;
           subscriptionRef.current = sub;
           setLiveState("live");
+          setStreamReason(null);
           stopPolling();
         } catch (err) {
           if (cancelled) return;
           setLiveState("degraded");
-          setInlineError(`Subscribe failed: ${(err as Error).message}`);
+          setStreamReason(friendlyTransportError(err));
           startPolling();
           refresh().catch(() => {});
         }
@@ -204,11 +224,20 @@ export default function TerminalScreen() {
       if (AppState.currentState === "active") trySubscribe();
       const appStateSub = AppState.addEventListener("change", onAppState);
 
+      reconnectRef.current = () => {
+        if (cancelled) return;
+        if (subscription) return;
+        setLiveState("connecting");
+        setStreamReason(null);
+        trySubscribe();
+      };
+
       return () => {
         cancelled = true;
         stopPolling();
         appStateSub.remove();
         dropSubscription();
+        reconnectRef.current = () => {};
         setLiveState("connecting");
       };
     }, [client, workspaceId, surfaceId, refresh])
@@ -231,7 +260,7 @@ export default function TerminalScreen() {
         await refresh();
       } catch (err) {
         if (aliveRef.current) {
-          setInlineError(`${def.label} failed: ${(err as Error).message}`);
+          setInlineError(`${def.label} failed: ${friendlyTransportError(err)}`);
         }
       }
     },
@@ -242,10 +271,14 @@ export default function TerminalScreen() {
     if (!client || !workspaceId || !draft) return;
     const line = draft;
     setDraft("");
+    inputRef.current?.focus();
     try {
       await client.sendText(workspaceId, line, surfaceId);
-      // TUIs listen for a real Enter key event; "\r" / "\n" alone is
-      // treated as a literal char inside the input box.
+      // Tiny settle delay — Codex/Claude TUIs need the input chars to
+      // land in their internal buffer before Enter fires. Without this,
+      // Enter occasionally races ahead of the text and submits an empty
+      // input.
+      await new Promise((r) => setTimeout(r, SEND_SETTLE_MS));
       try {
         await client.sendKey(workspaceId, "enter", surfaceId);
       } catch {
@@ -254,7 +287,7 @@ export default function TerminalScreen() {
       await refresh();
     } catch (err) {
       if (aliveRef.current) {
-        setInlineError(`Send failed: ${(err as Error).message}`);
+        setInlineError(`Send failed: ${friendlyTransportError(err)}`);
       }
     }
   }, [client, workspaceId, surfaceId, draft, refresh]);
@@ -282,28 +315,45 @@ export default function TerminalScreen() {
           >
             <Text style={styles.toolbarBtnText}>{fontSize}px</Text>
           </Pressable>
-          <View style={{ flex: 1 }} />
+          <View style={styles.toolbarStatus}>
+            <View style={[styles.statusDot, statusDotStyles[liveState]]} />
+            <Text style={styles.statusLabel}>{STATUS_LABEL[liveState]}</Text>
+          </View>
           <Pressable
-            style={styles.toolbarBtn}
+            style={styles.refreshLink}
             onPress={refresh}
             disabled={refreshing}
             hitSlop={6}
           >
             {refreshing ? (
-              <ActivityIndicator color={colors.text} />
+              <ActivityIndicator color={colors.sub} />
             ) : (
-              <Text style={styles.toolbarBtnText}>Refresh</Text>
+              <Text style={styles.refreshLinkText}>Refresh</Text>
             )}
           </Pressable>
         </View>
 
         {liveState === "degraded" || liveState === "closed" ? (
           <View style={styles.streamBanner}>
-            <Text style={styles.streamBannerText}>
-              {liveState === "closed"
-                ? "Surface closed by server"
-                : "Live updates unavailable — polling"}
-            </Text>
+            <View style={styles.streamBannerTextWrap}>
+              <Text style={styles.streamBannerText}>
+                {liveState === "closed"
+                  ? "Surface closed by server"
+                  : "Live updates unavailable — polling"}
+              </Text>
+              {streamReason ? (
+                <Text style={styles.streamBannerReason} numberOfLines={2}>
+                  {streamReason}
+                </Text>
+              ) : null}
+            </View>
+            <Pressable
+              onPress={() => reconnectRef.current()}
+              style={styles.reconnectBtn}
+              hitSlop={6}
+            >
+              <Text style={styles.reconnectBtnText}>Reconnect</Text>
+            </Pressable>
           </View>
         ) : null}
 
@@ -324,9 +374,19 @@ export default function TerminalScreen() {
           ref={scrollRef}
           style={styles.surface}
           contentContainerStyle={styles.surfaceContent}
-          onContentSizeChange={() =>
-            scrollRef.current?.scrollToEnd({ animated: false })
-          }
+          onScroll={(e) => {
+            const { contentOffset, contentSize, layoutMeasurement } =
+              e.nativeEvent;
+            const distanceFromBottom =
+              contentSize.height - (contentOffset.y + layoutMeasurement.height);
+            nearBottomRef.current = distanceFromBottom < NEAR_BOTTOM_PX;
+          }}
+          scrollEventThrottle={64}
+          onContentSizeChange={() => {
+            if (nearBottomRef.current) {
+              scrollRef.current?.scrollToEnd({ animated: false });
+            }
+          }}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
@@ -366,6 +426,7 @@ export default function TerminalScreen() {
 
         <View style={styles.inputRow}>
           <TextInput
+            ref={inputRef}
             style={styles.input}
             value={draft}
             onChangeText={setDraft}
@@ -414,15 +475,50 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   toolbarBtnText: { color: colors.text, fontSize: 13, fontWeight: "500" },
+  toolbarStatus: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  statusDot: { width: 7, height: 7, borderRadius: 4 },
+  statusLabel: { color: colors.sub, fontSize: 11, fontWeight: "500" },
+  refreshLink: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    minWidth: 56,
+    alignItems: "flex-end",
+  },
+  refreshLinkText: { color: colors.primary, fontSize: 13, fontWeight: "500" },
 
   streamBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
     backgroundColor: colors.bgRaised,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
-  streamBannerText: { color: colors.warn, fontSize: 11, fontWeight: "500" },
+  streamBannerTextWrap: { flex: 1, minWidth: 0 },
+  streamBannerText: { color: colors.warn, fontSize: 11, fontWeight: "600" },
+  streamBannerReason: {
+    color: colors.sub,
+    fontSize: 10,
+    fontFamily: monoFont,
+    marginTop: 2,
+  },
+  reconnectBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.borderAccent,
+    backgroundColor: colors.primaryDim,
+  },
+  reconnectBtnText: { color: colors.primary, fontSize: 12, fontWeight: "600" },
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -436,13 +532,21 @@ const styles = StyleSheet.create({
   errorText: { color: colors.danger, fontSize: 12, flex: 1 },
   errorDismiss: { color: colors.danger, fontSize: 11, fontWeight: "700" },
 
-  surface: { flex: 1, backgroundColor: colors.surfaceBg },
+  surface: {
+    flex: 1,
+    marginHorizontal: 8,
+    marginVertical: 6,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceBg,
+  },
   surfaceContent: {
     padding: 12,
     alignItems: "flex-start",
   },
   surfaceText: {
-    color: "#d6d8e0",
+    color: colors.terminalText,
     fontFamily: monoFont,
     textAlign: "left",
   },
@@ -509,5 +613,5 @@ const styles = StyleSheet.create({
     minWidth: 64,
   },
   sendBtnDisabled: { opacity: 0.45 },
-  sendBtnText: { color: "#fff", fontWeight: "600" },
+  sendBtnText: { color: colors.onPrimary, fontWeight: "600" },
 });

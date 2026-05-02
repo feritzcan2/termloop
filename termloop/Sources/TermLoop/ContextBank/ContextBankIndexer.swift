@@ -11,7 +11,7 @@ enum ContextBankIndexer {
     static let targetNames: Set<String> = Set(ContextBankFile.Kind.allFileNames)
 
     /// Directory names that should never be walked when searching for
-    /// context files. Shared between the indexer and the symlink planner so
+    /// context files. Shared between the indexer and the mirror planner so
     /// both see the same project tree.
     static let prunedDirectoryNames: Set<String> = [
         ".git",

@@ -17,7 +17,8 @@ enum TermLoopMobileSocketCommands {
     static func handle(
         method: String,
         params: [String: Any],
-        isTcpClient: Bool
+        isTcpClient: Bool,
+        socketFd: Int32 = -1
     ) -> TerminalController.V2CallResult? {
         switch method {
         case "auth.token":
@@ -38,9 +39,9 @@ enum TermLoopMobileSocketCommands {
         case "pairing.revoke_device":
             return TermLoopMobilePairingStore.revokeDevice(params: params)
         case "surface.subscribe":
-            return TermLoopMobileSurfaceStreamStore.shared.subscribe(params: params)
+            return TermLoopMobileSurfaceStreamStore.shared.subscribe(params: params, socketFd: socketFd)
         case "surface.unsubscribe":
-            return TermLoopMobileSurfaceStreamStore.shared.unsubscribe(params: params)
+            return TermLoopMobileSurfaceStreamStore.shared.unsubscribe(params: params, socketFd: socketFd)
         default:
             return nil
         }

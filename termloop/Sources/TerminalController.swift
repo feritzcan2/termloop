@@ -2133,7 +2133,16 @@ class TerminalController {
 
         return withSocketCommandPolicy(commandKey: method, isV2: true) {
             // MARK: termloop-hook
-            if let response = v2MainSync({ TermLoopSocketCommands.handle(method: method, params: params, isTcpClient: TermLoopTCPBridge.isCurrentThreadTcpClient()) }) {
+            let socketFd = TermLoopTCPBridge.currentSocketFd()
+            let isTcpClient = TermLoopTCPBridge.isCurrentThreadTcpClient()
+            if let response = v2MainSync({
+                TermLoopSocketCommands.handle(
+                    method: method,
+                    params: params,
+                    isTcpClient: isTcpClient,
+                    socketFd: socketFd
+                )
+            }) {
                 return v2Result(id: id, response)
             }
             // MARK: /termloop-hook

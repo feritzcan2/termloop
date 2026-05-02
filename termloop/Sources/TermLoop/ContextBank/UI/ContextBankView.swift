@@ -13,7 +13,7 @@ struct ContextBankView: View {
     let projectRoot: URL?
 
     @ObservedObject private var store = ContextBankStore.shared
-    @State private var showSymlinkSheet = false
+    @State private var showMirrorSheet = false
 
     var body: some View {
         Group {
@@ -27,11 +27,11 @@ struct ContextBankView: View {
         .onChange(of: projectRoot) { newRoot in
             store.bind(to: newRoot)
         }
-        .sheet(isPresented: $showSymlinkSheet) {
+        .sheet(isPresented: $showMirrorSheet) {
             if let projectRoot {
-                ContextBankSymlinkSheet(
+                ContextBankMirrorSheet(
                     projectRoot: projectRoot,
-                    onFinished: { showSymlinkSheet = false }
+                    onFinished: { showMirrorSheet = false }
                 )
             }
         }
@@ -102,6 +102,24 @@ struct ContextBankView: View {
 
             Spacer()
 
+            if !store.integrityIssues.isEmpty {
+                Button {
+                    showMirrorSheet = true
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 9, weight: .semibold))
+                        Text("\(store.integrityIssues.count)")
+                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    }
+                    .foregroundStyle(Color.orange)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 3)
+                }
+                .buttonStyle(.plain)
+                .help(integrityHelp)
+            }
+
             Text("\(store.files.count)")
                 .font(.system(size: 10, weight: .regular, design: .monospaced))
                 .foregroundStyle(.tertiary)
@@ -119,17 +137,17 @@ struct ContextBankView: View {
                          defaultValue: "Rescan project", table: "TermLoop"))
 
             Button {
-                showSymlinkSheet = true
+                showMirrorSheet = true
             } label: {
-                Image(systemName: "link")
+                Image(systemName: "doc.on.doc")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .padding(3)
             }
             .buttonStyle(.plain)
             .disabled(projectRoot == nil)
-            .help(String(localized: "contextBank.button.symlink",
-                         defaultValue: "Symlink options — mirror CLAUDE.md and AGENTS.md",
+            .help(String(localized: "contextBank.button.mirror",
+                         defaultValue: "Mirror files — keep CLAUDE.md and AGENTS.md as real files",
                          table: "TermLoop"))
 
             if store.isAnalyzing {
@@ -155,6 +173,23 @@ struct ContextBankView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(Color(NSColor.windowBackgroundColor).opacity(0.7))
+    }
+
+    private var integrityHelp: String {
+        let prefix = String(
+            localized: "contextBank.integrity.warning",
+            defaultValue: "Context Bank integrity warnings:",
+            table: "TermLoop"
+        )
+        let details = store.integrityIssues
+            .prefix(5)
+            .map(\.message)
+            .joined(separator: "\n")
+        let remaining = max(0, store.integrityIssues.count - 5)
+        if remaining > 0 {
+            return "\(prefix)\n\(details)\n+\(remaining) more"
+        }
+        return "\(prefix)\n\(details)"
     }
 
     private var emptyState: some View {

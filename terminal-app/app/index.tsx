@@ -280,7 +280,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
   },
   primaryBtnText: {
-    color: "#fff",
+    color: colors.onPrimary,
     fontSize: 15,
     fontWeight: "600",
     letterSpacing: 0.2,

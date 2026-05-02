@@ -20,7 +20,8 @@ enum TermLoopSocketCommands {
     /// bridge. TCP callers are limited to a read-only subset of `agent.*`
     /// methods — mutating calls receive a `forbidden` error.
     static func handle(method: String, params: [String: Any],
-                       isTcpClient: Bool = false) -> TerminalController.V2CallResult? {
+                       isTcpClient: Bool = false,
+                       socketFd: Int32 = -1) -> TerminalController.V2CallResult? {
         if method.hasPrefix("agent.") {
             if isTcpClient && !AgentSocketCommands.tcpAllowed.contains(method) {
                 return .err(code: "forbidden",
@@ -31,7 +32,8 @@ enum TermLoopSocketCommands {
         if let response = TermLoopMobileSocketCommands.handle(
             method: method,
             params: params,
-            isTcpClient: isTcpClient
+            isTcpClient: isTcpClient,
+            socketFd: socketFd
         ) {
             return response
         }
@@ -58,8 +60,8 @@ enum TermLoopSocketCommands {
         case "termloop.list_terminal_agents":       return listTerminalAgents(params)
         case "termloop.list_workspace_panes":       return listWorkspacePanes(params)
         case "termloop.set_project_default_agent":  return setProjectDefaultAgent(params)
-        case "events.subscribe":   return eventsSubscribe(params)
-        case "events.unsubscribe": return eventsUnsubscribe(params)
+        case "events.subscribe":   return eventsSubscribe(params, socketFd: socketFd)
+        case "events.unsubscribe": return eventsUnsubscribe(params, socketFd: socketFd)
         case "workspace.report_agent_activity": return workspaceReportAgentActivity(params)
         case "workspace.report_agent_binding": return workspaceReportAgentBinding(params)
         case "workspace.get_jira_ticket": return workspaceGetJiraTicket(params)
@@ -955,8 +957,8 @@ enum TermLoopSocketCommands {
     /// Returns `{"subscription_id": "<uuid>"}`.
     /// Works on both TCP and Unix sockets (TCP clients subscribe for push
     /// notifications over the long-lived connection).
-    private static func eventsSubscribe(_ params: [String: Any]) -> TerminalController.V2CallResult {
-        let socket = TermLoopTCPBridge.currentSocketFd()
+    private static func eventsSubscribe(_ params: [String: Any], socketFd: Int32 = -1) -> TerminalController.V2CallResult {
+        let socket = socketFd >= 0 ? socketFd : TermLoopTCPBridge.currentSocketFd()
 
         let typeStrings  = params["types"] as? [String]
         let wsIdStrings  = params["workspace_ids"] as? [String]
@@ -980,8 +982,8 @@ enum TermLoopSocketCommands {
     /// Unsubscribe from an event subscription.
     ///   `subscription_id` – optional String. When omitted, disposes ALL
     ///                        subscriptions for the current socket.
-    private static func eventsUnsubscribe(_ params: [String: Any]) -> TerminalController.V2CallResult {
-        let socket = TermLoopTCPBridge.currentSocketFd()
+    private static func eventsUnsubscribe(_ params: [String: Any], socketFd: Int32 = -1) -> TerminalController.V2CallResult {
+        let socket = socketFd >= 0 ? socketFd : TermLoopTCPBridge.currentSocketFd()
 
         if let idStr = rawString(params, "subscription_id"),
            !idStr.isEmpty,

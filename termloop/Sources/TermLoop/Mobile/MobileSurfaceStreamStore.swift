@@ -47,12 +47,12 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
     private init() {}
 
     @MainActor
-    func subscribe(params: [String: Any]) -> TerminalController.V2CallResult {
+    func subscribe(params: [String: Any], socketFd: Int32 = -1) -> TerminalController.V2CallResult {
         guard let workspaceId = normalizedString(params["workspace_id"]) else {
             return .err(code: "invalid_params", message: "Missing workspace_id", data: nil)
         }
         let surfaceId = normalizedString(params["surface_id"])
-        let socket = TermLoopTCPBridge.currentSocketFd()
+        let socket = socketFd >= 0 ? socketFd : TermLoopTCPBridge.currentSocketFd()
         guard socket >= 0 else {
             return .err(code: "unavailable", message: "No active socket for subscription", data: nil)
         }
@@ -104,13 +104,13 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
         return .ok(["subscription_id": id.uuidString])
     }
 
-    func unsubscribe(params: [String: Any]) -> TerminalController.V2CallResult {
+    func unsubscribe(params: [String: Any], socketFd: Int32 = -1) -> TerminalController.V2CallResult {
         guard let idString = normalizedString(params["subscription_id"]),
               let id = UUID(uuidString: idString) else {
             return .err(code: "invalid_params", message: "Missing or invalid subscription_id", data: nil)
         }
 
-        let socket = TermLoopTCPBridge.currentSocketFd()
+        let socket = socketFd >= 0 ? socketFd : TermLoopTCPBridge.currentSocketFd()
         guard unsubscribe(id: id, socket: socket) else {
             return .ok(["subscription_id": idString, "unsubscribed": false])
         }

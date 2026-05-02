@@ -3,21 +3,21 @@
 
 import SwiftUI
 
-struct ContextBankSymlinkSheet: View {
+struct ContextBankMirrorSheet: View {
     let projectRoot: URL
     let onFinished: () -> Void
 
-    @AppStorage("contextBank.symlink.tracked")
+    @AppStorage("contextBank.mirror.tracked")
     private var trackedCSV: String = ContextBankFile.Kind.allFileNames.joined(separator: ",")
 
     /// Empty string means "mirror (per folder)".
-    @AppStorage("contextBank.symlink.canonical")
+    @AppStorage("contextBank.mirror.canonical")
     private var canonicalName: String = ""
 
-    @AppStorage("contextBank.symlink.forceFix")
+    @AppStorage("contextBank.mirror.forceFix")
     private var forceFixDivergent: Bool = false
 
-    @State private var plan: ContextBankSymlinkPlan? = nil
+    @State private var plan: ContextBankMirrorPlan? = nil
     @State private var isApplying = false
     @State private var resultMessage: String?
     @State private var recomputeTask: Task<Void, Never>?
@@ -29,8 +29,8 @@ struct ContextBankSymlinkSheet: View {
             .filter { ContextBankFile.Kind.allFileNames.contains($0) })
     }
 
-    private var config: ContextBankSymlinkConfig {
-        ContextBankSymlinkConfig(
+    private var config: ContextBankMirrorConfig {
+        ContextBankMirrorConfig(
             tracked: trackedFiles,
             canonical: canonicalName.isEmpty ? nil : canonicalName,
             forceOverwriteDivergent: forceFixDivergent
@@ -70,12 +70,12 @@ struct ContextBankSymlinkSheet: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Image(systemName: "link")
+            Image(systemName: "doc.on.doc")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.secondary)
             Text(String(
-                localized: "contextBank.symlink.sheet.title",
-                defaultValue: "Symlink Options",
+                localized: "contextBank.mirror.sheet.title",
+                defaultValue: "Mirror Files",
                 table: "TermLoop"
             ))
             .font(.system(size: 13, weight: .semibold, design: .monospaced))
@@ -98,7 +98,7 @@ struct ContextBankSymlinkSheet: View {
     private var trackedSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(String(
-                localized: "contextBank.symlink.section.tracked",
+                localized: "contextBank.mirror.section.tracked",
                 defaultValue: "FILES TO MIRROR",
                 table: "TermLoop"
             ))
@@ -132,7 +132,7 @@ struct ContextBankSymlinkSheet: View {
     private var canonicalSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(String(
-                localized: "contextBank.symlink.section.source",
+                localized: "contextBank.mirror.section.source",
                 defaultValue: "SOURCE FILE",
                 table: "TermLoop"
             ))
@@ -140,17 +140,17 @@ struct ContextBankSymlinkSheet: View {
             .foregroundStyle(.secondary)
 
             canonicalRadio(name: "", title: String(
-                localized: "contextBank.symlink.option.mirror",
+                localized: "contextBank.mirror.option.mirror",
                 defaultValue: "Mirror (per folder)",
                 table: "TermLoop"
             ), subtitle: String(
-                localized: "contextBank.symlink.option.mirror.subtitle",
+                localized: "contextBank.mirror.option.mirror.subtitle",
                 defaultValue: "In each folder, fill in the missing tracked files from whichever exists. Identical pairs merge using the newer file.",
                 table: "TermLoop"
             ))
 
             ForEach(ContextBankFile.Kind.allFileNames, id: \.self) { name in
-                canonicalRadio(name: name, title: "\(name) is the source", subtitle: "Every other tracked file in the folder becomes a symlink to \(name).")
+                canonicalRadio(name: name, title: "\(name) is the source", subtitle: "Every other tracked file in the folder becomes a real copy of \(name).")
                     .opacity(trackedFiles.contains(name) ? 1.0 : 0.35)
                     .disabled(!trackedFiles.contains(name))
             }
@@ -202,7 +202,7 @@ struct ContextBankSymlinkSheet: View {
                     summaryRow(plan: plan).padding(.bottom, 4)
                     if plan.items.isEmpty {
                         Text(String(
-                            localized: "contextBank.symlink.preview.empty",
+                            localized: "contextBank.mirror.preview.empty",
                             defaultValue: "No tracked files found in this project.",
                             table: "TermLoop"
                         ))
@@ -224,22 +224,22 @@ struct ContextBankSymlinkSheet: View {
         }
     }
 
-    private func summaryRow(plan: ContextBankSymlinkPlan) -> some View {
+    private func summaryRow(plan: ContextBankMirrorPlan) -> some View {
         HStack(spacing: 12) {
             if plan.createCount > 0 {
                 Label("\(plan.createCount) create", systemImage: "plus.circle.fill")
                     .foregroundStyle(.green)
             }
             if plan.convertCount > 0 {
-                Label("\(plan.convertCount) convert", systemImage: "arrow.triangle.2.circlepath")
+                Label("\(plan.convertCount) replace", systemImage: "arrow.triangle.2.circlepath")
                     .foregroundStyle(.orange)
             }
             if plan.forceCount > 0 {
                 Label("\(plan.forceCount) force", systemImage: "trash.fill")
                     .foregroundStyle(.red)
             }
-            if plan.alreadyLinkedCount > 0 {
-                Label("\(plan.alreadyLinkedCount) linked", systemImage: "link")
+            if plan.alreadyMirroredCount > 0 {
+                Label("\(plan.alreadyMirroredCount) mirrored", systemImage: "doc.on.doc")
                     .foregroundStyle(.secondary)
             }
             if plan.divergentCount > 0 {
@@ -254,7 +254,7 @@ struct ContextBankSymlinkSheet: View {
         .font(.system(size: 11, weight: .semibold, design: .monospaced))
     }
 
-    private func row(for item: ContextBankSymlinkPlanItem) -> some View {
+    private func row(for item: ContextBankMirrorPlanItem) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             icon(for: item.action).frame(width: 14)
             VStack(alignment: .leading, spacing: 1) {
@@ -269,50 +269,50 @@ struct ContextBankSymlinkSheet: View {
         .padding(.vertical, 2)
     }
 
-    private func icon(for action: ContextBankSymlinkPlanItem.Action) -> some View {
+    private func icon(for action: ContextBankMirrorPlanItem.Action) -> some View {
         Image(systemName: action.symbolName)
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(actionTint(for: action))
     }
 
-    private func actionTint(for action: ContextBankSymlinkPlanItem.Action) -> Color {
+    private func actionTint(for action: ContextBankMirrorPlanItem.Action) -> Color {
         switch action {
-        case .create: return .green
-        case .convertToSymlink: return .orange
+        case .createCopy: return .green
+        case .replaceWithCopy: return .orange
         case .forceOverwriteDivergent: return .red
-        case .skipAlreadyLinked: return .secondary
+        case .skipAlreadyMirrored: return .secondary
         case .skipDivergentPair: return .red
         case .skipDirectionMismatch: return .secondary.opacity(0.7)
         }
     }
 
-    private func describe(_ item: ContextBankSymlinkPlanItem) -> String {
+    private func describe(_ item: ContextBankMirrorPlanItem) -> String {
         switch item.action {
-        case .create:
-            return "+ \(item.linkName) → \(item.targetName)"
-        case .convertToSymlink:
-            return "identical — replace \(item.linkName) with symlink → \(item.targetName)"
+        case .createCopy:
+            return "+ copy \(item.targetName) to \(item.linkName)"
+        case .replaceWithCopy:
+            return "replace symlink \(item.linkName) with copy of \(item.targetName)"
         case .forceOverwriteDivergent:
-            return "⚠ force: trash \(item.linkName) and link → \(item.targetName)"
-        case .skipAlreadyLinked:
-            return "already linked (\(item.linkName) → \(item.targetName))"
+            return "force: trash \(item.linkName) and copy from \(item.targetName)"
+        case .skipAlreadyMirrored:
+            return "already mirrored (\(item.linkName) matches \(item.targetName))"
         case .skipDivergentPair:
-            return "⚠ \(item.linkName) differs from \(item.targetName) — reconcile manually"
+            return "\(item.linkName) differs from \(item.targetName) — reconcile manually"
         case .skipDirectionMismatch:
             return "canonical source not in this folder"
         }
     }
 
-    private func describeColor(for action: ContextBankSymlinkPlanItem.Action) -> Color {
+    private func describeColor(for action: ContextBankMirrorPlanItem.Action) -> Color {
         switch action {
-        case .convertToSymlink, .forceOverwriteDivergent, .skipDivergentPair:
+        case .replaceWithCopy, .forceOverwriteDivergent, .skipDivergentPair:
             return actionTint(for: action)
-        case .create, .skipAlreadyLinked, .skipDirectionMismatch:
+        case .createCopy, .skipAlreadyMirrored, .skipDirectionMismatch:
             return .secondary
         }
     }
 
-    private func relativePath(for item: ContextBankSymlinkPlanItem) -> String {
+    private func relativePath(for item: ContextBankMirrorPlanItem) -> String {
         let rootPath = projectRoot.standardizedFileURL.path
         if item.directoryPath.hasPrefix(rootPath) {
             let tail = String(item.directoryPath.dropFirst(rootPath.count))
@@ -336,7 +336,7 @@ struct ContextBankSymlinkSheet: View {
                 forceFixToggle
             }
             Button(String(
-                localized: "contextBank.symlink.cancel",
+                localized: "contextBank.mirror.cancel",
                 defaultValue: "Cancel",
                 table: "TermLoop"
             )) { onFinished() }
@@ -375,7 +375,7 @@ struct ContextBankSymlinkSheet: View {
                 verticalPadding: 4
             ) {
                 Text(String(
-                    localized: "contextBank.symlink.option.force.title",
+                    localized: "contextBank.mirror.option.force.title",
                     defaultValue: "Force fix divergent (move to Trash)",
                     table: "TermLoop"
                 ))
@@ -385,20 +385,20 @@ struct ContextBankSymlinkSheet: View {
         }
         .buttonStyle(.plain)
         .help(String(
-            localized: "contextBank.symlink.option.force.help",
-            defaultValue: "Replace divergent files and stale symlinks with fresh symlinks to the canonical sibling. Originals go to the system Trash so you can recover them.",
+            localized: "contextBank.mirror.option.force.help",
+            defaultValue: "Replace divergent files with real copies of the canonical sibling. Originals go to the system Trash so you can recover them.",
             table: "TermLoop"
         ))
     }
 
     private var applyButtonLabel: String {
         if isApplying {
-            return String(localized: "contextBank.symlink.applying",
+            return String(localized: "contextBank.mirror.applying",
                           defaultValue: "Applying…",
                           table: "TermLoop")
         }
         let count = plan?.actionableCount ?? 0
-        let template = String(localized: "contextBank.symlink.apply",
+        let template = String(localized: "contextBank.mirror.apply",
                               defaultValue: "Apply (%d changes)",
                               table: "TermLoop")
         return String(format: template, count)
@@ -430,7 +430,7 @@ struct ContextBankSymlinkSheet: View {
         let root = projectRoot
         recomputeTask = Task.detached(priority: .userInitiated) {
             if Task.isCancelled { return }
-            let next = ContextBankSymlinker.plan(projectRoot: root, config: snapshot)
+            let next = ContextBankMirrorPlanner.plan(projectRoot: root, config: snapshot)
             if Task.isCancelled { return }
             await MainActor.run {
                 if self.config == snapshot {
@@ -446,7 +446,7 @@ struct ContextBankSymlinkSheet: View {
         resultMessage = nil
         let snapshot = plan
         Task.detached(priority: .userInitiated) {
-            let applied = ContextBankSymlinker.apply(snapshot)
+            let applied = ContextBankMirrorPlanner.apply(snapshot)
             await MainActor.run {
                 isApplying = false
                 resultMessage = "Applied \(applied) change\(applied == 1 ? "" : "s")"

@@ -137,7 +137,7 @@ export default function ScanPairingScreen() {
             )}
             {busy && (
               <View style={styles.busyOverlay}>
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.onPrimary} />
               </View>
             )}
           </View>
@@ -248,7 +248,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: colors.primary,
   },
-  permissionBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  permissionBtnText: { color: colors.onPrimary, fontSize: 14, fontWeight: "600" },
   busyOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: colors.overlay,
@@ -281,5 +281,5 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: "center",
   },
-  primaryBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  primaryBtnText: { color: colors.onPrimary, fontSize: 15, fontWeight: "600" },
 });

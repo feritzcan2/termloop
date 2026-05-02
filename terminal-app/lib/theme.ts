@@ -1,20 +1,23 @@
 import { Platform } from "react-native";
 
 export const colors = {
-  // Backgrounds — slightly warm dark grays, not pure black
-  bg: "#0e0f13",
-  bgElevated: "#16181f",
-  bgRaised: "#1a1d26",
-  inputBg: "#1c1f29",
-  surfaceBg: "#08090c",
+  // Backgrounds — cool dark with clear layer separation. Not pure black so
+  // borders, shadows and pressed states are actually visible on OLED.
+  bg: "#11131c",
+  bgElevated: "#1c1f2c",
+  bgRaised: "#262a3a",
+  inputBg: "#1f2330",
+  surfaceBg: "#0f111b",
 
   // Borders
-  border: "#252835",
-  borderStrong: "#2f3340",
+  border: "#2c3044",
+  borderStrong: "#383d54",
   borderAccent: "#3b6dff44",
 
   // Text
   text: "#eef0f4",
+  terminalText: "#e0e3ee",
+  onPrimary: "#ffffff",
   label: "#9aa0ad",
   sub: "#7d8492",
   hint: "#5e6573",

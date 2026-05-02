@@ -120,14 +120,18 @@ export interface AuthResult {
 
 export interface Transport {
   send<R = unknown>(req: RpcRequest): Promise<RpcResponse<R>>;
-  /** Optional: receive server-pushed event lines (no `id`/`ok` field). */
+  /**
+   * Single-owner setter (last-writer-wins): sets the handler that
+   * receives server-pushed event lines (no `id`/`ok` field). Calling
+   * twice silently replaces the previous handler.
+   */
   setEventHandler?(handler: (event: unknown) => void): void;
   /**
-   * Optional: notified when the underlying socket drops. `err === null`
-   * means a clean close initiated by `close()`; an Error indicates an
-   * unexpected drop. The client uses this to fail outstanding stream
-   * subscriptions, since silent socket loss otherwise leaves the UI
-   * "live but frozen".
+   * Single-owner setter (last-writer-wins): notified once when the
+   * underlying socket drops. `err === null` means a clean close
+   * initiated by `close()`; an Error indicates an unexpected drop. The
+   * client uses this to fail outstanding stream subscriptions so the UI
+   * doesn't appear "live but frozen".
    */
   setCloseHandler?(handler: (err: Error | null) => void): void;
   close?(): Promise<void>;

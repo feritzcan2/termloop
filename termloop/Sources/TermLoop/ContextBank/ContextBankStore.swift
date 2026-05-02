@@ -39,6 +39,7 @@ final class ContextBankStore: ObservableObject {
     }
 
     @Published private(set) var files: [ContextBankFile] = []
+    @Published private(set) var integrityIssues: [ContextBankIntegrityIssue] = []
     /// Pre-built tree derived from `files`. Published alongside so the
     /// view doesn't rebuild the trie on every SwiftUI body pass.
     @Published private(set) var tree: [ContextBankTreeNode] = []
@@ -239,6 +240,7 @@ final class ContextBankStore: ObservableObject {
         guard let root = currentProjectRoot else {
             if !files.isEmpty { files = [] }
             if !tree.isEmpty { tree = [] }
+            if !integrityIssues.isEmpty { integrityIssues = [] }
             if !suggestions.isEmpty { suggestions = [] }
             if selection != .none { selection = .none }
             return
@@ -247,20 +249,28 @@ final class ContextBankStore: ObservableObject {
         let pending = suggestions.filter { $0.status == .pending }
         scanTask = Task.detached(priority: .userInitiated) { [weak self] in
             let scanned = ContextBankIndexer.scan(projectRoot: root)
+            let issues = ContextBankIntegrityChecker.scan(projectRoot: root)
             if Task.isCancelled { return }
             let builtTree = ContextBankTreeBuilder.build(from: scanned, suggestions: pending)
             if Task.isCancelled { return }
-            await self?.applyScan(scanned, tree: builtTree, for: root)
+            await self?.applyScan(scanned, tree: builtTree, integrityIssues: issues, for: root)
         }
     }
 
-    private func applyScan(_ scanned: [ContextBankFile], tree builtTree: [ContextBankTreeNode], for root: URL) {
+    private func applyScan(
+        _ scanned: [ContextBankFile],
+        tree builtTree: [ContextBankTreeNode],
+        integrityIssues scannedIssues: [ContextBankIntegrityIssue],
+        for root: URL
+    ) {
         guard currentProjectRoot == root else { return }
         let filesChanged = scanned != files
         let treeChanged = builtTree != tree
-        guard filesChanged || treeChanged else { return }
+        let issuesChanged = scannedIssues != integrityIssues
+        guard filesChanged || treeChanged || issuesChanged else { return }
         files = scanned
         tree = builtTree
+        integrityIssues = scannedIssues
         // Validate selection: file URL must still exist; suggestion id
         // must still be pending. Otherwise reset to the first file (matches
         // the previous default-selection behavior).

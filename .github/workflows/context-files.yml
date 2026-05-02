@@ -1,0 +1,16 @@
+name: Context Files
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  guard:
+    name: no context symlinks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check context files
+        run: scripts/check-context-files.sh
