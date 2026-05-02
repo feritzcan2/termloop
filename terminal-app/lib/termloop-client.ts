@@ -189,7 +189,8 @@ export interface TermLoopClient {
   readSurface(
     workspaceId: string,
     surfaceId?: string,
-    format?: SurfaceFormat
+    format?: SurfaceFormat,
+    historyLines?: number
   ): Promise<SurfaceText>;
   sendText(workspaceId: string, text: string, surfaceId?: string): Promise<void>;
   sendKey(workspaceId: string, key: string, surfaceId?: string): Promise<void>;
@@ -206,7 +207,8 @@ export interface TermLoopClient {
     workspaceId: string,
     surfaceId: string | undefined,
     listener: (event: SurfaceEvent) => void,
-    format?: SurfaceFormat
+    format?: SurfaceFormat,
+    historyLines?: number
   ): Promise<SurfaceSubscription>;
   /** No real backend support yet — TODO once PTY resize lands. */
   resize(_params: { workspaceId: string; cols: number; rows: number }): Promise<void>;
@@ -353,10 +355,13 @@ export function createTermLoopClient(opts: {
       });
       return out?.surfaces ?? [];
     },
-    async readSurface(workspaceId, surfaceId, format) {
+    async readSurface(workspaceId, surfaceId, format, historyLines) {
       return call<SurfaceText>(
         "surface.read_text",
-        withSurface(workspaceId, surfaceId, format ? { format } : {})
+        withSurface(workspaceId, surfaceId, {
+          ...(format ? { format } : {}),
+          ...(historyLines ? { history_lines: historyLines } : {}),
+        })
       );
     },
     async sendText(workspaceId, text, surfaceId) {
@@ -374,10 +379,13 @@ export function createTermLoopClient(opts: {
     async resize(_params) {
       // No-op until backend exposes a PTY resize API.
     },
-    async subscribeSurface(workspaceId, surfaceId, listener, format) {
+    async subscribeSurface(workspaceId, surfaceId, listener, format, historyLines) {
       const out = await call<{ subscription_id: string }>(
         "surface.subscribe",
-        withSurface(workspaceId, surfaceId, format ? { format } : {})
+        withSurface(workspaceId, surfaceId, {
+          ...(format ? { format } : {}),
+          ...(historyLines ? { history_lines: historyLines } : {}),
+        })
       );
       const subId = out.subscription_id;
       listeners.set(subId, listener);

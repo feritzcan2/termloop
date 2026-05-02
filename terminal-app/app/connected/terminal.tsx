@@ -21,7 +21,8 @@ import { getActiveClient } from "../../lib/session";
 import type { SurfaceSubscription } from "../../lib/termloop-client";
 import { colors, monoFont, radii } from "../../lib/theme";
 
-const MAX_BUFFER_CHARS = 64_000;
+const MAX_BUFFER_LINES = 1200;
+const HISTORY_LINES = 500;
 const POLL_INTERVAL_MS = 1800;
 const SEND_SETTLE_MS = 60;
 const NEAR_BOTTOM_PX = 80;
@@ -45,9 +46,10 @@ const statusDotStyles: Record<LiveState, { backgroundColor: string }> = {
 const FONT_SIZES = [11, 13, 15] as const;
 type FontIndex = 0 | 1 | 2;
 
-function capLeft(text: string): string {
-  if (text.length <= MAX_BUFFER_CHARS) return text;
-  return text.slice(text.length - MAX_BUFFER_CHARS);
+function capTerminalBuffer(text: string): string {
+  const lines = text.split("\n");
+  if (lines.length <= MAX_BUFFER_LINES) return text;
+  return lines.slice(lines.length - MAX_BUFFER_LINES).join("\n");
 }
 
 interface KeyDef {
@@ -109,9 +111,14 @@ export default function TerminalScreen() {
     inFlightRef.current = true;
     setRefreshing(true);
     try {
-      const s = await client.readSurface(workspaceId, surfaceId, "vt");
+      const s = await client.readSurface(
+        workspaceId,
+        surfaceId,
+        "vt",
+        HISTORY_LINES
+      );
       if (aliveRef.current) {
-        setBuffer(capLeft(s.text));
+        setBuffer(capTerminalBuffer(s.text));
         setInlineError(null);
       }
     } catch (err) {
@@ -168,13 +175,13 @@ export default function TerminalScreen() {
               if (cancelled || !aliveRef.current) return;
               switch (event.type) {
                 case "surface.snapshot":
-                  setBuffer(capLeft(event.text));
+                  setBuffer(capTerminalBuffer(event.text));
                   setLiveState("live");
                   setStreamReason(null);
                   stopPolling();
                   return;
                 case "surface.output":
-                  setBuffer((b) => capLeft(b + event.text));
+                  setBuffer((b) => capTerminalBuffer(b + event.text));
                   setLiveState("live");
                   setStreamReason(null);
                   stopPolling();
@@ -192,7 +199,8 @@ export default function TerminalScreen() {
                   return;
               }
             },
-            "vt"
+            "vt",
+            HISTORY_LINES
           );
           if (cancelled) {
             sub.unsubscribe().catch(() => {});

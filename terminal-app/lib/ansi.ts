@@ -21,6 +21,7 @@ export interface AnsiStyle {
   fontWeight?: TextStyle["fontWeight"];
   fontStyle?: TextStyle["fontStyle"];
   textDecorationLine?: TextStyle["textDecorationLine"];
+  opacity?: number;
 }
 
 export interface AnsiSegment {
@@ -82,7 +83,11 @@ function applySgr(prev: AnsiStyle, params: number[]): AnsiStyle {
     if (!Number.isFinite(p) || p === 0) {
       s = {};
     } else if (p === 1) s.fontWeight = "bold";
-    else if (p === 22) s.fontWeight = "normal";
+    else if (p === 2) s.opacity = 0.68;
+    else if (p === 22) {
+      s.fontWeight = "normal";
+      s.opacity = undefined;
+    }
     else if (p === 3) s.fontStyle = "italic";
     else if (p === 23) s.fontStyle = "normal";
     else if (p === 4) s.textDecorationLine = "underline";
