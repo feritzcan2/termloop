@@ -47,6 +47,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      terminal_app: ${{ steps.changed.outputs.terminal_app }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect terminal-app changes
+        id: changed
+        run: |
+          before="${{ github.event.before }}"
+          if [ "$before" = "0000000000000000000000000000000000000000" ]; then
+            changed_files="$(git diff-tree --no-commit-id --name-only -r "${{ github.sha }}")"
+          else
+            git fetch --no-tags --depth=1 origin "$before" || true
+            changed_files="$(git diff --name-only "$before" "${{ github.sha }}")"
+          fi
+
+          if printf '%s\n' "$changed_files" | grep -q '^terminal-app/'; then
+            echo "terminal_app=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "terminal_app=false" >> "$GITHUB_OUTPUT"
+          fi
+
   typecheck:
     runs-on: ubuntu-latest
     defaults:
@@ -110,3 +138,43 @@ jobs:
             --profile "${{ inputs.profile }}" \
             --platform "${{ inputs.platform }}" \
             $extra_args
+
+  testflight-release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && needs.changes.outputs.terminal_app == 'true'
+    needs:
+      - changes
+      - typecheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terminal-app
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: terminal-app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify Expo token
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "EXPO_TOKEN secret is required for automatic TestFlight releases." >&2
+            exit 1
+          fi
+
+      - name: Build and submit staging to TestFlight
+        run: |
+          npx eas-cli build \
+            --non-interactive \
+            --profile staging \
+            --platform ios \
+            --auto-submit

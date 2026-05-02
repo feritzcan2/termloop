@@ -1,9 +1,26 @@
+# Dependencies are installed on EAS.
 node_modules/
+
+# Local Expo/dev-server state.
 .expo/
+.expo-shared/
 dist/
 web-build/
+
+# Native projects are generated from app.json for cloud builds. Keep this
+# broad so local Pods/build artifacts never inflate the upload archive.
 ios/
 android/
+
+# Build/cache artifacts that may exist after local native runs.
+Pods/
+build/
+DerivedData/
+.gradle/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+
+# Local machine/secrets/logs.
 *.log
 .DS_Store
 .env*

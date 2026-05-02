@@ -110,6 +110,9 @@ running them.
 The repository workflow `.github/workflows/mobile-app.yml` does two things:
 
 - PR/push validation: install dependencies and run `npm run typecheck`.
+- Automatic TestFlight release: on `master` pushes with changes under
+  `terminal-app/`, run the `staging` EAS profile for iOS with
+  `--auto-submit`.
 - Manual EAS builds: run the workflow manually and choose
   `development`, `development-simulator`, `preview`, `staging`, or
   `production`.
@@ -118,6 +121,10 @@ Required GitHub secret:
 
 - `EXPO_TOKEN`: Expo access token allowed to run EAS Build/Submit for the
   project.
+
+EAS must also have iOS build credentials and App Store Connect submission
+credentials configured for the `staging` profile. The automatic path uses
+the same command as `npm run eas:build:staging`.
 
 Optional manual input:
 
