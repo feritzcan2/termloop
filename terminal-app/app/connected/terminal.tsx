@@ -24,8 +24,10 @@ import { colors, monoFont, radii } from "../../lib/theme";
 const MAX_BUFFER_LINES = 1200;
 const HISTORY_LINES = 500;
 const POLL_INTERVAL_MS = 1800;
+const RECONNECT_INTERVAL_MS = 3000;
 const SEND_SETTLE_MS = 60;
 const NEAR_BOTTOM_PX = 80;
+const MAX_COMMAND_HISTORY = 50;
 
 type LiveState = "connecting" | "live" | "degraded" | "closed";
 
@@ -65,6 +67,8 @@ const KEYS: KeyDef[] = [
   { label: "Tab", key: "tab", text: "\t" },
   { label: "↑", key: "up" },
   { label: "↓", key: "down" },
+  { label: "←", key: "left", text: "[D" },
+  { label: "→", key: "right", text: "[C" },
   { label: "Enter", key: "enter", text: "\r" },
   { label: "Ctrl-C", key: "Ctrl-C", text: "" },
   { label: "Ctrl-D", key: "Ctrl-D", text: "" },
@@ -75,6 +79,7 @@ export default function TerminalScreen() {
     workspaceId?: string;
     surfaceId?: string;
     name?: string;
+    surfaceName?: string;
   }>();
   const router = useRouter();
   const headerHeight = useHeaderHeight();
@@ -89,6 +94,9 @@ export default function TerminalScreen() {
   const [fontIndex, setFontIndex] = useState<FontIndex>(1);
   const [liveState, setLiveState] = useState<LiveState>("connecting");
   const [streamReason, setStreamReason] = useState<string | null>(null);
+  const [isNearBottom, setIsNearBottom] = useState(true);
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
 
   const aliveRef = useRef(true);
   const inFlightRef = useRef(false);
@@ -145,6 +153,7 @@ export default function TerminalScreen() {
 
       let cancelled = false;
       let intervalId: ReturnType<typeof setInterval> | null = null;
+      let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
       let subscription: SurfaceSubscription | null = null;
 
       const startPolling = () => {
@@ -158,6 +167,11 @@ export default function TerminalScreen() {
         clearInterval(intervalId);
         intervalId = null;
       };
+      const clearReconnect = () => {
+        if (!reconnectTimer) return;
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      };
 
       const dropSubscription = () => {
         const sub = subscription;
@@ -167,6 +181,7 @@ export default function TerminalScreen() {
       };
 
       const trySubscribe = async () => {
+        clearReconnect();
         try {
           const sub = await client.subscribeSurface(
             workspaceId,
@@ -179,16 +194,19 @@ export default function TerminalScreen() {
                   setLiveState("live");
                   setStreamReason(null);
                   stopPolling();
+                  clearReconnect();
                   return;
                 case "surface.output":
                   setBuffer((b) => capTerminalBuffer(b + event.text));
                   setLiveState("live");
                   setStreamReason(null);
                   stopPolling();
+                  clearReconnect();
                   return;
                 case "surface.closed":
                   setLiveState("closed");
                   stopPolling();
+                  clearReconnect();
                   dropSubscription();
                   return;
                 case "surface.error":
@@ -196,6 +214,7 @@ export default function TerminalScreen() {
                   setStreamReason(friendlyTransportError(new Error(event.message)));
                   dropSubscription();
                   startPolling();
+                  scheduleReconnect();
                   return;
               }
             },
@@ -211,13 +230,28 @@ export default function TerminalScreen() {
           setLiveState("live");
           setStreamReason(null);
           stopPolling();
+          clearReconnect();
         } catch (err) {
           if (cancelled) return;
           setLiveState("degraded");
           setStreamReason(friendlyTransportError(err));
           startPolling();
+          scheduleReconnect();
           refresh().catch(() => {});
         }
+      };
+
+      const scheduleReconnect = () => {
+        if (cancelled || reconnectTimer || subscription) return;
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          if (cancelled || subscription || AppState.currentState !== "active") {
+            return;
+          }
+          setLiveState("connecting");
+          setStreamReason(null);
+          trySubscribe();
+        }, RECONNECT_INTERVAL_MS);
       };
 
       const onAppState = (next: AppStateStatus) => {
@@ -225,6 +259,7 @@ export default function TerminalScreen() {
           if (!subscription) trySubscribe();
         } else {
           stopPolling();
+          clearReconnect();
           if (subscription) {
             dropSubscription();
             setLiveState("connecting");
@@ -237,6 +272,7 @@ export default function TerminalScreen() {
       reconnectRef.current = () => {
         if (cancelled) return;
         if (subscription) return;
+        clearReconnect();
         setLiveState("connecting");
         setStreamReason(null);
         trySubscribe();
@@ -245,6 +281,7 @@ export default function TerminalScreen() {
       return () => {
         cancelled = true;
         stopPolling();
+        clearReconnect();
         appStateSub.remove();
         dropSubscription();
         reconnectRef.current = () => {};
@@ -281,6 +318,14 @@ export default function TerminalScreen() {
     if (!client || !workspaceId || !draft) return;
     const line = draft;
     setDraft("");
+    setHistoryIndex(null);
+    if (line.trim()) {
+      setCommandHistory((items) => {
+        const next =
+          items[items.length - 1] === line ? items : [...items, line];
+        return next.slice(Math.max(0, next.length - MAX_COMMAND_HISTORY));
+      });
+    }
     inputRef.current?.focus();
     try {
       await client.sendText(workspaceId, line, surfaceId);
@@ -295,12 +340,39 @@ export default function TerminalScreen() {
         await client.sendText(workspaceId, "\n", surfaceId);
       }
       await refresh();
+      setTimeout(() => inputRef.current?.focus(), 0);
     } catch (err) {
       if (aliveRef.current) {
         setInlineError(`Send failed: ${friendlyTransportError(err)}`);
       }
     }
   }, [client, workspaceId, surfaceId, draft, refresh]);
+
+  const navigateCommandHistory = useCallback(
+    (direction: "older" | "newer") => {
+      if (commandHistory.length === 0) return;
+      if (direction === "older") {
+        const nextIndex =
+          historyIndex === null
+            ? commandHistory.length - 1
+            : Math.max(0, historyIndex - 1);
+        setHistoryIndex(nextIndex);
+        setDraft(commandHistory[nextIndex]);
+      } else {
+        if (historyIndex === null) return;
+        const nextIndex = historyIndex + 1;
+        if (nextIndex >= commandHistory.length) {
+          setHistoryIndex(null);
+          setDraft("");
+        } else {
+          setHistoryIndex(nextIndex);
+          setDraft(commandHistory[nextIndex]);
+        }
+      }
+      setTimeout(() => inputRef.current?.focus(), 0);
+    },
+    [commandHistory, historyIndex]
+  );
 
   const cycleFont = useCallback(() => {
     setFontIndex((i) => (((i + 1) % FONT_SIZES.length) as FontIndex));
@@ -317,6 +389,14 @@ export default function TerminalScreen() {
   if (!client || !workspaceId) return null;
 
   const fontSize = FONT_SIZES[fontIndex];
+  const workspaceTitle =
+    typeof params.name === "string" && params.name.trim()
+      ? params.name.trim()
+      : "Workspace";
+  const surfaceTitle =
+    typeof params.surfaceName === "string" && params.surfaceName.trim()
+      ? params.surfaceName.trim()
+      : "Terminal";
 
   return (
     <SafeAreaView style={styles.root} edges={["bottom"]}>
@@ -326,6 +406,14 @@ export default function TerminalScreen() {
         style={{ flex: 1 }}
       >
         <View style={styles.toolbar}>
+          <View style={styles.titleBlock}>
+            <Text style={styles.workspaceTitle} numberOfLines={1}>
+              {workspaceTitle}
+            </Text>
+            <Text style={styles.surfaceTitle} numberOfLines={1}>
+              {surfaceTitle}
+            </Text>
+          </View>
           <Pressable
             style={styles.toolbarBtn}
             onPress={cycleFont}
@@ -388,44 +476,61 @@ export default function TerminalScreen() {
           </Pressable>
         ) : null}
 
-        <ScrollView
-          ref={scrollRef}
-          style={styles.surface}
-          contentContainerStyle={styles.surfaceContent}
-          onScroll={(e) => {
-            const { contentOffset, contentSize, layoutMeasurement } =
-              e.nativeEvent;
-            const distanceFromBottom =
-              contentSize.height - (contentOffset.y + layoutMeasurement.height);
-            nearBottomRef.current = distanceFromBottom < NEAR_BOTTOM_PX;
-          }}
-          scrollEventThrottle={64}
-          onContentSizeChange={() => {
-            if (nearBottomRef.current) {
-              scrollRef.current?.scrollToEnd({ animated: false });
-            }
-          }}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-        >
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <Text
-              style={[
-                styles.surfaceText,
-                { fontSize, lineHeight: Math.round(fontSize * 1.35) },
-              ]}
-              selectable
-            >
-              {segments
-                ? segments.map((seg, idx) => (
-                    <Text key={idx} style={seg.style}>
-                      {seg.text}
-                    </Text>
-                  ))
-                : stripAnsi(buffer)}
-            </Text>
+        <View style={styles.surfaceFrame}>
+          <ScrollView
+            ref={scrollRef}
+            style={styles.surfaceScroll}
+            contentContainerStyle={styles.surfaceContent}
+            onScroll={(e) => {
+              const { contentOffset, contentSize, layoutMeasurement } =
+                e.nativeEvent;
+              const distanceFromBottom =
+                contentSize.height - (contentOffset.y + layoutMeasurement.height);
+              const next = distanceFromBottom < NEAR_BOTTOM_PX;
+              nearBottomRef.current = next;
+              setIsNearBottom((current) => (current === next ? current : next));
+            }}
+            scrollEventThrottle={64}
+            onContentSizeChange={() => {
+              if (nearBottomRef.current) {
+                scrollRef.current?.scrollToEnd({ animated: false });
+              }
+            }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+          >
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <Text
+                style={[
+                  styles.surfaceText,
+                  { fontSize, lineHeight: Math.round(fontSize * 1.35) },
+                ]}
+                selectable
+              >
+                {segments
+                  ? segments.map((seg, idx) => (
+                      <Text key={idx} style={seg.style}>
+                        {seg.text}
+                      </Text>
+                    ))
+                  : stripAnsi(buffer)}
+              </Text>
+            </ScrollView>
           </ScrollView>
-        </ScrollView>
+          {!isNearBottom ? (
+            <Pressable
+              style={styles.jumpBottomBtn}
+              onPress={() => {
+                nearBottomRef.current = true;
+                setIsNearBottom(true);
+                scrollRef.current?.scrollToEnd({ animated: true });
+              }}
+              hitSlop={8}
+            >
+              <Text style={styles.jumpBottomText}>↓</Text>
+            </Pressable>
+          ) : null}
+        </View>
 
         <ScrollView
           horizontal
@@ -449,6 +554,28 @@ export default function TerminalScreen() {
         </ScrollView>
 
         <View style={styles.inputRow}>
+          <Pressable
+            style={[
+              styles.historyBtn,
+              commandHistory.length === 0 && styles.historyBtnDisabled,
+            ]}
+            onPress={() => navigateCommandHistory("older")}
+            disabled={commandHistory.length === 0}
+            hitSlop={4}
+          >
+            <Text style={styles.historyBtnText}>↑</Text>
+          </Pressable>
+          <Pressable
+            style={[
+              styles.historyBtn,
+              historyIndex === null && styles.historyBtnDisabled,
+            ]}
+            onPress={() => navigateCommandHistory("newer")}
+            disabled={historyIndex === null}
+            hitSlop={4}
+          >
+            <Text style={styles.historyBtnText}>↓</Text>
+          </Pressable>
           <TextInput
             ref={inputRef}
             style={styles.input}
@@ -481,30 +608,41 @@ const styles = StyleSheet.create({
   toolbar: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     gap: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
     backgroundColor: colors.bg,
   },
+  titleBlock: { flex: 1, minWidth: 0 },
+  workspaceTitle: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  surfaceTitle: {
+    color: colors.sub,
+    fontSize: 10,
+    fontFamily: monoFont,
+    marginTop: 1,
+  },
   toolbarBtn: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: radii.sm,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.bgElevated,
-    minWidth: 70,
+    minWidth: 54,
     alignItems: "center",
   },
   toolbarBtnText: { color: colors.text, fontSize: 13, fontWeight: "500" },
   toolbarStatus: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
     gap: 6,
+    minWidth: 64,
   },
   statusDot: { width: 7, height: 7, borderRadius: 4 },
   statusLabel: { color: colors.sub, fontSize: 11, fontWeight: "500" },
@@ -556,7 +694,7 @@ const styles = StyleSheet.create({
   errorText: { color: colors.danger, fontSize: 12, flex: 1 },
   errorDismiss: { color: colors.danger, fontSize: 11, fontWeight: "700" },
 
-  surface: {
+  surfaceFrame: {
     flex: 1,
     marginHorizontal: 8,
     marginVertical: 6,
@@ -564,6 +702,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surfaceBg,
+    overflow: "hidden",
+  },
+  surfaceScroll: {
+    flex: 1,
   },
   surfaceContent: {
     padding: 12,
@@ -573,6 +715,25 @@ const styles = StyleSheet.create({
     color: colors.terminalText,
     fontFamily: monoFont,
     textAlign: "left",
+  },
+  jumpBottomBtn: {
+    position: "absolute",
+    right: 12,
+    bottom: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.bgRaised,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  jumpBottomText: {
+    color: colors.primary,
+    fontSize: 20,
+    fontWeight: "700",
+    lineHeight: 22,
   },
 
   keyRowScroll: {
@@ -608,6 +769,7 @@ const styles = StyleSheet.create({
 
   inputRow: {
     flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 8,
     paddingTop: 8,
     paddingBottom: 8,
@@ -615,6 +777,23 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
     backgroundColor: colors.bg,
+  },
+  historyBtn: {
+    width: 38,
+    height: 42,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgElevated,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  historyBtnDisabled: { opacity: 0.35 },
+  historyBtnText: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "700",
+    lineHeight: 20,
   },
   input: {
     flex: 1,

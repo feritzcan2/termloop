@@ -135,6 +135,7 @@ export default function ConnectedScreen() {
           workspaceId: ws.id,
           surfaceId: surface.id,
           name: workspaceLabel(ws),
+          surfaceName: surface.title || surface.name || surface.kind || "Terminal",
         },
       });
     } catch (err) {
