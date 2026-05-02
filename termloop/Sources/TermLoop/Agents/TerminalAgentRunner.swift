@@ -1286,7 +1286,7 @@ enum TerminalAgentRunner {
         workspaceId: String,
         failurePreview: String
     ) -> URL? {
-        let isResumeLaunch = baseCommand.contains("codex resume ")
+        let isResumeLaunch = baseCommand.contains(" resume ")
         let reportsReadyBeforeLaunch = !isResumeLaunch
         let readyBlock: String = {
             guard reportsReadyBeforeLaunch else { return "" }
@@ -1642,7 +1642,7 @@ enum TerminalAgentRunner {
     ) -> String {
         switch agent.id {
         case "codex":
-            if baseCommand.contains("\(agent.executableName) resume ") {
+            if baseCommand.contains(" resume ") {
                 return "Codex resume failed"
             }
             return "Codex launch failed"
