@@ -133,13 +133,13 @@ export function parseAnsi(
   let plain = "";
   const flush = () => {
     if (plain.length > 0) {
-      segments.push({ text: plain, style });
       if (
         options.maxSegments !== undefined &&
-        segments.length > options.maxSegments
+        segments.length >= options.maxSegments
       ) {
         throw new Error("ANSI segment limit exceeded");
       }
+      segments.push({ text: plain, style });
       plain = "";
     }
   };

@@ -124,6 +124,14 @@ final class TerminalAgentLifecycle {
         case rejected(RejectReason)
     }
 
+    struct PreparedFreshWorkspaceLaunch {
+        let agent: TerminalAgent
+        let plan: TerminalAgentRunner.AgentLaunchPlan
+        let hasInitialPrompt: Bool
+        let worktreeExpectation: TermLoopWorktreeExpectation?
+        let baselineHead: String?
+    }
+
     // MARK: - Public API
 
     // Canonical fresh-create sequence: Runner.prepareLaunch composes the
@@ -168,6 +176,63 @@ final class TerminalAgentLifecycle {
             projectId: projectId,
             placementOverride: placementOverride,
             baselineHead: baselineHead
+        )
+    }
+
+    static func prepareFreshWorkspaceLaunch(
+        agent: TerminalAgent,
+        cwd: String?,
+        worktreeExpectation: TermLoopWorktreeExpectation? = nil,
+        baselineHead: String? = nil,
+        baseEnv: [String: String] = [:],
+        initialPrompt: String = "",
+        permission: AgentTemplate.PermissionMode? = nil,
+        systemPrompt: String? = nil,
+        model: AgentModelOption? = nil,
+        reasoning: AgentReasoningOption? = nil,
+        launchProvidedFullContext: Bool = false
+    ) throws -> PreparedFreshWorkspaceLaunch {
+        let (plan, hasInitialPrompt) = try TerminalAgentRunner.prepareLaunch(
+            agent: agent,
+            cwd: cwd,
+            worktreeExpectation: worktreeExpectation,
+            baseEnv: baseEnv,
+            initialPrompt: initialPrompt,
+            permission: permission,
+            systemPrompt: systemPrompt,
+            model: model,
+            reasoning: reasoning,
+            launchProvidedFullContext: launchProvidedFullContext
+        )
+        return PreparedFreshWorkspaceLaunch(
+            agent: agent,
+            plan: plan,
+            hasInitialPrompt: hasInitialPrompt,
+            worktreeExpectation: worktreeExpectation,
+            baselineHead: baselineHead
+        )
+    }
+
+    static func attachFreshLaunchToCreatedWorkspace(
+        _ launch: PreparedFreshWorkspaceLaunch,
+        to workspace: Workspace,
+        beforeDispatch: ((Workspace) -> Void)? = nil
+    ) {
+        TerminalAgentActivityStore.shared.markPendingRestore(
+            workspaceId: workspace.id,
+            state: TerminalAgentRunner.pendingPlaceholderState(
+                hasInitialPrompt: launch.hasInitialPrompt
+            )
+        )
+        TerminalAgentRunner.applyWorktreeBinding(
+            launch.worktreeExpectation,
+            to: workspace,
+            baselineHead: launch.baselineHead
+        )
+        beforeDispatch?(workspace)
+        TerminalAgentRunner.dispatchFallbackLaunchIfNeeded(launch.plan, to: workspace)
+        TermLoopHooks.schedulePersistedAgentSessionRecoveryIfNeeded(
+            agentId: launch.agent.id
         )
     }
 

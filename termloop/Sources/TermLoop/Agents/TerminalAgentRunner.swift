@@ -87,6 +87,7 @@ enum TerminalAgentRunner {
         agent: TerminalAgent,
         cwd: String?,
         worktreeExpectation: TermLoopWorktreeExpectation?,
+        baseEnv: [String: String] = [:],
         initialPrompt: String,
         permission: AgentTemplate.PermissionMode?,
         systemPrompt: String?,
@@ -132,8 +133,12 @@ enum TerminalAgentRunner {
             }
         }
         let workspaceId = UUID()
+        let launchBaseEnv = baseEnv.merging(worktreeExpectation?.environment ?? [:]) {
+            current,
+            _ in current
+        }
         let launchEnv = agentEnvironment(
-            base: worktreeExpectation?.environment ?? [:],
+            base: launchBaseEnv,
             workspaceId: workspaceId,
             agentId: agent.id,
             launchProvidedContext: launchProvidedFullContext

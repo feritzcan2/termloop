@@ -20,9 +20,12 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { parseAnsi, stripAnsi, type AnsiSegment } from "../../lib/ansi";
-import { friendlyTransportError } from "../../lib/errors";
+import {
+  friendlyTransportError,
+  isTerminalSurfaceStartingError,
+} from "../../lib/errors";
 import { getActiveClient } from "../../lib/session";
-import type { SurfaceSubscription } from "../../lib/termloop-client";
+import { type SurfaceSubscription } from "../../lib/termloop-client";
 import { colors, monoFont, radii } from "../../lib/theme";
 
 const MAX_BUFFER_LINES = 1200;
@@ -37,8 +40,10 @@ const NEAR_BOTTOM_PX = 80;
 const MAX_COMMAND_HISTORY = 50;
 const COMPOSER_MAX_HEIGHT = 96;
 const TERMINAL_HORIZONTAL_PADDING = 24;
+const TERMINAL_CONTENT_PADDING = 12;
 const TERMINAL_CHAR_WIDTH_RATIO = 0.72;
 const MAX_TERMINAL_CONTENT_WIDTH = 6000;
+const TERMINAL_WIDTH_BUCKET = 240;
 
 type LiveState = "connecting" | "live" | "degraded" | "closed";
 
@@ -86,17 +91,21 @@ function makeLine(key: number): TerminalRenderLine {
 }
 
 function plainTerminalLines(text: string): TerminalRenderLine[] {
-  return stripAnsi(text).split("\n").map((line, idx) => ({
+  return normalizeTerminalLineBreaks(stripAnsi(text)).split("\n").map((line, idx) => ({
     key: String(idx),
     text: line,
     segments: null,
   }));
 }
 
+function normalizeTerminalLineBreaks(text: string): string {
+  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
 function segmentTerminalLines(segments: AnsiSegment[]): TerminalRenderLine[] {
   const lines = [makeLine(0)];
   for (const segment of segments) {
-    const parts = segment.text.split("\n");
+    const parts = normalizeTerminalLineBreaks(segment.text).split("\n");
     for (let idx = 0; idx < parts.length; idx++) {
       if (idx > 0) lines.push(makeLine(lines.length));
       const part = parts[idx];
@@ -281,6 +290,10 @@ export default function TerminalScreen() {
         setInlineError(null);
       }
     } catch (err) {
+      if (aliveRef.current && isTerminalSurfaceStartingError(err)) {
+        setInlineError(null);
+        return;
+      }
       if (aliveRef.current) {
         setInlineError(`Read failed: ${friendlyTransportError(err)}`);
       }
@@ -578,13 +591,18 @@ export default function TerminalScreen() {
 
   const fontSize = FONT_SIZES[fontIndex];
   const lineHeight = Math.round(fontSize * 1.35);
-  const terminalContentWidth = Math.max(
+  const estimatedTerminalContentWidth = Math.max(
     surfaceWidth,
     Math.min(
       MAX_TERMINAL_CONTENT_WIDTH,
       Math.ceil(maxLineChars * fontSize * TERMINAL_CHAR_WIDTH_RATIO) +
         TERMINAL_HORIZONTAL_PADDING
     )
+  );
+  const terminalContentWidth = Math.min(
+    MAX_TERMINAL_CONTENT_WIDTH,
+    Math.ceil(estimatedTerminalContentWidth / TERMINAL_WIDTH_BUCKET) *
+      TERMINAL_WIDTH_BUCKET
   );
   const scrollToBottom = useCallback(
     (animated = true) => {
@@ -595,7 +613,7 @@ export default function TerminalScreen() {
           animated,
           offset: Math.max(
             0,
-            terminalLines.length * lineHeight + TERMINAL_HORIZONTAL_PADDING
+            terminalLines.length * lineHeight + TERMINAL_CONTENT_PADDING * 2
           ),
         });
       });
@@ -675,7 +693,7 @@ export default function TerminalScreen() {
   const terminalItemLayout = useCallback(
     (_: ArrayLike<TerminalRenderLine> | null | undefined, index: number) => ({
       length: lineHeight,
-      offset: lineHeight * index,
+      offset: TERMINAL_CONTENT_PADDING + lineHeight * index,
       index,
     }),
     [lineHeight]
@@ -701,6 +719,7 @@ export default function TerminalScreen() {
       : projectName
     : "TermLoop session";
   const canSend = Boolean(draft) && !sending;
+  const terminalIsEmpty = buffer.trim().length === 0;
 
   return (
     <SafeAreaView style={styles.root} edges={["top", "bottom"]}>
@@ -830,6 +849,14 @@ export default function TerminalScreen() {
               keyboardDismissMode="on-drag"
             />
           </ScrollView>
+          {terminalIsEmpty ? (
+            <View style={styles.emptyTerminalOverlay} pointerEvents="none">
+              <ActivityIndicator color={colors.sub} />
+              <Text style={styles.emptyTerminalText}>
+                Waiting for terminal output…
+              </Text>
+            </View>
+          ) : null}
           {!isNearBottom ? (
             <Pressable
               style={styles.jumpBottomBtn}
@@ -1065,7 +1092,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   surfaceContent: {
-    padding: 12,
+    padding: TERMINAL_CONTENT_PADDING,
     alignItems: "flex-start",
   },
   terminalLineRow: {
@@ -1075,6 +1102,22 @@ const styles = StyleSheet.create({
     color: colors.terminalText,
     fontFamily: monoFont,
     textAlign: "left",
+  },
+  emptyTerminalOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: colors.surfaceBg,
+  },
+  emptyTerminalText: {
+    color: colors.sub,
+    fontSize: 12,
+    fontFamily: monoFont,
   },
   jumpBottomBtn: {
     position: "absolute",

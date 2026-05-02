@@ -3548,6 +3548,16 @@ class TerminalController {
                         data: ["terminal_agent_id": id])
         }
         let termLoopWorkspaceCreateContext = self.termLoopWorkspaceCreateContext(cwd: cwd, projectId: explicitProjectId, initialEnv: initialEnv)
+        let termLoopWorkspaceAgentLaunch: TerminalAgentLifecycle.PreparedFreshWorkspaceLaunch?
+        if initialCommand == nil {
+            do {
+                termLoopWorkspaceAgentLaunch = try self.termLoopPrepareWorkspaceAgentLaunch(terminalAgentId: explicitTerminalAgentId, cwd: cwd, context: termLoopWorkspaceCreateContext)
+            } catch {
+                return .err(code: "internal_error", message: "Failed to prepare terminal agent launch: \(error)", data: nil)
+            }
+        } else {
+            termLoopWorkspaceAgentLaunch = nil
+        }
         // MARK: /termloop-hook
 
         var newId: UUID?
@@ -3556,8 +3566,9 @@ class TerminalController {
             let ws = tabManager.addWorkspace(
                 title: title,
                 workingDirectory: cwd,
-                initialTerminalCommand: initialCommand,
-                initialTerminalEnvironment: termLoopWorkspaceCreateContext.launchEnvironment,
+                initialTerminalCommand: termLoopWorkspaceAgentLaunch?.plan.initialCommand ?? initialCommand,
+                initialTerminalEnvironment: termLoopWorkspaceAgentLaunch?.plan.initialEnvironment ?? termLoopWorkspaceCreateContext.launchEnvironment,
+                workspaceId: termLoopWorkspaceAgentLaunch?.plan.workspaceId,
                 select: shouldFocus,
                 eagerLoadTerminal: !shouldFocus,
                 // MARK: termloop-hook
@@ -3566,19 +3577,8 @@ class TerminalController {
                 // MARK: /termloop-hook
             )
             // MARK: termloop-hook
-            self.termLoopApplyWorkspaceCreateContext(termLoopWorkspaceCreateContext, to: ws)
+            self.termLoopFinishWorkspaceCreate(launch: termLoopWorkspaceAgentLaunch, context: termLoopWorkspaceCreateContext, workspace: ws)
             // MARK: /termloop-hook
-            if initialCommand == nil,
-               let agentId = explicitTerminalAgentId,
-               !agentId.isEmpty,
-               let agent = TerminalAgentRegistry.shared.agent(id: agentId) {
-                _ = TerminalAgentLifecycle.launchInExistingWorkspace(
-                    in: ws,
-                    agent: agent,
-                    cwd: cwd,
-                    env: termLoopWorkspaceCreateContext.launchEnvironment
-                )
-            }
             ws.setCustomDescription(description)
             newId = ws.id
         }

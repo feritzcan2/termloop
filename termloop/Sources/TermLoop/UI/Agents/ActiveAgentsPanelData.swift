@@ -147,6 +147,12 @@ extension ActiveAgentsPanel {
             .compactMap {
                 WorkspaceMetadataStore.shared.abilitySession(forWorkspaceId: $0.id)
             }
+            .sorted {
+                if $0.spawnedAt != $1.spawnedAt {
+                    return $0.spawnedAt > $1.spawnedAt
+                }
+                return $0.workspaceId.uuidString < $1.workspaceId.uuidString
+            }
     }
 
     func computeTerminalSessions(
@@ -176,16 +182,13 @@ extension ActiveAgentsPanel {
                 )
             }
         .sorted {
-            let lhsUserPromptAt = $0.core.lastUserPromptAt ?? .distantPast
-            let rhsUserPromptAt = $1.core.lastUserPromptAt ?? .distantPast
-            if lhsUserPromptAt != rhsUserPromptAt {
-                return lhsUserPromptAt > rhsUserPromptAt
-            }
             if $0.phaseSortOrder != $1.phaseSortOrder {
                 return $0.phaseSortOrder < $1.phaseSortOrder
             }
-            if $0.updatedAt != $1.updatedAt {
-                return $0.updatedAt > $1.updatedAt
+            let lhsRecency = $0.core.lastUserPromptAt ?? $0.updatedAt
+            let rhsRecency = $1.core.lastUserPromptAt ?? $1.updatedAt
+            if lhsRecency != rhsRecency {
+                return lhsRecency > rhsRecency
             }
             return $0.core.workspaceId.uuidString < $1.core.workspaceId.uuidString
         }

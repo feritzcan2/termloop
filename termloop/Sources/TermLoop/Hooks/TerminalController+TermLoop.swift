@@ -98,6 +98,25 @@ extension TerminalController {
         )
     }
 
+    func termLoopPrepareWorkspaceAgentLaunch(
+        terminalAgentId: String?,
+        cwd: String?,
+        context: TermLoopWorkspaceCreateContext
+    ) throws -> TerminalAgentLifecycle.PreparedFreshWorkspaceLaunch? {
+        guard let id = terminalAgentId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !id.isEmpty,
+              let agent = TerminalAgentRegistry.shared.agent(id: id) else {
+            return nil
+        }
+        return try TerminalAgentLifecycle.prepareFreshWorkspaceLaunch(
+            agent: agent,
+            cwd: cwd,
+            worktreeExpectation: context.worktreeBinding?.expectation,
+            baselineHead: context.worktreeBinding?.baselineHead,
+            baseEnv: context.launchEnvironment
+        )
+    }
+
     @MainActor
     func termLoopApplyWorkspaceCreateContext(
         _ context: TermLoopWorkspaceCreateContext,
@@ -105,6 +124,30 @@ extension TerminalController {
     ) {
         guard let binding = context.worktreeBinding else { return }
         termLoopApplyWorkspaceWorktreeBinding(binding, to: workspace)
+    }
+
+    @MainActor
+    func termLoopFinishWorkspaceAgentLaunch(
+        _ launch: TerminalAgentLifecycle.PreparedFreshWorkspaceLaunch,
+        workspace: Workspace
+    ) {
+        TerminalAgentLifecycle.attachFreshLaunchToCreatedWorkspace(
+            launch,
+            to: workspace
+        )
+    }
+
+    @MainActor
+    func termLoopFinishWorkspaceCreate(
+        launch: TerminalAgentLifecycle.PreparedFreshWorkspaceLaunch?,
+        context: TermLoopWorkspaceCreateContext,
+        workspace: Workspace
+    ) {
+        if let launch {
+            termLoopFinishWorkspaceAgentLaunch(launch, workspace: workspace)
+        } else {
+            termLoopApplyWorkspaceCreateContext(context, to: workspace)
+        }
     }
 
     func termLoopWorkspaceWorktreeBinding(

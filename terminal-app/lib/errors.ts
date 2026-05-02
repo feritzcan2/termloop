@@ -26,3 +26,12 @@ export function friendlyTransportError(err: unknown): string {
   }
   return msg;
 }
+
+export function isTerminalSurfaceStartingError(err: unknown): boolean {
+  if (!(err instanceof RpcCallError)) return false;
+  return (
+    (err.code === "internal_error" &&
+      /terminal surface not found/i.test(err.message)) ||
+    (err.code === "not_found" && /surface/i.test(err.message))
+  );
+}

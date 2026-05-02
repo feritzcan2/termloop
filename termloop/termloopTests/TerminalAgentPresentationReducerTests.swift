@@ -10,6 +10,22 @@ final class TerminalAgentPresentationReducerTests: XCTestCase {
     private let wsId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
 
+    func testActiveAgentsSortPriorityPutsActionableStatesFirst() {
+        let ordered: [TerminalAgentDisplayState] = [
+            .needsInput,
+            .error,
+            .running,
+            .completed,
+            .ready,
+            .idle
+        ]
+
+        XCTAssertEqual(
+            ordered.map(\.activeAgentsSortPriority),
+            Array(0..<ordered.count)
+        )
+    }
+
     private func makeRaw(
         phase: TerminalAgentActivityPhase,
         attentionKind: TerminalAgentAttentionKind? = nil,

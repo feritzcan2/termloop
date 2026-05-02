@@ -72,10 +72,10 @@ in upstream-owned Swift files. Regenerate with `scripts/generate-hooks-inventory
 | `Sources/TerminalController.swift` | 3094 | `// TermLoopSocketCommands returns this type across file boundaries, so it` |
 | `Sources/TerminalController.swift` | 3455 | `payload.merge(self.termLoopWorkspaceSummaryFields(for: workspace)) { _, new in new }` |
 | `Sources/TerminalController.swift` | 3540 | `let explicitProjectId = v2UUID(params, "project_id")` |
-| `Sources/TerminalController.swift` | 3563 | `projectId: explicitProjectId ?? termLoopWorkspaceCreateContext.projectId,` |
-| `Sources/TerminalController.swift` | 3568 | `self.termLoopApplyWorkspaceCreateContext(termLoopWorkspaceCreateContext, to: ws)` |
-| `Sources/TerminalController.swift` | 6049 | `/// Narrow bridge for the mobile streaming backend. The stream registry` |
-| `Sources/TerminalController.swift` | 14904 | `if TerminalAgentRegistry.shared.statusKeys.contains(key) {` |
+| `Sources/TerminalController.swift` | 3574 | `projectId: explicitProjectId ?? termLoopWorkspaceCreateContext.projectId,` |
+| `Sources/TerminalController.swift` | 3579 | `if let termLoopWorkspaceAgentLaunch {` |
+| `Sources/TerminalController.swift` | 6053 | `/// Narrow bridge for the mobile streaming backend. The stream registry` |
+| `Sources/TerminalController.swift` | 14908 | `if TerminalAgentRegistry.shared.statusKeys.contains(key) {` |
 | `Sources/Update/UpdateTitlebarAccessory.swift` | 411 | `TermLoopHooks.titlebarSettingsButton(config: config)` |
 | `Sources/Workspace.swift` | 454 | `TermLoopHooks.ensurePanelDirectoryBeforeSnapshot(workspace: self, panelId: panelId)` |
 | `Sources/Workspace.swift` | 9254 | `TermLoopHooks.seedSpawnPanelDirectory(workspace: self, panelId: newPanel.id, directory: workingDirectory)` |

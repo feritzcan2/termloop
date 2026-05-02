@@ -177,6 +177,9 @@ export async function findConnectionMetaByEndpoint(
   );
   return (await loadMetadata()).find((c) => {
     if (c.port !== port) return false;
+    // Re-pair should update an existing saved Mac even if the QR advertises
+    // a different reachable host. In the rare case of two Macs sharing a host
+    // alias on the same port, the first saved match wins.
     return connectionHostCandidates(c).some((candidate) =>
       incoming.has(candidate)
     );

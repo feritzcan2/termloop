@@ -19,8 +19,10 @@ import {
   getActiveClient,
   getActiveConnectionId,
 } from "../../lib/session";
+import { isTerminalSurfaceStartingError } from "../../lib/errors";
 import {
   pickTerminalSurface,
+  type TermLoopClient,
   surfaceLabel,
   workspaceLabel,
   workspaceProjectId,
@@ -35,6 +37,9 @@ import { colors, monoFont, radii } from "../../lib/theme";
 type ProjectState = ProjectSummary | null | "loading";
 type WorkspaceSectionKind = "worktree" | "workspace";
 type WorkspaceViewMode = "active" | "worktrees";
+
+const TERMINAL_SURFACE_READY_ATTEMPTS = 40;
+const TERMINAL_SURFACE_READY_DELAY_MS = 250;
 
 interface WorkspaceRow {
   ws: WorkspaceSummary;
@@ -76,6 +81,35 @@ interface WorkspaceContextSummary {
   loading: boolean;
   jira: JiraTicketSummary | null;
   runTargets: WorkspaceRunTargetSummary[];
+}
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function waitForTerminalSurface(
+  client: TermLoopClient,
+  workspaceId: string
+) {
+  for (let attempt = 0; attempt < TERMINAL_SURFACE_READY_ATTEMPTS; attempt++) {
+    const surfaces = await client.listSurfaces(workspaceId);
+    const surface = pickTerminalSurface(surfaces);
+    if (surface) {
+      try {
+        await client.readSurface(
+          workspaceId,
+          surface.id,
+          "vt",
+          20
+        );
+        return surface;
+      } catch (err) {
+        if (!isTerminalSurfaceStartingError(err)) throw err;
+      }
+    }
+    if (attempt < TERMINAL_SURFACE_READY_ATTEMPTS - 1) {
+      await delay(TERMINAL_SURFACE_READY_DELAY_MS);
+    }
+  }
+  return null;
 }
 
 export default function ConnectedScreen() {
@@ -419,12 +453,17 @@ export default function ConnectedScreen() {
         projectId: target.projectId,
         terminalAgentId: agent.id,
       });
-      setAgentPickerOpen(false);
       await loadOverview();
       setOpeningId(created.workspace_id);
-      const surfaces = await client.listSurfaces(created.workspace_id);
-      const surface = pickTerminalSurface(surfaces);
-      if (!surface) return;
+      const surface = await waitForTerminalSurface(client, created.workspace_id);
+      if (!surface) {
+        setAgentPickerOpen(false);
+        Alert.alert(
+          "Agent started",
+          "The workspace was created, but the agent terminal has not produced output yet. Pull to refresh and open it again."
+        );
+        return;
+      }
       const surfaceName = surfaceLabel(surface);
       const connectionId = getActiveConnectionId();
       if (connectionId) {
@@ -436,6 +475,7 @@ export default function ConnectedScreen() {
           surfaceName,
         }).catch(() => {});
       }
+      setAgentPickerOpen(false);
       router.push({
         pathname: "/connected/terminal",
         params: {
@@ -869,6 +909,9 @@ export default function ConnectedScreen() {
               onPress={startAgent}
               disabled={!selectedAgentId || startingAgent}
             >
+              {startingAgent ? (
+                <ActivityIndicator color={colors.onPrimary} size="small" />
+              ) : null}
               <Text style={styles.startAgentBtnText}>
                 {startingAgent ? "Starting…" : "Start agent"}
               </Text>
@@ -1568,6 +1611,9 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   startAgentBtn: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
     paddingVertical: 13,
     borderRadius: radii.md,
     backgroundColor: colors.primary,
