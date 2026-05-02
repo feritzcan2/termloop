@@ -1,4 +1,3 @@
-import { useHeaderHeight } from "@react-navigation/elements";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -28,6 +27,7 @@ const RECONNECT_INTERVAL_MS = 3000;
 const SEND_SETTLE_MS = 60;
 const NEAR_BOTTOM_PX = 80;
 const MAX_COMMAND_HISTORY = 50;
+const COMPOSER_MAX_HEIGHT = 96;
 
 type LiveState = "connecting" | "live" | "degraded" | "closed";
 
@@ -82,7 +82,6 @@ export default function TerminalScreen() {
     surfaceName?: string;
   }>();
   const router = useRouter();
-  const headerHeight = useHeaderHeight();
   const workspaceId = params.workspaceId;
   const surfaceId = params.surfaceId;
   const client = getActiveClient();
@@ -374,9 +373,87 @@ export default function TerminalScreen() {
     [commandHistory, historyIndex]
   );
 
+  const scrollToBottom = useCallback((animated = true) => {
+    nearBottomRef.current = true;
+    setIsNearBottom(true);
+    scrollRef.current?.scrollToEnd({ animated });
+  }, []);
+
+  const clearDraft = useCallback(() => {
+    setDraft("");
+    setHistoryIndex(null);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }, []);
+
   const cycleFont = useCallback(() => {
     setFontIndex((i) => (((i + 1) % FONT_SIZES.length) as FontIndex));
   }, []);
+
+  const keyByLabel = useMemo(() => {
+    const map = new Map<string, KeyDef>();
+    for (const def of KEYS) map.set(def.label, def);
+    return map;
+  }, []);
+
+  const accessoryItems = useMemo(() => {
+    type Item =
+      | { kind: "key"; def: KeyDef; disabled?: boolean }
+      | {
+          kind: "action";
+          label: string;
+          onPress: () => void;
+          disabled: boolean;
+        };
+    const k = (label: string): Item | null => {
+      const def = keyByLabel.get(label);
+      return def ? { kind: "key", def } : null;
+    };
+    const order: (Item | null)[] = [
+      k("Tab"),
+      k("Esc"),
+      k("Ctrl-C"),
+      k("Enter"),
+      k("↑"),
+      k("↓"),
+      k("←"),
+      k("→"),
+      {
+        kind: "action",
+        label: "Cmd ↑",
+        onPress: () => navigateCommandHistory("older"),
+        disabled: commandHistory.length === 0,
+      },
+      {
+        kind: "action",
+        label: "Cmd ↓",
+        onPress: () => navigateCommandHistory("newer"),
+        disabled: historyIndex === null,
+      },
+      {
+        kind: "action",
+        label: "Clear",
+        onPress: clearDraft,
+        disabled: !draft,
+      },
+      {
+        kind: "action",
+        label: "Bottom",
+        onPress: () => scrollToBottom(true),
+        disabled: isNearBottom,
+      },
+      k("Ctrl-D"),
+    ];
+    return order.filter((x): x is Item => x !== null);
+  }, [
+    keyByLabel,
+    navigateCommandHistory,
+    commandHistory.length,
+    historyIndex,
+    clearDraft,
+    draft,
+    scrollToBottom,
+    isNearBottom,
+  ]);
 
   const segments = useMemo(() => {
     try {
@@ -399,32 +476,35 @@ export default function TerminalScreen() {
       : "Terminal";
 
   return (
-    <SafeAreaView style={styles.root} edges={["bottom"]}>
+    <SafeAreaView style={styles.root} edges={["top", "bottom"]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={headerHeight}
+        keyboardVerticalOffset={0}
         style={{ flex: 1 }}
       >
         <View style={styles.toolbar}>
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.backBtn}
+            hitSlop={10}
+          >
+            <Text style={styles.backChevron}>‹</Text>
+          </Pressable>
           <View style={styles.titleBlock}>
-            <Text style={styles.workspaceTitle} numberOfLines={1}>
+            <Text style={styles.toolbarTitle} numberOfLines={1}>
               {workspaceTitle}
-            </Text>
-            <Text style={styles.surfaceTitle} numberOfLines={1}>
-              {surfaceTitle}
+              <Text style={styles.toolbarTitleSub}> · {surfaceTitle}</Text>
             </Text>
           </View>
-          <Pressable
-            style={styles.toolbarBtn}
-            onPress={cycleFont}
-            hitSlop={6}
-          >
-            <Text style={styles.toolbarBtnText}>{fontSize}px</Text>
-          </Pressable>
           <View style={styles.toolbarStatus}>
             <View style={[styles.statusDot, statusDotStyles[liveState]]} />
-            <Text style={styles.statusLabel}>{STATUS_LABEL[liveState]}</Text>
+            <Text style={styles.statusLabel} numberOfLines={1}>
+              {STATUS_LABEL[liveState]}
+            </Text>
           </View>
+          <Pressable style={styles.fontBtn} onPress={cycleFont} hitSlop={6}>
+            <Text style={styles.fontBtnText}>{fontSize}px</Text>
+          </Pressable>
           <Pressable
             style={styles.refreshLink}
             onPress={refresh}
@@ -520,11 +600,7 @@ export default function TerminalScreen() {
           {!isNearBottom ? (
             <Pressable
               style={styles.jumpBottomBtn}
-              onPress={() => {
-                nearBottomRef.current = true;
-                setIsNearBottom(true);
-                scrollRef.current?.scrollToEnd({ animated: true });
-              }}
+              onPress={() => scrollToBottom(true)}
               hitSlop={8}
             >
               <Text style={styles.jumpBottomText}>↓</Text>
@@ -539,54 +615,48 @@ export default function TerminalScreen() {
           style={styles.keyRowScroll}
           contentContainerStyle={styles.keyRow}
         >
-          {KEYS.map((def) => (
-            <Pressable
-              key={def.label}
-              style={({ pressed }) => [
-                styles.keyBtn,
-                pressed && styles.keyBtnPressed,
-              ]}
-              onPress={() => sendKey(def)}
-            >
-              <Text style={styles.keyBtnText}>{def.label}</Text>
-            </Pressable>
-          ))}
+          {accessoryItems.map((item) =>
+            item.kind === "key" ? (
+              <Pressable
+                key={`k:${item.def.label}`}
+                style={({ pressed }) => [
+                  styles.keyBtn,
+                  pressed && styles.keyBtnPressed,
+                ]}
+                onPress={() => sendKey(item.def)}
+              >
+                <Text style={styles.keyBtnText}>{item.def.label}</Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                key={`a:${item.label}`}
+                style={[
+                  styles.actionBtn,
+                  item.disabled && styles.actionBtnDisabled,
+                ]}
+                onPress={item.onPress}
+                disabled={item.disabled}
+              >
+                <Text style={styles.actionBtnText}>{item.label}</Text>
+              </Pressable>
+            )
+          )}
         </ScrollView>
 
         <View style={styles.inputRow}>
-          <Pressable
-            style={[
-              styles.historyBtn,
-              commandHistory.length === 0 && styles.historyBtnDisabled,
-            ]}
-            onPress={() => navigateCommandHistory("older")}
-            disabled={commandHistory.length === 0}
-            hitSlop={4}
-          >
-            <Text style={styles.historyBtnText}>↑</Text>
-          </Pressable>
-          <Pressable
-            style={[
-              styles.historyBtn,
-              historyIndex === null && styles.historyBtnDisabled,
-            ]}
-            onPress={() => navigateCommandHistory("newer")}
-            disabled={historyIndex === null}
-            hitSlop={4}
-          >
-            <Text style={styles.historyBtnText}>↓</Text>
-          </Pressable>
           <TextInput
             ref={inputRef}
             style={styles.input}
             value={draft}
             onChangeText={setDraft}
-            placeholder="Type a command…"
+            placeholder="Type a command or prompt…"
             placeholderTextColor={colors.placeholder}
             autoCapitalize="none"
             autoCorrect={false}
-            onSubmitEditing={onSend}
-            returnKeyType="send"
+            multiline
+            scrollEnabled
+            textAlignVertical="top"
+            returnKeyType="default"
             blurOnSubmit={false}
           />
           <Pressable
@@ -608,51 +678,61 @@ const styles = StyleSheet.create({
   toolbar: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    gap: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    gap: 6,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
     backgroundColor: colors.bg,
   },
+  backBtn: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radii.sm,
+  },
+  backChevron: {
+    color: colors.primary,
+    fontSize: 26,
+    fontWeight: "400",
+    lineHeight: 28,
+    marginTop: -2,
+  },
   titleBlock: { flex: 1, minWidth: 0 },
-  workspaceTitle: {
+  toolbarTitle: {
     color: colors.text,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "600",
   },
-  surfaceTitle: {
+  toolbarTitleSub: {
     color: colors.sub,
-    fontSize: 10,
+    fontSize: 12,
+    fontWeight: "400",
     fontFamily: monoFont,
-    marginTop: 1,
   },
-  toolbarBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+  fontBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: radii.sm,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.bgElevated,
-    minWidth: 54,
-    alignItems: "center",
   },
-  toolbarBtnText: { color: colors.text, fontSize: 13, fontWeight: "500" },
+  fontBtnText: { color: colors.text, fontSize: 11, fontWeight: "500" },
   toolbarStatus: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    minWidth: 64,
+    gap: 4,
   },
-  statusDot: { width: 7, height: 7, borderRadius: 4 },
-  statusLabel: { color: colors.sub, fontSize: 11, fontWeight: "500" },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusLabel: { color: colors.sub, fontSize: 10, fontWeight: "500" },
   refreshLink: {
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    minWidth: 56,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
     alignItems: "flex-end",
   },
-  refreshLinkText: { color: colors.primary, fontSize: 13, fontWeight: "500" },
+  refreshLinkText: { color: colors.primary, fontSize: 12, fontWeight: "500" },
 
   streamBanner: {
     flexDirection: "row",
@@ -744,32 +824,48 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgElevated,
   },
   keyRow: {
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    gap: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    gap: 4,
     alignItems: "center",
   },
+  actionBtn: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.borderAccent,
+    backgroundColor: colors.primaryDim,
+    minWidth: 46,
+    alignItems: "center",
+  },
+  actionBtnDisabled: { opacity: 0.38 },
+  actionBtnText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "700",
+  },
   keyBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: radii.sm,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.bgRaised,
-    minWidth: 44,
+    minWidth: 38,
     alignItems: "center",
   },
   keyBtnPressed: { backgroundColor: colors.primaryDim, borderColor: colors.primary },
   keyBtnText: {
     color: colors.text,
     fontFamily: monoFont,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "500",
   },
 
   inputRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-end",
     paddingHorizontal: 8,
     paddingTop: 8,
     paddingBottom: 8,
@@ -778,25 +874,10 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     backgroundColor: colors.bg,
   },
-  historyBtn: {
-    width: 38,
-    height: 42,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.bgElevated,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  historyBtnDisabled: { opacity: 0.35 },
-  historyBtnText: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: "700",
-    lineHeight: 20,
-  },
   input: {
     flex: 1,
+    minHeight: 44,
+    maxHeight: COMPOSER_MAX_HEIGHT,
     backgroundColor: colors.inputBg,
     borderRadius: radii.md,
     paddingHorizontal: 12,
@@ -813,6 +894,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.primary,
     borderRadius: radii.md,
+    minHeight: 44,
     minWidth: 64,
   },
   sendBtnDisabled: { opacity: 0.45 },

@@ -21,6 +21,21 @@ export interface OpenSessionResult {
   auth?: AuthResult;
 }
 
+export async function applyAuth(
+  client: TermLoopClient,
+  conn: SavedConnection
+): Promise<{ auth?: AuthResult; authenticated: boolean }> {
+  if (conn.deviceId && conn.accessToken) {
+    const auth = await client.authWithToken(conn.deviceId, conn.accessToken);
+    return { auth, authenticated: true };
+  }
+  if (conn.password) {
+    const auth = await client.authWithPassword(conn.password);
+    return { auth, authenticated: true };
+  }
+  return { authenticated: false };
+}
+
 export async function openSession(
   conn: SavedConnection
 ): Promise<OpenSessionResult> {
@@ -33,11 +48,7 @@ export async function openSession(
 
   let auth: AuthResult | undefined;
   try {
-    if (conn.deviceId && conn.accessToken) {
-      auth = await client.authWithToken(conn.deviceId, conn.accessToken);
-    } else if (conn.password) {
-      auth = await client.authWithPassword(conn.password);
-    }
+    ({ auth } = await applyAuth(client, conn));
   } catch (err) {
     await client.close();
     throw err;

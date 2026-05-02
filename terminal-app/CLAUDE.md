@@ -1,7 +1,8 @@
 # terminal-app — Context
 
-Thin React Native (Expo) client for TermLoop. Pairs with the desktop app
-via QR, talks to it over newline-delimited JSON on a raw TCP socket.
+TermLoop Mobile: thin React Native (Expo) client for TermLoop. Pairs with
+the desktop app via QR, talks to it over newline-delimited JSON on a raw
+TCP socket.
 
 ## What lives here
 
@@ -17,6 +18,9 @@ via QR, talks to it over newline-delimited JSON on a raw TCP socket.
 | `lib/tcp-transport.ts` | `TcpTransport` — NDJSON over TCP via `react-native-tcp-socket` |
 | `lib/session.ts` | Module-scope active session (one connection at a time) |
 | `lib/connections.ts` | Catalog: metadata in AsyncStorage, secrets in expo-secure-store |
+| `lib/last-connection.ts` | Last successful connection id for launch auto-connect |
+| `lib/last-terminal.ts` | Last opened terminal per connection for resume |
+| `lib/connection-health.ts` | Short-lived authenticated online/offline probe |
 | `lib/theme.ts` | Colors + mono font — single source for dark theme |
 | `eas.json` | EAS Build profiles for development / preview / staging / production |
 | `docs/deployment.md` | Mobile deployment runbook and release guardrails |
@@ -52,6 +56,14 @@ via QR, talks to it over newline-delimited JSON on a raw TCP socket.
    are internal builds; `staging` and `production` are store builds with
    auto-submit. Do not change channels/profile names without updating
    `docs/deployment.md` and `.github/workflows/mobile-app.yml`.
+9. **App identity is intentional.** Display name is `TermLoop Mobile`,
+   slug is `termloop-mobile`, URL scheme is `termloop-mobile`, and iOS /
+   Android ids are `ai.termloop.mobile`. Update `app.json`, native iOS
+   config, and `docs/deployment.md` together if this changes.
+10. **Permissions stay minimal.** Camera is for QR pairing, local-network
+   access is for the Mac TCP bridge, Android network permissions are for
+   the same bridge. Do not add microphone permission unless a microphone
+   feature exists.
 
 ## When adding code
 
@@ -97,7 +109,7 @@ via QR, talks to it over newline-delimited JSON on a raw TCP socket.
 | Method | Params | Result |
 |---|---|---|
 | `system.ping` | – | `{ pong: true }` |
-| `pairing.claim` | `{ token, device_name }` | `{ authenticated, device_id, device_name, access_token, server_name, capabilities }` |
+| `pairing.claim` | `{ token, device_name, device_id? }` | `{ authenticated, device_id, device_name, access_token, server_name, capabilities }` |
 | `auth.token` | `{ device_id, access_token }` | `{ authenticated, device_id, device_name, server_name, capabilities }` |
 | `auth.login` | `{ password }` | `{ authenticated, server_name, capabilities }` |
 | `project.list` | – | `{ projects: ProjectSummary[] }` |
@@ -105,10 +117,10 @@ via QR, talks to it over newline-delimited JSON on a raw TCP socket.
 | `project.switch` | `{ project_id }` | `{ ok: true }` |
 | `workspace.list` | – | `{ workspaces: WorkspaceSummary[] }` |
 | `surface.list` | `{ workspace_id }` | `{ surfaces: ... }` |
-| `surface.read_text` | `{ workspace_id, surface_id?, format? }` | `{ text, base64?, workspace_id, workspace_ref?, surface_id, surface_ref?, window_id?, window_ref? }` |
+| `surface.read_text` | `{ workspace_id, surface_id?, format?, history_lines? }` | `{ text, base64?, workspace_id, workspace_ref?, surface_id, surface_ref?, window_id?, window_ref? }` |
 | `surface.send_text` | `{ workspace_id, text, surface_id? }` | `{ ok: true }` |
 | `surface.send_key` | `{ workspace_id, key, surface_id? }` | `{ ok: true }` |
-| `surface.subscribe` | `{ workspace_id, surface_id?, format? }` | `{ subscription_id }` |
+| `surface.subscribe` | `{ workspace_id, surface_id?, format?, history_lines? }` | `{ subscription_id, format?, history_lines? }` |
 | `surface.unsubscribe` | `{ subscription_id }` | `{ ok: true }` |
 
 ### Server-pushed events (V2 streaming)
@@ -141,6 +153,8 @@ defined; otherwise the call surfaces an inline error.
 | Enter | `enter` | `\r` |
 | Up arrow | `up` | – |
 | Down arrow | `down` | – |
+| Left arrow | `left` | `\x1b[D` |
+| Right arrow | `right` | `\x1b[C` |
 | Ctrl-C | `Ctrl-C` | `\x03` |
 | Ctrl-D | `Ctrl-D` | `\x04` |
 
@@ -163,7 +177,9 @@ V1 is considered the QR-paired thin-client baseline:
 - Mac `Connect Mobile` enables TCP, shows QR, lists paired devices, and can revoke.
 - Mobile scans QR, claims a device token, stores secrets in SecureStore, and reauths with `auth.token`.
 - Connected screen loads current project, filters workspaces by active project, and opens terminal surfaces.
-- Terminal screen supports read/send/key accessory row and focused polling only while mounted/focused.
+- Connections screen can auto-connect to the last successful connection once per launch/focus cycle.
+- Connected screen saves the last opened terminal per connection; reconnect resumes it when still valid.
+- Terminal screen supports live `surface.subscribe`, `format: "vt"`, `history_lines: 500`, ANSI SGR rendering, read/send/key accessory row, and polling fallback only when live streaming degrades.
 
 Before calling V1 done, run the smoke checklist in `docs/v1-smoke.md`.
 
@@ -172,6 +188,8 @@ Before calling V1 done, run the smoke checklist in `docs/v1-smoke.md`.
 | Field type | Where | Key shape |
 |---|---|---|
 | Connection metadata | AsyncStorage | `termloop.connections.v2` (single JSON list) |
+| Last successful connection | AsyncStorage | `termloop.last_connection.v1` |
+| Last terminal per connection | AsyncStorage | `termloop.last_terminal.v1` |
 | `accessToken` | SecureStore | `termloop.access_token.<id>` |
 | `password` | SecureStore | `termloop.password.<id>` |
 
@@ -197,11 +215,11 @@ credentials should edit/delete the existing row.
 ## Pending / known gaps
 
 - `client.resize()` is a no-op until backend exposes a PTY resize API.
-- No reconnect/backoff on socket drop.
-- `terminal.tsx` is a 64K-char scrolling view. `lib/ansi.ts` parses SGR
-  (color/bold/italic/underline) from `format: "vt"` output and strips
-  cursor/clear sequences — it does not maintain a real screen grid. On
-  parse failure the buffer renders via `stripAnsi(...)` plain.
+- `terminal.tsx` is a scrollback view with a 1200-line client ring buffer.
+  `lib/ansi.ts` parses SGR (color/bold/dim/italic/underline) from
+  `format: "vt"` output and strips cursor/clear sequences — it does not
+  maintain a real screen grid. On parse failure the buffer renders via
+  `stripAnsi(...)` plain.
 
 ## Hard rules
 

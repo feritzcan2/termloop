@@ -81,6 +81,10 @@ export function pickTerminalSurface(
   return terminals.find((s) => s.focused) ?? terminals[0];
 }
 
+export function surfaceLabel(s: SurfaceSummary): string {
+  return s.title || s.name || s.kind || "Terminal";
+}
+
 export type SurfaceFormat = "plain" | "vt";
 
 export interface SurfaceText {
@@ -177,7 +181,8 @@ export interface TermLoopClient {
   ping(): Promise<PingResult>;
   claimPairing(
     payload: PairingPayload,
-    deviceName: string
+    deviceName: string,
+    existingDeviceId?: string
   ): Promise<PairingClaimResult>;
   authWithToken(deviceId: string, accessToken: string): Promise<AuthResult>;
   authWithPassword(password: string): Promise<AuthResult>;
@@ -312,10 +317,11 @@ export function createTermLoopClient(opts: {
     async ping() {
       return call<PingResult>("system.ping");
     },
-    async claimPairing(payload, deviceName) {
+    async claimPairing(payload, deviceName, existingDeviceId) {
       return call<PairingClaimResult>("pairing.claim", {
         token: payload.token,
         device_name: deviceName,
+        ...(existingDeviceId ? { device_id: existingDeviceId } : {}),
       });
     },
     async authWithToken(deviceId, accessToken) {

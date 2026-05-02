@@ -24,7 +24,7 @@ enum TermLoopMobilePairingStore {
     private struct DeviceRecord: Codable {
         let deviceId: String
         var deviceName: String
-        let tokenHash: String
+        var tokenHash: String
         let createdAt: TimeInterval
         var lastSeenAt: TimeInterval?
         var revokedAt: TimeInterval?
@@ -41,6 +41,8 @@ enum TermLoopMobilePairingStore {
     private static let defaultPairingTTL: TimeInterval = 120
     private static let maxPairingTTL: TimeInterval = 600
     private static let minPairingTTL: TimeInterval = 30
+    private static let revokedDeviceRetention: TimeInterval = 30 * 24 * 60 * 60
+    private static let maxStoredDevices = 100
 
     static func createPairing(params: [String: Any]) -> TerminalController.V2CallResult {
         let ttlSeconds = sanitizedTTL(params["ttl_seconds"])
@@ -83,16 +85,28 @@ enum TermLoopMobilePairingStore {
             return .err(code: "pairing_invalid", message: "Pairing token is invalid or expired", data: nil)
         }
         let accessToken = randomToken()
-        let record = DeviceRecord(
-            deviceId: UUID().uuidString,
-            deviceName: deviceName,
-            tokenHash: tokenHash(accessToken),
-            createdAt: now,
-            lastSeenAt: now,
-            revokedAt: nil
-        )
         var devices = loadDevicesLocked()
-        devices.append(record)
+        let requestedDeviceId = nonEmptyString(params["device_id"])
+        let record: DeviceRecord
+        if let requestedDeviceId,
+           let index = devices.firstIndex(where: { $0.deviceId == requestedDeviceId }) {
+            devices[index].deviceName = deviceName
+            devices[index].tokenHash = tokenHash(accessToken)
+            devices[index].lastSeenAt = now
+            devices[index].revokedAt = nil
+            record = devices[index]
+        } else {
+            record = DeviceRecord(
+                deviceId: UUID().uuidString,
+                deviceName: deviceName,
+                tokenHash: tokenHash(accessToken),
+                createdAt: now,
+                lastSeenAt: now,
+                revokedAt: nil
+            )
+            devices.append(record)
+        }
+        devices = prunedDevices(devices, now: now)
         let saved = saveDevicesLocked(devices)
         lock.unlock()
 
@@ -132,7 +146,7 @@ enum TermLoopMobilePairingStore {
         }
         devices[index].lastSeenAt = now
         let record = devices[index]
-        _ = saveDevicesLocked(devices)
+        _ = saveDevicesLocked(prunedDevices(devices, now: now))
         lock.unlock()
 
         return .ok([
@@ -164,7 +178,7 @@ enum TermLoopMobilePairingStore {
             return .err(code: "not_found", message: "Mobile device not found", data: nil)
         }
         devices[index].revokedAt = now
-        let saved = saveDevicesLocked(devices)
+        let saved = saveDevicesLocked(prunedDevices(devices, now: now))
         lock.unlock()
         guard saved else {
             return .err(code: "internal_error", message: "Failed to revoke mobile device", data: nil)
@@ -248,13 +262,24 @@ enum TermLoopMobilePairingStore {
             return cachedDevices
         }
         guard let url = devicesFileURL(),
-              let data = try? Data(contentsOf: url),
-              let decoded = try? JSONDecoder().decode(DeviceFile.self, from: data) else {
+              FileManager.default.fileExists(atPath: url.path) else {
             cachedDevices = []
             return []
         }
-        cachedDevices = decoded.devices
-        return decoded.devices
+        do {
+            let data = try Data(contentsOf: url)
+            let decoded = try JSONDecoder().decode(DeviceFile.self, from: data)
+            let devices = prunedDevices(decoded.devices, now: Date().timeIntervalSince1970)
+            cachedDevices = devices
+            if devices.count != decoded.devices.count {
+                _ = saveDevicesLocked(devices)
+            }
+            return devices
+        } catch {
+            backupCorruptDevicesFile(url)
+            cachedDevices = []
+            return []
+        }
     }
 
     @discardableResult
@@ -281,6 +306,33 @@ enum TermLoopMobilePairingStore {
     private static func devicesFileURL() -> URL? {
         SocketControlPasswordStore.defaultPasswordFileURL()?.deletingLastPathComponent()
             .appendingPathComponent("mobile-devices.json", isDirectory: false)
+    }
+
+    private static func prunedDevices(_ devices: [DeviceRecord], now: TimeInterval) -> [DeviceRecord] {
+        let active = devices.filter { $0.revokedAt == nil }
+        let revoked = devices.filter { record in
+            guard let revokedAt = record.revokedAt else { return false }
+            return now - revokedAt <= revokedDeviceRetention
+        }
+        let remainingSlots = max(0, maxStoredDevices - active.count)
+        let retainedRevoked = revoked
+            .sorted { lhs, rhs in
+                deviceSortDate(lhs) > deviceSortDate(rhs)
+            }
+            .prefix(remainingSlots)
+            .map { $0 }
+        return active + retainedRevoked
+    }
+
+    private static func deviceSortDate(_ record: DeviceRecord) -> TimeInterval {
+        record.lastSeenAt ?? record.revokedAt ?? record.createdAt
+    }
+
+    private static func backupCorruptDevicesFile(_ url: URL) {
+        let stamp = Int(Date().timeIntervalSince1970)
+        let backupURL = url.deletingLastPathComponent()
+            .appendingPathComponent("mobile-devices.corrupt-\(stamp).json", isDirectory: false)
+        try? FileManager.default.moveItem(at: url, to: backupURL)
     }
 
     private static func tokenHash(_ token: String) -> String {

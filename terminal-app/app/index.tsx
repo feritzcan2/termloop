@@ -1,5 +1,5 @@
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { pingConnection, type HealthStatus } from "../lib/connection-health";
 import {
   clearConnectionSecrets,
   connectionNeedsReauth,
@@ -18,7 +19,17 @@ import {
   markConnected,
   type SavedConnection,
 } from "../lib/connections";
-import { friendlyTransportError } from "../lib/errors";
+import { CONNECT_MOBILE_HINT, friendlyTransportError } from "../lib/errors";
+import {
+  clearLastConnection,
+  getLastConnection,
+  saveLastConnection,
+} from "../lib/last-connection";
+import {
+  clearLastTerminal,
+  getLastTerminal,
+  validateLastTerminal,
+} from "../lib/last-terminal";
 import { openSession } from "../lib/session";
 import { colors, radii } from "../lib/theme";
 import { RpcCallError } from "../lib/termloop-client";
@@ -26,6 +37,7 @@ import { RpcCallError } from "../lib/termloop-client";
 interface Row {
   conn: SavedConnection;
   lastLabel: string;
+  health: HealthStatus;
 }
 
 type ConnectionStatus = "paired" | "password" | "reauth";
@@ -36,20 +48,65 @@ const STATUS_LABEL: Record<ConnectionStatus, string> = {
   reauth: "NEEDS RE-PAIRING",
 };
 
+const HEALTH_LABEL: Record<HealthStatus, string> = {
+  unknown: "Checking…",
+  online: "Online",
+  offline: "Offline",
+  needs_reauth: "Needs re-pairing",
+};
+
+const HEALTH_DOT: Record<HealthStatus, string> = {
+  unknown: colors.sub,
+  online: colors.success,
+  offline: colors.danger,
+  needs_reauth: colors.danger,
+};
+
 const ItemSep = () => <View style={styles.cardGap} />;
 
 export default function ConnectionListScreen() {
   const router = useRouter();
   const [items, setItems] = useState<SavedConnection[] | null>(null);
   const [connectingId, setConnectingId] = useState<string | null>(null);
+  const [health, setHealth] = useState<Record<string, HealthStatus>>({});
+  // Auto-connect runs at most once per screen mount, even if the user
+  // bounces back and re-focuses, so a failure never flips into a retry loop.
+  const autoTriedRef = useRef(false);
+  const onConnectRef = useRef<(c: SavedConnection) => void>(() => {});
+  const connectingIdRef = useRef<string | null>(null);
+  connectingIdRef.current = connectingId;
 
   useFocusEffect(
     useCallback(() => {
       let alive = true;
       listConnections()
-        .then((list) => {
+        .then(async (list) => {
           if (!alive) return;
           setItems((prev) => (sameIds(prev, list) ? prev : list));
+          // Probes run in parallel so a slow/unreachable Mac never
+          // blocks rendering of the other rows.
+          for (const c of list) {
+            if (connectionNeedsReauth(c)) continue;
+            pingConnection(c).then((res) => {
+              if (!alive) return;
+              const next: HealthStatus = res.ok ? "online" : "offline";
+              setHealth((prev) =>
+                prev[c.id] === next ? prev : { ...prev, [c.id]: next }
+              );
+            });
+          }
+          if (autoTriedRef.current) return;
+          const lastId = await getLastConnection().catch(() => null);
+          if (!alive || !lastId) return;
+          const target = list.find((c) => c.id === lastId);
+          if (!target) {
+            await clearLastConnection().catch(() => {});
+            return;
+          }
+          if (connectionNeedsReauth(target)) return;
+          if (connectingIdRef.current) return;
+          autoTriedRef.current = true;
+          onConnectRef.current(target);
         })
         .catch(() => {
           if (alive) setItems([]);
@@ -67,8 +124,11 @@ export default function ConnectionListScreen() {
         lastLabel: conn.lastConnectedAt
           ? ` · last ${new Date(conn.lastConnectedAt).toLocaleString()}`
           : "",
+        health: connectionNeedsReauth(conn)
+          ? "needs_reauth"
+          : (health[conn.id] ?? "unknown"),
       })),
-    [items]
+    [items, health]
   );
 
   const onConnect = useCallback(
@@ -88,15 +148,36 @@ export default function ConnectionListScreen() {
       setConnectingId(conn.id);
       try {
         const { client } = await openSession(conn);
-        const pong = await client.ping();
-        if (!pong.pong) throw new Error("ping failed");
         await markConnected(conn.id);
+        await saveLastConnection(conn.id).catch(() => {});
+
+        const last = await getLastTerminal(conn.id).catch(() => null);
+        if (last) {
+          const valid = await validateLastTerminal(client, last);
+          if (valid) {
+            // Push /connected first so the terminal screen's back button
+            // returns to the workspace list, not the connection list.
+            router.push("/connected");
+            router.push({
+              pathname: "/connected/terminal",
+              params: {
+                workspaceId: last.workspaceId,
+                surfaceId: last.surfaceId,
+                name: last.workspaceName,
+                surfaceName: last.surfaceName,
+              },
+            });
+            return;
+          }
+          await clearLastTerminal(conn.id).catch(() => {});
+        }
         router.push("/connected");
       } catch (err) {
         const tokenRejected =
           err instanceof RpcCallError &&
           (err.code === "invalid_token" ||
             err.code === "unauthorized" ||
+            err.code === "auth_failed" ||
             err.code === "not_found");
 
         if (tokenRejected && conn.accessToken) {
@@ -117,6 +198,8 @@ export default function ConnectionListScreen() {
     [router]
   );
 
+  onConnectRef.current = onConnect;
+
   const onDelete = useCallback((conn: SavedConnection) => {
     Alert.alert("Delete connection?", conn.name, [
       { text: "Cancel", style: "cancel" },
@@ -125,6 +208,13 @@ export default function ConnectionListScreen() {
         style: "destructive",
         onPress: async () => {
           await deleteConnection(conn.id);
+          await clearLastTerminal(conn.id).catch(() => {});
+          const lastId = await getLastConnection().catch(() => null);
+          if (lastId === conn.id) {
+            await clearLastConnection().catch(() => {});
+            // Allow auto-connect to fire again if the user re-pairs.
+            autoTriedRef.current = false;
+          }
           setItems(await listConnections());
         },
       },
@@ -219,6 +309,22 @@ export default function ConnectionListScreen() {
                     {item.conn.host}:{item.conn.port}
                     {item.lastLabel}
                   </Text>
+                  <View style={styles.healthRow}>
+                    <View
+                      style={[
+                        styles.healthDot,
+                        { backgroundColor: HEALTH_DOT[item.health] },
+                      ]}
+                    />
+                    <Text style={styles.healthLabel}>
+                      {HEALTH_LABEL[item.health]}
+                    </Text>
+                    {item.health === "offline" ? (
+                      <Text style={styles.healthHint} numberOfLines={1}>
+                        · {CONNECT_MOBILE_HINT}
+                      </Text>
+                    ) : null}
+                  </View>
                   <View style={styles.cardActions}>
                     {isConnecting ? (
                       <ActivityIndicator color={colors.primary} />
@@ -390,4 +496,14 @@ const styles = StyleSheet.create({
   statusPasswordText: { color: colors.sub },
   statusReauthText: { color: colors.danger },
   reauthHint: { color: colors.danger, fontSize: 12, fontWeight: "500" },
+
+  healthRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 4,
+  },
+  healthDot: { width: 6, height: 6, borderRadius: 3 },
+  healthLabel: { color: colors.sub, fontSize: 11, fontWeight: "500" },
+  healthHint: { color: colors.hint, fontSize: 11, flexShrink: 1 },
 });

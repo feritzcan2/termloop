@@ -159,9 +159,22 @@ private struct MobilePairingSheet: View {
     @State private var pairing: PairingDisplay?
     @State private var devices: [MobileDeviceDisplay] = []
     @State private var errorMessage: String?
+    @State private var successMessage: String?
     @State private var now = Date()
     @State private var lastDeviceReload = Date.distantPast
+    @State private var didLoadDevices = false
+    @State private var knownActiveDeviceIds: Set<String> = []
+    @State private var bridgeStatus: TermLoopTCPBridge.StatusSnapshot =
+        TermLoopTCPBridge.shared.currentStatus()
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    private var activeDevices: [MobileDeviceDisplay] {
+        devices.filter { !$0.revoked }
+    }
+
+    private var revokedDeviceCount: Int {
+        devices.filter { $0.revoked }.count
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -175,6 +188,19 @@ private struct MobilePairingSheet: View {
                 Spacer()
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.defaultAction)
+            }
+
+            bridgeStatusView
+
+            if let successMessage {
+                Text(successMessage)
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(.green)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.green.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
             }
 
             Group {
@@ -196,7 +222,7 @@ private struct MobilePairingSheet: View {
                             Text(pairingStatusText(pairing))
                                 .foregroundStyle(pairing.isExpired(at: now) ? .red : .secondary)
                             HStack(spacing: 8) {
-                                Button("Copy payload") {
+                                Button("Copy QR payload") {
                                     TermLoopMobilePasteboard.copy(pairing.payloadString)
                                 }
                                 Button(pairing.isExpired(at: now) ? "Regenerate QR" : "New QR") {
@@ -204,6 +230,10 @@ private struct MobilePairingSheet: View {
                                 }
                             }
                             Text("Keep this window open while pairing. Only the TermLoop mobile app can claim this QR token.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text("Paired devices stay authorized until you revoke them below.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -224,12 +254,12 @@ private struct MobilePairingSheet: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Paired Devices")
+                    Text(activeDevices.isEmpty ? "Paired Devices" : "Paired Devices (\(activeDevices.count))")
                         .font(.headline)
                     Spacer()
                     Button("Refresh") { loadDevices() }
                 }
-                if devices.isEmpty {
+                if activeDevices.isEmpty {
                     Text("No paired devices yet.")
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -237,28 +267,60 @@ private struct MobilePairingSheet: View {
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 8) {
-                            ForEach(devices) { device in
+                            ForEach(activeDevices) { device in
                                 deviceRow(device)
                             }
                         }
                     }
                     .frame(maxHeight: 170)
                 }
+                if revokedDeviceCount > 0 {
+                    Text("\(revokedDeviceCount) revoked device\(revokedDeviceCount == 1 ? "" : "s") hidden.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer(minLength: 0)
         }
         .padding(22)
-        .frame(width: 680, height: 540)
+        .frame(width: 700, height: 590)
         .onAppear {
             createPairing()
             loadDevices()
         }
         .onReceive(timer) { date in
             now = date
+            bridgeStatus = TermLoopTCPBridge.shared.currentStatus()
             if date.timeIntervalSince(lastDeviceReload) >= 3 {
                 loadDevices()
             }
         }
+    }
+
+    private var bridgeStatusView: some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(bridgeStatus.isRunning ? Color.green : Color.red.opacity(0.75))
+                .frame(width: 9, height: 9)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(bridgeStatus.isRunning ? "Mobile bridge is listening" : "Mobile bridge is not listening")
+                    .font(.callout.weight(.medium))
+                Text(bridgeStatus.isRunning
+                     ? "QR uses \(pairing?.host ?? Self.localIPv4Address() ?? bridgeStatus.bindHost):\(bridgeStatus.port). Use the same Wi-Fi or Tailscale."
+                     : "Click Connect Mobile again to enable the bridge.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if bridgeStatus.isRunning {
+                Text("\(bridgeStatus.bindHost):\(bridgeStatus.port)")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     @ViewBuilder
@@ -295,6 +357,7 @@ private struct MobilePairingSheet: View {
 
     private func createPairing() {
         errorMessage = nil
+        successMessage = nil
         pairing = nil
         let serverName = Host.current().localizedName ?? "TermLoop Mac"
         let result = TermLoopMobilePairingStore.createPairing(params: [
@@ -346,6 +409,14 @@ private struct MobilePairingSheet: View {
                 if lhs.revoked != rhs.revoked { return !lhs.revoked }
                 return lhs.sortDate > rhs.sortDate
             }
+        let activeIds = Set(devices.filter { !$0.revoked }.map(\.id))
+        let newIds = activeIds.subtracting(knownActiveDeviceIds)
+        if didLoadDevices,
+           let paired = devices.first(where: { newIds.contains($0.id) }) {
+            successMessage = "\(paired.deviceName) paired. It will stay authorized until revoked."
+        }
+        knownActiveDeviceIds = activeIds
+        didLoadDevices = true
     }
 
     private func revoke(_ device: MobileDeviceDisplay) {

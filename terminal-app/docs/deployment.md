@@ -5,6 +5,32 @@ TermLoop Mobile uses native modules (`react-native-tcp-socket`,
 real builds must be made with EAS or `expo run:*`. Expo Go is not a supported
 runtime for the app.
 
+## App Identity
+
+| Field | Value |
+|---|---|
+| Display name | `TermLoop Mobile` |
+| Expo slug | `termloop-mobile` |
+| URL scheme | `termloop-mobile` |
+| iOS bundle identifier | `ai.termloop.mobile` |
+| Android package | `ai.termloop.mobile` |
+
+The app may keep accepting the legacy `termloop` URL scheme in native iOS
+builds for local/dev compatibility, but new links should use
+`termloop-mobile`.
+
+## Permissions
+
+| Platform | Permission | Why |
+|---|---|---|
+| iOS | Camera | Scan the pairing QR shown by TermLoop on the Mac |
+| iOS | Local Network | Connect to the Mac-side TCP bridge on LAN/Tailscale |
+| Android | Camera | Scan the pairing QR shown by TermLoop on the Mac |
+| Android | Internet / network state | Open the TCP bridge and report reachability |
+
+The app does not need microphone access. If native files are regenerated,
+keep microphone permission out unless a real microphone feature is added.
+
 ## Build Profiles
 
 | Profile | Audience | Command |
@@ -99,6 +125,9 @@ Optional manual input:
 
 - Secrets (`accessToken`, password) must stay in `expo-secure-store`.
 - Metadata can stay in AsyncStorage.
+- iOS `Info.plist` and `app.json` must agree on `TermLoop Mobile`,
+  `ai.termloop.mobile`, camera, local-network, and encryption declarations.
+- Android package id must stay `ai.termloop.mobile`.
 - `npm run typecheck` must pass before any build.
 - Use `preview` for internal QA before `staging`.
 - Use `staging`/TestFlight before `production`.

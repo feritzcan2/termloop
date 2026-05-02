@@ -20,6 +20,7 @@ import {
   upsertConnection,
 } from "../../lib/connections";
 import { friendlyTransportError } from "../../lib/errors";
+import { saveLastConnection } from "../../lib/last-connection";
 import { openSession } from "../../lib/session";
 import { TcpTransport } from "../../lib/tcp-transport";
 import {
@@ -44,6 +45,10 @@ export default function ScanPairingScreen() {
       setBusy(true);
       try {
         const payload = parsePairingPayload(raw.trim());
+        const existing = await findConnectionMetaByEndpoint(
+          payload.host,
+          payload.port
+        );
         const transport = new TcpTransport({
           host: payload.host,
           port: payload.port,
@@ -53,16 +58,13 @@ export default function ScanPairingScreen() {
         try {
           result = await client.claimPairing(
             payload,
-            deviceName.trim() || "Mobile"
+            deviceName.trim() || "Mobile",
+            existing?.deviceId
           );
         } finally {
           await client.close();
         }
 
-        const existing = await findConnectionMetaByEndpoint(
-          payload.host,
-          payload.port
-        );
         const saved = await upsertConnection({
           id: existing?.id,
           name:
@@ -80,6 +82,7 @@ export default function ScanPairingScreen() {
         try {
           await openSession(saved);
           await markConnected(saved.id);
+          await saveLastConnection(saved.id).catch(() => {});
           router.replace("/connected");
         } catch (err) {
           Alert.alert(

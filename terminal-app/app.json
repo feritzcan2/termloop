@@ -1,24 +1,27 @@
 {
   "expo": {
-    "name": "TermLoop",
+    "name": "TermLoop Mobile",
     "slug": "termloop-mobile",
     "version": "0.1.0",
     "orientation": "portrait",
-    "scheme": "termloop",
+    "scheme": "termloop-mobile",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "ai.agentloop.mobile",
+      "bundleIdentifier": "ai.termloop.mobile",
       "infoPlist": {
-        "NSCameraUsageDescription": "TermLoop uses the camera to scan pairing QR codes shown by the desktop app.",
+        "NSCameraUsageDescription": "TermLoop Mobile uses the camera to scan pairing QR codes shown by TermLoop on your Mac.",
+        "NSLocalNetworkUsageDescription": "TermLoop Mobile connects to TermLoop on your Mac over your local network or Tailscale.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "ai.agentloop.mobile",
+      "package": "ai.termloop.mobile",
       "permissions": [
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
       ]
     },
     "plugins": [
@@ -26,7 +29,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "TermLoop uses the camera to scan pairing QR codes shown by the desktop app."
+          "cameraPermission": "TermLoop Mobile uses the camera to scan pairing QR codes shown by TermLoop on your Mac."
         }
       ],
       "expo-secure-store"

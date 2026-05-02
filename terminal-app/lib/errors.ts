@@ -1,5 +1,8 @@
 import { RpcCallError } from "./termloop-client";
 
+export const CONNECT_MOBILE_HINT =
+  "Open TermLoop on your Mac and enable Connect Mobile.";
+
 export function friendlyTransportError(err: unknown): string {
   const code = err instanceof RpcCallError ? err.code : "";
   const msg = String((err as Error)?.message ?? err);
@@ -15,14 +18,8 @@ export function friendlyTransportError(err: unknown): string {
       "Expo Go cannot open raw sockets. Run `npx expo prebuild --clean`."
     );
   }
-  if (/connect timeout/i.test(msg)) {
-    return (
-      "Couldn't reach the Mac before timeout. Check that it's on the same Wi-Fi " +
-      "and TermLoop's Connect Mobile is enabled."
-    );
-  }
-  if (/ECONNREFUSED/i.test(msg)) {
-    return "Connection refused. Make sure TermLoop is open and Connect Mobile is enabled.";
+  if (/connect timeout/i.test(msg) || /ECONNREFUSED/i.test(msg)) {
+    return CONNECT_MOBILE_HINT;
   }
   if (/EHOSTUNREACH|ENETUNREACH/i.test(msg)) {
     return "Host unreachable. Check Wi-Fi and that the Mac is awake.";

@@ -22,7 +22,10 @@ export default function RootLayout() {
         <Stack.Screen name="connections/scan" options={{ title: "Pair" }} />
         <Stack.Screen name="connections/new" options={{ title: "Manual setup" }} />
         <Stack.Screen name="connected/index" options={{ title: "Connected" }} />
-        <Stack.Screen name="connected/terminal" options={{ title: "Terminal" }} />
+        <Stack.Screen
+          name="connected/terminal"
+          options={{ headerShown: false }}
+        />
       </Stack>
     </GestureHandlerRootView>
   );

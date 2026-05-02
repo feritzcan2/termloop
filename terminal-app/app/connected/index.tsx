@@ -11,13 +11,16 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { saveLastTerminal } from "../../lib/last-terminal";
 import {
   closeSession,
   getActiveAuth,
   getActiveClient,
+  getActiveConnectionId,
 } from "../../lib/session";
 import {
   pickTerminalSurface,
+  surfaceLabel,
   workspaceLabel,
   workspaceProjectId,
   type ProjectSummary,
@@ -129,13 +132,25 @@ export default function ConnectedScreen() {
         );
         return;
       }
+      const wsName = workspaceLabel(ws);
+      const surfaceName = surfaceLabel(surface);
+      const connectionId = getActiveConnectionId();
+      if (connectionId) {
+        await saveLastTerminal({
+          connectionId,
+          workspaceId: ws.id,
+          surfaceId: surface.id,
+          workspaceName: wsName,
+          surfaceName,
+        }).catch(() => {});
+      }
       router.push({
         pathname: "/connected/terminal",
         params: {
           workspaceId: ws.id,
           surfaceId: surface.id,
-          name: workspaceLabel(ws),
-          surfaceName: surface.title || surface.name || surface.kind || "Terminal",
+          name: wsName,
+          surfaceName,
         },
       });
     } catch (err) {

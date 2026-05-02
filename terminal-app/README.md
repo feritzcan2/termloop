@@ -1,9 +1,16 @@
-# terminal-app
+# TermLoop Mobile
 
 Thin React Native (Expo) client for TermLoop. The mobile app is a **paired
 client** — the desktop app generates a pairing QR, this app scans it, claims
 a token, and reconnects with that token on subsequent launches. Manual
 host/port/password setup remains as a fallback for development and recovery.
+
+## App identity
+
+- Display name: `TermLoop Mobile`
+- Expo slug: `termloop-mobile`
+- URL scheme: `termloop-mobile`
+- iOS bundle id / Android package: `ai.termloop.mobile`
 
 ## Run
 
@@ -65,6 +72,9 @@ lib/
   tcp-transport.ts         Real transport: NDJSON over TCP via react-native-tcp-socket
   errors.ts                User-facing connection/pairing error messages
   connections.ts           AsyncStorage-backed connection catalog
+  last-connection.ts       Last successful connection id for auto-connect
+  last-terminal.ts         Last opened terminal per connection for resume
+  connection-health.ts     Short-lived authenticated online/offline probe
   session.ts               Module-scope active client (one connection at a time)
   theme.ts                 Shared colors + fonts
 ```
@@ -101,7 +111,7 @@ single line terminated by `\n`.
 | Method | Params | Result |
 |---|---|---|
 | `system.ping` | – | `{ pong: true }` |
-| `pairing.claim` | `{ token, device_name }` | `{ authenticated, device_id, device_name, access_token, server_name, capabilities }` |
+| `pairing.claim` | `{ token, device_name, device_id? }` | `{ authenticated, device_id, device_name, access_token, server_name, capabilities }` |
 | `auth.token` | `{ device_id, access_token }` | `{ authenticated, device_id, device_name, server_name, capabilities }` |
 | `auth.login` | `{ password }` | `{ authenticated, server_name, capabilities }` |
 | `project.list` | – | `{ projects: ProjectSummary[] }` |
@@ -109,9 +119,11 @@ single line terminated by `\n`.
 | `project.switch` | `{ project_id }` | `{ ok: true }` |
 | `workspace.list` | – | `{ workspaces: WorkspaceSummary[] }` |
 | `surface.list` | `{ workspace_id }` | `{ surfaces: SurfaceSummary[] }` |
-| `surface.read_text` | `{ workspace_id, surface_id? }` | `{ text, base64?, workspace_id, workspace_ref?, surface_id, surface_ref?, window_id?, window_ref? }` |
+| `surface.read_text` | `{ workspace_id, surface_id?, format?, history_lines? }` | `{ text, base64?, workspace_id, workspace_ref?, surface_id, surface_ref?, window_id?, window_ref? }` |
 | `surface.send_text` | `{ workspace_id, text, surface_id? }` | `{ ok: true }` |
 | `surface.send_key` | `{ workspace_id, key, surface_id? }` | `{ ok: true }` |
+| `surface.subscribe` | `{ workspace_id, surface_id?, format?, history_lines? }` | `{ subscription_id, format?, history_lines? }` |
+| `surface.unsubscribe` | `{ subscription_id }` | `{ ok: true }` |
 
 `surface.resize` does not exist on the backend yet — `client.resize()` is a
 no-op until a real PTY resize API lands.
@@ -120,11 +132,18 @@ The terminal Send button sends command text with `surface.send_text`, then
 sends `surface.send_key` with `key: "enter"`; if the key call fails it falls
 back to `surface.send_text` with `"\r"`.
 
+Terminal streaming uses `surface.subscribe` with `format: "vt"` and
+`history_lines: 500`. Server-pushed `surface.snapshot` replaces the buffer,
+`surface.output` appends to it, and `surface.error` / subscribe failure falls
+back to focused polling.
+
 ## Storage
 
 | Field type | Where | Notes |
 |---|---|---|
 | Connection metadata | AsyncStorage `termloop.connections.v2` | id, name, host, port, deviceId, serverName, lastConnectedAt |
+| Last successful connection | AsyncStorage `termloop.last_connection.v1` | connectionId + updatedAt only |
+| Last terminal per connection | AsyncStorage `termloop.last_terminal.v1` | workspace/surface ids and display names only |
 | Secrets (`accessToken`, `password`) | `expo-secure-store` (Keychain on iOS / EncryptedSharedPreferences on Android) | One key per connection: `termloop.access_token.<id>` and `termloop.password.<id>` |
 
 Legacy v1 records (`termloop.connections.v1`) where secrets sat in
@@ -136,13 +155,16 @@ removed.
 | Module | Why | Build impact |
 |---|---|---|
 | `react-native-tcp-socket` | Real NDJSON-over-TCP transport for backend | Dev build only — not Expo Go |
-| `expo-camera` | Live QR scanner in pairing screen | Dev build only — not Expo Go |
+| `expo-camera` | Live QR scanner in pairing screen | Dev build only — not Expo Go; camera permission only |
 | `expo-secure-store` | Hardware-backed storage for `accessToken` / `password` | Dev build only — not Expo Go |
 | `expo-dev-client` | EAS development builds | Required for `developmentClient` profiles |
 | `expo-updates` | OTA JS/assets updates by EAS channel | Required for `eas:update:*` scripts |
 
 Run `npx expo prebuild --clean` after install. Autolinking handles native
 linking on both platforms.
+
+iOS also declares local-network access because the app connects to the
+Mac-side TermLoop TCP bridge. The app does not need microphone permission.
 
 ## Deployment
 
@@ -170,11 +192,10 @@ behavior.
 
 ## Pending backend / mobile work
 
-- Live terminal event stream (incremental surface updates / cursor / dirty rows)
 - Terminal PTY resize API (`client.resize()` is a no-op until then)
-- Reconnect / backoff on socket drop
-- ANSI/xterm parsing for the terminal view (currently a scrolling text view)
-- Polished terminal renderer/input model beyond the V1 accessory row
+- Full terminal emulation for cursor-addressing TUIs (vim/top/htop) is out
+  of scope for the current scrollback renderer.
+- Polished terminal renderer/input model beyond the current accessory row
 
 ## Swapping the transport
 
