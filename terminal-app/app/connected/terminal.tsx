@@ -1,6 +1,6 @@
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
@@ -15,6 +15,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { parseAnsi, stripAnsi } from "../../lib/ansi";
 import { friendlyTransportError } from "../../lib/errors";
 import { getActiveClient } from "../../lib/session";
 import type { SurfaceSubscription } from "../../lib/termloop-client";
@@ -108,7 +109,7 @@ export default function TerminalScreen() {
     inFlightRef.current = true;
     setRefreshing(true);
     try {
-      const s = await client.readSurface(workspaceId, surfaceId);
+      const s = await client.readSurface(workspaceId, surfaceId, "vt");
       if (aliveRef.current) {
         setBuffer(capLeft(s.text));
         setInlineError(null);
@@ -190,7 +191,8 @@ export default function TerminalScreen() {
                   startPolling();
                   return;
               }
-            }
+            },
+            "vt"
           );
           if (cancelled) {
             sub.unsubscribe().catch(() => {});
@@ -296,6 +298,14 @@ export default function TerminalScreen() {
     setFontIndex((i) => (((i + 1) % FONT_SIZES.length) as FontIndex));
   }, []);
 
+  const segments = useMemo(() => {
+    try {
+      return parseAnsi(buffer);
+    } catch {
+      return null;
+    }
+  }, [buffer]);
+
   if (!client || !workspaceId) return null;
 
   const fontSize = FONT_SIZES[fontIndex];
@@ -398,7 +408,13 @@ export default function TerminalScreen() {
               ]}
               selectable
             >
-              {buffer}
+              {segments
+                ? segments.map((seg, idx) => (
+                    <Text key={idx} style={seg.style}>
+                      {seg.text}
+                    </Text>
+                  ))
+                : stripAnsi(buffer)}
             </Text>
           </ScrollView>
         </ScrollView>

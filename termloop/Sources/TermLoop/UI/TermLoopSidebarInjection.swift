@@ -74,6 +74,7 @@ enum TermLoopSidebar {
             HStack(spacing: 6) {
                 SidebarSkillsCommandsButton()
                 MobilePairingButton()
+                CLISocketStatusChip()
             }
         }
     }

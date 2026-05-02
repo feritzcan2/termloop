@@ -72,10 +72,13 @@ GHOSTTY_SHA="$GHOSTTY_COMMIT"
 GHOSTTY_KEY="$GHOSTTY_SHA"
 GHOSTTY_TREE_PATH="${GHOSTTY_PATH:-termloop/ghostty}"
 UNTRACKED_FILES="$(git -C "$PARENT_ROOT" ls-files --others --exclude-standard -- "$GHOSTTY_TREE_PATH")"
-if ! git -C "$PARENT_ROOT" diff --quiet -- "$GHOSTTY_TREE_PATH" || [[ -n "$UNTRACKED_FILES" ]]; then
+if ! git -C "$PARENT_ROOT" diff --quiet -- "$GHOSTTY_TREE_PATH" \
+  || ! git -C "$PARENT_ROOT" diff --cached --quiet -- "$GHOSTTY_TREE_PATH" \
+  || [[ -n "$UNTRACKED_FILES" ]]; then
   DIRTY_HASH="$(
     {
       printf 'head=%s\n' "$GHOSTTY_SHA"
+      git -C "$PARENT_ROOT" diff --cached --binary -- "$GHOSTTY_TREE_PATH"
       git -C "$PARENT_ROOT" diff --binary -- "$GHOSTTY_TREE_PATH"
       if [[ -n "$UNTRACKED_FILES" ]]; then
         printf '\n--untracked--\n'

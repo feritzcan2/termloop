@@ -17,6 +17,7 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
         let socket: Int32
         let workspaceId: String
         let surfaceId: String?
+        let format: String
         let timer: DispatchSourceTimer
         var lastText: String
 
@@ -25,6 +26,7 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
             socket: Int32,
             workspaceId: String,
             surfaceId: String?,
+            format: String,
             lastText: String,
             timer: DispatchSourceTimer
         ) {
@@ -32,6 +34,7 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
             self.socket = socket
             self.workspaceId = workspaceId
             self.surfaceId = surfaceId
+            self.format = format
             self.lastText = lastText
             self.timer = timer
         }
@@ -52,6 +55,10 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
             return .err(code: "invalid_params", message: "Missing workspace_id", data: nil)
         }
         let surfaceId = normalizedString(params["surface_id"])
+        let format = normalizedFormat(params["format"])
+        guard let format else {
+            return .err(code: "invalid_params", message: "format must be plain or vt", data: nil)
+        }
         let socket = socketFd >= 0 ? socketFd : TermLoopTCPBridge.currentSocketFd()
         guard socket >= 0 else {
             return .err(code: "unavailable", message: "No active socket for subscription", data: nil)
@@ -59,7 +66,8 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
 
         let initial = TerminalController.shared.termLoopMobileReadSurfaceText(
             workspaceId: workspaceId,
-            surfaceId: surfaceId
+            surfaceId: surfaceId,
+            format: format
         )
         let initialText: String
         if case .ok(let payload) = initial,
@@ -80,6 +88,7 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
             socket: socket,
             workspaceId: workspaceId,
             surfaceId: surfaceId,
+            format: format,
             lastText: initialText,
             timer: timer
         )
@@ -101,7 +110,7 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
         if !entry.lastText.isEmpty {
             push(type: "surface.snapshot", subscriptionId: id, text: entry.lastText, socket: socket)
         }
-        return .ok(["subscription_id": id.uuidString])
+        return .ok(["subscription_id": id.uuidString, "format": format])
     }
 
     func unsubscribe(params: [String: Any], socketFd: Int32 = -1) -> TerminalController.V2CallResult {
@@ -149,17 +158,18 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
     }
 
     private func poll(subscriptionId: UUID) {
-        let snapshot: (workspaceId: String, surfaceId: String?)? = {
+        let snapshot: (workspaceId: String, surfaceId: String?, format: String)? = {
             lock.lock(); defer { lock.unlock() }
             guard let entry = entries[subscriptionId] else { return nil }
-            return (entry.workspaceId, entry.surfaceId)
+            return (entry.workspaceId, entry.surfaceId, entry.format)
         }()
         guard let snapshot else { return }
 
         Task { @MainActor in
             let result = TerminalController.shared.termLoopMobileReadSurfaceText(
                 workspaceId: snapshot.workspaceId,
-                surfaceId: snapshot.surfaceId
+                surfaceId: snapshot.surfaceId,
+                format: snapshot.format
             )
             TermLoopMobileSurfaceStreamStore.shared.deliverPollResult(
                 subscriptionId: subscriptionId,
@@ -273,5 +283,17 @@ final class TermLoopMobileSurfaceStreamStore: @unchecked Sendable {
         guard let value = raw as? String else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func normalizedFormat(_ raw: Any?) -> String? {
+        let value = normalizedString(raw) ?? "plain"
+        switch value.lowercased() {
+        case "plain", "text":
+            return "plain"
+        case "vt", "ansi":
+            return "vt"
+        default:
+            return nil
+        }
     }
 }

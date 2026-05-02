@@ -5970,6 +5970,9 @@ class TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
+        guard let format = v2SurfaceTextFormat(params: params) else {
+            return .err(code: "invalid_params", message: "format must be plain or vt", data: nil)
+        }
         var includeScrollback = v2Bool(params, "scrollback") ?? false
         let lineLimit = v2Int(params, "lines")
         if let lineLimit, lineLimit <= 0 {
@@ -6007,6 +6010,7 @@ class TerminalController {
 
             let response = readTerminalTextBase64(
                 terminalPanel: terminalPanel,
+                format: format,
                 includeScrollback: includeScrollback,
                 lineLimit: lineLimit
             )
@@ -6025,6 +6029,7 @@ class TerminalController {
             result = .ok([
                 "text": text,
                 "base64": base64,
+                "format": format,
                 "workspace_id": ws.id.uuidString,
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
                 "surface_id": surfaceId.uuidString,
@@ -6040,8 +6045,11 @@ class TerminalController {
     /// Narrow bridge for the mobile streaming backend. The stream registry
     /// lives under `TermLoop/Mobile`; this method keeps the actual terminal
     /// text read path single-sourced in the existing v2 surface reader.
-    func termLoopMobileReadSurfaceText(workspaceId: String, surfaceId: String?) -> V2CallResult {
-        var params: [String: Any] = ["workspace_id": workspaceId]
+    func termLoopMobileReadSurfaceText(workspaceId: String, surfaceId: String?, format: String = "plain") -> V2CallResult {
+        var params: [String: Any] = [
+            "workspace_id": workspaceId,
+            "format": format
+        ]
         if let surfaceId {
             params["surface_id"] = surfaceId
         }
@@ -6049,7 +6057,19 @@ class TerminalController {
     }
     // MARK: /termloop-hook
 
-    private func readTerminalTextBase64(terminalPanel: TerminalPanel, includeScrollback: Bool = false, lineLimit: Int? = nil) -> String {
+    private func v2SurfaceTextFormat(params: [String: Any]) -> String? {
+        let raw = v2String(params, "format")?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "plain"
+        switch raw {
+        case "plain", "text":
+            return "plain"
+        case "vt", "ansi":
+            return "vt"
+        default:
+            return nil
+        }
+    }
+
+    private func readTerminalTextBase64(terminalPanel: TerminalPanel, format: String = "plain", includeScrollback: Bool = false, lineLimit: Int? = nil) -> String {
         guard let surface = terminalPanel.surface.surface else { return "ERROR: Terminal surface not found" }
 
         func readSelectionText(pointTag: ghostty_point_tag_e) -> String? {
@@ -6072,7 +6092,10 @@ class TerminalController {
             )
 
             var text = ghostty_text_s()
-            guard ghostty_surface_read_text(surface, selection, &text) else {
+            let didRead = format == "vt"
+                ? ghostty_surface_read_text_vt(surface, selection, &text)
+                : ghostty_surface_read_text(surface, selection, &text)
+            guard didRead else {
                 return nil
             }
             defer {

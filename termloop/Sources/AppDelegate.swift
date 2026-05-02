@@ -2432,6 +2432,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var sessionAutosaveTimer: DispatchSourceTimer?
     private var sessionAutosaveTickInFlight = false
     private var sessionAutosaveDeferredRetryPending = false
+    private var socketHealthMonitorTimer: DispatchSourceTimer?
+    private var socketHealthCheckInFlight = false
+    private var lastSocketSelfHealRestartAt: Date = .distantPast
     private let sessionPersistenceQueue = DispatchQueue(
         label: "com.termloop.app.sessionPersistence",
         qos: .utility
@@ -2463,6 +2466,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private static let commandPaletteRequestGraceInterval: TimeInterval = 1.25
     private static let commandPalettePendingOpenMaxAge: TimeInterval = 8.0
     private static let sessionAutosaveTypingQuietPeriod: TimeInterval = 0.65
+    private static let socketHealthMonitorInterval: TimeInterval = 10
+    private static let socketSelfHealRestartCooldown: TimeInterval = 20
 
     var updateViewModel: UpdateViewModel {
         updateController.viewModel
@@ -3004,6 +3009,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // MARK: /termloop-hook
         _ = saveSessionSnapshot(includeScrollback: true, removeWhenEmpty: false)
         stopSessionAutosaveTimer()
+        stopSocketHealthMonitor()
         TerminalController.shared.stop()
         VSCodeServeWebController.shared.stop()
         BrowserProfileStore.shared.flushPendingSaves()
@@ -3030,6 +3036,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         installLifecycleSnapshotObserversIfNeeded()
         prepareStartupSessionSnapshotIfNeeded()
         startSessionAutosaveTimerIfNeeded()
+        startSocketHealthMonitorIfNeeded()
 #if DEBUG
         setupJumpUnreadUITestIfNeeded()
         setupTerminalCmdClickUITestIfNeeded()
@@ -4352,6 +4359,96 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sessionAutosaveTimer = nil
         sessionAutosaveTickInFlight = false
         sessionAutosaveDeferredRetryPending = false
+    }
+
+    private func startSocketHealthMonitorIfNeeded() {
+        guard socketHealthMonitorTimer == nil else { return }
+        let env = ProcessInfo.processInfo.environment
+        guard !isRunningUnderXCTest(env) else { return }
+
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(
+            deadline: .now() + Self.socketHealthMonitorInterval,
+            repeating: Self.socketHealthMonitorInterval,
+            leeway: .seconds(2)
+        )
+        timer.setEventHandler { [weak self] in
+            self?.runSocketHealthCheck(source: "timer")
+        }
+        socketHealthMonitorTimer = timer
+        timer.resume()
+    }
+
+    private func stopSocketHealthMonitor() {
+        socketHealthMonitorTimer?.cancel()
+        socketHealthMonitorTimer = nil
+        socketHealthCheckInFlight = false
+    }
+
+    private func runSocketHealthCheck(source: String) {
+        guard !isTerminatingApp,
+              !socketHealthCheckInFlight,
+              tabManager != nil,
+              let config = socketListenerConfigurationIfEnabled() else {
+            return
+        }
+
+        let socketPath = TerminalController.shared.activeSocketPath(preferredPath: config.path)
+        let health = TerminalController.shared.socketListenerHealth(expectedSocketPath: socketPath)
+        if !health.isHealthy {
+            restartSocketListenerForHealthFailure(
+                source: source,
+                socketPath: socketPath,
+                health: health,
+                pingResponse: nil
+            )
+            return
+        }
+
+        socketHealthCheckInFlight = true
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let pingResponse = TerminalController.probeSocketCommand(
+                "ping",
+                at: socketPath,
+                timeout: 0.35
+            )
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.socketHealthCheckInFlight = false
+                guard pingResponse != "PONG" else { return }
+                self.restartSocketListenerForHealthFailure(
+                    source: source,
+                    socketPath: socketPath,
+                    health: health,
+                    pingResponse: pingResponse
+                )
+            }
+        }
+    }
+
+    private func restartSocketListenerForHealthFailure(
+        source: String,
+        socketPath: String,
+        health: TerminalController.SocketListenerHealth,
+        pingResponse: String?
+    ) {
+        guard !isTerminatingApp else { return }
+        guard Date().timeIntervalSince(lastSocketSelfHealRestartAt) >= Self.socketSelfHealRestartCooldown else {
+            return
+        }
+        lastSocketSelfHealRestartAt = Date()
+
+        var signals = health.failureSignals
+        if signals.isEmpty, pingResponse != "PONG" {
+            signals.append("ping_timeout")
+        }
+        sentryBreadcrumb("socket.listener.self_heal", category: "socket", data: [
+            "path": socketPath,
+            "source": source,
+            "signals": signals.joined(separator: ","),
+            "pingResponse": pingResponse ?? ""
+        ])
+        restartSocketListenerIfEnabled(source: "selfHeal.\(source)")
     }
 
     private func installLifecycleSnapshotObserversIfNeeded() {

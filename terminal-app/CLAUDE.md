@@ -105,10 +105,10 @@ via QR, talks to it over newline-delimited JSON on a raw TCP socket.
 | `project.switch` | `{ project_id }` | `{ ok: true }` |
 | `workspace.list` | – | `{ workspaces: WorkspaceSummary[] }` |
 | `surface.list` | `{ workspace_id }` | `{ surfaces: ... }` |
-| `surface.read_text` | `{ workspace_id, surface_id? }` | `{ text, base64?, workspace_id, workspace_ref?, surface_id, surface_ref?, window_id?, window_ref? }` |
+| `surface.read_text` | `{ workspace_id, surface_id?, format? }` | `{ text, base64?, workspace_id, workspace_ref?, surface_id, surface_ref?, window_id?, window_ref? }` |
 | `surface.send_text` | `{ workspace_id, text, surface_id? }` | `{ ok: true }` |
 | `surface.send_key` | `{ workspace_id, key, surface_id? }` | `{ ok: true }` |
-| `surface.subscribe` | `{ workspace_id, surface_id? }` | `{ subscription_id }` |
+| `surface.subscribe` | `{ workspace_id, surface_id?, format? }` | `{ subscription_id }` |
 | `surface.unsubscribe` | `{ subscription_id }` | `{ ok: true }` |
 
 ### Server-pushed events (V2 streaming)
@@ -198,8 +198,10 @@ credentials should edit/delete the existing row.
 
 - `client.resize()` is a no-op until backend exposes a PTY resize API.
 - No reconnect/backoff on socket drop.
-- ANSI/xterm not parsed; `terminal.tsx` is a scrolling text view with a
-  64K char cap.
+- `terminal.tsx` is a 64K-char scrolling view. `lib/ansi.ts` parses SGR
+  (color/bold/italic/underline) from `format: "vt"` output and strips
+  cursor/clear sequences — it does not maintain a real screen grid. On
+  parse failure the buffer renders via `stripAnsi(...)` plain.
 
 ## Hard rules
 

@@ -151,18 +151,29 @@ enum ContextBankIntegrityChecker {
     }
 
     private static func relativePath(of url: URL, from root: URL) -> String {
-        let path = (url.path as NSString).standardizingPath
-        let rootPath = [
+        let path = normalizedPath(url.path)
+        let rootCandidates = [
             root.path,
             root.standardizedFileURL.path,
             (root.path as NSString).resolvingSymlinksInPath,
         ]
-            .map { ($0 as NSString).standardizingPath }
-            .filter { path.hasPrefix($0) }
+        let rootPath = rootCandidates
+            .map(normalizedPath)
+            .filter { candidate in
+                path == candidate || path.hasPrefix("\(candidate)/")
+            }
             .max(by: { $0.count < $1.count })
 
         guard let rootPath else { return path }
         let tail = String(path.dropFirst(rootPath.count))
         return tail.hasPrefix("/") ? String(tail.dropFirst()) : tail
+    }
+
+    private static func normalizedPath(_ path: String) -> String {
+        let standardized = (path as NSString).standardizingPath
+        if standardized.hasPrefix("/private/var/") {
+            return String(standardized.dropFirst("/private".count))
+        }
+        return standardized
     }
 }

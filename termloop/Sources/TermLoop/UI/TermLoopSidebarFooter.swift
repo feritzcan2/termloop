@@ -33,6 +33,7 @@ extension TermLoopSidebar {
                     SidebarSkillsCommandsButton()
 
                     MobilePairingButton()
+                    CLISocketStatusChip()
 
                     // Visible only while a `git submodule update --init
                     // --recursive` task is in flight (or failed). Opens a

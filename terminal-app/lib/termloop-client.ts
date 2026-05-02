@@ -81,6 +81,8 @@ export function pickTerminalSurface(
   return terminals.find((s) => s.focused) ?? terminals[0];
 }
 
+export type SurfaceFormat = "plain" | "vt";
+
 export interface SurfaceText {
   workspaceId: string;
   surfaceId?: string;
@@ -184,7 +186,11 @@ export interface TermLoopClient {
   switchProject(projectId: string): Promise<void>;
   listWorkspaces(): Promise<WorkspaceSummary[]>;
   listSurfaces(workspaceId: string): Promise<SurfaceSummary[]>;
-  readSurface(workspaceId: string, surfaceId?: string): Promise<SurfaceText>;
+  readSurface(
+    workspaceId: string,
+    surfaceId?: string,
+    format?: SurfaceFormat
+  ): Promise<SurfaceText>;
   sendText(workspaceId: string, text: string, surfaceId?: string): Promise<void>;
   sendKey(workspaceId: string, key: string, surfaceId?: string): Promise<void>;
   /**
@@ -192,11 +198,15 @@ export interface TermLoopClient {
    * subscription_id; events for that id are routed to `listener` until
    * `unsubscribe()` is called or the transport closes. Throws if the
    * backend rejects the subscribe call (caller should fall back to polling).
+   *
+   * `format: "vt"` asks the backend to emit ANSI/VT-styled text;
+   * `"plain"` (the default) gets stripped output.
    */
   subscribeSurface(
     workspaceId: string,
     surfaceId: string | undefined,
-    listener: (event: SurfaceEvent) => void
+    listener: (event: SurfaceEvent) => void,
+    format?: SurfaceFormat
   ): Promise<SurfaceSubscription>;
   /** No real backend support yet — TODO once PTY resize lands. */
   resize(_params: { workspaceId: string; cols: number; rows: number }): Promise<void>;
@@ -343,10 +353,10 @@ export function createTermLoopClient(opts: {
       });
       return out?.surfaces ?? [];
     },
-    async readSurface(workspaceId, surfaceId) {
+    async readSurface(workspaceId, surfaceId, format) {
       return call<SurfaceText>(
         "surface.read_text",
-        withSurface(workspaceId, surfaceId)
+        withSurface(workspaceId, surfaceId, format ? { format } : {})
       );
     },
     async sendText(workspaceId, text, surfaceId) {
@@ -364,10 +374,10 @@ export function createTermLoopClient(opts: {
     async resize(_params) {
       // No-op until backend exposes a PTY resize API.
     },
-    async subscribeSurface(workspaceId, surfaceId, listener) {
+    async subscribeSurface(workspaceId, surfaceId, listener, format) {
       const out = await call<{ subscription_id: string }>(
         "surface.subscribe",
-        withSurface(workspaceId, surfaceId)
+        withSurface(workspaceId, surfaceId, format ? { format } : {})
       );
       const subId = out.subscription_id;
       listeners.set(subId, listener);

@@ -88,6 +88,72 @@ struct MobilePairingButton: View {
     }
 }
 
+struct CLISocketStatusChip: View {
+    private static let refreshInterval: TimeInterval = 5.0
+    @State private var failureSignals: [String] = Self.currentFailureSignals()
+    private let timer = Timer.publish(
+        every: refreshInterval,
+        on: .main,
+        in: .common
+    ).autoconnect()
+
+    private var isHealthy: Bool { failureSignals.isEmpty }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(isHealthy ? Color.green : Color.yellow.opacity(0.9))
+                .frame(width: 5, height: 5)
+            Text(verbatim: "cli")
+                .font(TermLoopSidebarTheme.tinyMono)
+                .foregroundStyle(TermLoopSidebarTheme.dim)
+            if !isHealthy {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Color.yellow.opacity(0.9))
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .overlay(
+            Rectangle()
+                .stroke(TermLoopSidebarTheme.rule, lineWidth: 1)
+        )
+        .help(helpText)
+        .onReceive(timer) { _ in refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: .socketListenerDidStart)) { _ in
+            refresh()
+        }
+    }
+
+    private var helpText: String {
+        if isHealthy {
+            return "CLI socket is reachable. Agent hooks and termloop rpc can report status."
+        }
+        return "CLI socket is not reachable: \(failureSignals.joined(separator: ", ")). Agent hooks may not report status until the listener restarts."
+    }
+
+    private func refresh() {
+        let next = Self.currentFailureSignals()
+        guard next != failureSignals else { return }
+        failureSignals = next
+    }
+
+    private static func currentFailureSignals() -> [String] {
+        let raw = UserDefaults.standard.string(forKey: SocketControlSettings.appStorageKey)
+            ?? SocketControlSettings.defaultMode.rawValue
+        let userMode = SocketControlSettings.migrateMode(raw)
+        let mode = SocketControlSettings.effectiveMode(userMode: userMode)
+        guard mode != .off else { return ["off"] }
+
+        let socketPath = TerminalController.shared.activeSocketPath(
+            preferredPath: SocketControlSettings.socketPath()
+        )
+        let health = TerminalController.shared.socketListenerHealth(expectedSocketPath: socketPath)
+        return health.failureSignals
+    }
+}
+
 private struct MobilePairingSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var pairing: PairingDisplay?
