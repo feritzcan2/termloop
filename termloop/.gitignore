@@ -1,6 +1,6 @@
 # Xcode
 .build/
-build/
+/build/
 DerivedData/
 *.xcuserstate
 xcuserdata/
@@ -38,6 +38,7 @@ __pycache__/
 # Zig
 .zig-cache/
 zig-out/
+ghostty/zig-pkg/
 
 # Node
 node_modules/

@@ -40,10 +40,11 @@ __pycache__/
 # Zig
 .zig-cache/
 zig-out/
+termloop/ghostty/zig-pkg/
 
 # Xcode / Swift build artifacts
 .build/
-build/
+/build/
 DerivedData/
 *.xcframework
 *.xcframework.bak-*/

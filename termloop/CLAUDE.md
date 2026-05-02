@@ -142,6 +142,17 @@ When rebuilding GhosttyKit.xcframework, always use Release optimizations:
 cd ghostty && zig build -Demit-xcframework=true -Dxcframework-target=universal -Doptimize=ReleaseFast
 ```
 
+Fresh clones should normally reuse a checksum-pinned prebuilt GhosttyKit via
+`scripts/ensure-ghosttykit.sh`; local Zig rebuilds are the fallback when no
+matching prebuilt exists for the vendored `termloop/ghostty` source tree. If you
+change Ghostty's exported C API or any source that affects `libghostty.a`,
+run `scripts/publish-ghosttykit.sh` so the matching
+`xcframework-<ghostty-source-key>` artifact, `scripts/ghosttykit-checksums.txt`,
+and `upstreams.lock` `GHOSTTY_TREE_KEY` stay in sync. Use
+`scripts/validate-ghosttykit.sh` when checking a local or downloaded framework.
+Do not let Swift call a Ghostty C symbol that is absent from the pinned
+GhosttyKit artifact.
+
 When rebuilding cmuxd for release/bundling, always use ReleaseFast:
 
 ```bash

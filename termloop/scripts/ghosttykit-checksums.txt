@@ -1,6 +1,8 @@
-# Pinned GhosttyKit.xcframework.tar.gz checksums keyed by the vendored ghostty commit.
-# Update this file in a reviewed PR whenever the vendored ghostty commit changes.
-# Format: <ghostty_sha> <sha256>
+# Pinned GhosttyKit.xcframework.tar.gz checksums.
+# New artifacts are keyed by the git tree hash of vendored termloop/ghostty.
+# Older entries below are keyed by upstream ghostty commit for compatibility.
+# Format: <ghosttykit_key> <sha256>
+eeb5021516ea6cc4afc867062d889de65ebedc98 1dd02e0b589340f0b98aaf37027d113a9eb17437b29a02bdf0bb3c8ad4f2f972
 7dd589824d4c9bda8265355718800cccaf7189a0 3915af4256850a0a7bee671c3ba0a47cbfee5dbfc6d71caf952acefdf2ee4207
 a50579bd5ddec81c6244b9b349d4bf781f667cec f7e9c0597468a263d6b75eaf815ccecd90c7933f3cf4ae58929569ff23b2666d
 c47010b80cd9ae6d1ab744c120f011a465521ea3 d6904870a3c920b2787b1c4b950cfdef232606bb9876964f5e8497081d5cb5df

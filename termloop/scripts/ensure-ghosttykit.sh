@@ -38,6 +38,25 @@ if required not in text:
 PY
 }
 
+derive_ghostty_source_key() {
+  local tree_path="$1"
+  local index_tree source_key
+  local attempt
+
+  for attempt in 1 2 3 4 5; do
+    if index_tree="$(git -C "$PARENT_ROOT" write-tree 2>/dev/null)" \
+      && source_key="$(git -C "$PARENT_ROOT" rev-parse "${index_tree}:${tree_path}" 2>/dev/null)"; then
+      printf '%s\n' "$source_key"
+      return 0
+    fi
+    sleep 0.1
+  done
+
+  if git -C "$PARENT_ROOT" diff --cached --quiet -- "$tree_path"; then
+    git -C "$PARENT_ROOT" rev-parse "HEAD:${tree_path}" 2>/dev/null
+  fi
+}
+
 if [[ ! -f "$LOCK_FILE" ]]; then
   echo "error: missing upstream lock file at $LOCK_FILE" >&2
   exit 1
@@ -48,12 +67,6 @@ source "$LOCK_FILE"
 
 if [[ ! -d "$PROJECT_DIR/ghostty" ]]; then
   echo "error: vendored ghostty source is missing. Run ./scripts/setup.sh first." >&2
-  exit 1
-fi
-
-if ! command -v zig >/dev/null 2>&1; then
-  echo "Error: zig is not installed." >&2
-  echo "Install via: brew install zig" >&2
   exit 1
 fi
 
@@ -68,17 +81,20 @@ if ! validate_bridge_header "$PROJECT_DIR/ghostty.h"; then
   exit 1
 fi
 
-GHOSTTY_SHA="$GHOSTTY_COMMIT"
-GHOSTTY_KEY="$GHOSTTY_SHA"
+GHOSTTY_UPSTREAM_SHA="$GHOSTTY_COMMIT"
 GHOSTTY_TREE_PATH="${GHOSTTY_PATH:-termloop/ghostty}"
+GHOSTTY_SOURCE_KEY="$(derive_ghostty_source_key "$GHOSTTY_TREE_PATH" || true)"
+if [[ -z "$GHOSTTY_SOURCE_KEY" ]]; then
+  GHOSTTY_SOURCE_KEY="$GHOSTTY_UPSTREAM_SHA"
+fi
+GHOSTTY_KEY="$GHOSTTY_SOURCE_KEY"
 UNTRACKED_FILES="$(git -C "$PARENT_ROOT" ls-files --others --exclude-standard -- "$GHOSTTY_TREE_PATH")"
 if ! git -C "$PARENT_ROOT" diff --quiet -- "$GHOSTTY_TREE_PATH" \
-  || ! git -C "$PARENT_ROOT" diff --cached --quiet -- "$GHOSTTY_TREE_PATH" \
   || [[ -n "$UNTRACKED_FILES" ]]; then
   DIRTY_HASH="$(
     {
-      printf 'head=%s\n' "$GHOSTTY_SHA"
-      git -C "$PARENT_ROOT" diff --cached --binary -- "$GHOSTTY_TREE_PATH"
+      printf 'source-key=%s\n' "$GHOSTTY_SOURCE_KEY"
+      printf 'upstream=%s\n' "$GHOSTTY_UPSTREAM_SHA"
       git -C "$PARENT_ROOT" diff --binary -- "$GHOSTTY_TREE_PATH"
       if [[ -n "$UNTRACKED_FILES" ]]; then
         printf '\n--untracked--\n'
@@ -90,7 +106,7 @@ if ! git -C "$PARENT_ROOT" diff --quiet -- "$GHOSTTY_TREE_PATH" \
       fi
     } | hash_stdin
   )"
-  GHOSTTY_KEY="${GHOSTTY_SHA}-dirty-${DIRTY_HASH}"
+  GHOSTTY_KEY="${GHOSTTY_SOURCE_KEY}-dirty-${DIRTY_HASH}"
 fi
 
 CACHE_ROOT="${TERMLOOP_GHOSTTYKIT_CACHE_DIR:-$HOME/.cache/termloop/ghosttykit}"
@@ -121,6 +137,8 @@ trap 'rmdir "$LOCK_DIR" >/dev/null 2>&1 || true' EXIT
 if [[ -d "$CACHE_XCFRAMEWORK" ]]; then
   echo "==> Reusing cached GhosttyKit.xcframework"
 else
+  CACHE_SEED_XCFRAMEWORK=""
+  DOWNLOAD_TMP_DIR=""
   LOCAL_KEY=""
   if [[ -f "$LOCAL_KEY_STAMP" ]]; then
     LOCAL_KEY="$(cat "$LOCAL_KEY_STAMP")"
@@ -130,28 +148,73 @@ else
 
   if [[ -d "$LOCAL_XCFRAMEWORK" && "$LOCAL_KEY" == "$GHOSTTY_KEY" ]]; then
     echo "==> Seeding cache from existing local GhosttyKit.xcframework (build key matches)"
-  else
+    CACHE_SEED_XCFRAMEWORK="$LOCAL_XCFRAMEWORK"
+  elif [[ "$GHOSTTY_KEY" == "$GHOSTTY_SOURCE_KEY" && -x "$SCRIPT_DIR/download-prebuilt-ghosttykit.sh" ]]; then
+    echo "==> Downloading pre-built GhosttyKit.xcframework for vendored ghostty source..."
+    DOWNLOAD_TMP_DIR="$(mktemp -d "$CACHE_ROOT/.ghosttykit-download.XXXXXX")"
+    if (
+      cd "$DOWNLOAD_TMP_DIR"
+      GHOSTTY_SHA="$GHOSTTY_UPSTREAM_SHA" \
+      GHOSTTYKIT_KEY="$GHOSTTY_SOURCE_KEY" \
+      GHOSTTYKIT_OUTPUT_DIR="$DOWNLOAD_TMP_DIR/GhosttyKit.xcframework" \
+      "$SCRIPT_DIR/download-prebuilt-ghosttykit.sh"
+    ); then
+      CACHE_SEED_XCFRAMEWORK="$DOWNLOAD_TMP_DIR/GhosttyKit.xcframework"
+    else
+      echo "==> Pre-built GhosttyKit download unavailable; falling back to local build."
+      rm -rf "$DOWNLOAD_TMP_DIR"
+      DOWNLOAD_TMP_DIR=""
+    fi
+  fi
+
+  if [[ -z "$CACHE_SEED_XCFRAMEWORK" ]]; then
+    if ! command -v zig >/dev/null 2>&1; then
+      echo "Error: zig is not installed and no pre-built GhosttyKit.xcframework is available." >&2
+      echo "Install via: brew install zig" >&2
+      exit 1
+    fi
+
+    if [[ "$GHOSTTY_KEY" != "$GHOSTTY_SOURCE_KEY" ]]; then
+      echo "==> Ghostty source is modified; building GhosttyKit.xcframework locally."
+    fi
     echo "==> Building GhosttyKit.xcframework (this may take a few minutes)..."
     (
       cd ghostty
       zig build -Demit-xcframework=true -Dxcframework-target=universal -Doptimize=ReleaseFast
     )
     echo "$GHOSTTY_KEY" > "$LOCAL_KEY_STAMP"
-    echo "$GHOSTTY_SHA" > "$LEGACY_LOCAL_SHA_STAMP"
+    echo "$GHOSTTY_UPSTREAM_SHA" > "$LEGACY_LOCAL_SHA_STAMP"
+    CACHE_SEED_XCFRAMEWORK="$LOCAL_XCFRAMEWORK"
   fi
 
-  if [[ ! -d "$LOCAL_XCFRAMEWORK" ]]; then
-    echo "Error: GhosttyKit.xcframework not found at $LOCAL_XCFRAMEWORK" >&2
+  if [[ ! -d "$CACHE_SEED_XCFRAMEWORK" ]]; then
+    echo "Error: GhosttyKit.xcframework not found at $CACHE_SEED_XCFRAMEWORK" >&2
     exit 1
   fi
 
   TMP_DIR="$(mktemp -d "$CACHE_ROOT/.ghosttykit-tmp.XXXXXX")"
   mkdir -p "$CACHE_DIR"
-  cp -R "$LOCAL_XCFRAMEWORK" "$TMP_DIR/GhosttyKit.xcframework"
+  cp -R "$CACHE_SEED_XCFRAMEWORK" "$TMP_DIR/GhosttyKit.xcframework"
   rm -rf "$CACHE_XCFRAMEWORK"
   mv "$TMP_DIR/GhosttyKit.xcframework" "$CACHE_XCFRAMEWORK"
   rmdir "$TMP_DIR"
+  if [[ -n "$DOWNLOAD_TMP_DIR" ]]; then
+    rm -rf "$DOWNLOAD_TMP_DIR"
+  fi
   echo "==> Cached GhosttyKit.xcframework at $CACHE_XCFRAMEWORK"
+fi
+
+VALIDATE_ARGS=(--framework "$CACHE_XCFRAMEWORK" --key "$GHOSTTY_KEY")
+if [[ "$GHOSTTY_KEY" == *"-dirty-"* ]]; then
+  VALIDATE_ARGS+=(--allow-missing-checksum)
+fi
+
+if ! API_VALIDATION_ERROR="$("$SCRIPT_DIR/validate-ghosttykit.sh" "${VALIDATE_ARGS[@]}" 2>&1)"; then
+  echo "error: cached GhosttyKit.xcframework does not match the vendored ghostty C API." >&2
+  echo "$API_VALIDATION_ERROR" >&2
+  echo "Rebuild and publish the GhosttyKit prebuilt for the current vendored ghostty source, or rebuild GhosttyKit locally." >&2
+  rm -rf "$CACHE_DIR"
+  exit 1
 fi
 
 MACOS_ARCHIVE="$CACHE_XCFRAMEWORK/macos-arm64_x86_64/libghostty.a"

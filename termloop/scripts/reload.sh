@@ -24,7 +24,11 @@ should_skip_ghostty_cli_helper_zig_build() {
 
   local product_version zig_version major_version
   product_version="$(sw_vers -productVersion 2>/dev/null || true)"
-  zig_version="$(zig version 2>/dev/null || true)"
+  if [[ -d "$PWD/ghostty" ]]; then
+    zig_version="$(cd "$PWD/ghostty" && zig version 2>/dev/null || true)"
+  else
+    zig_version="$(zig version 2>/dev/null || true)"
+  fi
   major_version="${product_version%%.*}"
 
   if [[ "$zig_version" == "0.15.2" ]] && [[ "$major_version" =~ ^[0-9]+$ ]] && (( major_version >= 26 )); then

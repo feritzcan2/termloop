@@ -602,7 +602,7 @@ final class NotificationDockBadgeTests: XCTestCase {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let expectedTitle = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
             ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
-            ?? "cmux"
+            ?? "TermLoop"
         XCTAssertEqual(output.components(separatedBy: "\n"), [expectedTitle, "Focused subtitle", "Focused body"])
     }
 

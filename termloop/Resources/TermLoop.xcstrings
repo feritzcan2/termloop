@@ -2471,19 +2471,87 @@
         }
       }
     },
-    "project.empty.hero.body": {
+    "project.empty.hero.button": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Projects unlock The Loop, Folders, Skills, and Tasks. Start by picking a folder on disk."
+            "value": "Open Project"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "プロジェクトを作成すると、Loop、Folders、Skills、Tasks が使えるようになります。まずはディスク上のフォルダを選んでください。"
+            "value": "プロジェクトを開く"
+          }
+        }
+      }
+    },
+    "project.empty.hero.button.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pick a folder on disk to open as a project"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ディスク上のフォルダを選んでプロジェクトとして開きます"
+          }
+        }
+      }
+    },
+    "project.empty.hero.openPanel.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pick a folder to open as a TermLoop project."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TermLoop プロジェクトとして開くフォルダを選んでください。"
+          }
+        }
+      }
+    },
+    "project.empty.hero.openPanel.prompt": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開く"
+          }
+        }
+      }
+    },
+    "project.empty.hero.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open your first project"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最初のプロジェクトを開く"
           }
         }
       }

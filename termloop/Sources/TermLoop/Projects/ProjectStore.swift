@@ -1,6 +1,7 @@
 // Copyright (c) 2026-present Ferit özcan. All rights reserved.
 // Part of TermLoop — GPL-3.0-or-later
 
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -303,5 +304,53 @@ final class ProjectStore: ObservableObject {
         let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
         if !exists { throw ProjectStoreError.folderNotFound(path) }
         if !isDirectory.boolValue { throw ProjectStoreError.folderNotDirectory(path) }
+    }
+
+    // MARK: - Shared UI helpers
+
+    /// `UserDefaults` / `@AppStorage` key remembering the last directory the
+    /// user picked when creating/opening a project. Shared between the
+    /// onboarding empty state and the create-project sheet so both surfaces
+    /// land in the same starting folder.
+    static let lastParentDirectoryDefaultsKey = "termLoop.lastProjectParentDir"
+
+    /// First existing folder among the conventional dev locations, falling
+    /// back to `~/Projects` when none exist. Used as the initial directory
+    /// for project pickers when no last-parent has been remembered yet.
+    static func defaultParentDirectory() -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        for name in ["Projects", "Developer", "Documents"] {
+            let url = home.appendingPathComponent(name, isDirectory: true)
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                return url.path
+            }
+        }
+        return home.appendingPathComponent("Projects", isDirectory: true).path
+    }
+
+    /// Returns `candidate` if no project has that name (case-insensitive),
+    /// otherwise appends ` 2`, ` 3`, … until a free name is found.
+    func uniqueProjectName(from candidate: String) -> String {
+        var name = candidate
+        var suffix = 2
+        while projects.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+            name = "\(candidate) \(suffix)"
+            suffix += 1
+        }
+        return name
+    }
+
+    /// Presents the standard project-error alert. Used by every surface that
+    /// calls `create(_:folderPath:)` so the message phrasing stays consistent.
+    static func presentError(_ error: Error) {
+        let alert = NSAlert()
+        alert.messageText = String(
+            localized: "project.error.title",
+            defaultValue: "Project Error", table: "TermLoop"
+        )
+        alert.informativeText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        alert.alertStyle = .warning
+        alert.runModal()
     }
 }

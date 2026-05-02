@@ -14603,7 +14603,7 @@ struct CMUXCLI {
 
         let logo = """
         \(c1)  ::\(reset)
-        \(c2)    ::::\(reset)              \(c1)c\(c2)m\(c3)u\(c7)x\(reset)
+        \(c2)    ::::\(reset)              \(c1)t\(c2)e\(c3)r\(c4)m\(c5)l\(c6)o\(c7)o\(c1)p\(reset)
         \(c3)      ::::::\(reset)
         \(c4)        ::::::\(reset)        \(tagline)the open source terminal\(reset)
         \(c5)      ::::::\(reset)          \(tagline)built for coding agents\(reset)

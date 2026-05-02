@@ -57,7 +57,6 @@ extension TermLoopSidebar {
         @AppStorage(WorktreeAgentsPanelState.hiddenKey) private var isWorktreeAgentsHidden: Bool = false
         @AppStorage(ActiveAgentsPanelState.hiddenKey) private var isActiveAgentsHidden: Bool = false
         @State private var showingNewTaskSheet = false
-        @State private var showingCreateProjectSheet = false
         @State private var askAgentRequest: AskAgentRequest? = nil
         @State private var planPickerRequest: PlanPickerRequest? = nil
         @State private var bridgeKickoffRequest: BridgeKickoffRequest? = nil
@@ -332,10 +331,8 @@ extension TermLoopSidebar {
             VStack(spacing: 0) {
                 TermLoopSidebar.Header()
                 if showsNoProjectEmptyState {
-                    SidebarProjectOnboardingEmptyState(
-                        isCreateSheetPresented: $showingCreateProjectSheet
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    SidebarProjectOnboardingEmptyState()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     WorkSubTabBar(
                         selection: workSubTab,
@@ -409,9 +406,6 @@ extension TermLoopSidebar {
                         onCancel: { showingNewTaskSheet = false }
                     )
                 }
-            }
-            .sheet(isPresented: $showingCreateProjectSheet) {
-                CreateProjectSheet(isPresented: $showingCreateProjectSheet)
             }
             .background(
                 WindowAccessor { window in
@@ -492,8 +486,7 @@ extension TermLoopSidebar {
 }
 
 private struct SidebarProjectOnboardingEmptyState: View {
-    @Binding var isCreateSheetPresented: Bool
-    @State private var isHoveringCreateButton = false
+    @State private var isHoveringOpenButton = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -502,29 +495,20 @@ private struct SidebarProjectOnboardingEmptyState: View {
             VStack(alignment: .leading, spacing: 14) {
                 Text(TermLoopSidebarTheme.caps(String(
                     localized: "project.empty.hero.title",
-                    defaultValue: "Create your first project",
+                    defaultValue: "Open your first project",
                     table: "TermLoop"
                 )))
                 .font(TermLoopSidebarTheme.headerLabel)
                 .foregroundStyle(Color.primary)
 
-                Text(String(
-                    localized: "project.empty.hero.body",
-                    defaultValue: "Projects unlock The Loop, Folders, Skills, and Tasks. Start by picking a folder on disk.",
-                    table: "TermLoop"
-                ))
-                .font(TermLoopSidebarTheme.bodyMono)
-                .foregroundStyle(TermLoopSidebarTheme.dim)
-                .fixedSize(horizontal: false, vertical: true)
-
                 Button {
-                    isCreateSheetPresented = true
+                    openProjectFromFolder()
                 } label: {
                     HStack(alignment: .center, spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(TermLoopSidebarTheme.caps(String(
                                 localized: "project.empty.hero.button",
-                                defaultValue: "Create Project",
+                                defaultValue: "Open Project",
                                 table: "TermLoop"
                             )))
                             .font(TermLoopSidebarTheme.headerLabel)
@@ -532,7 +516,7 @@ private struct SidebarProjectOnboardingEmptyState: View {
 
                             Text(String(
                                 localized: "project.empty.hero.button.subtitle",
-                                defaultValue: "Open the project creation flow",
+                                defaultValue: "Pick a folder on disk to open as a project",
                                 table: "TermLoop"
                             ))
                             .font(TermLoopSidebarTheme.tinyMono)
@@ -541,7 +525,7 @@ private struct SidebarProjectOnboardingEmptyState: View {
 
                         Spacer(minLength: 8)
 
-                        Image(systemName: "plus.circle.fill")
+                        Image(systemName: "folder.fill")
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundStyle(TermLoopSidebarTheme.accent)
                     }
@@ -551,7 +535,7 @@ private struct SidebarProjectOnboardingEmptyState: View {
                     .background(
                         Rectangle()
                             .fill(
-                                isHoveringCreateButton
+                                isHoveringOpenButton
                                     ? TermLoopSidebarTheme.activeBg
                                     : TermLoopSidebarTheme.hoverBg
                             )
@@ -559,7 +543,7 @@ private struct SidebarProjectOnboardingEmptyState: View {
                     .overlay(
                         Rectangle()
                             .stroke(
-                                isHoveringCreateButton
+                                isHoveringOpenButton
                                     ? TermLoopSidebarTheme.accent.opacity(0.30)
                                     : TermLoopSidebarTheme.ruleStrong,
                                 lineWidth: 1
@@ -568,7 +552,7 @@ private struct SidebarProjectOnboardingEmptyState: View {
                 }
                 .buttonStyle(.plain)
                 .contentShape(Rectangle())
-                .onHover { isHoveringCreateButton = $0 }
+                .onHover { isHoveringOpenButton = $0 }
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 18)
@@ -583,6 +567,40 @@ private struct SidebarProjectOnboardingEmptyState: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.bottom, 18)
+    }
+
+    private func openProjectFromFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = String(
+            localized: "project.empty.hero.openPanel.prompt",
+            defaultValue: "Open",
+            table: "TermLoop"
+        )
+        panel.message = String(
+            localized: "project.empty.hero.openPanel.message",
+            defaultValue: "Pick a folder to open as a TermLoop project.",
+            table: "TermLoop"
+        )
+        let defaults = UserDefaults.standard
+        let lastParent = defaults.string(forKey: ProjectStore.lastParentDirectoryDefaultsKey) ?? ""
+        let initialDir = lastParent.isEmpty ? ProjectStore.defaultParentDirectory() : lastParent
+        panel.directoryURL = URL(fileURLWithPath: (initialDir as NSString).expandingTildeInPath)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        let store = ProjectStore.shared
+        let name = store.uniqueProjectName(from: url.lastPathComponent)
+        do {
+            _ = try store.create(name: name, folderPath: url.path)
+            let parent = url.deletingLastPathComponent().path
+            if !parent.isEmpty, parent != "/" {
+                defaults.set(parent, forKey: ProjectStore.lastParentDirectoryDefaultsKey)
+            }
+        } catch {
+            ProjectStore.presentError(error)
+        }
     }
 }
 

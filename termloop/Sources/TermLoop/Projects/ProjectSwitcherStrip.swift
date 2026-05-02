@@ -227,7 +227,7 @@ struct ProjectSwitcherStrip: View {
             appDelegate?.closeWorkspaces(inProjectId: project.id)
             selectFirstWorkspaceForActiveProject()
         } catch {
-            presentError(error)
+            ProjectStore.presentError(error)
         }
         deleteCandidate = nil
     }
@@ -255,16 +255,6 @@ struct ProjectSwitcherStrip: View {
         return path
     }
 
-    private func presentError(_ error: Error) {
-        let alert = NSAlert()
-        alert.messageText = String(
-            localized: "project.error.title",
-            defaultValue: "Project Error", table: "TermLoop"
-        )
-        alert.informativeText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-        alert.alertStyle = .warning
-        alert.runModal()
-    }
 }
 
 // MARK: - Create sheet
@@ -273,24 +263,11 @@ struct CreateProjectSheet: View {
     @Binding var isPresented: Bool
     @ObservedObject private var projectStore = ProjectStore.shared
 
-    @AppStorage("termLoop.lastProjectParentDir") private var lastProjectParentDir: String = ""
+    @AppStorage(ProjectStore.lastParentDirectoryDefaultsKey) private var lastProjectParentDir: String = ""
 
     @State private var name: String = ""
     @State private var folderPath: String = ""
     @State private var errorMessage: String?
-
-    private static func defaultParentDirectory() -> String {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let candidates = ["Projects", "Developer", "Documents"]
-        for name in candidates {
-            let url = home.appendingPathComponent(name, isDirectory: true)
-            var isDir: ObjCBool = false
-            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
-                return url.path
-            }
-        }
-        return home.appendingPathComponent("Projects", isDirectory: true).path
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -361,7 +338,7 @@ struct CreateProjectSheet: View {
         .onAppear {
             if folderPath.isEmpty {
                 folderPath = lastProjectParentDir.isEmpty
-                    ? Self.defaultParentDirectory()
+                    ? ProjectStore.defaultParentDirectory()
                     : lastProjectParentDir
             }
         }
@@ -375,7 +352,7 @@ struct CreateProjectSheet: View {
         let initialDir: String = {
             if !folderPath.isEmpty { return folderPath }
             if !lastProjectParentDir.isEmpty { return lastProjectParentDir }
-            return Self.defaultParentDirectory()
+            return ProjectStore.defaultParentDirectory()
         }()
         panel.directoryURL = URL(fileURLWithPath: (initialDir as NSString).expandingTildeInPath)
         if panel.runModal() == .OK, let url = panel.url {

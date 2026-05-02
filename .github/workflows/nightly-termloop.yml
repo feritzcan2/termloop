@@ -152,6 +152,8 @@ jobs:
 
       - name: Download pre-built GhosttyKit.xcframework
         if: needs.decide.outputs.should_publish != 'true' || steps.current_head_prebuild.outputs.still_current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/download-prebuilt-ghosttykit.sh
 
       - name: Cache Swift packages

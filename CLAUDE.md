@@ -16,6 +16,10 @@ This repo is the only working repo. `termloop/`, `termloop/ghostty/`, `termloop/
 
 Treat the configured fork/upstream repos as read-only sync sources. To refresh vendored code, use `./scripts/sync-upstreams.sh` from the repo root; that script pulls the configured refs into the tracked directories and updates `upstreams.lock`.
 
+`sync-upstreams.sh` refuses to overwrite dirty vendored directories unless `--force` is passed. Use `--force` only when intentionally discarding local vendor edits.
+
+GhosttyKit prebuilts are keyed by the vendored Ghostty source tree (`GHOSTTY_TREE_KEY` in `upstreams.lock`), not only by the upstream commit SHA. If `termloop/ghostty/` changes in a way that can affect `libghostty.a` or the exported C API, run `termloop/scripts/publish-ghosttykit.sh` so the release asset, checksum file, and lock key stay together. Fresh clones should get the checksum-pinned prebuilt via `termloop/scripts/ensure-ghosttykit.sh`; local Zig is only the fallback. `termloop/ghostty/src/build/` and `termloop/ghostty/src/apprt/gtk/build/` are source directories and must be tracked. Generated `termloop/ghostty/zig-pkg/` stays ignored.
+
 | Path | Upstream source | Discipline |
 |---|---|---|
 | `termloop/` | `feritzcan2/cmux-fork` (integration fork over `manaflow-ai/cmux`) | **K/Y rules apply** to upstream termloop Swift/CLI files. TermLoop code under `termloop/Sources/TermLoop/` and `termloop/CLI/TermLoop/` is ours to shape freely. |

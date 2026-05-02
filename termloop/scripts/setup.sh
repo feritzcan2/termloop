@@ -14,13 +14,6 @@ fi
 
 echo "==> Vendored dependencies present."
 
-echo "==> Checking for zig..."
-if ! command -v zig &> /dev/null; then
-    echo "Error: zig is not installed."
-    echo "Install via: brew install zig"
-    exit 1
-fi
-
 "$SCRIPT_DIR/ensure-ghosttykit.sh"
 
 echo "==> Setup complete!"
