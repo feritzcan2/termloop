@@ -1109,7 +1109,10 @@ struct WorktreeAgentsPanel: View {
             var seenPaths = Set<String>()
             var byKey: [String: AgentReportedStateStore.AgentReportedBinding] = [:]
             for workspace in group.workspaces {
-                guard let path = WorkspaceMetadataStore.shared.worktreeRootPath(forWorkspaceId: workspace.id),
+                guard let path = WorkspaceMetadataStore.shared.reportedStatePath(
+                    forWorkspaceId: workspace.id,
+                    fallbackPath: workspace.termLoopPresentationCwd()
+                ),
                       seenPaths.insert(path).inserted else { continue }
                 for binding in AgentReportedStateStore.shared.bindings(forPath: path) {
                     let key = AgentReportedStateStore.bindingKey(
@@ -1639,7 +1642,8 @@ struct WorktreeAgentsPanel: View {
                             if !partitionedBindings.runTargets.isEmpty {
                                 WorktreeGroupRunTargetsBadge(
                                     bindings: partitionedBindings.runTargets,
-                                    workspaceIds: group.workspaces.map(\.id)
+                                    workspaceIds: group.workspaces.map(\.id),
+                                    reportedStatePath: group.worktreePath
                                 )
                             }
                             ForEach(groupBindingBadges) { snapshot in

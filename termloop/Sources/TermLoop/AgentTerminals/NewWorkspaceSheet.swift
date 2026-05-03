@@ -452,7 +452,9 @@ struct NewWorkspaceWithWorktreeForm: View {
                     ),
                     text: branchNameBinding
                 )
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             GroupBox(String(
                 localized: "workspace.worktree.sheet.baseRef",
@@ -478,6 +480,7 @@ struct NewWorkspaceWithWorktreeForm: View {
                     .padding(.top, 4)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if showsAgentPicker, let agent = selectedAgent {
                 GroupBox(String(

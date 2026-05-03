@@ -940,12 +940,12 @@ final class QuickActionViewModel: ObservableObject {
     }
 
     private func newWorktreeContext() throws -> NewWorktreeContext {
-        let defaultAgentId = resolvedDefaultTerminalAgentId()
+        let selectedAgentId = resolvedSelectedTerminalAgentId()
 
         if let launchPrefillContext {
             return NewWorktreeContext(
                 projectId: launchPrefillContext.projectId,
-                terminalAgentId: launchPrefillContext.terminalAgentId ?? defaultAgentId
+                terminalAgentId: selectedAgentId
             )
         }
 
@@ -955,8 +955,7 @@ final class QuickActionViewModel: ObservableObject {
             if let projectId = meta.projectId ?? workspace.projectId {
                 return NewWorktreeContext(
                     projectId: projectId,
-                    terminalAgentId: TerminalAgentResolver.resolve(workspaceId: wsId)?.id
-                        ?? defaultAgentId
+                    terminalAgentId: selectedAgentId
                 )
             }
         }
@@ -966,7 +965,7 @@ final class QuickActionViewModel: ObservableObject {
         }
         return NewWorktreeContext(
             projectId: projectId,
-            terminalAgentId: defaultAgentId
+            terminalAgentId: selectedAgentId
         )
     }
 
@@ -991,6 +990,13 @@ final class QuickActionViewModel: ObservableObject {
         let defaultId = TermLoopSettings.shared.defaultTerminalAgentId
         return AgentCatalogStore.shared.agent(id: defaultId)?.id
             ?? AgentCatalogStore.shared.agents.first?.id
+    }
+
+    private func resolvedSelectedTerminalAgentId() -> String? {
+        if AgentCatalogStore.shared.agent(id: advancedTerminalAgentId) != nil {
+            return advancedTerminalAgentId
+        }
+        return resolvedDefaultTerminalAgentId()
     }
 
     private func launchTerminal(request: AgentInvocationRequest) throws {
