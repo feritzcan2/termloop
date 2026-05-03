@@ -325,6 +325,7 @@
 		AAFBCD01A6EAC0DE00000001 /* SidebarBranchDirectoryRowHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAFBCD01A6EAC0DE00000002 /* SidebarBranchDirectoryRowHook.swift */; };
 		AAFBCD02A6EAC0DE00000001 /* SidebarCloseButtonHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAFBCD02A6EAC0DE00000002 /* SidebarCloseButtonHook.swift */; };
 		AAFBCD03A6EAC0DE00000001 /* TabManager+SidebarQuickClose.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAFBCD03A6EAC0DE00000002 /* TabManager+SidebarQuickClose.swift */; };
+		AAFBCD10A6EAC0DE00000001 /* TabManager+SidebarProjectRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAFBCD10A6EAC0DE00000002 /* TabManager+SidebarProjectRefresh.swift */; };
 		AAFBCD04A6EAC0DE00000001 /* TerminalAgentActivityStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAFBCD04A6EAC0DE00000002 /* TerminalAgentActivityStore.swift */; };
 		AAFBCD06A6EAC0DE00000001 /* AppDelegate+WorkspaceRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAFBCD06A6EAC0DE00000002 /* AppDelegate+WorkspaceRouting.swift */; };
 		AAFBCD07A6EAC0DE00000001 /* TerminalAgentPresentationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAFBCD07A6EAC0DE00000002 /* TerminalAgentPresentationState.swift */; };
@@ -416,6 +417,7 @@
 		C1D2E3F40A0B0C0D0FA00006 /* SidebarGitChangesChevron.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D2E3F40A0B0C0D0FA00007 /* SidebarGitChangesChevron.swift */; };
 		C1D2E3F40A0B0C0D0FA00008 /* SidebarRepoStatusBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D2E3F40A0B0C0D0FA00009 /* SidebarRepoStatusBanner.swift */; };
 		C1D2E3F40A0B0C0D0FA00010 /* SidebarAgentHooksWarning.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D2E3F40A0B0C0D0FA00011 /* SidebarAgentHooksWarning.swift */; };
+		C1D2E3F40A0B0C0D0FA00012 /* SidebarProjectRefreshCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D2E3F40A0B0C0D0FA00013 /* SidebarProjectRefreshCoordinator.swift */; };
 		C1D2E3F40A0B0C0D0FA0000A /* SidebarCLIStatusProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D2E3F40A0B0C0D0FA0000B /* SidebarCLIStatusProbe.swift */; };
 		C1D2E3F40A0B0C0D0FA0000C /* MainAreaActivation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D2E3F40A0B0C0D0FA0000D /* MainAreaActivation.swift */; };
 		C1D2E3F40A0B0C0D0FA0000E /* MainAreaProjectEmptyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D2E3F40A0B0C0D0FA0000F /* MainAreaProjectEmptyState.swift */; };
@@ -900,6 +902,7 @@
 		AAFBCD01A6EAC0DE00000002 /* SidebarBranchDirectoryRowHook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Hooks/SidebarBranchDirectoryRowHook.swift; sourceTree = "<group>"; };
 		AAFBCD02A6EAC0DE00000002 /* SidebarCloseButtonHook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Hooks/SidebarCloseButtonHook.swift; sourceTree = "<group>"; };
 		AAFBCD03A6EAC0DE00000002 /* TabManager+SidebarQuickClose.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TermLoop/Hooks/TabManager+SidebarQuickClose.swift"; sourceTree = "<group>"; };
+		AAFBCD10A6EAC0DE00000002 /* TabManager+SidebarProjectRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TermLoop/Hooks/TabManager+SidebarProjectRefresh.swift"; sourceTree = "<group>"; };
 		AAFBCD04A6EAC0DE00000002 /* TerminalAgentActivityStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Core/TerminalAgentActivityStore.swift; sourceTree = "<group>"; };
 		AAFBCD06A6EAC0DE00000002 /* AppDelegate+WorkspaceRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TermLoop/Hooks/AppDelegate+WorkspaceRouting.swift"; sourceTree = "<group>"; };
 		AAFBCD07A6EAC0DE00000002 /* TerminalAgentPresentationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Core/TerminalAgentPresentationState.swift; sourceTree = "<group>"; };
@@ -991,6 +994,7 @@
 		C1D2E3F40A0B0C0D0FA00007 /* SidebarGitChangesChevron.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/Sidebar/SidebarGitChangesChevron.swift; sourceTree = "<group>"; };
 		C1D2E3F40A0B0C0D0FA00009 /* SidebarRepoStatusBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/Sidebar/SidebarRepoStatusBanner.swift; sourceTree = "<group>"; };
 		C1D2E3F40A0B0C0D0FA00011 /* SidebarAgentHooksWarning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/Sidebar/SidebarAgentHooksWarning.swift; sourceTree = "<group>"; };
+		C1D2E3F40A0B0C0D0FA00013 /* SidebarProjectRefreshCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/Sidebar/SidebarProjectRefreshCoordinator.swift; sourceTree = "<group>"; };
 		C1D2E3F40A0B0C0D0FA0000B /* SidebarCLIStatusProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/Sidebar/SidebarCLIStatusProbe.swift; sourceTree = "<group>"; };
 		C1D2E3F40A0B0C0D0FA0000D /* MainAreaActivation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/Sidebar/MainAreaActivation.swift; sourceTree = "<group>"; };
 		C1D2E3F40A0B0C0D0FA0000F /* MainAreaProjectEmptyState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/Sidebar/MainAreaProjectEmptyState.swift; sourceTree = "<group>"; };
@@ -1621,6 +1625,7 @@
 				C1D2E3F40A0B0C0D0FA00007 /* SidebarGitChangesChevron.swift */,
 				C1D2E3F40A0B0C0D0FA00009 /* SidebarRepoStatusBanner.swift */,
 				C1D2E3F40A0B0C0D0FA00011 /* SidebarAgentHooksWarning.swift */,
+				C1D2E3F40A0B0C0D0FA00013 /* SidebarProjectRefreshCoordinator.swift */,
 				C1D2E3F40A0B0C0D0FA0000B /* SidebarCLIStatusProbe.swift */,
 				C1D2E3F40A0B0C0D0FA0000D /* MainAreaActivation.swift */,
 				C1D2E3F40A0B0C0D0FA0000F /* MainAreaProjectEmptyState.swift */,
@@ -1645,6 +1650,7 @@
 				AAFBCD01A6EAC0DE00000002 /* SidebarBranchDirectoryRowHook.swift */,
 				AAFBCD02A6EAC0DE00000002 /* SidebarCloseButtonHook.swift */,
 				AAFBCD03A6EAC0DE00000002 /* TabManager+SidebarQuickClose.swift */,
+				AAFBCD10A6EAC0DE00000002 /* TabManager+SidebarProjectRefresh.swift */,
 				AAFBCD04A6EAC0DE00000002 /* TerminalAgentActivityStore.swift */,
 				AAFBCD09A6EAC0DE00000002 /* TerminalAgentActivityStore+Queries.swift */,
 				AAFBCD07A6EAC0DE00000002 /* TerminalAgentPresentationState.swift */,
@@ -2373,6 +2379,7 @@
 				C1D2E3F40A0B0C0D0FA00006 /* SidebarGitChangesChevron.swift in Sources */,
 				C1D2E3F40A0B0C0D0FA00008 /* SidebarRepoStatusBanner.swift in Sources */,
 				C1D2E3F40A0B0C0D0FA00010 /* SidebarAgentHooksWarning.swift in Sources */,
+				C1D2E3F40A0B0C0D0FA00012 /* SidebarProjectRefreshCoordinator.swift in Sources */,
 				C1D2E3F40A0B0C0D0FA0000A /* SidebarCLIStatusProbe.swift in Sources */,
 				C1D2E3F40A0B0C0D0FA0000C /* MainAreaActivation.swift in Sources */,
 				C1D2E3F40A0B0C0D0FA0000E /* MainAreaProjectEmptyState.swift in Sources */,
@@ -2401,6 +2408,7 @@
 				AAFBCD01A6EAC0DE00000001 /* SidebarBranchDirectoryRowHook.swift in Sources */,
 				AAFBCD02A6EAC0DE00000001 /* SidebarCloseButtonHook.swift in Sources */,
 				AAFBCD03A6EAC0DE00000001 /* TabManager+SidebarQuickClose.swift in Sources */,
+				AAFBCD10A6EAC0DE00000001 /* TabManager+SidebarProjectRefresh.swift in Sources */,
 				AAFBCD04A6EAC0DE00000001 /* TerminalAgentActivityStore.swift in Sources */,
 				AAFBCD09A6EAC0DE00000001 /* TerminalAgentActivityStore+Queries.swift in Sources */,
 				AAFBCD07A6EAC0DE00000001 /* TerminalAgentPresentationState.swift in Sources */,

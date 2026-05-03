@@ -22,7 +22,6 @@ enum TermLoopMCPServer {
     private static let jiraBindingId = "ticket"
     private static let askToToolName = "ask_to"
     private static let replyToRequestToolName = "reply_to_request"
-    private static let reportLinkToolName = "report_link"
     private static let contextBankProposeToolName = "context_bank_propose_suggestion"
     private static let contextBankFinalizeToolName = "context_bank_finalize_run"
 
@@ -182,30 +181,6 @@ enum TermLoopMCPServer {
             ],
             alwaysOn: true,
             handler: runReplyToRequest
-        ),
-        BuiltInTool(
-            name: reportLinkToolName,
-            description: "Report a build, preview, or artifact link back to TermLoop so it appears in the sidebar.",
-            inputSchema: [
-                "type": "object",
-                "properties": [
-                    "url": [
-                        "type": "string",
-                        "description": "The absolute URL to show in the sidebar."
-                    ],
-                    "title": [
-                        "type": "string",
-                        "description": "Short label shown next to the link."
-                    ],
-                    "kind": [
-                        "type": "string",
-                        "description": "Optional category like build, preview, logs, artifact."
-                    ]
-                ],
-                "required": ["url"]
-            ],
-            alwaysOn: true,
-            handler: runReportLink
         ),
         BuiltInTool(
             name: contextBankProposeToolName,
@@ -789,58 +764,6 @@ enum TermLoopMCPServer {
         } catch {
             return toolResult(id: id,
                               text: "reply_to_request failed: \(mcpErrorDescription(error))",
-                              isError: true)
-        }
-    }
-
-    /// Mirror of the legacy V1 `report_link` flow on the structured V2 path.
-    /// Sends `(url, title, kind, agent_id)` to `workspace.report_agent_link` so
-    /// the sidebar chip pipeline can render the build link.
-    private static func runReportLink(
-        id: Any,
-        arguments: [String: Any],
-        processEnv: [String: String],
-        socketPath: String
-    ) -> [String: Any] {
-        let rawURL = ((arguments["url"] as? String) ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let parsedURL = URL(string: rawURL),
-              let scheme = parsedURL.scheme?.lowercased(),
-              !scheme.isEmpty else {
-            return toolResult(id: id, text: "Missing or invalid url", isError: true)
-        }
-        guard let workspaceId = trimmedEnv(processEnv, "TERMLOOP_WORKSPACE_ID") else {
-            return toolResult(id: id, text: "Missing TERMLOOP_WORKSPACE_ID", isError: true)
-        }
-        let title = (arguments["title"] as? String)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let kind = (arguments["kind"] as? String)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let agentId = trimmedEnv(processEnv, "TERMLOOP_AGENT_ID")
-
-        let client = SocketClient(path: socketPath)
-        do {
-            try client.connect()
-            defer { client.close() }
-            let response = try client.sendV2(
-                method: "workspace.report_agent_link",
-                params: [
-                    "workspace_id": workspaceId,
-                    "agent_id": agentId as Any? ?? NSNull(),
-                    "url": parsedURL.absoluteString,
-                    "title": title as Any? ?? NSNull(),
-                    "kind": kind as Any? ?? NSNull(),
-                ]
-            )
-            if let errorText = extractErrorMessage(response) {
-                return toolResult(id: id, text: errorText, isError: true)
-            }
-            return toolResult(id: id,
-                              text: "Reported \(parsedURL.absoluteString)",
-                              isError: false)
-        } catch {
-            return toolResult(id: id,
-                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(mcpErrorDescription(error))",
                               isError: true)
         }
     }

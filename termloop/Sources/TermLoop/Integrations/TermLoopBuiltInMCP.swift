@@ -60,7 +60,6 @@ enum TermLoopBuiltInMCP {
             capabilities: [
                 "ask_to",
                 "reply_to_request",
-                "report_link",
                 "set_jira_ticket",
                 "get_jira_ticket",
                 "set_run_targets",
