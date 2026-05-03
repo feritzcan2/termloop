@@ -101,6 +101,9 @@ struct WorkspaceBridge: Identifiable, Codable, Equatable, Hashable {
     var finalReply: BridgeFinalReply?
     var kickoffMessage: String
     var firstSpeaker: BridgeSender  // .left or .right
+    /// True when the first turn was supplied through the agent launch command
+    /// instead of pasted into an already-running TUI.
+    var kickoffDeliveredAtLaunch: Bool?
     /// Optional for backward-compat with persisted bridges from before the
     /// auto/manual mode was introduced. Read via `effectiveForwardMode`,
     /// which falls back to `.manual`. Bridges saved by an interim build
@@ -124,6 +127,7 @@ struct WorkspaceBridge: Identifiable, Codable, Equatable, Hashable {
         finalReply: BridgeFinalReply? = nil,
         kickoffMessage: String,
         firstSpeaker: BridgeSender,
+        kickoffDeliveredAtLaunch: Bool? = nil,
         forwardMode: BridgeForwardMode? = .manual,
         createdAt: Date = Date()
     ) {
@@ -141,6 +145,7 @@ struct WorkspaceBridge: Identifiable, Codable, Equatable, Hashable {
         self.finalReply = finalReply
         self.kickoffMessage = kickoffMessage
         self.firstSpeaker = firstSpeaker
+        self.kickoffDeliveredAtLaunch = kickoffDeliveredAtLaunch
         self.forwardMode = forwardMode
         self.createdAt = createdAt
     }
