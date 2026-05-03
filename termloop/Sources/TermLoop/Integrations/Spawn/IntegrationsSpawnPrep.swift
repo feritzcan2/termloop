@@ -38,7 +38,11 @@ enum IntegrationsSpawnPrep {
         }
     }
 
-    static func prepare(items: [IntegrationItem], workspaceId: String) -> Prepared {
+    static func prepare(
+        items: [IntegrationItem],
+        workspaceId: String,
+        launchEnvironment: [String: String] = [:]
+    ) -> Prepared {
         var env: [String: String] = [:]
         var mcpServers: [String: Any] = [:]
         var tempDir: URL?
@@ -46,7 +50,11 @@ enum IntegrationsSpawnPrep {
         for item in items {
             switch item.kind {
             case .mcp:
-                if let data = resolveMCPEntry(item: item, workspaceId: workspaceId) {
+                if let data = resolveMCPEntry(
+                    item: item,
+                    workspaceId: workspaceId,
+                    launchEnvironment: launchEnvironment
+                ) {
                     mcpServers[item.displayName] = data
                 }
             case .webhook:
@@ -90,9 +98,16 @@ enum IntegrationsSpawnPrep {
         try? FileManager.default.removeItem(atPath: dir)
     }
 
-    private static func resolveMCPEntry(item: IntegrationItem, workspaceId: String) -> [String: Any]? {
+    private static func resolveMCPEntry(
+        item: IntegrationItem,
+        workspaceId: String,
+        launchEnvironment: [String: String]
+    ) -> [String: Any]? {
         if item.source == .termLoop, item.displayName == TermLoopBuiltInMCP.serverName {
-            return TermLoopBuiltInMCP.configEntry(workspaceId: workspaceId)
+            return TermLoopBuiltInMCP.configEntry(
+                workspaceId: workspaceId,
+                launchEnvironment: launchEnvironment
+            )
         }
         // Reload the backing `.mcp.json` / `~/.claude.json` entry for this
         // server and expand any `${keychain:…}` placeholders in string

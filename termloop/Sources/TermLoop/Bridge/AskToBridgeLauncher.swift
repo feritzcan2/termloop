@@ -50,6 +50,7 @@ enum AskToBridgeLauncher {
         }
 
         let requestId = UUID()
+        let askToReplyToken = UUID().uuidString
         let sourceAgentId = resolveSourceAgentId(workspaceId: sourceWorkspaceId)
         let sourceProjectId = resolveSourceProjectId(sourceWorkspace)
         let kickoffMessage = BridgeHelperSystemPrompt.kickoffMessage(
@@ -117,6 +118,10 @@ enum AskToBridgeLauncher {
                 agent: agent,
                 title: target.defaultWorkspaceTitle,
                 cwd: sourceWorkspace.currentDirectory,
+                baseEnv: [
+                    "TERMLOOP_ASK_TO_REQUEST_ID": requestId.uuidString,
+                    "TERMLOOP_ASK_TO_REPLY_TOKEN": askToReplyToken
+                ],
                 initialPrompt: plan.resolvedPromptBody ?? "",
                 projectId: sourceProjectId,
                 permission: plan.resolvedPermission,
@@ -154,7 +159,8 @@ enum AskToBridgeLauncher {
             rightWorkspaceTitleOverride: target.title,
             kickoffMessage: kickoffMessage,
             firstSpeaker: firstSpeaker,
-            kickoffDeliveredAtLaunch: deliverKickoffAtLaunch
+            kickoffDeliveredAtLaunch: deliverKickoffAtLaunch,
+            askToReplyToken: askToReplyToken
         )
         guard WorkspaceBridgeStore.shared.add(bridge) else {
             throw LaunchError.bridgeRejected

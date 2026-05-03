@@ -20,6 +20,8 @@ enum TermLoopClaudeHooks {
         "TERMLOOP_SOCKET",
         "TERMLOOP_BUNDLED_CLI_PATH",
         "TERMLOOP_WORKSPACE_ID",
+        "TERMLOOP_ASK_TO_REQUEST_ID",
+        "TERMLOOP_ASK_TO_REPLY_TOKEN",
         "TERMLOOP_SURFACE_ID",
         "TERMLOOP_PANEL_ID",
         "TERMLOOP_AGENT_ID",

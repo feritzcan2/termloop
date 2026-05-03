@@ -41,6 +41,7 @@
 		267CDDBEC770DB4E37501C7D /* JiraMCPPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDD43A7966611CFB48533E86 /* JiraMCPPreset.swift */; };
 		2BB56A710BB1FC50367E5BCF /* TabManagerSessionSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10D684CFFB8CDEF89CE2D9E1 /* TabManagerSessionSnapshotTests.swift */; };
 		2D78DED16C79E7421F23B21B /* WorkspaceBridgeStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C479F506025F66A68BE483F /* WorkspaceBridgeStoreTests.swift */; };
+		B1A5C0DE0000000000000002 /* TermLoopBuiltInMCPTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A5C0DE0000000000000001 /* TermLoopBuiltInMCPTests.swift */; };
 		3142A811A6C5CF83CAFF4D2F /* BuiltinPipelines in Resources */ = {isa = PBXBuildFile; fileRef = 88A45E0B615FE4942920522E /* BuiltinPipelines */; };
 		320154EA255A1C68451D5CED /* IntegrationsSpawnPrep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F3A3126370C217B01582710 /* IntegrationsSpawnPrep.swift */; };
 		342AAC3751900A61F8B12A7F /* BridgeTurnCompletedHookTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 145829DA1A9FC4777A23EDC4 /* BridgeTurnCompletedHookTests.swift */; };
@@ -632,6 +633,7 @@
 		223C5C9524B391449DFBA033 /* QuickActionAdvancedContextTab.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickActionAdvancedContextTab.swift; sourceTree = "<group>"; };
 		22909AA600DB2FF1CDB1D45B /* TinyYAML.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TinyYAML.swift; sourceTree = "<group>"; };
 		2C479F506025F66A68BE483F /* WorkspaceBridgeStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorkspaceBridgeStoreTests.swift; sourceTree = "<group>"; };
+		B1A5C0DE0000000000000001 /* TermLoopBuiltInMCPTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TermLoopBuiltInMCPTests.swift; sourceTree = "<group>"; };
 		2C642BE53F1142CBB60F62C8 /* AgentTemplateStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentTemplateStore.swift; sourceTree = "<group>"; };
 		2D686D0016E06B161DBD503D /* QuickActionPreviewViewModelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickActionPreviewViewModelTests.swift; sourceTree = "<group>"; };
 		3047859637D21DD6871E11DF /* TabManager+TermLoopPrune.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TermLoop/Hooks/TabManager+TermLoopPrune.swift"; sourceTree = "<group>"; };
@@ -2019,6 +2021,7 @@
 				CB1E00001111222233334448 /* ContextBankIntegrityTests.swift */,
 				3BC41841A0027C5FCF28E38F /* AgentWorkspaceKindTests.swift */,
 				2C479F506025F66A68BE483F /* WorkspaceBridgeStoreTests.swift */,
+				B1A5C0DE0000000000000001 /* TermLoopBuiltInMCPTests.swift */,
 				F0D8FC7225FF21696C5669C2 /* BridgeMessageExtractorTests.swift */,
 				09AD6834510195B8DA8805CB /* BridgeCreationValidatorTests.swift */,
 				145829DA1A9FC4777A23EDC4 /* BridgeTurnCompletedHookTests.swift */,
@@ -2807,6 +2810,7 @@
 				CB1E00001111222233334447 /* ContextBankIntegrityTests.swift in Sources */,
 				23D2FF5D5CACFBBB0CC38058 /* AgentWorkspaceKindTests.swift in Sources */,
 				2D78DED16C79E7421F23B21B /* WorkspaceBridgeStoreTests.swift in Sources */,
+				B1A5C0DE0000000000000002 /* TermLoopBuiltInMCPTests.swift in Sources */,
 				DA48BD17DD120EE78FDF5B25 /* BridgeMessageExtractorTests.swift in Sources */,
 				F9D0FEF1AC1F16269ED951F1 /* BridgeCreationValidatorTests.swift in Sources */,
 				342AAC3751900A61F8B12A7F /* BridgeTurnCompletedHookTests.swift in Sources */,
