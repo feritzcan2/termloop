@@ -33,6 +33,10 @@ extension ActiveAgentsPanel {
         }
         .onReceive(TerminalAgentActivityStore.shared.$presentationVersion) { newValue in
             guard newValue != activityTick else { return }
+            if AppMenuTrackingGate.shared.isTrackingMenu {
+                pendingActivityTick = newValue
+                return
+            }
             activityTick = newValue
         }
         .onReceive(WorkspaceMetadataStore.shared.$branchVersion) { _ in
@@ -47,7 +51,24 @@ extension ActiveAgentsPanel {
         }
         .onReceive(bridgeStore.$overviewVersion) { newValue in
             guard newValue != bridgeOverviewTick else { return }
+            if AppMenuTrackingGate.shared.isTrackingMenu {
+                pendingBridgeOverviewTick = newValue
+                return
+            }
             bridgeOverviewTick = newValue
+        }
+        .onReceive(AppMenuTrackingGate.shared.trackingEnded) { _ in
+            if let pending = pendingActivityTick,
+               pending != activityTick {
+                activityTick = pending
+            }
+            pendingActivityTick = nil
+
+            if let pending = pendingBridgeOverviewTick,
+               pending != bridgeOverviewTick {
+                bridgeOverviewTick = pending
+            }
+            pendingBridgeOverviewTick = nil
         }
         .onReceive(TerminalAgentAttentionMuteStore.shared.$version) { newValue in
             guard newValue != attentionMuteTick else { return }

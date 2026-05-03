@@ -227,7 +227,7 @@ enum GitCommandRunner {
             stderr.fileHandleForWriting.closeFile()
             throw RunError.launchFailed(command: command, underlying: String(describing: error))
         }
-        // Close the parent's write ends. Otherwise readDataToEndOfFile() can
+        // Close the parent's write ends. Otherwise pipe reads can
         // wait forever even after the child exits because this process still
         // owns an open writer for the pipe.
         stdout.fileHandleForWriting.closeFile()
@@ -409,10 +409,29 @@ enum GitCommandRunner {
         var data = Data()
         group.enter()
         DispatchQueue.global(qos: .utility).async {
-            let drained = handle.readDataToEndOfFile()
-            lock.lock()
-            data = drained
-            lock.unlock()
+            var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+            while true {
+                let count = buffer.withUnsafeMutableBytes { rawBuffer in
+                    Darwin.read(handle.fileDescriptor, rawBuffer.baseAddress, rawBuffer.count)
+                }
+                if count > 0 {
+                    lock.lock()
+                    buffer.withUnsafeBufferPointer { pointer in
+                        if let baseAddress = pointer.baseAddress {
+                            data.append(baseAddress, count: count)
+                        }
+                    }
+                    lock.unlock()
+                    continue
+                }
+                if count == 0 || errno == EBADF {
+                    break
+                }
+                if errno == EINTR {
+                    continue
+                }
+                break
+            }
             group.leave()
         }
         return { timeout in
