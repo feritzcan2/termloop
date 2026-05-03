@@ -86,10 +86,16 @@ Branch, PR status, dirty file count, port forwards, agent state — every worksp
 <tr>
 <td width="40%" valign="middle">
 <h3>iOS bridge</h3>
-Native iOS client connects to your TermLoop session over an authenticated TCP socket on your local network. Start an agent from the couch, watch output from a coffee-shop queue. Stable today; still under active development.
+Native iOS client pairs with your Mac over an authenticated TCP socket on your local network. Watch live agent output, switch projects, jump into a session — from the couch, the queue, or another room. Stable today; still under active development.
 </td>
 <td width="60%">
-<em>screenshots coming soon</em>
+<table>
+<tr>
+<td width="33%"><img src="./termloop/docs/assets/mobile/connections.jpg" alt="iOS app pairing with a Mac" width="100%" /></td>
+<td width="33%"><img src="./termloop/docs/assets/mobile/project-list.jpg" alt="iOS project workspace list" width="100%" /></td>
+<td width="33%"><img src="./termloop/docs/assets/mobile/agent-session.jpg" alt="Live agent session in iOS" width="100%" /></td>
+</tr>
+</table>
 </td>
 </tr>
 </table>
