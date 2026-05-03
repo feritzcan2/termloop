@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — TermLoop</title>
+<meta name="description" content="TermLoop Mobile collects no analytics or telemetry. Your sessions stay on your network.">
+<meta property="og:title" content="Privacy Policy — TermLoop">
+<meta property="og:description" content="TermLoop Mobile collects no analytics or telemetry. Your sessions stay on your network.">
+<meta name="theme-color" content="#000000">
+<link rel="canonical" href="https://termloop.ai/privacy-policy">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@300..600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg: #000000;
+    --bg-1: #09090b;
+    --bg-2: #18181b;
+    --border: #27272a;
+    --border-2: #3f3f46;
+    --fg: #fafafa;
+    --fg-2: #d4d4d8;
+    --fg-3: #a1a1aa;
+    --fg-4: #71717a;
+    --cyan: #06b6d4;
+    --cyan-2: #22d3ee;
+    --cyan-3: #67e8f9;
+    --purple: #9333ea;
+    --purple-2: #a855f7;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 16px;
+    line-height: 1.65;
+    min-height: 100vh;
+  }
+  ::selection { background: var(--cyan); color: #000; }
+  a { color: var(--cyan-2); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    pointer-events: none; z-index: 0;
+    background-image:
+      linear-gradient(to right, rgba(255,255,255,0.035) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,0.035) 1px, transparent 1px);
+    background-size: 60px 60px;
+    mask-image: radial-gradient(ellipse at top, black 30%, transparent 72%);
+    -webkit-mask-image: radial-gradient(ellipse at top, black 30%, transparent 72%);
+  }
+
+  nav.top {
+    position: sticky; top: 0; z-index: 50;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    background: rgba(0,0,0,0.65);
+    border-bottom: 1px solid var(--border);
+  }
+  nav .row {
+    max-width: 800px; margin: 0 auto;
+    padding: 16px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 600; letter-spacing: -0.01em;
+    color: var(--fg);
+  }
+  .brand .mark {
+    width: 26px; height: 26px;
+    border-radius: 7px;
+    background: linear-gradient(135deg, var(--cyan), var(--purple));
+    display: grid; place-items: center;
+    font-family: 'Geist Mono', monospace;
+    font-weight: 700; font-size: 13px;
+    color: #000;
+    box-shadow: 0 0 24px rgba(6,182,212,0.45);
+  }
+  .nav-back {
+    font-size: 14px;
+    color: var(--fg-3);
+    font-family: 'Geist Mono', monospace;
+  }
+  .nav-back:hover { color: var(--fg); text-decoration: none; }
+
+  main {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 64px 24px 96px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .eyebrow {
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--cyan-2);
+    margin-bottom: 16px;
+  }
+  h1 {
+    font-size: clamp(32px, 5vw, 44px);
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    margin-bottom: 12px;
+    color: var(--fg);
+  }
+  .meta {
+    color: var(--fg-4);
+    font-family: 'Geist Mono', monospace;
+    font-size: 13px;
+    margin-bottom: 48px;
+  }
+
+  h2 {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 40px 0 14px;
+    color: var(--fg);
+  }
+  h2 .num {
+    font-family: 'Geist Mono', monospace;
+    color: var(--cyan-2);
+    font-weight: 500;
+    margin-right: 12px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+  }
+  p {
+    color: var(--fg-2);
+    margin-bottom: 14px;
+  }
+  ul {
+    margin: 8px 0 14px 0;
+    padding-left: 24px;
+    color: var(--fg-2);
+  }
+  ul li { margin-bottom: 6px; }
+  ul li::marker { color: var(--cyan-2); }
+
+  code {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.88em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    color: var(--cyan-3);
+  }
+  strong { color: var(--fg); font-weight: 600; }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 48px 0 32px;
+  }
+
+  .footer-note {
+    color: var(--fg-4);
+    font-size: 13px;
+    font-family: 'Geist Mono', monospace;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<nav class="top">
+  <div class="row">
+    <a href="/" class="brand">
+      <span class="mark">◎</span>
+      <span>TermLoop</span>
+    </a>
+    <a href="/" class="nav-back">← back to termloop.ai</a>
+  </div>
+</nav>
+
+<main>
+  <div class="eyebrow">Privacy</div>
+  <h1>Privacy Policy</h1>
+  <div class="meta">Effective May 3, 2026 · Last updated May 3, 2026</div>
+
+  <p>This policy covers <strong>TermLoop Mobile</strong> (iOS) and the <strong>TermLoop</strong> macOS application. The two work together: the iOS app connects to a Mac running TermLoop over your local network and acts as a remote viewer / controller for sessions you've already started on your Mac.</p>
+
+  <p>The summary, in one line: <strong>we collect nothing, we run no servers, your data never leaves networks you control.</strong></p>
+
+  <h2><span class="num">01</span>Data we collect</h2>
+  <p><strong>None.</strong> TermLoop and TermLoop Mobile collect no analytics, telemetry, behavioral data, or usage statistics. We do not know when you open the app, which projects you have, what code you write, what prompts you send to AI agents, or what those agents reply.</p>
+  <p>We operate no backend service for the apps. There is nowhere for us to send your data even if we wanted to.</p>
+
+  <h2><span class="num">02</span>Data stored on your device</h2>
+  <p>To pair the iOS app with your Mac, the app stores locally:</p>
+  <ul>
+    <li>A pairing token (a random string issued by your Mac during pairing)</li>
+    <li>The IP address and port of your Mac</li>
+    <li>A device-local nickname for the connection (e.g. "Felix's Mac mini")</li>
+  </ul>
+  <p>This is held in encrypted local storage on your iPhone and is never transmitted to TermLoop or any third party.</p>
+
+  <h2><span class="num">03</span>Data sent to your Mac</h2>
+  <p>When you connect, the iOS app sends to your Mac:</p>
+  <ul>
+    <li>The pairing token, for authentication</li>
+    <li>Commands you type and gestures you make in the app</li>
+    <li>Subscription requests for live terminal output</li>
+  </ul>
+  <p>Your Mac stores a SHA-256 hash of paired-device tokens at <code>~/Library/Application Support/termloop/mobile-devices.json</code> so it can recognize trusted devices on reconnect. The raw token never leaves your device after pairing.</p>
+  <p>You can revoke any paired device at any time from the TermLoop desktop app.</p>
+
+  <h2><span class="num">04</span>Network behavior</h2>
+  <p>TermLoop Mobile communicates with your Mac over a TCP socket on a network reachable between your iPhone and your Mac — typically your home or office Wi-Fi, optionally a tailnet / VPN you operate. All traffic stays within networks you control.</p>
+  <p>The app does <strong>not</strong> contact TermLoop-operated servers. We run none. The only outbound network calls TermLoop itself makes (on macOS) are checking for app updates via Sparkle, which you can disable in settings.</p>
+  <p>AI agent providers (Anthropic, OpenAI, Google, etc.) are contacted directly by the agent CLIs you launch from inside TermLoop, using credentials you've configured for those CLIs. TermLoop does not proxy that traffic and does not see those credentials.</p>
+
+  <h2><span class="num">05</span>Permissions the iOS app may request</h2>
+  <ul>
+    <li><strong>Local Network</strong> — required to discover and connect to your Mac on Wi-Fi</li>
+    <li><strong>Camera</strong> — only invoked when you tap "Scan pairing QR" so the app can read the QR code displayed by your Mac. No images are stored or transmitted.</li>
+  </ul>
+
+  <h2><span class="num">06</span>Crash reporting</h2>
+  <p>The macOS application ships with crash reporting <strong>disabled by default</strong>. You can opt in from <code>Settings → App</code>. When enabled, anonymized crash data is sent to the project's Sentry endpoint with personally identifiable information stripped (no file paths, document names, query strings, cookies, headers, screenshots, or view hierarchies). Document and terminal contents are never included.</p>
+  <p>The iOS app currently includes no crash reporting integration.</p>
+
+  <h2><span class="num">07</span>Third parties</h2>
+  <p>We share no data with third parties because we collect none.</p>
+  <p>If you opt into macOS crash reporting, anonymized crash events are processed by <a href="https://sentry.io" target="_blank" rel="noopener">Sentry</a> on our behalf. Sentry's privacy policy applies to that processing.</p>
+
+  <h2><span class="num">08</span>Children</h2>
+  <p>The app is not directed at children under 13. Because we collect no personal data, the app does not knowingly process data from children. If you believe a child has provided personal data through the app, please contact us and we will work with you, though there is typically nothing for us to delete.</p>
+
+  <h2><span class="num">09</span>Your rights</h2>
+  <p>Under GDPR, CCPA, and similar regulations, you have the right to access, correct, or delete personal data held about you. Because we collect and hold no personal data about you, there is nothing for us to access, correct, or delete on our side.</p>
+  <p>Data on your devices (paired tokens, the device-local connection list) is fully under your control: deleting the iOS app removes its local store; the desktop app's <code>mobile-devices.json</code> can be edited or deleted manually.</p>
+
+  <h2><span class="num">10</span>Changes to this policy</h2>
+  <p>If we change what data is processed by TermLoop or TermLoop Mobile, we will update this policy and revise the effective date above. Material changes will also be noted in the app's release notes.</p>
+
+  <h2><span class="num">11</span>Contact</h2>
+  <p>Questions, requests, or privacy concerns: <a href="mailto:feritzcan93@gmail.com">feritzcan93@gmail.com</a></p>
+
+  <hr />
+  <p class="footer-note">© 2026 · termloop.ai · <a href="/" style="color: var(--fg-4);">termloop.ai</a></p>
+</main>
+
+</body>
+</html>
