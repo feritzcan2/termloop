@@ -3,10 +3,74 @@
 
 import AppKit
 import Bonsplit
+import Combine
 import SwiftUI
 
 enum ActiveAgentsPanelState {
     static let hiddenKey = "termloop.activeAgents.hidden.v1"
+}
+
+/// AppKit invalidates hover tracking for nested `NSMenu` items if the SwiftUI
+/// view that owns the context menu is rebuilt while the menu is open. Agent
+/// rows can receive many live activity updates during a turn, so panels use
+/// this gate to defer non-essential row refreshes until menu tracking ends.
+final class AppMenuTrackingGate {
+    static let shared = AppMenuTrackingGate()
+
+    let trackingEnded = PassthroughSubject<Void, Never>()
+
+    private(set) var isTrackingMenu = false
+
+    private var trackingDepth = 0
+    private var endGeneration = 0
+    private var observers: [NSObjectProtocol] = []
+
+    private init() {
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(
+            forName: NSMenu.didBeginTrackingNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            self?.beginTracking()
+        })
+        observers.append(center.addObserver(
+            forName: NSMenu.didEndTrackingNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            self?.endTracking()
+        })
+    }
+
+    deinit {
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    private func beginTracking() {
+        trackingDepth += 1
+        isTrackingMenu = true
+        endGeneration &+= 1
+    }
+
+    private func endTracking() {
+        if trackingDepth > 0 {
+            trackingDepth -= 1
+        }
+        guard trackingDepth == 0 else { return }
+
+        endGeneration &+= 1
+        let generation = endGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self,
+                  self.trackingDepth == 0,
+                  self.endGeneration == generation else { return }
+            self.isTrackingMenu = false
+            self.trackingEnded.send(())
+        }
+    }
 }
 
 @MainActor
@@ -23,6 +87,8 @@ struct ActiveAgentsPanel: View {
     @State var projectScopeTick: Int = 0
     @State var activityTick: Int = 0
     @State var bridgeOverviewTick: Int = 0
+    @State var pendingActivityTick: Int?
+    @State var pendingBridgeOverviewTick: Int?
     @State var branchTick: Int = 0
     @State var attentionMuteTick: Int = 0
     @State var workspaceTitleTick: Int = 0

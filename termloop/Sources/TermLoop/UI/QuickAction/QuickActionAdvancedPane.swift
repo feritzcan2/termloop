@@ -3,10 +3,9 @@
 
 import SwiftUI
 
-/// Thin back-compat wrapper around `QuickActionAdvancedTable`. Pre-redesign
+/// Thin back-compat wrapper around `QuickActionAdvancedTabs`. Pre-redesign
 /// callers referenced this type directly; we keep the filename so external
-/// references (tests, docs) don't churn. All real content lives in
-/// `QuickActionAdvancedTable`.
+/// references (tests, docs) don't churn.
 struct QuickActionAdvancedPane: View {
     @ObservedObject var viewModel: QuickActionViewModel
     let template: AgentTemplate?

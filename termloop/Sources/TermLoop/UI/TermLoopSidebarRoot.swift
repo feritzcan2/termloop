@@ -2,7 +2,6 @@
 // Part of TermLoop — GPL-3.0-or-later
 
 import AppKit
-import Bonsplit
 import Combine
 import SwiftUI
 
@@ -53,7 +52,7 @@ extension TermLoopSidebar {
 
         @AppStorage(TermLoopSidebarTab.storageKey) private var tabRawValue: String = TermLoopSidebarTab.work.rawValue
         @AppStorage("termloop.workLastWorkspaceId") private var workLastWorkspaceId: String = ""
-        @AppStorage("termloop.workSubTab") private var workSubTabRaw: String = WorkSubTab.loop.rawValue
+        @AppStorage(WorkSubTab.storageKey) private var workSubTabRaw: String = WorkSubTab.loop.rawValue
         @AppStorage(WorktreeAgentsPanelState.hiddenKey) private var isWorktreeAgentsHidden: Bool = false
         @AppStorage(ActiveAgentsPanelState.hiddenKey) private var isActiveAgentsHidden: Bool = false
         @State private var askAgentRequest: AskAgentRequest? = nil
@@ -108,15 +107,6 @@ extension TermLoopSidebar {
             return URL(fileURLWithPath: project.folderPath, isDirectory: true)
         }
 
-        private var workspaceNumberShortcut: StoredShortcut {
-            let _ = keyboardShortcutSettingsObserver.revision
-            return KeyboardShortcutSettings.shortcut(for: .selectWorkspaceByNumber)
-        }
-
-        private var showsSidebarNotificationMessage: Bool {
-            tabItemSettingsStore.snapshot.showsNotificationMessage
-        }
-
         private func selectFirstWorkspaceForActiveProjectIfNeeded() {
             guard let activeId = projectStore.activeProjectId else { return }
             let tabs = tabManager.tabs
@@ -133,92 +123,6 @@ extension TermLoopSidebar {
         private func debugShortSidebarTabId(_ id: UUID?) -> String {
             guard let id else { return "nil" }
             return String(id.uuidString.prefix(5))
-        }
-
-        @ViewBuilder
-        private func makeTabRow(
-            tab: Workspace,
-            tabIndexById: [UUID: Int],
-            workspaceCount: Int,
-            canCloseWorkspace: Bool,
-            workspaceNumberShortcut: StoredShortcut,
-            tabItemSettings: SidebarTabItemSettingsSnapshot,
-            selectedContextTargetIds: [UUID],
-            selectedRemoteContextMenuWorkspaceIds: [UUID],
-            allSelectedRemoteContextMenuTargetsConnecting: Bool,
-            allSelectedRemoteContextMenuTargetsDisconnected: Bool
-        ) -> some View {
-            let index = tabIndexById[tab.id] ?? 0
-            let usesSelectedContextMenuTargets = selectedTabIds.contains(tab.id)
-            let contextMenuWorkspaceIds = usesSelectedContextMenuTargets
-                ? selectedContextTargetIds
-                : [tab.id]
-            let remoteContextMenuWorkspaceIds = usesSelectedContextMenuTargets
-                ? selectedRemoteContextMenuWorkspaceIds
-                : (tab.isRemoteWorkspace ? [tab.id] : [])
-            let allRemoteContextMenuTargetsConnecting = usesSelectedContextMenuTargets
-                ? allSelectedRemoteContextMenuTargetsConnecting
-                : (tab.isRemoteWorkspace && tab.remoteConnectionState == .connecting)
-            let allRemoteContextMenuTargetsDisconnected = usesSelectedContextMenuTargets
-                ? allSelectedRemoteContextMenuTargetsDisconnected
-                : (tab.isRemoteWorkspace && tab.remoteConnectionState == .disconnected)
-            let liveUnreadCount = notificationStore.unreadCount(forTabId: tab.id)
-            let liveLatestNotificationText: String? = {
-                guard showsSidebarNotificationMessage,
-                      let notification = notificationStore.latestNotification(forTabId: tab.id) else {
-                    return nil
-                }
-                let text = notification.body.isEmpty ? notification.title : notification.body
-                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                return trimmed.isEmpty ? nil : trimmed
-            }()
-            let liveShowsModifierShortcutHints = modifierKeyMonitor.isModifierPressed
-            let livePresentation = SidebarTabItemPresentationSnapshot(
-                tabId: tab.id,
-                unreadCount: liveUnreadCount,
-                latestNotificationText: liveLatestNotificationText,
-                showsModifierShortcutHints: liveShowsModifierShortcutHints
-            )
-            let frozenPresentation = frozenTabItemPresentation?.tabId == tab.id
-                ? frozenTabItemPresentation
-                : nil
-            VStack(spacing: 0) {
-                TabItemView(
-                    tabManager: tabManager,
-                    notificationStore: notificationStore,
-                    tab: tab,
-                    index: index,
-                    isActive: tabManager.selectedTabId == tab.id,
-                    workspaceShortcutDigit: WorkspaceShortcutMapper.digitForWorkspace(
-                        at: index,
-                        workspaceCount: workspaceCount
-                    ),
-                    workspaceShortcutModifierSymbol: workspaceNumberShortcut.numberedDigitHintPrefix,
-                    canCloseWorkspace: canCloseWorkspace,
-                    accessibilityWorkspaceCount: workspaceCount,
-                    unreadCount: frozenPresentation?.unreadCount ?? liveUnreadCount,
-                    latestNotificationText: frozenPresentation?.latestNotificationText ?? liveLatestNotificationText,
-                    rowSpacing: tabRowSpacing,
-                    setSelectionToTabs: { selection = .tabs },
-                    selectedTabIds: $selectedTabIds,
-                    lastSidebarSelectionIndex: $lastSidebarSelectionIndex,
-                    showsModifierShortcutHints: frozenPresentation?.showsModifierShortcutHints ?? liveShowsModifierShortcutHints,
-                    dragAutoScrollController: dragAutoScrollController,
-                    draggedTabId: $draggedTabId,
-                    dropIndicator: $dropIndicator,
-                    contextMenuWorkspaceIds: contextMenuWorkspaceIds,
-                    remoteContextMenuWorkspaceIds: remoteContextMenuWorkspaceIds,
-                    allRemoteContextMenuTargetsConnecting: allRemoteContextMenuTargetsConnecting,
-                    allRemoteContextMenuTargetsDisconnected: allRemoteContextMenuTargetsDisconnected,
-                    settings: tabItemSettings,
-                    livePresentation: livePresentation,
-                    frozenPresentation: $frozenTabItemPresentation
-                )
-                .equatable()
-                // MARK: termloop-hook
-                TermLoopHooks.workspaceRowBridgeExtras(workspace: tab, tabManager: tabManager)
-                // MARK: /termloop-hook
-            }
         }
 
         var body: some View {
@@ -304,21 +208,6 @@ extension TermLoopSidebar {
             let tabs: [Workspace] = projectFiltered.filter {
                 !WorkspaceMetadataStore.shared.isAbilityAgent(workspaceId: $0.id)
             }
-            let workspaceCount = tabs.count
-            let canCloseWorkspace = workspaceCount > 1
-            let workspaceNumberShortcut = self.workspaceNumberShortcut
-            let tabItemSettings = tabItemSettingsStore.snapshot
-            let tabIndexById = Dictionary(uniqueKeysWithValues: tabs.enumerated().map {
-                ($0.element.id, $0.offset)
-            })
-            let orderedSelectedTabs = tabs.filter { selectedTabIds.contains($0.id) }
-            let selectedContextTargetIds = orderedSelectedTabs.map(\.id)
-            let selectedRemoteContextMenuTargets = orderedSelectedTabs.filter { $0.isRemoteWorkspace }
-            let selectedRemoteContextMenuWorkspaceIds = selectedRemoteContextMenuTargets.map(\.id)
-            let allSelectedRemoteContextMenuTargetsConnecting = !selectedRemoteContextMenuTargets.isEmpty &&
-                selectedRemoteContextMenuTargets.allSatisfy { $0.remoteConnectionState == .connecting }
-            let allSelectedRemoteContextMenuTargetsDisconnected = !selectedRemoteContextMenuTargets.isEmpty &&
-                selectedRemoteContextMenuTargets.allSatisfy { $0.remoteConnectionState == .disconnected }
 
             VStack(spacing: 0) {
                 TermLoopSidebar.Header()

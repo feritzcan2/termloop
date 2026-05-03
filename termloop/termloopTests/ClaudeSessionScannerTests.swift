@@ -54,9 +54,11 @@ final class ClaudeSessionScannerTests: XCTestCase {
 
     func test_scan_findsSessionsForCwdContainingDot() throws {
         // Claude Code's on-disk slug replaces both `/` and `.` with `-`, so
-        // `/tmp/repo/.termloop-worktrees/branch` maps to `-tmp-repo--cmux-worktrees-branch`
+        // `/tmp/repo/.termloop-worktrees/branch` maps to `-tmp-repo--termloop-worktrees-branch`
         // (double dash). The scanner must match that encoding.
-        let slug = "-tmp-repo--cmux-worktrees-branch"
+        let cwd = "/tmp/repo/.termloop-worktrees/branch"
+        let slug = ClaudeSessionScanner.slug(forCwd: cwd)
+        XCTAssertEqual(slug, "-tmp-repo--termloop-worktrees-branch")
         let slugDir = tempProjectsDir.appendingPathComponent(slug)
         try FileManager.default.createDirectory(at: slugDir, withIntermediateDirectories: true)
         let content = """
@@ -69,9 +71,10 @@ final class ClaudeSessionScannerTests: XCTestCase {
             atomically: true, encoding: .utf8)
 
         let scanner = ClaudeSessionScanner(projectsDir: tempProjectsDir)
-        let r = scanner.scan(cwd: "/tmp/repo/.termloop-worktrees/branch")
+        let r = scanner.scan(cwd: cwd)
         XCTAssertEqual(r.count, 1, "slug function must replace `.` with `-` like Claude Code does")
-        XCTAssertEqual(r[0].title, "hello")
+        let result = try XCTUnwrap(r.first)
+        XCTAssertEqual(result.title, "hello")
     }
 
     func test_scan_malformedLinesAreSkipped() throws {

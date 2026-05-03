@@ -3,19 +3,40 @@
 
 import Foundation
 
-/// Per-run override state for preview composition. D1(B) side-channel: mute /
-/// force-include never flow into launch. Preview callers build one from chip
-/// state and pass it to `AgentInvocationComposer.previewPlan(_:overrides:)`.
-struct PreviewOverrides: Equatable {
-    var muted: Set<String>
-    var forceIncluded: Set<String>
+/// Sheet-scoped per-run override state for instruction composition. Preview
+/// and launch both pass this to `AgentInvocationComposer.compose`, so the
+/// reviewed payload and launched payload stay in lockstep.
+struct InstructionRunOverrides: Equatable {
+    enum GeneratedPartKind: Hashable {
+        case worktreeContext
+        case reportedContext
+        case toolLinkedPayload(abilityId: String, toolName: String)
+    }
 
-    static let none = PreviewOverrides(muted: [], forceIncluded: [])
+    var mutedAbilityIds: Set<String>
+    var forceIncludedAbilityIds: Set<String>
+    var disabledGenerated: Set<GeneratedPartKind>
 
-    var isEmpty: Bool { muted.isEmpty && forceIncluded.isEmpty }
+    init(
+        mutedAbilityIds: Set<String> = [],
+        forceIncludedAbilityIds: Set<String> = [],
+        disabledGenerated: Set<GeneratedPartKind> = []
+    ) {
+        self.mutedAbilityIds = mutedAbilityIds
+        self.forceIncludedAbilityIds = forceIncludedAbilityIds
+        self.disabledGenerated = disabledGenerated
+    }
+
+    static let none = InstructionRunOverrides()
+
+    var isEmpty: Bool {
+        mutedAbilityIds.isEmpty
+            && forceIncludedAbilityIds.isEmpty
+            && disabledGenerated.isEmpty
+    }
 }
 
-extension PreviewOverrides {
+extension InstructionRunOverrides {
     /// Applies mute + force-include to a pre-partitioned base (already
     /// filtered for `.off` and worktree-dormant). Overrides can only
     /// subtract (mute) or promote-within-visible (force-include); they
@@ -23,15 +44,15 @@ extension PreviewOverrides {
     static func applyToBasePartition(
         active: [Ability],
         listed: [Ability],
-        overrides: PreviewOverrides
+        overrides: InstructionRunOverrides
     ) -> (active: [Ability], listed: [Ability]) {
         var newActive: [Ability] = []
         var newListed: [Ability] = []
-        for ability in active where !overrides.muted.contains(ability.id) {
+        for ability in active where !overrides.mutedAbilityIds.contains(ability.id) {
             newActive.append(ability)
         }
-        for ability in listed where !overrides.muted.contains(ability.id) {
-            if overrides.forceIncluded.contains(ability.id) {
+        for ability in listed where !overrides.mutedAbilityIds.contains(ability.id) {
+            if overrides.forceIncludedAbilityIds.contains(ability.id) {
                 var promoted = ability
                 promoted.activation = .always
                 newActive.append(promoted)
@@ -48,19 +69,19 @@ extension PreviewOverrides {
     /// chip rendering.
     static func partition(
         from abilities: [Ability],
-        overrides: PreviewOverrides,
+        overrides: InstructionRunOverrides,
         isWorktree: Bool
     ) -> (injected: [Ability], listed: [Ability]) {
         var injected: [Ability] = []
         var listed: [Ability] = []
-        for ability in abilities where !overrides.muted.contains(ability.id) {
+        for ability in abilities where !overrides.mutedAbilityIds.contains(ability.id) {
             switch ability.activation {
             case .always:
                 injected.append(ability)
             case .worktree:
                 if isWorktree { injected.append(ability) }
             case .listed:
-                if overrides.forceIncluded.contains(ability.id) {
+                if overrides.forceIncludedAbilityIds.contains(ability.id) {
                     var promoted = ability
                     promoted.activation = .always
                     injected.append(promoted)

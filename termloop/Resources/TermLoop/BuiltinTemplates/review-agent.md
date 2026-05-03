@@ -1,7 +1,7 @@
 ---
 id: review-agent
-name: Review Agent
-description: Self-review of uncommitted changes, writes findings to a review note
+name: Code Review
+description: OSS-derived review of the current diff for correctness, security, performance, and maintainability
 icon: 🔍
 scope: workspace
 permissionMode: ask
@@ -15,4 +15,4 @@ variables: [branch_name, workspace_path, timestamp]
 timeoutSeconds: 420
 systemPromptDocumentId: "system.template.review-agent"
 ---
-Review the current uncommitted working tree, write the review note for this checkout, and print the file path.
+Review the current uncommitted working-tree diff. Write a prioritized review note and print its path.

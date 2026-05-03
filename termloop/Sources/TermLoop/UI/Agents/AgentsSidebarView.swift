@@ -828,10 +828,24 @@ struct AgentsCatalogMainAreaView: View {
     }
 
     private func deleteSelectedTemplate() {
-        guard let template = selectedEntry?.template, template.source == .project else { return }
+        guard let template = selectedEntry?.template else { return }
         let resetsToDefault = selectedTemplateCanReset
         performCatalogAction {
-            try templateStore.deleteProjectTemplate(template)
+            switch template.source {
+            case .project:
+                try templateStore.deleteProjectTemplate(template)
+            case .user:
+                try templateStore.deleteUserTemplate(template)
+            case .builtin:
+                guard let activeProjectFolderPath else {
+                    throw NSError(domain: "AgentsCatalog", code: 1, userInfo: [NSLocalizedDescriptionKey: "No active project selected."])
+                }
+                try templateStore.deleteBuiltInTemplateFromProject(
+                    template,
+                    projectFolderPath: activeProjectFolderPath
+                )
+            }
+
             if resetsToDefault {
                 uiState.showCreatedItem(
                     id: "template:\(template.id)",
@@ -840,6 +854,9 @@ struct AgentsCatalogMainAreaView: View {
                 )
             } else {
                 reconcileAfterRemoving(id: "template:\(template.id)")
+                uiState.statusMessage = template.source == .builtin
+                    ? "Template removed from this project"
+                    : "Template deleted"
             }
         }
     }

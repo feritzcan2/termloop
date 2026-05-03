@@ -3,7 +3,7 @@
 
 import Foundation
 
-/// Builds the system-reminder block prepended to an agent run's first prompt.
+/// Loads project ability bundles used by the agent-input composer.
 enum AbilityInjector {
     /// Reads ability files directly from `<projectRoot>/.termloop/abilities`.
     /// This intentionally bypasses `AbilityStore.shared`, which only mirrors
@@ -26,42 +26,10 @@ enum AbilityInjector {
             includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles]
         )) ?? []
-        let loaded: [Ability] = entries.compactMap { url in
-            if url.hasDirectoryPath {
-                return try? AbilityBundleStore.load(from: url)
-            }
-            // Legacy `.md` ability — kept for symmetry with `AbilityStore.reload`
-            // so users who haven't migrated to bundles still see them at agent
-            // launch (not just in the abilities panel).
-            guard url.pathExtension.lowercased() == "md",
-                  let text = try? String(contentsOf: url, encoding: .utf8),
-                  let parsed = AbilityFrontmatter.parse(text) else { return nil }
-            let slug = url.deletingPathExtension().lastPathComponent
-            return Ability(
-                id: slug,
-                name: parsed.fields.name,
-                description: parsed.fields.description,
-                activation: parsed.fields.activation,
-                body: parsed.body,
-                systemReminderBody: parsed.body,
-                tags: [],
-                items: [],
-                filePath: url,
-                metadataFilePath: url,
-                storageKind: .legacyMarkdownFile
-            )
+        return entries.compactMap { url in
+            guard url.hasDirectoryPath else { return nil }
+            return try? AbilityBundleStore.load(from: url)
         }
-        // Bundle wins when both forms exist for the same id.
-        var preferredById: [String: Ability] = [:]
-        for ability in loaded {
-            if let existing = preferredById[ability.id],
-               existing.storageKind == .bundle,
-               ability.storageKind == .legacyMarkdownFile {
-                continue
-            }
-            preferredById[ability.id] = ability
-        }
-        return preferredById.values
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 

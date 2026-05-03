@@ -120,6 +120,7 @@ struct NewWorkspaceWithWorktreeRequest: Identifiable, Equatable {
     let modelOverride: AgentModelOption?
     let reasoningOverride: AgentReasoningOption?
     let variableValues: [String: String]
+    let runOverrides: InstructionRunOverrides
     let launchSource: AgentInvocationSource?
     let reasonTag: String?
     let suggestedBranchName: String?
@@ -139,6 +140,7 @@ struct NewWorkspaceWithWorktreeRequest: Identifiable, Equatable {
         modelOverride: AgentModelOption? = nil,
         reasoningOverride: AgentReasoningOption? = nil,
         variableValues: [String: String] = [:],
+        runOverrides: InstructionRunOverrides = .none,
         launchSource: AgentInvocationSource? = nil,
         reasonTag: String? = nil,
         suggestedBranchName: String? = nil,
@@ -157,6 +159,7 @@ struct NewWorkspaceWithWorktreeRequest: Identifiable, Equatable {
         self.modelOverride = modelOverride
         self.reasoningOverride = reasoningOverride
         self.variableValues = variableValues
+        self.runOverrides = runOverrides
         self.launchSource = launchSource
         self.reasonTag = reasonTag
         self.suggestedBranchName = suggestedBranchName
@@ -876,7 +879,10 @@ struct NewWorkspaceWithWorktreeForm: View {
                 reasonTag: request.reasonTag
             )
         }
-        return try AgentInvocationComposer.compose(invocation)
+        return try AgentInvocationComposer.compose(
+            invocation,
+            overrides: request.runOverrides
+        )
     }
 
     private struct PreparedWorktree {
