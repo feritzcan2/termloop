@@ -22,6 +22,7 @@ import {
 import { isTerminalSurfaceStartingError } from "../../lib/errors";
 import {
   pickTerminalSurface,
+  projectSummaryPath,
   type TermLoopClient,
   surfaceLabel,
   workspaceLabel,
@@ -241,7 +242,8 @@ export default function ConnectedScreen() {
         }).catch(() => {});
       }
       const projectName = current !== "loading" ? current?.name ?? "" : "";
-      const projectPath = current !== "loading" ? current?.path ?? "" : "";
+      const projectPath =
+        current !== "loading" ? projectSummaryPath(current) ?? "" : "";
       router.push({
         pathname: "/connected/terminal",
         params: {
@@ -383,13 +385,14 @@ export default function ConnectedScreen() {
   const agentTargets = useMemo<AgentTarget[]>(() => {
     const activeProject =
       current !== "loading" && current !== null ? current : null;
+    const activeProjectPath = projectSummaryPath(activeProject);
     const targets: AgentTarget[] = [
       {
         key: "project",
         kind: "workspace",
         label: activeProject?.name ?? "Current project",
-        detail: activeProject?.path ?? "New workspace",
-        cwd: activeProject?.path,
+        detail: activeProjectPath ?? "New workspace",
+        cwd: activeProjectPath,
         projectId: activeProject?.id,
       },
     ];
@@ -412,8 +415,10 @@ export default function ConnectedScreen() {
 
   const projectName =
     current === "loading" ? "Loading project…" : current ? current.name : "No project";
+  const activeProjectPath =
+    current !== "loading" ? projectSummaryPath(current) : undefined;
   const projectPath =
-    current !== "loading" && current?.path ? current.path : "No project path";
+    activeProjectPath ?? "No project path";
 
   const openAgentPicker = async (targetKey = "project") => {
     if (!client) return;
@@ -484,7 +489,8 @@ export default function ConnectedScreen() {
           name: agent.display_name,
           surfaceName,
           projectName: current !== "loading" ? current?.name ?? "" : "",
-          projectPath: current !== "loading" ? current?.path ?? "" : "",
+          projectPath:
+            current !== "loading" ? projectSummaryPath(current) ?? "" : "",
         },
       });
     } catch (err) {
@@ -801,6 +807,7 @@ export default function ConnectedScreen() {
                   const isCurrent =
                     current !== "loading" && current?.id === item.id;
                   const isSwitching = switchingId === item.id;
+                  const itemPath = projectSummaryPath(item);
                   return (
                     <Pressable
                       style={styles.projectItem}
@@ -811,9 +818,9 @@ export default function ConnectedScreen() {
                         <Text style={styles.projectItemName} numberOfLines={1}>
                           {item.name}
                         </Text>
-                        {item.path ? (
+                        {itemPath ? (
                           <Text style={styles.projectItemPath} numberOfLines={1}>
-                            {item.path}
+                            {itemPath}
                           </Text>
                         ) : null}
                       </View>

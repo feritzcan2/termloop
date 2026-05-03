@@ -313,9 +313,12 @@ struct NewWorkspaceWithWorktreeSheet: View {
 struct NewWorkspaceWithWorktreeForm: View {
     let request: NewWorkspaceWithWorktreeRequest
     weak var tabManager: TabManager?
+    private let externalBranchName: Binding<String>?
     var showsTitle: Bool = true
     var showsCancelButton: Bool = true
     var showsPromptEditors: Bool = true
+    var showsAgentPickerControl: Bool = true
+    var contentPadding: CGFloat = 20
     var externalSubmitToken: Int = 0
     var onCancel: () -> Void = {}
     var onSuccess: () -> Void = {}
@@ -336,22 +339,28 @@ struct NewWorkspaceWithWorktreeForm: View {
     init(
         request: NewWorkspaceWithWorktreeRequest,
         tabManager: TabManager?,
+        branchName: Binding<String>? = nil,
         showsTitle: Bool = true,
         showsCancelButton: Bool = true,
         showsPromptEditors: Bool = true,
+        showsAgentPickerControl: Bool = true,
+        contentPadding: CGFloat = 20,
         externalSubmitToken: Int = 0,
         onCancel: @escaping () -> Void = {},
         onSuccess: @escaping () -> Void = {}
     ) {
         self.request = request
         self.tabManager = tabManager
+        self.externalBranchName = branchName
         self.showsTitle = showsTitle
         self.showsCancelButton = showsCancelButton
         self.showsPromptEditors = showsPromptEditors
+        self.showsAgentPickerControl = showsAgentPickerControl
+        self.contentPadding = contentPadding
         self.externalSubmitToken = externalSubmitToken
         self.onCancel = onCancel
         self.onSuccess = onSuccess
-        _branchName = State(initialValue: request.suggestedBranchName ?? "")
+        _branchName = State(initialValue: branchName?.wrappedValue ?? request.suggestedBranchName ?? "")
         _selectedAgentId = State(initialValue: Self.initialSelectedAgentId(for: request))
         _initialPromptText = State(initialValue: request.initialPrompt ?? "")
         _systemPromptText = State(initialValue: request.systemPrompt ?? "")
@@ -362,7 +371,10 @@ struct NewWorkspaceWithWorktreeForm: View {
     }
 
     private var showsAgentPicker: Bool {
-        !request.isConversationMigration && request.terminalAgentId != nil && !registry.agents.isEmpty
+        showsAgentPickerControl
+            && !request.isConversationMigration
+            && request.terminalAgentId != nil
+            && !registry.agents.isEmpty
     }
 
     // Migration flows are restoring a conversation — their prompts are
@@ -382,8 +394,12 @@ struct NewWorkspaceWithWorktreeForm: View {
         return registry.agents.first
     }
 
+    private var branchNameBinding: Binding<String> {
+        externalBranchName ?? $branchName
+    }
+
     private var trimmedBranchName: String {
-        branchName.trimmingCharacters(in: .whitespacesAndNewlines)
+        branchNameBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var titleText: String {
@@ -434,7 +450,7 @@ struct NewWorkspaceWithWorktreeForm: View {
                         defaultValue: "feature/your-branch",
                         table: "TermLoop"
                     ),
-                    text: $branchName
+                    text: branchNameBinding
                 )
             }
 
@@ -547,7 +563,7 @@ struct NewWorkspaceWithWorktreeForm: View {
                 .disabled(trimmedBranchName.isEmpty || isCreating)
             }
         }
-        .padding(20)
+        .padding(contentPadding)
         .task(id: request.projectId) {
             loadBaseRefs()
             refreshDirtyState()

@@ -6,13 +6,28 @@ import SwiftUI
 struct QuickActionAdvancedTabs: View {
     @ObservedObject var viewModel: QuickActionViewModel
     @ObservedObject private var preview: QuickActionPreviewViewModel
+    let settingsPrimaryAction: (() -> Void)?
+    let settingsPrimaryLabel: String
+    let settingsPrimaryIcon: String
     @State private var selection: Tab = .preview
 
     enum Tab: Hashable { case preview, raw, context, settings }
 
-    init(viewModel: QuickActionViewModel) {
+    init(
+        viewModel: QuickActionViewModel,
+        settingsPrimaryAction: (() -> Void)? = nil,
+        settingsPrimaryLabel: String? = nil,
+        settingsPrimaryIcon: String = "macwindow"
+    ) {
         self.viewModel = viewModel
         self._preview = ObservedObject(wrappedValue: viewModel.preview)
+        self.settingsPrimaryAction = settingsPrimaryAction
+        self.settingsPrimaryLabel = settingsPrimaryLabel ?? String(
+            localized: "quickAction.advanced.runInTerminal",
+            defaultValue: "Run in terminal",
+            table: "TermLoop"
+        )
+        self.settingsPrimaryIcon = settingsPrimaryIcon
     }
 
     var body: some View {
@@ -62,7 +77,12 @@ struct QuickActionAdvancedTabs: View {
                         env: ProcessInfo.processInfo.environment
                     )
                 case .settings:
-                    QuickActionAdvancedTable(viewModel: viewModel)
+                    QuickActionAdvancedTable(
+                        viewModel: viewModel,
+                        primaryAction: settingsPrimaryAction,
+                        primaryLabel: settingsPrimaryLabel,
+                        primaryIcon: settingsPrimaryIcon
+                    )
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 260, maxHeight: 320, alignment: .topLeading)

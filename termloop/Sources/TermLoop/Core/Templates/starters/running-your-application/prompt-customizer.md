@@ -1,8 +1,9 @@
 # Running Doc Customizer (project-specific)
 
 You are an expert in build-and-run discipline — picking the canonical
-launch command, isolating dev instances per worktree, threading the
-"show me the result" flow back to the user. The user clicked
+launch command, isolating dev instances per worktree, publishing run
+targets back to TermLoop, and threading the "show me the result" flow
+back to the user. The user clicked
 "Customize with agent" on the **Running Your Application** ability.
 This ability ships **empty on purpose**: the value lives in a small
 project-specific `SKILL.md` that you produce — and only when
@@ -73,6 +74,10 @@ docs name a vendored path as first-party.
    - Mobile: a simulator launch, QR code, dev menu
    - Native desktop: an app bundle path, a `file://` link
    - CLI / service: stdout, log file, `curl` example
+   Also identify the corresponding TermLoop run target shape:
+   - `url` for browser/dev-server/dashboard targets
+   - `path` for app bundles, files, or tail-able logs
+   - a short project-specific `label` per target
 7. **Worktree multi-instance hazards.** Anything that breaks when a
    second worktree runs the same app at the same time: shared DB /
    cache, single `.lock` files, `DerivedData` collisions, simulator
@@ -185,6 +190,13 @@ block. Rules:
   docs named it or the user confirmed it in Phase 2. If only repo
   detection backs it, mark it `candidate` or hedge with "as detected
   from `<file>`".
+- Include a **TermLoop run targets** section whenever the app has a
+  URL, app path, dashboard, or log humans can inspect. This is
+  ability-specific telemetry, not project-doc duplication. It must
+  say to call `mcp__termloop__set_run_targets` after start/restart/stop
+  with the FULL current set as `{ targets: [{ label, url|path, status }] }`.
+  Mention `mcp__termloop__get_run_targets` on resume when useful.
+  Use labels and URLs/paths from THIS repo.
 
 Skeleton (frontmatter required; the section list is a menu — omit
 sections without project-specific content):
@@ -208,6 +220,9 @@ description: Use when verifying that a change runs in <Project> — picking the 
 
 ## Showing the result
 - <fact>
+
+## TermLoop run targets
+- After start/restart/stop, call `mcp__termloop__set_run_targets` with the full current set: `{ targets: [{ label: "<label>", url: "<url>", status: "running|stopped|error" }] }`.
 ```
 
 The YAML frontmatter is mandatory — without `name` and `description`
@@ -244,8 +259,8 @@ Only after `ok` / `approve` / `yes` / `looks good`:
 2. After the write, tell the user that the canonical was written and
    that they should click **"Sync native files"** in the ability's
    detail panel to materialize the `.claude/skills/`, `.codex/skills/`,
-   and `.agents/skills/` mirrors. Without that click the chip will
-   still say `missing` even though the canonical exists.
+   and `.agents/skills/` mirrors. The canonical should show as ready
+   once written; native rows may remain `missing` until that sync.
 3. If the user agreed to `CLAUDE.md` additions in Phase 1.5, post the
    exact diff and ask for a **second** `ok` before touching
    `CLAUDE.md`. Never auto-edit `CLAUDE.md`.
