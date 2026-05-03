@@ -246,23 +246,202 @@ extension TermLoopSocketCommands {
                              data: nil))
     }
 
+    /// Safer resolver for agent-originated tools (notably Ask-To). If the
+    /// MCP server did not inherit `TERMLOOP_WORKSPACE_ID`, many open agent
+    /// workspaces can share the same cwd. The generic resolver uses
+    /// selected/recent workspace tie-breakers for human-triggered socket
+    /// calls, but an agent tool must not guess: guessing creates a bridge
+    /// under the wrong source and later pastes the helper reply there.
+    static func resolveAgentToolWorkspaceId(
+        from params: [String: Any],
+        commandName: String
+    ) -> WorkspaceLookup {
+        if let wsIdStr = rawString(params, "workspace_id")?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !wsIdStr.isEmpty {
+            BridgeDebugTrace.log(
+                "agentTool.resolve explicit command=\(commandName) ws=\(String(wsIdStr.prefix(8))) \(agentToolParamSummary(params))"
+            )
+            return resolveWorkspaceId(from: params)
+        }
+
+        guard AppDelegate.shared != nil else {
+            BridgeDebugTrace.log("agentTool.resolve unavailable command=\(commandName)")
+            return .missing(.err(
+                code: "unavailable",
+                message: "TabManager not available",
+                data: nil
+            ))
+        }
+
+        let cwd = rawString(params, "cwd")?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedCwd = cwd.map(canonicalPath) ?? ""
+        let normalizedAgentId = rawString(params, "agent_id")?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        let openWorkspaces = allOpenWorkspaces()
+        if let processLookup = resolveAgentToolWorkspaceIdByProcess(
+            from: params,
+            openWorkspaces: openWorkspaces,
+            normalizedCwd: normalizedCwd,
+            normalizedAgentId: normalizedAgentId,
+            commandName: commandName
+        ) {
+            return processLookup
+        }
+
+        guard let cwd, !cwd.isEmpty else {
+            BridgeDebugTrace.log(
+                "agentTool.resolve missing-cwd command=\(commandName) \(agentToolParamSummary(params))"
+            )
+            return .missing(.err(
+                code: "invalid_params",
+                message: "Missing workspace_id for \(commandName) (cwd fallback is only allowed when it uniquely identifies one open agent workspace)",
+                data: nil
+            ))
+        }
+        guard !normalizedCwd.isEmpty else {
+            BridgeDebugTrace.log("agentTool.resolve invalid-cwd command=\(commandName) cwd=\(cwd)")
+            return .missing(.err(
+                code: "invalid_params",
+                message: "Invalid cwd",
+                data: ["cwd": cwd]
+            ))
+        }
+
+        let allMatches = openWorkspaces.filter { workspace in
+            liveWorkspace(workspace, ownsCanonicalCwd: normalizedCwd)
+        }
+        guard !allMatches.isEmpty else {
+            BridgeDebugTrace.log(
+                "agentTool.resolve.cwd none command=\(commandName) cwd=\(cwd) open=\(openWorkspaces.count) \(agentToolParamSummary(params))"
+            )
+            return .missing(.err(
+                code: "no_workspace_for_cwd",
+                message: "No open workspace owns the cwd \(cwd)",
+                data: ["cwd": cwd]
+            ))
+        }
+
+        let matches: [Workspace] = {
+            guard let normalizedAgentId, !normalizedAgentId.isEmpty else {
+                return allMatches
+            }
+            let agentMatches = allMatches.filter {
+                workspace($0, matchesAgentId: normalizedAgentId)
+            }
+            return agentMatches.isEmpty ? allMatches : agentMatches
+        }()
+
+        if matches.count == 1, let workspace = matches.first {
+            BridgeDebugTrace.log(
+                "agentTool.resolve.cwd found command=\(commandName) ws=\(shortId(workspace.id)) cwd=\(cwd) " +
+                "allMatches=\(allMatches.count) \(agentToolParamSummary(params))"
+            )
+            return .found(id: workspace.id, idString: workspace.id.uuidString)
+        }
+
+        BridgeDebugTrace.log(
+            "agentTool.resolve.cwd ambiguous command=\(commandName) cwd=\(cwd) matches=\(shortIds(matches)) " +
+            "allMatches=\(allMatches.count) \(agentToolParamSummary(params))"
+        )
+        return .missing(.err(
+            code: "ambiguous_workspace_for_cwd",
+            message: "Multiple open workspaces match cwd \(cwd); TERMLOOP_WORKSPACE_ID is required for \(commandName).",
+            data: [
+                "cwd": cwd,
+                "agent_id": normalizedAgentId as Any? ?? NSNull(),
+                "workspace_ids": matches.map { $0.id.uuidString }
+            ]
+            ))
+    }
+
+    /// Stronger fallback for env-less MCP servers. When Codex/Claude starts
+    /// TermLoop's stdio MCP server without `TERMLOOP_WORKSPACE_ID`, cwd may be
+    /// shared by many open same-repo workspaces. The MCP server now sends its
+    /// process ancestry; if one tracked agent PID is in that ancestry, we can
+    /// resolve the caller without guessing from focus/recency.
+    private static func resolveAgentToolWorkspaceIdByProcess(
+        from params: [String: Any],
+        openWorkspaces: [Workspace],
+        normalizedCwd: String,
+        normalizedAgentId: String?,
+        commandName: String
+    ) -> WorkspaceLookup? {
+        let ancestry = processAncestorPIDs(from: params)
+        guard !ancestry.isEmpty else { return nil }
+
+        var matches = openWorkspaces.filter { workspace in
+            !workspaceAgentPIDs(workspace).isDisjoint(with: ancestry)
+        }
+        guard !matches.isEmpty else {
+            BridgeDebugTrace.log(
+                "agentTool.resolve.process none command=\(commandName) ancestryCount=\(ancestry.count) open=\(openWorkspaces.count) " +
+                "cwdFilter=\(!normalizedCwd.isEmpty) agent=\(normalizedAgentId ?? "nil")"
+            )
+            return nil
+        }
+        let pidMatchCount = matches.count
+
+        if let normalizedAgentId, !normalizedAgentId.isEmpty {
+            let agentMatches = matches.filter {
+                workspace($0, matchesAgentId: normalizedAgentId)
+            }
+            if !agentMatches.isEmpty {
+                matches = agentMatches
+            }
+        }
+
+        if !normalizedCwd.isEmpty {
+            let cwdMatches = matches.filter {
+                liveWorkspace($0, ownsCanonicalCwd: normalizedCwd)
+            }
+            if !cwdMatches.isEmpty {
+                matches = cwdMatches
+            }
+        }
+
+        if matches.count == 1, let workspace = matches.first {
+            BridgeDebugTrace.log(
+                "agentTool.resolve.process found command=\(commandName) ws=\(shortId(workspace.id)) " +
+                "pidMatches=\(pidMatchCount) ancestryCount=\(ancestry.count) cwdFilter=\(!normalizedCwd.isEmpty) agent=\(normalizedAgentId ?? "nil")"
+            )
+            return .found(id: workspace.id, idString: workspace.id.uuidString)
+        }
+
+        BridgeDebugTrace.log(
+            "agentTool.resolve.process ambiguous command=\(commandName) matches=\(shortIds(matches)) " +
+            "pidMatches=\(pidMatchCount) ancestryCount=\(ancestry.count) cwdFilter=\(!normalizedCwd.isEmpty) agent=\(normalizedAgentId ?? "nil")"
+        )
+        return .missing(.err(
+            code: "ambiguous_workspace_for_process",
+            message: "Multiple open workspaces match the MCP process ancestry; TERMLOOP_WORKSPACE_ID is required for \(commandName).",
+            data: [
+                "process_ancestor_pids": Array(ancestry).sorted(),
+                "agent_id": normalizedAgentId as Any? ?? NSNull(),
+                "workspace_ids": matches.map { $0.id.uuidString }
+            ]
+        ))
+    }
+
     /// Fallback for env-less MCP callers launched from a normal project root
     /// rather than a TermLoop-managed worktree. Worktree roots are handled by
     /// `WorkspaceMetadataStore.workspaceId(forCwd:)`; this live scan covers
     /// generic root workspaces and uses the selected/recently-prompted
     /// workspace to avoid guessing when several tabs share the same cwd.
     private static func resolveLiveWorkspaceId(forCwd cwd: String) -> WorkspaceLookup? {
-        guard let tabManager = AppDelegate.shared?.tabManager else { return nil }
         let normalizedCwd = canonicalPath(cwd)
         guard !normalizedCwd.isEmpty else { return nil }
-        let matches = tabManager.tabs.filter { workspace in
+        let matches = allOpenWorkspaces().filter { workspace in
             liveWorkspace(workspace, ownsCanonicalCwd: normalizedCwd)
         }
         guard !matches.isEmpty else { return nil }
         if matches.count == 1, let only = matches.first {
             return .found(id: only.id, idString: only.id.uuidString)
         }
-        if let selected = tabManager.selectedWorkspace,
+        if let selected = AppDelegate.shared?.tabManager?.selectedWorkspace,
            matches.contains(where: { $0.id == selected.id }) {
             return .found(id: selected.id, idString: selected.id.uuidString)
         }
@@ -292,12 +471,118 @@ extension TermLoopSocketCommands {
         ))
     }
 
+    private static func allOpenWorkspaces() -> [Workspace] {
+        guard let app = AppDelegate.shared else { return [] }
+        var seen = Set<UUID>()
+        var result: [Workspace] = []
+
+        for context in app.mainWindowContexts.values {
+            for workspace in context.tabManager.tabs where seen.insert(workspace.id).inserted {
+                result.append(workspace)
+            }
+        }
+        if let tabManager = app.tabManager {
+            for workspace in tabManager.tabs where seen.insert(workspace.id).inserted {
+                result.append(workspace)
+            }
+        }
+        return result
+    }
+
+    private static func shortId(_ id: UUID) -> String {
+        String(id.uuidString.prefix(8))
+    }
+
+    private static func shortIds(_ workspaces: [Workspace]) -> String {
+        workspaces.map { shortId($0.id) }.joined(separator: ",")
+    }
+
+    private static func agentToolParamSummary(_ params: [String: Any]) -> String {
+        let hasWorkspace = !(rawString(params, "workspace_id")?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+        let hasCwd = !(rawString(params, "cwd")?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+        let agent = rawString(params, "agent_id")?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasProcess = !processAncestorPIDs(from: params).isEmpty
+        let hasAskStamp = !(rawString(params, "ask_to_request_id")?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+        let hasReplyToken = !(rawString(params, "ask_to_reply_token")?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+        return "hasWs=\(hasWorkspace ? 1 : 0) hasCwd=\(hasCwd ? 1 : 0) hasProc=\(hasProcess ? 1 : 0) agent=\(agent?.isEmpty == false ? agent! : "nil") askStamp=\(hasAskStamp ? 1 : 0) hasToken=\(hasReplyToken ? 1 : 0)"
+    }
+
     private static func liveWorkspace(_ workspace: Workspace, ownsCanonicalCwd cwd: String) -> Bool {
         let candidates = [workspace.currentDirectory] + Array(workspace.panelDirectories.values)
         return candidates.contains { raw in
             let candidate = canonicalPath(raw)
             guard !candidate.isEmpty else { return false }
             return cwd == candidate || cwd.hasPrefix(candidate + "/")
+        }
+    }
+
+    private static func workspace(_ workspace: Workspace, matchesAgentId agentId: String) -> Bool {
+        let metadata = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: workspace.id)
+        let candidates = [
+            metadata.terminalAgentId,
+            metadata.persistedAgentSession?.agentId,
+            TerminalAgentActivityStore.shared.state(forWorkspaceId: workspace.id)?.agentId
+        ]
+        return candidates.contains { candidate in
+            guard let normalized = candidate?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased(),
+                  !normalized.isEmpty else {
+                return false
+            }
+            return normalized == agentId
+        }
+    }
+
+    private static func workspaceAgentPIDs(_ workspace: Workspace) -> Set<Int> {
+        var pids = Set(workspace.agentPIDs.values.compactMap { pid -> Int? in
+            pid > 0 ? Int(pid) : nil
+        })
+        if let pid = TerminalAgentActivityStore.shared.state(forWorkspaceId: workspace.id)?.pid,
+           pid > 0 {
+            pids.insert(Int(pid))
+        }
+        return pids
+    }
+
+    private static func processAncestorPIDs(from params: [String: Any]) -> Set<Int> {
+        var pids = Set<Int>()
+        for key in ["mcp_pid", "mcp_parent_pid"] {
+            if let value = intParam(params[key]), value > 1 {
+                pids.insert(value)
+            }
+        }
+        if let values = params["process_ancestor_pids"] as? [Any] {
+            for raw in values {
+                if let value = intParam(raw), value > 1 {
+                    pids.insert(value)
+                }
+            }
+        }
+        return pids
+    }
+
+    private static func intParam(_ raw: Any?) -> Int? {
+        switch raw {
+        case let value as Int:
+            return value
+        case let value as Int32:
+            return Int(value)
+        case let value as Int64:
+            return Int(value)
+        case let value as Double where value.isFinite:
+            return Int(value)
+        case let value as NSNumber:
+            return value.intValue
+        case let value as String:
+            return Int(value.trimmingCharacters(in: .whitespacesAndNewlines))
+        default:
+            return nil
         }
     }
 

@@ -70,12 +70,42 @@ struct BridgeMessage: Identifiable, Codable, Equatable, Hashable {
     }
 }
 
-/// The single final answer delivered for an Ask-To request. `requestId` is
-/// the bridge id; this marker is what makes `reply_to_request` one-shot.
+/// The single final answer delivered for an Ask-To request. Stored on the
+/// request, not on the bridge lifecycle: replying closes that one request,
+/// while the bridge/conversation can stay available for manual forwards or a
+/// later follow-up request.
 struct BridgeFinalReply: Codable, Equatable, Hashable {
     let messageId: UUID
     let text: String
     let timestamp: Date
+}
+
+/// One single-use Ask-To request inside a long-lived askAgent bridge. A
+/// bridge is the conversation/link between source and helper workspaces; each
+/// request is a one-shot job that the helper must close with exactly one
+/// `reply_to_request` call.
+struct AskToRequest: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var message: String
+    var kickoffMessage: String
+    var finalReply: BridgeFinalReply?
+    let createdAt: Date
+
+    init(
+        id: UUID = UUID(),
+        message: String,
+        kickoffMessage: String,
+        finalReply: BridgeFinalReply? = nil,
+        createdAt: Date = Date()
+    ) {
+        self.id = id
+        self.message = message
+        self.kickoffMessage = kickoffMessage
+        self.finalReply = finalReply
+        self.createdAt = createdAt
+    }
+
+    var isOpen: Bool { finalReply == nil }
 }
 
 /// Model for a bidirectional link between two workspaces running terminal
@@ -83,7 +113,7 @@ struct BridgeFinalReply: Codable, Equatable, Hashable {
 /// `firstSpeaker` picks which side receives the kickoff message so the
 /// coordinator knows where to start. After kickoff, all forwarding is
 /// user-initiated via the cable's arrow buttons.
-struct WorkspaceBridge: Identifiable, Codable, Equatable, Hashable {
+struct WorkspaceBridge: Identifiable, Equatable, Hashable {
     let id: UUID
     /// Mutable so `WorkspaceBridgeStore.rebindAfterRestore` can update them to
     /// the current runtime UUIDs after a restart (workspace UUIDs are not
@@ -98,7 +128,11 @@ struct WorkspaceBridge: Identifiable, Codable, Equatable, Hashable {
     var rightAgentId: String?
     var rightPrompt: String?
     var rightWorkspaceTitleOverride: String?
+    /// Legacy mirror for the most recent final Ask-To reply. New code should
+    /// use `askToRequests`; this stays to keep old persisted bridge JSON and
+    /// older UI reads from losing the last answer during migration.
     var finalReply: BridgeFinalReply?
+    var askToRequests: [AskToRequest]
     var kickoffMessage: String
     var firstSpeaker: BridgeSender  // .left or .right
     /// True when the first turn was supplied through the agent launch command
@@ -129,6 +163,7 @@ struct WorkspaceBridge: Identifiable, Codable, Equatable, Hashable {
         rightPrompt: String? = nil,
         rightWorkspaceTitleOverride: String? = nil,
         finalReply: BridgeFinalReply? = nil,
+        askToRequests: [AskToRequest] = [],
         kickoffMessage: String,
         firstSpeaker: BridgeSender,
         kickoffDeliveredAtLaunch: Bool? = nil,
@@ -148,6 +183,7 @@ struct WorkspaceBridge: Identifiable, Codable, Equatable, Hashable {
         self.rightPrompt = rightPrompt
         self.rightWorkspaceTitleOverride = rightWorkspaceTitleOverride
         self.finalReply = finalReply
+        self.askToRequests = askToRequests
         self.kickoffMessage = kickoffMessage
         self.firstSpeaker = firstSpeaker
         self.kickoffDeliveredAtLaunch = kickoffDeliveredAtLaunch
@@ -158,6 +194,55 @@ struct WorkspaceBridge: Identifiable, Codable, Equatable, Hashable {
 
     var effectiveForwardMode: BridgeForwardMode {
         forwardMode ?? .manual
+    }
+
+    var latestAskToRequest: AskToRequest? {
+        askToRequests.max { $0.createdAt < $1.createdAt }
+    }
+
+    var openAskToRequest: AskToRequest? {
+        askToRequests.first { $0.isOpen }
+    }
+
+    func askToRequest(id requestId: UUID) -> AskToRequest? {
+        askToRequests.first { $0.id == requestId }
+    }
+
+    /// Back-compat: old Ask-To bridges used `bridge.id` as the request id.
+    func containsAskToRequest(id requestId: UUID) -> Bool {
+        askToRequest(id: requestId) != nil
+            || (intent == .askAgent && id == requestId)
+    }
+
+    /// Helper-side Ask-To launches carry a request stamp and bridge-scoped
+    /// bearer token in their MCP environment. This lets replies authenticate
+    /// even when the MCP process reports a stale or missing workspace id.
+    func acceptsAskToLaunchCredential(
+        requestId: UUID?,
+        replyToken: String?,
+        callerAgentId: String?
+    ) -> Bool {
+        guard let requestId,
+              containsAskToRequest(id: requestId) else {
+            return false
+        }
+        guard let suppliedToken = replyToken?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !suppliedToken.isEmpty,
+              let expectedToken = askToReplyToken?.trimmingCharacters(in: .whitespacesAndNewlines),
+              suppliedToken == expectedToken else {
+            return false
+        }
+
+        let callerAgent = callerAgentId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let bridgeAgent = rightAgentId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return callerAgent == nil
+            || callerAgent?.isEmpty == true
+            || bridgeAgent == nil
+            || callerAgent == bridgeAgent
     }
 
     /// Workspace id on the given side.
@@ -174,5 +259,97 @@ struct WorkspaceBridge: Identifiable, Codable, Equatable, Hashable {
         case .left: return .right
         case .right: return .left
         }
+    }
+}
+
+extension WorkspaceBridge: Codable {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case leftWorkspaceId
+        case rightWorkspaceId
+        case intent
+        case state
+        case messages
+        case rolePrompt
+        case leftAgentId
+        case rightAgentId
+        case rightPrompt
+        case rightWorkspaceTitleOverride
+        case finalReply
+        case askToRequests
+        case kickoffMessage
+        case firstSpeaker
+        case kickoffDeliveredAtLaunch
+        case askToReplyToken
+        case forwardMode
+        case createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        leftWorkspaceId = try c.decode(UUID.self, forKey: .leftWorkspaceId)
+        rightWorkspaceId = try c.decode(UUID.self, forKey: .rightWorkspaceId)
+        intent = try c.decodeIfPresent(BridgeIntent.self, forKey: .intent) ?? .relay
+        state = try c.decodeIfPresent(BridgeState.self, forKey: .state) ?? .running
+        messages = try c.decodeIfPresent([BridgeMessage].self, forKey: .messages) ?? []
+        rolePrompt = try c.decodeIfPresent(String.self, forKey: .rolePrompt)
+        leftAgentId = try c.decodeIfPresent(String.self, forKey: .leftAgentId)
+        rightAgentId = try c.decodeIfPresent(String.self, forKey: .rightAgentId)
+        rightPrompt = try c.decodeIfPresent(String.self, forKey: .rightPrompt)
+        rightWorkspaceTitleOverride = try c.decodeIfPresent(String.self, forKey: .rightWorkspaceTitleOverride)
+        finalReply = try c.decodeIfPresent(BridgeFinalReply.self, forKey: .finalReply)
+        kickoffMessage = try c.decodeIfPresent(String.self, forKey: .kickoffMessage) ?? ""
+        firstSpeaker = try c.decodeIfPresent(BridgeSender.self, forKey: .firstSpeaker) ?? .left
+        kickoffDeliveredAtLaunch = try c.decodeIfPresent(Bool.self, forKey: .kickoffDeliveredAtLaunch)
+        askToReplyToken = try c.decodeIfPresent(String.self, forKey: .askToReplyToken)
+        forwardMode = try c.decodeIfPresent(BridgeForwardMode.self, forKey: .forwardMode)
+        createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+
+        let decodedRequests = try c.decodeIfPresent([AskToRequest].self, forKey: .askToRequests) ?? []
+        if intent == .askAgent, decodedRequests.isEmpty {
+            askToRequests = [
+                AskToRequest(
+                    id: id,
+                    message: kickoffMessage,
+                    kickoffMessage: kickoffMessage,
+                    finalReply: finalReply,
+                    createdAt: createdAt
+                )
+            ]
+        } else {
+            askToRequests = decodedRequests
+        }
+
+        // Legacy builds used `.stopped(.replied)` to mean "the single request
+        // has replied". In the split model that is request state, not bridge
+        // lifecycle, so revive those links on decode and keep their controls.
+        if intent == .askAgent,
+           case .stopped(.replied) = state {
+            state = .running
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(leftWorkspaceId, forKey: .leftWorkspaceId)
+        try c.encode(rightWorkspaceId, forKey: .rightWorkspaceId)
+        try c.encode(intent, forKey: .intent)
+        try c.encode(state, forKey: .state)
+        try c.encode(messages, forKey: .messages)
+        try c.encodeIfPresent(rolePrompt, forKey: .rolePrompt)
+        try c.encodeIfPresent(leftAgentId, forKey: .leftAgentId)
+        try c.encodeIfPresent(rightAgentId, forKey: .rightAgentId)
+        try c.encodeIfPresent(rightPrompt, forKey: .rightPrompt)
+        try c.encodeIfPresent(rightWorkspaceTitleOverride, forKey: .rightWorkspaceTitleOverride)
+        try c.encodeIfPresent(finalReply, forKey: .finalReply)
+        try c.encode(askToRequests, forKey: .askToRequests)
+        try c.encode(kickoffMessage, forKey: .kickoffMessage)
+        try c.encode(firstSpeaker, forKey: .firstSpeaker)
+        try c.encodeIfPresent(kickoffDeliveredAtLaunch, forKey: .kickoffDeliveredAtLaunch)
+        try c.encodeIfPresent(askToReplyToken, forKey: .askToReplyToken)
+        try c.encodeIfPresent(forwardMode, forKey: .forwardMode)
+        try c.encode(createdAt, forKey: .createdAt)
     }
 }
