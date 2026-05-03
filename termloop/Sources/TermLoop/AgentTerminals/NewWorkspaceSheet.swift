@@ -206,8 +206,7 @@ final class NewWorkspaceWithWorktreeCoordinator: ObservableObject {
                 launchSource: request.launchSource,
                 reasonTag: request.reasonTag,
                 projectId: request.projectId,
-                suggestedBranchName: request.suggestedBranchName,
-                assignedTicket: request.assignedTicket
+                suggestedBranchName: request.suggestedBranchName
             )
         )
     }
