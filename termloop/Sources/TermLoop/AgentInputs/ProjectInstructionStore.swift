@@ -547,6 +547,8 @@ enum ProjectSkillMaterializer {
         let isCanonical: Bool
         let isManagedCopy: Bool
         let isLinkedCopy: Bool
+        let isSynced: Bool
+        let isSyncable: Bool
     }
 
     static func materializeForLaunch(_ plan: AgentInvocationPlan) {
@@ -623,6 +625,26 @@ enum ProjectSkillMaterializer {
         materialize(projectFolderPath: projectFolderPath, agentCwdPath: agentCwdPath, skillIds: [skillId])
     }
 
+    static func materialize(
+        projectFolderPath: String?,
+        agentCwdPath: String? = nil,
+        skillId: String,
+        ability: Ability?
+    ) {
+        let hintsBySkillId: [String: String]
+        if let ability {
+            hintsBySkillId = computeSkillHints(skillIds: [skillId], abilities: [ability])
+        } else {
+            hintsBySkillId = [:]
+        }
+        materialize(
+            projectFolderPath: projectFolderPath,
+            agentCwdPath: agentCwdPath,
+            skillIds: [skillId],
+            hintsBySkillId: hintsBySkillId
+        )
+    }
+
     /// Builds per-skill hint footers from the active abilities that require
     /// each skill. Each ability contributes one hint per built-in MCP tool it
     /// has opted into — for example, `working-with-jira` opted into
@@ -650,7 +672,11 @@ enum ProjectSkillMaterializer {
         return result
     }
 
-    static func skillLocations(projectFolderPath: String?, skillId: String) -> [SkillLocation] {
+    static func skillLocations(
+        projectFolderPath: String?,
+        skillId: String,
+        ability: Ability? = nil
+    ) -> [SkillLocation] {
         guard let projectFolderPath,
               !projectFolderPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let safeId = safeSkillId(skillId) else {
@@ -658,6 +684,9 @@ enum ProjectSkillMaterializer {
         }
         let projectRoot = URL(fileURLWithPath: projectFolderPath, isDirectory: true)
         let canonical = canonicalSkillDirectory(projectRoot: projectRoot, skillId: safeId)
+        let hintFooter = ability.flatMap {
+            computeSkillHints(skillIds: [safeId], abilities: [$0])[safeId]
+        }
         var locations: [SkillLocation] = [
             skillLocation(
                 label: "Project canonical",
@@ -667,7 +696,13 @@ enum ProjectSkillMaterializer {
         ]
 
         for destination in nativeSkillDestinations(skillRoot: projectRoot, skillId: safeId) {
-            locations.append(skillLocation(label: destination.label, directory: destination.directory, isCanonical: false))
+            locations.append(skillLocation(
+                label: destination.label,
+                directory: destination.directory,
+                isCanonical: false,
+                sourceDirectory: canonical,
+                skillFileFooter: hintFooter
+            ))
         }
         return locations
     }
@@ -829,12 +864,34 @@ enum ProjectSkillMaterializer {
     private static func skillLocation(
         label: String,
         directory: URL,
-        isCanonical: Bool
+        isCanonical: Bool,
+        sourceDirectory: URL? = nil,
+        skillFileFooter: String? = nil
     ) -> SkillLocation {
         let skillFile = directory.appendingPathComponent("SKILL.md")
         let marker = directory.appendingPathComponent(managedMarkerName)
         let fm = FileManager.default
         let linked = (try? fm.destinationOfSymbolicLink(atPath: skillFile.path)) != nil
+        let exists = fm.fileExists(atPath: skillFile.path)
+        let managed = !isCanonical && fm.fileExists(atPath: marker.path)
+        let sourceExists = sourceDirectory.map {
+            fm.fileExists(atPath: $0.appendingPathComponent("SKILL.md").path)
+        } ?? false
+        let isSyncable = !isCanonical && sourceExists && (!exists || managed || linked)
+        let synced: Bool = {
+            guard exists else { return false }
+            guard !isCanonical else { return true }
+            guard let sourceDirectory else { return false }
+            if linked {
+                return managedSymlinksAlreadyPoint(from: sourceDirectory, to: directory)
+            }
+            guard managed else { return false }
+            return managedCopyAlreadyFresh(
+                from: sourceDirectory,
+                destination: directory,
+                skillFileFooter: skillFileFooter
+            )
+        }()
         let resolvedDirectory = directory.resolvingSymlinksInPath()
         let canonicalFile = canonicalSkillDirectory(
             projectRoot: resolvedDirectory
@@ -848,10 +905,12 @@ enum ProjectSkillMaterializer {
             label: label,
             fileURL: skillFile,
             editURL: isCanonical || linked ? skillFile.resolvingSymlinksInPath() : canonicalFile,
-            exists: fm.fileExists(atPath: skillFile.path),
+            exists: exists,
             isCanonical: isCanonical,
-            isManagedCopy: !isCanonical && fm.fileExists(atPath: marker.path),
-            isLinkedCopy: !isCanonical && linked
+            isManagedCopy: managed,
+            isLinkedCopy: !isCanonical && linked,
+            isSynced: synced,
+            isSyncable: isSyncable
         )
     }
 
@@ -902,12 +961,13 @@ enum ProjectSkillMaterializer {
             guard fm.fileExists(atPath: marker.path) else {
                 return
             }
-            // Idempotency check via mtime: skip rewrite if every kept entry is
-            // at least as new as the canonical source. Cheap heuristic; misses
-            // mid-second edits but avoids constant churn under reload bursts.
-            // Footer changes still need a rewrite, but tool-hint text rarely
-            // mutates between launches so the heuristic stays useful.
-            if managedCopyAlreadyFresh(from: source, destination: destination) {
+            // Idempotency check by content so mid-second edits and generated
+            // TermLoop footer changes still refresh the managed copy.
+            if managedCopyAlreadyFresh(
+                from: source,
+                destination: destination,
+                skillFileFooter: skillFileFooter
+            ) {
                 return
             }
             try? fm.removeItem(at: destination)
@@ -963,25 +1023,109 @@ enum ProjectSkillMaterializer {
         return true
     }
 
-    private static func managedCopyAlreadyFresh(from source: URL, destination: URL) -> Bool {
+    private static func managedCopyAlreadyFresh(
+        from source: URL,
+        destination: URL,
+        skillFileFooter: String? = nil
+    ) -> Bool {
         let fm = FileManager.default
-        guard let sourceChildren = try? fm.contentsOfDirectory(
-            at: source,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: []
-        ) else {
+        let marker = destination.appendingPathComponent(managedMarkerName)
+        guard fm.fileExists(atPath: marker.path) else {
+            return false
+        }
+        return directoryContentsMatch(
+            source: source,
+            destination: destination,
+            skillFileFooter: skillFileFooter,
+            allowedExtraDestinationNames: [managedMarkerName]
+        )
+    }
+
+    private static func directoryContentsMatch(
+        source: URL,
+        destination: URL,
+        skillFileFooter: String?,
+        allowedExtraDestinationNames: Set<String> = []
+    ) -> Bool {
+        let fm = FileManager.default
+        guard isDirectory(source),
+              isDirectory(destination),
+              let sourceChildren = try? fm.contentsOfDirectory(
+                at: source,
+                includingPropertiesForKeys: nil,
+                options: []
+              ),
+              let destinationChildren = try? fm.contentsOfDirectory(
+                at: destination,
+                includingPropertiesForKeys: nil,
+                options: []
+              ) else {
+            return false
+        }
+        let sourceNames = Set(sourceChildren
+            .map(\.lastPathComponent)
+            .filter { $0 != managedMarkerName })
+        let destinationNames = Set(destinationChildren.map(\.lastPathComponent))
+        guard sourceNames.subtracting(destinationNames).isEmpty else { return false }
+        guard destinationNames
+            .subtracting(sourceNames)
+            .subtracting(allowedExtraDestinationNames)
+            .isEmpty else {
             return false
         }
         for child in sourceChildren where child.lastPathComponent != managedMarkerName {
             let copiedChild = destination.appendingPathComponent(child.lastPathComponent)
-            guard fm.fileExists(atPath: copiedChild.path),
-                  let sourceMtime = (try? child.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
-                  let copyMtime = (try? copiedChild.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
-                  copyMtime >= sourceMtime else {
+            let footer = child.lastPathComponent == "SKILL.md" ? skillFileFooter : nil
+            guard copiedEntryMatches(
+                source: child,
+                destination: copiedChild,
+                skillFileFooter: footer
+            ) else {
                 return false
             }
         }
         return true
+    }
+
+    private static func copiedEntryMatches(
+        source: URL,
+        destination: URL,
+        skillFileFooter: String?
+    ) -> Bool {
+        let sourceIsDirectory = isDirectory(source)
+        guard sourceIsDirectory == isDirectory(destination) else { return false }
+        if sourceIsDirectory {
+            return directoryContentsMatch(
+                source: source,
+                destination: destination,
+                skillFileFooter: nil
+            )
+        }
+        guard let destinationData = try? Data(contentsOf: destination) else { return false }
+        if let skillFileFooter,
+           !skillFileFooter.isEmpty,
+           let expectedData = expectedSkillFileData(sourceFile: source, footer: skillFileFooter) {
+            return destinationData == expectedData
+        }
+        guard let sourceData = try? Data(contentsOf: source) else { return false }
+        return destinationData == sourceData
+    }
+
+    private static func expectedSkillFileData(sourceFile: URL, footer: String) -> Data? {
+        guard var body = try? String(contentsOf: sourceFile, encoding: .utf8) else {
+            return nil
+        }
+        if !body.hasSuffix("\n") {
+            body += "\n"
+        }
+        body += footer
+        return body.data(using: .utf8)
+    }
+
+    private static func isDirectory(_ url: URL) -> Bool {
+        var isDir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+            && isDir.boolValue
     }
 
     private static func sweepManagedSkills(

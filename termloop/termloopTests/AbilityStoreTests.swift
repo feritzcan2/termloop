@@ -443,6 +443,86 @@ final class AbilityStoreTests: XCTestCase {
         )
     }
 
+    func testProjectSkillMaterializerReportsNativeSkillSyncState() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let repo = tmp.appendingPathComponent("repo")
+        let canonical = repo
+            .appendingPathComponent(".termloop/skills/working-with-jira", isDirectory: true)
+        try FileManager.default.createDirectory(at: canonical, withIntermediateDirectories: true)
+        let canonicalSkill = canonical.appendingPathComponent("SKILL.md")
+        try "canonical".write(to: canonicalSkill, atomically: true, encoding: .utf8)
+
+        ProjectSkillMaterializer.materialize(
+            projectFolderPath: repo.path,
+            skillIds: ["working-with-jira"]
+        )
+
+        var locations = ProjectSkillMaterializer.skillLocations(
+            projectFolderPath: repo.path,
+            skillId: "working-with-jira"
+        )
+        XCTAssertTrue(locations.filter { !$0.isCanonical }.allSatisfy(\.isSynced))
+
+        try "updated".write(to: canonicalSkill, atomically: true, encoding: .utf8)
+        locations = ProjectSkillMaterializer.skillLocations(
+            projectFolderPath: repo.path,
+            skillId: "working-with-jira"
+        )
+        XCTAssertTrue(locations.filter { !$0.isCanonical }.contains { !$0.isSynced && $0.isSyncable })
+
+        ProjectSkillMaterializer.materialize(
+            projectFolderPath: repo.path,
+            skillIds: ["working-with-jira"]
+        )
+        locations = ProjectSkillMaterializer.skillLocations(
+            projectFolderPath: repo.path,
+            skillId: "working-with-jira"
+        )
+        XCTAssertTrue(locations.filter { !$0.isCanonical }.allSatisfy(\.isSynced))
+    }
+
+    func testProjectSkillMaterializerSyncStateAccountsForAbilityFooter() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let repo = tmp.appendingPathComponent("repo")
+        let canonical = repo
+            .appendingPathComponent(".termloop/skills/working-with-jira", isDirectory: true)
+        try FileManager.default.createDirectory(at: canonical, withIntermediateDirectories: true)
+        try "canonical".write(
+            to: canonical.appendingPathComponent("SKILL.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let ability = Ability(
+            id: "working-with-jira",
+            name: "Working With Jira",
+            description: "Use when working with Jira.",
+            activation: .worktree,
+            body: "",
+            items: [.requiredSkill("working-with-jira")],
+            mcpTools: [AbilityMCPToolBinding(name: "set_jira_ticket")],
+            filePath: URL(fileURLWithPath: "/tmp/jira.md"),
+            metadataFilePath: URL(fileURLWithPath: "/tmp/jira.json")
+        )
+
+        ProjectSkillMaterializer.materialize(
+            projectFolderPath: repo.path,
+            skillId: "working-with-jira",
+            ability: ability
+        )
+
+        let codexSkill = repo
+            .appendingPathComponent(".codex/skills/working-with-jira/SKILL.md")
+        XCTAssertTrue(try String(contentsOf: codexSkill, encoding: .utf8).contains("TermLoop telemetry"))
+        let locations = ProjectSkillMaterializer.skillLocations(
+            projectFolderPath: repo.path,
+            skillId: "working-with-jira",
+            ability: ability
+        )
+        XCTAssertTrue(locations.filter { !$0.isCanonical }.allSatisfy(\.isSynced))
+    }
+
     func testProjectSkillMaterializerDoesNotOverwriteUnmanagedAgentSkill() throws {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
