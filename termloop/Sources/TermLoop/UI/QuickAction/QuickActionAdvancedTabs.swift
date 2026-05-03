@@ -6,12 +6,9 @@ import SwiftUI
 struct QuickActionAdvancedTabs: View {
     @ObservedObject var viewModel: QuickActionViewModel
     @ObservedObject private var preview: QuickActionPreviewViewModel
-    let settingsPrimaryAction: (() -> Void)?
-    let settingsPrimaryLabel: String
-    let settingsPrimaryIcon: String
     @State private var selection: Tab = .preview
 
-    enum Tab: Hashable { case preview, raw, context, settings }
+    enum Tab: Hashable { case preview, raw }
 
     init(
         viewModel: QuickActionViewModel,
@@ -21,13 +18,6 @@ struct QuickActionAdvancedTabs: View {
     ) {
         self.viewModel = viewModel
         self._preview = ObservedObject(wrappedValue: viewModel.preview)
-        self.settingsPrimaryAction = settingsPrimaryAction
-        self.settingsPrimaryLabel = settingsPrimaryLabel ?? String(
-            localized: "quickAction.advanced.runInTerminal",
-            defaultValue: "Run in terminal",
-            table: "TermLoop"
-        )
-        self.settingsPrimaryIcon = settingsPrimaryIcon
     }
 
     var body: some View {
@@ -68,21 +58,6 @@ struct QuickActionAdvancedTabs: View {
                         plan: preview.plan,
                         transport: viewModel.transportResolutionForPreview()
                     )
-                case .context:
-                    QuickActionAdvancedContextTab(
-                        projectFolderPath: viewModel.resolvedProjectFolderForPreview(),
-                        cwd: viewModel.resolvedRunCwdForPreview(),
-                        branch: viewModel.resolvedBranchForPreview(),
-                        isWorktree: preview.isWorktree,
-                        env: ProcessInfo.processInfo.environment
-                    )
-                case .settings:
-                    QuickActionAdvancedTable(
-                        viewModel: viewModel,
-                        primaryAction: settingsPrimaryAction,
-                        primaryLabel: settingsPrimaryLabel,
-                        primaryIcon: settingsPrimaryIcon
-                    )
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 260, maxHeight: 320, alignment: .topLeading)
@@ -95,12 +70,6 @@ struct QuickActionAdvancedTabs: View {
                     Button("", action: { selection = .raw })
                         .keyboardShortcut("2", modifiers: .command)
                         .hidden()
-                    Button("", action: { selection = .context })
-                        .keyboardShortcut("3", modifiers: .command)
-                        .hidden()
-                    Button("", action: { selection = .settings })
-                        .keyboardShortcut("4", modifiers: .command)
-                        .hidden()
                 }
                 .frame(width: 0, height: 0)
             )
@@ -112,8 +81,6 @@ struct QuickActionAdvancedTabs: View {
             HStack(spacing: 6) {
                 tabPill("Preview", tab: .preview)
                 tabPill("Raw", tab: .raw)
-                tabPill("Context", tab: .context)
-                tabPill("Settings", tab: .settings)
             }
         }
     }

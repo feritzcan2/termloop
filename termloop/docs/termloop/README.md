@@ -14,6 +14,7 @@ This directory documents the rules and workflow that keep `termloop` conflict-fr
 - `hook-patterns.md` — the four permitted hook types and how to apply them.
 - `sync-workflow.md` — the `/sync-upstream` procedure and conflict triage table.
 - `hooks-inventory.md` — catalog of all hook points currently in upstream files.
+- `default-agent-template-standard.md` — quality and source rules for built-in agent templates.
 
 ## Product framing
 

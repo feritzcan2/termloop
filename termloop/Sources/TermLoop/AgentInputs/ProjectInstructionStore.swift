@@ -16,6 +16,19 @@ import Foundation
 /// Skills lifetime: truth lives here, but the popover-scoped `SkillCatalog`
 /// view-model retains its existing per-popover refresh ergonomics.
 enum ProjectInstructionStore {
+    struct SkillFooterPayload: Equatable {
+        let toolName: String
+        let text: String
+        let sourceFileURL: URL?
+    }
+
+    struct AbilityPayloadProjection: Equatable {
+        let payloadBlocks: [AbilityPayloadBlock]
+
+        var isEmpty: Bool {
+            payloadBlocks.allSatisfy { !$0.enabled || $0.trimmedBody.isEmpty }
+        }
+    }
 
     // MARK: - Abilities
 
@@ -78,6 +91,8 @@ enum ProjectInstructionStore {
             allAbilities: abilities,
             referencedSkills: referencedSkills,
             composedAppendSystemPrompt: composed,
+            disabledGeneratedParts: [],
+            hasRunOverrides: false,
             isWorktree: isWorktree
         )
     }
@@ -88,44 +103,29 @@ enum ProjectInstructionStore {
         listedAbilities: [Ability],
         isWorktree: Bool,
         projectFolderPath: String?,
-        referencedSkills: [SkillEntry] = []
+        referencedSkills: [SkillEntry] = [],
+        disabledGenerated: Set<InstructionRunOverrides.GeneratedPartKind> = []
     ) -> String? {
         guard !activeAbilities.isEmpty || !listedAbilities.isEmpty else { return nil }
 
-        // `system-reminder.md` is, by design, always-on guidance. Listed
-        // abilities still need their reminder injected — otherwise the agent
-        // only sees an on-demand bullet and may never read the file that
-        // contains a hard rule like "call `set_jira_ticket` after a state
-        // change".
-        let referencedSkillNames = Set(referencedSkills.map(\.name))
-        let canRelyOnProjectNativeSkills = projectFolderPath?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .isEmpty == false
-        let activeReminders: [(Ability, String)] = activeAbilities.compactMap { ability in
-            let trimmed = reminderBody(
+        let activePayloads: [(Ability, AbilityPayloadProjection)] = activeAbilities.compactMap { ability in
+            let projection = abilityPayloadProjection(
                 for: ability,
-                referencedSkillNames: referencedSkillNames,
-                canRelyOnProjectNativeSkills: canRelyOnProjectNativeSkills
+                disabledGenerated: disabledGenerated
             )
-            return trimmed.isEmpty ? nil : (ability, trimmed)
+            return projection.isEmpty ? nil : (ability, projection)
         }
-        let listedReminders: [(Ability, String)] = listedAbilities.compactMap { ability in
-            let trimmed = reminderBody(
+        let listedPayloads: [(Ability, AbilityPayloadProjection)] = listedAbilities.compactMap { ability in
+            let projection = abilityPayloadProjection(
                 for: ability,
-                referencedSkillNames: referencedSkillNames,
-                canRelyOnProjectNativeSkills: canRelyOnProjectNativeSkills
+                disabledGenerated: disabledGenerated
             )
-            return trimmed.isEmpty ? nil : (ability, trimmed)
+            return projection.isEmpty ? nil : (ability, projection)
         }
-        // Bullet listing is only useful for abilities whose system-reminder
-        // is empty — otherwise the rule is already injected above and the
-        // bullet just repeats the description (and the required-skill name
-        // the reminder normally already mentions).
         let onDemandOnly: [Ability] = listedAbilities.filter { ability in
-            reminderBody(
+            payloadBody(
                 for: ability,
-                referencedSkillNames: referencedSkillNames,
-                canRelyOnProjectNativeSkills: canRelyOnProjectNativeSkills
+                disabledGenerated: disabledGenerated
             ).isEmpty
         }
         // Drop skills that are already materialized into the agent-native
@@ -133,70 +133,51 @@ enum ProjectInstructionStore {
         // are picked up by the agent's own skill discovery; re-listing the
         // file path in the prompt is wasted context. Without a project root
         // we can't probe — keep the section to preserve old behavior.
-        let unmaterializedSkills: [SkillEntry] = referencedSkills.filter { skill in
-            guard let projectFolderPath, !projectFolderPath.isEmpty else { return true }
-            let nativeFile = URL(fileURLWithPath: projectFolderPath, isDirectory: true)
-                .appendingPathComponent(".claude", isDirectory: true)
-                .appendingPathComponent("skills", isDirectory: true)
-                .appendingPathComponent(skill.name, isDirectory: true)
-                .appendingPathComponent("SKILL.md")
-            return !FileManager.default.fileExists(atPath: nativeFile.path)
+        let unmaterializedSkills = unmaterializedSkillsForPrompt(
+            referencedSkills: referencedSkills,
+            projectFolderPath: projectFolderPath
+        )
+        guard !activePayloads.isEmpty
+            || !listedPayloads.isEmpty
+            || !onDemandOnly.isEmpty
+            || !unmaterializedSkills.isEmpty else {
+            return nil
         }
 
         var out = ""
         out += "<system-reminder>\n"
 
-        // Compact form: exactly one ability (active OR listed) contributed an
-        // always-on rule and there's nothing else to surface — no active
-        // ability without a body to list, no on-demand-only bullets, no
-        // unmaterialized skill pointers. Drops the "# Project Abilities"
-        // preamble and the section heading entirely; the rule itself is the
-        // only content worth keeping.
-        let allReminders = activeReminders + listedReminders
-        let activeWithoutBody = activeAbilities.count - activeReminders.count
-        if allReminders.count == 1,
-           activeWithoutBody == 0,
+        let allPayloads = activePayloads + listedPayloads
+        if allPayloads.count == 1,
            onDemandOnly.isEmpty,
            unmaterializedSkills.isEmpty,
-           let (ability, reminder) = allReminders.first {
-            out += "## Project rules — \(ability.name)\n\n"
-            out += reminder
+           let (ability, projection) = allPayloads.first {
+            out += "# Project rules — \(ability.name)\n\n"
+            out += renderProjection(projection, headingLevel: 2)
             out += "\n</system-reminder>"
             return out
         }
 
-        // Standard form: skip the "# Project Abilities" preamble and the
-        // "## Active" wrapper. Each active ability renders as a top-level
-        // "## Name" with its rule body — that is the rule, no boilerplate
-        // needed to frame it. Listed-on-demand reminders sit under their
-        // own labeled section below to mark the difference in scope.
         var hasEmittedSection = false
         let separator = { (out: inout String) in
             if hasEmittedSection { out += "\n" }
             hasEmittedSection = true
         }
 
-        for ability in activeAbilities {
-            let reminder = reminderBody(
-                for: ability,
-                referencedSkillNames: referencedSkillNames,
-                canRelyOnProjectNativeSkills: canRelyOnProjectNativeSkills
-            )
+        for (ability, projection) in activePayloads {
             separator(&out)
             out += "## \(ability.name)\n"
-            if !reminder.isEmpty {
-                out += "\n"
-                out += reminder
-                out += "\n"
-            }
+            out += "\n"
+            out += renderProjection(projection, headingLevel: 3)
+            out += "\n"
         }
 
-        if !listedReminders.isEmpty {
+        if !listedPayloads.isEmpty {
             separator(&out)
             out += "## Always-on rules from on-demand abilities\n"
-            for (ability, reminder) in listedReminders {
+            for (ability, projection) in listedPayloads {
                 out += "\n### \(ability.name)\n"
-                out += reminder
+                out += renderProjection(projection, headingLevel: 4)
                 out += "\n"
             }
         }
@@ -235,62 +216,78 @@ enum ProjectInstructionStore {
         return out
     }
 
-    private static func reminderBody(
+    static func abilityPayloadProjection(
         for ability: Ability,
-        referencedSkillNames: Set<String>,
-        canRelyOnProjectNativeSkills: Bool
-    ) -> String {
-        let systemReminder = (ability.systemReminderBody ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if !systemReminder.isEmpty {
-            return appendMCPToolHints(to: systemReminder, for: ability)
+        disabledGenerated: Set<InstructionRunOverrides.GeneratedPartKind> = []
+    ) -> AbilityPayloadProjection {
+        let blocks = ability.payloadBlocks.filter { block in
+            guard block.enabled else { return false }
+            guard let toolName = block.mcpToolName else { return true }
+            return !disabledGenerated.contains(.toolLinkedPayload(
+                abilityId: ability.id,
+                toolName: toolName
+            ))
         }
-
-        let body = ability.body.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !body.isEmpty else {
-            return appendMCPToolHints(to: "", for: ability)
-        }
-
-        // Active legacy/simple abilities still need their body injected. For
-        // on-demand abilities backed by native skills, the skill file is the
-        // preferred context path; only fall back to the body when a declared
-        // required skill is not available.
-        if ability.activation == .always || ability.activation == .worktree {
-            return appendMCPToolHints(to: body, for: ability)
-        }
-        if !canRelyOnProjectNativeSkills, !ability.requiredSkillIDs.isEmpty {
-            return appendMCPToolHints(to: body, for: ability)
-        }
-        if !ability.requiredSkillIDs.isEmpty,
-           ability.requiredSkillIDs.contains(where: { !referencedSkillNames.contains($0) }) {
-            return appendMCPToolHints(to: body, for: ability)
-        }
-        return ""
+        return AbilityPayloadProjection(payloadBlocks: blocks)
     }
 
-    private static func appendMCPToolHints(to base: String, for ability: Ability) -> String {
-        var toolNames = Set(ability.enabledMCPToolNames)
-        // Mirror TerminalAgentRunner's defensive auto-exposure: these ability
-        // ids own their sidebar telemetry tools, even if an older project
-        // manifest predates `termLoopMCPTools`.
-        if ability.id == TermLoopBuiltInMCP.jiraAbilityId {
-            toolNames.insert(TermLoopBuiltInMCP.setJiraTicketToolName)
-            toolNames.insert(TermLoopBuiltInMCP.getJiraTicketToolName)
+    static func skillFooterPayloads(for ability: Ability) -> [SkillFooterPayload] {
+        ability.payloadBlocks.compactMap { block in
+            guard block.enabled,
+                  block.includeInSkillFooter,
+                  let toolName = block.mcpToolName,
+                  !block.trimmedBody.isEmpty else { return nil }
+            return SkillFooterPayload(
+                toolName: toolName,
+                text: block.trimmedBody,
+                sourceFileURL: block.fileURL
+            )
         }
-        if ability.id == TermLoopBuiltInMCP.runningYourApplicationAbilityId {
-            toolNames.insert(TermLoopBuiltInMCP.setRunTargetsToolName)
-            toolNames.insert(TermLoopBuiltInMCP.getRunTargetsToolName)
+    }
+
+    static func renderPayloadBlocks(_ blocks: [AbilityPayloadBlock], headingLevel: Int) -> String {
+        blocks
+            .filter { $0.enabled && !$0.trimmedBody.isEmpty }
+            .map { block in
+                let heading = String(repeating: "#", count: max(1, headingLevel))
+                return "\(heading) \(block.title)\n\n\(block.trimmedBody)"
+            }
+            .joined(separator: "\n\n")
+    }
+
+    private static func renderProjection(
+        _ projection: AbilityPayloadProjection,
+        headingLevel: Int
+    ) -> String {
+        renderPayloadBlocks(projection.payloadBlocks, headingLevel: headingLevel)
+    }
+
+    static func unmaterializedSkillsForPrompt(
+        referencedSkills: [SkillEntry],
+        projectFolderPath: String?
+    ) -> [SkillEntry] {
+        referencedSkills.filter { skill in
+            guard let projectFolderPath, !projectFolderPath.isEmpty else { return true }
+            let nativeFile = URL(fileURLWithPath: projectFolderPath, isDirectory: true)
+                .appendingPathComponent(".claude", isDirectory: true)
+                .appendingPathComponent("skills", isDirectory: true)
+                .appendingPathComponent(skill.name, isDirectory: true)
+                .appendingPathComponent("SKILL.md")
+            return !FileManager.default.fileExists(atPath: nativeFile.path)
         }
+    }
 
-        let hints = toolNames
-            .sorted()
-            .compactMap { TermLoopBuiltInMCP.systemPromptHint(toolName: $0) }
-        guard !hints.isEmpty else { return base }
-
-        let hintBlock = hints.map { "- \($0)" }.joined(separator: "\n")
-        let trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return hintBlock }
-        return "\(trimmed)\n\n\(hintBlock)"
+    private static func payloadBody(
+        for ability: Ability,
+        disabledGenerated: Set<InstructionRunOverrides.GeneratedPartKind> = []
+    ) -> String {
+        renderProjection(
+            abilityPayloadProjection(
+                for: ability,
+                disabledGenerated: disabledGenerated
+            ),
+            headingLevel: 3
+        )
     }
 
     @MainActor
@@ -317,7 +314,8 @@ enum ProjectInstructionStore {
             listedAbilities: listed,
             isWorktree: isWorktree,
             projectFolderPath: nil,
-            referencedSkills: []
+            referencedSkills: [],
+            disabledGenerated: []
         )
     }
 
@@ -385,8 +383,9 @@ enum ProjectInstructionStore {
 
     /// Disk-shipped starter bundles under
     /// `Sources/TermLoop/Core/Templates/starters/<slug>/`. Each is a full
-    /// ability bundle (`ability.json` + `system-reminder.md` + `instructions.md`)
-    /// that the user can copy into their project via the Abilities panel.
+    /// ability bundle (`ability.json` + `payload/*.md` + optional
+    /// `prompt-customizer.md`) that the user can copy into their project via
+    /// the Abilities panel.
     static func loadStarters() -> [AbilityStarter] { startersCache.starters }
 
     static func loadStarterAbility(_ starter: AbilityStarter) -> Ability? {
@@ -547,6 +546,8 @@ enum ProjectSkillMaterializer {
         let isCanonical: Bool
         let isManagedCopy: Bool
         let isLinkedCopy: Bool
+        let isSynced: Bool
+        let isSyncable: Bool
     }
 
     static func materializeForLaunch(_ plan: AgentInvocationPlan) {
@@ -554,14 +555,24 @@ enum ProjectSkillMaterializer {
         materialize(
             projectFolderPath: projectFolderPath,
             agentCwdPath: plan.runCwd?.path,
-            abilities: plan.instructions.activeAbilities + plan.instructions.listedAbilities
+            abilities: plan.instructions.activeAbilities + plan.instructions.listedAbilities,
+            disabledGenerated: plan.instructions.disabledGeneratedParts
         )
     }
 
-    static func materialize(projectFolderPath: String?, agentCwdPath: String? = nil, abilities: [Ability]) {
+    static func materialize(
+        projectFolderPath: String?,
+        agentCwdPath: String? = nil,
+        abilities: [Ability],
+        disabledGenerated: Set<InstructionRunOverrides.GeneratedPartKind> = []
+    ) {
         let activeAbilities = abilities.filter { $0.activation != .off }
         let skillIds = Array(Set(activeAbilities.flatMap(\.requiredSkillIDs))).sorted()
-        let hintsBySkillId = computeSkillHints(skillIds: skillIds, abilities: activeAbilities)
+        let hintsBySkillId = computeSkillHints(
+            skillIds: skillIds,
+            abilities: activeAbilities,
+            disabledGenerated: disabledGenerated
+        )
         materialize(
             projectFolderPath: projectFolderPath,
             agentCwdPath: agentCwdPath,
@@ -623,34 +634,74 @@ enum ProjectSkillMaterializer {
         materialize(projectFolderPath: projectFolderPath, agentCwdPath: agentCwdPath, skillIds: [skillId])
     }
 
-    /// Builds per-skill hint footers from the active abilities that require
-    /// each skill. Each ability contributes one hint per built-in MCP tool it
-    /// has opted into — for example, `working-with-jira` opted into
-    /// `set_jira_ticket` produces the "Telemetry: as soon as you parse the
-    /// key …" line. Returned text is appended to the materialized SKILL.md so
-    /// the agent sees it through native skill discovery without the user
-    /// having to keep boilerplate in the canonical file.
-    private static func computeSkillHints(skillIds: [String], abilities: [Ability]) -> [String: String] {
+    static func materialize(
+        projectFolderPath: String?,
+        agentCwdPath: String? = nil,
+        skillId: String,
+        ability: Ability?,
+        disabledGenerated: Set<InstructionRunOverrides.GeneratedPartKind> = []
+    ) {
+        let hintsBySkillId: [String: String]
+        if let ability {
+            hintsBySkillId = computeSkillHints(
+                skillIds: [skillId],
+                abilities: [ability],
+                disabledGenerated: disabledGenerated
+            )
+        } else {
+            hintsBySkillId = [:]
+        }
+        materialize(
+            projectFolderPath: projectFolderPath,
+            agentCwdPath: agentCwdPath,
+            skillIds: [skillId],
+            hintsBySkillId: hintsBySkillId
+        )
+    }
+
+    /// Builds per-skill footers from payload blocks that explicitly opt into
+    /// skill materialization. Returned text is appended to the materialized
+    /// SKILL.md so the agent sees the same editable project guidance through
+    /// native skill discovery.
+    private static func computeSkillHints(
+        skillIds: [String],
+        abilities: [Ability],
+        disabledGenerated: Set<InstructionRunOverrides.GeneratedPartKind> = []
+    ) -> [String: String] {
         let wantedIds = Set(skillIds)
         var hintsBySkill: [String: [String]] = [:]
         for ability in abilities {
-            let toolHints = ability.enabledMCPToolNames.compactMap {
-                TermLoopBuiltInMCP.systemPromptHint(toolName: $0)
-            }
-            guard !toolHints.isEmpty else { continue }
+            let footerPayloads = ProjectInstructionStore.skillFooterPayloads(for: ability)
+                .filter { payload in
+                    !disabledGenerated.contains(.toolLinkedPayload(
+                        abilityId: ability.id,
+                        toolName: payload.toolName
+                    ))
+                }
+                .map(\.text)
+            guard !footerPayloads.isEmpty else { continue }
             for skillId in ability.requiredSkillIDs where wantedIds.contains(skillId) {
-                hintsBySkill[skillId, default: []].append(contentsOf: toolHints)
+                hintsBySkill[skillId, default: []].append(contentsOf: footerPayloads)
             }
         }
         var result: [String: String] = [:]
         for (skillId, hints) in hintsBySkill {
-            let body = hints.map { "- \($0)" }.joined(separator: "\n")
+            let body = stableUnique(hints).map { "- \($0)" }.joined(separator: "\n")
             result[skillId] = "\n\n## TermLoop telemetry\n\n\(body)\n"
         }
         return result
     }
 
-    static func skillLocations(projectFolderPath: String?, skillId: String) -> [SkillLocation] {
+    private static func stableUnique(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        return values.filter { seen.insert($0).inserted }
+    }
+
+    static func skillLocations(
+        projectFolderPath: String?,
+        skillId: String,
+        ability: Ability? = nil
+    ) -> [SkillLocation] {
         guard let projectFolderPath,
               !projectFolderPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let safeId = safeSkillId(skillId) else {
@@ -658,6 +709,9 @@ enum ProjectSkillMaterializer {
         }
         let projectRoot = URL(fileURLWithPath: projectFolderPath, isDirectory: true)
         let canonical = canonicalSkillDirectory(projectRoot: projectRoot, skillId: safeId)
+        let hintFooter = ability.flatMap {
+            computeSkillHints(skillIds: [safeId], abilities: [$0])[safeId]
+        }
         var locations: [SkillLocation] = [
             skillLocation(
                 label: "Project canonical",
@@ -667,7 +721,13 @@ enum ProjectSkillMaterializer {
         ]
 
         for destination in nativeSkillDestinations(skillRoot: projectRoot, skillId: safeId) {
-            locations.append(skillLocation(label: destination.label, directory: destination.directory, isCanonical: false))
+            locations.append(skillLocation(
+                label: destination.label,
+                directory: destination.directory,
+                isCanonical: false,
+                sourceDirectory: canonical,
+                skillFileFooter: hintFooter
+            ))
         }
         return locations
     }
@@ -829,12 +889,34 @@ enum ProjectSkillMaterializer {
     private static func skillLocation(
         label: String,
         directory: URL,
-        isCanonical: Bool
+        isCanonical: Bool,
+        sourceDirectory: URL? = nil,
+        skillFileFooter: String? = nil
     ) -> SkillLocation {
         let skillFile = directory.appendingPathComponent("SKILL.md")
         let marker = directory.appendingPathComponent(managedMarkerName)
         let fm = FileManager.default
         let linked = (try? fm.destinationOfSymbolicLink(atPath: skillFile.path)) != nil
+        let exists = fm.fileExists(atPath: skillFile.path)
+        let managed = !isCanonical && fm.fileExists(atPath: marker.path)
+        let sourceExists = sourceDirectory.map {
+            fm.fileExists(atPath: $0.appendingPathComponent("SKILL.md").path)
+        } ?? false
+        let isSyncable = !isCanonical && sourceExists && (!exists || managed || linked)
+        let synced: Bool = {
+            guard exists else { return false }
+            guard !isCanonical else { return true }
+            guard let sourceDirectory else { return false }
+            if linked {
+                return managedSymlinksAlreadyPoint(from: sourceDirectory, to: directory)
+            }
+            guard managed else { return false }
+            return managedCopyAlreadyFresh(
+                from: sourceDirectory,
+                destination: directory,
+                skillFileFooter: skillFileFooter
+            )
+        }()
         let resolvedDirectory = directory.resolvingSymlinksInPath()
         let canonicalFile = canonicalSkillDirectory(
             projectRoot: resolvedDirectory
@@ -848,10 +930,12 @@ enum ProjectSkillMaterializer {
             label: label,
             fileURL: skillFile,
             editURL: isCanonical || linked ? skillFile.resolvingSymlinksInPath() : canonicalFile,
-            exists: fm.fileExists(atPath: skillFile.path),
+            exists: exists,
             isCanonical: isCanonical,
-            isManagedCopy: !isCanonical && fm.fileExists(atPath: marker.path),
-            isLinkedCopy: !isCanonical && linked
+            isManagedCopy: managed,
+            isLinkedCopy: !isCanonical && linked,
+            isSynced: synced,
+            isSyncable: isSyncable
         )
     }
 
@@ -902,12 +986,13 @@ enum ProjectSkillMaterializer {
             guard fm.fileExists(atPath: marker.path) else {
                 return
             }
-            // Idempotency check via mtime: skip rewrite if every kept entry is
-            // at least as new as the canonical source. Cheap heuristic; misses
-            // mid-second edits but avoids constant churn under reload bursts.
-            // Footer changes still need a rewrite, but tool-hint text rarely
-            // mutates between launches so the heuristic stays useful.
-            if managedCopyAlreadyFresh(from: source, destination: destination) {
+            // Idempotency check by content so mid-second edits and generated
+            // TermLoop footer changes still refresh the managed copy.
+            if managedCopyAlreadyFresh(
+                from: source,
+                destination: destination,
+                skillFileFooter: skillFileFooter
+            ) {
                 return
             }
             try? fm.removeItem(at: destination)
@@ -963,25 +1048,109 @@ enum ProjectSkillMaterializer {
         return true
     }
 
-    private static func managedCopyAlreadyFresh(from source: URL, destination: URL) -> Bool {
+    private static func managedCopyAlreadyFresh(
+        from source: URL,
+        destination: URL,
+        skillFileFooter: String? = nil
+    ) -> Bool {
         let fm = FileManager.default
-        guard let sourceChildren = try? fm.contentsOfDirectory(
-            at: source,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: []
-        ) else {
+        let marker = destination.appendingPathComponent(managedMarkerName)
+        guard fm.fileExists(atPath: marker.path) else {
+            return false
+        }
+        return directoryContentsMatch(
+            source: source,
+            destination: destination,
+            skillFileFooter: skillFileFooter,
+            allowedExtraDestinationNames: [managedMarkerName]
+        )
+    }
+
+    private static func directoryContentsMatch(
+        source: URL,
+        destination: URL,
+        skillFileFooter: String?,
+        allowedExtraDestinationNames: Set<String> = []
+    ) -> Bool {
+        let fm = FileManager.default
+        guard isDirectory(source),
+              isDirectory(destination),
+              let sourceChildren = try? fm.contentsOfDirectory(
+                at: source,
+                includingPropertiesForKeys: nil,
+                options: []
+              ),
+              let destinationChildren = try? fm.contentsOfDirectory(
+                at: destination,
+                includingPropertiesForKeys: nil,
+                options: []
+              ) else {
+            return false
+        }
+        let sourceNames = Set(sourceChildren
+            .map(\.lastPathComponent)
+            .filter { $0 != managedMarkerName })
+        let destinationNames = Set(destinationChildren.map(\.lastPathComponent))
+        guard sourceNames.subtracting(destinationNames).isEmpty else { return false }
+        guard destinationNames
+            .subtracting(sourceNames)
+            .subtracting(allowedExtraDestinationNames)
+            .isEmpty else {
             return false
         }
         for child in sourceChildren where child.lastPathComponent != managedMarkerName {
             let copiedChild = destination.appendingPathComponent(child.lastPathComponent)
-            guard fm.fileExists(atPath: copiedChild.path),
-                  let sourceMtime = (try? child.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
-                  let copyMtime = (try? copiedChild.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
-                  copyMtime >= sourceMtime else {
+            let footer = child.lastPathComponent == "SKILL.md" ? skillFileFooter : nil
+            guard copiedEntryMatches(
+                source: child,
+                destination: copiedChild,
+                skillFileFooter: footer
+            ) else {
                 return false
             }
         }
         return true
+    }
+
+    private static func copiedEntryMatches(
+        source: URL,
+        destination: URL,
+        skillFileFooter: String?
+    ) -> Bool {
+        let sourceIsDirectory = isDirectory(source)
+        guard sourceIsDirectory == isDirectory(destination) else { return false }
+        if sourceIsDirectory {
+            return directoryContentsMatch(
+                source: source,
+                destination: destination,
+                skillFileFooter: nil
+            )
+        }
+        guard let destinationData = try? Data(contentsOf: destination) else { return false }
+        if let skillFileFooter,
+           !skillFileFooter.isEmpty,
+           let expectedData = expectedSkillFileData(sourceFile: source, footer: skillFileFooter) {
+            return destinationData == expectedData
+        }
+        guard let sourceData = try? Data(contentsOf: source) else { return false }
+        return destinationData == sourceData
+    }
+
+    private static func expectedSkillFileData(sourceFile: URL, footer: String) -> Data? {
+        guard var body = try? String(contentsOf: sourceFile, encoding: .utf8) else {
+            return nil
+        }
+        if !body.hasSuffix("\n") {
+            body += "\n"
+        }
+        body += footer
+        return body.data(using: .utf8)
+    }
+
+    private static func isDirectory(_ url: URL) -> Bool {
+        var isDir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+            && isDir.boolValue
     }
 
     private static func sweepManagedSkills(

@@ -7,16 +7,14 @@ struct AbilityBundleManifest: Codable {
     var activation: AbilityActivation
     var tags: [String]
     var items: [AbilityItem]
-    var instructionFile: String
     var termLoopMCPTools: [AbilityMCPToolBinding]
     var bindings: [AbilityBinding]
 
-    static let defaultInstructionFile = "instructions.md"
-    static let systemReminderFile = "system-reminder.md"
     static let customizerPromptFile = "prompt-customizer.md"
+    static let payloadDirectoryName = "payload"
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, description, activation, tags, items, instructionFile, termLoopMCPTools, bindings
+        case id, name, description, activation, tags, items, termLoopMCPTools, bindings
     }
 
     init(
@@ -26,7 +24,6 @@ struct AbilityBundleManifest: Codable {
         activation: AbilityActivation,
         tags: [String],
         items: [AbilityItem],
-        instructionFile: String = AbilityBundleManifest.defaultInstructionFile,
         termLoopMCPTools: [AbilityMCPToolBinding] = [],
         bindings: [AbilityBinding] = []
     ) {
@@ -36,7 +33,6 @@ struct AbilityBundleManifest: Codable {
         self.activation = activation
         self.tags = tags
         self.items = items
-        self.instructionFile = instructionFile
         self.termLoopMCPTools = termLoopMCPTools
         self.bindings = bindings
     }
@@ -48,8 +44,6 @@ struct AbilityBundleManifest: Codable {
         self.description = try c.decode(String.self, forKey: .description)
         self.activation = try c.decode(AbilityActivation.self, forKey: .activation)
         self.tags = try c.decodeIfPresent([String].self, forKey: .tags) ?? []
-        self.instructionFile = try c.decodeIfPresent(String.self, forKey: .instructionFile)
-            ?? AbilityBundleManifest.defaultInstructionFile
         self.termLoopMCPTools = try c.decodeIfPresent(
             [AbilityMCPToolBinding].self,
             forKey: .termLoopMCPTools
@@ -111,30 +105,56 @@ enum AbilityBundleStore {
         let manifestURL = directoryURL.appendingPathComponent("ability.json")
         let manifestData = try Data(contentsOf: manifestURL)
         let manifest = try JSONDecoder().decode(AbilityBundleManifest.self, from: manifestData)
-        let bodyURL = directoryURL.appendingPathComponent(manifest.instructionFile)
-        let body = (try? String(contentsOf: bodyURL, encoding: .utf8)) ?? ""
-
-        let systemReminderURL = directoryURL.appendingPathComponent(AbilityBundleManifest.systemReminderFile)
-        let systemReminderBody: String? = readOptionalMarkdown(at: systemReminderURL)
 
         let customizerURL = directoryURL.appendingPathComponent(AbilityBundleManifest.customizerPromptFile)
         let customizerPromptBody: String? = readOptionalMarkdown(at: customizerURL)
+        let payloadBlocks = loadPayloadBlocks(from: directoryURL)
 
         return Ability(
             id: manifest.id,
             name: manifest.name,
             description: manifest.description,
             activation: manifest.activation,
-            body: body,
-            systemReminderBody: systemReminderBody,
             customizerPromptBody: customizerPromptBody,
+            payloadBlocks: payloadBlocks,
             tags: manifest.tags,
             items: manifest.items,
             mcpTools: manifest.termLoopMCPTools,
             bindings: manifest.bindings,
-            filePath: bodyURL,
-            metadataFilePath: manifestURL,
-            storageKind: .bundle
+            metadataFilePath: manifestURL
+        )
+    }
+
+    static func loadPayloadBlocks(from bundleURL: URL) -> [AbilityPayloadBlock] {
+        let payloadURL = bundleURL.appendingPathComponent(AbilityBundleManifest.payloadDirectoryName, isDirectory: true)
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: payloadURL.path, isDirectory: &isDir),
+              isDir.boolValue else { return [] }
+        let files = ((try? FileManager.default.contentsOfDirectory(
+            at: payloadURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? [])
+            .filter { $0.pathExtension.lowercased() == "md" }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+        return files.compactMap(loadPayloadBlock)
+    }
+
+    private static func loadPayloadBlock(from fileURL: URL) -> AbilityPayloadBlock? {
+        guard let raw = try? String(contentsOf: fileURL, encoding: .utf8) else { return nil }
+        let parsed = try? FrontmatterParser.parse(raw)
+        let frontmatter = parsed?.frontmatter ?? [:]
+        let fallbackTitle = humanizedPayloadTitle(fileURL.deletingPathExtension().lastPathComponent)
+        let mcpToolName = stringValue(frontmatter["mcpTool"])?.nilIfBlank()
+        return AbilityPayloadBlock(
+            id: fileURL.deletingPathExtension().lastPathComponent,
+            title: stringValue(frontmatter["title"])?.nilIfBlank() ?? fallbackTitle,
+            description: stringValue(frontmatter["description"]) ?? "",
+            enabled: boolValue(frontmatter["enabled"]) ?? true,
+            body: parsed?.body ?? raw.trimmingCharacters(in: .whitespacesAndNewlines),
+            fileURL: fileURL,
+            mcpToolName: mcpToolName,
+            includeInSkillFooter: boolValue(frontmatter["includeInSkillFooter"]) ?? (mcpToolName != nil)
         )
     }
 
@@ -155,7 +175,6 @@ enum AbilityBundleStore {
             activation: ability.activation,
             tags: ability.tags,
             items: ability.items,
-            instructionFile: relativeInstructionPath(for: ability),
             termLoopMCPTools: ability.mcpTools,
             bindings: ability.bindings
         )
@@ -164,23 +183,14 @@ enum AbilityBundleStore {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(manifest)
         try data.write(to: ability.metadataFilePath, options: .atomic)
-        // Only persist `instructions.md` when there is actual content. Empty
-        // body means the ability is skill-backed and its instruction file is
-        // intentionally absent — writing zero bytes would just resurrect the
-        // legacy file on every save.
-        try writeOrRemove(
-            content: ability.body,
-            at: ability.filePath
-        )
 
-        try writeOrRemove(
-            content: ability.systemReminderBody,
-            at: bundleURL.appendingPathComponent(AbilityBundleManifest.systemReminderFile)
-        )
         try writeOrRemove(
             content: ability.customizerPromptBody,
             at: bundleURL.appendingPathComponent(AbilityBundleManifest.customizerPromptFile)
         )
+        for block in ability.payloadBlocks {
+            try writePayloadBlock(block)
+        }
     }
 
     private static func writeOrRemove(content: String?, at url: URL) throws {
@@ -192,13 +202,38 @@ enum AbilityBundleStore {
         }
     }
 
-    static func bundleDirectoryURL(parentDirectory: URL, slug: String) -> URL {
-        parentDirectory.appendingPathComponent(slug, isDirectory: true)
+    static func writePayloadBlock(_ block: AbilityPayloadBlock) throws {
+        try FileManager.default.createDirectory(
+            at: block.fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let text = formatPayloadBlock(block)
+        try text.write(to: block.fileURL, atomically: true, encoding: .utf8)
     }
 
-    static func instructionFileURL(parentDirectory: URL, slug: String) -> URL {
-        bundleDirectoryURL(parentDirectory: parentDirectory, slug: slug)
-            .appendingPathComponent(AbilityBundleManifest.defaultInstructionFile)
+    static func createPayloadBlock(in ability: Ability) throws -> AbilityPayloadBlock {
+        let dir = payloadDirectoryURL(for: ability)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let nextIndex = nextPayloadBlockIndex(existing: ability.payloadBlocks.map(\.id))
+        let id = String(format: "%03d-new-block", nextIndex)
+        let block = AbilityPayloadBlock(
+            id: id,
+            title: "New block",
+            description: "",
+            enabled: true,
+            body: "",
+            fileURL: dir.appendingPathComponent("\(id).md")
+        )
+        try writePayloadBlock(block)
+        return block
+    }
+
+    static func deletePayloadBlock(_ block: AbilityPayloadBlock) throws {
+        try FileManager.default.removeItem(at: block.fileURL)
+    }
+
+    static func bundleDirectoryURL(parentDirectory: URL, slug: String) -> URL {
+        parentDirectory.appendingPathComponent(slug, isDirectory: true)
     }
 
     static func metadataFileURL(parentDirectory: URL, slug: String) -> URL {
@@ -206,13 +241,68 @@ enum AbilityBundleStore {
             .appendingPathComponent("ability.json")
     }
 
-    private static func relativeInstructionPath(for ability: Ability) -> String {
-        let bundleURL = ability.metadataFilePath.deletingLastPathComponent()
-        let bundlePath = bundleURL.path.hasSuffix("/") ? bundleURL.path : bundleURL.path + "/"
-        let filePath = ability.filePath.path
-        if filePath.hasPrefix(bundlePath) {
-            return String(filePath.dropFirst(bundlePath.count))
+    static func payloadDirectoryURL(for ability: Ability) -> URL {
+        ability.metadataFilePath
+            .deletingLastPathComponent()
+            .appendingPathComponent(AbilityBundleManifest.payloadDirectoryName, isDirectory: true)
+    }
+
+    private static func formatPayloadBlock(_ block: AbilityPayloadBlock) -> String {
+        var lines = [
+            "---",
+            "title: \(yamlString(block.title))",
+            "description: \(yamlString(block.description))",
+            "enabled: \(block.enabled ? "true" : "false")"
+        ]
+        if let mcpToolName = block.mcpToolName?.nilIfBlank() {
+            lines.append("mcpTool: \(yamlString(mcpToolName))")
         }
-        return ability.filePath.lastPathComponent
+        if block.includeInSkillFooter || block.mcpToolName?.nilIfBlank() != nil {
+            lines.append("includeInSkillFooter: \(block.includeInSkillFooter ? "true" : "false")")
+        }
+        lines.append("---")
+        lines.append("")
+        lines.append(block.body.trimmingCharacters(in: .whitespacesAndNewlines))
+        lines.append("")
+        return lines.joined(separator: "\n")
+    }
+
+    private static func yamlString(_ value: String) -> String {
+        let escaped = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
+    }
+
+    private static func stringValue(_ value: Any?) -> String? {
+        value as? String
+    }
+
+    private static func boolValue(_ value: Any?) -> Bool? {
+        value as? Bool
+    }
+
+    private static func nextPayloadBlockIndex(existing ids: [String]) -> Int {
+        let existingIndexes = ids.compactMap { id -> Int? in
+            let prefix = id.prefix { $0.isNumber }
+            return prefix.isEmpty ? nil : Int(prefix)
+        }
+        return ((existingIndexes.max() ?? 0) + 10)
+    }
+
+    private static func humanizedPayloadTitle(_ id: String) -> String {
+        let withoutIndex = id.replacingOccurrences(of: #"^\d+[-_]*"#, with: "", options: .regularExpression)
+        let words = withoutIndex
+            .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "_", with: " ")
+        guard !words.isEmpty else { return "Payload block" }
+        return String(words.prefix(1)).uppercased() + String(words.dropFirst())
+    }
+}
+
+private extension String {
+    func nilIfBlank() -> String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

@@ -4,9 +4,8 @@
 import SwiftUI
 
 /// Empty-state nudge for abilities that don't yet declare any required
-/// skills. Old `instructions.md` body editing is gone — every ability is
-/// expected to be skill-backed; until skills are declared, the user can
-/// only kick off the customizer.
+/// skills. Payload blocks carry launch instructions; skills carry
+/// agent-discoverable project workflows.
 @MainActor
 struct AbilityInstructionsCard: View {
     let ability: Ability
@@ -48,7 +47,7 @@ struct AbilityRequiredSkillsCard: View {
     var body: some View {
         AbilityDetailCard(
             title: "Project skills",
-            subtitle: "Ability-specific workflow lives in skill files. Agents read and update these instead of an instructions.md body."
+            subtitle: "Ability-specific workflow lives in skill files. Agents read and update these alongside payload blocks."
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(ability.requiredSkillIDs, id: \.self) { id in
@@ -160,25 +159,31 @@ struct AbilityRequiredSkillsCard: View {
     private func nativeCopiesSection(_ id: String) -> some View {
         let locations = ProjectSkillMaterializer.skillLocations(
             projectFolderPath: projectFolderPath,
-            skillId: id
+            skillId: id,
+            ability: ability
         )
         if !locations.isEmpty {
+            let canonicalExists = locations.first(where: { $0.isCanonical })?.exists == true
+            let nativeLocations = locations.filter { !$0.isCanonical }
+            let canSync = nativeLocations.contains { $0.isSyncable && !$0.isSynced }
+            let hasOutOfSync = nativeLocations.contains { !$0.isSynced }
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
                     Text("Skill files")
                         .font(TermLoopSidebarTheme.sectionCaps)
                         .foregroundStyle(Color.primary)
                     Spacer(minLength: 8)
-                    Button("Sync native files") {
+                    Button(nativeSyncButtonLabel(canSync: canSync, hasOutOfSync: hasOutOfSync)) {
                         ProjectSkillMaterializer.materialize(
                             projectFolderPath: projectFolderPath,
-                            skillId: id
+                            skillId: id,
+                            ability: ability
                         )
                         refreshTick &+= 1
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
-                    .disabled(locations.first(where: { $0.isCanonical })?.exists != true)
+                    .disabled(!canonicalExists || !canSync)
                 }
                 Text("Canonical is the source of truth. Native skill files are linked when the agent supports it; Codex uses a managed real copy because it ignores symlinked SKILL.md files.")
                     .font(TermLoopSidebarTheme.tinyMono)
@@ -199,8 +204,8 @@ struct AbilityRequiredSkillsCard: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             TermLoopSidebarToken(
                 label: location.isCanonical ? "source" : copyStatusLabel(location),
-                tone: location.exists ? .accent : .warning,
-                emphasized: !location.exists
+                tone: copyStatusTone(location),
+                emphasized: !location.exists || (!location.isCanonical && !location.isSynced)
             )
             Text(location.label)
                 .font(TermLoopSidebarTheme.tinyMono)
@@ -223,8 +228,24 @@ struct AbilityRequiredSkillsCard: View {
 
     private func copyStatusLabel(_ location: ProjectSkillMaterializer.SkillLocation) -> String {
         if !location.exists { return "missing" }
+        if !location.isSynced {
+            if location.isManagedCopy || location.isLinkedCopy { return "stale" }
+            return "unmanaged"
+        }
         if location.isLinkedCopy { return "linked" }
-        return location.isManagedCopy ? "managed" : "unmanaged"
+        return location.isManagedCopy ? "synced" : "unmanaged"
+    }
+
+    private func copyStatusTone(_ location: ProjectSkillMaterializer.SkillLocation) -> TermLoopSidebarTokenTone {
+        if location.isCanonical {
+            return location.exists ? .accent : .warning
+        }
+        return location.exists && location.isSynced ? .accent : .warning
+    }
+
+    private func nativeSyncButtonLabel(canSync: Bool, hasOutOfSync: Bool) -> String {
+        if canSync { return "Sync native files" }
+        return hasOutOfSync ? "Native files unmanaged" : "Native files synced"
     }
 
     private func loadSkillPreview(_ fileURL: URL?) -> SkillPreview? {

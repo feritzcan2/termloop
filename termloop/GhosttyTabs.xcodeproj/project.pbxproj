@@ -266,7 +266,6 @@
 		A9E700CAA6EAC0DE00000001 /* CopyWorkspaceIdMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E700CAA6EAC0DE00000002 /* CopyWorkspaceIdMenu.swift */; };
 		A9E70300A6EAC0DE00000001 /* RepoSlugCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70300A6EAC0DE00000002 /* RepoSlugCache.swift */; };
 		A9E70400A6EAC0DE00000001 /* Ability.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70400A6EAC0DE00000002 /* Ability.swift */; };
-		A9E70401A6EAC0DE00000001 /* AbilityFrontmatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70401A6EAC0DE00000002 /* AbilityFrontmatter.swift */; };
 		A9E70402A6EAC0DE00000001 /* AbilityStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70402A6EAC0DE00000002 /* AbilityStore.swift */; };
 		A9E70403A6EAC0DE00000001 /* AbilityInjector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70403A6EAC0DE00000002 /* AbilityInjector.swift */; };
 		A9E70404A6EAC0DE00000001 /* AbilityPrompts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70404A6EAC0DE00000002 /* AbilityPrompts.swift */; };
@@ -277,7 +276,7 @@
 		A9E70460A6EAC0DE00000001 /* AgentSystemPromptInjector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70460A6EAC0DE00000002 /* AgentSystemPromptInjector.swift */; };
 		A9E70501A6EAC0DE00000001 /* AbilityDetailCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70501A6EAC0DE00000002 /* AbilityDetailCard.swift */; };
 		A9E70502A6EAC0DE00000001 /* AbilitySetupCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70502A6EAC0DE00000002 /* AbilitySetupCard.swift */; };
-		A9E70503A6EAC0DE00000001 /* AbilitySystemReminderCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70503A6EAC0DE00000002 /* AbilitySystemReminderCard.swift */; };
+		A9E70503A6EAC0DE00000001 /* AbilityPayloadCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70503A6EAC0DE00000002 /* AbilityPayloadCard.swift */; };
 		A9E70504A6EAC0DE00000001 /* AbilityInstructionsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70504A6EAC0DE00000002 /* AbilityInstructionsCard.swift */; };
 		A9E70505A6EAC0DE00000001 /* AbilityNewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70505A6EAC0DE00000002 /* AbilityNewSheet.swift */; };
 		A9E70506A6EAC0DE00000001 /* AbilityMCPToolsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70506A6EAC0DE00000002 /* AbilityMCPToolsCard.swift */; };
@@ -311,7 +310,7 @@
 		AA300001A6EAC0DE00000001 /* ProjectScopeHookCleanerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA300002A6EAC0DE00000001 /* ProjectScopeHookCleanerTests.swift */; };
 		AA300003A6EAC0DE00000001 /* ClaudeHookInstallerCommandTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA300004A6EAC0DE00000001 /* ClaudeHookInstallerCommandTests.swift */; };
 		AA300005A6EAC0DE00000001 /* CodexConfigTomlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA300006A6EAC0DE00000001 /* CodexConfigTomlTests.swift */; };
-		AA937AD624B8029789A40BC1 /* PreviewOverrides.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F68CF86E9315DFD8961D2F7 /* PreviewOverrides.swift */; };
+		AA937AD624B8029789A40BC1 /* InstructionRunOverrides.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F68CF86E9315DFD8961D2F7 /* InstructionRunOverrides.swift */; };
 		AAB2001EA6EAC0DE00000001 /* TermLoopHooks+Events.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB2001EA6EAC0DE00000002 /* TermLoopHooks+Events.swift */; };
 		AAB2001FA6EAC0DE00000001 /* InternalHookEventTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB2001FA6EAC0DE00000002 /* InternalHookEventTests.swift */; };
 		AAB20020A6EAC0DE00000001 /* WorkspaceResumedEventTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB20020A6EAC0DE00000002 /* WorkspaceResumedEventTests.swift */; };
@@ -618,7 +617,7 @@
 		3BC41841A0027C5FCF28E38F /* AgentWorkspaceKindTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceKindTests.swift; sourceTree = "<group>"; };
 		3DDB9A196E62734D60CF8C81 /* QuickActionPreviewBar.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickActionPreviewBar.swift; sourceTree = "<group>"; };
 		3E20C67F1FE9ACEBA3ED50D3 /* QuickActionAdvancedRawTab.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickActionAdvancedRawTab.swift; sourceTree = "<group>"; };
-		3F68CF86E9315DFD8961D2F7 /* PreviewOverrides.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PreviewOverrides.swift; sourceTree = "<group>"; };
+		3F68CF86E9315DFD8961D2F7 /* InstructionRunOverrides.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InstructionRunOverrides.swift; sourceTree = "<group>"; };
 		42092CDB2109E250F7F2A76E /* TabManagerUnitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabManagerUnitTests.swift; sourceTree = "<group>"; };
 		447BF0A1CD512BA36EB9AD88 /* PermissionModeFastCreateTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PermissionModeFastCreateTests.swift; sourceTree = "<group>"; };
 		458604546AB3183BE64550D0 /* ContextBankAnalyzer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextBankAnalyzer.swift; sourceTree = "<group>"; };
@@ -818,7 +817,6 @@
 		A9E700CAA6EAC0DE00000002 /* CopyWorkspaceIdMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/CopyWorkspaceIdMenu.swift; sourceTree = "<group>"; };
 		A9E70300A6EAC0DE00000002 /* RepoSlugCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Core/RepoSlugCache.swift; sourceTree = "<group>"; };
 		A9E70400A6EAC0DE00000002 /* Ability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Core/Abilities/Ability.swift; sourceTree = "<group>"; };
-		A9E70401A6EAC0DE00000002 /* AbilityFrontmatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Core/Abilities/AbilityFrontmatter.swift; sourceTree = "<group>"; };
 		A9E70402A6EAC0DE00000002 /* AbilityStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Core/Abilities/AbilityStore.swift; sourceTree = "<group>"; };
 		A9E70403A6EAC0DE00000002 /* AbilityInjector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Core/Abilities/AbilityInjector.swift; sourceTree = "<group>"; };
 		A9E70404A6EAC0DE00000002 /* AbilityPrompts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Core/Abilities/AbilityPrompts.swift; sourceTree = "<group>"; };
@@ -829,7 +827,7 @@
 		A9E70460A6EAC0DE00000002 /* AgentSystemPromptInjector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Agents/AgentSystemPromptInjector.swift; sourceTree = "<group>"; };
 		A9E70501A6EAC0DE00000002 /* AbilityDetailCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/Abilities/AbilityDetail/AbilityDetailCard.swift; sourceTree = "<group>"; };
 		A9E70502A6EAC0DE00000002 /* AbilitySetupCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/Abilities/AbilityDetail/AbilitySetupCard.swift; sourceTree = "<group>"; };
-		A9E70503A6EAC0DE00000002 /* AbilitySystemReminderCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/Abilities/AbilityDetail/AbilitySystemReminderCard.swift; sourceTree = "<group>"; };
+		A9E70503A6EAC0DE00000002 /* AbilityPayloadCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/Abilities/AbilityDetail/AbilityPayloadCard.swift; sourceTree = "<group>"; };
 		A9E70504A6EAC0DE00000002 /* AbilityInstructionsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/Abilities/AbilityDetail/AbilityInstructionsCard.swift; sourceTree = "<group>"; };
 		A9E70505A6EAC0DE00000002 /* AbilityNewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/Abilities/AbilityNewSheet.swift; sourceTree = "<group>"; };
 		A9E70506A6EAC0DE00000002 /* AbilityMCPToolsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/Abilities/AbilityDetail/AbilityMCPToolsCard.swift; sourceTree = "<group>"; };
@@ -1595,7 +1593,6 @@
 				3047859637D21DD6871E11DF /* TabManager+TermLoopPrune.swift */,
 				A9E70300A6EAC0DE00000002 /* RepoSlugCache.swift */,
 				A9E70400A6EAC0DE00000002 /* Ability.swift */,
-				A9E70401A6EAC0DE00000002 /* AbilityFrontmatter.swift */,
 				A9E70408A6EAC0DE00000002 /* AbilityBundle.swift */,
 				A9E70402A6EAC0DE00000002 /* AbilityStore.swift */,
 				A9E70403A6EAC0DE00000002 /* AbilityInjector.swift */,
@@ -1606,7 +1603,7 @@
 				A9E70406A6EAC0DE00000002 /* AbilityRow.swift */,
 				A9E70501A6EAC0DE00000002 /* AbilityDetailCard.swift */,
 				A9E70502A6EAC0DE00000002 /* AbilitySetupCard.swift */,
-				A9E70503A6EAC0DE00000002 /* AbilitySystemReminderCard.swift */,
+				A9E70503A6EAC0DE00000002 /* AbilityPayloadCard.swift */,
 				A9E70504A6EAC0DE00000002 /* AbilityInstructionsCard.swift */,
 				A9E70506A6EAC0DE00000002 /* AbilityMCPToolsCard.swift */,
 				A9E70505A6EAC0DE00000002 /* AbilityNewSheet.swift */,
@@ -1732,7 +1729,7 @@
 				4DC013E70C28DF9434E48432 /* AgentInvocationTransportAdapter.swift */,
 				801C280F49E218C76E9127BC /* BridgePromptCatalog.swift */,
 				3BC13776B648248C703042D0 /* TerminalAgentLifecycle+Plan.swift */,
-				3F68CF86E9315DFD8961D2F7 /* PreviewOverrides.swift */,
+				3F68CF86E9315DFD8961D2F7 /* InstructionRunOverrides.swift */,
 			);
 			name = AgentInputs;
 			path = AgentInputs;
@@ -2340,7 +2337,6 @@
 				C0DE7118A6EAC0DE00000001 /* WorktreeBranchPullRequestStore.swift in Sources */,
 				C0DE7119A6EAC0DE00000001 /* PullRequestOrdering.swift in Sources */,
 				A9E70400A6EAC0DE00000001 /* Ability.swift in Sources */,
-				A9E70401A6EAC0DE00000001 /* AbilityFrontmatter.swift in Sources */,
 				A9E70402A6EAC0DE00000001 /* AbilityStore.swift in Sources */,
 				A9E70403A6EAC0DE00000001 /* AbilityInjector.swift in Sources */,
 				A9E70404A6EAC0DE00000001 /* AbilityPrompts.swift in Sources */,
@@ -2350,7 +2346,7 @@
 				A9E70406A6EAC0DE00000001 /* AbilityRow.swift in Sources */,
 				A9E70501A6EAC0DE00000001 /* AbilityDetailCard.swift in Sources */,
 				A9E70502A6EAC0DE00000001 /* AbilitySetupCard.swift in Sources */,
-				A9E70503A6EAC0DE00000001 /* AbilitySystemReminderCard.swift in Sources */,
+				A9E70503A6EAC0DE00000001 /* AbilityPayloadCard.swift in Sources */,
 				A9E70504A6EAC0DE00000001 /* AbilityInstructionsCard.swift in Sources */,
 				A9E70506A6EAC0DE00000001 /* AbilityMCPToolsCard.swift in Sources */,
 				A9E70505A6EAC0DE00000001 /* AbilityNewSheet.swift in Sources */,
@@ -2556,7 +2552,7 @@
 				3B5122EE9665169B994A8C81 /* AgentInvocationTransportAdapter.swift in Sources */,
 				44D0371C7B771A7DB7F5EF37 /* BridgePromptCatalog.swift in Sources */,
 				0DBC273CFF3A51C2FD83A683 /* TerminalAgentLifecycle+Plan.swift in Sources */,
-				AA937AD624B8029789A40BC1 /* PreviewOverrides.swift in Sources */,
+				AA937AD624B8029789A40BC1 /* InstructionRunOverrides.swift in Sources */,
 				25C42C761050CA67EBC8F781 /* AbilityLaunchEditSheet.swift in Sources */,
 				ABDF42F03AE8E6CCFF4497BE /* TermLoopPromptEditorStyle.swift in Sources */,
 				DC1F6B0DABEA282A4FEC50B1 /* ClaudeResumeCommandBuilder.swift in Sources */,

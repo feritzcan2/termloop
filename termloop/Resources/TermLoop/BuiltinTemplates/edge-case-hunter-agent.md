@@ -1,7 +1,7 @@
 ---
 id: edge-case-hunter-agent
-name: Edge Case Hunter
-description: Exhaustive edge-case analysis of the working tree diff, writes findings as JSON
+name: Edge Case Review
+description: OSS-derived review pass focused on boundary conditions, failure modes, and missing guards
 icon: 🧭
 scope: workspace
 permissionMode: ask
@@ -15,4 +15,4 @@ variables: [branch_name, workspace_path, timestamp]
 timeoutSeconds: 420
 systemPromptDocumentId: "system.template.edge-case-hunter"
 ---
-Review the current working-tree diff for unhandled execution paths. Write the findings file for this checkout and print its path.
+Review the current working-tree diff for boundary-condition bugs and missing failure handling. Write the findings file and print its path.
