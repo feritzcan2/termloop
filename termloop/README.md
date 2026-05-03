@@ -34,6 +34,15 @@
 <table>
 <tr>
 <td width="40%" valign="middle">
+<h3>Parallel worktree agents</h3>
+Hand four agents four tasks at once. Each runs in its own <code>.termloop-worktrees/&lt;branch&gt;</code>, boots its own dev server, opens its own PR. Your host checkout stays clean.
+</td>
+<td width="60%">
+<img src="./docs/assets/worktree-parallel.gif" alt="Four agents running in parallel worktrees, opening PRs, then merging" width="100%" />
+</td>
+</tr>
+<tr>
+<td width="40%" valign="middle">
 <h3>Notification rings</h3>
 Panes get a blue ring and tabs light up when coding agents need your attention
 </td>
