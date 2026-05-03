@@ -1215,3 +1215,25 @@ enum TermLoopSocketCommands {
         }
     }
 }
+
+enum TermLoopSocketHealthProbe {
+    static func isHealthyPingResponse(
+        _ response: String?,
+        mode: SocketControlMode
+    ) -> Bool {
+        guard let response else { return false }
+        if response == "PONG" { return true }
+        guard mode.requiresPasswordAuth else { return false }
+
+        let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.hasPrefix("ERROR: Authentication required")
+            || trimmed.contains("\"auth_required\"")
+    }
+
+    static func failureSignal(
+        forPingResponse response: String?,
+        mode: SocketControlMode
+    ) -> String? {
+        isHealthyPingResponse(response, mode: mode) ? nil : "ping_timeout"
+    }
+}
