@@ -18,11 +18,19 @@ final class WorkspaceBridgeStore: ObservableObject {
     private static let maxMessagesPerBridge = 40
 
     enum FinalReplyRecordResult: Equatable {
-        case recorded(messageId: UUID)
+        case recorded(bridgeId: UUID, messageId: UUID)
         case notFound
         case notAskAgent
         case notRunning
         case alreadyReplied
+    }
+
+    enum AskToRequestAppendResult: Equatable {
+        case appended
+        case notFound
+        case notAskAgent
+        case notRunning
+        case requestAlreadyOpen
     }
 
     @Published private(set) var bridges: [WorkspaceBridge] = []
@@ -63,6 +71,10 @@ final class WorkspaceBridgeStore: ObservableObject {
 
     func bridge(id: UUID) -> WorkspaceBridge? {
         bridges.first { $0.id == id }
+    }
+
+    func bridge(containingAskToRequestId requestId: UUID) -> WorkspaceBridge? {
+        bridges.first { $0.containsAskToRequest(id: requestId) }
     }
 
     func bridge(forWorkspaceId wsId: UUID) -> WorkspaceBridge? {
@@ -136,20 +148,91 @@ final class WorkspaceBridgeStore: ObservableObject {
         }
     }
 
-    /// Records the one final helper reply for an Ask-To request and closes the
-    /// request id. Follow-up work must create a new ask_to request.
-    func recordFinalReply(bridgeId: UUID, text: String) -> FinalReplyRecordResult {
+    /// Adds a new single-use Ask-To request to an existing askAgent bridge.
+    /// Only one request may be open per helper conversation so the helper's
+    /// `reply_to_request` has an unambiguous job to close.
+    func appendAskToRequest(
+        bridgeId: UUID,
+        request: AskToRequest
+    ) -> AskToRequestAppendResult {
         guard let idx = bridges.firstIndex(where: { $0.id == bridgeId }) else {
             return .notFound
         }
         guard bridges[idx].intent == .askAgent else {
             return .notAskAgent
         }
-        guard bridges[idx].finalReply == nil else {
-            return .alreadyReplied
+        guard bridges[idx].state == .running else {
+            BridgeDebugTrace.log(
+                "store.askTo.append reject bridge=\(bridgeId.uuidString.prefix(8)) request=\(request.id.uuidString.prefix(8)) reason=not-running"
+            )
+            return .notRunning
+        }
+        guard bridges[idx].openAskToRequest == nil else {
+            BridgeDebugTrace.log(
+                "store.askTo.append reject bridge=\(bridgeId.uuidString.prefix(8)) request=\(request.id.uuidString.prefix(8)) reason=request-already-open"
+            )
+            return .requestAlreadyOpen
+        }
+
+        bridges[idx].askToRequests.append(request)
+        // Keep the legacy/latest kickoff mirror useful for debugging and
+        // persistence viewers, but do not treat it as bridge identity.
+        bridges[idx].kickoffMessage = request.kickoffMessage
+        overviewVersion &+= 1
+        save()
+        BridgeDebugTrace.log(
+            "store.askTo.append ok bridge=\(bridgeId.uuidString.prefix(8)) request=\(request.id.uuidString.prefix(8)) " +
+            "openCount=\(bridges[idx].askToRequests.filter(\.isOpen).count) totalRequests=\(bridges[idx].askToRequests.count)"
+        )
+        return .appended
+    }
+
+    /// Records the one final helper reply for an Ask-To request and closes
+    /// only that request id. The bridge remains `.running` so users can keep
+    /// manually forwarding between visible agents or create a later follow-up
+    /// request on the same helper conversation.
+    func recordFinalReply(requestId: UUID, text: String) -> FinalReplyRecordResult {
+        guard let idx = bridges.firstIndex(where: { bridge in
+            bridge.containsAskToRequest(id: requestId)
+        }) else {
+            BridgeDebugTrace.log("store.reply record reject request=\(requestId.uuidString.prefix(8)) reason=not-found")
+            return .notFound
+        }
+        guard bridges[idx].intent == .askAgent else {
+            BridgeDebugTrace.log(
+                "store.reply record reject bridge=\(bridges[idx].id.uuidString.prefix(8)) request=\(requestId.uuidString.prefix(8)) reason=not-ask-agent"
+            )
+            return .notAskAgent
         }
         guard bridges[idx].state == .running else {
+            BridgeDebugTrace.log(
+                "store.reply record reject bridge=\(bridges[idx].id.uuidString.prefix(8)) request=\(requestId.uuidString.prefix(8)) reason=not-running"
+            )
             return .notRunning
+        }
+
+        if bridges[idx].askToRequests.isEmpty {
+            bridges[idx].askToRequests = [
+                AskToRequest(
+                    id: bridges[idx].id,
+                    message: bridges[idx].kickoffMessage,
+                    kickoffMessage: bridges[idx].kickoffMessage,
+                    finalReply: bridges[idx].finalReply,
+                    createdAt: bridges[idx].createdAt
+                )
+            ]
+        }
+        guard let requestIdx = bridges[idx].askToRequests.firstIndex(where: { $0.id == requestId }) else {
+            BridgeDebugTrace.log(
+                "store.reply record reject bridge=\(bridges[idx].id.uuidString.prefix(8)) request=\(requestId.uuidString.prefix(8)) reason=request-missing"
+            )
+            return .notFound
+        }
+        guard bridges[idx].askToRequests[requestIdx].finalReply == nil else {
+            BridgeDebugTrace.log(
+                "store.reply record reject bridge=\(bridges[idx].id.uuidString.prefix(8)) request=\(requestId.uuidString.prefix(8)) reason=already-replied"
+            )
+            return .alreadyReplied
         }
 
         let message = BridgeMessage(sender: .right, text: text)
@@ -157,15 +240,23 @@ final class WorkspaceBridgeStore: ObservableObject {
         if bridges[idx].messages.count > Self.maxMessagesPerBridge {
             bridges[idx].messages.removeFirst(bridges[idx].messages.count - Self.maxMessagesPerBridge)
         }
-        bridges[idx].finalReply = BridgeFinalReply(
+        let finalReply = BridgeFinalReply(
             messageId: message.id,
             text: text,
             timestamp: message.timestamp
         )
-        bridges[idx].state = .stopped(.replied)
+        bridges[idx].askToRequests[requestIdx].finalReply = finalReply
+        bridges[idx].finalReply = finalReply
+        // A final one-shot reply should disarm any pending auto forward; the
+        // user can re-arm manually from the still-running cable.
+        bridges[idx].forwardMode = .manual
         overviewVersion &+= 1
         save()
-        return .recorded(messageId: message.id)
+        BridgeDebugTrace.log(
+            "store.reply record ok bridge=\(bridges[idx].id.uuidString.prefix(8)) request=\(requestId.uuidString.prefix(8)) " +
+            "message=\(message.id.uuidString.prefix(8)) chars=\(text.count)"
+        )
+        return .recorded(bridgeId: bridges[idx].id, messageId: message.id)
     }
 
     /// Completely removes the bridge from the store and clears the

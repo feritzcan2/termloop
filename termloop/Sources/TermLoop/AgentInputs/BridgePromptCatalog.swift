@@ -219,7 +219,7 @@ enum BridgeHelperSystemPrompt {
         - Do all investigation, review, or requested work before replying.
         - Do not use the reply tool for interim updates.
         - When the final report or completed result is ready, call `reply_to_request` exactly once with `request_id: "\(requestId.uuidString)"` and the final answer in `message`.
-        - After that tool call succeeds, do not continue this request. If the source agent needs follow-up, it will create a new `ask_to` request.
+        - After that tool call succeeds, do not continue this request. If the source agent needs follow-up, it will create a new `ask_to` request, usually reusing this helper conversation via `conversation_id`.
         """
     }
 }

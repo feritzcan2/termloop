@@ -257,6 +257,27 @@ final class BridgeCoordinator {
         }
     }
 
+    /// Sends a newly appended Ask-To request to the existing helper side of a
+    /// long-lived askAgent bridge. Used by MCP follow-ups where the bridge
+    /// stays alive but each request id remains single-use.
+    func sendAskToRequest(bridgeId: UUID, requestId: UUID) {
+        guard let bridge = store.bridge(id: bridgeId),
+              bridge.intent == .askAgent,
+              bridge.state == .running,
+              let request = bridge.askToRequest(id: requestId),
+              let tabManager
+        else {
+            BridgeDebugTrace.log("coord.askTo.send guard-fail bridge=\(bridgeId.uuidString.prefix(8)) request=\(requestId.uuidString.prefix(8))")
+            return
+        }
+        sendFreshHelperKickoffWhenReady(
+            bridge: bridge,
+            targetWorkspaceId: bridge.rightWorkspaceId,
+            text: request.kickoffMessage,
+            tabManager: tabManager
+        )
+    }
+
     // MARK: - Auto forward
 
     private func attachAutoForwardSubscription(for bridge: WorkspaceBridge) {
@@ -399,7 +420,7 @@ final class BridgeCoordinator {
         callerAgentId: String? = nil,
         text: String
     ) -> FinalReplyDeliveryResult {
-        guard let bridge = store.bridge(id: requestId) else {
+        guard let bridge = store.bridge(containingAskToRequestId: requestId) else {
             return .notFound
         }
         guard bridge.intent == .askAgent else {
@@ -411,17 +432,13 @@ final class BridgeCoordinator {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedAskToReplyToken = askToReplyToken?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedBridgeReplyToken = bridge.askToReplyToken?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let hasMatchingLaunchCredential = askToRequestId == requestId
-            && normalizedAskToReplyToken?.isEmpty == false
-            && normalizedAskToReplyToken == normalizedBridgeReplyToken
-        let hasMatchingAgent = normalizedCallerAgentId == nil
-            || normalizedCallerAgentId?.isEmpty == true
-            || normalizedBridgeAgentId == nil
-            || normalizedCallerAgentId == normalizedBridgeAgentId
+        let hasMatchingLaunchCredential = bridge.acceptsAskToLaunchCredential(
+            requestId: askToRequestId,
+            replyToken: askToReplyToken,
+            callerAgentId: callerAgentId
+        )
         let callerIsHelper = callerWorkspaceId == bridge.rightWorkspaceId
-            || (hasMatchingLaunchCredential && hasMatchingAgent)
+            || hasMatchingLaunchCredential
         guard callerIsHelper else {
             BridgeDebugTrace.log(
                 "reply.reject wrong-caller request=\(requestId.uuidString.prefix(8)) " +
@@ -447,15 +464,20 @@ final class BridgeCoordinator {
             return .sourceWorkspaceUnavailable
         }
 
-        let recordResult = store.recordFinalReply(bridgeId: requestId, text: text)
+        let recordResult = store.recordFinalReply(requestId: requestId, text: text)
         switch recordResult {
-        case .recorded(let messageId):
-            detachAutoForwardSubscription(bridgeId: requestId)
+        case .recorded(let bridgeId, let messageId):
+            detachAutoForwardSubscription(bridgeId: bridgeId)
             _ = sendBridgeInput(
                 Self.finalReplyInput(text),
                 toWorkspaceId: bridge.leftWorkspaceId,
                 tabManager: tabManager,
-                bridgeId: requestId
+                bridgeId: bridgeId
+            )
+            BridgeDebugTrace.log(
+                "reply.delivered bridge=\(bridgeId.uuidString.prefix(8)) request=\(requestId.uuidString.prefix(8)) " +
+                "message=\(messageId.uuidString.prefix(8)) source=\(bridge.leftWorkspaceId.uuidString.prefix(8)) " +
+                "helper=\(bridge.rightWorkspaceId.uuidString.prefix(8)) chars=\(text.count)"
             )
             return .delivered(messageId: messageId)
         case .notFound:
