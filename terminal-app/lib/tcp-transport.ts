@@ -115,12 +115,17 @@ export class TcpTransport implements Transport {
         this.onData(chunk);
       });
       sock.on("error", (err: Error) => {
+        this.closed = true;
+        this.socket = null;
+        this.connectPromise = null;
         finish(err);
         this.failAll(err);
         this.notifyClose(err);
       });
       sock.on("close", () => {
         if (!this.closed) {
+          this.closed = true;
+          this.connectPromise = null;
           const err = new Error("Connection closed");
           this.failAll(err);
           this.notifyClose(err);
@@ -229,9 +234,20 @@ export class TcpTransport implements Transport {
       try {
         sock.write(JSON.stringify(req) + "\n", "utf8");
       } catch (err) {
+        const writeErr = err as Error;
         this.pending.delete(req.id);
         clearTimeout(timer);
-        reject(err as Error);
+        this.closed = true;
+        this.socket = null;
+        this.connectPromise = null;
+        this.failAll(writeErr);
+        this.notifyClose(writeErr);
+        try {
+          sock.destroy();
+        } catch {
+          /* ignore */
+        }
+        reject(writeErr);
       }
     });
   }
