@@ -81,7 +81,8 @@ user's answer before moving on.
    - What should the AI avoid? What are common false starts or anti-patterns
      in this codebase?
    - What activation mode fits? Default to `listed` unless the user clearly
-     wants it auto-applied.
+     wants it auto-applied; skill-backed project abilities will flip to
+     `worktree` automatically after their required SKILL.md is written.
 4. Draft. Propose the full ability bundle to the user: a compact
    `ability.json`, an `instructions.md` body, and any linked prompt documents
    that must change. Keep the body focused; 100-400 words is a good target.
@@ -93,17 +94,21 @@ user's answer before moving on.
    `instructions.md` together. If the ability declares a `requiredSkill`,
    also write `.termloop/skills/<skillId>/SKILL.md` per the "Required
    skills" rules below — TermLoop will materialize it into the agent's
-   native skill catalog automatically.
+   native skill catalog and enable the ability for worktree agents
+   automatically.
 6. Announce. Tell the user: "Created `.termloop/abilities/<slug>/` with `ability.json`, `instructions.md`, and (if applicable) `.termloop/skills/<skillId>/SKILL.md`. It
-   should now appear in the Abilities panel in the TermLoop sidebar. Adjust
-   the activation there if needed."
+   should now appear in the Abilities panel in the TermLoop sidebar. Required
+   skills sync automatically, and skill-backed abilities enable for worktrees
+   automatically."
 
 ## Required skills (`SKILL.md`)
 
 If the ability declares a `requiredSkill` item, you must also write a SKILL.md
 at `<projectRoot>/.termloop/skills/<skillId>/SKILL.md`. TermLoop materializes
 this file into the agent's native catalog (`.claude/skills/`, `.codex/skills/`,
-`.agents/skills/`) so the agent can discover it via its skill UI.
+`.agents/skills/`) so the agent can discover it via its skill UI. When this
+canonical skill appears, TermLoop also flips the matching ability to worktree
+activation.
 
 SKILL.md format:
 

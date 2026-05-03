@@ -177,8 +177,12 @@ final class IntegrationsStore: ObservableObject {
               envelope.version == Self.cacheVersion else {
             return
         }
+        let builtInTermLoopMCP = TermLoopBuiltInMCP.item()
         items = envelope.records.map { rec in
-            IntegrationItem(
+            if rec.id == builtInTermLoopMCP.id {
+                return builtInTermLoopMCP
+            }
+            return IntegrationItem(
                 id: rec.id,
                 kind: rec.kind,
                 displayName: rec.displayName,
