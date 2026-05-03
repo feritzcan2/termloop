@@ -41,7 +41,7 @@ npm run android       # Android emulator (or device)
    {
      "type": "termloop.pairing",
      "version": 1,
-     "server_name": "Ferit's MacBook",
+     "server_name": "My MacBook",
      "host": "192.168.1.20",
      "port": 7878,
      "token": "temporary-random-token",

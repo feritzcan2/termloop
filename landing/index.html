@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TermLoop — The terminal IDE for your AI agents</title>
-<meta name="description" content="TermLoop is an agentic terminal IDE. Run AI agents in parallel, each in its own git worktree. Bring your own API keys. macOS-native with a phone bridge.">
+<meta name="description" content="TermLoop is an open source agentic terminal IDE. Run AI agents in parallel, each in its own git worktree. Use your existing Claude or Codex subscription. macOS-native with a phone bridge.">
 <meta property="og:title" content="TermLoop — The terminal IDE for your AI agents">
-<meta property="og:description" content="Run AI agents in parallel. Built-in git worktrees. Mobile bridge. Bring your own API keys.">
+<meta property="og:description" content="Open source. Run AI agents in parallel. Built-in git worktrees. Mobile bridge. Use your existing subscription.">
 <meta property="og:type" content="website">
 <link rel="canonical" href="https://termloop.ai/">
 <meta name="theme-color" content="#000000">
@@ -1228,8 +1228,7 @@
       <a href="#features">Features</a>
       <a href="#how">How it works</a>
       <a href="#faq">FAQ</a>
-      <a href="/github">GitHub</a>
-      <a href="#notify" class="nav-cta">Early access →</a>
+      <a href="/github" class="nav-cta">GitHub →</a>
     </div>
   </div>
 </nav>
@@ -1237,22 +1236,18 @@
 <!-- ═══ HERO ═══ -->
 <section class="hero">
   <div class="container">
-    <div class="badge reveal" style="animation-delay: 0.05s">
-      <span class="ring"></span>
-      <span>Pre-alpha · shipping Q3 2026</span>
-    </div>
     <h1 class="hero-title reveal" style="animation-delay: 0.15s">
       The terminal IDE<br>
       for <span class="grad">your AI agents.</span>
     </h1>
     <p class="hero-sub reveal" style="animation-delay: 0.3s">
       Run AI agents in parallel — each in its own git worktree.
-      Bring your own API keys. Control the whole thing from your phone.
-      Native to macOS.
+      Use your existing Claude or Codex subscription. Control the whole thing from your phone.
+      Open source, native to macOS.
     </p>
     <div class="hero-cta reveal" style="animation-delay: 0.4s">
-      <a href="#notify" class="btn btn-primary">
-        Get early access
+      <a href="https://github.com/feritzcan2/termloop/releases/latest/download/termloop-macos.dmg" class="btn btn-primary">
+        Download for macOS
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
       </a>
       <a href="/github" class="btn btn-ghost">
@@ -1261,12 +1256,46 @@
       </a>
     </div>
     <div class="trust-row reveal" style="animation-delay: 0.55s">
-      <span><span class="dot">●</span> BYO API keys</span>
-      <span><span class="dot">●</span> Built on cmux</span>
+      <span><span class="dot">●</span> Use your subscription</span>
+      <span><span class="dot">●</span> Open source</span>
       <span><span class="dot">●</span> macOS · iOS</span>
       <span><span class="dot">●</span> No telemetry</span>
     </div>
 
+  </div>
+</section>
+
+<!-- ═══ KICKOFF ═══ -->
+<section class="loop-section" id="kickoff">
+  <div class="container">
+    <div class="loop-proof">
+      <div class="loop-proof-head">
+        <div class="eyebrow">Kickoff</div>
+        <h3 class="loop-proof-title-h">All your agents in one tap.</h3>
+        <p class="loop-proof-lede">
+          Quick Actions are saved agent launches — name, prompt, model,
+          even a starter command. One tap fires the whole set — every agent
+          boots in its own <code>worktree</code>, ready to work.
+        </p>
+      </div>
+      <figure class="loop-proof-figure">
+        <div class="loop-proof-frame">
+          <div class="loop-proof-bar">
+            <div class="loop-proof-dots"><span></span><span></span><span></span></div>
+            <div class="loop-proof-bar-title">termloop · quick action · all agents in one tap</div>
+          </div>
+          <video autoplay muted loop playsinline preload="metadata" aria-label="One Quick Action launches every TermLoop agent at once">
+            <source src="/assets/videos/quick-actions.webm" type="video/webm">
+            <source src="/assets/videos/quick-actions.mp4" type="video/mp4">
+          </video>
+        </div>
+        <figcaption class="loop-proof-beats">
+          <span><b>01</b> Open Quick Actions</span>
+          <span><b>02</b> One tap</span>
+          <span><b>03</b> Every agent boots in its worktree</span>
+        </figcaption>
+      </figure>
+    </div>
   </div>
 </section>
 
@@ -1279,8 +1308,8 @@
         <h3 class="loop-proof-title-h">Four agents. Four tasks. One workspace.</h3>
         <p class="loop-proof-lede">
           Hand four agents four tasks at once. Each runs in its own
-          <code>.termloop-worktrees/&lt;branch&gt;</code>, boots its own dev server,
-          opens its own PR. Your host checkout stays clean.
+          <code>worktree</code>, boots its own dev server, opens its own PR.
+          Your host checkout stays clean.
         </p>
       </div>
       <figure class="loop-proof-figure">
@@ -1300,6 +1329,42 @@
           <span><b>03</b> Apps boot with live URLs</span>
           <span><b>04</b> PRs open</span>
           <span><b>05</b> Pull, done</span>
+        </figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ ASK-TO ═══ -->
+<section class="loop-section" id="ask-to">
+  <div class="container">
+    <div class="loop-proof">
+      <div class="loop-proof-head">
+        <div class="eyebrow">Ask-to</div>
+        <h3 class="loop-proof-title-h">Stuck? Ask another agent.</h3>
+        <p class="loop-proof-lede">
+          When an agent hits a wall, it doesn't wait for you. The built-in
+          <code>ask_to</code> MCP tool lets it consult any other running
+          agent — different model, different worktree, different perspective.
+          Cross-pollination, no human in the loop.
+        </p>
+      </div>
+      <figure class="loop-proof-figure">
+        <div class="loop-proof-frame">
+          <div class="loop-proof-bar">
+            <div class="loop-proof-dots"><span></span><span></span><span></span></div>
+            <div class="loop-proof-bar-title">termloop · ask_to · cross-agent consult</div>
+          </div>
+          <video autoplay muted loop playsinline preload="metadata" aria-label="One TermLoop agent asks another for help via the built-in ask_to MCP tool">
+            <source src="/assets/videos/ask-to.webm" type="video/webm">
+            <source src="/assets/videos/ask-to.mp4" type="video/mp4">
+          </video>
+        </div>
+        <figcaption class="loop-proof-beats">
+          <span><b>01</b> Agent prepares the question</span>
+          <span><b>02</b> New agent picks it up</span>
+          <span><b>03</b> Back to the asker</span>
+          <span><b>04</b> Answer arrives</span>
         </figcaption>
       </figure>
     </div>
@@ -1329,7 +1394,7 @@
         <h3>Parallel agent sessions</h3>
         <p>Run four Claudes, a Codex, and a Gemini at once — each in its own pane, each in its own worktree. Nothing collides. Nothing waits its turn.</p>
         <div class="meta">
-          <span>Claude</span><span>Codex</span><span>Gemini</span><span>BYO</span>
+          <span>Claude</span><span>Codex</span><span>Gemini</span><span>+ more</span>
         </div>
       </div>
 
@@ -1372,10 +1437,10 @@
             <path d="M9 14h6"/>
           </svg>
         </div>
-        <h3>Bring your own keys</h3>
-        <p>You pay the model provider directly. No middleman markup, no rate-limit surprises. TermLoop never touches your API traffic.</p>
+        <h3>Use your own subscription</h3>
+        <p>TermLoop runs the agent CLIs you already have — Claude Code, Codex, Gemini. You stay logged in with your existing subscription. No middleman, no markup, no proxy. TermLoop never touches your API traffic.</p>
         <div class="meta">
-          <span>Anthropic</span><span>OpenAI</span><span>Google</span><span>Ollama</span>
+          <span>Claude</span><span>Codex</span><span>Gemini</span><span>Ollama</span>
         </div>
       </div>
 
@@ -1490,28 +1555,12 @@
       </details>
       <details class="q">
         <summary>How much does it cost?</summary>
-        <p>Early access is free. Final pricing will be announced before launch — expect a free tier for personal use and a paid tier for power features like the mobile bridge and cloud session sync. Sign up for early access and we'll tell you first.</p>
+        <p>TermLoop is open source and the macOS app is a free download. You bring your own Claude or Codex subscription — TermLoop runs the agent CLIs you're already paying for, no separate billing.</p>
       </details>
       <details class="q">
         <summary>What's the license?</summary>
         <p>TermLoop builds on <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener" style="color: var(--cyan-2);">cmux</a>, which is GPL-3.0-or-later with a commercial option by its publisher. The full TermLoop licensing terms will be published alongside the first binary. Until then, the repository is source-available for inspection.</p>
       </details>
-    </div>
-  </div>
-</section>
-
-<!-- ═══ NOTIFY ═══ -->
-<section class="notify" id="notify">
-  <div class="container">
-    <div class="notify-card">
-      <div class="eyebrow">Early access</div>
-      <h2>Get the first binary.</h2>
-      <p>One email when TermLoop ships. Plus a private TestFlight invite when mobile opens up. No drip.</p>
-      <form class="subscribe" id="subscribe" novalidate>
-        <input type="email" name="email" placeholder="you@domain.dev" required autocomplete="email" spellcheck="false" aria-label="Your email">
-        <button type="submit">Notify me</button>
-      </form>
-      <div class="notify-status" id="notify-status">~ waiting for input</div>
     </div>
   </div>
 </section>
@@ -1544,26 +1593,6 @@
     });
   });
 
-  // subscribe form
-  const form = document.getElementById('subscribe');
-  const status = document.getElementById('notify-status');
-  if (form) {
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const email = (form.email.value || '').trim();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        status.textContent = '⚠ invalid email — try again';
-        status.style.color = '#ef4444';
-        return;
-      }
-      // TODO: wire to Cloudflare Worker / Resend / Buttondown
-      status.innerHTML = '✓ queued · <span style="color: var(--cyan-2)">' + email.replace(/[<>&"']/g, '') + '</span> · see you at launch';
-      status.style.color = 'var(--fg-3)';
-      form.querySelector('input').value = '';
-      form.style.opacity = '0.5';
-      form.style.pointerEvents = 'none';
-    });
-  }
 </script>
 
 </body>
