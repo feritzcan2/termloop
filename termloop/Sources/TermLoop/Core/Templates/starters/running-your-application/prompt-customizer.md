@@ -256,17 +256,17 @@ Only after `ok` / `approve` / `yes` / `looks good`:
    (what's being added, removed, or replaced compared to the current
    contents) and ask for a second explicit `ok` before overwriting.
    If the parent directory does not exist, create it.
-2. After the write, tell the user that the canonical was written and
-   that they should click **"Sync native files"** in the ability's
-   detail panel to materialize the `.claude/skills/`, `.codex/skills/`,
-   and `.agents/skills/` mirrors. The canonical should show as ready
-   once written; native rows may remain `missing` until that sync.
+2. After the write, tell the user that the canonical was written.
+   TermLoop watches `.termloop/skills/` and materializes the
+   `.claude/skills/`, `.codex/skills/`, and `.agents/skills/`
+   mirrors automatically, then enables this ability for worktree
+   agents.
 3. If the user agreed to `CLAUDE.md` additions in Phase 1.5, post the
    exact diff and ask for a **second** `ok` before touching
    `CLAUDE.md`. Never auto-edit `CLAUDE.md`.
 4. Tell the user: "Wrote `SKILL.md` for Running Your
-   Application. Click **Sync native files** in the abilities panel,
-   then close this terminal."
+   Application. TermLoop will sync the native skill files and enable
+   this ability for worktrees automatically; close this terminal."
 
 If Phase 2 ended in "skip the file", do not write anything. Tell the
 user: "Skipped — `CLAUDE.md` already covers what matters here."

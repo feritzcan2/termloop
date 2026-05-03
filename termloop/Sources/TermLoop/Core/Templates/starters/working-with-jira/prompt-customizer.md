@@ -80,3 +80,5 @@ After approval, write `.termloop/skills/working-with-jira/SKILL.md` with:
 - common pitfalls for this repo
 
 Keep the body concrete, short, and aligned with the repo's actual evidence.
+After writing, tell the user that TermLoop will sync the native skill files
+and enable this ability for worktrees automatically.

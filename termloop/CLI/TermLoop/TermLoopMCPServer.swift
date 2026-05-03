@@ -361,14 +361,15 @@ enum TermLoopMCPServer {
         }
     }
 
-    /// Resolves the opt-in tool set. Prefers a fresh on-disk read of
-    /// `<cwd>/.termloop/abilities/*/ability.json` when that directory exists
-    /// — that path stays correct across ability toggles within a single MCP
-    /// server lifetime and works for agents that sandbox MCP subprocess env
-    /// (Codex). Falls back to `TERMLOOP_ENABLED_MCP_TOOLS` (set by TermLoop
-    /// at agent launch and inherited by env-propagating agents like Claude)
-    /// only when the abilities directory cannot be located — e.g. agent CWD
-    /// is not the project root.
+    /// Resolves the opt-in tool set. Prefers a fresh on-disk read of the
+    /// active project's `.termloop/abilities/*/ability.json` when that
+    /// directory can be found from cwd or any ancestor. The ancestor walk is
+    /// important for worktree agents launched from
+    /// `<project>/.termloop-worktrees/<branch>`: Codex may sandbox MCP
+    /// subprocess env, so relying only on launch-time
+    /// `TERMLOOP_ENABLED_MCP_TOOLS` would leave optional tools stale after an
+    /// ability toggle. Falls back to env only when no project ability catalog
+    /// is locatable.
     private static func enabledToolNameSet(env: [String: String]) -> Set<String> {
         if let disk = enabledToolNamesFromCWDIfAvailable() {
             return disk
@@ -401,7 +402,9 @@ enum TermLoopMCPServer {
     /// fallback (e.g., MCP server invoked outside the runner-launched env)
     /// still sees the tool and the chip pipeline keeps working.
     private static func enabledToolNamesFromCWDIfAvailable() -> Set<String>? {
-        let abilitiesDir = FileManager.default.currentDirectoryPath + "/.termloop/abilities"
+        guard let abilitiesDir = abilitiesDirectoryFromCWD() else {
+            return nil
+        }
         guard let entries = try? FileManager.default.contentsOfDirectory(atPath: abilitiesDir) else {
             return nil
         }
@@ -433,6 +436,27 @@ enum TermLoopMCPServer {
             }
         }
         return names
+    }
+
+    private static func abilitiesDirectoryFromCWD() -> String? {
+        let fm = FileManager.default
+        var url = URL(fileURLWithPath: fm.currentDirectoryPath, isDirectory: true)
+            .standardizedFileURL
+        while true {
+            let candidate = url
+                .appendingPathComponent(".termloop", isDirectory: true)
+                .appendingPathComponent("abilities", isDirectory: true)
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: candidate.path, isDirectory: &isDir),
+               isDir.boolValue {
+                return candidate.path
+            }
+            let parent = url.deletingLastPathComponent()
+            if parent.path == url.path {
+                return nil
+            }
+            url = parent
+        }
     }
 
     // MARK: Built-in tool handlers

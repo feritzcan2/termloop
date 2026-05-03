@@ -144,6 +144,8 @@ Optional manual input:
 - Metadata can stay in AsyncStorage.
 - iOS `Info.plist` and `app.json` must agree on `TermLoop Mobile`,
   `ai.termloop.mobile`, camera, local-network, and encryption declarations.
+- iOS push notification entitlement must stay enabled for
+  `ai.termloop.mobile`; the desktop APNs `bundle_id` must use the same value.
 - Android package id must stay `ai.termloop.mobile`.
 - App icon must remain an opaque 1024x1024 PNG. Adaptive/splash images can
   keep transparency.
