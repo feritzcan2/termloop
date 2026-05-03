@@ -11,7 +11,6 @@ struct QuickActionView: View {
 
     @State private var composerFocused: Bool = true
     @State private var worktreeSubmitToken: Int = 0
-    @State private var ticketSubmitToken: Int = 0
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -41,10 +40,6 @@ struct QuickActionView: View {
         }
         .animation(.easeInOut(duration: 0.12), value: viewModel.isDropdownOpen)
         .animation(.easeInOut(duration: 0.12), value: viewModel.isAdvancedOpen)
-        .onChange(of: viewModel.activeSurface) { _, newValue in
-            guard newValue == .ticket else { return }
-            viewModel.maybePrepareTickets()
-        }
     }
 
     private var mainStack: some View {
@@ -65,12 +60,11 @@ struct QuickActionView: View {
             Divider()
 
             Group {
-                if viewModel.activeSurface == .run {
+                switch viewModel.activeSurface {
+                case .run:
                     runSurface
-                } else if viewModel.activeSurface == .worktree {
+                case .worktree:
                     worktreeSurface
-                } else {
-                    ticketSurface
                 }
             }
         }
@@ -90,12 +84,6 @@ struct QuickActionView: View {
                 table: "TermLoop"
             ))
             .tag(QuickActionSurface.worktree)
-            Text(String(
-                localized: "quickAction.surface.ticket",
-                defaultValue: "Ticket",
-                table: "TermLoop"
-            ))
-            .tag(QuickActionSurface.ticket)
         }
         .pickerStyle(.segmented)
     }
@@ -264,28 +252,6 @@ struct QuickActionView: View {
         }
     }
 
-    private var ticketSurface: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ticketComposerSection
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-
-            Divider()
-
-            ticketContent
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-
-            Divider()
-            ticketFooter
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-        }
-        .task {
-            viewModel.maybePrepareTickets()
-        }
-    }
-
     private var worktreeRequestState: Result<NewWorkspaceWithWorktreeRequest, Error> {
         Result { try viewModel.newWorktreeRequest() }
     }
@@ -327,14 +293,6 @@ struct QuickActionView: View {
             onSubmit: submitWorktreeFromComposer,
             onCommandReturn: handleWorktreeCommandReturn,
             onToggleAdvanced: { viewModel.toggleAdvanced() }
-        )
-    }
-
-    private var ticketComposerSection: some View {
-        composerSection(
-            onSubmit: submitTicketFromComposer,
-            onCommandReturn: submitTicketFromComposer,
-            onToggleAdvanced: nil
         )
     }
 
@@ -409,22 +367,6 @@ struct QuickActionView: View {
 
     private var composerPlaceholder: String {
         switch (viewModel.activeSurface, viewModel.composition) {
-        case (.ticket, .freePrompt):
-            return String(
-                localized: "quickAction.composer.placeholder.ticket.freePrompt",
-                defaultValue: "Optional initial prompt for the ticket worktree agent",
-                table: "TermLoop"
-            )
-        case (.ticket, .template(let id)):
-            let name = AgentTemplateStore.shared.template(id: id)?.name ?? id
-            if let hint = viewModel.composerPromptHint {
-                return "Optional extra instructions for \(name) after the ticket worktree opens. \(hint)"
-            }
-            return String(
-                localized: "quickAction.composer.placeholder.ticket.template",
-                defaultValue: "Describe what \(name) should do after the ticket worktree opens, then press ↵ to create.",
-                table: "TermLoop"
-            )
         case (.worktree, .freePrompt):
             return String(
                 localized: "quickAction.composer.placeholder.worktree.freePrompt",
@@ -807,309 +749,6 @@ struct QuickActionView: View {
         }
     }
 
-    private var ticketFooter: some View {
-        HStack(spacing: 8) {
-            Text(String(
-                localized: "quickAction.footer.brand",
-                defaultValue: "termloop",
-                table: "TermLoop"
-            ))
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundColor(.secondary)
-            Spacer()
-            footerHint("⌘R", String(
-                localized: "quickAction.footer.hint.refresh",
-                defaultValue: "refresh",
-                table: "TermLoop"
-            ))
-            footerHint("↵", String(
-                localized: "quickAction.footer.hint.create",
-                defaultValue: "create",
-                table: "TermLoop"
-            ))
-            footerHint("esc", String(localized: "quickAction.footer.hint.dismiss", defaultValue: "dismiss", table: "TermLoop"))
-        }
-    }
-
-    @ViewBuilder
-    private var ticketContent: some View {
-        switch viewModel.ticketState {
-        case .idle, .loading:
-            HStack(spacing: 10) {
-                ProgressView()
-                    .controlSize(.small)
-                Text(String(
-                    localized: "quickAction.ticket.loading",
-                    defaultValue: "Loading tickets…",
-                    table: "TermLoop"
-                ))
-                .font(.caption)
-                .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-        case .connectRequired(let message):
-            VStack(alignment: .leading, spacing: 10) {
-                Text(message)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Button(String(
-                    localized: "quickAction.ticket.connect",
-                    defaultValue: "Connect Provider",
-                    table: "TermLoop"
-                )) {
-                    openIntegrations()
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-        case .failed(let message):
-            VStack(alignment: .leading, spacing: 10) {
-                Text(message)
-                    .font(.caption)
-                    .foregroundColor(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Button(String(
-                    localized: "quickAction.ticket.retry",
-                    defaultValue: "Retry",
-                    table: "TermLoop"
-                )) {
-                    viewModel.refreshTickets(force: true)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-        case .ready:
-            HStack(alignment: .top, spacing: 12) {
-                ticketPanel {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "magnifyingglass")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(.secondary)
-
-                            TextField(
-                                String(
-                                    localized: "quickAction.ticket.search.placeholder",
-                                    defaultValue: "Search tickets",
-                                    table: "TermLoop"
-                                ),
-                                text: $viewModel.ticketSearchText
-                            )
-                            .textFieldStyle(.plain)
-
-                            Divider()
-                                .frame(height: 16)
-
-                            Button {
-                                viewModel.refreshTickets(force: true)
-                            } label: {
-                                Image(systemName: "arrow.clockwise")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 22, height: 22)
-                            }
-                            .buttonStyle(.plain)
-                            .keyboardShortcut("r", modifiers: [.command])
-                            .help(String(
-                                localized: "quickAction.ticket.refresh",
-                                defaultValue: "Refresh tickets",
-                                table: "TermLoop"
-                            ))
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color.black.opacity(0.14))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .stroke(Color.white.opacity(0.06), lineWidth: 1)
-                        )
-
-                        if viewModel.ticketCapabilities.supportsAssignedToCurrentUserOnly {
-                            Toggle(isOn: Binding(
-                                get: { viewModel.ticketAssignedToMeOnly },
-                                set: { viewModel.setTicketAssignedToMeOnly($0) }
-                            )) {
-                                if let user = viewModel.ticketAuthenticatedUser, !user.isEmpty {
-                                    Text("Assigned to me (\(user))")
-                                } else {
-                                    Text("Assigned to me")
-                                }
-                            }
-                            .toggleStyle(.checkbox)
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                        }
-
-                        Text(ticketCountLabel)
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.secondary)
-
-                        if viewModel.filteredTicketItems.isEmpty {
-                            Text(String(
-                                localized: "quickAction.ticket.empty",
-                                defaultValue: "No tickets found.",
-                                table: "TermLoop"
-                            ))
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        } else {
-                            ScrollView {
-                                LazyVStack(alignment: .leading, spacing: 8) {
-                                    ForEach(viewModel.filteredTicketItems) { ticket in
-                                        Button {
-                                            viewModel.selectTicket(ticket)
-                                        } label: {
-                                            ticketRow(ticket)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                                .padding(.trailing, 2)
-                            }
-                            .frame(minHeight: 260, maxHeight: 320)
-                        }
-                    }
-                }
-                .frame(width: 272)
-
-                ticketPanel {
-                    if let ticket = viewModel.selectedTicket,
-                       let request = try? viewModel.newTicketWorktreeRequest() {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(alignment: .top, spacing: 10) {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(ticket.key)
-                                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                        .foregroundColor(.primary)
-
-                                    Text(ticket.title)
-                                        .font(.system(size: 13, weight: .medium))
-                                        .foregroundColor(.primary)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-
-                                Spacer(minLength: 0)
-
-                                ticketStatusBadge(ticket.status)
-                            }
-
-                            Divider()
-
-                            NewWorkspaceWithWorktreeForm(
-                                request: request,
-                                tabManager: AppDelegate.shared?.tabManager,
-                                showsTitle: false,
-                                showsCancelButton: false,
-                                showsPromptEditors: false,
-                                externalSubmitToken: ticketSubmitToken,
-                                onCancel: {},
-                                onSuccess: onWorktreeCreated
-                            )
-                            .id(ticket.key)
-                        }
-                    } else {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Select a ticket")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(.primary)
-                            Text("Pick a ticket on the left to prefill the worktree branch and create a dedicated workspace.")
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Spacer(minLength: 0)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    }
-                }
-                .frame(maxWidth: .infinity, minHeight: 320, alignment: .topLeading)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private var ticketCountLabel: String {
-        let providerName = viewModel.ticketProviderName ?? "Ticket"
-        return "\(viewModel.filteredTicketItems.count) \(providerName) tickets"
-    }
-
-    private func ticketRow(_ ticket: QuickActionTicketItem) -> some View {
-        let isSelected = viewModel.selectedTicketID == ticket.id
-        return HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .center, spacing: 8) {
-                    Text(ticket.key)
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundColor(isSelected ? .primary : .secondary)
-                    Spacer(minLength: 0)
-                    ticketStatusBadge(ticket.status)
-                }
-
-                Text(ticket.title)
-                    .font(.system(size: 12))
-                    .foregroundColor(.primary.opacity(isSelected ? 0.95 : 0.82))
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(isSelected ? Color.accentColor : Color.white.opacity(0.14))
-                .padding(.top, 2)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(0.16) : Color.white.opacity(0.02))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(isSelected ? Color.accentColor.opacity(0.55) : Color.white.opacity(0.05), lineWidth: 1)
-        )
-    }
-
-    private func ticketPanel<Content: View>(
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            content()
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.white.opacity(0.03))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 1)
-        )
-    }
-
-    private func ticketStatusBadge(_ status: String) -> some View {
-        Text(status.isEmpty ? "OPEN" : status)
-            .font(.system(size: 9, weight: .semibold))
-            .foregroundColor(.secondary)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(Color.white.opacity(0.05))
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
-            )
-    }
-
     // MARK: Dropdown overlay
 
     private var dropdownOverlay: some View {
@@ -1157,11 +796,6 @@ struct QuickActionView: View {
         onWorktreeCreated()
     }
 
-    private func submitTicketFromComposer() {
-        if viewModel.isDropdownOpen || viewModel.selectedTicket == nil { return }
-        ticketSubmitToken &+= 1
-    }
-
     private func handleCommandReturn() {
         if viewModel.isAdvancedOpen {
             let ok = viewModel.submit()
@@ -1174,10 +808,9 @@ struct QuickActionView: View {
     private func handleEscape() {
         if viewModel.isDropdownOpen {
             viewModel.closeTemplateDropdown()
-        } else if viewModel.isAdvancedOpen
-                    && (viewModel.activeSurface == .run || viewModel.activeSurface == .worktree) {
+        } else if viewModel.isAdvancedOpen {
             viewModel.closeAdvanced()
-        } else if viewModel.activeSurface == .worktree || viewModel.activeSurface == .ticket {
+        } else if viewModel.activeSurface == .worktree {
             onDismiss()
         } else if !viewModel.promptText.isEmpty || viewModel.errorMessage != nil {
             viewModel.promptText = ""
@@ -1187,11 +820,4 @@ struct QuickActionView: View {
         }
     }
 
-    private func openIntegrations() {
-        UserDefaults.standard.set(
-            TermLoopSidebarTab.integrations.rawValue,
-            forKey: TermLoopSidebarTab.storageKey
-        )
-        onDismiss()
-    }
 }

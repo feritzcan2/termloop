@@ -58,7 +58,6 @@ final class TerminalAgentLifecycle {
             "title=\(debugWorkspaceTitle(workspace))",
             "workspaceCwd=\(debugClean(workspace.currentDirectory))",
             "project=\(debugProject(metadata.projectId))",
-            "task=\(debugShort(metadata.taskId))",
             "terminalAgent=\(debugClean(metadata.terminalAgentId))",
             "branch=\(debugClean(metadata.branch))",
             "worktree=\(debugClean(metadata.worktreePath))",
@@ -677,7 +676,6 @@ final class TerminalAgentLifecycle {
             workingDirectory: cwd,
             select: true,
             projectId: oldMetadata.projectId,
-            taskId: oldMetadata.taskId,
             terminalAgentId: terminalAgentId
         )
 
@@ -687,7 +685,6 @@ final class TerminalAgentLifecycle {
         rebuilt.suppressAgentsOnClose = nil
         let resolvedAfterAdd = metadataStore.metadata(forWorkspaceId: newWorkspace.id)
         rebuilt.projectId = resolvedAfterAdd.projectId
-        rebuilt.taskId = resolvedAfterAdd.taskId
         rebuilt.terminalAgentId = bridgeAgentId(forWorkspaceId: oldWorkspaceId, metadata: oldMetadata)
             ?? resolvedAfterAdd.terminalAgentId
         metadataStore.restoreMetadata(rebuilt, forWorkspaceId: newWorkspace.id)

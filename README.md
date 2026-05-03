@@ -331,19 +331,6 @@ Ways to get involved:
 - Create and participate in [GitHub issues](https://github.com/feritzcan2/termloop/issues) and [discussions](https://github.com/feritzcan2/termloop/discussions)
 - Let us know what you're building with TermLoop
 
-## Founder's Edition
-
-TermLoop is free, open source, and always will be. If you'd like to support development and get early access to what's coming next:
-
-**[Get Founder's Edition](https://buy.stripe.com/3cI00j2Ld0it5OU33r5EY0q)**
-
-- **Prioritized feature requests/bug fixes**
-- **Early access: TermLoop AI that gives you context on every workspace, tab and panel**
-- **Early access: iOS app with terminals synced between desktop and phone**
-- **Early access: Cloud VMs**
-- **Early access: Voice mode**
-- **My personal iMessage/WhatsApp**
-
 ## License
 
 TermLoop is open source under [GPL-3.0-or-later](./termloop/LICENSE).

@@ -565,10 +565,9 @@ private enum WorktreeAgentsPanelTypography {
 
 /// Sidebar panel that sits above `ActiveAgentsPanel` and groups every
 /// workspace running on a `.termloop-worktrees/<branch>/` worktree by branch.
-/// Unlike `ActiveAgentsPanel` (flat list of agent runs) or `TasksSubTabView`
-/// (full task-store planning list), this panel answers one question at a
-/// glance: "which worktrees do I have open right now, and what agent is
-/// in each?"
+/// Unlike `ActiveAgentsPanel` (flat list of agent runs), this panel answers
+/// one question at a glance: "which worktrees do I have open right now, and
+/// what agent is in each?"
 ///
 /// A workspace is considered worktree-backed when
 /// `WorkspaceMetadataStore.branch(for:)` returns a non-empty branch — the
@@ -2683,7 +2682,6 @@ struct WorktreeChangesSheet: View {
                 seededCandidates: seed.candidates,
                 currentBranch: seed.currentBranch,
                 directory: directory,
-                explicitTracked: seed.explicitTracked,
                 projectRoot: seed.projectRoot
             )
         }.value
@@ -2811,7 +2809,6 @@ struct WorktreeChangesSheet: View {
     private func candidateSeedsFromMainActor() -> (
         candidates: [String],
         currentBranch: String?,
-        explicitTracked: [String]?,
         projectRoot: String
     ) {
         var seeded: [String] = []
@@ -2825,7 +2822,6 @@ struct WorktreeChangesSheet: View {
         return (
             candidates: seeded,
             currentBranch: branch?.trimmingCharacters(in: .whitespacesAndNewlines),
-            explicitTracked: project?.trackedBranches,
             projectRoot: project?.folderPath ?? effectiveDirectory
         )
     }

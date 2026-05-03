@@ -56,7 +56,6 @@ extension TermLoopSidebar {
         @AppStorage("termloop.workSubTab") private var workSubTabRaw: String = WorkSubTab.loop.rawValue
         @AppStorage(WorktreeAgentsPanelState.hiddenKey) private var isWorktreeAgentsHidden: Bool = false
         @AppStorage(ActiveAgentsPanelState.hiddenKey) private var isActiveAgentsHidden: Bool = false
-        @State private var showingNewTaskSheet = false
         @State private var askAgentRequest: AskAgentRequest? = nil
         @State private var planPickerRequest: PlanPickerRequest? = nil
         @State private var bridgeKickoffRequest: BridgeKickoffRequest? = nil
@@ -75,13 +74,6 @@ extension TermLoopSidebar {
                 get: { WorkSubTab(rawValue: workSubTabRaw) ?? .loop },
                 set: { workSubTabRaw = $0.rawValue }
             )
-        }
-
-        private var tasksBadgeCount: Int {
-            guard let projectId = ProjectStore.shared.activeProjectId else { return 0 }
-            return TaskStore.shared.tasks(for: projectId)
-                .filter { $0.status == .idle || $0.status == .active }
-                .count
         }
 
         private var showsNoProjectEmptyState: Bool {
@@ -334,10 +326,7 @@ extension TermLoopSidebar {
                     SidebarProjectOnboardingEmptyState()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    WorkSubTabBar(
-                        selection: workSubTab,
-                        tasksBadgeCount: tasksBadgeCount
-                    )
+                    WorkSubTabBar(selection: workSubTab)
                     Group {
                         switch workSubTab.wrappedValue {
                         case .loop:
@@ -374,15 +363,6 @@ extension TermLoopSidebar {
                             }
                             .modifier(ClearScrollBackground())
                             .modifier(SidebarSubtleScrollIndicators())
-                        case .tasks:
-                            if let projectId = ProjectStore.shared.activeProjectId {
-                                TasksSubTabView(
-                                    projectId: projectId,
-                                    onNewTask: { showingNewTaskSheet = true }
-                                )
-                            } else {
-                                Color.clear
-                            }
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -397,15 +377,6 @@ extension TermLoopSidebar {
                     selectedWorkspaceId: tabManager.selectedTabId
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .sheet(isPresented: $showingNewTaskSheet) {
-                if let projectId = ProjectStore.shared.activeProjectId {
-                    NewTaskSheet(
-                        projectId: projectId,
-                        onCreated: { _ in showingNewTaskSheet = false },
-                        onCancel: { showingNewTaskSheet = false }
-                    )
-                }
             }
             .background(
                 WindowAccessor { window in

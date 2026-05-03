@@ -3025,40 +3025,6 @@
         }
       }
     },
-    "sidebar.workSubTab.tasks": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tasks"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "タスク"
-          }
-        }
-      }
-    },
-    "sidebar.workSubTab.tasks.new.help": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "New task"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "新しいタスク"
-          }
-        }
-      }
-    },
     "sidebar.worktreeGroup.collapse": {
       "extractionState": "manual",
       "localizations": {
