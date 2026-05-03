@@ -3892,6 +3892,40 @@
         }
       }
     },
+    "project.refresh.accessibilityLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refresh project status"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトの状態を更新"
+          }
+        }
+      }
+    },
+    "project.refresh.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refresh Git and PR status"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git と PR の状態を更新"
+          }
+        }
+      }
+    },
     "titlebar.termLoopSettings.accessibilityLabel": {
       "extractionState": "manual",
       "localizations": {
