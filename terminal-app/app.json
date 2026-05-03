@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "ai.termloop.mobile",
       "infoPlist": {
         "NSCameraUsageDescription": "TermLoop Mobile uses the camera to scan pairing QR codes shown by TermLoop on your Mac.",
