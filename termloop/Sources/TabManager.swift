@@ -1012,6 +1012,9 @@ class TabManager: ObservableObject {
                 dismissPanelNotificationOnFocusIfActive(tabId: tabId, panelId: surfaceId)
             }
         })
+        // MARK: termloop-hook
+        TermLoopHooks.registerSidebarProjectRefreshBridge(tabManager: self, scheduleGitMetadata: { [weak self] workspaceId, panelId, reason in self?.scheduleWorkspaceGitMetadataRefreshIfPossible(workspaceId: workspaceId, panelId: panelId, reason: reason) }, schedulePullRequest: { [weak self] workspaceId, panelId, reason in self?.scheduleWorkspacePullRequestRefresh(workspaceId: workspaceId, panelId: panelId, reason: reason) })
+        // MARK: /termloop-hook
 
         startAgentPIDSweepTimer()
         startWorkspaceGitMetadataPollTimer()

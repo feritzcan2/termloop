@@ -62,11 +62,11 @@ extension AgentPromptDocument.Kind {
     var usageLabel: String {
         switch self {
         case .systemPromptTemplate:
-            return "Reusable system prompt"
+            return "Reusable system instructions"
         case .bridgeSourcePrompt:
             return "Bridge handoff prompt"
         case .bridgeTargetPrompt:
-            return "Bridge target system prompt"
+            return "Bridge target system instructions"
         case .forkHandoffPrompt:
             return "Fork handoff prompt"
         case .abilityCreatorPrompt:

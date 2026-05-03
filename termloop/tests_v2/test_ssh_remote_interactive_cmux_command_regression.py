@@ -47,7 +47,6 @@ def _run_cli_json(cli: str, args: list[str]) -> dict:
     env = dict(os.environ)
     env.pop("TERMLOOP_WORKSPACE_ID", None)
     env.pop("TERMLOOP_SURFACE_ID", None)
-    env.pop("TERMLOOP_TAB_ID", None)
 
     import subprocess
 

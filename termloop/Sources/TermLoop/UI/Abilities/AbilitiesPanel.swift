@@ -2,6 +2,7 @@
 // Part of TermLoop — GPL-3.0-or-later
 
 import AppKit
+import CoreServices
 import SwiftUI
 
 /// Sidebar section for project-local abilities. Sits above
@@ -646,6 +647,127 @@ final class AbilityDetailUIState: ObservableObject {
     }
 }
 
+/// View-scoped filesystem watcher for project skill files shown on the ability
+/// detail page. AbilityStore watches `.termloop/abilities`; this watches the
+/// sibling skill catalogs so customizer-agent writes show up without navigating
+/// away and back.
+@MainActor
+final class AbilitySkillFileWatcher: ObservableObject {
+    @Published private(set) var tick: UInt = 0
+
+    private var stream: FSEventStreamRef?
+    private var latestProjectFolderPath: String?
+    private var latestSkillIds: [String] = []
+    private var watchKey: String = ""
+    private var refreshWorkItem: DispatchWorkItem?
+
+    deinit {
+        if let stream {
+            FSEventStreamStop(stream)
+            FSEventStreamInvalidate(stream)
+            FSEventStreamRelease(stream)
+        }
+        stream = nil
+        refreshWorkItem?.cancel()
+        refreshWorkItem = nil
+    }
+
+    func start(projectFolderPath: String?, skillIds: [String]) {
+        let normalizedPath = projectFolderPath?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty()
+        let normalizedSkillIds = Array(Set(skillIds.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty })).sorted()
+        let nextKey = "\(normalizedPath ?? "")|\(normalizedSkillIds.joined(separator: ","))"
+        guard nextKey != watchKey else { return }
+
+        latestProjectFolderPath = normalizedPath
+        latestSkillIds = normalizedSkillIds
+        watchKey = nextKey
+        restartStream()
+    }
+
+    func stop() {
+        stopStream()
+        watchKey = ""
+        latestProjectFolderPath = nil
+        latestSkillIds = []
+    }
+
+    private func stopStream() {
+        if let stream {
+            FSEventStreamStop(stream)
+            FSEventStreamInvalidate(stream)
+            FSEventStreamRelease(stream)
+        }
+        stream = nil
+        refreshWorkItem?.cancel()
+        refreshWorkItem = nil
+    }
+
+    private func restartStream() {
+        stopStream()
+        guard let latestProjectFolderPath,
+              !latestSkillIds.isEmpty else { return }
+
+        let projectRoot = URL(fileURLWithPath: latestProjectFolderPath, isDirectory: true)
+        let paths = watchedCatalogPaths(projectRoot: projectRoot)
+        guard !paths.isEmpty else { return }
+
+        let callback: FSEventStreamCallback = { _, clientInfo, _, _, _, _ in
+            guard let info = clientInfo else { return }
+            let watcher = Unmanaged<AbilitySkillFileWatcher>
+                .fromOpaque(info)
+                .takeUnretainedValue()
+            Task { @MainActor in watcher.scheduleRefresh() }
+        }
+        var context = FSEventStreamContext(
+            version: 0,
+            info: Unmanaged.passUnretained(self).toOpaque(),
+            retain: nil,
+            release: nil,
+            copyDescription: nil
+        )
+        guard let stream = FSEventStreamCreate(
+            kCFAllocatorDefault,
+            callback,
+            &context,
+            paths as CFArray,
+            FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
+            0.15,
+            FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer)
+        ) else { return }
+        FSEventStreamSetDispatchQueue(stream, DispatchQueue.main)
+        FSEventStreamStart(stream)
+        self.stream = stream
+    }
+
+    private func watchedCatalogPaths(projectRoot: URL) -> [String] {
+        let fm = FileManager.default
+        return [".termloop", ".claude", ".codex", ".agents"]
+            .map { projectRoot.appendingPathComponent($0, isDirectory: true) }
+            .filter { url in
+                var isDir: ObjCBool = false
+                return fm.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
+            }
+            .map(\.path)
+    }
+
+    private func scheduleRefresh() {
+        refreshWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.tick &+= 1
+                self.restartStream()
+            }
+        }
+        refreshWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+    }
+}
+
 @MainActor
 struct AbilityDetailPage: View {
     let abilityId: String
@@ -653,6 +775,7 @@ struct AbilityDetailPage: View {
     @ObservedObject private var abilityStore = AbilityStore.shared
     @ObservedObject private var detailState = AbilityDetailUIState.shared
     @ObservedObject private var projectStore = ProjectStore.shared
+    @StateObject private var skillFileWatcher = AbilitySkillFileWatcher()
     @State private var deleteConfirmation = false
 
     private var ability: Ability? {
@@ -675,6 +798,7 @@ struct AbilityDetailPage: View {
                             ability: ability,
                             projectFolderPath: projectFolderPath
                         )
+                        .id("setup-\(skillFileWatcher.tick)")
                         AbilityMCPToolsCard(
                             ability: ability,
                             onToggle: { name, enabled in
@@ -700,6 +824,7 @@ struct AbilityDetailPage: View {
                                 projectFolderPath: projectFolderPath,
                                 onCustomize: { detailState.requestCustomize() }
                             )
+                            .id("skills-\(skillFileWatcher.tick)")
                         }
                     }
                     .padding(16)
@@ -723,6 +848,27 @@ struct AbilityDetailPage: View {
                 detailState.close()
             }
             Button("Cancel", role: .cancel) {}
+        }
+        .onAppear {
+            skillFileWatcher.start(
+                projectFolderPath: projectFolderPath,
+                skillIds: ability?.requiredSkillIDs ?? []
+            )
+        }
+        .onChange(of: projectFolderPath) { _, newValue in
+            skillFileWatcher.start(
+                projectFolderPath: newValue,
+                skillIds: ability?.requiredSkillIDs ?? []
+            )
+        }
+        .onChange(of: ability?.requiredSkillIDs ?? []) { _, newValue in
+            skillFileWatcher.start(
+                projectFolderPath: projectFolderPath,
+                skillIds: newValue
+            )
+        }
+        .onDisappear {
+            skillFileWatcher.stop()
         }
     }
 

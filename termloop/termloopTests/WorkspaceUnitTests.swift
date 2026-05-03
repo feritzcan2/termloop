@@ -1297,6 +1297,46 @@ final class WorkspaceCustomDescriptionTests: XCTestCase {
         XCTAssertFalse(workspace.hasCustomDescription)
     }
 }
+
+@MainActor
+final class WorkspaceTitleVersionTests: XCTestCase {
+    func testCustomTitleChangesBumpTitleVersionOncePerVisibleTitle() {
+        let store = WorkspaceMetadataStore.shared
+        let workspace = Workspace(title: "Original")
+        defer { store.forgetObservedWorkspaceTitle(workspaceId: workspace.id) }
+        let initialVersion = store.titleVersion
+
+        workspace.setCustomTitle("MobileUI-Codex")
+        XCTAssertEqual(store.titleVersion, initialVersion + 1)
+
+        workspace.setCustomTitle("MobileUI-Codex")
+        XCTAssertEqual(store.titleVersion, initialVersion + 1)
+
+        workspace.setCustomTitle(nil)
+        XCTAssertEqual(store.titleVersion, initialVersion + 2)
+    }
+
+    func testProcessTitleChangesOnlyBumpWhenTheyChangeVisibleTitle() {
+        let store = WorkspaceMetadataStore.shared
+        let workspace = Workspace(title: "Original")
+        defer { store.forgetObservedWorkspaceTitle(workspaceId: workspace.id) }
+        let initialVersion = store.titleVersion
+
+        workspace.applyProcessTitle("Shell")
+        XCTAssertEqual(store.titleVersion, initialVersion + 1)
+
+        workspace.setCustomTitle("Pinned")
+        XCTAssertEqual(store.titleVersion, initialVersion + 2)
+
+        workspace.applyProcessTitle("Ignored while pinned")
+        XCTAssertEqual(store.titleVersion, initialVersion + 2)
+
+        workspace.setCustomTitle(nil)
+        XCTAssertEqual(store.titleVersion, initialVersion + 3)
+        XCTAssertEqual(workspace.title, "Ignored while pinned")
+    }
+}
+
 final class WorkspacePlacementSettingsTests: XCTestCase {
     func testCurrentPlacementDefaultsToAfterCurrentWhenUnset() {
         let suiteName = "WorkspacePlacementSettingsTests.Default.\(UUID().uuidString)"

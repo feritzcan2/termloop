@@ -27,10 +27,15 @@
         "android.permission.CAMERA",
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "plugins": [
       "expo-router",
+      "expo-notifications",
+      "./plugins/with-apns-entitlement",
       [
         "expo-camera",
         {

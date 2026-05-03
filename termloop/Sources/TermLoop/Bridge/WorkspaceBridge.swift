@@ -27,6 +27,7 @@ enum BridgeForwardMode: String, Codable, Equatable, Hashable {
 /// Reason a bridge stopped — surfaced in the sidebar cable badge.
 enum BridgeStopReason: String, Codable, Equatable, Hashable {
     case manual
+    case replied
     case workspaceClosed
     case sendTimeout
 }
@@ -69,6 +70,14 @@ struct BridgeMessage: Identifiable, Codable, Equatable, Hashable {
     }
 }
 
+/// The single final answer delivered for an Ask-To request. `requestId` is
+/// the bridge id; this marker is what makes `reply_to_request` one-shot.
+struct BridgeFinalReply: Codable, Equatable, Hashable {
+    let messageId: UUID
+    let text: String
+    let timestamp: Date
+}
+
 /// Model for a bidirectional link between two workspaces running terminal
 /// agents. `left` and `right` are arbitrary — both sides can speak.
 /// `firstSpeaker` picks which side receives the kickoff message so the
@@ -89,8 +98,16 @@ struct WorkspaceBridge: Identifiable, Codable, Equatable, Hashable {
     var rightAgentId: String?
     var rightPrompt: String?
     var rightWorkspaceTitleOverride: String?
+    var finalReply: BridgeFinalReply?
     var kickoffMessage: String
     var firstSpeaker: BridgeSender  // .left or .right
+    /// True when the first turn was supplied through the agent launch command
+    /// instead of pasted into an already-running TUI.
+    var kickoffDeliveredAtLaunch: Bool?
+    /// Launch-scoped bearer token for Ask-To final replies. This lets
+    /// `reply_to_request` authenticate the helper even if the provider's MCP
+    /// process reports a stale workspace id.
+    var askToReplyToken: String?
     /// Optional for backward-compat with persisted bridges from before the
     /// auto/manual mode was introduced. Read via `effectiveForwardMode`,
     /// which falls back to `.manual`. Bridges saved by an interim build
@@ -111,8 +128,11 @@ struct WorkspaceBridge: Identifiable, Codable, Equatable, Hashable {
         rightAgentId: String? = nil,
         rightPrompt: String? = nil,
         rightWorkspaceTitleOverride: String? = nil,
+        finalReply: BridgeFinalReply? = nil,
         kickoffMessage: String,
         firstSpeaker: BridgeSender,
+        kickoffDeliveredAtLaunch: Bool? = nil,
+        askToReplyToken: String? = nil,
         forwardMode: BridgeForwardMode? = .manual,
         createdAt: Date = Date()
     ) {
@@ -127,8 +147,11 @@ struct WorkspaceBridge: Identifiable, Codable, Equatable, Hashable {
         self.rightAgentId = rightAgentId
         self.rightPrompt = rightPrompt
         self.rightWorkspaceTitleOverride = rightWorkspaceTitleOverride
+        self.finalReply = finalReply
         self.kickoffMessage = kickoffMessage
         self.firstSpeaker = firstSpeaker
+        self.kickoffDeliveredAtLaunch = kickoffDeliveredAtLaunch
+        self.askToReplyToken = askToReplyToken
         self.forwardMode = forwardMode
         self.createdAt = createdAt
     }

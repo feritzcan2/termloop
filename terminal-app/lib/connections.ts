@@ -13,6 +13,7 @@ export interface SavedConnection {
   id: string;
   name: string;
   host: string;
+  alternateHosts?: string[];
   port: number;
   deviceId?: string;
   serverName?: string;
@@ -87,7 +88,38 @@ async function migrateLegacyIfNeeded(): Promise<ConnectionMetadata[] | null> {
 
 function stripSecrets(c: SavedConnection): ConnectionMetadata {
   const { accessToken: _a, password: _p, ...rest } = c;
-  return rest;
+  return normalizeConnectionMetadata(rest);
+}
+
+function normalizeHost(host: string | undefined): string | null {
+  const value = host?.trim();
+  return value ? value : null;
+}
+
+export function connectionHostCandidates(
+  conn: Pick<SavedConnection, "host" | "alternateHosts">
+): string[] {
+  const out: string[] = [];
+  for (const host of [conn.host, ...(conn.alternateHosts ?? [])]) {
+    const normalized = normalizeHost(host);
+    if (normalized && !out.includes(normalized)) out.push(normalized);
+  }
+  return out;
+}
+
+function normalizeConnectionMetadata(
+  c: ConnectionMetadata
+): ConnectionMetadata {
+  const host = normalizeHost(c.host) ?? c.host;
+  const alternateHosts = connectionHostCandidates({
+    host,
+    alternateHosts: c.alternateHosts,
+  }).filter((item) => item !== host);
+  return {
+    ...c,
+    host,
+    ...(alternateHosts.length > 0 ? { alternateHosts } : { alternateHosts: undefined }),
+  };
 }
 
 async function loadMetadata(): Promise<ConnectionMetadata[]> {
@@ -137,11 +169,21 @@ export async function getConnection(
 
 export async function findConnectionMetaByEndpoint(
   host: string,
-  port: number
+  port: number,
+  alternateHosts: string[] = []
 ): Promise<ConnectionMetadata | undefined> {
-  return (await loadMetadata()).find(
-    (c) => c.host === host && c.port === port
+  const incoming = new Set(
+    connectionHostCandidates({ host, alternateHosts })
   );
+  return (await loadMetadata()).find((c) => {
+    if (c.port !== port) return false;
+    // Re-pair should update an existing saved Mac even if the QR advertises
+    // a different reachable host. In the rare case of two Macs sharing a host
+    // alias on the same port, the first saved match wins.
+    return connectionHostCandidates(c).some((candidate) =>
+      incoming.has(candidate)
+    );
+  });
 }
 
 export async function upsertConnection(

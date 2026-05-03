@@ -66,8 +66,11 @@ enum JiraTicketBindingPrompt {
     /// at the worktree root, so calling this for any workspace inside a
     /// worktree updates the chip for every workspace in that worktree.
     static func present(forWorkspaceId workspaceId: UUID) {
+        let fallbackPath = AppDelegate.shared?
+            .workspaceFor(tabId: workspaceId)?
+            .termLoopPresentationCwd()
         guard let path = WorkspaceMetadataStore.shared
-            .worktreeRootPath(forWorkspaceId: workspaceId) else {
+            .reportedStatePath(forWorkspaceId: workspaceId, fallbackPath: fallbackPath) else {
             presentNoWorktreeError()
             return
         }
@@ -81,7 +84,12 @@ enum JiraTicketBindingPrompt {
         let metadata = WorkspaceMetadataStore.shared
         let resolvedPath = workspaces
             .lazy
-            .compactMap { metadata.worktreeRootPath(forWorkspaceId: $0.id) }
+            .compactMap {
+                metadata.reportedStatePath(
+                    forWorkspaceId: $0.id,
+                    fallbackPath: $0.termLoopPresentationCwd()
+                )
+            }
             .first
         guard let resolvedPath else {
             presentNoWorktreeError()
@@ -181,10 +189,11 @@ enum JiraTicketBindingPrompt {
             handleSave(
                 rawInput: urlField.stringValue,
                 rawStatus: statusField.stringValue,
-                workspaceIds: workspaceIds
+                workspaceIds: workspaceIds,
+                reportedStatePath: path
             )
         case .alertSecondButtonReturn where prior != nil:
-            handleClear(workspaceIds: workspaceIds)
+            handleClear(workspaceIds: workspaceIds, reportedStatePath: path)
         default:
             return
         }
@@ -193,7 +202,8 @@ enum JiraTicketBindingPrompt {
     private static func handleSave(
         rawInput: String,
         rawStatus: String,
-        workspaceIds: [UUID]
+        workspaceIds: [UUID],
+        reportedStatePath: String
     ) {
         let trimmed = rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -230,20 +240,22 @@ enum JiraTicketBindingPrompt {
             value,
             abilityId: TermLoopBuiltInMCP.jiraAbilityId,
             bindingId: bindingId,
-            forWorkspaceId: firstId
+            forWorkspaceId: firstId,
+            fallbackPath: reportedStatePath
         )
         if case .noWorktree = outcome {
             presentNoWorktreeError()
         }
     }
 
-    private static func handleClear(workspaceIds: [UUID]) {
+    private static func handleClear(workspaceIds: [UUID], reportedStatePath: String) {
         guard let firstId = workspaceIds.first else { return }
         WorkspaceMetadataStore.shared.setReportedBinding(
             nil,
             abilityId: TermLoopBuiltInMCP.jiraAbilityId,
             bindingId: bindingId,
-            forWorkspaceId: firstId
+            forWorkspaceId: firstId,
+            fallbackPath: reportedStatePath
         )
     }
 

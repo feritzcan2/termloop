@@ -29,6 +29,10 @@ export interface AnsiSegment {
   style: AnsiStyle;
 }
 
+export interface ParseAnsiOptions {
+  maxSegments?: number;
+}
+
 const FG_BASIC: Record<number, string> = {
   30: "#3b3f4c",
   31: "#e06c75",
@@ -120,12 +124,21 @@ function applySgr(prev: AnsiStyle, params: number[]): AnsiStyle {
   return s;
 }
 
-export function parseAnsi(text: string): AnsiSegment[] {
+export function parseAnsi(
+  text: string,
+  options: ParseAnsiOptions = {}
+): AnsiSegment[] {
   const segments: AnsiSegment[] = [];
   let style: AnsiStyle = {};
   let plain = "";
   const flush = () => {
     if (plain.length > 0) {
+      if (
+        options.maxSegments !== undefined &&
+        segments.length >= options.maxSegments
+      ) {
+        throw new Error("ANSI segment limit exceeded");
+      }
       segments.push({ text: plain, style });
       plain = "";
     }

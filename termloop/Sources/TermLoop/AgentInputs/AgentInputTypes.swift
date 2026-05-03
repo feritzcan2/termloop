@@ -57,9 +57,8 @@ extension AgentInvocationSource {
 
 // MARK: - AgentModelOption
 
-/// Agent capability-side model identity. Distinct from `AgentTemplate.Model`,
-/// which is template-side metadata. The catalog decides whether a given
-/// option is valid for the chosen agent; templates only *suggest* a model.
+/// Agent capability-side model identity. The catalog decides whether a given
+/// option is valid for the chosen agent; templates only suggest a model.
 enum AgentModelOption: String, Equatable, Hashable, Codable {
     case `default`
     case opus
@@ -73,23 +72,6 @@ enum AgentModelOption: String, Equatable, Hashable, Codable {
 }
 
 extension AgentModelOption {
-    init(template model: AgentTemplate.Model) {
-        switch model {
-        case .opus: self = .opus
-        case .sonnet: self = .sonnet
-        case .default: self = .default
-        }
-    }
-
-    var asTemplateModel: AgentTemplate.Model {
-        switch self {
-        case .opus: return .opus
-        case .sonnet: return .sonnet
-        case .default, .gpt55, .gpt54, .gpt54Mini, .gpt53Codex, .gpt53CodexSpark, .gpt52:
-            return .default
-        }
-    }
-
     var displayLabel: String {
         switch self {
         case .default: return rawValue

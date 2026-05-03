@@ -25,6 +25,7 @@ import { openSession } from "../../lib/session";
 import { TcpTransport } from "../../lib/tcp-transport";
 import {
   createTermLoopClient,
+  pairingHostCandidates,
   parsePairingPayload,
 } from "../../lib/termloop-client";
 import { colors, monoFont } from "../../lib/theme";
@@ -47,23 +48,35 @@ export default function ScanPairingScreen() {
         const payload = parsePairingPayload(raw.trim());
         const existing = await findConnectionMetaByEndpoint(
           payload.host,
-          payload.port
+          payload.port,
+          payload.alternate_hosts
         );
-        const transport = new TcpTransport({
-          host: payload.host,
-          port: payload.port,
-        });
-        const client = createTermLoopClient({ transport });
         let result;
-        try {
-          result = await client.claimPairing(
-            payload,
-            deviceName.trim() || "Mobile",
-            existing?.deviceId
-          );
-        } finally {
-          await client.close();
+        let connectedHost = payload.host;
+        let lastErr: unknown = null;
+        const hosts = pairingHostCandidates(payload);
+        for (const host of hosts) {
+          const transport = new TcpTransport({
+            host,
+            port: payload.port,
+            connectTimeoutMs: hosts.length > 1 ? 3500 : undefined,
+          });
+          const client = createTermLoopClient({ transport });
+          try {
+            result = await client.claimPairing(
+              payload,
+              deviceName.trim() || "Mobile",
+              existing?.deviceId
+            );
+            connectedHost = host;
+            break;
+          } catch (err) {
+            lastErr = err;
+          } finally {
+            await client.close();
+          }
         }
+        if (!result) throw lastErr ?? new Error("Pairing failed.");
 
         const saved = await upsertConnection({
           id: existing?.id,
@@ -71,8 +84,9 @@ export default function ScanPairingScreen() {
             existing?.name ||
             result.server_name ||
             payload.server_name ||
-            `${payload.host}`,
-          host: payload.host,
+            `${connectedHost}`,
+          host: connectedHost,
+          alternateHosts: hosts.filter((host) => host !== connectedHost),
           port: payload.port,
           deviceId: result.device_id,
           accessToken: result.access_token,

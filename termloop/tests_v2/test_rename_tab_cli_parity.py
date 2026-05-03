@@ -43,7 +43,6 @@ def _run_cli(cli: str, args: List[str], env: Optional[Dict[str, str]] = None) ->
     merged_env = dict(os.environ)
     merged_env.pop("TERMLOOP_WORKSPACE_ID", None)
     merged_env.pop("TERMLOOP_SURFACE_ID", None)
-    merged_env.pop("TERMLOOP_TAB_ID", None)
     if env:
         merged_env.update(env)
 
@@ -101,12 +100,12 @@ def main() -> int:
             ["rename-tab", env_title],
             env={
                 "TERMLOOP_WORKSPACE_ID": ws_id,
-                "TERMLOOP_TAB_ID": surface_id,
+                "TERMLOOP_SURFACE_ID": surface_id,
             },
         )
         _must(
             "action=rename" in env_out.lower() and "tab=" in env_out.lower(),
-            f"rename-tab via TERMLOOP_TAB_ID should route to tab.action rename summary, got: {env_out!r}",
+            f"rename-tab via TERMLOOP_SURFACE_ID should route to tab.action rename summary, got: {env_out!r}",
         )
 
         invalid = subprocess.run(
@@ -114,7 +113,7 @@ def main() -> int:
             capture_output=True,
             text=True,
             check=False,
-            env={k: v for k, v in os.environ.items() if k not in {"TERMLOOP_WORKSPACE_ID", "TERMLOOP_SURFACE_ID", "TERMLOOP_TAB_ID"}},
+            env={k: v for k, v in os.environ.items() if k not in {"TERMLOOP_WORKSPACE_ID", "TERMLOOP_SURFACE_ID"}},
         )
         invalid_output = f"{invalid.stdout}\n{invalid.stderr}"
         _must(invalid.returncode != 0, "Expected rename-tab without title to fail")

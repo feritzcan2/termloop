@@ -190,6 +190,18 @@ struct QuickActionComposer: NSViewRepresentable {
             Task { @MainActor in self.autocompleteController?.textDidChange() }
         }
 
+        func textDidBeginEditing(_ notification: Notification) {
+            DispatchQueue.main.async { [weak self] in
+                self?.parent.isFocused.wrappedValue = true
+            }
+        }
+
+        func textDidEndEditing(_ notification: Notification) {
+            DispatchQueue.main.async { [weak self] in
+                self?.parent.isFocused.wrappedValue = false
+            }
+        }
+
         func textViewDidChangeSelection(_ notification: Notification) {
             Task { @MainActor in self.autocompleteController?.textDidChange() }
         }

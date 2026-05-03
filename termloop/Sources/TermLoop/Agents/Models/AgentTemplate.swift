@@ -20,7 +20,6 @@ struct AgentTemplate: Equatable {
     }
     enum Lifecycle: String, Codable, Equatable { case detached, appBound = "app-bound" }
     enum Logging: String, Codable, Equatable { case file, memory, history }
-    enum Model: String, Codable, Equatable { case opus, sonnet, `default` }
     enum Cleanup: String, Codable, Equatable {
         case none
         case removeWorktree = "remove-worktree"
@@ -36,13 +35,15 @@ struct AgentTemplate: Equatable {
     let name: String
     let description: String
     let icon: String
+    let agentId: String?
     let scope: Scope
     let permissionMode: PermissionMode
     let lifecycle: Lifecycle
     let logging: Logging
     let triggers: [Trigger]
     let defaultAttach: Bool
-    let model: Model
+    let model: AgentModelOption
+    let reasoning: AgentReasoningOption?
     let cleanup: Cleanup
     let variables: [String]
     let timeoutSeconds: Int
@@ -90,11 +91,14 @@ struct AgentTemplate: Equatable {
         }
         let description = (fm["description"] as? String) ?? ""
         let icon = (fm["icon"] as? String) ?? ""
+        let agentId = (fm["agentId"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         let scope: Scope = try parseEnum(fm, field: "scope", default: .workspace)
         let permissionMode: PermissionMode = try parseEnum(fm, field: "permissionMode", default: .ask)
         let lifecycle: Lifecycle = try parseEnum(fm, field: "lifecycle", default: .detached)
         let logging: Logging = try parseEnum(fm, field: "logging", default: .file)
-        let model: Model = try parseEnum(fm, field: "model", default: .default)
+        let model: AgentModelOption = try parseEnum(fm, field: "model", default: .default)
+        let reasoning: AgentReasoningOption? = try parseOptionalEnum(fm, field: "reasoning")
         let cleanup: Cleanup = try parseEnum(fm, field: "cleanup", default: .none)
         let triggers = try parseTriggerList(fm["triggers"])
         let defaultAttach = (fm["defaultAttach"] as? Bool) ?? false
@@ -106,9 +110,10 @@ struct AgentTemplate: Equatable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return AgentTemplate(
             id: id, name: name, description: description, icon: icon,
+            agentId: agentId?.isEmpty == false ? agentId : nil,
             scope: scope, permissionMode: permissionMode,
             lifecycle: lifecycle, logging: logging, triggers: triggers,
-            defaultAttach: defaultAttach, model: model, cleanup: cleanup,
+            defaultAttach: defaultAttach, model: model, reasoning: reasoning, cleanup: cleanup,
             variables: variables, timeoutSeconds: timeoutSeconds,
             promptDocumentId: promptDocumentId?.isEmpty == false ? promptDocumentId : nil,
             systemPromptDocumentId: systemPromptDocumentId?.isEmpty == false ? systemPromptDocumentId : nil,
@@ -120,6 +125,17 @@ struct AgentTemplate: Equatable {
         _ fm: [String: Any], field: String, default def: E
     ) throws -> E where E.RawValue == String {
         guard let raw = fm[field] as? String else { return def }
+        guard let e = E(rawValue: raw) else {
+            throw ParseError.invalidValue(field: field, value: raw)
+        }
+        return e
+    }
+
+    private static func parseOptionalEnum<E: RawRepresentable>(
+        _ fm: [String: Any], field: String
+    ) throws -> E? where E.RawValue == String {
+        guard let raw = (fm[field] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return nil }
         guard let e = E(rawValue: raw) else {
             throw ParseError.invalidValue(field: field, value: raw)
         }

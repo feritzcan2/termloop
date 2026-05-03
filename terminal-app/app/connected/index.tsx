@@ -19,8 +19,11 @@ import {
   getActiveClient,
   getActiveConnectionId,
 } from "../../lib/session";
+import { isTerminalSurfaceStartingError } from "../../lib/errors";
 import {
   pickTerminalSurface,
+  projectSummaryPath,
+  type TermLoopClient,
   surfaceLabel,
   workspaceLabel,
   workspaceProjectId,
@@ -35,6 +38,9 @@ import { colors, monoFont, radii } from "../../lib/theme";
 type ProjectState = ProjectSummary | null | "loading";
 type WorkspaceSectionKind = "worktree" | "workspace";
 type WorkspaceViewMode = "active" | "worktrees";
+
+const TERMINAL_SURFACE_READY_ATTEMPTS = 40;
+const TERMINAL_SURFACE_READY_DELAY_MS = 250;
 
 interface WorkspaceRow {
   ws: WorkspaceSummary;
@@ -76,6 +82,35 @@ interface WorkspaceContextSummary {
   loading: boolean;
   jira: JiraTicketSummary | null;
   runTargets: WorkspaceRunTargetSummary[];
+}
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function waitForTerminalSurface(
+  client: TermLoopClient,
+  workspaceId: string
+) {
+  for (let attempt = 0; attempt < TERMINAL_SURFACE_READY_ATTEMPTS; attempt++) {
+    const surfaces = await client.listSurfaces(workspaceId);
+    const surface = pickTerminalSurface(surfaces);
+    if (surface) {
+      try {
+        await client.readSurface(
+          workspaceId,
+          surface.id,
+          "vt",
+          20
+        );
+        return surface;
+      } catch (err) {
+        if (!isTerminalSurfaceStartingError(err)) throw err;
+      }
+    }
+    if (attempt < TERMINAL_SURFACE_READY_ATTEMPTS - 1) {
+      await delay(TERMINAL_SURFACE_READY_DELAY_MS);
+    }
+  }
+  return null;
 }
 
 export default function ConnectedScreen() {
@@ -207,7 +242,8 @@ export default function ConnectedScreen() {
         }).catch(() => {});
       }
       const projectName = current !== "loading" ? current?.name ?? "" : "";
-      const projectPath = current !== "loading" ? current?.path ?? "" : "";
+      const projectPath =
+        current !== "loading" ? projectSummaryPath(current) ?? "" : "";
       router.push({
         pathname: "/connected/terminal",
         params: {
@@ -349,13 +385,14 @@ export default function ConnectedScreen() {
   const agentTargets = useMemo<AgentTarget[]>(() => {
     const activeProject =
       current !== "loading" && current !== null ? current : null;
+    const activeProjectPath = projectSummaryPath(activeProject);
     const targets: AgentTarget[] = [
       {
         key: "project",
         kind: "workspace",
         label: activeProject?.name ?? "Current project",
-        detail: activeProject?.path ?? "New workspace",
-        cwd: activeProject?.path,
+        detail: activeProjectPath ?? "New workspace",
+        cwd: activeProjectPath,
         projectId: activeProject?.id,
       },
     ];
@@ -378,8 +415,10 @@ export default function ConnectedScreen() {
 
   const projectName =
     current === "loading" ? "Loading project…" : current ? current.name : "No project";
+  const activeProjectPath =
+    current !== "loading" ? projectSummaryPath(current) : undefined;
   const projectPath =
-    current !== "loading" && current?.path ? current.path : "No project path";
+    activeProjectPath ?? "No project path";
 
   const openAgentPicker = async (targetKey = "project") => {
     if (!client) return;
@@ -419,12 +458,17 @@ export default function ConnectedScreen() {
         projectId: target.projectId,
         terminalAgentId: agent.id,
       });
-      setAgentPickerOpen(false);
       await loadOverview();
       setOpeningId(created.workspace_id);
-      const surfaces = await client.listSurfaces(created.workspace_id);
-      const surface = pickTerminalSurface(surfaces);
-      if (!surface) return;
+      const surface = await waitForTerminalSurface(client, created.workspace_id);
+      if (!surface) {
+        setAgentPickerOpen(false);
+        Alert.alert(
+          "Agent started",
+          "The workspace was created, but the agent terminal has not produced output yet. Pull to refresh and open it again."
+        );
+        return;
+      }
       const surfaceName = surfaceLabel(surface);
       const connectionId = getActiveConnectionId();
       if (connectionId) {
@@ -436,6 +480,7 @@ export default function ConnectedScreen() {
           surfaceName,
         }).catch(() => {});
       }
+      setAgentPickerOpen(false);
       router.push({
         pathname: "/connected/terminal",
         params: {
@@ -444,7 +489,8 @@ export default function ConnectedScreen() {
           name: agent.display_name,
           surfaceName,
           projectName: current !== "loading" ? current?.name ?? "" : "",
-          projectPath: current !== "loading" ? current?.path ?? "" : "",
+          projectPath:
+            current !== "loading" ? projectSummaryPath(current) ?? "" : "",
         },
       });
     } catch (err) {
@@ -761,6 +807,7 @@ export default function ConnectedScreen() {
                   const isCurrent =
                     current !== "loading" && current?.id === item.id;
                   const isSwitching = switchingId === item.id;
+                  const itemPath = projectSummaryPath(item);
                   return (
                     <Pressable
                       style={styles.projectItem}
@@ -771,9 +818,9 @@ export default function ConnectedScreen() {
                         <Text style={styles.projectItemName} numberOfLines={1}>
                           {item.name}
                         </Text>
-                        {item.path ? (
+                        {itemPath ? (
                           <Text style={styles.projectItemPath} numberOfLines={1}>
-                            {item.path}
+                            {itemPath}
                           </Text>
                         ) : null}
                       </View>
@@ -869,6 +916,9 @@ export default function ConnectedScreen() {
               onPress={startAgent}
               disabled={!selectedAgentId || startingAgent}
             >
+              {startingAgent ? (
+                <ActivityIndicator color={colors.onPrimary} size="small" />
+              ) : null}
               <Text style={styles.startAgentBtnText}>
                 {startingAgent ? "Starting…" : "Start agent"}
               </Text>
@@ -1568,6 +1618,9 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   startAgentBtn: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
     paddingVertical: 13,
     borderRadius: radii.md,
     backgroundColor: colors.primary,

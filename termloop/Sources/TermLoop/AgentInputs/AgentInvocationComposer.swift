@@ -42,9 +42,9 @@ enum AgentInvocationComposer {
 
     static func compose(_ request: AgentInvocationRequest) throws -> AgentInvocationPlan {
         let template = try resolveTemplate(request)
-        let agent = try resolveAgent(request)
-        let model = AgentCatalogStore.shared.resolveModel(request.modelOverride, for: agent.id)
-        let reasoning = AgentCatalogStore.shared.resolveReasoning(request.reasoningOverride, for: agent.id)
+        let agent = try resolveAgent(request, template: template)
+        let model = AgentCatalogStore.shared.resolveModel(request.modelOverride ?? template?.model, for: agent.id)
+        let reasoning = AgentCatalogStore.shared.resolveReasoning(request.reasoningOverride ?? template?.reasoning, for: agent.id)
         let permission = resolvePermission(request, template: template)
         let projectFolderPath = projectFolderPath(for: request)
         let instructions = ProjectInstructionStore.snapshot(
@@ -195,9 +195,16 @@ enum AgentInvocationComposer {
     // MARK: - Step: agent
 
     private static func resolveAgent(
-        _ request: AgentInvocationRequest
+        _ request: AgentInvocationRequest,
+        template: AgentTemplate?
     ) throws -> TerminalAgent {
         if let id = request.agentId {
+            guard let agent = AgentCatalogStore.shared.agent(id: id) else {
+                throw CompositionError.agentNotFound(id)
+            }
+            return agent
+        }
+        if let id = template?.agentId {
             guard let agent = AgentCatalogStore.shared.agent(id: id) else {
                 throw CompositionError.agentNotFound(id)
             }

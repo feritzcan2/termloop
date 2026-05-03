@@ -7,6 +7,8 @@
  *   error   : { id, ok: false, error: { code: string, message, data? } }
  */
 
+import { connectionHostCandidates } from "./connections";
+
 export type RequestId = string;
 
 export interface RpcRequest<M extends string = string, P = unknown> {
@@ -39,6 +41,14 @@ export interface ProjectSummary {
   id: string;
   name: string;
   path?: string;
+  folder_path?: string;
+}
+
+export function projectSummaryPath(
+  project: ProjectSummary | null | undefined
+): string | undefined {
+  const path = project?.folder_path?.trim() || project?.path?.trim();
+  return path || undefined;
 }
 
 export interface WorkspaceSummary {
@@ -118,6 +128,12 @@ export interface WorkspaceRunTargetSummary {
   reported_at?: string | null;
 }
 
+export interface RegisterPushTokenParams {
+  deviceToken: string;
+  platform: "ios" | "android";
+  environment: "development" | "production";
+}
+
 function isTerminalSurface(s: SurfaceSummary): boolean {
   return s.kind === "terminal" || s.type === "terminal";
 }
@@ -150,6 +166,7 @@ export interface PairingPayload {
   version: number;
   server_name: string;
   host: string;
+  alternate_hosts?: string[];
   port: number;
   token: string;
   expires_at: number;
@@ -242,6 +259,7 @@ export interface TermLoopClient {
   listWorkspaces(): Promise<WorkspaceSummary[]>;
   createWorkspace(params: CreateWorkspaceParams): Promise<CreateWorkspaceResult>;
   listTerminalAgents(): Promise<TerminalAgentSummary[]>;
+  registerPushToken(params: RegisterPushTokenParams): Promise<void>;
   getJiraTicket(workspaceId: string): Promise<JiraTicketSummary | null>;
   getRunTargets(workspaceId: string): Promise<WorkspaceRunTargetSummary[]>;
   listSurfaces(workspaceId: string): Promise<SurfaceSummary[]>;
@@ -425,6 +443,13 @@ export function createTermLoopClient(opts: {
       );
       return out?.agents ?? [];
     },
+    async registerPushToken(params) {
+      await call<{ registered?: boolean }>("push.register", {
+        device_token: params.deviceToken,
+        platform: params.platform,
+        environment: params.environment,
+      });
+    },
     async getJiraTicket(workspaceId) {
       try {
         const out = await call<{
@@ -560,6 +585,13 @@ export function parsePairingPayload(raw: string): PairingPayload {
   if (typeof o.host !== "string" || !o.host) {
     throw new Error("Pairing payload missing host.");
   }
+  if (
+    o.alternate_hosts !== undefined &&
+    (!Array.isArray(o.alternate_hosts) ||
+      o.alternate_hosts.some((item) => typeof item !== "string"))
+  ) {
+    throw new Error("Pairing payload has invalid alternate_hosts.");
+  }
   if (typeof o.port !== "number" || !Number.isFinite(o.port)) {
     throw new Error("Pairing payload missing/invalid port.");
   }
@@ -575,5 +607,18 @@ export function parsePairingPayload(raw: string): PairingPayload {
   if (o.expires_at * 1000 < Date.now()) {
     throw new Error("Pairing token has expired.");
   }
-  return o as unknown as PairingPayload;
+  return {
+    ...(o as unknown as PairingPayload),
+    alternate_hosts: connectionHostCandidates({
+      host: o.host as string,
+      alternateHosts: o.alternate_hosts as string[] | undefined,
+    }).slice(1),
+  };
+}
+
+export function pairingHostCandidates(payload: PairingPayload): string[] {
+  return connectionHostCandidates({
+    host: payload.host,
+    alternateHosts: payload.alternate_hosts,
+  });
 }

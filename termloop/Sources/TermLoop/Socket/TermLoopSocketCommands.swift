@@ -75,6 +75,7 @@ enum TermLoopSocketCommands {
         case "push.register":   return pushRegister(params)
         case "push.unregister": return pushUnregister(params)
         case "bridge.ask_to":   return bridgeAskTo(params)
+        case "bridge.reply_to_request": return bridgeReplyToRequest(params)
         default:
             return nil
         }
@@ -1117,6 +1118,7 @@ enum TermLoopSocketCommands {
                 tabManager: tabManager
             )
             return .ok([
+                "request_id": outcome.bridgeId.uuidString,
                 "bridge_id": outcome.bridgeId.uuidString,
                 "helper_workspace_id": outcome.helperWorkspaceId.uuidString,
                 "target": target.agentId
@@ -1133,8 +1135,11 @@ enum TermLoopSocketCommands {
                         data: nil)
         } catch AskToBridgeLauncher.LaunchError.bridgeRejected {
             return .err(code: "conflict",
-                        message: "Bridge rejected (workspace already in another bridge)",
-                        data: nil)
+                        message: "Bridge rejected: source workspace already has a running bridge",
+                        data: [
+                            "source_workspace_id": sourceId.uuidString,
+                            "target": target.agentId
+                        ])
         } catch AskToBridgeLauncher.LaunchError.helperLaunchFailed(let underlying) {
             return .err(code: "internal_error",
                         message: "Helper launch failed: \(underlying.localizedDescription)",
@@ -1143,5 +1148,95 @@ enum TermLoopSocketCommands {
             return .err(code: "internal_error",
                         message: error.localizedDescription, data: nil)
         }
+    }
+
+    /// Final, one-shot Ask-To reply delivery for the `reply_to_request` MCP
+    /// tool. The request id is the bridge id created by `bridge.ask_to`.
+    private static func bridgeReplyToRequest(_ params: [String: Any]) -> TerminalController.V2CallResult {
+        guard let requestIdString = nonEmptyString(params, "request_id"),
+              let requestId = UUID(uuidString: requestIdString) else {
+            return .err(code: "invalid_params",
+                        message: "Missing or invalid request_id",
+                        data: nil)
+        }
+        guard let message = nonEmptyString(params, "message") else {
+            return .err(code: "invalid_params", message: "Missing message", data: nil)
+        }
+
+        let callerId: UUID
+        switch resolveWorkspaceId(from: params) {
+        case .found(let id, _):
+            callerId = id
+        case .missing(let error):
+            return error
+        }
+
+        let result = BridgeCoordinator.shared.deliverFinalReply(
+            requestId: requestId,
+            callerWorkspaceId: callerId,
+            askToRequestId: uuid(params, "ask_to_request_id"),
+            askToReplyToken: rawString(params, "ask_to_reply_token"),
+            callerAgentId: rawString(params, "agent_id"),
+            text: message
+        )
+        switch result {
+        case .delivered(let messageId):
+            return .ok([
+                "request_id": requestId.uuidString,
+                "bridge_id": requestId.uuidString,
+                "message_id": messageId.uuidString,
+                "delivered": true
+            ])
+        case .notFound:
+            return .err(code: "not_found",
+                        message: "Ask-To request not found",
+                        data: ["request_id": requestId.uuidString])
+        case .notAskAgent:
+            return .err(code: "invalid_params",
+                        message: "request_id does not refer to an Ask-To request",
+                        data: ["request_id": requestId.uuidString])
+        case .notRunning:
+            return .err(code: "conflict",
+                        message: "Ask-To request is no longer open",
+                        data: ["request_id": requestId.uuidString])
+        case .alreadyReplied:
+            return .err(code: "conflict",
+                        message: "Ask-To request already has a final reply",
+                        data: ["request_id": requestId.uuidString])
+        case .wrongCaller(let expectedWorkspaceId, let actualWorkspaceId):
+            return .err(code: "forbidden",
+                        message: "Only the helper workspace can reply to this request",
+                        data: [
+                            "request_id": requestId.uuidString,
+                            "expected_workspace_id": expectedWorkspaceId.uuidString,
+                            "actual_workspace_id": actualWorkspaceId.uuidString
+                        ])
+        case .sourceWorkspaceUnavailable:
+            return .err(code: "unavailable",
+                        message: "Source workspace is not available",
+                        data: ["request_id": requestId.uuidString])
+        }
+    }
+}
+
+enum TermLoopSocketHealthProbe {
+    static func isHealthyPingResponse(
+        _ response: String?,
+        mode: SocketControlMode
+    ) -> Bool {
+        guard let response else { return false }
+        if response == "PONG" { return true }
+        guard mode.requiresPasswordAuth else { return false }
+
+        let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.hasPrefix("ERROR: Authentication required")
+            || trimmed.contains("\"auth_required\"")
+    }
+
+    static func failureSignal(
+        forPingResponse response: String?,
+        mode: SocketControlMode
+    ) -> String? {
+        isHealthyPingResponse(response, mode: mode) ? nil : "ping_timeout"
     }
 }

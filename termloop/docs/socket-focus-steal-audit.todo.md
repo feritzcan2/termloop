@@ -73,4 +73,4 @@ All other commands should preserve current user focus context.
 ## CLI Coverage
 - [x] Ensure every top-level CLI command routes to non-focus-stealing socket behavior.
 - [x] Add/verify `rename-workspace` + `rename-window` behavior remains intact.
-- [x] Add explicit `rename-tab` command (defaults to `TERMLOOP_TAB_ID` / `TERMLOOP_SURFACE_ID` / `TERMLOOP_WORKSPACE_ID` when flags omitted).
+- [x] Add explicit `rename-tab` command (defaults to `TERMLOOP_SURFACE_ID` / `TERMLOOP_WORKSPACE_ID` when flags omitted).

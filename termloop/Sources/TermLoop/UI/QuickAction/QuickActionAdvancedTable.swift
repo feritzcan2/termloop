@@ -5,6 +5,13 @@ import SwiftUI
 
 struct QuickActionAdvancedTable: View {
     @ObservedObject var viewModel: QuickActionViewModel
+    var primaryAction: (() -> Void)? = nil
+    var primaryLabel: String = String(
+        localized: "quickAction.advanced.runInTerminal",
+        defaultValue: "Run in terminal",
+        table: "TermLoop"
+    )
+    var primaryIcon: String = "macwindow"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -326,24 +333,20 @@ struct QuickActionAdvancedTable: View {
         HStack {
             Spacer()
             Button {
-                _ = viewModel.submit()
+                if let primaryAction {
+                    primaryAction()
+                } else {
+                    _ = viewModel.submit()
+                }
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "macwindow")
-                    Text(runButtonLabel)
+                    Image(systemName: primaryIcon)
+                    Text(primaryLabel)
                 }
             }
             .keyboardShortcut(.defaultAction)
             .buttonStyle(.borderedProminent)
         }
-    }
-
-    private var runButtonLabel: String {
-        String(
-            localized: "quickAction.advanced.runInTerminal",
-            defaultValue: "Run in terminal",
-            table: "TermLoop"
-        )
     }
 
     @ViewBuilder
