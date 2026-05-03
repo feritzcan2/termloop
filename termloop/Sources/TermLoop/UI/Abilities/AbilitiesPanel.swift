@@ -19,6 +19,7 @@ struct AbilitiesPanel: View {
     @State private var deleteConfirmationId: String? = nil
     @State private var errorMessage: String? = nil
     @State private var newSheetVisible: Bool = false
+    @State private var pendingCustomizeChoice: AbilityCatalogItem? = nil
 
     /// Narrow subscription to `WorkspaceMetadataStore.$agentSessionVersion`
     /// so this panel re-evaluates when an agent session starts or clears.
@@ -147,6 +148,29 @@ struct AbilitiesPanel: View {
         } message: { message in
             Text(message)
         }
+        .confirmationDialog(
+            pendingCustomizeChoiceTitle,
+            isPresented: Binding(
+                get: { pendingCustomizeChoice != nil },
+                set: { if !$0 { pendingCustomizeChoice = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingCustomizeChoice
+        ) { item in
+            Button(continueCustomizerLabel(for: item)) {
+                pendingCustomizeChoice = nil
+                openOrStartAbilityAgent(for: item)
+            }
+            Button("Start new agent", role: .destructive) {
+                pendingCustomizeChoice = nil
+                openOrStartAbilityAgent(for: item, forceFresh: true)
+            }
+            Button("Cancel", role: .cancel) {
+                pendingCustomizeChoice = nil
+            }
+        } message: { _ in
+            Text("Continue the existing customizer session, or start a fresh one for this ability.")
+        }
         .sheet(isPresented: $newSheetVisible) {
             AbilityNewSheet { name, description in
                 createNewAbility(name: name, description: description)
@@ -200,6 +224,11 @@ struct AbilitiesPanel: View {
             defaultValue: "Abilities",
             table: "TermLoop"
         )
+    }
+
+    private var pendingCustomizeChoiceTitle: String {
+        guard let item = pendingCustomizeChoice else { return "Customize with agent" }
+        return "Customize \(item.title)?"
     }
 
     // MARK: - States
@@ -316,14 +345,19 @@ struct AbilitiesPanel: View {
     }
 
     private func assignedAbilityWorkspaceId(for abilityId: String) -> UUID? {
-        let matches = TermLoopSidebar.projectScopedTabs(allTabs: tabManager.tabs).compactMap { workspace -> (UUID, Date)? in
-            guard let session = WorkspaceMetadataStore.shared.abilitySession(forWorkspaceId: workspace.id) else {
+        guard let activeProjectId = projectStore.activeProjectId else { return nil }
+        let metadataStore = WorkspaceMetadataStore.shared
+        let matches = metadataStore.byWorkspaceId.compactMap { workspaceId, metadata -> (UUID, Date)? in
+            guard let session = metadataStore.abilitySession(forWorkspaceId: workspaceId),
+                  let workspace = AppDelegate.shared?.workspaceFor(tabId: workspaceId) else {
                 return nil
             }
+            let projectId = metadata.projectId ?? workspace.projectId
+            guard projectId == activeProjectId else { return nil }
             switch session.kind {
             case .abilityDiscussion(let assignedId), .abilityRefiner(let assignedId):
                 guard assignedId == abilityId else { return nil }
-                return (workspace.id, session.spawnedAt)
+                return (workspaceId, session.spawnedAt)
             case .abilityCreator:
                 return nil
             }
@@ -343,7 +377,7 @@ struct AbilitiesPanel: View {
     private func latestPersistedAbilitySession(
         for abilityId: String
     ) -> (workspaceId: UUID, session: PersistedAgentSession)? {
-        let activeProjectId = projectStore.activeProjectId
+        guard let activeProjectId = projectStore.activeProjectId else { return nil }
         return WorkspaceMetadataStore.shared.byWorkspaceId
             .compactMap { workspaceId, metadata -> (UUID, PersistedAgentSession)? in
                 guard metadata.projectId == activeProjectId,
@@ -414,12 +448,32 @@ struct AbilitiesPanel: View {
               let item = catalogItems.first(where: { $0.id == id }) else { return }
         let forceFresh = detailState.customizeRequestForceFresh
         detailState.customizeRequestForceFresh = false
-        openOrStartAbilityAgent(for: item, forceFresh: forceFresh)
+        guard !forceFresh else {
+            openOrStartAbilityAgent(for: item, forceFresh: true)
+            return
+        }
+        guard hasReusableCustomizerSession(for: item.id) else {
+            openOrStartAbilityAgent(for: item)
+            return
+        }
+        pendingCustomizeChoice = item
+    }
+
+    private func hasReusableCustomizerSession(for abilityId: String) -> Bool {
+        assignedAbilityWorkspaceId(for: abilityId) != nil
+            || latestPersistedAbilitySession(for: abilityId) != nil
+    }
+
+    private func continueCustomizerLabel(for item: AbilityCatalogItem) -> String {
+        assignedAbilityWorkspaceId(for: item.id) == nil
+            ? "Resume previous agent"
+            : "Continue existing agent"
     }
 
     private func clearPersistedAbilitySessions(for abilityId: String) {
-        let activeProjectId = projectStore.activeProjectId
+        guard let activeProjectId = projectStore.activeProjectId else { return }
         let store = WorkspaceMetadataStore.shared
+        let appDelegate = AppDelegate.shared
         let targetWorkspaceIds: [UUID] = store.byWorkspaceId.compactMap { workspaceId, metadata in
             (metadata.projectId == activeProjectId && metadata.assignedAbilityId == abilityId)
                 ? workspaceId
@@ -428,8 +482,11 @@ struct AbilitiesPanel: View {
         // Close any open tabs assigned to this ability first — otherwise the
         // old Claude session keeps re-registering itself via hooks and the
         // restore coordinator fires a resume script in the new tab.
-        for workspace in tabManager.tabs where targetWorkspaceIds.contains(workspace.id) {
-            tabManager.closeWorkspace(workspace)
+        for workspaceId in targetWorkspaceIds {
+            if let workspace = appDelegate?.workspaceFor(tabId: workspaceId),
+               let owner = appDelegate?.tabManagerFor(tabId: workspaceId) {
+                owner.closeWorkspaceWithoutConfirmation(workspace)
+            }
         }
         for workspaceId in targetWorkspaceIds {
             _ = store.clearPersistedAgentSession(for: workspaceId)
@@ -500,7 +557,8 @@ struct AbilitiesPanel: View {
 
     private func openOrStartAbilityAgent(for item: AbilityCatalogItem, forceFresh: Bool = false) {
         if !forceFresh, let existingWorkspaceId = assignedAbilityWorkspaceId(for: item.id) {
-            TermLoopHooks.focusWorkspace(workspaceId: existingWorkspaceId)
+            QuickActionController.shared.dismiss()
+            TermLoopHooks.focusAbilityWorkspace(workspaceId: existingWorkspaceId, abilityId: item.id)
             return
         }
         guard let projectId = projectStore.activeProjectId,
@@ -508,6 +566,7 @@ struct AbilitiesPanel: View {
             errorMessage = "Select a project before opening an ability agent."
             return
         }
+        MainAreaActivation.activateAbilityDetailSurface(abilityId: item.id)
         if !store.isInitialized {
             store.initializeDirectory()
         }
@@ -606,6 +665,7 @@ struct AbilitiesPanel: View {
             spawnedAt: Date(),
             forWorkspaceId: workspace.id
         )
+        MainAreaActivation.activateAbilityDetailSurface(abilityId: item.id)
         // User-initiated revival — force autoRestoreClaude=true even when the
         // setting is off, since the user just clicked the revive action.
         TerminalAgentLifecycle.restoreWorkspaces([workspace], autoRestoreClaude: true)

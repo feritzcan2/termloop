@@ -16,8 +16,7 @@
 </p>
 
 <p align="center">
-  <a href="https://x.com/manaflowai"><img src="https://img.shields.io/badge/@manaflow-555?logo=x" alt="X / Twitter" /></a>
-  <a href="https://github.com/feritzcan2/termloop/discussions"><img src="https://img.shields.io/badge/Discord-555?logo=discord" alt="Discord" /></a>
+  <a href="https://github.com/feritzcan2/termloop/discussions"><img src="https://img.shields.io/badge/Discussions-555?logo=github" alt="GitHub Discussions" /></a>
   <a href="https://github.com/feritzcan2/termloop"><img src="https://img.shields.io/github/stars/feritzcan2/termloop?style=flat&logo=github&label=stars&color=4c71f2" alt="GitHub stars" /></a>
 </p>
 
@@ -80,7 +79,7 @@ Sidebar shows git branch, linked PR status/number, working directory, listening 
 <tr>
 <td width="40%" valign="middle">
 <h3>SSH</h3>
-<code>cmux ssh user@remote</code> creates a workspace for a remote machine. Browser panes route through the remote network so localhost just works. Drag an image into a remote session to upload via scp.
+<code>termloop ssh user@remote</code> creates a workspace for a remote machine. Browser panes route through the remote network so localhost just works. Drag an image into a remote session to upload via scp.
 </td>
 <td width="60%">
 <img src="./docs/assets/ssh.png" alt="TermLoop SSH" width="100%" />
@@ -89,7 +88,7 @@ Sidebar shows git branch, linked PR status/number, working directory, listening 
 <tr>
 <td width="40%" valign="middle">
 <h3>Claude Code Teams</h3>
-<code>cmux claude-teams</code> runs Claude Code's teammate mode with one command. Teammates spawn as native splits with sidebar metadata and notifications. No tmux required.
+<code>termloop claude-teams</code> runs Claude Code's teammate mode with one command. Teammates spawn as native splits with sidebar metadata and notifications. No tmux required.
 </td>
 <td width="60%">
 <img src="./docs/assets/claude-code-teams.png" alt="Claude Code Teams" width="100%" />
@@ -135,7 +134,7 @@ I run a lot of Claude Code and Codex sessions in parallel. I was using Ghostty w
 
 I tried a few coding orchestrators but most of them were Electron/Tauri apps and the performance bugged me. I also just prefer the terminal since GUI orchestrators lock you into their workflow. So I built TermLoop as a native macOS app in Swift/AppKit. It uses libghostty for terminal rendering and reads your existing Ghostty config for themes, fonts, and colors.
 
-The main additions are the sidebar and notification system. The sidebar has vertical tabs that show git branch, linked PR status/number, working directory, listening ports, and the latest notification text for each workspace. The notification system picks up terminal sequences (OSC 9/99/777) and has a CLI (`cmux notify`) you can wire into agent hooks for Claude Code, OpenCode, etc. When an agent is waiting, its pane gets a blue ring and the tab lights up in the sidebar, so I can tell which one needs me across splits and tabs. Cmd+Shift+U jumps to the most recent unread.
+The main additions are the sidebar and notification system. The sidebar has vertical tabs that show git branch, linked PR status/number, working directory, listening ports, and the latest notification text for each workspace. The notification system picks up terminal sequences (OSC 9/99/777) and has a CLI (`termloop notify`) you can wire into agent hooks for Claude Code, OpenCode, etc. When an agent is waiting, its pane gets a blue ring and the tab lights up in the sidebar, so I can tell which one needs me across splits and tabs. Cmd+Shift+U jumps to the most recent unread.
 
 The in-app browser has a scriptable API ported from [agent-browser](https://github.com/vercel-labs/agent-browser). Agents can snapshot the accessibility tree, get element refs, click, fill forms, and evaluate JS. You can split a browser pane next to your terminal and have Claude Code interact with your dev server directly.
 
@@ -256,7 +255,7 @@ Browser developer-tool shortcuts follow Safari defaults and are customizable in 
 
 TermLoop NIGHTLY is a separate app with its own bundle ID, so it runs alongside the stable version. Built automatically from the latest `main` commit and auto-updates via its own Sparkle feed.
 
-Report nightly bugs on [GitHub Issues](https://github.com/feritzcan2/termloop/issues) or in [#nightly-bugs on Discord](https://github.com/feritzcan2/termloop/discussions).
+Report nightly bugs on [GitHub Issues](https://github.com/feritzcan2/termloop/issues) or [GitHub Discussions](https://github.com/feritzcan2/termloop/discussions).
 
 ## Session restore (current behavior)
 
@@ -282,18 +281,15 @@ TermLoop does **not** restore live process state inside terminal apps. For examp
 
 Ways to get involved:
 
-- Follow us on X for updates [@manaflowai](https://x.com/manaflowai), [@lawrencecchen](https://x.com/lawrencecchen), and [@austinywang](https://x.com/austinywang)
-- Join the conversation on [Discord](https://github.com/feritzcan2/termloop/discussions)
+- Join the conversation on [GitHub Discussions](https://github.com/feritzcan2/termloop/discussions)
 - Create and participate in [GitHub issues](https://github.com/feritzcan2/termloop/issues) and [discussions](https://github.com/feritzcan2/termloop/discussions)
 - Let us know what you're building with TermLoop
 
 ## Community
 
-- [Discord](https://github.com/feritzcan2/termloop/discussions)
+- [GitHub Discussions](https://github.com/feritzcan2/termloop/discussions)
 - [GitHub](https://github.com/feritzcan2/termloop)
-- [X / Twitter](https://github.com/feritzcan2/termloop)
 - [YouTube](https://www.youtube.com/channel/UCAa89_j-TWkrXfk9A3CbASw)
-- [LinkedIn](https://www.linkedin.com/company/manaflow-ai/)
 - [Reddit](https://www.reddit.com/r/termloop/)
 
 ## Founder's Edition

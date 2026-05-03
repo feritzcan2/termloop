@@ -32,9 +32,9 @@ export default function OhMyOpenCodePage() {
       />
 
       <h2>{t("usage")}</h2>
-      <CodeBlock lang="bash">{`cmux omo
-cmux omo --continue
-cmux omo --model claude-sonnet-4-6`}</CodeBlock>
+      <CodeBlock lang="bash">{`termloop omo
+termloop omo --continue
+termloop omo --model claude-sonnet-4-6`}</CodeBlock>
       <p>{t("usageDesc")}</p>
 
       <h2>{t("whatYouGet")}</h2>

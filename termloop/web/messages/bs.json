@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "cmux — Terminal napravljen za multitasking",
+    "title": "TermLoop — Terminal napravljen za multitasking",
     "description": "Nativni macOS terminal izgrađen na Ghostty. Radi s Claude Code, Codex, OpenCode, Gemini CLI, Kiro, Aider i bilo kojim CLI alatom. Vertikalni tabovi, notifikacijski prstenovi, podijeljeni paneli i socket API.",
     "ogDescription": "Nativni macOS terminal za AI agente za kodiranje. Radi s Claude Code, Codex, OpenCode, Gemini CLI, Kiro, Aider i bilo kojim CLI alatom."
   },
@@ -34,12 +34,13 @@
     "terms": "Uslovi korištenja",
     "eula": "EULA",
     "github": "GitHub",
-    "twitter": "X / Twitter",
-    "discord": "Discord",
+    "twitter": "Repository",
+    "discord": "Discussions",
     "contact": "Kontakt",
     "nightly": "Nightly",
-    "copyright": "© {year} Manaflow",
-    "language": "Jezik"
+    "copyright": "© {year} TermLoop",
+    "language": "Jezik",
+    "discussions": "Discussions"
   },
   "home": {
     "taglinePrefix": "Terminal napravljen za ",
@@ -67,16 +68,16 @@
       "keyboardShortcuts": "Prečice na tastaturi",
       "keyboardShortcutsDesc": ": <link>opsežne prečice</link> za radne prostore, razdjelnice, preglednik i više"
     },
-    "faqGhosttyQ": "Kakav je odnos cmux-a i Ghostty-ja?",
-    "faqGhosttyA": "cmux nije fork Ghostty-ja. Koristi <link>libghostty</link> kao biblioteku za renderiranje terminala, na isti način kao što aplikacije koriste WebKit za web prikaze. Ghostty je samostalni terminal; termloop je drugačija aplikacija izgrađena na njegovom rendering engine-u.",
+    "faqGhosttyQ": "Kakav je odnos TermLoop-a i Ghostty-ja?",
+    "faqGhosttyA": "TermLoop nije fork Ghostty-ja. Koristi <link>libghostty</link> kao biblioteku za renderiranje terminala, na isti način kao što aplikacije koriste WebKit za web prikaze. Ghostty je samostalni terminal; termloop je drugačija aplikacija izgrađena na njegovom rendering engine-u.",
     "faqPlatformQ": "Koje platforme podržava?",
     "faqPlatformA": "Samo macOS, za sada. termloop je nativna Swift + AppKit aplikacija.",
     "faqAgentsQ": "Sa kojim coding agentima termloop radi?",
     "faqAgentsA": "Sa svima. termloop je terminal, tako da svaki agent koji radi u terminalu funkcioniše odmah: Claude Code, Codex, OpenCode, Gemini CLI, Kiro, Aider, Goose, Amp, Cline, Cursor Agent i sve ostalo što možete pokrenuti iz komandne linije.",
     "faqNotificationsQ": "Kako funkcionišu notifikacije?",
-    "faqNotificationsA": "Kada proces treba pažnju, termloop prikazuje notifikacijske prstenove oko panela, bedževe nepročitanih u bočnoj traci, notifikacijski popover i macOS desktop notifikaciju. Ovi se aktiviraju automatski putem standardnih terminalskih escape sekvenci (OSC 9/99/777), ili ih možete pokrenuti pomoću <cliLink>cmux CLI</cliLink> i <hooksLink>Claude Code hooks</hooksLink>.",
+    "faqNotificationsA": "Kada proces treba pažnju, termloop prikazuje notifikacijske prstenove oko panela, bedževe nepročitanih u bočnoj traci, notifikacijski popover i macOS desktop notifikaciju. Ovi se aktiviraju automatski putem standardnih terminalskih escape sekvenci (OSC 9/99/777), ili ih možete pokrenuti pomoću <cliLink>TermLoop CLI</cliLink> i <hooksLink>Claude Code hooks</hooksLink>.",
     "faqShortcutsQ": "Mogu li prilagoditi prečice na tastaturi?",
-    "faqShortcutsA": "Terminalne prečice se čitaju iz vaše Ghostty konfiguracijske datoteke (<configPath>~/.config/ghostty/config</configPath>). cmux-specifične prečice (radni prostori, razdjelnice, preglednik, notifikacije) se mogu prilagoditi u Postavkama. Pogledajte <link>podrazumijevane prečice</link> za kompletnu listu.",
+    "faqShortcutsA": "Terminalne prečice se čitaju iz vaše Ghostty konfiguracijske datoteke (<configPath>~/.config/ghostty/config</configPath>). TermLoop-specifične prečice (radni prostori, razdjelnice, preglednik, notifikacije) se mogu prilagoditi u Postavkama. Pogledajte <link>podrazumijevane prečice</link> za kompletnu listu.",
     "faqTmuxQ": "Kako se poredi sa tmux-om?",
     "faqTmuxA": "tmux je multiplekser terminala koji radi unutar bilo kojeg terminala. termloop je nativna macOS aplikacija sa GUI-jem: vertikalni tabovi, podijeljeni paneli, ugrađeni preglednik i socket API su svi ugrađeni. Nisu potrebne konfiguracijske datoteke niti prefix tasteri.",
     "faqFreeQ": "Da li je termloop besplatan?",
@@ -85,54 +86,60 @@
   "community": {
     "title": "Zajednica",
     "description": "Povežite se sa drugim termloop korisnicima i timom iza njega.",
-    "discord": "Discord",
-    "discordAction": "Pridružite se našem Discord-u",
-    "discordDesc": "Razgovarajte sa zajednicom, dobijte pomoć i podijelite povratne informacije",
+    "discord": "Discussions",
+    "discordAction": "Open discussions",
+    "discordDesc": "Ask questions, get help, and share feedback",
     "githubAction": "Pogledaj na GitHub-u",
     "githubDesc": "Označite repo zvjezdicom, prijavite probleme i doprinesite",
-    "twitter": "Twitter",
-    "twitterAction": "Pratite na X-u",
-    "twitterDesc": "Ažuriranja, objave i savjeti",
+    "twitter": "Repository",
+    "twitterAction": "View repository",
+    "twitterDesc": "Browse source, releases, and project activity",
     "youtube": "YouTube",
     "youtubeAction": "Pretplatite se",
     "youtubeDesc": "Demonstracije, tutorijali i vodiči",
     "linkedin": "LinkedIn",
     "linkedinAction": "Pratite nas",
     "linkedinDesc": "Vijesti o kompaniji i inženjerska ažuriranja",
-    "metaTitle": "Zajednica — cmux",
-    "metaDescription": "Pridružite se termloop zajednici na Discordu, Twitteru, GitHubu i više"
+    "metaTitle": "Zajednica — TermLoop",
+    "metaDescription": "Join the TermLoop community on GitHub Discussions and GitHub.",
+    "discussions": "Discussions",
+    "discussionsAction": "Open discussions",
+    "discussionsDesc": "Ask questions, get help, and share feedback",
+    "repository": "Repository",
+    "repositoryAction": "View repository",
+    "repositoryDesc": "Browse source, releases, and project activity"
   },
   "blog": {
     "title": "Blog",
-    "layoutTitle": "cmux blog",
+    "layoutTitle": "TermLoop blog",
     "metaTitle": "Blog",
-    "metaDescription": "Vijesti i ažuriranja od tima cmux",
+    "metaDescription": "Vijesti i ažuriranja od tima TermLoop",
     "description": "Vijesti i ažuriranja od termloop tima",
     "posts": {
       "cmdShiftU": {
         "title": "Cmd+Shift+U",
-        "summary": "Kako Cmd+Shift+U navigira između završenih agenata kroz radne prostore u cmux-u.",
+        "summary": "Kako Cmd+Shift+U navigira između završenih agenata kroz radne prostore u TermLoop-u.",
         "date": "4. mart 2026.",
         "p1": "Moja omiljena termloop funkcionalnost je Cmd+Shift+U. Trenutno imam 17 otvorenih radnih prostora, svaki pokreće agenta. Nekada sam klikao kroz tabove i panel notifikacija da saznam šta je završeno. Kucanje je brže.",
         "p2": "Cmd+Shift+U skače na najnoviju nepročitanu <link>notifikaciju</link>. U praksi to znači posljednjeg agenta koji je završio. Prebacuje na pravi radni prostor, fokusira tačan panel, bljeska ga da vidite gdje gledati i označava kao pročitano. Ako je notifikacija došla iz drugog prozora, taj prozor dolazi u prvi plan."
       },
       "zenOfCmux": {
-        "title": "Zen cmux-a",
-        "summary": "cmux je primitiv, ne rješenje. Daje vam sastavive dijelove, a vaš tok rada je na vama.",
+        "title": "Zen TermLoop-a",
+        "summary": "TermLoop je primitiv, ne rješenje. Daje vam sastavive dijelove, a vaš tok rada je na vama.",
         "date": "27. februar 2026.",
-        "p1": "cmux ne propisuje kako programeri koriste svoje alate. To je terminal i preglednik sa CLI-jem, a ostatak je na vama.",
-        "p2": "cmux je primitiv, ne rješenje. Daje vam terminal, preglednik, notifikacije, radne prostore, razdjelnice, tabove i CLI za kontrolu svega toga. termloop vas ne prisiljava na jedan određen način korištenja coding agenata. Ono što izgradite od primitiva je vaše.",
+        "p1": "TermLoop ne propisuje kako programeri koriste svoje alate. To je terminal i preglednik sa CLI-jem, a ostatak je na vama.",
+        "p2": "TermLoop je primitiv, ne rješenje. Daje vam terminal, preglednik, notifikacije, radne prostore, razdjelnice, tabove i CLI za kontrolu svega toga. termloop vas ne prisiljava na jedan određen način korištenja coding agenata. Ono što izgradite od primitiva je vaše.",
         "p3": "Najbolji programeri su oduvijek pravili vlastite alate. Niko još nije otkrio najbolji način rada sa agentima, a timovi koji grade zatvorene proizvode to definitivno nisu. Programeri koji su najbliži svojim bazama koda će to prvi otkriti.",
         "p4": "Dajte milionu programera sastavive primitive i oni će kolektivno pronaći najefikasnije tokove rada brže nego što bi bilo koji produktni tim mogao osmisliti odozgo prema dolje."
       },
       "showHnLaunch": {
-        "title": "Lansiranje cmux-a na Show HN",
-        "summary": "cmux je dostigao #2 na Hacker News-u, podijelio ga Mitchell Hashimoto, i postao viralan u Japanu.",
+        "title": "Lansiranje TermLoop-a na Show HN",
+        "summary": "TermLoop je dostigao #2 na Hacker News-u, podijelio ga Mitchell Hashimoto, i postao viralan u Japanu.",
         "date": "21. februar 2026.",
         "intro": "Objavili smo termloop na <link>Show HN</link> 19. februara:",
         "blockquote1": "Pokrećem mnogo Claude Code i Codex sesija paralelno. Koristio sam Ghostty sa gomilom podijeljenih panela i oslanjao se na nativne macOS notifikacije da saznam kada mi agent treba. Ali tijelo notifikacije Claude Code-a je uvijek samo \"Claude is waiting for your input\" bez konteksta, i sa dovoljno otvorenih tabova, nisam više mogao ni pročitati naslove.",
         "blockquote2": "Probao sam nekoliko coding orkestratora, ali većina su bile Electron/Tauri aplikacije i performanse su me smetale. Takođe jednostavno preferiram terminal jer GUI orkestratori vas zaključavaju u svoj tok rada. Zato sam napravio termloop kao nativnu macOS aplikaciju u Swift/AppKit-u. Koristi libghostty za renderiranje terminala i čita vašu postojeću Ghostty konfiguraciju za teme, fontove, boje i više.",
-        "blockquote3": "Glavna proširenja su bočna traka i sistem notifikacija. Bočna traka ima vertikalne tabove koji prikazuju git granu, radni direktorij, aktivne portove i najnoviji tekst notifikacije za svaki radni prostor. Sistem notifikacija prepoznaje terminalne sekvence (OSC 9/99/777) i ima CLI (cmux notify) koji možete povezati sa agent hookovima za Claude Code, OpenCode, itd. Kada agent čeka, njegov panel dobija plavi prsten i tab se osvijetli u bočnoj traci, tako da mogu vidjeti koji mi treba kroz razdjelnice i tabove. Cmd+Shift+U skače na najnoviji nepročitani.",
+        "blockquote3": "Glavna proširenja su bočna traka i sistem notifikacija. Bočna traka ima vertikalne tabove koji prikazuju git granu, radni direktorij, aktivne portove i najnoviji tekst notifikacije za svaki radni prostor. Sistem notifikacija prepoznaje terminalne sekvence (OSC 9/99/777) i ima CLI (termloop notify) koji možete povezati sa agent hookovima za Claude Code, OpenCode, itd. Kada agent čeka, njegov panel dobija plavi prsten i tab se osvijetli u bočnoj traci, tako da mogu vidjeti koji mi treba kroz razdjelnice i tabove. Cmd+Shift+U skače na najnoviji nepročitani.",
         "blockquote4": "Ugrađeni preglednik ima skriptabilan API. Agenti mogu napraviti snapshot stabla pristupačnosti, dobiti reference elemenata, kliknuti, popuniti forme, izvršiti JS i čitati logove konzole. Možete podijeliti panel preglednika pored terminala i imati Claude Code koji direktno interaguje sa vašim dev serverom.",
         "blockquote5": "Sve je skriptabilno kroz CLI i socket API: kreiranje radnih prostora/tabova, dijeljenje panela, slanje pritisaka tipki, otvaranje URL-ova u pregledniku.",
         "hitNumber2": "Na vrhuncu je dostigao #2 na Hacker News-u. Mitchell Hashimoto ga je podijelio:",
@@ -141,15 +148,15 @@
         "translation": "Prijevod: \"Ovo izgleda dobro. Terminalna aplikacija bazirana na Ghostty-ju dizajnirana da se ne izgubite pokretajući više CLI-jeva poput Claude Code-a paralelno. Panel koji čeka unos dobija plavi okvir i ima vlastiti sistem notifikacija.\"",
         "viralChina": "I polu-viralan u Kini:",
         "extensions": "Još jedna uzbudljiva stvar je bila vidjeti ljude kako grade na termloop CLI-ju. sasha je napravio pi-cmux proširenje koje prikazuje informacije o modelu, korištenje tokena i stanje agenta u bočnoj traci:",
-        "scriptable": "Sve u cmux-u je skriptabilno kroz CLI: kreiranje radnih prostora, slanje pritisaka tipki, kontrola preglednika, čitanje notifikacija. Dio termloop filozofije je biti programabilan i sastaviv, tako da ljudi mogu prilagoditi način na koji rade sa coding agentima. Stanje tehnike za coding agente se brzo mijenja, i ne želite biti zaključani u nefleksibilni GUI orkestrator koji ne može pratiti.",
-        "cta": "Ako pokrećete više coding agenata, <link>probajte cmux</link>."
+        "scriptable": "Sve u TermLoop-u je skriptabilno kroz CLI: kreiranje radnih prostora, slanje pritisaka tipki, kontrola preglednika, čitanje notifikacija. Dio termloop filozofije je biti programabilan i sastaviv, tako da ljudi mogu prilagoditi način na koji rade sa coding agentima. Stanje tehnike za coding agente se brzo mijenja, i ne želite biti zaključani u nefleksibilni GUI orkestrator koji ne može pratiti.",
+        "cta": "Ako pokrećete više coding agenata, <link>probajte TermLoop</link>."
       },
       "introducingCmux": {
-        "title": "Predstavljamo cmux",
+        "title": "Predstavljamo TermLoop",
         "summary": "Nativni macOS terminal izgrađen na Ghostty-ju, dizajniran za pokretanje više AI coding agenata jedan pored drugog.",
         "date": "12. februar 2026.",
-        "p1": "cmux je nativna macOS terminalna aplikacija izgrađena na Ghostty-ju, dizajnirana od temelja za programere koji pokreću više AI coding agenata istovremeno.",
-        "whyTitle": "Zašto cmux?",
+        "p1": "TermLoop je nativna macOS terminalna aplikacija izgrađena na Ghostty-ju, dizajnirana od temelja za programere koji pokreću više AI coding agenata istovremeno.",
+        "whyTitle": "Zašto TermLoop?",
         "whyP": "Moderni razvojni tokovi rada često uključuju pokretanje nekoliko agenata odjednom. Claude Code, Codex i drugi alati, svaki u svom terminalu. Praćenje koji trebaju pažnju i brzo prebacivanje između njih je problem koji termloop rješava.",
         "featuresTitle": "Ključne funkcionalnosti",
         "getStartedTitle": "Počnite",
@@ -167,28 +174,28 @@
       }
     },
     "zenOfCmux": {
-      "metaTitle": "Zen cmux-a",
-      "metaDescription": "cmux je primitiv, ne rješenje. Daje vam komposabilne dijelove i vaš radni tok je na vama."
+      "metaTitle": "Zen TermLoop-a",
+      "metaDescription": "TermLoop je primitiv, ne rješenje. Daje vam komposabilne dijelove i vaš radni tok je na vama."
     },
     "cmdShiftU": {
       "metaTitle": "Cmd+Shift+U",
-      "metaDescription": "Nova prečica na tastaturi koja mijenja način interakcije s cmux-om."
+      "metaDescription": "Nova prečica na tastaturi koja mijenja način interakcije s TermLoop-om."
     },
     "showHnLaunch": {
-      "metaTitle": "Lansiranje cmux-a na Show HN",
-      "metaDescription": "Priča o lansiranju cmux-a na Hacker News."
+      "metaTitle": "Lansiranje TermLoop-a na Show HN",
+      "metaDescription": "Priča o lansiranju TermLoop-a na Hacker News."
     },
     "introducingCmux": {
-      "metaTitle": "Predstavljamo cmux",
-      "metaDescription": "Zašto smo napravili cmux, novi terminal za macOS."
+      "metaTitle": "Predstavljamo TermLoop",
+      "metaDescription": "Zašto smo napravili TermLoop, novi terminal za macOS."
     }
   },
   "docs": {
-    "layoutTitle": "cmux docs",
+    "layoutTitle": "TermLoop docs",
     "gettingStarted": {
       "title": "Početak rada",
-      "metaDescription": "Instalirajte cmux, nativni macOS terminal za AI coding agente. Homebrew, DMG preuzimanje, CLI podešavanje i automatska ažuriranja putem Sparkle-a.",
-      "intro": "cmux je lagani, nativni macOS terminal izgrađen na Ghostty-ju za upravljanje više AI coding agenata. Sadrži vertikalne tabove, panel notifikacija i socket-bazirani kontrolni API.",
+      "metaDescription": "Instalirajte TermLoop, nativni macOS terminal za AI coding agente. Homebrew, DMG preuzimanje, CLI podešavanje i automatska ažuriranja putem Sparkle-a.",
+      "intro": "TermLoop je lagani, nativni macOS terminal izgrađen na Ghostty-ju za upravljanje više AI coding agenata. Sadrži vertikalne tabove, panel notifikacija i socket-bazirani kontrolni API.",
       "install": "Instalacija",
       "dmgRecommended": "DMG (preporučeno)",
       "dmgDesc": "Otvorite .dmg i prevucite termloop u folder Aplikacije. termloop se automatski ažurira putem Sparkle-a, tako da trebate preuzeti samo jednom.",
@@ -201,17 +208,17 @@
       "verifyItem2": "Jedan inicijalni radni prostor već otvoren",
       "verifyItem3": "Ghostty-pokretan terminal spreman za unos",
       "cliSetup": "Podešavanje CLI-ja",
-      "cliDesc": "cmux uključuje alat komandne linije za automatizaciju. Unutar termloop terminala radi automatski. Za korištenje CLI-ja izvan cmux-a, kreirajte simboličku vezu:",
+      "cliDesc": "TermLoop uključuje alat komandne linije za automatizaciju. Unutar termloop terminala radi automatski. Za korištenje CLI-ja izvan TermLoop-a, kreirajte simboličku vezu:",
       "cliThen": "Zatim možete pokretati komande poput:",
       "autoUpdates": "Automatska ažuriranja",
-      "autoUpdatesDesc": "cmux automatski provjerava ažuriranja putem Sparkle-a. Kada je ažuriranje dostupno, vidjet ćete oznaku ažuriranja u naslovnoj traci. Možete takođe ručno provjeriti putem termloop > Check for Updates u traci menija.",
+      "autoUpdatesDesc": "TermLoop automatski provjerava ažuriranja putem Sparkle-a. Kada je ažuriranje dostupno, vidjet ćete oznaku ažuriranja u naslovnoj traci. Možete takođe ručno provjeriti putem termloop > Check for Updates u traci menija.",
       "sessionRestore": "Obnova sesije (trenutno ponašanje)",
       "sessionRestoreDesc": "Nakon ponovnog pokretanja, termloop obnavlja samo raspored i metapodatke:",
       "sessionItem1": "Raspored prozora, radnih prostora i panela",
       "sessionItem2": "Radne direktorije",
       "sessionItem3": "Terminal scrollback (po principu najboljeg napora)",
       "sessionItem4": "URL preglednika i historija navigacije",
-      "sessionCallout": "cmux još ne obnavlja stanje živih procesa. Aktivne sesije terminalnih aplikacija kao što su Claude Code, tmux i vim se ne nastavljaju nakon ponovnog pokretanja aplikacije.",
+      "sessionCallout": "TermLoop još ne obnavlja stanje živih procesa. Aktivne sesije terminalnih aplikacija kao što su Claude Code, tmux i vim se ne nastavljaju nakon ponovnog pokretanja aplikacije.",
       "requirements": "Zahtjevi",
       "reqItem1": "macOS 14.0 ili noviji",
       "reqItem2": "Apple Silicon ili Intel Mac",
@@ -220,7 +227,7 @@
     "concepts": {
       "title": "Koncepti",
       "metaDescription": "Kako termloop organizuje terminale: prozori, radni prostori, paneli i površine. Hijerarhija iza bočne trake, razdjelnica i socket API-ja.",
-      "intro": "cmux organizuje vaše terminale u hijerarhiju od četiri nivoa. Razumijevanje ovih nivoa pomaže pri korištenju socket API-ja, CLI-ja i prečica na tastaturi.",
+      "intro": "TermLoop organizuje vaše terminale u hijerarhiju od četiri nivoa. Razumijevanje ovih nivoa pomaže pri korištenju socket API-ja, CLI-ja i prečica na tastaturi.",
       "hierarchy": "Hijerarhija",
       "windowTitle": "Prozor",
       "windowDesc": "macOS prozor. Otvorite više prozora sa {shortcut}. Svaki prozor ima svoju bočnu traku sa nezavisnim radnim prostorima.",
@@ -272,9 +279,9 @@
     "configuration": {
       "title": "Konfiguracija",
       "metaDescription": "Konfigurirajte termloop putem Ghostty konfiguracijskih datoteka. Font, tema, boje, stil podijeljenih panela, scrollback i postavke aplikacije za način automatizacije.",
-      "intro": "cmux čita konfiguraciju iz Ghostty konfiguracijskih datoteka, pružajući vam poznate opcije ako dolazite iz Ghostty-ja.",
+      "intro": "TermLoop čita konfiguraciju iz Ghostty konfiguracijskih datoteka, pružajući vam poznate opcije ako dolazite iz Ghostty-ja.",
       "configLocations": "Lokacije konfiguracijskih datoteka",
-      "configLocationsDesc": "cmux traži konfiguraciju na ovim lokacijama (redom):",
+      "configLocationsDesc": "TermLoop traži konfiguraciju na ovim lokacijama (redom):",
       "createConfig": "Kreirajte konfiguracijsku datoteku ako ne postoji:",
       "appearance": "Izgled",
       "font": "Font",
@@ -297,8 +304,8 @@
       "automationCallout": "Na dijeljenim mašinama, razmislite o korištenju načina \"Isključeno\" ili \"Samo termloop procesi\".",
       "browserLinkBehavior": "Ponašanje linkova preglednika",
       "browserLinkDesc": "U Postavke > Preglednik, termloop izlaže dvije liste hostova sa različitim namjenama:",
-      "browserHostsEmbed": "Hostovi za otvaranje u ugrađenom pregledniku: primjenjuje se na linkove kliknute iz terminalskog izlaza. Hostovi na ovoj listi se otvaraju u cmux-u; ostali hostovi se otvaraju u vašem podrazumijevanom pregledniku. Podržava jedan host ili wildcard po liniji (na primjer: example.com, *.internal.example).",
-      "browserHostsHttp": "HTTP hostovi dozvoljeni u ugrađenom pregledniku: primjenjuje se samo na HTTP (ne-HTTPS) URL-ove. Hostovi na ovoj listi se mogu otvoriti u cmux-u bez upozorenja. Podrazumijevane vrijednosti uključuju localhost, 127.0.0.1, ::1, 0.0.0.0 i *.localtest.me.",
+      "browserHostsEmbed": "Hostovi za otvaranje u ugrađenom pregledniku: primjenjuje se na linkove kliknute iz terminalskog izlaza. Hostovi na ovoj listi se otvaraju u TermLoop-u; ostali hostovi se otvaraju u vašem podrazumijevanom pregledniku. Podržava jedan host ili wildcard po liniji (na primjer: example.com, *.internal.example).",
+      "browserHostsHttp": "HTTP hostovi dozvoljeni u ugrađenom pregledniku: primjenjuje se samo na HTTP (ne-HTTPS) URL-ove. Hostovi na ovoj listi se mogu otvoriti u TermLoop-u bez upozorenja. Podrazumijevane vrijednosti uključuju localhost, 127.0.0.1, ::1, 0.0.0.0 i *.localtest.me.",
       "exampleConfig": "Primjer konfiguracije",
       "metaTitle": "Konfiguracija"
     },
@@ -308,7 +315,7 @@
       "metaDescription": "Definirajte prilagođene komande i rasporede radnog prostora u cmux.json. Konfiguracija po projektu i globalna konfiguracija s praćenjem promjena datoteka.",
       "intro": "Definirajte prilagođene komande i rasporede radnog prostora dodavanjem datoteke cmux.json u korijenski direktorij vašeg projekta ili ~/.config/termloop/. Komande se pojavljuju u paleti komandi.",
       "fileLocations": "Lokacije datoteka",
-      "fileLocationsDesc": "cmux traži konfiguraciju na dva mjesta:",
+      "fileLocationsDesc": "TermLoop traži konfiguraciju na dva mjesta:",
       "localConfig": "Po projektu:",
       "localConfigDesc": "nalazi se u vašem projektnom direktoriju, ima prednost",
       "globalConfig": "Globalno:",
@@ -368,7 +375,7 @@
     },
     "keyboardShortcuts": {
       "title": "Prečice na tastaturi",
-      "description": "Sve prečice na tastaturi dostupne u cmux-u, grupirane po kategorijama.",
+      "description": "Sve prečice na tastaturi dostupne u TermLoop-u, grupirane po kategorijama.",
       "metaDescription": "Sve termloop prečice na tastaturi za radne prostore, površine, podijeljene panele, preglednik, notifikacije, pretragu i upravljanje prozorima na macOS-u.",
       "searchPlaceholder": "Pretraži prečice...",
       "searchLabel": "Pretraži prečice na tastaturi",
@@ -431,8 +438,8 @@
     },
     "api": {
       "title": "API Referenca",
-      "metaDescription": "cmux CLI i Unix socket API referenca. Upravljanje radnim prostorima, podijeljeni paneli, kontrola unosa, notifikacije, metapodaci bočne trake, varijable okruženja i metode detekcije.",
-      "intro": "cmux pruža i CLI alat i Unix socket za programsku kontrolu. Svaka komanda je dostupna kroz oba interfejsa.",
+      "metaDescription": "TermLoop CLI i Unix socket API referenca. Upravljanje radnim prostorima, podijeljeni paneli, kontrola unosa, notifikacije, metapodaci bočne trake, varijable okruženja i metode detekcije.",
+      "intro": "TermLoop pruža i CLI alat i Unix socket za programsku kontrolu. Svaka komanda je dostupna kroz oba interfejsa.",
       "socket": "Socket",
       "buildHeader": "Build",
       "pathHeader": "Putanja",
@@ -504,7 +511,7 @@
       "termProgramDesc": "Postavljeno na ghostty",
       "termDesc": "Postavljeno na xterm-ghostty",
       "envCallout": "Starije TERMLOOP_SOCKET_MODE vrijednosti full i notifications se još prihvataju radi kompatibilnosti.",
-      "detectingCmux": "Detekcija cmux-a",
+      "detectingCmux": "Detekcija TermLoop-a",
       "examples": "Primjeri",
       "pythonClient": "Python klijent",
       "shellScript": "Shell skripta",
@@ -513,8 +520,8 @@
     },
     "notifications": {
       "title": "Notifikacije",
-      "metaDescription": "Šaljite desktop notifikacije iz AI agenata i skripti u cmux-u. CLI, OSC 99/777 escape sekvence i integracija Claude Code hooks.",
-      "intro": "cmux podržava desktop notifikacije, omogućavajući AI agentima i skriptama da vas obavijeste kada trebaju pažnju.",
+      "metaDescription": "Šaljite desktop notifikacije iz AI agenata i skripti u TermLoop-u. CLI, OSC 99/777 escape sekvence i integracija Claude Code hooks.",
+      "intro": "TermLoop podržava desktop notifikacije, omogućavajući AI agentima i skriptama da vas obavijeste kada trebaju pažnju.",
       "lifecycle": "Životni ciklus",
       "received": "Primljeno: notifikacija se pojavljuje u panelu, desktop obavještenje se pokreće (ako nije potisnuto)",
       "unread": "Nepročitano: bedž prikazan na tabu radnog prostora",
@@ -522,7 +529,7 @@
       "cleared": "Obrisano: uklonjeno iz panela",
       "suppression": "Potiskivanje",
       "suppressionDesc": "Desktop obavještenja se potiskuju kada:",
-      "suppressItem1": "cmux prozor je fokusiran",
+      "suppressItem1": "TermLoop prozor je fokusiran",
       "suppressItem2": "Specifični radni prostor koji šalje notifikaciju je aktivan",
       "suppressItem3": "Panel notifikacija je otvoren",
       "notificationPanel": "Panel notifikacija",
@@ -550,9 +557,9 @@
       "cmpHigher": "Viša",
       "cmpLower": "Niža",
       "featureHeader": "Funkcionalnost",
-      "comparisonCallout": "Koristite OSC 777 za jednostavne notifikacije. Koristite OSC 99 kada trebate podnaslove ili ID-eve notifikacija. Koristite CLI (cmux notify) za najlakšu integraciju.",
+      "comparisonCallout": "Koristite OSC 777 za jednostavne notifikacije. Koristite OSC 99 kada trebate podnaslove ili ID-eve notifikacija. Koristite CLI (termloop notify) za najlakšu integraciju.",
       "claudeCodeHooks": "Claude Code hooks",
-      "claudeCodeHooksDesc": "cmux se integriše sa <link>Claude Code</link> putem hookova da vas obavijesti kada su zadaci završeni.",
+      "claudeCodeHooksDesc": "TermLoop se integriše sa <link>Claude Code</link> putem hookova da vas obavijesti kada su zadaci završeni.",
       "createHookScript": "1. Kreirajte hook skriptu",
       "configureClaude": "2. Konfigurirajte Claude Code",
       "restartNote": "Ponovo pokrenite Claude Code da primijenite hookove.",
@@ -564,7 +571,7 @@
       "python": "Python",
       "nodejs": "Node.js",
       "tmuxPassthrough": "tmux passthrough",
-      "tmuxDesc": "Ako koristite tmux unutar cmux-a, omogućite passthrough:",
+      "tmuxDesc": "Ako koristite tmux unutar TermLoop-a, omogućite passthrough:",
       "metaTitle": "Notifikacije"
     },
     "browserAutomation": {
@@ -609,7 +616,7 @@
     },
     "changelog": {
       "title": "Zapisnik promjena",
-      "metaDescription": "cmux bilješke o izdanjima i historija verzija. Nove funkcionalnosti, ispravke grešaka i promjene za nativni macOS terminal.",
+      "metaDescription": "TermLoop bilješke o izdanjima i historija verzija. Nove funkcionalnosti, ispravke grešaka i promjene za nativni macOS terminal.",
       "metaTitle": "Dnevnik promjena"
     },
     "navItems": {
@@ -636,35 +643,35 @@
   },
   "wallOfLove": {
     "title": "Zid ljubavi",
-    "description": "Šta ljudi kažu o cmux-u."
+    "description": "Šta ljudi kažu o TermLoop-u."
   },
   "testimonials": {
     "mitchellh": "Još jedan dan, još jedan projekat baziran na libghostty-ju, ovaj put macOS terminal sa vertikalnim tabovima, boljom organizacijom/notifikacijama, ugrađenim/skriptabilnim preglednikom specifično usmjeren na ljude koji koriste mnogo terminalskih agentskih tokova rada.",
     "schrockn": "Ovo je tačno proizvod koji sam tražio. Nakon dva sata jutros sam zaljubljen.",
     "egrefen": "Koristio sam ovo cijeli vikend i nevjerovatno je.",
     "max4c": "ovo je bio moj omiljeni alat posljednje dvije sedmice",
-    "asaza": "cmux izgleda toliko dobro da je možda konačno vrijeme da se oprostim od VSCode-a",
+    "asaza": "TermLoop izgleda toliko dobro da je možda konačno vrijeme da se oprostim od VSCode-a",
     "johnthedebs": "Hej, ovo izgleda ozbiljno odlično. Volim ideje ovdje, specifično: programabilnost, slojeviti UI, preglednik sa API-jem. Radujem se da ovo probam. Takođe želim dodati da stvarno cijenim Mitchell Hashimoto-a što je kreirao libghostty; osjeća se kao uzbudljivo vrijeme za korisnike terminala.",
     "joeriddles": "Vertikalni tabovi u mom terminalu! Nikada nisam na to pomislio. Koristim i volim Firefox vertikalne tabove.",
     "dchu17": "Dao sam ovome priliku i bilo je prilično intuitivno. Dobar posao!",
     "afruth": "Sviđa mi se, koristio sam ga proteklog dana na tri paralelna projekta, svaki sa nekoliko worktree-ova. Imati ovo u paru sa lazygit-om i yazi / nvim-om učinilo me malo produktivnijim nego obično bez jurnjave za više ghostty / iTerm instanci. Takođe se osjeća prirodnije od tmux-a.",
     "northprint": "Probao sam termloop jer je izgledao dobro — dobar je",
-    "indykish": "cmux je prilično dobar.",
+    "indykish": "TermLoop je prilično dobar.",
     "kataring": "Prešao sam na termloop.ai",
     "scottw": "Ovo je bio tako koristan nalaz. Ne mogu ga dovoljno preporučiti.",
     "johnblythe": "uzeo ovo tokom vikenda i volio sam ga. čekao sam nešto ovako.",
     "bchris91": "Ovo je tačno ono što sam htio. Nevjerovatan posao, hvala!",
     "connorelsea": "Koristim ovo sedmicu i fantastično je. Vertikalni tab za svaki zadatak u toku. Unutra, Claude na jednoj strani a preglednik sa PR-ovima i resursima na drugoj, prebacujem se između zadataka i ostajam organizovan. Pomiješajte to sa skillovima da Claude prati CI rekurzivno itd. osjećam se prosvijećenim iskreno",
-    "tonkotsuboy": "Prešao sam sa Warpa na Ghostty početkom godine, ali sad sam prešao na cmux. Vertikalni tabovi su praktični, i cijenim što dobijem notifikaciju kada Claude Code zadaci završe. Baziran je na Ghostty-ju tako da munjevite performanse ostaju. Prikaz grane i completioni koje sam podesio u Ghostty-ju i dalje rade."
+    "tonkotsuboy": "Prešao sam sa Warpa na Ghostty početkom godine, ali sad sam prešao na TermLoop. Vertikalni tabovi su praktični, i cijenim što dobijem notifikaciju kada Claude Code zadaci završe. Baziran je na Ghostty-ju tako da munjevite performanse ostaju. Prikaz grane i completioni koje sam podesio u Ghostty-ju i dalje rade."
   },
   "nightly": {
-    "title": "cmux NIGHTLY",
+    "title": "TermLoop NIGHTLY",
     "subtitle": "Najnovije verzije iz main grane",
-    "metaTitle": "cmux NIGHTLY — Nightly verzije",
+    "metaTitle": "TermLoop NIGHTLY — Nightly verzije",
     "metaDescription": "Preuzmite termloop NIGHTLY, zasebnu aplikaciju koja se automatski kompajlira iz posljednjeg commita na main. Radi uporedo sa stabilnom verzijom s vlastitim automatskim ažuriranjima.",
-    "description": "cmux NIGHTLY se automatski kompajlira iz posljednjeg commita na main. Ima vlastiti bundle ID, pa radi uporedo sa stabilnom verzijom bez konflikata. Koristite ga za testiranje novih funkcija prije objavljivanja.",
+    "description": "TermLoop NIGHTLY se automatski kompajlira iz posljednjeg commita na main. Ima vlastiti bundle ID, pa radi uporedo sa stabilnom verzijom bez konflikata. Koristite ga za testiranje novih funkcija prije objavljivanja.",
     "download": "Preuzmi NIGHTLY za Mac",
-    "warning": "Nightly verzije mogu sadržavati greške ili nepotpune funkcije. Ako nešto ne radi, prijavite to na <githubLink>GitHubu</githubLink> ili u <discordLink>#nightly-bugs na Discordu</discordLink> i prebacite se na stabilnu verziju."
+    "warning": "Nightly builds may contain bugs or incomplete features. If something breaks, report it on <githubLink>GitHub</githubLink> or in <discordLink>GitHub Discussions</discordLink>, and switch back to the stable release."
   },
   "languageSwitcher": {
     "label": "Jezik"

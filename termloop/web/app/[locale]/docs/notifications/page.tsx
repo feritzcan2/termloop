@@ -83,8 +83,8 @@ echo "$TERMLOOP_NOTIFICATION_TITLE: $TERMLOOP_NOTIFICATION_BODY" >> ~/notificati
       <h2>{t("sending")}</h2>
 
       <h3>{t("cli")}</h3>
-      <CodeBlock lang="bash">{`cmux notify --title "Task Complete" --body "Your build finished"
-cmux notify --title "Claude Code" --subtitle "Waiting" --body "Agent needs input"`}</CodeBlock>
+      <CodeBlock lang="bash">{`termloop notify --title "Task Complete" --body "Your build finished"
+termloop notify --title "Claude Code" --subtitle "Waiting" --body "Agent needs input"`}</CodeBlock>
 
       <h3>{t("osc777Title")}</h3>
       <p>{t("osc777Desc")}</p>
@@ -156,7 +156,7 @@ printf '\\e]99;i=1;e=1;d=1;p=body:All tests passed\\e\\\\'`}</CodeBlock>
 
       <h3>{t("createHookScript")}</h3>
       <CodeBlock title="~/.claude/hooks/cmux-notify.sh" lang="bash">{`#!/bin/bash
-# Skip if not in cmux
+# Skip if not in TermLoop
 [ -S /tmp/termloop.sock ] || exit 0
 
 EVENT=$(cat)

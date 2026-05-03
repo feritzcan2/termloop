@@ -129,7 +129,7 @@ function HeroImage({ src, version }: { src: string; version: string }) {
       <div className="overflow-hidden rounded-lg">
         <Image
           src={src}
-          alt={`cmux ${version}`}
+          alt={`TermLoop ${version}`}
           width={width}
           height={height}
           sizes="(max-width: 640px) 100vw, 640px"
