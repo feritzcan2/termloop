@@ -83,22 +83,19 @@ Branch, PR status, dirty file count, port forwards, agent state — every worksp
 <img src="./termloop/docs/assets/sidebar.png" alt="TermLoop sidebar showing worktree agents, open and merged PRs" width="400" />
 </td>
 </tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>iOS bridge</h3>
+</table>
+
+## Phone bridge — your sessions, in your pocket
+
 Native iOS client pairs with your Mac over an authenticated TCP socket on your local network. Watch live agent output, switch projects, jump into a session — from the couch, the queue, or another room. Stable today; still under active development.
-</td>
-<td width="60%">
-<table>
-<tr>
-<td width="33%"><img src="./termloop/docs/assets/mobile/connections.jpg" alt="iOS app pairing with a Mac" width="100%" /></td>
-<td width="33%"><img src="./termloop/docs/assets/mobile/project-list.jpg" alt="iOS project workspace list" width="100%" /></td>
-<td width="33%"><img src="./termloop/docs/assets/mobile/agent-session.jpg" alt="Live agent session in iOS" width="100%" /></td>
-</tr>
-</table>
-</td>
-</tr>
-</table>
+
+<p align="center">
+  <img src="./termloop/docs/assets/mobile/connections.jpg" alt="iOS app pairing with a Mac" width="280" />
+  &nbsp;
+  <img src="./termloop/docs/assets/mobile/project-list.jpg" alt="iOS project workspace list" width="280" />
+  &nbsp;
+  <img src="./termloop/docs/assets/mobile/agent-session.jpg" alt="Live agent session in iOS" width="280" />
+</p>
 
 ## Built on the cmux foundation
 
