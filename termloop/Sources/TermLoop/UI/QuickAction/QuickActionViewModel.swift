@@ -49,10 +49,9 @@ enum QuickActionCompositionSource: Equatable {
     case template(id: String)
 }
 
-enum QuickActionSurface: String, CaseIterable, Identifiable {
+enum QuickActionSurface: String, Identifiable {
     case run
     case worktree
-    case ticket
     var id: String { rawValue }
 }
 
@@ -89,206 +88,6 @@ struct QuickActionResolvedVariable: Identifiable, Equatable {
 enum QuickActionWorktreeIntent: Equatable {
     case createWorkspace
     case migrateConversationIfPossible
-}
-
-struct QuickActionTicketItem: Identifiable, Hashable {
-    let id: String
-    let key: String
-    let title: String
-    let status: String
-    let branchSuggestion: String?
-}
-
-struct QuickActionTicketCapabilities: Equatable {
-    let supportsAssignedToCurrentUserOnly: Bool
-
-    static let none = QuickActionTicketCapabilities(supportsAssignedToCurrentUserOnly: false)
-}
-
-struct QuickActionTicketQuery: Equatable {
-    var assignedToCurrentUserOnly: Bool = false
-}
-
-struct QuickActionTicketProviderResult {
-    let authenticatedUser: String?
-    let tickets: [QuickActionTicketItem]
-}
-
-enum QuickActionTicketProviderFetchOutcome {
-    case ready(QuickActionTicketProviderResult)
-    case connectRequired(message: String)
-    case failed(message: String)
-}
-
-protocol QuickActionTicketProvider {
-    var displayName: String { get }
-    var capabilities: QuickActionTicketCapabilities { get }
-
-    func fetchTickets(query: QuickActionTicketQuery) async -> QuickActionTicketProviderFetchOutcome
-}
-
-enum QuickActionTicketProviderResolution {
-    case available(any QuickActionTicketProvider)
-    case unavailable(message: String)
-}
-
-enum QuickActionTicketState: Equatable {
-    case idle
-    case loading
-    case ready
-    case connectRequired(message: String)
-    case failed(message: String)
-}
-
-private struct JiraCLITicketProvider: QuickActionTicketProvider {
-    let binaryPath: String
-    let environment: [String: String]
-
-    let displayName = "Jira"
-    let capabilities = QuickActionTicketCapabilities(supportsAssignedToCurrentUserOnly: true)
-
-    func fetchTickets(query: QuickActionTicketQuery) async -> QuickActionTicketProviderFetchOutcome {
-        let auth = await IntegrationTestSupport.run(
-            command: binaryPath,
-            args: ["me"],
-            env: environment,
-            timeoutMs: 7_000
-        )
-
-        let authOutput = Self.sanitizedCLIOutput(auth.output)
-        guard auth.exit == 0 else {
-            return .connectRequired(message: authOutput.isEmpty
-                ? "Jira CLI is installed but not authenticated. Connect Jira in Integrations."
-                : authOutput)
-        }
-
-        let authenticatedUser = authOutput
-            .components(separatedBy: .newlines)
-            .first?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        var args = ["issue", "list", "--plain", "--columns", "key,summary,status", "--no-headers"]
-        if query.assignedToCurrentUserOnly {
-            let assignee = authenticatedUser ?? environment["JIRA_LOGIN"] ?? ""
-            if !assignee.isEmpty {
-                args.append(contentsOf: ["--assignee", assignee])
-            }
-        }
-
-        let result = await IntegrationTestSupport.run(
-            command: binaryPath,
-            args: args,
-            env: environment,
-            timeoutMs: 15_000
-        )
-        let output = Self.sanitizedCLIOutput(result.output)
-        guard result.exit == 0 else {
-            if Self.isEmptyResultMessage(output) {
-                return .ready(QuickActionTicketProviderResult(
-                    authenticatedUser: authenticatedUser,
-                    tickets: []
-                ))
-            }
-            return .failed(message: output.isEmpty
-                ? "Could not load tickets."
-                : output)
-        }
-
-        return .ready(QuickActionTicketProviderResult(
-            authenticatedUser: authenticatedUser,
-            tickets: Self.parseTickets(output)
-        ))
-    }
-
-    private static func parseTickets(_ output: String) -> [QuickActionTicketItem] {
-        output
-            .split(whereSeparator: \.isNewline)
-            .compactMap { rawLine in
-                let parts = rawLine.split(separator: "\t", omittingEmptySubsequences: false)
-                    .map(String.init)
-                guard parts.count >= 3 else { return nil }
-                let key = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
-                let status = parts.last?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                let title = parts.dropFirst().dropLast().joined(separator: " ")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !key.isEmpty else { return nil }
-                return QuickActionTicketItem(
-                    id: key,
-                    key: key,
-                    title: title.isEmpty ? key : title,
-                    status: status,
-                    branchSuggestion: key
-                )
-            }
-    }
-
-    private static func sanitizedCLIOutput(_ output: String) -> String {
-        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "" }
-        let pattern = #"(?:\u{001B})?\[[0-9;]*m"#
-        let cleaned = trimmed.replacingOccurrences(
-            of: pattern,
-            with: "",
-            options: .regularExpression
-        )
-        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private static func isEmptyResultMessage(_ output: String) -> Bool {
-        output.localizedCaseInsensitiveContains("No result found")
-            || output.localizedCaseInsensitiveContains("No results found")
-    }
-}
-
-@MainActor
-private enum QuickActionTicketProviderResolver {
-    static func resolve(activeProjectRootURL: URL?) -> QuickActionTicketProviderResolution {
-        let store = IntegrationsStore.shared
-        store.setActiveProjectRoot(activeProjectRootURL)
-
-        if let binaryPath = resolveJiraBinaryPath(),
-           let provider = makeJiraProvider(binaryPath: binaryPath) {
-            return .available(provider)
-        }
-
-        let hasAtlassianMCP = store.item(id: IntegrationItem.makeId(kind: .mcp, name: "atlassian")) != nil
-        return .unavailable(message: hasAtlassianMCP
-            ? "Atlassian MCP connected, but direct ticket selection needs authenticated `jira` CLI."
-            : "No ticket provider is connected for direct ticket selection. Connect `jira` in Integrations.")
-    }
-
-    private static func makeJiraProvider(binaryPath: String) -> JiraCLITicketProvider? {
-        let nonSecrets = IntegrationConfigStore.shared.loadNonSecrets()["cli.jira"] ?? [:]
-        var env: [String: String] = [:]
-        if let server = nonSecrets["server"], !server.isEmpty {
-            env["JIRA_SERVER"] = server
-        }
-        if let login = nonSecrets["login"], !login.isEmpty {
-            env["JIRA_LOGIN"] = login
-        }
-        if let authType = nonSecrets["authType"], !authType.isEmpty {
-            env["JIRA_AUTH_TYPE"] = authType
-        }
-        if let token = IntegrationConfigStore.shared.loadSecret(
-            presetId: "cli.jira",
-            key: "apiToken"
-        ), !token.isEmpty {
-            env["JIRA_API_TOKEN"] = token
-        }
-        return JiraCLITicketProvider(binaryPath: binaryPath, environment: env)
-    }
-
-    private static func resolveJiraBinaryPath() -> String? {
-        if let item = IntegrationsStore.shared.item(id: IntegrationItem.makeId(kind: .cli, name: "jira")),
-           let binaryPath = item.binaryPath,
-           !binaryPath.isEmpty {
-            return binaryPath
-        }
-        return CLIDiscovery.findBinary(
-            name: "jira",
-            in: CLIDiscovery.pathDirectories()
-        )?.path
-    }
 }
 
 /// How a quick-action run should be dispatched.
@@ -385,15 +184,7 @@ final class QuickActionViewModel: ObservableObject {
     @Published var selectedPromptDocumentId: String?
     @Published var selectedSystemPromptDocumentId: String?
     @Published var advancedTitle: String = ""
-    @Published var ticketSearchText: String = ""
-    @Published var ticketAssignedToMeOnly: Bool = false
-    @Published var selectedTicketID: String?
-
-    @Published private(set) var ticketItems: [QuickActionTicketItem] = []
-    @Published private(set) var ticketState: QuickActionTicketState = .idle
-    @Published private(set) var ticketAuthenticatedUser: String?
-    @Published private(set) var ticketProviderName: String?
-    @Published private(set) var ticketCapabilities: QuickActionTicketCapabilities = .none
+    @Published var worktreeBranchName: String = ""
 
     @Published private(set) var didRestoreFromMemory: Bool = false
     @Published private(set) var worktreeIntent: QuickActionWorktreeIntent = .createWorkspace
@@ -413,7 +204,6 @@ final class QuickActionViewModel: ObservableObject {
         let terminalAgentId: String?
         let placementOverride: NewWorkspacePlacement?
         let suggestedBranchName: String?
-        let assignedTicket: WorkspaceMetadataStore.AssignedTicket?
     }
 
     private let templateStore: AgentTemplateStore
@@ -421,7 +211,6 @@ final class QuickActionViewModel: ObservableObject {
     private let lru: QuickActionLRUStore
     private let launcher: QuickActionLauncher
     private var cancellables: Set<AnyCancellable> = []
-    private var ticketLoadTask: Task<Void, Never>?
     private var presentedLaunchSource: AgentInvocationSource?
     private var presentedReasonTag: String?
     private var launchPrefillContext: LaunchPrefillContext?
@@ -495,6 +284,10 @@ final class QuickActionViewModel: ObservableObject {
             .removeDuplicates(by: ==)
             .sink { [weak self] _ in self?.refreshPreview() }
             .store(in: &cancellables)
+        $worktreeBranchName
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.refreshPreview() }
+            .store(in: &cancellables)
         $selectedPromptDocumentId
             .removeDuplicates()
             .sink { [weak self] _ in self?.refreshPreview() }
@@ -538,20 +331,13 @@ final class QuickActionViewModel: ObservableObject {
         self.worktreeIntent = worktreeIntent
         composition = .freePrompt(resolvedTemplateId: resolvedFreePromptTemplateId())
         syncDocumentSelectionsToComposition()
-        ticketSearchText = ""
-        ticketAssignedToMeOnly = false
-        selectedTicketID = nil
-        ticketItems = []
-        ticketState = .idle
-        ticketAuthenticatedUser = nil
-        ticketProviderName = nil
-        ticketCapabilities = .none
 
         let mem = lru.freePromptAdvancedMemory()
         advancedRunMode = QuickActionRunMode(rawValue: lru.lastRunMode() ?? "") ?? .terminal
         advancedTerminalAgentId = lru.lastTerminalAgentId() ?? "claude"
         applyAdvancedMemory(mem)
         advancedTitle = ""
+        worktreeBranchName = ""
         didRestoreFromMemory = mem != nil || lru.lastRunMode() != nil
         isSubmitting = false
         presentedLaunchSource = nil
@@ -572,19 +358,10 @@ final class QuickActionViewModel: ObservableObject {
         errorMessage = nil
         advancedVariableValues = [:]
         advancedTitle = ""
+        worktreeBranchName = ""
         advancedReasoning = .default
         isSubmitting = false
         worktreeIntent = .createWorkspace
-        ticketLoadTask?.cancel()
-        ticketLoadTask = nil
-        ticketSearchText = ""
-        ticketAssignedToMeOnly = false
-        selectedTicketID = nil
-        ticketItems = []
-        ticketState = .idle
-        ticketAuthenticatedUser = nil
-        ticketProviderName = nil
-        ticketCapabilities = .none
         presentedLaunchSource = nil
         presentedReasonTag = nil
         launchPrefillContext = nil
@@ -611,6 +388,7 @@ final class QuickActionViewModel: ObservableObject {
         if let advancedTitle = prefill.advancedTitle {
             self.advancedTitle = advancedTitle
         }
+        worktreeBranchName = prefill.suggestedBranchName ?? ""
         if let advancedTerminalAgentId = prefill.advancedTerminalAgentId {
             self.advancedTerminalAgentId = advancedTerminalAgentId
         }
@@ -642,8 +420,7 @@ final class QuickActionViewModel: ObservableObject {
                 projectId: projectId,
                 terminalAgentId: prefill.advancedTerminalAgentId,
                 placementOverride: prefill.placementOverride,
-                suggestedBranchName: prefill.suggestedBranchName,
-                assignedTicket: prefill.assignedTicket
+                suggestedBranchName: prefill.suggestedBranchName
             )
         } else {
             launchPrefillContext = nil
@@ -899,45 +676,17 @@ final class QuickActionViewModel: ObservableObject {
             variableValues: advancedVariableValues,
             launchSource: .manualWorkspaceCreate,
             reasonTag: presentedReasonTag,
-            suggestedBranchName: launchPrefillContext?.suggestedBranchName,
-            assignedTicket: launchPrefillContext?.assignedTicket
-        )
-    }
-
-    func newTicketWorktreeRequest() throws -> NewWorkspaceWithWorktreeRequest {
-        let context = try newWorktreeContext()
-        return NewWorkspaceWithWorktreeRequest(
-            projectId: context.projectId,
-            terminalAgentId: context.terminalAgentId,
-            initialPrompt: resolvedWorktreeInitialPrompt(),
-            systemPrompt: resolvedWorktreeSystemPrompt(),
-            templateId: activeTemplate?.id,
-            promptDocumentIdOverride: promptDocumentOverrideForCurrentSelection(),
-            systemPromptDocumentIdOverride: systemPromptDocumentOverrideForCurrentSelection(),
-            permissionOverride: advancedPermission,
-            modelOverride: advancedModel,
-            reasoningOverride: advancedReasoning,
-            variableValues: advancedVariableValues,
-            launchSource: .manualWorkspaceCreate,
-            reasonTag: presentedReasonTag,
-            suggestedBranchName: selectedTicket?.branchSuggestion,
-            assignedTicket: selectedTicket.map {
-                WorkspaceMetadataStore.AssignedTicket(
-                    providerName: ticketProviderName ?? "Ticket",
-                    key: $0.key,
-                    title: $0.title
-                )
-            }
+            suggestedBranchName: resolvedSuggestedWorktreeBranchName()
         )
     }
 
     private func newWorktreeContext() throws -> NewWorktreeContext {
-        let defaultAgentId = resolvedDefaultTerminalAgentId()
+        let selectedAgentId = resolvedSelectedTerminalAgentId()
 
         if let launchPrefillContext {
             return NewWorktreeContext(
                 projectId: launchPrefillContext.projectId,
-                terminalAgentId: launchPrefillContext.terminalAgentId ?? defaultAgentId
+                terminalAgentId: selectedAgentId
             )
         }
 
@@ -947,8 +696,7 @@ final class QuickActionViewModel: ObservableObject {
             if let projectId = meta.projectId ?? workspace.projectId {
                 return NewWorktreeContext(
                     projectId: projectId,
-                    terminalAgentId: TerminalAgentResolver.resolve(workspaceId: wsId)?.id
-                        ?? defaultAgentId
+                    terminalAgentId: selectedAgentId
                 )
             }
         }
@@ -958,13 +706,18 @@ final class QuickActionViewModel: ObservableObject {
         }
         return NewWorktreeContext(
             projectId: projectId,
-            terminalAgentId: defaultAgentId
+            terminalAgentId: selectedAgentId
         )
     }
 
     private func resolvedWorktreeInitialPrompt() -> String? {
         let trimmed = promptText.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : promptText
+    }
+
+    private func resolvedSuggestedWorktreeBranchName() -> String? {
+        let trimmed = worktreeBranchName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? launchPrefillContext?.suggestedBranchName : worktreeBranchName
     }
 
     private func resolvedWorktreeSystemPrompt() -> String? {
@@ -978,6 +731,13 @@ final class QuickActionViewModel: ObservableObject {
         let defaultId = TermLoopSettings.shared.defaultTerminalAgentId
         return AgentCatalogStore.shared.agent(id: defaultId)?.id
             ?? AgentCatalogStore.shared.agents.first?.id
+    }
+
+    private func resolvedSelectedTerminalAgentId() -> String? {
+        if AgentCatalogStore.shared.agent(id: advancedTerminalAgentId) != nil {
+            return advancedTerminalAgentId
+        }
+        return resolvedDefaultTerminalAgentId()
     }
 
     private func launchTerminal(request: AgentInvocationRequest) throws {
@@ -1088,6 +848,10 @@ final class QuickActionViewModel: ObservableObject {
             }
             lru.setFreePromptAdvanced(mem)
         }
+    }
+
+    func recordSuccessfulWorktreeCreate() {
+        persistLRUOnSuccess()
     }
 
     func terminalWorkspaceTitle(
@@ -1415,7 +1179,9 @@ final class QuickActionViewModel: ObservableObject {
     }
 
     var shouldShowRunCompositionSummary: Bool {
-        activeSurface == .run && (promptInputStatus.hasValue || systemInputStatus.hasValue)
+        let supportsSummary = activeSurface == .run
+            || (activeSurface == .worktree && worktreeIntent == .createWorkspace)
+        return supportsSummary && (promptInputStatus.hasValue || systemInputStatus.hasValue)
     }
 
     var canSubmitCurrentPrompt: Bool {
@@ -1424,6 +1190,33 @@ final class QuickActionViewModel: ObservableObject {
     }
 
     // MARK: Preview
+
+    private func resolvedWorktreePreviewContext() -> QuickActionRunResolver.ResolvedContext? {
+        guard activeSurface == .worktree,
+              worktreeIntent == .createWorkspace else {
+            return nil
+        }
+        let branch = worktreeBranchName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !branch.isEmpty,
+              let projectId = resolvedLaunchProjectId,
+              let project = ProjectStore.shared.project(id: projectId) else {
+            return nil
+        }
+        let projectPath = (project.folderPath as NSString).expandingTildeInPath
+        guard let worktreePath = WorktreeResolver.path(
+            projectFolder: projectPath,
+            branch: branch
+        ) else {
+            return nil
+        }
+        return QuickActionRunResolver.ResolvedContext(
+            workspaceId: nil,
+            projectId: projectId,
+            workspaceCwd: URL(fileURLWithPath: worktreePath),
+            branchName: branch,
+            repoRootPath: projectPath
+        )
+    }
 
     func refreshPreview() {
         guard let agent = AgentCatalogStore.shared.agent(id: advancedTerminalAgentId)
@@ -1440,6 +1233,7 @@ final class QuickActionViewModel: ObservableObject {
         }()
         let promptDocumentIdOverride = promptDocumentOverrideForCurrentSelection()
         let systemPromptDocumentIdOverride = systemPromptDocumentOverrideForCurrentSelection()
+        let worktreePreviewContext = resolvedWorktreePreviewContext()
 
         switch composition {
         case .template(let id):
@@ -1447,29 +1241,63 @@ final class QuickActionViewModel: ObservableObject {
                 preview.setPlan(nil)
                 return
             }
-            request = try? QuickActionRunResolver.resolvePreview(
-                template: tpl,
-                targetWorkspaceId: targetWorkspaceId,
-                agentId: agent.id,
-                promptOverride: trimmedPrompt.isEmpty ? nil : promptText,
-                promptDocumentIdOverride: promptDocumentIdOverride,
-                permissionOverride: advancedPermission,
-                variableOverrides: advancedVariableValues,
-                source: source,
-                modelOverride: advancedModel,
-                reasoningOverride: advancedReasoning,
-                systemPromptOverride: effectiveSystemPrompt,
-                systemPromptDocumentIdOverride: systemPromptDocumentIdOverride,
-                reasonTag: presentedReasonTag,
-                projectId: resolvedLaunchProjectId
-            )
+            if let worktreePreviewContext {
+                request = try? QuickActionRunResolver.resolve(
+                    template: tpl,
+                    context: worktreePreviewContext,
+                    agentId: agent.id,
+                    promptOverride: trimmedPrompt.isEmpty ? nil : promptText,
+                    promptDocumentIdOverride: promptDocumentIdOverride,
+                    permissionOverride: advancedPermission,
+                    variableOverrides: advancedVariableValues,
+                    source: source,
+                    modelOverride: advancedModel,
+                    reasoningOverride: advancedReasoning,
+                    systemPromptOverride: effectiveSystemPrompt,
+                    systemPromptDocumentIdOverride: systemPromptDocumentIdOverride,
+                    reasonTag: presentedReasonTag
+                )
+            } else {
+                request = try? QuickActionRunResolver.resolvePreview(
+                    template: tpl,
+                    targetWorkspaceId: targetWorkspaceId,
+                    agentId: agent.id,
+                    promptOverride: trimmedPrompt.isEmpty ? nil : promptText,
+                    promptDocumentIdOverride: promptDocumentIdOverride,
+                    permissionOverride: advancedPermission,
+                    variableOverrides: advancedVariableValues,
+                    source: source,
+                    modelOverride: advancedModel,
+                    reasoningOverride: advancedReasoning,
+                    systemPromptOverride: effectiveSystemPrompt,
+                    systemPromptDocumentIdOverride: systemPromptDocumentIdOverride,
+                    reasonTag: presentedReasonTag,
+                    projectId: resolvedLaunchProjectId
+                )
+            }
         case .freePrompt(let resolvedId):
             guard let id = resolvedId,
                   let tpl = templateStore.template(id: id) else {
                 preview.setPlan(nil)
                 return
             }
-            if targetWorkspaceId == nil {
+            if let worktreePreviewContext {
+                request = try? QuickActionRunResolver.resolve(
+                    template: tpl,
+                    context: worktreePreviewContext,
+                    agentId: agent.id,
+                    promptOverride: trimmedPrompt.isEmpty ? nil : promptText,
+                    promptDocumentIdOverride: promptDocumentIdOverride,
+                    permissionOverride: advancedPermission,
+                    variableOverrides: advancedVariableValues,
+                    source: source,
+                    modelOverride: advancedModel,
+                    reasoningOverride: advancedReasoning,
+                    systemPromptOverride: effectiveSystemPrompt,
+                    systemPromptDocumentIdOverride: systemPromptDocumentIdOverride,
+                    reasonTag: presentedReasonTag
+                )
+            } else if targetWorkspaceId == nil {
                 if let projectId = resolvedLaunchProjectId,
                    let project = ProjectStore.shared.project(id: projectId) {
                     let expanded = (project.folderPath as NSString).expandingTildeInPath
@@ -1599,6 +1427,9 @@ final class QuickActionViewModel: ObservableObject {
     }
 
     func resolvedRunCwdForPreview() -> String? {
+        if let worktreeContext = resolvedWorktreePreviewContext() {
+            return worktreeContext.workspaceCwd?.path
+        }
         let key = RunCwdCacheKey(
             targetWorkspaceId: targetWorkspaceId,
             prefillProjectId: launchPrefillContext?.projectId,
@@ -1625,6 +1456,12 @@ final class QuickActionViewModel: ObservableObject {
     }
 
     func resolvedProjectFolderForPreview() -> String? {
+        if activeSurface == .worktree,
+           worktreeIntent == .createWorkspace,
+           let projectId = resolvedLaunchProjectId,
+           let project = ProjectStore.shared.project(id: projectId) {
+            return project.folderPath
+        }
         if let wsId = targetWorkspaceId {
             return ProjectInstructionStore.resolvedProjectFolderPath(
                 forWorkspaceId: wsId,
@@ -1635,6 +1472,10 @@ final class QuickActionViewModel: ObservableObject {
     }
 
     func resolvedBranchForPreview() -> String? {
+        if activeSurface == .worktree, worktreeIntent == .createWorkspace {
+            let branch = worktreeBranchName.trimmingCharacters(in: .whitespacesAndNewlines)
+            return branch.isEmpty ? nil : branch
+        }
         guard let wsId = targetWorkspaceId,
               let ws = AppDelegate.shared?.workspaceFor(tabId: wsId) else { return nil }
         return WorkspaceMetadataStore.shared.branch(for: ws)
@@ -1723,107 +1564,4 @@ final class QuickActionViewModel: ObservableObject {
         refreshPreview()
     }
 
-    // MARK: Tickets
-
-    var filteredTicketItems: [QuickActionTicketItem] {
-        let trimmed = ticketSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return ticketItems }
-        return ticketItems.filter {
-            $0.key.localizedCaseInsensitiveContains(trimmed)
-                || $0.title.localizedCaseInsensitiveContains(trimmed)
-                || $0.status.localizedCaseInsensitiveContains(trimmed)
-        }
-    }
-
-    var selectedTicket: QuickActionTicketItem? {
-        guard let selectedTicketID else { return nil }
-        return ticketItems.first { $0.id == selectedTicketID }
-    }
-
-    func selectTicket(_ ticket: QuickActionTicketItem) {
-        selectedTicketID = ticket.id
-    }
-
-    func maybePrepareTickets() {
-        guard activeSurface == .ticket else { return }
-        if case .idle = ticketState {
-            refreshTickets()
-        }
-    }
-
-    func refreshTickets(force: Bool = false) {
-        guard activeSurface == .ticket else { return }
-        if !force {
-            switch ticketState {
-            case .loading, .ready:
-                return
-            case .idle, .connectRequired, .failed:
-                break
-            }
-        }
-
-        ticketLoadTask?.cancel()
-        ticketLoadTask = Task { [weak self] in
-            await self?.loadTickets()
-        }
-    }
-
-    func setTicketAssignedToMeOnly(_ enabled: Bool) {
-        guard ticketAssignedToMeOnly != enabled else { return }
-        ticketAssignedToMeOnly = enabled
-        refreshTickets(force: true)
-    }
-
-    private func loadTickets() async {
-        ticketState = .loading
-
-        switch QuickActionTicketProviderResolver.resolve(activeProjectRootURL: activeProjectRootURL()) {
-        case .unavailable(let message):
-            ticketItems = []
-            selectedTicketID = nil
-            ticketAuthenticatedUser = nil
-            ticketProviderName = nil
-            ticketCapabilities = .none
-            ticketState = .connectRequired(message: message)
-
-        case .available(let provider):
-            ticketProviderName = provider.displayName
-            ticketCapabilities = provider.capabilities
-
-            let outcome = await provider.fetchTickets(
-                query: QuickActionTicketQuery(assignedToCurrentUserOnly: ticketAssignedToMeOnly)
-            )
-            if Task.isCancelled { return }
-
-            switch outcome {
-            case .connectRequired(let message):
-                ticketItems = []
-                selectedTicketID = nil
-                ticketAuthenticatedUser = nil
-                ticketState = .connectRequired(message: message)
-
-            case .failed(let message):
-                ticketItems = []
-                selectedTicketID = nil
-                ticketAuthenticatedUser = nil
-                ticketState = .failed(message: message)
-
-            case .ready(let result):
-                ticketAuthenticatedUser = result.authenticatedUser
-                ticketItems = result.tickets
-                if let selectedTicketID,
-                   result.tickets.contains(where: { $0.id == selectedTicketID }) {
-                    self.selectedTicketID = selectedTicketID
-                } else {
-                    self.selectedTicketID = result.tickets.first?.id
-                }
-                ticketState = .ready
-            }
-        }
-    }
-
-    private func activeProjectRootURL() -> URL? {
-        guard let active = ProjectStore.shared.activeProject else { return nil }
-        return URL(fileURLWithPath: (active.folderPath as NSString).expandingTildeInPath, isDirectory: true)
-    }
 }

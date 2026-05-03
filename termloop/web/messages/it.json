@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "cmux — Il terminale progettato per il multitasking",
+    "title": "TermLoop — Il terminale progettato per il multitasking",
     "description": "Terminale macOS nativo basato su Ghostty. Funziona con Claude Code, Codex, OpenCode, Gemini CLI, Kiro, Aider e qualsiasi strumento CLI. Tab verticali, anelli di notifica, pannelli divisi e un API socket.",
     "ogDescription": "Terminale macOS nativo per agenti di codice IA. Funziona con Claude Code, Codex, OpenCode, Gemini CLI, Kiro, Aider e qualsiasi strumento CLI."
   },
@@ -34,12 +34,13 @@
     "terms": "Termini",
     "eula": "EULA",
     "github": "GitHub",
-    "twitter": "X / Twitter",
-    "discord": "Discord",
+    "twitter": "Repository",
+    "discord": "Discussions",
     "contact": "Contatti",
     "nightly": "Nightly",
-    "copyright": "© {year} Manaflow",
-    "language": "Lingua"
+    "copyright": "© {year} TermLoop",
+    "language": "Lingua",
+    "discussions": "Discussions"
   },
   "home": {
     "taglinePrefix": "Il terminale progettato per ",
@@ -68,71 +69,77 @@
       "keyboardShortcutsDesc": ": <link>scorciatoie complete</link> per workspace, divisioni, browser e altro"
     },
     "faqGhosttyQ": "Qual è il rapporto tra termloop e Ghostty?",
-    "faqGhosttyA": "cmux non è un fork di Ghostty. Utilizza <link>libghostty</link> come libreria per il rendering del terminale, allo stesso modo in cui le app usano WebKit per le viste web. Ghostty è un terminale autonomo; termloop è un'app diversa costruita sul suo motore di rendering.",
+    "faqGhosttyA": "TermLoop non è un fork di Ghostty. Utilizza <link>libghostty</link> come libreria per il rendering del terminale, allo stesso modo in cui le app usano WebKit per le viste web. Ghostty è un terminale autonomo; termloop è un'app diversa costruita sul suo motore di rendering.",
     "faqPlatformQ": "Quali piattaforme supporta?",
     "faqPlatformA": "Solo macOS, per ora. termloop è un'app nativa Swift + AppKit.",
-    "faqAgentsQ": "Con quali agenti di codice funziona cmux?",
+    "faqAgentsQ": "Con quali agenti di codice funziona TermLoop?",
     "faqAgentsA": "Tutti. termloop è un terminale, quindi qualsiasi agente che funziona in un terminale funziona immediatamente: Claude Code, Codex, OpenCode, Gemini CLI, Kiro, Aider, Goose, Amp, Cline, Cursor Agent, e qualsiasi altro strumento lanciabile dalla riga di comando.",
     "faqNotificationsQ": "Come funzionano le notifiche?",
-    "faqNotificationsA": "Quando un processo ha bisogno di attenzione, termloop mostra anelli di notifica attorno ai pannelli, badge non letti nella barra laterale, un popover di notifica e una notifica desktop macOS. Si attivano automaticamente tramite le sequenze di escape standard del terminale (OSC 9/99/777), oppure puoi attivarle con il <cliLink>CLI cmux</cliLink> e gli <hooksLink>hook di Claude Code</hooksLink>.",
+    "faqNotificationsA": "Quando un processo ha bisogno di attenzione, termloop mostra anelli di notifica attorno ai pannelli, badge non letti nella barra laterale, un popover di notifica e una notifica desktop macOS. Si attivano automaticamente tramite le sequenze di escape standard del terminale (OSC 9/99/777), oppure puoi attivarle con il <cliLink>CLI TermLoop</cliLink> e gli <hooksLink>hook di Claude Code</hooksLink>.",
     "faqShortcutsQ": "Posso personalizzare le scorciatoie da tastiera?",
     "faqShortcutsA": "Le combinazioni di tasti del terminale sono lette dal file di configurazione Ghostty (<configPath>~/.config/ghostty/config</configPath>). Le scorciatoie specifiche di termloop (workspace, divisioni, browser, notifiche) possono essere personalizzate nelle Impostazioni. Vedi le <link>scorciatoie predefinite</link> per l'elenco completo.",
     "faqTmuxQ": "Come si confronta con tmux?",
     "faqTmuxA": "tmux è un multiplexer di terminali che funziona all'interno di qualsiasi terminale. termloop è un'app macOS nativa con interfaccia grafica: tab verticali, pannelli divisi, browser integrato e API socket sono tutti integrati. Nessun file di configurazione o tasti prefisso necessari.",
-    "faqFreeQ": "cmux è gratuito?",
+    "faqFreeQ": "TermLoop è gratuito?",
     "faqFreeA": "Sì, termloop è gratuito. Il codice sorgente è disponibile su <link>GitHub</link>."
   },
   "community": {
     "title": "Community",
     "description": "Connettiti con altri utenti termloop e il team che lo sviluppa.",
-    "discord": "Discord",
-    "discordAction": "Unisciti al nostro Discord",
-    "discordDesc": "Chatta con la community, ottieni aiuto e condividi feedback",
+    "discord": "Discussions",
+    "discordAction": "Open discussions",
+    "discordDesc": "Ask questions, get help, and share feedback",
     "githubAction": "Vedi su GitHub",
     "githubDesc": "Metti una stella, segnala problemi e contribuisci",
-    "twitter": "Twitter",
-    "twitterAction": "Segui su X",
-    "twitterDesc": "Aggiornamenti, annunci e suggerimenti",
+    "twitter": "Repository",
+    "twitterAction": "View repository",
+    "twitterDesc": "Browse source, releases, and project activity",
     "youtube": "YouTube",
     "youtubeAction": "Iscriviti",
     "youtubeDesc": "Demo, tutorial e guide",
     "linkedin": "LinkedIn",
     "linkedinAction": "Seguici",
     "linkedinDesc": "Notizie aziendali e aggiornamenti tecnici",
-    "metaTitle": "Community — cmux",
-    "metaDescription": "Unisciti alla community termloop su Discord, Twitter, GitHub e altro"
+    "metaTitle": "Community — TermLoop",
+    "metaDescription": "Join the TermLoop community on GitHub Discussions and GitHub.",
+    "discussions": "Discussions",
+    "discussionsAction": "Open discussions",
+    "discussionsDesc": "Ask questions, get help, and share feedback",
+    "repository": "Repository",
+    "repositoryAction": "View repository",
+    "repositoryDesc": "Browse source, releases, and project activity"
   },
   "blog": {
     "title": "Blog",
-    "layoutTitle": "cmux blog",
+    "layoutTitle": "TermLoop blog",
     "metaTitle": "Blog",
-    "metaDescription": "Notizie e aggiornamenti dal team cmux",
-    "description": "Notizie e aggiornamenti dal team cmux",
+    "metaDescription": "Notizie e aggiornamenti dal team TermLoop",
+    "description": "Notizie e aggiornamenti dal team TermLoop",
     "posts": {
       "cmdShiftU": {
         "title": "Cmd+Shift+U",
-        "summary": "Come Cmd+Shift+U permette di navigare tra gli agenti completati nei diversi workspace di cmux.",
+        "summary": "Come Cmd+Shift+U permette di navigare tra gli agenti completati nei diversi workspace di TermLoop.",
         "date": "4 marzo 2026",
         "p1": "La mia funzionalità preferita di termloop è Cmd+Shift+U. Ho 17 workspace aperti in questo momento, ognuno con un agente in esecuzione. Prima cliccavo tra i tab e il pannello notifiche per capire cosa fosse completato. Digitare è più veloce.",
         "p2": "Cmd+Shift+U salta alla <link>notifica</link> non letta più recente. In pratica significa l'ultimo agente che ha terminato. Passa al workspace giusto, mette a fuoco il pannello esatto, lo fa lampeggiare per mostrarti dove guardare e lo segna come letto. Se la notifica proviene da un'altra finestra, quella finestra viene portata in primo piano."
       },
       "zenOfCmux": {
-        "title": "La filosofia di cmux",
-        "summary": "cmux è un elemento base, non una soluzione. Ti dà pezzi componibili e il tuo workflow è una tua scelta.",
+        "title": "La filosofia di TermLoop",
+        "summary": "TermLoop è un elemento base, non una soluzione. Ti dà pezzi componibili e il tuo workflow è una tua scelta.",
         "date": "27 febbraio 2026",
-        "p1": "cmux non prescrive ai developer come usare i propri strumenti. È un terminale e un browser con un CLI, il resto dipende da te.",
-        "p2": "cmux è un elemento base, non una soluzione. Ti dà un terminale, un browser, notifiche, workspace, divisioni, tab e un CLI per controllare tutto. termloop non ti obbliga a usare gli agenti di codice in un modo specifico. Quello che costruisci con questi elementi è tuo.",
+        "p1": "TermLoop non prescrive ai developer come usare i propri strumenti. È un terminale e un browser con un CLI, il resto dipende da te.",
+        "p2": "TermLoop è un elemento base, non una soluzione. Ti dà un terminale, un browser, notifiche, workspace, divisioni, tab e un CLI per controllare tutto. termloop non ti obbliga a usare gli agenti di codice in un modo specifico. Quello che costruisci con questi elementi è tuo.",
         "p3": "I migliori developer hanno sempre costruito i propri strumenti. Nessuno ha ancora trovato il modo migliore per lavorare con gli agenti, e i team che costruiscono prodotti chiusi sicuramente nemmeno. I developer più vicini alle proprie codebase lo troveranno per primi.",
         "p4": "Dai a un milione di developer elementi componibili e troveranno collettivamente i workflow più efficienti più velocemente di qualsiasi team di prodotto potrebbe progettare dall'alto."
       },
       "showHnLaunch": {
         "title": "Lancio di termloop su Show HN",
-        "summary": "cmux ha raggiunto il 2° posto su Hacker News, è stato condiviso da Mitchell Hashimoto ed è diventato virale in Giappone.",
+        "summary": "TermLoop ha raggiunto il 2° posto su Hacker News, è stato condiviso da Mitchell Hashimoto ed è diventato virale in Giappone.",
         "date": "21 febbraio 2026",
         "intro": "Abbiamo pubblicato termloop su <link>Show HN</link> il 19 febbraio:",
         "blockquote1": "Eseguo molte sessioni Claude Code e Codex in parallelo. Usavo Ghostty con diversi pannelli divisi, affidandomi alle notifiche native di macOS per sapere quando un agente aveva bisogno di me. Ma il corpo della notifica di Claude Code dice sempre solo \"Claude is waiting for your input\" senza contesto, e con abbastanza tab aperti, non riuscivo nemmeno più a leggere i titoli.",
         "blockquote2": "Ho provato alcuni orchestratori di codice ma la maggior parte erano app Electron/Tauri e le prestazioni mi infastidivano. Preferisco anche semplicemente il terminale, dato che gli orchestratori GUI ti vincolano al loro workflow. Quindi ho costruito termloop come app macOS nativa in Swift/AppKit. Usa libghostty per il rendering del terminale e legge la tua configurazione Ghostty esistente per temi, font, colori e altro.",
-        "blockquote3": "Le principali aggiunte sono la barra laterale e il sistema di notifiche. La barra laterale ha tab verticali che mostrano il branch git, la directory di lavoro, le porte in ascolto e l'ultimo testo di notifica per ogni workspace. Il sistema di notifiche cattura le sequenze del terminale (OSC 9/99/777) e ha un CLI (cmux notify) che puoi collegare agli hook degli agenti per Claude Code, OpenCode, ecc. Quando un agente è in attesa, il suo pannello riceve un anello blu e il tab si illumina nella barra laterale, così posso vedere quale ha bisogno di me tra divisioni e tab. Cmd+Shift+U salta al più recente non letto.",
+        "blockquote3": "Le principali aggiunte sono la barra laterale e il sistema di notifiche. La barra laterale ha tab verticali che mostrano il branch git, la directory di lavoro, le porte in ascolto e l'ultimo testo di notifica per ogni workspace. Il sistema di notifiche cattura le sequenze del terminale (OSC 9/99/777) e ha un CLI (termloop notify) che puoi collegare agli hook degli agenti per Claude Code, OpenCode, ecc. Quando un agente è in attesa, il suo pannello riceve un anello blu e il tab si illumina nella barra laterale, così posso vedere quale ha bisogno di me tra divisioni e tab. Cmd+Shift+U salta al più recente non letto.",
         "blockquote4": "Il browser integrato ha un'API scriptable. Gli agenti possono catturare l'albero di accessibilità, ottenere riferimenti agli elementi, cliccare, compilare form, eseguire JS e leggere i log della console. Puoi dividere un pannello browser accanto al terminale e far interagire Claude Code direttamente con il tuo server di sviluppo.",
         "blockquote5": "Tutto è scriptable tramite il CLI e l'API socket: creare workspace/tab, dividere pannelli, inviare sequenze di tasti, aprire URL nel browser.",
         "hitNumber2": "Al picco ha raggiunto il 2° posto su Hacker News. Mitchell Hashimoto lo ha condiviso:",
@@ -140,16 +147,16 @@
         "viralJapan": "Sorprendentemente, termloop è diventato virale in Giappone:",
         "translation": "Traduzione: \"Sembra buono. Un'app terminale basata su Ghostty progettata per non perdersi quando si eseguono più CLI come Claude Code in parallelo. Il pannello in attesa di input riceve una cornice blu, e ha il proprio sistema di notifiche.\"",
         "viralChina": "E semi-virale in Cina:",
-        "extensions": "Un'altra cosa entusiasmante è stata vedere persone costruire sopra il CLI cmux. sasha ha creato un'estensione pi-cmux che mostra info sul modello, utilizzo dei token e stato dell'agente nella barra laterale:",
+        "extensions": "Un'altra cosa entusiasmante è stata vedere persone costruire sopra il CLI TermLoop. sasha ha creato un'estensione pi-cmux che mostra info sul modello, utilizzo dei token e stato dell'agente nella barra laterale:",
         "scriptable": "Tutto in termloop è scriptable tramite il CLI: creare workspace, inviare sequenze di tasti, controllare il browser, leggere le notifiche. Parte della filosofia di termloop è essere programmabile e componibile, così le persone possono personalizzare il modo in cui lavorano con gli agenti di codice. Lo stato dell'arte degli agenti di codice sta cambiando rapidamente, e non vuoi essere vincolato a un orchestratore GUI rigido che non riesce a stare al passo.",
-        "cta": "Se stai eseguendo più agenti di codice, <link>prova cmux</link>."
+        "cta": "Se stai eseguendo più agenti di codice, <link>prova TermLoop</link>."
       },
       "introducingCmux": {
-        "title": "Presentazione di cmux",
+        "title": "Presentazione di TermLoop",
         "summary": "Un terminale macOS nativo basato su Ghostty, progettato per eseguire più agenti di codice IA fianco a fianco.",
         "date": "12 febbraio 2026",
-        "p1": "cmux è un'applicazione terminale macOS nativa costruita su Ghostty, progettata fin dall'inizio per i developer che eseguono più agenti di codice IA simultaneamente.",
-        "whyTitle": "Perché cmux?",
+        "p1": "TermLoop è un'applicazione terminale macOS nativa costruita su Ghostty, progettata fin dall'inizio per i developer che eseguono più agenti di codice IA simultaneamente.",
+        "whyTitle": "Perché TermLoop?",
         "whyP": "I workflow di sviluppo moderni spesso richiedono l'esecuzione di più agenti contemporaneamente. Claude Code, Codex e altri strumenti, ognuno nel proprio terminale. Tenere traccia di quali hanno bisogno di attenzione e passare rapidamente dall'uno all'altro è il problema che termloop risolve.",
         "featuresTitle": "Funzionalità principali",
         "getStartedTitle": "Per iniziare",
@@ -167,28 +174,28 @@
       }
     },
     "zenOfCmux": {
-      "metaTitle": "Lo Zen di cmux",
-      "metaDescription": "cmux è una primitiva, non una soluzione. Ti dà pezzi componibili e il tuo workflow dipende da te."
+      "metaTitle": "Lo Zen di TermLoop",
+      "metaDescription": "TermLoop è una primitiva, non una soluzione. Ti dà pezzi componibili e il tuo workflow dipende da te."
     },
     "cmdShiftU": {
       "metaTitle": "Cmd+Shift+U",
-      "metaDescription": "La nuova scorciatoia da tastiera che cambia il modo di interagire con cmux."
+      "metaDescription": "La nuova scorciatoia da tastiera che cambia il modo di interagire con TermLoop."
     },
     "showHnLaunch": {
       "metaTitle": "Lancio di termloop su Show HN",
       "metaDescription": "La storia del lancio di termloop su Hacker News."
     },
     "introducingCmux": {
-      "metaTitle": "Presentiamo cmux",
-      "metaDescription": "Perché abbiamo costruito cmux, un nuovo terminale per macOS."
+      "metaTitle": "Presentiamo TermLoop",
+      "metaDescription": "Perché abbiamo costruito TermLoop, un nuovo terminale per macOS."
     }
   },
   "docs": {
-    "layoutTitle": "cmux docs",
+    "layoutTitle": "TermLoop docs",
     "gettingStarted": {
       "title": "Per iniziare",
-      "metaDescription": "Installa cmux, il terminale macOS nativo per agenti di codice IA. Homebrew, download DMG, configurazione CLI e aggiornamenti automatici tramite Sparkle.",
-      "intro": "cmux è un terminale macOS nativo e leggero basato su Ghostty per gestire più agenti di codice IA. Dispone di tab verticali, un pannello notifiche e un'API di controllo basata su socket.",
+      "metaDescription": "Installa TermLoop, il terminale macOS nativo per agenti di codice IA. Homebrew, download DMG, configurazione CLI e aggiornamenti automatici tramite Sparkle.",
+      "intro": "TermLoop è un terminale macOS nativo e leggero basato su Ghostty per gestire più agenti di codice IA. Dispone di tab verticali, un pannello notifiche e un'API di controllo basata su socket.",
       "install": "Installazione",
       "dmgRecommended": "DMG (consigliato)",
       "dmgDesc": "Apri il .dmg e trascina termloop nella cartella Applicazioni. termloop si aggiorna automaticamente tramite Sparkle, quindi devi scaricare solo una volta.",
@@ -201,17 +208,17 @@
       "verifyItem2": "Un workspace iniziale già aperto",
       "verifyItem3": "Il terminale Ghostty pronto per l'input",
       "cliSetup": "Configurazione del CLI",
-      "cliDesc": "cmux include uno strumento a riga di comando per l'automazione. Nei terminali termloop funziona automaticamente. Per usare il CLI al di fuori di cmux, crea un link simbolico:",
+      "cliDesc": "TermLoop include uno strumento a riga di comando per l'automazione. Nei terminali termloop funziona automaticamente. Per usare il CLI al di fuori di TermLoop, crea un link simbolico:",
       "cliThen": "Poi puoi eseguire comandi come:",
       "autoUpdates": "Aggiornamenti automatici",
-      "autoUpdatesDesc": "cmux verifica automaticamente gli aggiornamenti tramite Sparkle. Quando un aggiornamento è disponibile, vedrai una pillola di aggiornamento nella barra del titolo. Puoi anche controllare manualmente tramite termloop > Controlla aggiornamenti nella barra dei menu.",
+      "autoUpdatesDesc": "TermLoop verifica automaticamente gli aggiornamenti tramite Sparkle. Quando un aggiornamento è disponibile, vedrai una pillola di aggiornamento nella barra del titolo. Puoi anche controllare manualmente tramite termloop > Controlla aggiornamenti nella barra dei menu.",
       "sessionRestore": "Ripristino sessione (comportamento attuale)",
       "sessionRestoreDesc": "Dopo il riavvio, termloop ripristina solo il layout e i metadati:",
       "sessionItem1": "Layout di finestre, workspace e pannelli",
       "sessionItem2": "Directory di lavoro",
       "sessionItem3": "Cronologia del terminale (best effort)",
       "sessionItem4": "URL del browser e cronologia di navigazione",
-      "sessionCallout": "cmux non ripristina ancora lo stato dei processi attivi. Le sessioni di applicazioni terminale attive come Claude Code, tmux e vim non vengono riprese dopo il riavvio dell'app.",
+      "sessionCallout": "TermLoop non ripristina ancora lo stato dei processi attivi. Le sessioni di applicazioni terminale attive come Claude Code, tmux e vim non vengono riprese dopo il riavvio dell'app.",
       "requirements": "Requisiti",
       "reqItem1": "macOS 14.0 o successivo",
       "reqItem2": "Mac Apple Silicon o Intel",
@@ -220,7 +227,7 @@
     "concepts": {
       "title": "Concetti",
       "metaDescription": "Come termloop organizza i terminali: finestre, workspace, pannelli e superfici. La gerarchia dietro la barra laterale, le divisioni e l'API socket.",
-      "intro": "cmux organizza i tuoi terminali in una gerarchia a quattro livelli. Comprendere questi livelli aiuta nell'uso dell'API socket, del CLI e delle scorciatoie da tastiera.",
+      "intro": "TermLoop organizza i tuoi terminali in una gerarchia a quattro livelli. Comprendere questi livelli aiuta nell'uso dell'API socket, del CLI e delle scorciatoie da tastiera.",
       "hierarchy": "Gerarchia",
       "windowTitle": "Finestra",
       "windowDesc": "Una finestra macOS. Apri più finestre con {shortcut}. Ogni finestra ha la propria barra laterale con workspace indipendenti.",
@@ -272,9 +279,9 @@
     "configuration": {
       "title": "Configurazione",
       "metaDescription": "Configura termloop tramite i file di configurazione Ghostty. Font, tema, colori, stile dei pannelli divisi, cronologia e impostazioni dell'app per la modalità automazione.",
-      "intro": "cmux legge la configurazione dai file di configurazione Ghostty, offrendoti opzioni familiari se provieni da Ghostty.",
+      "intro": "TermLoop legge la configurazione dai file di configurazione Ghostty, offrendoti opzioni familiari se provieni da Ghostty.",
       "configLocations": "Posizione dei file di configurazione",
-      "configLocationsDesc": "cmux cerca la configurazione in queste posizioni (in ordine):",
+      "configLocationsDesc": "TermLoop cerca la configurazione in queste posizioni (in ordine):",
       "createConfig": "Crea il file di configurazione se non esiste:",
       "appearance": "Aspetto",
       "font": "Font",
@@ -292,12 +299,12 @@
       "automationMode": "Modalità automazione",
       "automationModeDesc": "Livello di accesso al socket di controllo:",
       "automationOff": "Disattivato: nessun accesso al socket (più sicuro)",
-      "automationCmux": "Solo processi cmux: solo i processi avviati nei terminali termloop possono connettersi",
+      "automationCmux": "Solo processi TermLoop: solo i processi avviati nei terminali termloop possono connettersi",
       "automationAll": "allowAll: consenti a qualsiasi processo locale di connettersi (TERMLOOP_SOCKET_MODE=allowAll, solo override tramite variabile d'ambiente)",
-      "automationCallout": "Su macchine condivise, considera l'uso della modalità \"Disattivato\" o \"Solo processi cmux\".",
+      "automationCallout": "Su macchine condivise, considera l'uso della modalità \"Disattivato\" o \"Solo processi TermLoop\".",
       "browserLinkBehavior": "Comportamento dei link del browser",
       "browserLinkDesc": "In Impostazioni > Browser, termloop espone due liste di host con scopi diversi:",
-      "browserHostsEmbed": "Host da aprire nel browser integrato: si applica ai link cliccati dall'output del terminale. Gli host in questa lista si aprono in cmux; gli altri host si aprono nel browser predefinito. Supporta un host o wildcard per riga (ad esempio: example.com, *.internal.example).",
+      "browserHostsEmbed": "Host da aprire nel browser integrato: si applica ai link cliccati dall'output del terminale. Gli host in questa lista si aprono in TermLoop; gli altri host si aprono nel browser predefinito. Supporta un host o wildcard per riga (ad esempio: example.com, *.internal.example).",
       "browserHostsHttp": "Host HTTP consentiti nel browser integrato: si applica solo agli URL HTTP (non-HTTPS). Gli host in questa lista possono aprirsi in termloop senza avviso. I valori predefiniti includono localhost, 127.0.0.1, ::1, 0.0.0.0 e *.localtest.me.",
       "exampleConfig": "Esempio di configurazione",
       "metaTitle": "Configurazione"
@@ -308,7 +315,7 @@
       "metaDescription": "Definisci comandi personalizzati e layout workspace in cmux.json. Configurazione per progetto e globale con monitoraggio in tempo reale dei file.",
       "intro": "Definisci comandi personalizzati e layout workspace aggiungendo un file cmux.json alla radice del progetto o ~/.config/termloop/. I comandi appaiono nella palette dei comandi.",
       "fileLocations": "Posizioni dei file",
-      "fileLocationsDesc": "cmux cerca la configurazione in due posti:",
+      "fileLocationsDesc": "TermLoop cerca la configurazione in due posti:",
       "localConfig": "Per progetto:",
       "localConfigDesc": "si trova nella directory del progetto, ha la precedenza",
       "globalConfig": "Globale:",
@@ -368,7 +375,7 @@
     },
     "keyboardShortcuts": {
       "title": "Scorciatoie da tastiera",
-      "description": "Tutte le scorciatoie da tastiera disponibili in cmux, raggruppate per categoria.",
+      "description": "Tutte le scorciatoie da tastiera disponibili in TermLoop, raggruppate per categoria.",
       "metaDescription": "Tutte le scorciatoie da tastiera termloop per workspace, superfici, pannelli divisi, browser, notifiche, ricerca e gestione delle finestre su macOS.",
       "searchPlaceholder": "Cerca scorciatoie...",
       "searchLabel": "Cerca scorciatoie da tastiera",
@@ -431,8 +438,8 @@
     },
     "api": {
       "title": "Riferimento API",
-      "metaDescription": "Riferimento API CLI e socket Unix di cmux. Gestione workspace, pannelli divisi, controllo input, notifiche, metadati della barra laterale, variabili d'ambiente e metodi di rilevamento.",
-      "intro": "cmux fornisce sia uno strumento CLI che un socket Unix per il controllo programmatico. Ogni comando è disponibile tramite entrambe le interfacce.",
+      "metaDescription": "Riferimento API CLI e socket Unix di TermLoop. Gestione workspace, pannelli divisi, controllo input, notifiche, metadati della barra laterale, variabili d'ambiente e metodi di rilevamento.",
+      "intro": "TermLoop fornisce sia uno strumento CLI che un socket Unix per il controllo programmatico. Ogni comando è disponibile tramite entrambe le interfacce.",
       "socket": "Socket",
       "buildHeader": "Build",
       "pathHeader": "Percorso",
@@ -451,7 +458,7 @@
       "cmuxOnlyEnable": "Modalità predefinita nell'interfaccia Impostazioni",
       "allowAllMode": "Consenti a qualsiasi processo locale di connettersi (nessun controllo di discendenza).",
       "allowAllEnable": "Solo override tramite variabile d'ambiente: TERMLOOP_SOCKET_MODE=allowAll",
-      "accessCallout": "Su macchine condivise, usa Disattivato o Solo processi cmux.",
+      "accessCallout": "Su macchine condivise, usa Disattivato o Solo processi TermLoop.",
       "cliOptions": "Opzioni del CLI",
       "flagHeader": "Flag",
       "customSocketPath": "Percorso socket personalizzato",
@@ -504,7 +511,7 @@
       "termProgramDesc": "Impostato a ghostty",
       "termDesc": "Impostato a xterm-ghostty",
       "envCallout": "I vecchi valori TERMLOOP_SOCKET_MODE full e notifications sono ancora accettati per compatibilità.",
-      "detectingCmux": "Rilevare cmux",
+      "detectingCmux": "Rilevare TermLoop",
       "examples": "Esempi",
       "pythonClient": "Client Python",
       "shellScript": "Script shell",
@@ -513,8 +520,8 @@
     },
     "notifications": {
       "title": "Notifiche",
-      "metaDescription": "Invia notifiche desktop da agenti IA e script in cmux. CLI, sequenze di escape OSC 99/777 e integrazione degli hook di Claude Code.",
-      "intro": "cmux supporta le notifiche desktop, permettendo agli agenti IA e agli script di avvisarti quando hanno bisogno di attenzione.",
+      "metaDescription": "Invia notifiche desktop da agenti IA e script in TermLoop. CLI, sequenze di escape OSC 99/777 e integrazione degli hook di Claude Code.",
+      "intro": "TermLoop supporta le notifiche desktop, permettendo agli agenti IA e agli script di avvisarti quando hanno bisogno di attenzione.",
       "lifecycle": "Ciclo di vita",
       "received": "Ricevuta: la notifica appare nel pannello, l'avviso desktop si attiva (se non soppresso)",
       "unread": "Non letta: badge mostrato sul tab del workspace",
@@ -550,9 +557,9 @@
       "cmpHigher": "Maggiore",
       "cmpLower": "Minore",
       "featureHeader": "Funzionalità",
-      "comparisonCallout": "Usa OSC 777 per notifiche semplici. Usa OSC 99 quando hai bisogno di sottotitoli o ID di notifica. Usa il CLI (cmux notify) per l'integrazione più semplice.",
+      "comparisonCallout": "Usa OSC 777 per notifiche semplici. Usa OSC 99 quando hai bisogno di sottotitoli o ID di notifica. Usa il CLI (termloop notify) per l'integrazione più semplice.",
       "claudeCodeHooks": "Hook di Claude Code",
-      "claudeCodeHooksDesc": "cmux si integra con <link>Claude Code</link> tramite hook per notificarti quando le attività sono completate.",
+      "claudeCodeHooksDesc": "TermLoop si integra con <link>Claude Code</link> tramite hook per notificarti quando le attività sono completate.",
       "createHookScript": "1. Crea lo script hook",
       "configureClaude": "2. Configura Claude Code",
       "restartNote": "Riavvia Claude Code per applicare gli hook.",
@@ -564,13 +571,13 @@
       "python": "Python",
       "nodejs": "Node.js",
       "tmuxPassthrough": "Passthrough tmux",
-      "tmuxDesc": "Se usi tmux all'interno di cmux, abilita il passthrough:",
+      "tmuxDesc": "Se usi tmux all'interno di TermLoop, abilita il passthrough:",
       "metaTitle": "Notifiche"
     },
     "browserAutomation": {
       "title": "Automazione del browser",
       "metaDescription": "Riferimento comandi browser termloop per navigazione, interazione DOM, attesa, ispezione, valutazione JavaScript, tab, dialoghi, frame, download e stato del browser.",
-      "intro": "Il gruppo di comandi termloop browser fornisce l'automazione del browser per le superfici browser di cmux. Usalo per navigare, interagire con gli elementi DOM, ispezionare lo stato della pagina, valutare JavaScript e gestire i dati di sessione del browser.",
+      "intro": "Il gruppo di comandi termloop browser fornisce l'automazione del browser per le superfici browser di TermLoop. Usalo per navigare, interagire con gli elementi DOM, ispezionare lo stato della pagina, valutare JavaScript e gestire i dati di sessione del browser.",
       "commandIndex": "Indice dei comandi",
       "categoryHeader": "Categoria",
       "subcommandsHeader": "Sottocomandi",
@@ -609,7 +616,7 @@
     },
     "changelog": {
       "title": "Changelog",
-      "metaDescription": "Note di rilascio e cronologia delle versioni di cmux. Nuove funzionalità, correzioni di bug e modifiche per il terminale macOS nativo.",
+      "metaDescription": "Note di rilascio e cronologia delle versioni di TermLoop. Nuove funzionalità, correzioni di bug e modifiche per il terminale macOS nativo.",
       "metaTitle": "Registro modifiche"
     },
     "navItems": {
@@ -636,35 +643,35 @@
   },
   "wallOfLove": {
     "title": "Wall of Love",
-    "description": "Cosa dicono le persone di cmux."
+    "description": "Cosa dicono le persone di TermLoop."
   },
   "testimonials": {
     "mitchellh": "Un altro giorno, un altro progetto basato su libghostty, questa volta un terminale macOS con tab verticali, migliore organizzazione/notifiche, browser integrato/scriptabile specificamente pensato per chi usa un sacco di workflow agentici da terminale.",
     "schrockn": "Questo è esattamente il prodotto che stavo cercando. Dopo due ore stamattina me ne sono innamorato.",
     "egrefen": "L'ho usato tutto il weekend ed è fantastico.",
     "max4c": "questo è stato il mio strumento preferito nelle ultime due settimane",
-    "asaza": "cmux è così bello che potrebbe essere finalmente il momento di dire addio a VSCode",
+    "asaza": "TermLoop è così bello che potrebbe essere finalmente il momento di dire addio a VSCode",
     "johnthedebs": "Hey, sembra davvero fantastico. Adoro le idee qui, in particolare: la programmabilità, l'interfaccia a livelli, il browser con API. Non vedo l'ora di provarlo. Voglio anche aggiungere che apprezzo molto Mitchell Hashimoto per aver creato libghostty; sembra un momento entusiasmante per essere un utente di terminale.",
     "joeriddles": "Tab verticali nel mio terminale! Non ci avevo mai pensato prima. Uso e adoro i tab verticali di Firefox.",
     "dchu17": "L'ho provato ed è stato abbastanza intuitivo. Bel lavoro!",
     "afruth": "Mi piace, l'ho usato nell'ultimo giorno su tre progetti paralleli, ciascuno con diversi worktree. Averlo insieme a lazygit e yazi / nvim mi ha reso un po' più produttivo del solito senza dover rincorrere più istanze di ghostty / iTerm. Inoltre sembra più naturale di tmux.",
     "northprint": "Ho provato termloop perché sembrava buono, ed è buono",
-    "indykish": "cmux è piuttosto buono.",
+    "indykish": "TermLoop è piuttosto buono.",
     "kataring": "Sono passato a termloop.ai",
     "scottw": "È stata una scoperta così utile. Non lo consiglio mai abbastanza.",
     "johnblythe": "l'ho preso nel weekend e mi è piaciuto. aspettavo qualcosa del genere.",
     "bchris91": "Questo è esattamente quello che volevo. Lavoro fantastico, grazie!",
     "connorelsea": "Lo uso da una settimana ed è fantastico. Un tab verticale per ogni task in corso. Dentro, Claude da un lato e il browser con PR e risorse dall'altro, passo tra i task e resto organizzato. Combinalo con le skill per far monitorare la CI a Claude ricorsivamente, ecc. mi sento illuminato onestamente",
-    "tonkotsuboy": "A inizio anno sono passato da Warp a Ghostty, ma ora sono passato a cmux. I tab verticali sono comodi e apprezzo le notifiche quando i task di Claude Code finiscono. È basato su Ghostty quindi le prestazioni fulminee restano. Anche la visualizzazione del branch e i completamenti che avevo impostato su Ghostty funzionano ancora."
+    "tonkotsuboy": "A inizio anno sono passato da Warp a Ghostty, ma ora sono passato a TermLoop. I tab verticali sono comodi e apprezzo le notifiche quando i task di Claude Code finiscono. È basato su Ghostty quindi le prestazioni fulminee restano. Anche la visualizzazione del branch e i completamenti che avevo impostato su Ghostty funzionano ancora."
   },
   "nightly": {
-    "title": "cmux NIGHTLY",
+    "title": "TermLoop NIGHTLY",
     "subtitle": "Build di ultima generazione dal branch main",
-    "metaTitle": "cmux NIGHTLY — Build Nightly",
+    "metaTitle": "TermLoop NIGHTLY — Build Nightly",
     "metaDescription": "Scarica termloop NIGHTLY, un'app separata compilata automaticamente dall'ultimo commit su main. Funziona accanto alla versione stabile con aggiornamenti automatici propri.",
-    "description": "cmux NIGHTLY viene compilata automaticamente dall'ultimo commit su main. Ha un proprio bundle ID, quindi funziona accanto alla versione stabile senza conflitti. Usala per testare le nuove funzionalità prima del rilascio.",
+    "description": "TermLoop NIGHTLY viene compilata automaticamente dall'ultimo commit su main. Ha un proprio bundle ID, quindi funziona accanto alla versione stabile senza conflitti. Usala per testare le nuove funzionalità prima del rilascio.",
     "download": "Scarica NIGHTLY per Mac",
-    "warning": "Le build nightly possono contenere bug o funzionalità incomplete. In caso di problemi, segnalali su <githubLink>GitHub</githubLink> o in <discordLink>#nightly-bugs su Discord</discordLink> e torna alla versione stabile."
+    "warning": "Nightly builds may contain bugs or incomplete features. If something breaks, report it on <githubLink>GitHub</githubLink> or in <discordLink>GitHub Discussions</discordLink>, and switch back to the stable release."
   },
   "languageSwitcher": {
     "label": "Lingua"

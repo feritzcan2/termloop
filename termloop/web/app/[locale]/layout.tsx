@@ -53,7 +53,7 @@ export async function generateMetadata({
       title: t("title"),
       description: t("ogDescription"),
       url: alternates.canonical,
-      siteName: "cmux",
+      siteName: "TermLoop",
       type: "website",
     },
     twitter: {
@@ -97,7 +97,7 @@ export default async function LocaleLayout({
     applicationCategory: "DeveloperApplication",
     url: "https://termloop.ai",
     downloadUrl:
-      "https://github.com/feritzcan2/termloop/releases/latest/download/cmux-macos.dmg",
+      "https://github.com/feritzcan2/termloop/releases/latest/download/termloop-macos.dmg",
     description:
       "Native macOS terminal built on Ghostty. Works with Claude Code, Codex, OpenCode, Gemini CLI, Kiro, Aider, and any CLI tool. Vertical tabs, notification rings, split panes, and a socket API.",
     keywords:

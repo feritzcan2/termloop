@@ -2,6 +2,7 @@
 // Part of TermLoop — GPL-3.0-or-later
 
 import AppKit
+import CoreServices
 import SwiftUI
 
 /// Sidebar section for project-local abilities. Sits above
@@ -18,6 +19,7 @@ struct AbilitiesPanel: View {
     @State private var deleteConfirmationId: String? = nil
     @State private var errorMessage: String? = nil
     @State private var newSheetVisible: Bool = false
+    @State private var pendingCustomizeChoice: AbilityCatalogItem? = nil
 
     /// Narrow subscription to `WorkspaceMetadataStore.$agentSessionVersion`
     /// so this panel re-evaluates when an agent session starts or clears.
@@ -146,6 +148,29 @@ struct AbilitiesPanel: View {
         } message: { message in
             Text(message)
         }
+        .confirmationDialog(
+            pendingCustomizeChoiceTitle,
+            isPresented: Binding(
+                get: { pendingCustomizeChoice != nil },
+                set: { if !$0 { pendingCustomizeChoice = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingCustomizeChoice
+        ) { item in
+            Button(continueCustomizerLabel(for: item)) {
+                pendingCustomizeChoice = nil
+                openOrStartAbilityAgent(for: item)
+            }
+            Button("Start new agent", role: .destructive) {
+                pendingCustomizeChoice = nil
+                openOrStartAbilityAgent(for: item, forceFresh: true)
+            }
+            Button("Cancel", role: .cancel) {
+                pendingCustomizeChoice = nil
+            }
+        } message: { _ in
+            Text("Continue the existing customizer session, or start a fresh one for this ability.")
+        }
         .sheet(isPresented: $newSheetVisible) {
             AbilityNewSheet { name, description in
                 createNewAbility(name: name, description: description)
@@ -199,6 +224,11 @@ struct AbilitiesPanel: View {
             defaultValue: "Abilities",
             table: "TermLoop"
         )
+    }
+
+    private var pendingCustomizeChoiceTitle: String {
+        guard let item = pendingCustomizeChoice else { return "Customize with agent" }
+        return "Customize \(item.title)?"
     }
 
     // MARK: - States
@@ -315,14 +345,19 @@ struct AbilitiesPanel: View {
     }
 
     private func assignedAbilityWorkspaceId(for abilityId: String) -> UUID? {
-        let matches = TermLoopSidebar.projectScopedTabs(allTabs: tabManager.tabs).compactMap { workspace -> (UUID, Date)? in
-            guard let session = WorkspaceMetadataStore.shared.abilitySession(forWorkspaceId: workspace.id) else {
+        guard let activeProjectId = projectStore.activeProjectId else { return nil }
+        let metadataStore = WorkspaceMetadataStore.shared
+        let matches = metadataStore.byWorkspaceId.compactMap { workspaceId, metadata -> (UUID, Date)? in
+            guard let session = metadataStore.abilitySession(forWorkspaceId: workspaceId),
+                  let workspace = AppDelegate.shared?.workspaceFor(tabId: workspaceId) else {
                 return nil
             }
+            let projectId = metadata.projectId ?? workspace.projectId
+            guard projectId == activeProjectId else { return nil }
             switch session.kind {
             case .abilityDiscussion(let assignedId), .abilityRefiner(let assignedId):
                 guard assignedId == abilityId else { return nil }
-                return (workspace.id, session.spawnedAt)
+                return (workspaceId, session.spawnedAt)
             case .abilityCreator:
                 return nil
             }
@@ -342,7 +377,7 @@ struct AbilitiesPanel: View {
     private func latestPersistedAbilitySession(
         for abilityId: String
     ) -> (workspaceId: UUID, session: PersistedAgentSession)? {
-        let activeProjectId = projectStore.activeProjectId
+        guard let activeProjectId = projectStore.activeProjectId else { return nil }
         return WorkspaceMetadataStore.shared.byWorkspaceId
             .compactMap { workspaceId, metadata -> (UUID, PersistedAgentSession)? in
                 guard metadata.projectId == activeProjectId,
@@ -413,12 +448,32 @@ struct AbilitiesPanel: View {
               let item = catalogItems.first(where: { $0.id == id }) else { return }
         let forceFresh = detailState.customizeRequestForceFresh
         detailState.customizeRequestForceFresh = false
-        openOrStartAbilityAgent(for: item, forceFresh: forceFresh)
+        guard !forceFresh else {
+            openOrStartAbilityAgent(for: item, forceFresh: true)
+            return
+        }
+        guard hasReusableCustomizerSession(for: item.id) else {
+            openOrStartAbilityAgent(for: item)
+            return
+        }
+        pendingCustomizeChoice = item
+    }
+
+    private func hasReusableCustomizerSession(for abilityId: String) -> Bool {
+        assignedAbilityWorkspaceId(for: abilityId) != nil
+            || latestPersistedAbilitySession(for: abilityId) != nil
+    }
+
+    private func continueCustomizerLabel(for item: AbilityCatalogItem) -> String {
+        assignedAbilityWorkspaceId(for: item.id) == nil
+            ? "Resume previous agent"
+            : "Continue existing agent"
     }
 
     private func clearPersistedAbilitySessions(for abilityId: String) {
-        let activeProjectId = projectStore.activeProjectId
+        guard let activeProjectId = projectStore.activeProjectId else { return }
         let store = WorkspaceMetadataStore.shared
+        let appDelegate = AppDelegate.shared
         let targetWorkspaceIds: [UUID] = store.byWorkspaceId.compactMap { workspaceId, metadata in
             (metadata.projectId == activeProjectId && metadata.assignedAbilityId == abilityId)
                 ? workspaceId
@@ -427,8 +482,11 @@ struct AbilitiesPanel: View {
         // Close any open tabs assigned to this ability first — otherwise the
         // old Claude session keeps re-registering itself via hooks and the
         // restore coordinator fires a resume script in the new tab.
-        for workspace in tabManager.tabs where targetWorkspaceIds.contains(workspace.id) {
-            tabManager.closeWorkspace(workspace)
+        for workspaceId in targetWorkspaceIds {
+            if let workspace = appDelegate?.workspaceFor(tabId: workspaceId),
+               let owner = appDelegate?.tabManagerFor(tabId: workspaceId) {
+                owner.closeWorkspaceWithoutConfirmation(workspace)
+            }
         }
         for workspaceId in targetWorkspaceIds {
             _ = store.clearPersistedAgentSession(for: workspaceId)
@@ -499,7 +557,8 @@ struct AbilitiesPanel: View {
 
     private func openOrStartAbilityAgent(for item: AbilityCatalogItem, forceFresh: Bool = false) {
         if !forceFresh, let existingWorkspaceId = assignedAbilityWorkspaceId(for: item.id) {
-            TermLoopHooks.focusWorkspace(workspaceId: existingWorkspaceId)
+            QuickActionController.shared.dismiss()
+            TermLoopHooks.focusAbilityWorkspace(workspaceId: existingWorkspaceId, abilityId: item.id)
             return
         }
         guard let projectId = projectStore.activeProjectId,
@@ -507,6 +566,7 @@ struct AbilitiesPanel: View {
             errorMessage = "Select a project before opening an ability agent."
             return
         }
+        MainAreaActivation.activateAbilityDetailSurface(abilityId: item.id)
         if !store.isInitialized {
             store.initializeDirectory()
         }
@@ -605,6 +665,7 @@ struct AbilitiesPanel: View {
             spawnedAt: Date(),
             forWorkspaceId: workspace.id
         )
+        MainAreaActivation.activateAbilityDetailSurface(abilityId: item.id)
         // User-initiated revival — force autoRestoreClaude=true even when the
         // setting is off, since the user just clicked the revive action.
         TerminalAgentLifecycle.restoreWorkspaces([workspace], autoRestoreClaude: true)
@@ -646,6 +707,127 @@ final class AbilityDetailUIState: ObservableObject {
     }
 }
 
+/// View-scoped filesystem watcher for project skill files shown on the ability
+/// detail page. AbilityStore watches `.termloop/abilities`; this watches the
+/// sibling skill catalogs so customizer-agent writes show up without navigating
+/// away and back.
+@MainActor
+final class AbilitySkillFileWatcher: ObservableObject {
+    @Published private(set) var tick: UInt = 0
+
+    private var stream: FSEventStreamRef?
+    private var latestProjectFolderPath: String?
+    private var latestSkillIds: [String] = []
+    private var watchKey: String = ""
+    private var refreshWorkItem: DispatchWorkItem?
+
+    deinit {
+        if let stream {
+            FSEventStreamStop(stream)
+            FSEventStreamInvalidate(stream)
+            FSEventStreamRelease(stream)
+        }
+        stream = nil
+        refreshWorkItem?.cancel()
+        refreshWorkItem = nil
+    }
+
+    func start(projectFolderPath: String?, skillIds: [String]) {
+        let normalizedPath = projectFolderPath?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty()
+        let normalizedSkillIds = Array(Set(skillIds.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty })).sorted()
+        let nextKey = "\(normalizedPath ?? "")|\(normalizedSkillIds.joined(separator: ","))"
+        guard nextKey != watchKey else { return }
+
+        latestProjectFolderPath = normalizedPath
+        latestSkillIds = normalizedSkillIds
+        watchKey = nextKey
+        restartStream()
+    }
+
+    func stop() {
+        stopStream()
+        watchKey = ""
+        latestProjectFolderPath = nil
+        latestSkillIds = []
+    }
+
+    private func stopStream() {
+        if let stream {
+            FSEventStreamStop(stream)
+            FSEventStreamInvalidate(stream)
+            FSEventStreamRelease(stream)
+        }
+        stream = nil
+        refreshWorkItem?.cancel()
+        refreshWorkItem = nil
+    }
+
+    private func restartStream() {
+        stopStream()
+        guard let latestProjectFolderPath,
+              !latestSkillIds.isEmpty else { return }
+
+        let projectRoot = URL(fileURLWithPath: latestProjectFolderPath, isDirectory: true)
+        let paths = watchedCatalogPaths(projectRoot: projectRoot)
+        guard !paths.isEmpty else { return }
+
+        let callback: FSEventStreamCallback = { _, clientInfo, _, _, _, _ in
+            guard let info = clientInfo else { return }
+            let watcher = Unmanaged<AbilitySkillFileWatcher>
+                .fromOpaque(info)
+                .takeUnretainedValue()
+            Task { @MainActor in watcher.scheduleRefresh() }
+        }
+        var context = FSEventStreamContext(
+            version: 0,
+            info: Unmanaged.passUnretained(self).toOpaque(),
+            retain: nil,
+            release: nil,
+            copyDescription: nil
+        )
+        guard let stream = FSEventStreamCreate(
+            kCFAllocatorDefault,
+            callback,
+            &context,
+            paths as CFArray,
+            FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
+            0.15,
+            FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer)
+        ) else { return }
+        FSEventStreamSetDispatchQueue(stream, DispatchQueue.main)
+        FSEventStreamStart(stream)
+        self.stream = stream
+    }
+
+    private func watchedCatalogPaths(projectRoot: URL) -> [String] {
+        let fm = FileManager.default
+        return [".termloop", ".claude", ".codex", ".agents"]
+            .map { projectRoot.appendingPathComponent($0, isDirectory: true) }
+            .filter { url in
+                var isDir: ObjCBool = false
+                return fm.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
+            }
+            .map(\.path)
+    }
+
+    private func scheduleRefresh() {
+        refreshWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.tick &+= 1
+                self.restartStream()
+            }
+        }
+        refreshWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+    }
+}
+
 @MainActor
 struct AbilityDetailPage: View {
     let abilityId: String
@@ -653,6 +835,7 @@ struct AbilityDetailPage: View {
     @ObservedObject private var abilityStore = AbilityStore.shared
     @ObservedObject private var detailState = AbilityDetailUIState.shared
     @ObservedObject private var projectStore = ProjectStore.shared
+    @StateObject private var skillFileWatcher = AbilitySkillFileWatcher()
     @State private var deleteConfirmation = false
 
     private var ability: Ability? {
@@ -675,6 +858,7 @@ struct AbilityDetailPage: View {
                             ability: ability,
                             projectFolderPath: projectFolderPath
                         )
+                        .id("setup-\(skillFileWatcher.tick)")
                         AbilityMCPToolsCard(
                             ability: ability,
                             onToggle: { name, enabled in
@@ -700,6 +884,7 @@ struct AbilityDetailPage: View {
                                 projectFolderPath: projectFolderPath,
                                 onCustomize: { detailState.requestCustomize() }
                             )
+                            .id("skills-\(skillFileWatcher.tick)")
                         }
                     }
                     .padding(16)
@@ -723,6 +908,27 @@ struct AbilityDetailPage: View {
                 detailState.close()
             }
             Button("Cancel", role: .cancel) {}
+        }
+        .onAppear {
+            skillFileWatcher.start(
+                projectFolderPath: projectFolderPath,
+                skillIds: ability?.requiredSkillIDs ?? []
+            )
+        }
+        .onChange(of: projectFolderPath) { _, newValue in
+            skillFileWatcher.start(
+                projectFolderPath: newValue,
+                skillIds: ability?.requiredSkillIDs ?? []
+            )
+        }
+        .onChange(of: ability?.requiredSkillIDs ?? []) { _, newValue in
+            skillFileWatcher.start(
+                projectFolderPath: projectFolderPath,
+                skillIds: newValue
+            )
+        }
+        .onDisappear {
+            skillFileWatcher.stop()
         }
     }
 

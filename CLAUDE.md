@@ -1,14 +1,14 @@
-# bmadworkflowtest — Claude Context
+# TermLoop Workspace — Agent Context
 
 ## TermLoop
-TermLoop is a terminal editor with agentic side bar. Developers are our target users who uses coding agents in termloop. 
-You are also, running inside termloop now while we develop termloop. Everyfeature we develop, must target every possible project type. 
-Any prompth we pass to agents must be visible under promt tempaltes tab to user. No inline promths in code.
+TermLoop is a terminal editor with an agentic sidebar. Developers who use coding agents are the target users.
+We are developing TermLoop from inside TermLoop. Every feature should work across project types, not just this repository.
+Any prompt we pass to agents must be visible to users under the prompt templates tab. No inline prompts in code.
 Two sibling projects under one workspace, plus supporting material:
 
 - `terminal-app/` — Expo/React Native mobile SSH terminal (iOS/Android). See its own `terminal-app/CLAUDE.md` for mobile stack details.
-- `termloop/` — **TermLoop**, our AI-first macOS terminal product built on top of `manaflow-ai/cmux`. All product code lives under `Sources/TermLoop/`; upstream termloop and nested dependencies are vendored into this repo and synced via `./scripts/sync-upstreams.sh`. See `termloop/CLAUDE.md` for fork discipline and `termloop/docs/termloop/` for deep-dive references.
-- `docs/` — local notes.
+- `termloop/` — **TermLoop**, our AI-first macOS terminal product. All product code lives under `Sources/TermLoop/`; upstream engine code and nested dependencies are vendored into this repo and synced via `./scripts/sync-upstreams.sh`. See `termloop/CLAUDE.md` for fork discipline and `termloop/docs/termloop/` for deep-dive references.
+- `docs/` — public architecture notes, upstream provenance, and release documentation.
 
 ## Upstream Sync Model
 
@@ -20,12 +20,12 @@ Treat the configured fork/upstream repos as read-only sync sources. To refresh v
 
 GhosttyKit prebuilts are keyed by the vendored Ghostty source tree (`GHOSTTY_TREE_KEY` in `upstreams.lock`), not only by the upstream commit SHA. If `termloop/ghostty/` changes in a way that can affect `libghostty.a` or the exported C API, run `termloop/scripts/publish-ghosttykit.sh` so the release asset, checksum file, and lock key stay together. Fresh clones should get the checksum-pinned prebuilt via `termloop/scripts/ensure-ghosttykit.sh`; local Zig is only the fallback. `termloop/ghostty/src/build/` and `termloop/ghostty/src/apprt/gtk/build/` are source directories and must be tracked. Generated `termloop/ghostty/zig-pkg/` stays ignored.
 
-| Path | Upstream source | Discipline |
-|---|---|---|
-| `termloop/` | `feritzcan2/cmux-fork` (integration fork over `manaflow-ai/cmux`) | **K/Y rules apply** to upstream termloop Swift/CLI files. TermLoop code under `termloop/Sources/TermLoop/` and `termloop/CLI/TermLoop/` is ours to shape freely. |
-| `termloop/ghostty/` | `feritzcan2/ghostty` | K/Y does NOT apply. Modifying ghostty Zig/C is supported when Swift hits an opaque C API wall. Sync changes back upstream manually when needed. |
-| `termloop/homebrew-cmux/` | `manaflow-ai/homebrew-cmux` | Vendored support repo; sync via the root script when required. |
-| `termloop/vendor/bonsplit/` | `feritzcan2/bonsplit` | Vendored dependency; free to modify, but keep upstream commit provenance in `upstreams.lock`. |
+| Path | Discipline |
+|---|---|
+| `termloop/` | **K/Y rules apply** to vendored upstream Swift/CLI files. TermLoop code under `termloop/Sources/TermLoop/` and `termloop/CLI/TermLoop/` is ours to shape freely. |
+| `termloop/ghostty/` | K/Y does NOT apply. Modifying the renderer's Zig/C is supported when Swift hits an opaque C API wall. Sync changes back upstream manually when needed. |
+| `termloop/homebrew-cmux/` | Local Homebrew tap holding the TermLoop cask formula. Edit directly. |
+| `termloop/vendor/bonsplit/` | Vendored dependency; free to modify, but keep upstream commit provenance in `upstreams.lock`. |
 
 When designing: if Swift only sees an opaque C API and the feature needs more, check whether the source lives in `termloop/ghostty/`. If it does, modifying it is on the table. The working copy is local to this repo, so there is no nested remote to push from in-place.
 
@@ -45,7 +45,7 @@ Rules:
 
 - UI must read **presentation state** (`presentation(forWorkspaceId:)`, `displayState(...)`, query helpers), not raw activity state, `workspace.statusEntries`, `workspace.agentPIDs`, or ad-hoc metadata fallbacks for agent presentation.
 - Panel-style consumers should prefer **parent-built snapshots** and pure row renderers.
-- If you need new agent UI behavior, put it in the store/query layer if it changes truth, or in formatting helpers if it is display-only.Prefer using existing one over creating new store all time.
+- If you need new agent UI behavior, put it in the store/query layer if it changes truth, or in formatting helpers if it is display-only. Prefer existing stores over creating new ones.
 - Do not add a new "easy" wrapper namespace that hides the store as the real source of truth.
 
 ## TermLoop agent-input contract

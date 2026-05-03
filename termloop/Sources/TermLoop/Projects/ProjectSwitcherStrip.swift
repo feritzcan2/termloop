@@ -9,6 +9,7 @@ import SwiftUI
 /// deleting projects.
 struct ProjectSwitcherStrip: View {
     @ObservedObject private var projectStore = ProjectStore.shared
+    @ObservedObject private var refreshCoordinator = SidebarProjectRefreshCoordinator.shared
     @EnvironmentObject private var tabManager: TabManager
 
     @State private var sheet: ActiveSheet?
@@ -123,6 +124,7 @@ struct ProjectSwitcherStrip: View {
             .help(activeProject?.folderPath ?? "")
             .accessibilityIdentifier("ProjectSwitcherStrip.Menu")
 
+            refreshButton
         }
         .padding(.horizontal, TermLoopSidebarTheme.rowInsetH)
         .padding(.top, 6)
@@ -201,6 +203,39 @@ struct ProjectSwitcherStrip: View {
     }
 
     // MARK: - Helpers
+
+    private var refreshButton: some View {
+        Button {
+            refreshCoordinator.refresh(tabManager: tabManager)
+        } label: {
+            ZStack {
+                if refreshCoordinator.isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.55)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(TermLoopSidebarTheme.dim)
+                }
+            }
+            .frame(width: 22, height: 22)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(activeProject == nil || refreshCoordinator.isRefreshing)
+        .help(String(
+            localized: "project.refresh.help",
+            defaultValue: "Refresh Git and PR status",
+            table: "TermLoop"
+        ))
+        .accessibilityLabel(String(
+            localized: "project.refresh.accessibilityLabel",
+            defaultValue: "Refresh project status",
+            table: "TermLoop"
+        ))
+        .accessibilityIdentifier("ProjectSwitcherStrip.RefreshButton")
+    }
 
     private var activeProject: Project? {
         guard let id = projectStore.activeProjectId else { return nil }

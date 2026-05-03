@@ -1110,7 +1110,8 @@ enum TerminalAgentRunner {
 
         let prepared = IntegrationsSpawnPrep.prepare(
             items: dedupedById.values.sorted { $0.id < $1.id },
-            workspaceId: workspaceId.uuidString
+            workspaceId: workspaceId.uuidString,
+            launchEnvironment: baseEnv
         )
 
         var mergedEnv = prepared.envVars
@@ -1356,7 +1357,54 @@ enum TerminalAgentRunner {
             if root.exists():
                 search_roots.append(root)
 
-        def recent_payload():
+        def report(payload):
+            subprocess.run(
+                [cli, "rpc", "workspace.report_agent_activity", payload],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+
+        def fresh_lifecycle_activity(path):
+            last = ""
+            try:
+                with path.open("r", encoding="utf-8") as handle:
+                    for raw_line in handle:
+                        try:
+                            obj = json.loads(raw_line)
+                        except Exception:
+                            continue
+                        if obj.get("type") != "event_msg":
+                            continue
+                        payload = obj.get("payload") or {}
+                        event_type = payload.get("type")
+                        if event_type == "task_started":
+                            last = "running"
+                        elif event_type == "task_complete":
+                            last = "completed"
+                        elif event_type == "turn_aborted" and payload.get("reason") == "interrupted":
+                            last = "ready"
+            except Exception:
+                return "ready"
+            return last or "ready"
+
+        def fresh_activity_payload(session_id, session_cwd, activity):
+            payload = {
+                "workspace_id": workspace_id,
+                "agent_id": "codex",
+                "session_id": session_id,
+                "cwd": session_cwd,
+            }
+            if activity == "running":
+                payload["phase"] = "running"
+            elif activity == "completed":
+                payload["phase"] = "waiting"
+                payload["attention_kind"] = "completion"
+            else:
+                payload["phase"] = "ready"
+            return json.dumps(payload, separators=(",", ":"))
+
+        def recent_session():
             matches = []
             for root in search_roots:
                 for path in root.glob("*.jsonl"):
@@ -1388,31 +1436,43 @@ enum TerminalAgentRunner {
                         continue
                     if session_cwd and session_cwd != cwd:
                         continue
-                    matches.append((created_at, stat.st_mtime, session_id, session_cwd or cwd))
+                    matches.append((created_at, stat.st_mtime, path, session_id, session_cwd or cwd))
             if not matches:
                 return None
-            _, _, session_id, session_cwd = max(matches)
-            return json.dumps({
-                "workspace_id": workspace_id,
-                "agent_id": "codex",
-                "phase": "ready",
-                "session_id": session_id,
-                "cwd": session_cwd,
-            }, separators=(",", ":"))
+            _, _, path, session_id, session_cwd = max(matches)
+            return path, session_id, session_cwd
+
+        session = None
 
         for _ in range(40):
             if ready_marker and not Path(ready_marker).exists():
                 raise SystemExit(0)
-            payload = recent_payload()
-            if payload:
-                subprocess.run(
-                    [cli, "rpc", "workspace.report_agent_activity", payload],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=False,
-                )
-                raise SystemExit(0)
+            session = recent_session()
+            if session:
+                break
             time.sleep(0.5)
+
+        if not session:
+            raise SystemExit(0)
+
+        path, session_id, session_cwd = session
+        last_mtime = None
+        last_activity = None
+
+        while True:
+            if ready_marker and not Path(ready_marker).exists():
+                raise SystemExit(0)
+            try:
+                mtime = path.stat().st_mtime
+            except Exception:
+                raise SystemExit(0)
+            if mtime != last_mtime:
+                last_mtime = mtime
+                activity = fresh_lifecycle_activity(path)
+                if activity != last_activity:
+                    report(fresh_activity_payload(session_id, session_cwd, activity))
+                    last_activity = activity
+            time.sleep(1)
         PY
         }
 

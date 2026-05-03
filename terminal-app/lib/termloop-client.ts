@@ -41,6 +41,14 @@ export interface ProjectSummary {
   id: string;
   name: string;
   path?: string;
+  folder_path?: string;
+}
+
+export function projectSummaryPath(
+  project: ProjectSummary | null | undefined
+): string | undefined {
+  const path = project?.folder_path?.trim() || project?.path?.trim();
+  return path || undefined;
 }
 
 export interface WorkspaceSummary {
@@ -118,6 +126,12 @@ export interface WorkspaceRunTargetSummary {
   status?: string | null;
   url?: string | null;
   reported_at?: string | null;
+}
+
+export interface RegisterPushTokenParams {
+  deviceToken: string;
+  platform: "ios" | "android";
+  environment: "development" | "production";
 }
 
 function isTerminalSurface(s: SurfaceSummary): boolean {
@@ -245,6 +259,7 @@ export interface TermLoopClient {
   listWorkspaces(): Promise<WorkspaceSummary[]>;
   createWorkspace(params: CreateWorkspaceParams): Promise<CreateWorkspaceResult>;
   listTerminalAgents(): Promise<TerminalAgentSummary[]>;
+  registerPushToken(params: RegisterPushTokenParams): Promise<void>;
   getJiraTicket(workspaceId: string): Promise<JiraTicketSummary | null>;
   getRunTargets(workspaceId: string): Promise<WorkspaceRunTargetSummary[]>;
   listSurfaces(workspaceId: string): Promise<SurfaceSummary[]>;
@@ -427,6 +442,13 @@ export function createTermLoopClient(opts: {
         "termloop.list_terminal_agents"
       );
       return out?.agents ?? [];
+    },
+    async registerPushToken(params) {
+      await call<{ registered?: boolean }>("push.register", {
+        device_token: params.deviceToken,
+        platform: params.platform,
+        environment: params.environment,
+      });
     },
     async getJiraTicket(workspaceId) {
       try {

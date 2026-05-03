@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "cmux — ស្ថានីយដែលបង្កើតសម្រាប់ពហុកិច្ចការ",
+    "title": "TermLoop — ស្ថានីយដែលបង្កើតសម្រាប់ពហុកិច្ចការ",
     "description": "ស្ថានីយ macOS ដើមកំណើតបង្កើតលើ Ghostty។ ដំណើរការជាមួយ Claude Code, Codex, OpenCode, Gemini CLI, Kiro, Aider និងឧបករណ៍ CLI ណាមួយ។",
     "ogDescription": "ស្ថានីយ macOS ដើមកំណើតសម្រាប់ភ្នាក់ងារសរសេរកូដ AI។"
   },
@@ -34,12 +34,13 @@
     "terms": "លក្ខខណ្ឌ",
     "eula": "EULA",
     "github": "GitHub",
-    "twitter": "X / Twitter",
-    "discord": "Discord",
+    "twitter": "Repository",
+    "discord": "Discussions",
     "contact": "ទំនាក់ទំនង",
     "nightly": "Nightly",
-    "copyright": "© {year} Manaflow",
-    "language": "ភាសា"
+    "copyright": "© {year} TermLoop",
+    "language": "ភាសា",
+    "discussions": "Discussions"
   },
   "home": {
     "taglinePrefix": "ទែមីណលដែលបង្កើតសម្រាប់ ",
@@ -67,14 +68,14 @@
       "keyboardShortcuts": "ផ្លូវកាត់ក្ដារចុច",
       "keyboardShortcutsDesc": ": <link>ផ្លូវកាត់ជាច្រើន</link> សម្រាប់ workspace, បំបែក, កម្មវិធីរុករក, និងច្រើនទៀត"
     },
-    "faqGhosttyQ": "cmux ទាក់ទងនឹង Ghostty យ៉ាងដូចម្ដេច?",
-    "faqGhosttyA": "cmux មិនមែនជា fork នៃ Ghostty ទេ។ វាប្រើ <link>libghostty</link> ជាបណ្ណាល័យសម្រាប់ការបង្ហាញទែមីណល, ដូចគ្នានឹងកម្មវិធីប្រើ WebKit សម្រាប់ web views ដែរ។ Ghostty គឺជាទែមីណលឯករាជ្យ; termloop គឺជាកម្មវិធីផ្សេងដែលបង្កើតនៅលើម៉ាស៊ីនបង្ហាញរបស់វា។",
+    "faqGhosttyQ": "TermLoop ទាក់ទងនឹង Ghostty យ៉ាងដូចម្ដេច?",
+    "faqGhosttyA": "TermLoop មិនមែនជា fork នៃ Ghostty ទេ។ វាប្រើ <link>libghostty</link> ជាបណ្ណាល័យសម្រាប់ការបង្ហាញទែមីណល, ដូចគ្នានឹងកម្មវិធីប្រើ WebKit សម្រាប់ web views ដែរ។ Ghostty គឺជាទែមីណលឯករាជ្យ; termloop គឺជាកម្មវិធីផ្សេងដែលបង្កើតនៅលើម៉ាស៊ីនបង្ហាញរបស់វា។",
     "faqPlatformQ": "វាគាំទ្រប្រព័ន្ធប្រតិបត្តិការអ្វីខ្លះ?",
     "faqPlatformA": "macOS តែប៉ុណ្ណោះសម្រាប់ពេលនេះ។ termloop គឺជាកម្មវិធី Swift + AppKit ដើម។",
-    "faqAgentsQ": "cmux ដំណើរការជាមួយ coding agent អ្វីខ្លះ?",
+    "faqAgentsQ": "TermLoop ដំណើរការជាមួយ coding agent អ្វីខ្លះ?",
     "faqAgentsA": "ទាំងអស់។ termloop គឺជាទែមីណល, ដូច្នេះ agent ណាមួយដែលដំណើរការក្នុងទែមីណលអាចប្រើបានភ្លាមៗ: Claude Code, Codex, OpenCode, Gemini CLI, Kiro, Aider, Goose, Amp, Cline, Cursor Agent, និងអ្វីផ្សេងទៀតដែលអ្នកអាចចាប់ផ្ដើមពីបន្ទាត់ពាក្យបញ្ជា។",
     "faqNotificationsQ": "ការជូនដំណឹងដំណើរការយ៉ាងដូចម្ដេច?",
-    "faqNotificationsA": "នៅពេលដំណើរការមួយត្រូវការការយកចិត្តទុកដាក់, termloop បង្ហាញរង្វង់ជូនដំណឹងជុំវិញបន្ទះ, ស្លាកមិនទាន់អានក្នុងរបារចំហៀង, ផ្ទាំងលេចជូនដំណឹង, និងការជូនដំណឹងផ្ទៃតុ macOS។ ទាំងនេះដំណើរការដោយស្វ័យប្រវត្តិតាមរយៈ terminal escape sequences ស្តង់ដារ (OSC 9/99/777), ឬអ្នកអាចកេះវាដោយ <cliLink>cmux CLI</cliLink> និង <hooksLink>Claude Code hooks</hooksLink>។",
+    "faqNotificationsA": "នៅពេលដំណើរការមួយត្រូវការការយកចិត្តទុកដាក់, termloop បង្ហាញរង្វង់ជូនដំណឹងជុំវិញបន្ទះ, ស្លាកមិនទាន់អានក្នុងរបារចំហៀង, ផ្ទាំងលេចជូនដំណឹង, និងការជូនដំណឹងផ្ទៃតុ macOS។ ទាំងនេះដំណើរការដោយស្វ័យប្រវត្តិតាមរយៈ terminal escape sequences ស្តង់ដារ (OSC 9/99/777), ឬអ្នកអាចកេះវាដោយ <cliLink>TermLoop CLI</cliLink> និង <hooksLink>Claude Code hooks</hooksLink>។",
     "faqShortcutsQ": "តើខ្ញុំអាចប្ដូរផ្លូវកាត់ក្ដារចុចតាមបំណងបានទេ?",
     "faqShortcutsA": "ការចងក្ដារចុចទែមីណលត្រូវបានអានពីឯកសារកំណត់រចនាសម្ព័ន្ធ Ghostty របស់អ្នក (<configPath>~/.config/ghostty/config</configPath>)។ ផ្លូវកាត់ជាក់លាក់របស់ termloop (workspace, បំបែក, កម្មវិធីរុករក, ជូនដំណឹង) អាចប្ដូរតាមបំណងក្នុងការកំណត់។ មើល <link>ផ្លូវកាត់លំនាំដើម</link> សម្រាប់បញ្ជីពេញ។",
     "faqTmuxQ": "វាប្រៀបធៀបជាមួយ tmux យ៉ាងដូចម្ដេច?",
@@ -85,54 +86,60 @@
   "community": {
     "title": "សហគមន៍",
     "description": "ភ្ជាប់ជាមួយអ្នកប្រើ termloop ផ្សេងទៀតនិងក្រុមដែលនៅពីក្រោយវា។",
-    "discord": "Discord",
-    "discordAction": "ចូលរួម Discord របស់យើង",
-    "discordDesc": "ជជែកជាមួយសហគមន៍, ទទួលបានជំនួយ, និងចែករំលែកមតិកែលម្អ",
+    "discord": "Discussions",
+    "discordAction": "Open discussions",
+    "discordDesc": "Ask questions, get help, and share feedback",
     "githubAction": "មើលនៅលើ GitHub",
     "githubDesc": "ដាក់ផ្កាយ repo, រាយការណ៍បញ្ហា, និងចូលរួមវិភាគទាន",
-    "twitter": "Twitter",
-    "twitterAction": "តាមដាននៅលើ X",
-    "twitterDesc": "ព័ត៌មានថ្មី, សេចក្ដីប្រកាស, និងគន្លឹះ",
+    "twitter": "Repository",
+    "twitterAction": "View repository",
+    "twitterDesc": "Browse source, releases, and project activity",
     "youtube": "YouTube",
     "youtubeAction": "ជាវ",
     "youtubeDesc": "ការបង្ហាញ, មេរៀន, និងការណែនាំ",
     "linkedin": "LinkedIn",
     "linkedinAction": "តាមដានយើង",
     "linkedinDesc": "ព័ត៌មានក្រុមហ៊ុននិងព័ត៌មានថ្មីផ្នែកវិស្វកម្ម",
-    "metaTitle": "សហគមន៍ — cmux",
-    "metaDescription": "ចូលរួមសហគមន៍ termloop នៅលើ Discord, Twitter, GitHub និងច្រើនទៀត"
+    "metaTitle": "សហគមន៍ — TermLoop",
+    "metaDescription": "Join the TermLoop community on GitHub Discussions and GitHub.",
+    "discussions": "Discussions",
+    "discussionsAction": "Open discussions",
+    "discussionsDesc": "Ask questions, get help, and share feedback",
+    "repository": "Repository",
+    "repositoryAction": "View repository",
+    "repositoryDesc": "Browse source, releases, and project activity"
   },
   "blog": {
     "title": "ប្លក់",
-    "layoutTitle": "cmux blog",
+    "layoutTitle": "TermLoop blog",
     "metaTitle": "ប្លក់",
-    "metaDescription": "ព័ត៌មាននិងបច្ចុប្បន្នភាពពីក្រុម cmux",
-    "description": "ព័ត៌មាននិងព័ត៌មានថ្មីពីក្រុម cmux",
+    "metaDescription": "ព័ត៌មាននិងបច្ចុប្បន្នភាពពីក្រុម TermLoop",
+    "description": "ព័ត៌មាននិងព័ត៌មានថ្មីពីក្រុម TermLoop",
     "posts": {
       "cmdShiftU": {
         "title": "Cmd+Shift+U",
-        "summary": "របៀបដែល Cmd+Shift+U រុករករវាង agent ដែលបានបញ្ចប់ក្នុង workspace ផ្សេងៗក្នុង cmux។",
+        "summary": "របៀបដែល Cmd+Shift+U រុករករវាង agent ដែលបានបញ្ចប់ក្នុង workspace ផ្សេងៗក្នុង TermLoop។",
         "date": "ថ្ងៃទី 4 ខែមីនា ឆ្នាំ 2026",
         "p1": "មុខងារ termloop ដែលខ្ញុំចូលចិត្តបំផុតគឺ Cmd+Shift+U។ ខ្ញុំមាន workspace 17 បើកនៅពេលនេះ, នីមួយៗកំពុងដំណើរការ agent មួយ។ ខ្ញុំធ្លាប់ចុចតាមផ្ទាំងនិងផ្ទាំងជូនដំណឹងដើម្បីរកមើលអ្វីដែលបានបញ្ចប់។ ការវាយអក្សរលឿនជាង។",
         "p2": "Cmd+Shift+U លោតទៅ <link>ជូនដំណឹង</link> មិនទាន់អានថ្មីបំផុត។ ក្នុងការអនុវត្តន៍វាមានន័យថា agent ចុងក្រោយដែលបានបញ្ចប់។ វាប្ដូរទៅ workspace ត្រឹមត្រូវ, ផ្ដោតលើបន្ទះពិតប្រាកដ, ភ្លឺវាឡើងដើម្បីអ្នកមើលឃើញកន្លែងដែលត្រូវមើល, និងសម្គាល់ថាបានអាន។ ប្រសិនបើជូនដំណឹងមកពីបង្អួចផ្សេង, បង្អួចនោះមកមុខ។"
       },
       "zenOfCmux": {
-        "title": "ទស្សនវិជ្ជា cmux",
-        "summary": "cmux គឺជាប្រដាប់មូលដ្ឋាន មិនមែនជាដំណោះស្រាយទេ។ វាផ្ដល់ឱ្យអ្នកនូវផ្នែកដែលអាចផ្សំបាន ហើយលំហូរការងាររបស់អ្នកអាស្រ័យលើអ្នក។",
+        "title": "ទស្សនវិជ្ជា TermLoop",
+        "summary": "TermLoop គឺជាប្រដាប់មូលដ្ឋាន មិនមែនជាដំណោះស្រាយទេ។ វាផ្ដល់ឱ្យអ្នកនូវផ្នែកដែលអាចផ្សំបាន ហើយលំហូរការងាររបស់អ្នកអាស្រ័យលើអ្នក។",
         "date": "ថ្ងៃទី 27 ខែកុម្ភៈ ឆ្នាំ 2026",
-        "p1": "cmux មិនកំណត់វិធីដែលអ្នកអភិវឌ្ឍន៍ប្រើឧបករណ៍របស់ពួកគេទេ។ វាជាទែមីណលនិងកម្មវិធីរុករកជាមួយ CLI ហើយផ្នែកដែលនៅសល់អាស្រ័យលើអ្នក។",
-        "p2": "cmux គឺជាប្រដាប់មូលដ្ឋាន មិនមែនជាដំណោះស្រាយទេ។ វាផ្ដល់ឱ្យអ្នកនូវទែមីណល, កម្មវិធីរុករក, ជូនដំណឹង, workspace, បំបែក, ផ្ទាំង, និង CLI ដើម្បីគ្រប់គ្រងទាំងអស់។ termloop មិនបង្ខំអ្នកឱ្យប្រើ coding agent តាមវិធីជាក់លាក់មួយទេ។ អ្វីដែលអ្នកបង្កើតជាមួយប្រដាប់មូលដ្ឋានទាំងនេះគឺជារបស់អ្នក។",
+        "p1": "TermLoop មិនកំណត់វិធីដែលអ្នកអភិវឌ្ឍន៍ប្រើឧបករណ៍របស់ពួកគេទេ។ វាជាទែមីណលនិងកម្មវិធីរុករកជាមួយ CLI ហើយផ្នែកដែលនៅសល់អាស្រ័យលើអ្នក។",
+        "p2": "TermLoop គឺជាប្រដាប់មូលដ្ឋាន មិនមែនជាដំណោះស្រាយទេ។ វាផ្ដល់ឱ្យអ្នកនូវទែមីណល, កម្មវិធីរុករក, ជូនដំណឹង, workspace, បំបែក, ផ្ទាំង, និង CLI ដើម្បីគ្រប់គ្រងទាំងអស់។ termloop មិនបង្ខំអ្នកឱ្យប្រើ coding agent តាមវិធីជាក់លាក់មួយទេ។ អ្វីដែលអ្នកបង្កើតជាមួយប្រដាប់មូលដ្ឋានទាំងនេះគឺជារបស់អ្នក។",
         "p3": "អ្នកអភិវឌ្ឍន៍ល្អបំផុតតែងតែបង្កើតឧបករណ៍ផ្ទាល់ខ្លួន។ គ្មាននរណាបានរកឃើញវិធីល្អបំផុតក្នុងការធ្វើការជាមួយ agent នៅឡើយទេ ហើយក្រុមដែលបង្កើតផលិតផលបិទក៏មិនបានដែរ។ អ្នកអភិវឌ្ឍន៍ដែលជិតបំផុតទៅនឹង codebase ផ្ទាល់ខ្លួនរបស់ពួកគេនឹងរកឃើញវាមុនគេ។",
         "p4": "ផ្ដល់ឱ្យអ្នកអភិវឌ្ឍន៍មួយលាននាក់នូវប្រដាប់មូលដ្ឋានដែលអាចផ្សំបាន ហើយពួកគេនឹងរកឃើញលំហូរការងារដែលមានប្រសិទ្ធភាពបំផុតរួមគ្នា លឿនជាងក្រុមផលិតផលណាមួយអាចរចនាពីលើចុះក្រោម។"
       },
       "showHnLaunch": {
         "title": "បើកដំណើរការ termloop នៅលើ Show HN",
-        "summary": "cmux ឡើងដល់ #2 នៅលើ Hacker News, ត្រូវបានចែករំលែកដោយ Mitchell Hashimoto, និងប្រជាប្រិយនៅជប៉ុន។",
+        "summary": "TermLoop ឡើងដល់ #2 នៅលើ Hacker News, ត្រូវបានចែករំលែកដោយ Mitchell Hashimoto, និងប្រជាប្រិយនៅជប៉ុន។",
         "date": "ថ្ងៃទី 21 ខែកុម្ភៈ ឆ្នាំ 2026",
         "intro": "យើងបានបង្ហោះ termloop នៅលើ <link>Show HN</link> នៅថ្ងៃទី 19 កុម្ភៈ:",
         "blockquote1": "ខ្ញុំដំណើរការ Claude Code និង Codex sessions ជាច្រើនស្របគ្នា។ ខ្ញុំកំពុងប្រើ Ghostty ជាមួយបន្ទះបំបែកជាច្រើន ហើយពឹងផ្អែកលើការជូនដំណឹង macOS ដើមដើម្បីដឹងពេល agent ត្រូវការខ្ញុំ។ ប៉ុន្តែមាតិកាជូនដំណឹង Claude Code តែងតែជា \"Claude is waiting for your input\" ដោយគ្មានបរិបទ ហើយនៅពេលបើកផ្ទាំងគ្រប់គ្រាន់ ខ្ញុំមិនអាចអានចំណងជើងបានទៀតទេ។",
         "blockquote2": "ខ្ញុំបានសាកល្បង coding orchestrator មួយចំនួន ប៉ុន្តែភាគច្រើនជាកម្មវិធី Electron/Tauri ហើយប្រតិបត្តិការរំខានខ្ញុំ។ ខ្ញុំក៏ចូលចិត្តទែមីណលដែរ ព្រោះ GUI orchestrator ចាប់អ្នកក្នុងលំហូរការងាររបស់ពួកគេ។ ដូច្នេះខ្ញុំបានបង្កើត termloop ជាកម្មវិធី macOS ដើមក្នុង Swift/AppKit។ វាប្រើ libghostty សម្រាប់បង្ហាញទែមីណល ហើយអានកំណត់រចនាសម្ព័ន្ធ Ghostty ដែលមានស្រាប់របស់អ្នកសម្រាប់ស្បែក, ពុម្ពអក្សរ, ពណ៌, និងច្រើនទៀត។",
-        "blockquote3": "ការបន្ថែមសំខាន់គឺរបារចំហៀងនិងប្រព័ន្ធជូនដំណឹង។ របារចំហៀងមានផ្ទាំងបញ្ឈរដែលបង្ហាញ git branch, ថតការងារ, ports ដែលកំពុងស្ដាប់, និងអត្ថបទជូនដំណឹងថ្មីបំផុតសម្រាប់ workspace នីមួយៗ។ ប្រព័ន្ធជូនដំណឹងចាប់យក terminal sequences (OSC 9/99/777) ហើយមាន CLI (cmux notify) ដែលអ្នកអាចភ្ជាប់ទៅ agent hooks សម្រាប់ Claude Code, OpenCode ជាដើម។ នៅពេល agent កំពុងរង់ចាំ បន្ទះរបស់វាទទួលរង្វង់ខៀវ ហើយផ្ទាំងភ្លឺឡើងក្នុងរបារចំហៀង ដូច្នេះខ្ញុំអាចដឹងថាមួយណាត្រូវការខ្ញុំក្នុងការបំបែកនិងផ្ទាំង។ Cmd+Shift+U លោតទៅមិនទាន់អានថ្មីបំផុត។",
+        "blockquote3": "ការបន្ថែមសំខាន់គឺរបារចំហៀងនិងប្រព័ន្ធជូនដំណឹង។ របារចំហៀងមានផ្ទាំងបញ្ឈរដែលបង្ហាញ git branch, ថតការងារ, ports ដែលកំពុងស្ដាប់, និងអត្ថបទជូនដំណឹងថ្មីបំផុតសម្រាប់ workspace នីមួយៗ។ ប្រព័ន្ធជូនដំណឹងចាប់យក terminal sequences (OSC 9/99/777) ហើយមាន CLI (termloop notify) ដែលអ្នកអាចភ្ជាប់ទៅ agent hooks សម្រាប់ Claude Code, OpenCode ជាដើម។ នៅពេល agent កំពុងរង់ចាំ បន្ទះរបស់វាទទួលរង្វង់ខៀវ ហើយផ្ទាំងភ្លឺឡើងក្នុងរបារចំហៀង ដូច្នេះខ្ញុំអាចដឹងថាមួយណាត្រូវការខ្ញុំក្នុងការបំបែកនិងផ្ទាំង។ Cmd+Shift+U លោតទៅមិនទាន់អានថ្មីបំផុត។",
         "blockquote4": "កម្មវិធីរុករកក្នុងកម្មវិធីមាន API ដែលអាចសរសេរស្គ្រីបបាន។ Agent អាចថតរូបមែកធាង accessibility, ទទួល element refs, ចុច, បំពេញទម្រង់, វាយតម្លៃ JS, និងអានកំណត់ត្រា console។ អ្នកអាចបំបែកបន្ទះកម្មវិធីរុករកនៅជាប់ទែមីណលរបស់អ្នក ហើយឱ្យ Claude Code ធ្វើអន្តរកម្មជាមួយ dev server របស់អ្នកដោយផ្ទាល់។",
         "blockquote5": "អ្វីទាំងអស់អាចសរសេរស្គ្រីបបានតាមរយៈ CLI និង socket API: បង្កើត workspace/ផ្ទាំង, បំបែកបន្ទះ, ផ្ញើការចុចគ្រាប់ចុច, បើក URL ក្នុងកម្មវិធីរុករក។",
         "hitNumber2": "នៅពេលកំពូលវាឡើងដល់ #2 នៅលើ Hacker News។ Mitchell Hashimoto បានចែករំលែកវា:",
@@ -142,14 +149,14 @@
         "viralChina": "និងពាក់កណ្ដាលប្រជាប្រិយនៅចិន:",
         "extensions": "រឿងគួរឱ្យរំភើបមួយទៀតគឺឃើញមនុស្សបង្កើតនៅលើ termloop CLI។ sasha បានបង្កើត pi-cmux extension ដែលបង្ហាញព័ត៌មាន model, ការប្រើប្រាស់ token, និងស្ថានភាព agent ក្នុងរបារចំហៀង:",
         "scriptable": "អ្វីទាំងអស់ក្នុង termloop អាចសរសេរស្គ្រីបបានតាមរយៈ CLI: បង្កើត workspace, ផ្ញើការចុចគ្រាប់ចុច, គ្រប់គ្រងកម្មវិធីរុករក, អានជូនដំណឹង។ ផ្នែកមួយនៃទស្សនវិជ្ជា termloop គឺអាចសរសេរកម្មវិធីនិងផ្សំបាន ដើម្បីមនុស្សអាចប្ដូរវិធីធ្វើការជាមួយ coding agent តាមបំណង។ បច្ចេកវិទ្យាទំនើបបំផុតសម្រាប់ coding agent កំពុងផ្លាស់ប្ដូរយ៉ាងលឿន ហើយអ្នកមិនចង់ជាប់នៅក្នុង GUI orchestrator ដែលមិនអាចតាមទានទេ។",
-        "cta": "ប្រសិនបើអ្នកកំពុងដំណើរការ coding agent ជាច្រើន, <link>សាកល្បង cmux</link>។"
+        "cta": "ប្រសិនបើអ្នកកំពុងដំណើរការ coding agent ជាច្រើន, <link>សាកល្បង TermLoop</link>។"
       },
       "introducingCmux": {
-        "title": "ណែនាំ cmux",
+        "title": "ណែនាំ TermLoop",
         "summary": "ទែមីណល macOS ដើមដែលបង្កើតនៅលើ Ghostty, រចនាសម្រាប់ដំណើរការ AI coding agent ជាច្រើនជាប់គ្នា។",
         "date": "ថ្ងៃទី 12 ខែកុម្ភៈ ឆ្នាំ 2026",
-        "p1": "cmux គឺជាកម្មវិធីទែមីណល macOS ដើមដែលបង្កើតនៅលើ Ghostty, រចនាពីមូលដ្ឋានសម្រាប់អ្នកអភិវឌ្ឍន៍ដែលដំណើរការ AI coding agent ជាច្រើនក្នុងពេលតែមួយ។",
-        "whyTitle": "ហេតុអ្វី cmux?",
+        "p1": "TermLoop គឺជាកម្មវិធីទែមីណល macOS ដើមដែលបង្កើតនៅលើ Ghostty, រចនាពីមូលដ្ឋានសម្រាប់អ្នកអភិវឌ្ឍន៍ដែលដំណើរការ AI coding agent ជាច្រើនក្នុងពេលតែមួយ។",
+        "whyTitle": "ហេតុអ្វី TermLoop?",
         "whyP": "លំហូរការងារអភិវឌ្ឍន៍ទំនើបជារឿយៗពាក់ព័ន្ធនឹងការដំណើរការ agent ជាច្រើនក្នុងពេលតែមួយ។ Claude Code, Codex, និងឧបករណ៍ផ្សេងទៀតនីមួយៗក្នុងទែមីណលផ្ទាល់ខ្លួន។ ការតាមដានថាមួយណាត្រូវការការយកចិត្តទុកដាក់ និងប្ដូររវាងពួកវាយ៉ាងលឿន គឺជាបញ្ហាដែល termloop ដោះស្រាយ។",
         "featuresTitle": "មុខងារសំខាន់ៗ",
         "getStartedTitle": "ចាប់ផ្ដើម",
@@ -167,28 +174,28 @@
       }
     },
     "zenOfCmux": {
-      "metaTitle": "ហ្សែនរបស់ cmux",
-      "metaDescription": "cmux គឺជាបុព្វបទ មិនមែនដំណោះស្រាយទេ។"
+      "metaTitle": "ហ្សែនរបស់ TermLoop",
+      "metaDescription": "TermLoop គឺជាបុព្វបទ មិនមែនដំណោះស្រាយទេ។"
     },
     "cmdShiftU": {
       "metaTitle": "Cmd+Shift+U",
-      "metaDescription": "ផ្លូវកាត់ក្តារចុចថ្មីដែលផ្លាស់ប្ដូរវិធីអន្តរកម្មរបស់អ្នកជាមួយ cmux។"
+      "metaDescription": "ផ្លូវកាត់ក្តារចុចថ្មីដែលផ្លាស់ប្ដូរវិធីអន្តរកម្មរបស់អ្នកជាមួយ TermLoop។"
     },
     "showHnLaunch": {
       "metaTitle": "ចាប់ផ្តើម termloop នៅ Show HN",
       "metaDescription": "រឿងរ៉ាវនៃការចាប់ផ្តើម termloop នៅ Hacker News។"
     },
     "introducingCmux": {
-      "metaTitle": "ណែនាំ cmux",
+      "metaTitle": "ណែនាំ TermLoop",
       "metaDescription": "ហេតុអ្វីយើងបង្កើត termloop ស្ថានីយថ្មីសម្រាប់ macOS។"
     }
   },
   "docs": {
-    "layoutTitle": "cmux docs",
+    "layoutTitle": "TermLoop docs",
     "gettingStarted": {
       "title": "ចាប់ផ្ដើម",
-      "metaDescription": "ដំឡើង cmux, ទែមីណល macOS ដើមសម្រាប់ AI coding agent។ Homebrew, ទាញយក DMG, ដំឡើង CLI, និងធ្វើបច្ចុប្បន្នភាពស្វ័យប្រវត្តិតាមរយៈ Sparkle។",
-      "intro": "cmux គឺជាទែមីណល macOS ដើមស្រាលដែលបង្កើតនៅលើ Ghostty សម្រាប់គ្រប់គ្រង AI coding agent ជាច្រើន។ វាមានផ្ទាំងបញ្ឈរ, ផ្ទាំងជូនដំណឹង, និង API គ្រប់គ្រងផ្អែកលើ socket។",
+      "metaDescription": "ដំឡើង TermLoop, ទែមីណល macOS ដើមសម្រាប់ AI coding agent។ Homebrew, ទាញយក DMG, ដំឡើង CLI, និងធ្វើបច្ចុប្បន្នភាពស្វ័យប្រវត្តិតាមរយៈ Sparkle។",
+      "intro": "TermLoop គឺជាទែមីណល macOS ដើមស្រាលដែលបង្កើតនៅលើ Ghostty សម្រាប់គ្រប់គ្រង AI coding agent ជាច្រើន។ វាមានផ្ទាំងបញ្ឈរ, ផ្ទាំងជូនដំណឹង, និង API គ្រប់គ្រងផ្អែកលើ socket។",
       "install": "ដំឡើង",
       "dmgRecommended": "DMG (បានណែនាំ)",
       "dmgDesc": "បើកឯកសារ .dmg ហើយអូស termloop ទៅថតកម្មវិធី។ termloop ធ្វើបច្ចុប្បន្នភាពស្វ័យប្រវត្តិតាមរយៈ Sparkle, ដូច្នេះអ្នកត្រូវទាញយកតែម្ដងប៉ុណ្ណោះ។",
@@ -201,17 +208,17 @@
       "verifyItem2": "workspace ដំបូងមួយបានបើករួចហើយ",
       "verifyItem3": "ទែមីណល Ghostty រួចរាល់សម្រាប់ការបញ្ចូល",
       "cliSetup": "ដំឡើង CLI",
-      "cliDesc": "cmux រួមបញ្ចូលឧបករណ៍បន្ទាត់ពាក្យបញ្ជាសម្រាប់ស្វ័យប្រវត្តិកម្ម។ នៅក្នុងទែមីណល termloop វាដំណើរការដោយស្វ័យប្រវត្តិ។ ដើម្បីប្រើ CLI ពីក្រៅ cmux, បង្កើត symlink:",
+      "cliDesc": "TermLoop រួមបញ្ចូលឧបករណ៍បន្ទាត់ពាក្យបញ្ជាសម្រាប់ស្វ័យប្រវត្តិកម្ម។ នៅក្នុងទែមីណល termloop វាដំណើរការដោយស្វ័យប្រវត្តិ។ ដើម្បីប្រើ CLI ពីក្រៅ TermLoop, បង្កើត symlink:",
       "cliThen": "បន្ទាប់មកអ្នកអាចដំណើរការពាក្យបញ្ជាដូចជា:",
       "autoUpdates": "បច្ចុប្បន្នភាពស្វ័យប្រវត្តិ",
-      "autoUpdatesDesc": "cmux ពិនិត្យរកបច្ចុប្បន្នភាពដោយស្វ័យប្រវត្តិតាមរយៈ Sparkle។ នៅពេលមានបច្ចុប្បន្នភាព អ្នកនឹងឃើញសញ្ញាបច្ចុប្បន្នភាពក្នុងរបារចំណងជើង។ អ្នកក៏អាចពិនិត្យដោយផ្ទាល់តាមរយៈ termloop > Check for Updates ក្នុងរបារម៉ឺនុយ។",
+      "autoUpdatesDesc": "TermLoop ពិនិត្យរកបច្ចុប្បន្នភាពដោយស្វ័យប្រវត្តិតាមរយៈ Sparkle។ នៅពេលមានបច្ចុប្បន្នភាព អ្នកនឹងឃើញសញ្ញាបច្ចុប្បន្នភាពក្នុងរបារចំណងជើង។ អ្នកក៏អាចពិនិត្យដោយផ្ទាល់តាមរយៈ termloop > Check for Updates ក្នុងរបារម៉ឺនុយ។",
       "sessionRestore": "ស្ដារវគ្គ (អាកប្បកិរិយាបច្ចុប្បន្ន)",
       "sessionRestoreDesc": "បន្ទាប់ពីបើកឡើងវិញ, termloop ស្ដារប្លង់និងទិន្នន័យមេតាប៉ុណ្ណោះ:",
       "sessionItem1": "ប្លង់បង្អួច, workspace, និងបន្ទះ",
       "sessionItem2": "ថតការងារ",
       "sessionItem3": "ប្រវត្តិរមូរទែមីណល (ខិតខំអស់ពីសមត្ថភាព)",
       "sessionItem4": "URL កម្មវិធីរុករកនិងប្រវត្តិរុករក",
-      "sessionCallout": "cmux មិនទាន់ស្ដារស្ថានភាពដំណើរការផ្ទាល់ទេ។ វគ្គកម្មវិធីទែមីណលដែលកំពុងដំណើរការដូចជា Claude Code, tmux, និង vim មិនត្រូវបានបន្តបន្ទាប់ពីចាប់ផ្ដើមកម្មវិធីឡើងវិញទេ។",
+      "sessionCallout": "TermLoop មិនទាន់ស្ដារស្ថានភាពដំណើរការផ្ទាល់ទេ។ វគ្គកម្មវិធីទែមីណលដែលកំពុងដំណើរការដូចជា Claude Code, tmux, និង vim មិនត្រូវបានបន្តបន្ទាប់ពីចាប់ផ្ដើមកម្មវិធីឡើងវិញទេ។",
       "requirements": "តម្រូវការ",
       "reqItem1": "macOS 14.0 ឬក្រោយ",
       "reqItem2": "Mac Apple Silicon ឬ Intel",
@@ -220,7 +227,7 @@
     "concepts": {
       "title": "គោលគំនិត",
       "metaDescription": "របៀបដែល termloop រៀបចំទែមីណល: បង្អួច, workspace, បន្ទះ, និង surface។ ឋានានុក្រមពីក្រោយរបារចំហៀង, បំបែក, និង socket API។",
-      "intro": "cmux រៀបចំទែមីណលរបស់អ្នកក្នុងឋានានុក្រមបួនកម្រិត។ ការយល់ដឹងពីកម្រិតទាំងនេះជួយនៅពេលប្រើ socket API, CLI, និងផ្លូវកាត់ក្ដារចុច។",
+      "intro": "TermLoop រៀបចំទែមីណលរបស់អ្នកក្នុងឋានានុក្រមបួនកម្រិត។ ការយល់ដឹងពីកម្រិតទាំងនេះជួយនៅពេលប្រើ socket API, CLI, និងផ្លូវកាត់ក្ដារចុច។",
       "hierarchy": "ឋានានុក្រម",
       "windowTitle": "បង្អួច",
       "windowDesc": "បង្អួច macOS។ បើកបង្អួចជាច្រើនជាមួយ {shortcut}។ បង្អួចនីមួយៗមានរបារចំហៀងផ្ទាល់ខ្លួនជាមួយ workspace ឯករាជ្យ។",
@@ -272,9 +279,9 @@
     "configuration": {
       "title": "កំណត់រចនាសម្ព័ន្ធ",
       "metaDescription": "កំណត់រចនាសម្ព័ន្ធ termloop តាមរយៈឯកសារកំណត់រចនាសម្ព័ន្ធ Ghostty។ ពុម្ពអក្សរ, ស្បែក, ពណ៌, រចនាប័ទ្មបន្ទះបំបែក, ប្រវត្តិរមូរ, និងការកំណត់កម្មវិធីសម្រាប់មុខងារស្វ័យប្រវត្តិកម្ម។",
-      "intro": "cmux អានកំណត់រចនាសម្ព័ន្ធពីឯកសារកំណត់រចនាសម្ព័ន្ធ Ghostty, ផ្ដល់ឱ្យអ្នកនូវជម្រើសដែលធ្លាប់ស្គាល់ប្រសិនបើអ្នកមកពី Ghostty។",
+      "intro": "TermLoop អានកំណត់រចនាសម្ព័ន្ធពីឯកសារកំណត់រចនាសម្ព័ន្ធ Ghostty, ផ្ដល់ឱ្យអ្នកនូវជម្រើសដែលធ្លាប់ស្គាល់ប្រសិនបើអ្នកមកពី Ghostty។",
       "configLocations": "ទីតាំងឯកសារកំណត់រចនាសម្ព័ន្ធ",
-      "configLocationsDesc": "cmux ស្វែងរកកំណត់រចនាសម្ព័ន្ធនៅទីតាំងទាំងនេះ (តាមលំដាប់):",
+      "configLocationsDesc": "TermLoop ស្វែងរកកំណត់រចនាសម្ព័ន្ធនៅទីតាំងទាំងនេះ (តាមលំដាប់):",
       "createConfig": "បង្កើតឯកសារកំណត់រចនាសម្ព័ន្ធប្រសិនបើមិនមាន:",
       "appearance": "រូបរាង",
       "font": "ពុម្ពអក្សរ",
@@ -297,7 +304,7 @@
       "automationCallout": "នៅលើម៉ាស៊ីនចែករំលែក, ពិចារណាប្រើមុខងារ \"បិទ\" ឬ \"ដំណើរការ termloop ប៉ុណ្ណោះ\"។",
       "browserLinkBehavior": "អាកប្បកិរិយាតំណកម្មវិធីរុករក",
       "browserLinkDesc": "នៅក្នុងការកំណត់ > កម្មវិធីរុករក, termloop បង្ហាញបញ្ជី host ពីរជាមួយគោលបំណងផ្សេងគ្នា:",
-      "browserHostsEmbed": "Host ដែលត្រូវបើកក្នុងកម្មវិធីរុករកដែលបង្កប់: អនុវត្តចំពោះតំណដែលចុចពីលទ្ធផលទែមីណល។ Host ក្នុងបញ្ជីនេះបើកក្នុង cmux; host ផ្សេងទៀតបើកក្នុងកម្មវិធីរុករកលំនាំដើមរបស់អ្នក។ គាំទ្រ host មួយ ឬ wildcard ក្នុងមួយជួរ (ឧទាហរណ៍: example.com, *.internal.example)។",
+      "browserHostsEmbed": "Host ដែលត្រូវបើកក្នុងកម្មវិធីរុករកដែលបង្កប់: អនុវត្តចំពោះតំណដែលចុចពីលទ្ធផលទែមីណល។ Host ក្នុងបញ្ជីនេះបើកក្នុង TermLoop; host ផ្សេងទៀតបើកក្នុងកម្មវិធីរុករកលំនាំដើមរបស់អ្នក។ គាំទ្រ host មួយ ឬ wildcard ក្នុងមួយជួរ (ឧទាហរណ៍: example.com, *.internal.example)។",
       "browserHostsHttp": "HTTP Host ដែលអនុញ្ញាតក្នុងកម្មវិធីរុករកដែលបង្កប់: អនុវត្តតែចំពោះ HTTP (មិនមែន HTTPS) URL។ Host ក្នុងបញ្ជីនេះអាចបើកក្នុង termloop ដោយមិនមានការព្រមានទេ។ លំនាំដើមរួមមាន localhost, 127.0.0.1, ::1, 0.0.0.0, និង *.localtest.me។",
       "exampleConfig": "ឧទាហរណ៍កំណត់រចនាសម្ព័ន្ធ",
       "metaTitle": "ការកំណត់រចនាសម្ព័ន្ធ"
@@ -308,7 +315,7 @@
       "metaDescription": "កំណត់ពាក្យបញ្ជាផ្ទាល់ខ្លួននិងប្លង់ workspace ក្នុង cmux.json។ ការកំណត់រចនាសម្ព័ន្ធតាមគម្រោងនិងសាកល ជាមួយការតាមដានឯកសារដោយផ្ទាល់។",
       "intro": "កំណត់ពាក្យបញ្ជាផ្ទាល់ខ្លួននិងប្លង់ workspace ដោយបន្ថែមឯកសារ cmux.json ទៅឫសគម្រោងរបស់អ្នក ឬ ~/.config/termloop/។ ពាក្យបញ្ជាលេចឡើងក្នុងបន្ទះពាក្យបញ្ជា។",
       "fileLocations": "ទីតាំងឯកសារ",
-      "fileLocationsDesc": "cmux រកការកំណត់រចនាសម្ព័ន្ធនៅ២កន្លែង:",
+      "fileLocationsDesc": "TermLoop រកការកំណត់រចនាសម្ព័ន្ធនៅ២កន្លែង:",
       "localConfig": "តាមគម្រោង:",
       "localConfigDesc": "ស្ថិតក្នុងថតគម្រោងរបស់អ្នក, មានអាទិភាព",
       "globalConfig": "សាកល:",
@@ -368,7 +375,7 @@
     },
     "keyboardShortcuts": {
       "title": "ផ្លូវកាត់ក្ដារចុច",
-      "description": "ផ្លូវកាត់ក្ដារចុចទាំងអស់ដែលមានក្នុង cmux, ដាក់ជាក្រុមតាមប្រភេទ។",
+      "description": "ផ្លូវកាត់ក្ដារចុចទាំងអស់ដែលមានក្នុង TermLoop, ដាក់ជាក្រុមតាមប្រភេទ។",
       "metaDescription": "ផ្លូវកាត់ក្ដារចុច termloop ទាំងអស់សម្រាប់ workspace, surface, បន្ទះបំបែក, កម្មវិធីរុករក, ជូនដំណឹង, ស្វែងរក, និងការគ្រប់គ្រងបង្អួចនៅលើ macOS។",
       "searchPlaceholder": "ស្វែងរកផ្លូវកាត់...",
       "searchLabel": "ស្វែងរកផ្លូវកាត់ក្ដារចុច",
@@ -432,7 +439,7 @@
     "api": {
       "title": "ឯកសារយោង API",
       "metaDescription": "ឯកសារយោង termloop CLI និង Unix socket API។ ការគ្រប់គ្រង workspace, បន្ទះបំបែក, ការគ្រប់គ្រងការបញ្ចូល, ជូនដំណឹង, ទិន្នន័យមេតារបារចំហៀង, អថេរបរិស្ថាន, និងវិធីកំណត់។",
-      "intro": "cmux ផ្ដល់ទាំងឧបករណ៍ CLI និង Unix socket សម្រាប់ការគ្រប់គ្រងដោយកម្មវិធី។ ពាក្យបញ្ជាទាំងអស់មានតាមរយៈចំណុចប្រទាក់ទាំងពីរ។",
+      "intro": "TermLoop ផ្ដល់ទាំងឧបករណ៍ CLI និង Unix socket សម្រាប់ការគ្រប់គ្រងដោយកម្មវិធី។ ពាក្យបញ្ជាទាំងអស់មានតាមរយៈចំណុចប្រទាក់ទាំងពីរ។",
       "socket": "Socket",
       "buildHeader": "Build",
       "pathHeader": "ផ្លូវ",
@@ -504,7 +511,7 @@
       "termProgramDesc": "កំណត់ទៅ ghostty",
       "termDesc": "កំណត់ទៅ xterm-ghostty",
       "envCallout": "តម្លៃ TERMLOOP_SOCKET_MODE ចាស់ full និង notifications នៅតែទទួលបានសម្រាប់ភាពឆបគ្នា។",
-      "detectingCmux": "កំណត់ cmux",
+      "detectingCmux": "កំណត់ TermLoop",
       "examples": "ឧទាហរណ៍",
       "pythonClient": "Python client",
       "shellScript": "Shell script",
@@ -513,8 +520,8 @@
     },
     "notifications": {
       "title": "ជូនដំណឹង",
-      "metaDescription": "ផ្ញើជូនដំណឹងផ្ទៃតុពី AI agent និងស្គ្រីបក្នុង cmux។ CLI, OSC 99/777 escape sequences, និងការរួមបញ្ចូល Claude Code hooks។",
-      "intro": "cmux គាំទ្រជូនដំណឹងផ្ទៃតុ, អនុញ្ញាតឱ្យ AI agent និងស្គ្រីបជូនដំណឹងអ្នកនៅពេលពួកវាត្រូវការការយកចិត្តទុកដាក់។",
+      "metaDescription": "ផ្ញើជូនដំណឹងផ្ទៃតុពី AI agent និងស្គ្រីបក្នុង TermLoop។ CLI, OSC 99/777 escape sequences, និងការរួមបញ្ចូល Claude Code hooks។",
+      "intro": "TermLoop គាំទ្រជូនដំណឹងផ្ទៃតុ, អនុញ្ញាតឱ្យ AI agent និងស្គ្រីបជូនដំណឹងអ្នកនៅពេលពួកវាត្រូវការការយកចិត្តទុកដាក់។",
       "lifecycle": "វដ្តជីវិត",
       "received": "បានទទួល: ជូនដំណឹងបង្ហាញក្នុង panel, ការជូនដំណឹងផ្ទៃតុដំណើរការ (ប្រសិនបើមិនត្រូវបានបង្ហាប់)",
       "unread": "មិនទាន់អាន: ស្លាកបង្ហាញនៅលើផ្ទាំង workspace",
@@ -550,9 +557,9 @@
       "cmpHigher": "ខ្ពស់ជាង",
       "cmpLower": "ទាបជាង",
       "featureHeader": "មុខងារ",
-      "comparisonCallout": "ប្រើ OSC 777 សម្រាប់ជូនដំណឹងសាមញ្ញ។ ប្រើ OSC 99 នៅពេលអ្នកត្រូវការចំណងជើងរង ឬ ID ជូនដំណឹង។ ប្រើ CLI (cmux notify) សម្រាប់ការរួមបញ្ចូលងាយស្រួលបំផុត។",
+      "comparisonCallout": "ប្រើ OSC 777 សម្រាប់ជូនដំណឹងសាមញ្ញ។ ប្រើ OSC 99 នៅពេលអ្នកត្រូវការចំណងជើងរង ឬ ID ជូនដំណឹង។ ប្រើ CLI (termloop notify) សម្រាប់ការរួមបញ្ចូលងាយស្រួលបំផុត។",
       "claudeCodeHooks": "Claude Code hooks",
-      "claudeCodeHooksDesc": "cmux រួមបញ្ចូលជាមួយ <link>Claude Code</link> តាមរយៈ hooks ដើម្បីជូនដំណឹងអ្នកនៅពេលភារកិច្ចបានបញ្ចប់។",
+      "claudeCodeHooksDesc": "TermLoop រួមបញ្ចូលជាមួយ <link>Claude Code</link> តាមរយៈ hooks ដើម្បីជូនដំណឹងអ្នកនៅពេលភារកិច្ចបានបញ្ចប់។",
       "createHookScript": "1. បង្កើត hook script",
       "configureClaude": "2. កំណត់រចនាសម្ព័ន្ធ Claude Code",
       "restartNote": "ចាប់ផ្ដើម Claude Code ឡើងវិញដើម្បីអនុវត្ត hooks។",
@@ -564,13 +571,13 @@
       "python": "Python",
       "nodejs": "Node.js",
       "tmuxPassthrough": "tmux passthrough",
-      "tmuxDesc": "ប្រសិនបើប្រើ tmux ក្នុង cmux, បើក passthrough:",
+      "tmuxDesc": "ប្រសិនបើប្រើ tmux ក្នុង TermLoop, បើក passthrough:",
       "metaTitle": "ការជូនដំណឹង"
     },
     "browserAutomation": {
       "title": "ស្វ័យប្រវត្តិកម្មកម្មវិធីរុករក",
       "metaDescription": "ឯកសារយោងពាក្យបញ្ជាកម្មវិធីរុករក termloop សម្រាប់ការរុករក, អន្តរកម្ម DOM, ការរង់ចាំ, ការពិនិត្យ, ការវាយតម្លៃ JavaScript, ផ្ទាំង, ប្រអប់សន្ទនា, ស៊ុម, ការទាញយក, និងស្ថានភាពកម្មវិធីរុករក។",
-      "intro": "ក្រុមពាក្យបញ្ជាកម្មវិធីរុករក termloop ផ្ដល់ស្វ័យប្រវត្តិកម្មកម្មវិធីរុករកលើ surface កម្មវិធីរុករក cmux។ ប្រើវាដើម្បីរុករក, ធ្វើអន្តរកម្មជាមួយធាតុ DOM, ពិនិត្យស្ថានភាពទំព័រ, វាយតម្លៃ JavaScript, និងគ្រប់គ្រងទិន្នន័យវគ្គកម្មវិធីរុករក។",
+      "intro": "ក្រុមពាក្យបញ្ជាកម្មវិធីរុករក termloop ផ្ដល់ស្វ័យប្រវត្តិកម្មកម្មវិធីរុករកលើ surface កម្មវិធីរុករក TermLoop។ ប្រើវាដើម្បីរុករក, ធ្វើអន្តរកម្មជាមួយធាតុ DOM, ពិនិត្យស្ថានភាពទំព័រ, វាយតម្លៃ JavaScript, និងគ្រប់គ្រងទិន្នន័យវគ្គកម្មវិធីរុករក។",
       "commandIndex": "សន្ទស្សន៍ពាក្យបញ្ជា",
       "categoryHeader": "ប្រភេទ",
       "subcommandsHeader": "ពាក្យបញ្ជារង",
@@ -639,34 +646,34 @@
     "schrockn": "នេះជាផលិតផលដែលខ្ញុំកំពុងស្វែងរកពិតប្រាកដ។ បន្ទាប់ពីប្រើពីរម៉ោងព្រឹកនេះ ខ្ញុំស្រឡាញ់វាហើយ។",
     "egrefen": "ខ្ញុំប្រើវាពេញចុងសប្តាហ៍ ហើយវាអស្ចារ្យ។",
     "max4c": "នេះជាឧបករណ៍ដែលខ្ញុំចូលចិត្តបំផុតក្នុងរយៈពេលពីរសប្តាហ៍កន្លងមក",
-    "asaza": "cmux មើលទៅល្អខ្លាំងម៉ង អាចដល់ពេលហើយនឹងបញ្ចប់ជាមួយ VSCode",
+    "asaza": "TermLoop មើលទៅល្អខ្លាំងម៉ង អាចដល់ពេលហើយនឹងបញ្ចប់ជាមួយ VSCode",
     "johnthedebs": "នេះមើលទៅអស្ចារ្យ។ ចូលចិត្តគំនិតនៅទីនេះ ជាពិសេស: ភាពអាចសរសេរកម្មវិធីបាន, UI ជាស្រទាប់, កម្មវិធីរុករកជាមួយ API។ រង់ចាំសាកល្បង។ ក៏ចង់និយាយថាខ្ញុំពិតជាអរគុណ Mitchell Hashimoto ដែលបង្កើត libghostty។ វារឹតតែគួរឱ្យរំភើបសម្រាប់អ្នកប្រើទែមីណល។",
     "joeriddles": "ផ្ទាំងបញ្ឈរក្នុងទែមីណលរបស់ខ្ញុំ! ខ្ញុំមិនដែលគិតដល់រឿងនេះមកមុនទេ។ ខ្ញុំប្រើហើយចូលចិត្តផ្ទាំងបញ្ឈរ Firefox។",
     "dchu17": "សាកល្បងហើយវាងាយស្រួលប្រើ។ ធ្វើបានល្អ!",
     "afruth": "ខ្ញុំចូលចិត្តវា ប្រើក្នុងថ្ងៃកន្លងមកជាមួយគម្រោងបីស្របគ្នា នីមួយៗមាន worktree ជាច្រើន។ ការមានវាជាមួយ lazygit និង yazi / nvim ធ្វើឱ្យខ្ញុំផលិតភាពជាងធម្មតាដោយមិនចាំបាច់តាមរក ghostty / iTerm ជាច្រើនវិន្ដូ។ ក៏មានអារម្មណ៍ធម្មជាតិជាង tmux ដែរ។",
     "northprint": "សាកល្បង termloop ព្រោះវាមើលទៅល្អ — វាល្អពិតមែន",
-    "indykish": "cmux ល្អដែរ។",
+    "indykish": "TermLoop ល្អដែរ។",
     "kataring": "ប្ដូរមកប្រើ termloop.ai",
     "scottw": "នេះជាការរកឃើញដ៏មានប្រយោជន៍។ ខ្ញុំណែនាំវាខ្លាំងណាស់។",
     "johnblythe": "ទាញយកមកចុងសប្តាហ៍កន្លងមក ហើយចូលចិត្តវា។ រង់ចាំអ្វីបែបនេះយូរហើយ។",
     "bchris91": "នេះជាអ្វីដែលខ្ញុំចង់បានពិតប្រាកដ។ ការងារអស្ចារ្យ អរគុណ!",
     "connorelsea": "ប្រើមកមួយសប្តាហ៍ហើយ វាល្អខ្លាំង។ ផ្ទាំងបញ្ឈរសម្រាប់កិច្ចការនីមួយៗ។ ខាងក្នុង Claude នៅម្ខាង កម្មវិធីរុករកជាមួយ PR និងធនធាននៅម្ខាង ប្ដូររវាងកិច្ចការហើយរក្សាការរៀបចំ។ ផ្សំជាមួយ skills ឱ្យ Claude តាមដាន CI ដដែលៗ ។ រឹតតែស្រស់បំព្រង",
-    "tonkotsuboy": "ខ្ញុំប្ដូរពី Warp មក Ghostty ដើមឆ្នាំ ប៉ុន្តែឥឡូវខ្ញុំប្ដូរមក cmux។ ផ្ទាំងបញ្ឈរងាយស្រួល ហើយខ្ញុំពេញចិត្តដែលទទួលបានជូនដំណឹងពេល Claude Code បានបញ្ចប់។ វាផ្អែកលើ Ghostty ដូច្នេះល្បឿនលឿនប្រែកៗនៅតែមាន។ ការបង្ហាញ branch និង completion ដែលខ្ញុំបានកំណត់ក្នុង Ghostty នៅតែដំណើរការដែរ។"
+    "tonkotsuboy": "ខ្ញុំប្ដូរពី Warp មក Ghostty ដើមឆ្នាំ ប៉ុន្តែឥឡូវខ្ញុំប្ដូរមក TermLoop។ ផ្ទាំងបញ្ឈរងាយស្រួល ហើយខ្ញុំពេញចិត្តដែលទទួលបានជូនដំណឹងពេល Claude Code បានបញ្ចប់។ វាផ្អែកលើ Ghostty ដូច្នេះល្បឿនលឿនប្រែកៗនៅតែមាន។ ការបង្ហាញ branch និង completion ដែលខ្ញុំបានកំណត់ក្នុង Ghostty នៅតែដំណើរការដែរ។"
   },
   "nightly": {
-    "title": "cmux NIGHTLY",
+    "title": "TermLoop NIGHTLY",
     "subtitle": "កំណែចុងក្រោយពីសាខា main",
-    "metaTitle": "cmux NIGHTLY — កំណែ Nightly",
+    "metaTitle": "TermLoop NIGHTLY — កំណែ Nightly",
     "metaDescription": "ទាញយក termloop NIGHTLY កម្មវិធីដាច់ដោយឡែកដែលត្រូវបានបង្កើតដោយស្វ័យប្រវត្តិពី commit ចុងក្រោយនៅលើ main។ ដំណើរការស្របជាមួយកំណែស្ថិរភាពជាមួយការអាប់ដេតស្វ័យប្រវត្តិផ្ទាល់ខ្លួន។",
-    "description": "cmux NIGHTLY ត្រូវបានបង្កើតដោយស្វ័យប្រវត្តិពី commit ចុងក្រោយនៅលើ main។ វាមាន bundle ID ផ្ទាល់ខ្លួន ដូច្នេះវាដំណើរការស្របជាមួយកំណែស្ថិរភាពដោយគ្មានជម្លោះ។ ប្រើវាដើម្បីសាកល្បងមុខងារថ្មីមុនពេលចេញផ្សាយ។",
+    "description": "TermLoop NIGHTLY ត្រូវបានបង្កើតដោយស្វ័យប្រវត្តិពី commit ចុងក្រោយនៅលើ main។ វាមាន bundle ID ផ្ទាល់ខ្លួន ដូច្នេះវាដំណើរការស្របជាមួយកំណែស្ថិរភាពដោយគ្មានជម្លោះ។ ប្រើវាដើម្បីសាកល្បងមុខងារថ្មីមុនពេលចេញផ្សាយ។",
     "download": "ទាញយក NIGHTLY សម្រាប់ Mac",
-    "warning": "កំណែ nightly អាចមានកំហុស ឬមុខងារមិនទាន់ពេញលេញ។ ប្រសិនបើមានបញ្ហា សូមរាយការណ៍នៅលើ <githubLink>GitHub</githubLink> ឬក្នុង <discordLink>#nightly-bugs នៅលើ Discord</discordLink> ហើយប្តូរទៅកំណែស្ថិរភាពវិញ។"
+    "warning": "Nightly builds may contain bugs or incomplete features. If something breaks, report it on <githubLink>GitHub</githubLink> or in <discordLink>GitHub Discussions</discordLink>, and switch back to the stable release."
   },
   "languageSwitcher": {
     "label": "ភាសា"
   },
   "wallOfLove": {
     "title": "ជញ្ជៀងសរសើរ",
-    "description": "អ្វីដែលមនុស្សនិយាយអំពី cmux។"
+    "description": "អ្វីដែលមនុស្សនិយាយអំពី TermLoop។"
   }
 }

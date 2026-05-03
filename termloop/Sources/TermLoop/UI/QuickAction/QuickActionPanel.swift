@@ -18,7 +18,7 @@ final class QuickActionPanel: NSPanel {
         static let runHeight: CGFloat = 420
         static let runAdvancedHeight: CGFloat = 760
         static let worktreeHeight: CGFloat = 720
-        static let ticketHeight: CGFloat = 760
+        static let worktreeAdvancedHeight: CGFloat = 900
     }
 
     init(rootView: some View) {
@@ -72,9 +72,7 @@ final class QuickActionPanel: NSPanel {
         case .run:
             isAdvancedOpen ? Layout.runAdvancedHeight : Layout.runHeight
         case .worktree:
-            Layout.worktreeHeight
-        case .ticket:
-            Layout.ticketHeight
+            isAdvancedOpen ? Layout.worktreeAdvancedHeight : Layout.worktreeHeight
         }
         setContentSize(NSSize(width: Self.canonicalWidth, height: height))
     }

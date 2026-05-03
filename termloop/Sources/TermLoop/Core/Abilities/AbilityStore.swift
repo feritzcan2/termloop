@@ -2,6 +2,7 @@
 // Part of TermLoop — GPL-3.0-or-later
 
 import Combine
+import CoreServices
 import Darwin
 import Foundation
 import SwiftUI
@@ -25,14 +26,18 @@ final class AbilityStore: ObservableObject {
     private var activeProjectSub: AnyCancellable?
     private var watchSources: [DispatchSourceFileSystemObject] = []
     private var watchedFDs: [Int32] = []
+    private var skillTreeStream: FSEventStreamRef?
     private var debounceWork: DispatchWorkItem?
+    private var skillSyncDebounceWork: DispatchWorkItem?
+    private var pendingChangedSkillIds = Set<String>()
     private var currentProjectFolder: URL?
     private let logger = Logger(subsystem: "ai.termloop", category: "abilities")
 
     /// Per-ability memory of the last non-`.off` activation mode, so the
     /// sidebar Toggle can restore the user's prior choice instead of always
-    /// jumping to `.always`. Captured by `setActivation` before any write of
-    /// `.off`, so both the Toggle and the dropdown menu participate.
+    /// jumping to `.always`. `setActivation` updates it for explicit non-off
+    /// choices and preserves the previous mode before writing `.off`, so both
+    /// the Toggle and the dropdown menu participate.
     private var lastNonOffActivation: [String: AbilityActivation] = [:]
     private let lastNonOffKey = "termloop.abilities.lastNonOffActivation"
 
@@ -64,6 +69,8 @@ final class AbilityStore: ObservableObject {
             .appendingPathComponent("abilities", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         reload()
+        stopWatching()
+        startWatching()
     }
 
     /// Writes or overwrites an ability file with the given fields. The id
@@ -106,12 +113,29 @@ final class AbilityStore: ObservableObject {
     /// the body byte-for-byte.
     func setActivation(id: String, _ mode: AbilityActivation) {
         guard let ability = abilities.first(where: { $0.id == id }) else { return }
-        if mode == .off, ability.activation != .off {
-            lastNonOffActivation[id] = ability.activation
-            persistLastNonOffActivation()
+        if mode == .off {
+            if ability.activation != .off {
+                lastNonOffActivation[id] = ability.activation
+                persistLastNonOffActivation()
+            }
+        } else {
+            if lastNonOffActivation[id] != mode {
+                lastNonOffActivation[id] = mode
+                persistLastNonOffActivation()
+            }
         }
         var updated = ability
         updated.activation = mode
+        save(updated)
+    }
+
+    private func setActivationToWorktree(_ ability: Ability) {
+        if lastNonOffActivation[ability.id] != .worktree {
+            lastNonOffActivation[ability.id] = .worktree
+            persistLastNonOffActivation()
+        }
+        var updated = ability
+        updated.activation = .worktree
         save(updated)
     }
 
@@ -219,6 +243,7 @@ final class AbilityStore: ObservableObject {
     // MARK: - Filesystem watcher
 
     private func startWatching() {
+        startWatchingSkillTree()
         guard let dir = abilitiesDirectoryURL() else { return }
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: dir.path, isDirectory: &isDir),
@@ -254,8 +279,11 @@ final class AbilityStore: ObservableObject {
         watchSources.forEach { $0.cancel() }
         watchSources.removeAll()
         watchedFDs.removeAll()
+        stopWatchingSkillTree()
         debounceWork?.cancel()
         debounceWork = nil
+        skillSyncDebounceWork?.cancel()
+        skillSyncDebounceWork = nil
     }
 
     private func scheduleDebouncedReload() {
@@ -274,14 +302,227 @@ final class AbilityStore: ObservableObject {
         guard let dir = abilitiesDirectoryURL() else { return }
         var isDir: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: dir.path, isDirectory: &isDir) && isDir.boolValue
-        if exists && watchSources.isEmpty {
+        if exists && (watchSources.isEmpty || skillTreeStream == nil) {
+            stopWatching()
             startWatching()
         } else if !exists && !watchSources.isEmpty {
             stopWatching()
+            startWatching()
+        } else if !exists && skillTreeStream == nil {
+            startWatching()
         } else if exists {
             stopWatching()
             startWatching()
         }
+    }
+
+    private func startWatchingSkillTree() {
+        guard skillTreeStream == nil,
+              let folder = currentProjectFolder else { return }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDir),
+              isDir.boolValue else { return }
+
+        let callback: FSEventStreamCallback = { _, clientInfo, _, eventPaths, _, _ in
+            guard let clientInfo else { return }
+            let paths = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] ?? []
+            let touchedSkillIds = Set(paths.compactMap(AbilityStore.skillIdFromCanonicalSkillPath))
+            let touchedSkills = paths.contains { path in
+                path.contains("/.termloop/skills/")
+                    || path.hasSuffix("/.termloop/skills")
+            }
+            let touchedAbilities = paths.contains { path in
+                path.contains("/.termloop/abilities/")
+                    || path.hasSuffix("/.termloop/abilities")
+            }
+            guard touchedSkills || touchedAbilities else { return }
+            let store = Unmanaged<AbilityStore>
+                .fromOpaque(clientInfo)
+                .takeUnretainedValue()
+            Task { @MainActor in
+                if touchedAbilities {
+                    store.scheduleDebouncedReload()
+                }
+                if touchedSkills {
+                    store.scheduleDebouncedSkillMaterialize(skillIds: touchedSkillIds)
+                }
+            }
+        }
+        var context = FSEventStreamContext(
+            version: 0,
+            info: Unmanaged.passUnretained(self).toOpaque(),
+            retain: nil,
+            release: nil,
+            copyDescription: nil
+        )
+        guard let stream = FSEventStreamCreate(
+            nil,
+            callback,
+            &context,
+            [folder.path] as CFArray,
+            FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
+            0.2,
+            FSEventStreamCreateFlags(
+                kFSEventStreamCreateFlagFileEvents
+                    | kFSEventStreamCreateFlagNoDefer
+                    | kFSEventStreamCreateFlagUseCFTypes
+            )
+        ) else { return }
+        FSEventStreamSetDispatchQueue(stream, DispatchQueue.main)
+        FSEventStreamStart(stream)
+        skillTreeStream = stream
+    }
+
+    private func stopWatchingSkillTree() {
+        guard let stream = skillTreeStream else { return }
+        FSEventStreamStop(stream)
+        FSEventStreamInvalidate(stream)
+        FSEventStreamRelease(stream)
+        skillTreeStream = nil
+    }
+
+    private static func skillIdFromCanonicalSkillPath(_ path: String) -> String? {
+        guard let range = path.range(of: "/.termloop/skills/") else { return nil }
+        let remainder = path[range.upperBound...]
+        guard let skillId = remainder.split(separator: "/", omittingEmptySubsequences: true).first else {
+            return nil
+        }
+        return String(skillId)
+    }
+
+    private func scheduleDebouncedSkillMaterialize(skillIds: Set<String> = []) {
+        pendingChangedSkillIds.formUnion(skillIds)
+        skillSyncDebounceWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let changedSkillIds = self.pendingChangedSkillIds
+            self.pendingChangedSkillIds.removeAll()
+            self.materializeNativeSkillsAfterSkillChange(changedSkillIds: changedSkillIds)
+        }
+        skillSyncDebounceWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+    }
+
+    private func materializeNativeSkillsAfterSkillChange(changedSkillIds: Set<String>) {
+        reload()
+        guard let projectFolderPath = currentProjectFolder?.path else { return }
+        if enableWorktreeAbilitiesForExistingSkills(
+            projectFolderPath: projectFolderPath,
+            changedSkillIds: changedSkillIds
+        ) {
+            reload()
+        }
+        ProjectSkillMaterializer.materialize(
+            projectFolderPath: projectFolderPath,
+            abilities: abilities
+        )
+        materializeExistingStarterSkills(
+            projectFolderPath: projectFolderPath,
+            changedSkillIds: changedSkillIds
+        )
+    }
+
+    @discardableResult
+    private func enableWorktreeAbilitiesForExistingSkills(
+        projectFolderPath: String,
+        changedSkillIds: Set<String>
+    ) -> Bool {
+        let projectRoot = URL(fileURLWithPath: projectFolderPath, isDirectory: true)
+        let existingSkillIds = existingCanonicalSkillIds(projectRoot: projectRoot)
+        let targetSkillIds = changedSkillIds.isEmpty
+            ? existingSkillIds
+            : existingSkillIds.intersection(changedSkillIds)
+        guard !targetSkillIds.isEmpty else { return false }
+
+        var changed = false
+        let installedAbilitiesToEnable = abilities.filter { ability in
+            ability.activation != .worktree
+                && ability.activation != .always
+                && ability.requiredSkillIDs.contains { targetSkillIds.contains($0) }
+        }
+        for ability in installedAbilitiesToEnable {
+            setActivationToWorktree(ability)
+            changed = true
+        }
+
+        if changed {
+            reload()
+        }
+
+        var installedAbilityIds = Set(abilities.map(\.id))
+        for starter in ProjectInstructionStore.loadStarters() where !installedAbilityIds.contains(starter.id) {
+            guard let starterAbility = ProjectInstructionStore.loadStarterAbility(starter),
+                  starterAbility.requiredSkillIDs.contains(where: { targetSkillIds.contains($0) }),
+                  let installed = installStarter(starter) else {
+                continue
+            }
+            setActivation(id: installed.id, .worktree)
+            installedAbilityIds.insert(starter.id)
+            changed = true
+        }
+
+        return changed
+    }
+
+    private func materializeExistingStarterSkills(
+        projectFolderPath: String,
+        changedSkillIds: Set<String>
+    ) {
+        let projectRoot = URL(fileURLWithPath: projectFolderPath, isDirectory: true)
+        let existingSkillIds = existingCanonicalSkillIds(projectRoot: projectRoot)
+        let targetSkillIds = changedSkillIds.isEmpty
+            ? existingSkillIds
+            : existingSkillIds.intersection(changedSkillIds)
+        guard !targetSkillIds.isEmpty else { return }
+        let disabledInstalledSkillIds = Set(
+            abilities
+                .filter { $0.activation == .off }
+                .flatMap(\.requiredSkillIDs)
+        )
+        let starterSkillIds = Set(ProjectInstructionStore.loadStarters().flatMap { starter -> [String] in
+            guard let starterAbility = ProjectInstructionStore.loadStarterAbility(starter) else {
+                return []
+            }
+            return starterAbility.requiredSkillIDs
+        })
+        let existingStarterSkillIds = starterSkillIds
+            .subtracting(disabledInstalledSkillIds)
+            .intersection(targetSkillIds)
+            .sorted()
+        guard !existingStarterSkillIds.isEmpty else { return }
+        ProjectSkillMaterializer.materialize(
+            projectFolderPath: projectFolderPath,
+            skillIds: existingStarterSkillIds
+        )
+    }
+
+    private func existingCanonicalSkillIds(projectRoot: URL) -> Set<String> {
+        let skillsDir = projectRoot
+            .appendingPathComponent(".termloop", isDirectory: true)
+            .appendingPathComponent("skills", isDirectory: true)
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: skillsDir.path, isDirectory: &isDir),
+              isDir.boolValue else { return [] }
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: skillsDir,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        return Set(entries.compactMap { url in
+            guard url.hasDirectoryPath,
+                  FileManager.default.fileExists(
+                    atPath: canonicalSkillFileURL(projectRoot: projectRoot, skillId: url.lastPathComponent).path
+                  ) else { return nil }
+            return url.lastPathComponent
+        })
+    }
+
+    private func canonicalSkillFileURL(projectRoot: URL, skillId: String) -> URL {
+        projectRoot
+            .appendingPathComponent(".termloop", isDirectory: true)
+            .appendingPathComponent("skills", isDirectory: true)
+            .appendingPathComponent(skillId, isDirectory: true)
+            .appendingPathComponent("SKILL.md", isDirectory: false)
     }
 
     // MARK: - Load

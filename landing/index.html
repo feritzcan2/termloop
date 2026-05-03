@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TermLoop — The terminal IDE for your AI agents</title>
-<meta name="description" content="TermLoop is an agentic terminal IDE. Run AI agents in parallel, each in its own git worktree. Bring your own API keys. macOS-native with a phone bridge.">
+<meta name="description" content="TermLoop is an open source agentic terminal IDE. Run AI agents in parallel, each in its own git worktree. Use your existing Claude or Codex subscription. macOS-native with a phone bridge.">
 <meta property="og:title" content="TermLoop — The terminal IDE for your AI agents">
-<meta property="og:description" content="Run AI agents in parallel. Built-in git worktrees. Mobile bridge. Bring your own API keys.">
+<meta property="og:description" content="Open source. Run AI agents in parallel. Built-in git worktrees. Mobile bridge. Use your existing subscription.">
 <meta property="og:type" content="website">
 <link rel="canonical" href="https://termloop.ai/">
 <meta name="theme-color" content="#000000">
@@ -188,8 +188,16 @@
     padding: 96px 0 72px;
     text-align: center;
   }
+  .hero-eyebrow {
+    margin: 0 auto;
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--cyan-2);
+  }
   h1.hero-title {
-    margin: 24px auto 0;
+    margin: 18px auto 0;
     max-width: 900px;
     font-family: 'Geist', sans-serif;
     font-weight: 500;
@@ -742,6 +750,231 @@
   }
   .loop-closing::before { content: '↻  '; color: var(--cyan-2); font-style: normal; letter-spacing: 0.08em; }
 
+  .loop-proof {
+    margin: 64px auto 0;
+    max-width: 1200px;
+    padding: 0 24px;
+  }
+  .loop-proof-head {
+    max-width: 760px;
+    margin: 0 auto 28px;
+    text-align: center;
+  }
+  .loop-proof-title-h {
+    margin: 12px 0 14px;
+    font-size: clamp(22px, 3.4vw, 32px);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--fg);
+  }
+  .loop-proof-lede {
+    color: var(--fg-2);
+    font-size: 16px;
+    line-height: 1.7;
+    margin: 0;
+  }
+  .loop-proof-lede code {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.9em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    color: var(--cyan-3);
+  }
+  .loop-proof-figure { margin: 0; }
+  .loop-proof-frame {
+    position: relative;
+    border: 1px solid var(--border-2);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(34,211,238,0.05), rgba(168,85,247,0.05));
+    overflow: hidden;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.02) inset,
+      0 30px 80px -30px rgba(34,211,238,0.25),
+      0 30px 80px -30px rgba(168,85,247,0.2);
+  }
+  .loop-proof-overlay {
+    position: absolute;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 14px;
+    background: rgba(0,0,0,0.62);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    color: var(--fg);
+    font-family: 'Geist Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    text-align: center;
+    pointer-events: none;
+    white-space: nowrap;
+    max-width: calc(100% - 32px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: opacity 0.18s ease;
+  }
+  .loop-proof-overlay:empty { display: none; }
+  @media (max-width: 640px) {
+    .loop-proof-overlay {
+      font-size: 11.5px;
+      padding: 6px 10px;
+      bottom: 10px;
+      max-width: calc(100% - 16px);
+    }
+  }
+  .loop-proof-bar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0,0,0,0.4);
+  }
+  .loop-proof-dots { display: flex; gap: 6px; }
+  .loop-proof-dots span {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--bg-3);
+  }
+  .loop-proof-dots span:nth-child(1) { background: #ef4444; }
+  .loop-proof-dots span:nth-child(2) { background: #eab308; }
+  .loop-proof-dots span:nth-child(3) { background: #22c55e; }
+  .loop-proof-bar-title {
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px;
+    color: var(--fg-3);
+    letter-spacing: 0.04em;
+  }
+  .loop-proof video {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: #000;
+    cursor: zoom-in;
+  }
+  .loop-proof video:hover { filter: brightness(1.04); }
+  .loop-proof video:fullscreen,
+  .loop-proof video:-webkit-full-screen {
+    cursor: default;
+  }
+  .loop-proof-beats {
+    margin-top: 18px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px 18px;
+    color: var(--fg-3);
+    font-size: 13px;
+    font-family: 'Geist Mono', monospace;
+    letter-spacing: 0.02em;
+  }
+  .loop-proof-beats span { display: inline-flex; align-items: baseline; gap: 6px; }
+  .loop-proof-beats b {
+    font-weight: 500;
+    color: var(--cyan-2);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+
+  /* ── MORE INSIDE (screenshot showcase) ────────────────── */
+  section.more { padding: 64px 0 40px; }
+  section.more .section-head { margin-bottom: 48px; }
+  .more-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    align-items: center;
+    margin-bottom: 56px;
+    grid-template-areas: "image text";
+  }
+  .more-row .more-image { grid-area: image; }
+  .more-row .more-text { grid-area: text; }
+  .more-row.reverse { grid-template-areas: "text image"; }
+  .more-row.banner {
+    grid-template-areas: "image image" "text text";
+    grid-template-columns: 1fr;
+    gap: 24px;
+    margin-bottom: 0;
+  }
+  .more-image {
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    background: var(--bg-1);
+    box-shadow: 0 30px 80px -40px rgba(0,0,0,0.6);
+  }
+  .more-image img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .phone-trio {
+    display: flex;
+    gap: 18px;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 0 8px;
+  }
+  .phone-trio img {
+    flex: 1 1 0;
+    max-width: 280px;
+    width: 100%;
+    height: auto;
+    border-radius: 22px;
+    border: 1px solid var(--border-2);
+    background: #000;
+    box-shadow: 0 30px 80px -40px rgba(34,211,238,0.3),
+                0 30px 80px -40px rgba(168,85,247,0.25);
+  }
+  .phone-trio img:nth-child(1) { transform: translateY(12px) rotate(-2deg); }
+  .phone-trio img:nth-child(3) { transform: translateY(12px) rotate(2deg); }
+  @media (max-width: 640px) {
+    .phone-trio { gap: 8px; }
+    .phone-trio img:nth-child(1),
+    .phone-trio img:nth-child(3) { transform: none; }
+  }
+  .more-text { padding: 8px 0; }
+  .more-eyebrow {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--cyan-2);
+    margin-bottom: 10px;
+  }
+  .more-text h3 {
+    font-size: clamp(20px, 2.4vw, 26px);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--fg);
+    margin-bottom: 12px;
+  }
+  .more-text p {
+    color: var(--fg-2);
+    font-size: 15.5px;
+    line-height: 1.65;
+  }
+  .more-text code {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.88em;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    color: var(--cyan-3);
+  }
+  @media (max-width: 800px) {
+    .more-row,
+    .more-row.reverse,
+    .more-row.banner {
+      grid-template-areas: "image" "text";
+      grid-template-columns: 1fr;
+      gap: 18px;
+      margin-bottom: 48px;
+    }
+  }
+
   /* ── SECTION HEADING ──────────────────────────────────── */
   .eyebrow {
     font-family: 'Geist Mono', monospace;
@@ -1137,11 +1370,8 @@
       <span>TermLoop</span>
     </a>
     <div class="nav-links">
-      <a href="#features">Features</a>
-      <a href="#how">How it works</a>
       <a href="#faq">FAQ</a>
-      <a href="/github">GitHub</a>
-      <a href="#notify" class="nav-cta">Early access →</a>
+      <a href="https://github.com/feritzcan2/termloop" class="nav-cta">GitHub →</a>
     </div>
   </div>
 </nav>
@@ -1149,213 +1379,69 @@
 <!-- ═══ HERO ═══ -->
 <section class="hero">
   <div class="container">
-    <div class="badge reveal" style="animation-delay: 0.05s">
-      <span class="ring"></span>
-      <span>Pre-alpha · shipping Q3 2026</span>
-    </div>
+    <p class="hero-eyebrow reveal" style="animation-delay: 0.05s">
+      For devs running Claude Code, Codex, Gemini CLI, Aider, Cline — in parallel
+    </p>
     <h1 class="hero-title reveal" style="animation-delay: 0.15s">
       The terminal IDE<br>
       for <span class="grad">your AI agents.</span>
     </h1>
     <p class="hero-sub reveal" style="animation-delay: 0.3s">
       Run AI agents in parallel — each in its own git worktree.
-      Bring your own API keys. Control the whole thing from your phone.
-      Native to macOS.
+      Use your existing Claude or Codex subscription. Control the whole thing from your phone.
+      Open source, native to macOS.
     </p>
     <div class="hero-cta reveal" style="animation-delay: 0.4s">
-      <a href="#notify" class="btn btn-primary">
-        Get early access
+      <a href="https://github.com/feritzcan2/termloop/releases/latest/download/termloop-macos.dmg" class="btn btn-primary">
+        Download for macOS
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
       </a>
-      <a href="/github" class="btn btn-ghost">
+      <a href="https://github.com/feritzcan2/termloop" class="btn btn-ghost">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55v-1.92c-3.2.7-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.2-3.09-.12-.29-.52-1.48.11-3.09 0 0 .98-.31 3.2 1.18.93-.26 1.92-.38 2.91-.38.99 0 1.98.13 2.91.38 2.22-1.5 3.19-1.18 3.19-1.18.64 1.61.24 2.8.12 3.09.75.81 1.2 1.84 1.2 3.09 0 4.42-2.69 5.39-5.25 5.68.41.36.78 1.05.78 2.12v3.14c0 .3.21.66.79.55A11.5 11.5 0 0 0 23.5 12C23.5 5.73 18.27.5 12 .5z"/></svg>
         Star on GitHub
       </a>
     </div>
     <div class="trust-row reveal" style="animation-delay: 0.55s">
-      <span><span class="dot">●</span> BYO API keys</span>
-      <span><span class="dot">●</span> Built on cmux</span>
+      <span><span class="dot">●</span> Use your subscription</span>
+      <span><span class="dot">●</span> Open source</span>
       <span><span class="dot">●</span> macOS · iOS</span>
       <span><span class="dot">●</span> No telemetry</span>
     </div>
 
-    <!-- PROMOTION PIPELINE MOCKUP -->
-    <div class="preview reveal" style="animation-delay: 0.7s" aria-label="TermLoop promotion pipeline">
-      <div class="preview-chrome">
-        <div class="dots"><span></span><span></span><span></span></div>
-        <div class="title">termloop · ~/Projects/termloop</div>
+  </div>
+</section>
+
+<!-- ═══ KICKOFF ═══ -->
+<section class="loop-section" id="kickoff">
+  <div class="container">
+    <div class="loop-proof">
+      <div class="loop-proof-head">
+        <div class="eyebrow">Kickoff</div>
+        <h3 class="loop-proof-title-h">All your agents in one tap.</h3>
+        <p class="loop-proof-lede">
+          Quick Actions are saved agent launches — name, prompt, model,
+          even a starter command. One tap fires the whole set, each agent
+          ready to work on its own task.
+        </p>
       </div>
-
-      <div class="pipeline">
-        <!-- left rail: promotion pipeline visualization -->
-        <aside class="pipe-rail" aria-hidden="true">
-          <svg class="pipe-loop-svg" viewBox="0 0 90 46" preserveAspectRatio="xMidYMin meet">
-            <defs>
-              <linearGradient id="pipeLoopGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stop-color="rgba(34,197,94,0.75)"/>
-                <stop offset="100%" stop-color="rgba(6,182,212,0.2)"/>
-              </linearGradient>
-            </defs>
-            <!-- wraparound curve: from top of track up and over, returning down -->
-            <path d="M 45 46 Q 45 8 66 8 Q 80 8 80 28 L 80 46"
-                  fill="none" stroke="url(#pipeLoopGrad)" stroke-width="1.5"
-                  stroke-linecap="round" stroke-dasharray="2 4"/>
-            <!-- upward arrowhead -->
-            <path d="M 39 16 L 45 9 L 51 16"
-                  fill="none" stroke="var(--cyan-3)" stroke-width="1.8"
-                  stroke-linecap="round" stroke-linejoin="round"/>
-            <text x="58" y="42" font-family="Geist Mono, monospace"
-                  font-size="6.5" fill="#71717a" letter-spacing="0.8">cycle</text>
-          </svg>
-
-          <div class="pipe-track">
-            <span class="pipe-arrow"></span>
-            <span class="pipe-pulse"></span>
-            <span class="pipe-stop merged"><b></b><em>merged</em></span>
-            <span class="pipe-stop open"><b></b><em>open pr</em></span>
-            <span class="pipe-stop worktree"><b></b><em>worktree</em></span>
-            <span class="pipe-stop active"><b></b><em>active</em></span>
+      <figure class="loop-proof-figure">
+        <div class="loop-proof-frame">
+          <div class="loop-proof-bar">
+            <div class="loop-proof-dots"><span></span><span></span><span></span></div>
+            <div class="loop-proof-bar-title">termloop · quick action · all agents in one tap</div>
           </div>
-          <div class="pipe-direction">promotes ↑</div>
-        </aside>
-
-        <!-- right column: stacked sections, MERGED at top → ACTIVE at bottom -->
-        <div class="pipe-body">
-          <!-- MERGED PRS -->
-          <section class="pipe-section merged">
-            <header class="pipe-section-head">
-              <span class="pipe-caret">▾</span>
-              <span class="pipe-section-title">Merged PRs</span>
-              <span class="pipe-section-count">4 · 9</span>
-            </header>
-            <article class="pipe-branch">
-              <div class="branch-head">
-                <span class="branch-name">Branch: collapse</span>
-                <span class="branch-meta">PR #42 → dev · 2 changes · 5 commits</span>
-              </div>
-              <div class="agent-row">
-                <span class="chip running">running</span>
-                <span class="agent-name">collapse <em>(Claude Code)</em></span>
-                <span class="agent-line">Kalan referanslar yapısal olarak farklı özelliklere ait…</span>
-                <span class="agent-time">29m</span>
-              </div>
-              <div class="agent-row">
-                <span class="chip ready">ready</span>
-                <span class="agent-name">collapse <em>(Claude Code)</em></span>
-                <span class="agent-line"><i>Claude is waiting for your input</i></span>
-                <span class="agent-time">116m</span>
-              </div>
-            </article>
-            <article class="pipe-branch">
-              <div class="branch-head">
-                <span class="branch-name">Branch: promths</span>
-                <span class="branch-meta">PR #31 → dev · 10 changes · 54 commits</span>
-              </div>
-              <div class="agent-row">
-                <span class="chip running">running</span>
-                <span class="agent-name">promths <em>(Claude Code)</em></span>
-                <span class="agent-line">Build sonucunu bekliyorum.</span>
-                <span class="agent-time">53m</span>
-              </div>
-              <div class="agent-row">
-                <span class="chip build">Build: TermLoop DEV promths.app</span>
-                <span class="agent-name">promths <em>(Codex CLI)</em></span>
-                <span class="agent-line"><i>ready to hand off</i></span>
-                <span class="agent-time">206m</span>
-              </div>
-            </article>
-            <article class="pipe-branch collapsed">
-              <div class="branch-head">
-                <span class="branch-name">Branch: hooks</span>
-                <span class="branch-meta">PR #39 → dev · 5 changes · 39 commits</span>
-              </div>
-            </article>
-            <article class="pipe-branch collapsed">
-              <div class="branch-head">
-                <span class="branch-name">Branch: contextbank</span>
-                <span class="branch-meta">PR #36 → dev · 3 changes · 13 commits</span>
-              </div>
-            </article>
-          </section>
-
-          <!-- OPEN PRS -->
-          <section class="pipe-section open">
-            <header class="pipe-section-head">
-              <span class="pipe-caret">▾</span>
-              <span class="pipe-section-title">Open PRs</span>
-              <span class="pipe-section-count">1 · 1</span>
-            </header>
-            <article class="pipe-branch">
-              <div class="branch-head">
-                <span class="branch-name">Branch: notify-overhaul</span>
-                <span class="branch-meta">PR #51 → dev · 4 changes · 12 commits</span>
-              </div>
-              <div class="agent-row">
-                <span class="chip ready">review</span>
-                <span class="agent-name">notify-overhaul <em>(Codex CLI)</em></span>
-                <span class="agent-line"><i>CI green · awaiting review</i></span>
-                <span class="agent-time">4m</span>
-              </div>
-            </article>
-          </section>
-
-          <!-- WORKTREE AGENTS -->
-          <section class="pipe-section worktree">
-            <header class="pipe-section-head">
-              <span class="pipe-caret">▾</span>
-              <span class="pipe-section-title">Worktree Agents</span>
-              <span class="pipe-section-count">1 · 2</span>
-            </header>
-            <article class="pipe-branch">
-              <div class="branch-head">
-                <span class="branch-name">Branch: askto</span>
-                <span class="branch-meta">.termloop-worktrees/askto · 1 change</span>
-              </div>
-              <div class="agent-row">
-                <span class="chip done">done</span>
-                <span class="agent-name">askto <em>(Claude Code)</em></span>
-                <span class="agent-line">Doğrulama tamamlandı. Üç iddianın da kod satırlarına göre…</span>
-                <span class="agent-time">2m</span>
-              </div>
-              <div class="agent-row">
-                <span class="chip ready">ready</span>
-                <span class="agent-name">askto <em>(Claude Code)</em></span>
-                <span class="agent-line"><i>Claude is waiting for your input</i></span>
-                <span class="agent-time">14m</span>
-              </div>
-            </article>
-          </section>
-
-          <!-- ACTIVE AGENTS -->
-          <section class="pipe-section active">
-            <header class="pipe-section-head">
-              <span class="pipe-caret">▾</span>
-              <span class="pipe-section-title">Active Agents</span>
-              <span class="pipe-section-count">1 · 1</span>
-            </header>
-            <article class="pipe-branch">
-              <div class="branch-head">
-                <span class="branch-name">dev (host)</span>
-                <span class="branch-meta">~/Projects/termloop · no worktree yet</span>
-              </div>
-              <div class="agent-row">
-                <span class="chip thinking">thinking</span>
-                <span class="agent-name">dev <em>(Claude Code)</em></span>
-                <span class="agent-line">Scoping TerminalAgentActivityStore refactor…</span>
-                <span class="agent-time">0:08</span>
-              </div>
-            </article>
-          </section>
+          <video autoplay muted loop playsinline preload="metadata" aria-label="One Quick Action launches every TermLoop agent at once" data-captions='[{"t":0,"text":"Open Quick Actions"},{"t":4,"text":"One tap"},{"t":9,"text":"Each on its own task"}]'>
+            <source src="/assets/videos/quick-actions.webm" type="video/webm">
+            <source src="/assets/videos/quick-actions.mp4" type="video/mp4">
+          </video>
+          <div class="loop-proof-overlay" aria-live="polite"></div>
         </div>
-      </div>
-
-      <footer class="pipe-statusbar">
-        <span class="pipe-stat-tcp"><b></b>tcp:7878 · listening</span>
-        <span class="pipe-stat-sep">·</span>
-        <span class="pipe-stat-phone">↔ iPhone 192.168.1.42</span>
-        <span class="pipe-stat-spacer"></span>
-        <span class="pipe-stat-meta">dev · Opus 4.7 · bypass permissions on</span>
-      </footer>
+        <figcaption class="loop-proof-beats">
+          <span><b>01</b> Open Quick Actions</span>
+          <span><b>02</b> One tap</span>
+          <span><b>03</b> Each on its own task</span>
+        </figcaption>
+      </figure>
     </div>
   </div>
 </section>
@@ -1363,259 +1449,128 @@
 <!-- ═══ THE LOOP ═══ -->
 <section class="loop-section" id="loop">
   <div class="container">
-    <div class="section-head">
-      <div class="eyebrow">The loop</div>
-      <h2 class="section-title">Four states. One direction.<br>Forever upward.</h2>
-      <p class="section-sub">Every agent moves through four states, bottom to top. When a PR lands, its slot frees and a fresh agent takes its place. The cycle never stops.</p>
-    </div>
-
-    <div class="loop-circuit">
-      <svg class="loop-rail-svg" viewBox="0 0 1200 340" preserveAspectRatio="none" aria-hidden="true">
-        <defs>
-          <linearGradient id="loopRailGrad" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%"   stop-color="rgba(103,232,249,0.8)"/>
-            <stop offset="33%"  stop-color="rgba(6,182,212,0.55)"/>
-            <stop offset="66%"  stop-color="rgba(168,85,247,0.55)"/>
-            <stop offset="100%" stop-color="rgba(34,197,94,0.85)"/>
-          </linearGradient>
-          <linearGradient id="loopReturnGrad" x1="1" y1="0" x2="0" y2="0">
-            <stop offset="0%"   stop-color="rgba(34,197,94,0.7)"/>
-            <stop offset="100%" stop-color="rgba(103,232,249,0.7)"/>
-          </linearGradient>
-        </defs>
-
-        <!-- bottom rail: main direction (left → right, active → merged) -->
-        <path class="rail-dash" d="M 180 298 L 1020 298"
-              fill="none" stroke="url(#loopRailGrad)" stroke-width="1.5" stroke-linecap="round"/>
-
-        <!-- left cap: active entry -->
-        <path d="M 180 298 Q 30 298 30 178 Q 30 40 180 40"
-              fill="none" stroke="rgba(103,232,249,0.35)" stroke-width="1.25"
-              stroke-dasharray="3 6" stroke-linecap="round"/>
-
-        <!-- right cap: merged exit -->
-        <path d="M 1020 298 Q 1170 298 1170 178 Q 1170 40 1020 40"
-              fill="none" stroke="rgba(34,197,94,0.4)" stroke-width="1.25"
-              stroke-dasharray="3 6" stroke-linecap="round"/>
-
-        <!-- top rail: return flow (right → left) -->
-        <path class="rail-dash" d="M 1020 40 L 180 40"
-              fill="none" stroke="url(#loopReturnGrad)" stroke-width="1.25"
-              stroke-dasharray="3 6" stroke-linecap="round"/>
-
-        <!-- return arrow (pointing left along top rail) -->
-        <path d="M 620 40 L 612 34 M 620 40 L 612 46"
-              stroke="var(--cyan-2)" stroke-width="1.8"
-              stroke-linecap="round" fill="none"/>
-
-        <!-- return label -->
-        <text x="600" y="28" font-family="Geist Mono, monospace"
-              font-size="11" fill="#71717a" letter-spacing="2"
-              text-anchor="middle">SLOT FREES · NEW AGENT TAKES IT</text>
-
-        <!-- tick marks on bottom rail, aligned with stage centers -->
-        <circle cx="180" cy="298" r="5" fill="#000"
-                stroke="var(--cyan-3)" stroke-width="2"/>
-        <circle cx="460" cy="298" r="5" fill="#000"
-                stroke="var(--cyan-2)" stroke-width="2"/>
-        <circle cx="740" cy="298" r="5" fill="#000"
-                stroke="var(--purple-3)" stroke-width="2"/>
-        <circle cx="1020" cy="298" r="5" fill="var(--green)"
-                stroke="var(--green)" stroke-width="2"/>
-      </svg>
-
-      <ol class="loop-stages">
-        <li class="loop-stage" style="--i:0">
-          <div class="loop-num">01 · ACTIVE</div>
-          <h4 class="loop-stage-name">An agent starts</h4>
-          <p class="loop-stage-desc">You hand a task to an agent on the host checkout. It reads, thinks, proposes — no branch yet, no isolation.</p>
-          <div class="loop-mini">
-            <span class="chip thinking">thinking</span>
-            <span class="loop-mini-name">dev <em>(Claude Code)</em></span>
+    <div class="loop-proof">
+      <div class="loop-proof-head">
+        <div class="eyebrow">See it run</div>
+        <h3 class="loop-proof-title-h">Four agents. Four tasks. One workspace.</h3>
+        <p class="loop-proof-lede">
+          Hand four agents four tasks at once. Each runs in its own
+          <code>worktree</code>, boots its own dev server, opens its own PR.
+          Your host checkout stays clean.
+        </p>
+      </div>
+      <figure class="loop-proof-figure">
+        <div class="loop-proof-frame">
+          <div class="loop-proof-bar">
+            <div class="loop-proof-dots"><span></span><span></span><span></span></div>
+            <div class="loop-proof-bar-title">termloop · 4 agents · 1 loop · 18 seconds</div>
           </div>
-        </li>
-        <li class="loop-stage" style="--i:1">
-          <div class="loop-num">02 · WORKTREE</div>
-          <h4 class="loop-stage-name">Isolation kicks in</h4>
-          <p class="loop-stage-desc">As soon as it commits, TermLoop spins up <code>.termloop-worktrees/&lt;branch&gt;</code>. Your host stays clean; the agent keeps iterating.</p>
-          <div class="loop-mini">
-            <span class="chip ready">ready</span>
-            <span class="loop-mini-name">askto <em>(Claude Code)</em></span>
-          </div>
-        </li>
-        <li class="loop-stage" style="--i:2">
-          <div class="loop-num">03 · OPEN PR</div>
-          <h4 class="loop-stage-name">The work goes public</h4>
-          <p class="loop-stage-desc">Push, open, wait for CI. The agent stays attached to its worktree and keeps responding to review without blocking anything else.</p>
-          <div class="loop-mini">
-            <span class="chip ready">review</span>
-            <span class="loop-mini-name">notify-overhaul <em>(Codex CLI)</em></span>
-          </div>
-        </li>
-        <li class="loop-stage" style="--i:3">
-          <div class="loop-num">04 · MERGED</div>
-          <h4 class="loop-stage-name">Slot frees, cycle restarts</h4>
-          <p class="loop-stage-desc">PR lands, the worktree is archived, and the agent card disappears — making room for the next task the moment you're ready.</p>
-          <div class="loop-mini">
-            <span class="chip done">done</span>
-            <span class="loop-mini-name">collapse <em>(Claude Code)</em></span>
-          </div>
-        </li>
-      </ol>
-    </div>
-
-    <p class="loop-closing">You work in states, not commands. Four stops, one direction, forever upward.</p>
-  </div>
-</section>
-
-<!-- ═══ FEATURES ═══ -->
-<section class="features" id="features">
-  <div class="container">
-    <div class="section-head">
-      <div class="eyebrow">Features</div>
-      <h2 class="section-title">Everything an agent-heavy workflow needs.<br>Nothing it doesn't.</h2>
-      <p class="section-sub">TermLoop replaces your terminal. It doesn't bolt an AI panel onto VS Code. Built from the ground up for people who already live in tmux.</p>
-    </div>
-
-    <div class="feature-grid">
-      <!-- CARD 1 -->
-      <div class="feature-card">
-        <div class="icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="7" height="7" rx="1.5"/>
-            <rect x="14" y="3" width="7" height="7" rx="1.5"/>
-            <rect x="3" y="14" width="7" height="7" rx="1.5"/>
-            <rect x="14" y="14" width="7" height="7" rx="1.5"/>
-          </svg>
+          <video autoplay muted loop playsinline preload="metadata" aria-label="Four TermLoop agents running in parallel worktrees, opening PRs, and merging" data-captions='[{"t":0,"text":"Empty workspace"},{"t":4,"text":"4 agents kick off"},{"t":10,"text":"Apps boot · live URLs come in"},{"t":13,"text":"PRs open in the sidebar"},{"t":16,"text":"Pull → finished"}]'>
+            <source src="/assets/videos/worktree-parallel.webm" type="video/webm">
+            <source src="/assets/videos/worktree-parallel.mp4" type="video/mp4">
+          </video>
+          <div class="loop-proof-overlay" aria-live="polite"></div>
         </div>
-        <h3>Parallel agent sessions</h3>
-        <p>Run four Claudes, a Codex, and a Gemini at once — each in its own pane, each in its own worktree. Nothing collides. Nothing waits its turn.</p>
-        <div class="meta">
-          <span>Claude</span><span>Codex</span><span>Gemini</span><span>BYO</span>
-        </div>
-      </div>
-
-      <!-- CARD 2 -->
-      <div class="feature-card">
-        <div class="icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/>
-            <path d="M8.12 10.8 15.88 6.2M8.12 13.2l7.76 4.6"/>
-          </svg>
-        </div>
-        <h3>Worktrees, first-class</h3>
-        <p>Every task gets its own branch and directory, created automatically. No stashing, no branch gymnastics. Agents can't step on work in progress.</p>
-        <div class="meta">
-          <span>zero-config</span><span>git-native</span><span>disposable</span>
-        </div>
-      </div>
-
-      <!-- CARD 3 -->
-      <div class="feature-card">
-        <div class="icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="6" y="2" width="12" height="20" rx="2.5"/>
-            <path d="M11 18h2"/>
-          </svg>
-        </div>
-        <h3>Phone in the loop</h3>
-        <p>Start an agent from the couch. Check output from a coffee-shop queue. Native iOS client over an authenticated TCP bridge — no cloud round-trip.</p>
-        <div class="meta">
-          <span>bridged</span><span>encrypted</span><span>async</span>
-        </div>
-      </div>
-
-      <!-- CARD 4 -->
-      <div class="feature-card">
-        <div class="icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2v6l4-4-4 4-4-4 4 4z"/>
-            <circle cx="12" cy="14" r="7"/>
-            <path d="M9 14h6"/>
-          </svg>
-        </div>
-        <h3>Bring your own keys</h3>
-        <p>You pay the model provider directly. No middleman markup, no rate-limit surprises. TermLoop never touches your API traffic.</p>
-        <div class="meta">
-          <span>Anthropic</span><span>OpenAI</span><span>Google</span><span>Ollama</span>
-        </div>
-      </div>
-
-      <!-- CARD 5 -->
-      <div class="feature-card">
-        <div class="icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 17l6-6 4 4 6-8"/>
-            <path d="M14 7h6v6"/>
-          </svg>
-        </div>
-        <h3>Projects, not just shells</h3>
-        <p>Group workspaces by project, switch contexts in one keystroke. Your "work" project, your "side-project" project — each with its own agents and env.</p>
-        <div class="meta">
-          <span>namespaced</span><span>persistent</span><span>fast-switch</span>
-        </div>
-      </div>
-
-      <!-- CARD 6 -->
-      <div class="feature-card">
-        <div class="icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2l9 4v6c0 5-4 9-9 10C7 21 3 17 3 12V6l9-4z"/>
-            <path d="M9 12l2 2 4-5"/>
-          </svg>
-        </div>
-        <h3>Source-available, auditable</h3>
-        <p>Inspect the socket protocol, the agent loop, everything. No telemetry, no phone-home — what you see on your machine is all there is.</p>
-        <div class="meta">
-          <span>auditable</span><span>no-telemetry</span><span>local-first</span>
-        </div>
-      </div>
+        <figcaption class="loop-proof-beats">
+          <span><b>01</b> Empty workspace</span>
+          <span><b>02</b> 4 agents kick off</span>
+          <span><b>03</b> Apps boot with live URLs</span>
+          <span><b>04</b> PRs open</span>
+          <span><b>05</b> Pull, done</span>
+        </figcaption>
+      </figure>
     </div>
   </div>
 </section>
 
-<!-- ═══ HOW IT WORKS ═══ -->
-<section class="steps" id="how">
+<!-- ═══ ASK-TO ═══ -->
+<section class="loop-section" id="ask-to">
   <div class="container">
-    <div class="section-head">
-      <div class="eyebrow">Flow</div>
-      <h2 class="section-title">How an TermLoop session runs.</h2>
-      <p class="section-sub">Three steps. No config files. No YAML.</p>
-    </div>
-
-    <div class="steps-grid">
-      <div class="step">
-        <div class="num">01</div>
-        <h4>Point it at a repo</h4>
-        <p>Open TermLoop in any git project. It auto-detects remotes, branches, and dev server scripts.</p>
+    <div class="loop-proof">
+      <div class="loop-proof-head">
+        <div class="eyebrow">Ask-to</div>
+        <h3 class="loop-proof-title-h">Stuck? Ask another agent.</h3>
+        <p class="loop-proof-lede">
+          When an agent hits a wall, it doesn't wait for you. The built-in
+          <code>ask_to</code> MCP tool lets it consult any other running
+          agent — different model, different worktree, different perspective.
+          Cross-pollination, no human in the loop.
+        </p>
       </div>
-      <div class="step">
-        <div class="num">02</div>
-        <h4>Spawn an agent</h4>
-        <p>Pick a model, give a task. TermLoop forks a worktree, boots the agent, and streams output to a new pane.</p>
-      </div>
-      <div class="step">
-        <div class="num">03</div>
-        <h4>Review & merge</h4>
-        <p>When the agent reports done, review the diff in place. Merge, discard, or hand off to another agent.</p>
-      </div>
+      <figure class="loop-proof-figure">
+        <div class="loop-proof-frame">
+          <div class="loop-proof-bar">
+            <div class="loop-proof-dots"><span></span><span></span><span></span></div>
+            <div class="loop-proof-bar-title">termloop · ask_to · cross-agent consult</div>
+          </div>
+          <video autoplay muted loop playsinline preload="metadata" aria-label="One TermLoop agent asks another for help via the built-in ask_to MCP tool" data-captions='[{"t":0,"text":"Agent prepares the question"},{"t":6,"text":"New agent picks it up"},{"t":9,"text":"Back to the asker"},{"t":12,"text":"Answer arrives"}]'>
+            <source src="/assets/videos/ask-to.webm" type="video/webm">
+            <source src="/assets/videos/ask-to.mp4" type="video/mp4">
+          </video>
+          <div class="loop-proof-overlay" aria-live="polite"></div>
+        </div>
+        <figcaption class="loop-proof-beats">
+          <span><b>01</b> Agent prepares the question</span>
+          <span><b>02</b> New agent picks it up</span>
+          <span><b>03</b> Back to the asker</span>
+          <span><b>04</b> Answer arrives</span>
+        </figcaption>
+      </figure>
     </div>
   </div>
 </section>
 
-<!-- ═══ OSS ═══ -->
-<section class="oss">
+<!-- ═══ MORE INSIDE ═══ -->
+<section class="more" id="more">
   <div class="container">
-    <div class="oss-inner">
-      <div class="eyebrow">Built in the open</div>
-      <h2>Read the source. Trust the loop.</h2>
-      <p>TermLoop is built on <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener" style="color: var(--cyan-2); text-decoration: underline; text-decoration-color: rgba(34,211,238,0.3);">cmux</a> &mdash; a GPL-3.0 terminal multiplexer by Manaflow. We publish our agent layer publicly too. No telemetry, no phone-home. Final license and pricing announced at launch.</p>
-      <div class="oss-cta">
-        <a href="/github" class="btn btn-primary">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55v-1.92c-3.2.7-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.2-3.09-.12-.29-.52-1.48.11-3.09 0 0 .98-.31 3.2 1.18.93-.26 1.92-.38 2.91-.38.99 0 1.98.13 2.91.38 2.22-1.5 3.19-1.18 3.19-1.18.64 1.61.24 2.8.12 3.09.75.81 1.2 1.84 1.2 3.09 0 4.42-2.69 5.39-5.25 5.68.41.36.78 1.05.78 2.12v3.14c0 .3.21.66.79.55A11.5 11.5 0 0 0 23.5 12C23.5 5.73 18.27.5 12 .5z"/></svg>
-          github.com/termloopai
-        </a>
-        <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener" class="btn btn-ghost">See cmux upstream</a>
+    <div class="section-head">
+      <div class="eyebrow">More inside</div>
+      <h2 class="section-title">Built for serious agent workflows.</h2>
+    </div>
+
+    <div class="more-row">
+      <div class="more-image">
+        <img src="/assets/screenshots/sidebar.png" alt="TermLoop sidebar showing worktree agents, open and merged PRs">
+      </div>
+      <div class="more-text">
+        <div class="more-eyebrow">Sidebar</div>
+        <h3>Every thread, one rail.</h3>
+        <p>Branch, PR status, dirty file count, port forwards, agent state — every workspace at a glance. Skim ten active threads without switching tabs.</p>
+      </div>
+    </div>
+
+    <div class="more-row reverse">
+      <div class="more-image">
+        <img src="/assets/screenshots/context-bank.png" alt="Context Bank cataloging CLAUDE.md files across the project with usage scores">
+      </div>
+      <div class="more-text">
+        <div class="more-eyebrow">Context Bank</div>
+        <h3>Shared, scored context.</h3>
+        <p>TermLoop catalogs every <code>CLAUDE.md</code>, <code>AGENTS.md</code>, <code>GEMINI.md</code> across your tree, scores how much each one actually helps, and lets you clone the strong ones into other agents.</p>
+      </div>
+    </div>
+
+    <div class="more-row banner">
+      <div class="more-image">
+        <img src="/assets/screenshots/claude-accounts.png" alt="Settings panel binding one Claude account per project">
+      </div>
+      <div class="more-text">
+        <div class="more-eyebrow">Per-project accounts</div>
+        <h3>Different Claude login per project.</h3>
+        <p>Bind a separate Claude account to each project — work in one, personal in another. No terminal switching, no token juggling.</p>
+      </div>
+    </div>
+
+    <div class="more-row banner phone-row">
+      <div class="phone-trio">
+        <img src="/assets/screenshots/mobile/connections.jpg" alt="iOS app pairing screen connecting to a Mac">
+        <img src="/assets/screenshots/mobile/project-list.jpg" alt="iOS app showing the termloop project workspace list">
+        <img src="/assets/screenshots/mobile/agent-session.jpg" alt="Live agent terminal session viewed from the iOS app">
+      </div>
+      <div class="more-text">
+        <div class="more-eyebrow">Phone bridge</div>
+        <h3>Your sessions, in your pocket.</h3>
+        <p>Native iOS client pairs with your Mac over an authenticated TCP socket on your local network. Watch live agent output, switch projects, jump into a session — from the couch, the queue, or another room.</p>
       </div>
     </div>
   </div>
@@ -1631,49 +1586,33 @@
 
     <div class="faq-list">
       <details class="q">
-        <summary>Is this a fork of Claude Code / Cursor / Warp?</summary>
-        <p>None of those. TermLoop is built on cmux, an open-source terminal multiplexer — think tmux with a native macOS shell. We added a pane-per-agent model, git worktree orchestration, and a mobile bridge. Claude Code and the others run inside TermLoop panes, not the other way around.</p>
+        <summary>Do I pay separately for the AI?</summary>
+        <p>No. TermLoop runs the agent CLIs you already use — Claude Code, Codex, Gemini CLI, Aider, Cline. You stay logged in with your existing subscription. TermLoop never proxies your API traffic and adds no billing layer.</p>
       </details>
       <details class="q">
-        <summary>What models can I run?</summary>
-        <p>Any model with a CLI: Claude Code (Anthropic), Codex (OpenAI), Gemini CLI, Aider, Cline, local Ollama, or your own scripts. TermLoop just hands each one a worktree and a pane — it's model-agnostic.</p>
+        <summary>Which agents and models can I run?</summary>
+        <p>Anything with a CLI: Claude Code (Anthropic), Codex (OpenAI), Gemini CLI (Google), Aider, Cline, local Ollama, or your own scripts. TermLoop just hands each one a worktree and a pane — it's model-agnostic.</p>
       </details>
       <details class="q">
-        <summary>Does TermLoop see my API keys or code?</summary>
-        <p>No. Agents call their providers directly from your machine with your own keys. TermLoop never proxies, stores, or phones home. The only network call it makes is checking for app updates, which you can disable.</p>
+        <summary>Is TermLoop a fork of something?</summary>
+        <p>TermLoop builds on <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener" style="color: var(--cyan-2); text-decoration: underline; text-decoration-color: rgba(34,211,238,0.3);">cmux</a>, an open-source GPL-3.0 terminal multiplexer by Manaflow. cmux gives us the multiplexer foundation — splits, panes, the renderer. The agent-loop layer, worktree orchestration, ask_to MCP, Context Bank, mobile bridge, and per-project Claude accounts — all of it is what TermLoop adds on top.</p>
       </details>
       <details class="q">
-        <summary>Why macOS-only?</summary>
-        <p>Because we wanted a native, fast, low-latency UI before we wanted broad reach. Linux is on the roadmap. Windows isn't, for now.</p>
+        <summary>Is it really open source?</summary>
+        <p>Yes. The macOS app is a free download and the source is public. Inspect the socket protocol, the agent loop, the worktree orchestration — everything. No telemetry, no phone-home.</p>
       </details>
       <details class="q">
-        <summary>How does the phone bridge work?</summary>
-        <p>A native iOS client connects to your TermLoop session over a password-authenticated TCP socket on your local network (or over a tailnet if you have one). Same protocol as the desktop — you can list workspaces, switch projects, and watch agent output live.</p>
+        <summary>Linux or Windows?</summary>
+        <p>macOS only today. Linux is on the roadmap. Windows isn't, for now — we wanted a native, low-latency UI before we wanted broad reach.</p>
       </details>
       <details class="q">
-        <summary>How much does it cost?</summary>
-        <p>Early access is free. Final pricing will be announced before launch — expect a free tier for personal use and a paid tier for power features like the mobile bridge and cloud session sync. Sign up for early access and we'll tell you first.</p>
+        <summary>Does the iOS app actually work?</summary>
+        <p>Yes — the iOS client connects to your TermLoop session over an authenticated TCP socket on your local network. It's stable today but still under active development, so expect ongoing iteration. Desktop is the primary surface for now.</p>
       </details>
       <details class="q">
-        <summary>What's the license?</summary>
-        <p>TermLoop builds on <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener" style="color: var(--cyan-2);">cmux</a>, which is GPL-3.0-or-later with a commercial option by its publisher. The full TermLoop licensing terms will be published alongside the first binary. Until then, the repository is source-available for inspection.</p>
+        <summary>What about my code and credentials?</summary>
+        <p>They never leave your machine. Agents call their providers directly with your own subscription. The only network call TermLoop itself makes is checking for app updates, which you can disable.</p>
       </details>
-    </div>
-  </div>
-</section>
-
-<!-- ═══ NOTIFY ═══ -->
-<section class="notify" id="notify">
-  <div class="container">
-    <div class="notify-card">
-      <div class="eyebrow">Early access</div>
-      <h2>Get the first binary.</h2>
-      <p>One email when TermLoop ships. Plus a private TestFlight invite when mobile opens up. No drip.</p>
-      <form class="subscribe" id="subscribe" novalidate>
-        <input type="email" name="email" placeholder="you@domain.dev" required autocomplete="email" spellcheck="false" aria-label="Your email">
-        <button type="submit">Notify me</button>
-      </form>
-      <div class="notify-status" id="notify-status">~ waiting for input</div>
     </div>
   </div>
 </section>
@@ -1686,10 +1625,8 @@
       <span>TermLoop</span>
     </div>
     <div class="links">
-      <a href="#features">Features</a>
-      <a href="#how">How</a>
       <a href="#faq">FAQ</a>
-      <a href="/github">GitHub</a>
+      <a href="https://github.com/feritzcan2/termloop">GitHub</a>
       <a href="mailto:feritzcan93@gmail.com">Contact</a>
     </div>
     <div class="copy">© 2026 · termloop.ai</div>
@@ -1706,26 +1643,69 @@
     });
   });
 
-  // subscribe form
-  const form = document.getElementById('subscribe');
-  const status = document.getElementById('notify-status');
-  if (form) {
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const email = (form.email.value || '').trim();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        status.textContent = '⚠ invalid email — try again';
-        status.style.color = '#ef4444';
-        return;
+  // Tap-to-fullscreen for demo videos
+  const isIOSLike = () => {
+    const ua = navigator.userAgent || '';
+    return /iPad|iPhone|iPod/.test(ua) ||
+           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  };
+  const enterFullscreen = (video) => {
+    // iOS Safari: prefer the native iOS fullscreen player
+    if (isIOSLike() && typeof video.webkitEnterFullscreen === 'function') {
+      try { video.webkitEnterFullscreen(); return; } catch (_) {}
+    }
+    if (typeof video.requestFullscreen === 'function') {
+      const p = video.requestFullscreen();
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => {
+          if (typeof video.webkitEnterFullscreen === 'function') {
+            try { video.webkitEnterFullscreen(); } catch (_) {}
+          }
+        });
       }
-      // TODO: wire to Cloudflare Worker / Resend / Buttondown
-      status.innerHTML = '✓ queued · <span style="color: var(--cyan-2)">' + email.replace(/[<>&"']/g, '') + '</span> · see you at launch';
-      status.style.color = 'var(--fg-3)';
-      form.querySelector('input').value = '';
-      form.style.opacity = '0.5';
-      form.style.pointerEvents = 'none';
+      return;
+    }
+    if (typeof video.webkitEnterFullscreen === 'function') {
+      try { video.webkitEnterFullscreen(); } catch (_) {}
+    } else if (typeof video.webkitRequestFullscreen === 'function') {
+      video.webkitRequestFullscreen();
+    }
+  };
+  document.querySelectorAll('.loop-proof video').forEach(video => {
+    video.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      enterFullscreen(video);
     });
-  }
+    // iOS sometimes routes through touchend instead of click
+    video.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      enterFullscreen(video);
+    }, { passive: false });
+  });
+
+  // Caption overlays driven by video.currentTime
+  document.querySelectorAll('.loop-proof video[data-captions]').forEach(video => {
+    const overlay = video.parentElement.querySelector('.loop-proof-overlay');
+    if (!overlay) return;
+    let captions;
+    try { captions = JSON.parse(video.dataset.captions); } catch (_) { return; }
+    if (!Array.isArray(captions) || captions.length === 0) return;
+    let lastText = '';
+    const update = () => {
+      const t = video.currentTime;
+      let active = captions[0];
+      for (const c of captions) if (t >= c.t) active = c;
+      if (active.text !== lastText) {
+        overlay.textContent = active.text;
+        lastText = active.text;
+      }
+    };
+    video.addEventListener('timeupdate', update);
+    video.addEventListener('loadedmetadata', update);
+    video.addEventListener('seeked', update);
+    update();
+  });
 </script>
 
 </body>

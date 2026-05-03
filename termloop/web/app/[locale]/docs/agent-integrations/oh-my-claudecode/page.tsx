@@ -21,9 +21,9 @@ export default function OhMyClaudeCodePage() {
       <p>{t("intro")}</p>
 
       <h2>{t("usage")}</h2>
-      <CodeBlock lang="bash">{`cmux omc
-cmux omc team 3:claude "implement feature"
-cmux omc --watch`}</CodeBlock>
+      <CodeBlock lang="bash">{`termloop omc
+termloop omc team 3:claude "implement feature"
+termloop omc --watch`}</CodeBlock>
       <p>{t("usageDesc")}</p>
 
       <h2>{t("whatYouGet")}</h2>

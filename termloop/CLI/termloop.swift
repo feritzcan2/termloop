@@ -1532,6 +1532,17 @@ final class SocketClient {
         if let error = response["error"] as? [String: Any] {
             let code = (error["code"] as? String) ?? "error"
             let message = (error["message"] as? String) ?? "Unknown v2 error"
+            if let data = error["data"] {
+                let detail: String = {
+                    guard JSONSerialization.isValidJSONObject(data),
+                          let encoded = try? JSONSerialization.data(withJSONObject: data, options: [.sortedKeys]),
+                          let rendered = String(data: encoded, encoding: .utf8) else {
+                        return String(describing: data)
+                    }
+                    return rendered
+                }()
+                throw CLIError(message: "\(code): \(message) \(detail)")
+            }
             throw CLIError(message: "\(code): \(message)")
         }
 
@@ -7021,8 +7032,9 @@ struct CMUXCLI {
         }
 
         let bridgeId = (result["bridge_id"] as? String) ?? "?"
+        let requestId = (result["request_id"] as? String) ?? bridgeId
         let helperId = (result["helper_workspace_id"] as? String) ?? "?"
-        print("Sent to \(target). bridge_id=\(bridgeId), helper_workspace_id=\(helperId)")
+        print("Sent to \(target). request_id=\(requestId), bridge_id=\(bridgeId), helper_workspace_id=\(helperId). The helper must call reply_to_request exactly once with this request_id when the final answer is ready.")
     }
 
     /// Return the help/usage text for a subcommand, or nil if the command is unknown.

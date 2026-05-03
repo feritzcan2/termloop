@@ -22,7 +22,15 @@ extension ActiveAgentsPanel {
                 #if DEBUG
                 dlog("ActiveAgentsPanel.abilityRow tap workspaceId=\(session.workspaceId.uuidString.prefix(8))")
                 #endif
-                MainAreaActivation.activateWorkspaceTerminal(session.workspaceId, on: tabManager)
+                if let abilityId = session.kind.abilityId {
+                    MainAreaActivation.activateAbilityWorkspaceTerminal(
+                        session.workspaceId,
+                        abilityId: abilityId,
+                        on: tabManager
+                    )
+                } else {
+                    MainAreaActivation.activateWorkspaceTerminal(session.workspaceId, on: tabManager)
+                }
             },
             onClose: { [weak tabManager] in
                 guard let tm = tabManager,

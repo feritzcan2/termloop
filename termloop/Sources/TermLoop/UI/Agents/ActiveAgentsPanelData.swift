@@ -161,6 +161,11 @@ extension ActiveAgentsPanel {
         return snapshot.tabs
             .filter { snapshot.isVisibleInLoopPanel(workspaceId: $0.id) }
             .compactMap { workspace -> TerminalAgentLiveSession? in
+                // Ability-owned workspaces have their own Active Agents row;
+                // do not also render the same workspace as a generic terminal.
+                guard WorkspaceMetadataStore.shared.abilitySession(forWorkspaceId: workspace.id) == nil else {
+                    return nil
+                }
                 guard TerminalAgentActivityStore.shared.shouldAppearInActiveAgentsPanel(forWorkspace: workspace),
                       let presentation = TerminalAgentActivityStore.shared
                         .presentation(forWorkspaceId: workspace.id) else {
@@ -218,7 +223,10 @@ extension ActiveAgentsPanel {
                 continue
             }
             if WorkspaceMetadataStore.shared.abilitySession(forWorkspaceId: workspace.id) != nil {
+                // Keep the collapsed header count aligned with the expanded
+                // row model: an ability workspace contributes exactly one row.
                 counts.abilitySessions += 1
+                continue
             }
             guard let presentation = TerminalAgentActivityStore.shared
                 .presentation(forWorkspaceId: workspace.id) else {

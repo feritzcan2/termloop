@@ -128,6 +128,7 @@ TCP socket.
 | `surface.subscribe` | `{ workspace_id, surface_id?, format?, history_lines? }` | `{ subscription_id, format?, history_lines? }` |
 | `surface.unsubscribe` | `{ subscription_id }` | `{ ok: true }` |
 | `termloop.list_terminal_agents` | – | `{ agents: TerminalAgentSummary[] }` |
+| `push.register` | `{ device_token, platform, environment }` | `{ registered: true }` |
 
 ### Server-pushed events (V2 streaming)
 

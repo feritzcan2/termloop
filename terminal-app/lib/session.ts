@@ -1,3 +1,5 @@
+import * as Notifications from "expo-notifications";
+import { Platform } from "react-native";
 import { connectionHostCandidates, type SavedConnection } from "./connections";
 import { TcpTransport } from "./tcp-transport";
 import {
@@ -54,6 +56,9 @@ export async function openSession(
     try {
       const { auth } = await applyAuth(client, conn);
       active = { connectionId: conn.id, client, transport, auth };
+      void registerPushToken(client).catch((err) => {
+        console.warn("Push registration skipped:", err);
+      });
       return { client, auth };
     } catch (err) {
       lastErr = err;
@@ -62,6 +67,31 @@ export async function openSession(
   }
 
   throw lastErr ?? new Error("Connection failed.");
+}
+
+async function registerPushToken(client: TermLoopClient): Promise<void> {
+  if (Platform.OS !== "ios") return;
+
+  const permissions = await Notifications.getPermissionsAsync();
+  let granted = permissions.granted || permissions.status === "granted";
+  if (!granted && permissions.canAskAgain) {
+    const next = await Notifications.requestPermissionsAsync({
+      ios: { allowAlert: true, allowBadge: true, allowSound: true },
+    });
+    granted = next.granted || next.status === "granted";
+  }
+  if (!granted) return;
+
+  const token = await Notifications.getDevicePushTokenAsync();
+  if (token.type !== "ios" || typeof token.data !== "string" || !token.data) {
+    return;
+  }
+
+  await client.registerPushToken({
+    deviceToken: token.data,
+    platform: "ios",
+    environment: __DEV__ ? "development" : "production",
+  });
 }
 
 export function getActiveClient(): TermLoopClient | null {

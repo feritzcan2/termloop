@@ -565,10 +565,9 @@ private enum WorktreeAgentsPanelTypography {
 
 /// Sidebar panel that sits above `ActiveAgentsPanel` and groups every
 /// workspace running on a `.termloop-worktrees/<branch>/` worktree by branch.
-/// Unlike `ActiveAgentsPanel` (flat list of agent runs) or `TasksSubTabView`
-/// (full task-store planning list), this panel answers one question at a
-/// glance: "which worktrees do I have open right now, and what agent is
-/// in each?"
+/// Unlike `ActiveAgentsPanel` (flat list of agent runs), this panel answers
+/// one question at a glance: "which worktrees do I have open right now, and
+/// what agent is in each?"
 ///
 /// A workspace is considered worktree-backed when
 /// `WorkspaceMetadataStore.branch(for:)` returns a non-empty branch — the
@@ -1109,7 +1108,10 @@ struct WorktreeAgentsPanel: View {
             var seenPaths = Set<String>()
             var byKey: [String: AgentReportedStateStore.AgentReportedBinding] = [:]
             for workspace in group.workspaces {
-                guard let path = WorkspaceMetadataStore.shared.worktreeRootPath(forWorkspaceId: workspace.id),
+                guard let path = WorkspaceMetadataStore.shared.reportedStatePath(
+                    forWorkspaceId: workspace.id,
+                    fallbackPath: workspace.termLoopPresentationCwd()
+                ),
                       seenPaths.insert(path).inserted else { continue }
                 for binding in AgentReportedStateStore.shared.bindings(forPath: path) {
                     let key = AgentReportedStateStore.bindingKey(
@@ -1378,11 +1380,47 @@ struct WorktreeAgentsPanel: View {
         return String.localizedStringWithFormat(format, agent.displayName)
     }
 
-    private func openPullRequests(_ pullRequests: [SidebarPullRequestState]) {
+    private func openPullRequests(
+        _ pullRequests: [SidebarPullRequestState],
+        workspaceIds: [UUID],
+        preferredWorkspaceId: UUID?
+    ) {
         let uniquePullRequests = WorktreeAgentsPullRequestSummary.orderedUniquePullRequests(from: pullRequests)
         for pullRequest in uniquePullRequests {
-            NSWorkspace.shared.open(pullRequest.url)
+            WorktreeURLRouter.open(
+                pullRequest.url,
+                workspaceIds: workspaceIds,
+                preferredWorkspaceId: preferredWorkspaceId
+            )
         }
+    }
+
+    private func pullRequestBadge(
+        summary: WorktreeAgentsPullRequestSummary.Summary?,
+        allPullRequests: [SidebarPullRequestState],
+        group: WorktreeAgentsGroup
+    ) -> some View {
+        let workspaceIds = group.workspaces.map(\.id)
+        let preferredWorkspaceId = sourceWorkspace(for: group)?.id
+        return WorktreeGroupPullRequestBadge(
+            summary: summary,
+            allPullRequests: allPullRequests,
+            openPullRequests: {
+                openPullRequests(
+                    $0,
+                    workspaceIds: workspaceIds,
+                    preferredWorkspaceId: preferredWorkspaceId
+                )
+            },
+            openSinglePullRequest: {
+                WorktreeURLRouter.open(
+                    $0,
+                    workspaceIds: workspaceIds,
+                    preferredWorkspaceId: preferredWorkspaceId
+                )
+            }
+        )
+        .equatable()
     }
 
     private func addAgent(to group: WorktreeAgentsGroup, agent: TerminalAgent) {
@@ -1517,7 +1555,6 @@ struct WorktreeAgentsPanel: View {
         let groupBindings = renderSnapshot.bindingsByBranch[group.branch] ?? []
         let groupBindingBadges = renderSnapshot.bindingBadgeSnapshotsByBranch[group.branch] ?? []
         let partitionedBindings = partitionRunTargetBindings(groupBindings)
-        let compactPersistentBindingBadges = groupBindingBadges.filter { $0.isJira }
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: expanded ? "chevron.down" : "chevron.right")
@@ -1628,18 +1665,17 @@ struct WorktreeAgentsPanel: View {
                 // git summary (commits/changes) sits at the trailing end.
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .center, spacing: 4) {
-                        WorktreeGroupPullRequestBadge(
+                        pullRequestBadge(
                             summary: pullRequestSummary,
                             allPullRequests: allBranchPullRequests,
-                            openPullRequests: openPullRequests,
-                            openSinglePullRequest: { NSWorkspace.shared.open($0) }
+                            group: group
                         )
-                        .equatable()
                         if !groupBindings.isEmpty {
                             if !partitionedBindings.runTargets.isEmpty {
                                 WorktreeGroupRunTargetsBadge(
                                     bindings: partitionedBindings.runTargets,
-                                    workspaceIds: group.workspaces.map(\.id)
+                                    workspaceIds: group.workspaces.map(\.id),
+                                    reportedStatePath: group.worktreePath
                                 )
                             }
                             ForEach(groupBindingBadges) { snapshot in
@@ -1654,33 +1690,45 @@ struct WorktreeAgentsPanel: View {
                             pullRequestLookupTick: pullRequestLookupTick
                         )
                     }
-                    // Compact fallbacks for narrow sidebars: keep PR status
-                    // and persistent ticket bindings visible, then drop git
-                    // metadata instead of crushing branch titles/count tokens.
+                    // Compact fallbacks for narrow sidebars: keep every
+                    // agent-reported badge visible, then drop git metadata
+                    // instead of crushing branch titles/count tokens.
                     HStack(alignment: .center, spacing: 4) {
-                        WorktreeGroupPullRequestBadge(
+                        pullRequestBadge(
                             summary: pullRequestSummary,
                             allPullRequests: allBranchPullRequests,
-                            openPullRequests: openPullRequests,
-                            openSinglePullRequest: { NSWorkspace.shared.open($0) }
+                            group: group
                         )
-                        .equatable()
-                        ForEach(compactPersistentBindingBadges) { snapshot in
+                        if !partitionedBindings.runTargets.isEmpty {
+                            WorktreeGroupRunTargetsBadge(
+                                bindings: partitionedBindings.runTargets,
+                                workspaceIds: group.workspaces.map(\.id),
+                                reportedStatePath: group.worktreePath
+                            )
+                        }
+                        ForEach(groupBindingBadges) { snapshot in
                             WorktreeGroupBindingBadge(snapshot: snapshot)
                                 .equatable()
                         }
                     }
                     VStack(alignment: .trailing, spacing: 2) {
-                        WorktreeGroupPullRequestBadge(
+                        pullRequestBadge(
                             summary: pullRequestSummary,
                             allPullRequests: allBranchPullRequests,
-                            openPullRequests: openPullRequests,
-                            openSinglePullRequest: { NSWorkspace.shared.open($0) }
+                            group: group
                         )
-                        .equatable()
-                        ForEach(compactPersistentBindingBadges) { snapshot in
-                            WorktreeGroupBindingBadge(snapshot: snapshot)
-                                .equatable()
+                        HStack(alignment: .center, spacing: 4) {
+                            if !partitionedBindings.runTargets.isEmpty {
+                                WorktreeGroupRunTargetsBadge(
+                                    bindings: partitionedBindings.runTargets,
+                                    workspaceIds: group.workspaces.map(\.id),
+                                    reportedStatePath: group.worktreePath
+                                )
+                            }
+                            ForEach(groupBindingBadges) { snapshot in
+                                WorktreeGroupBindingBadge(snapshot: snapshot)
+                                    .equatable()
+                            }
                         }
                     }
                 }
@@ -2634,7 +2682,6 @@ struct WorktreeChangesSheet: View {
                 seededCandidates: seed.candidates,
                 currentBranch: seed.currentBranch,
                 directory: directory,
-                explicitTracked: seed.explicitTracked,
                 projectRoot: seed.projectRoot
             )
         }.value
@@ -2762,7 +2809,6 @@ struct WorktreeChangesSheet: View {
     private func candidateSeedsFromMainActor() -> (
         candidates: [String],
         currentBranch: String?,
-        explicitTracked: [String]?,
         projectRoot: String
     ) {
         var seeded: [String] = []
@@ -2776,7 +2822,6 @@ struct WorktreeChangesSheet: View {
         return (
             candidates: seeded,
             currentBranch: branch?.trimmingCharacters(in: .whitespacesAndNewlines),
-            explicitTracked: project?.trackedBranches,
             projectRoot: project?.folderPath ?? effectiveDirectory
         )
     }

@@ -9,7 +9,6 @@ All notable changes to termloop are documented here.
 - Detect listening ports for remote SSH workspaces ([#2398](https://github.com/feritzcan2/termloop/pull/2398))
 - Editable workspace descriptions ([#2475](https://github.com/feritzcan2/termloop/pull/2475))
 - Claude Binary Path setting ([#2514](https://github.com/feritzcan2/termloop/pull/2514))
-- `cmux omx` and `cmux omc` agent integrations ([#2619](https://github.com/feritzcan2/termloop/pull/2619))
 - "Open Folder in VS Code (Inline)" menu item and command palette entry ([#2409](https://github.com/feritzcan2/termloop/pull/2409))
 - New Window entry in the Dock menu ([#2340](https://github.com/feritzcan2/termloop/pull/2340))
 - Reset-terminal workaround in the terminal menu ([#2349](https://github.com/feritzcan2/termloop/pull/2349))
@@ -97,8 +96,6 @@ All notable changes to termloop are documented here.
 - Browser profile import — cookies, history, and settings from Chrome, Firefox, Safari, and more ([#318](https://github.com/feritzcan2/termloop/pull/318), [#1582](https://github.com/feritzcan2/termloop/pull/1582), [#1593](https://github.com/feritzcan2/termloop/pull/1593))
 - Support `window.open()` popup windows in browser panes with shared OAuth context ([#1150](https://github.com/feritzcan2/termloop/pull/1150), [#1600](https://github.com/feritzcan2/termloop/pull/1600))
 - Minimal mode — hide the titlebar for a distraction-free terminal ([#1479](https://github.com/feritzcan2/termloop/pull/1479), [#2218](https://github.com/feritzcan2/termloop/pull/2218))
-- `cmux.json` custom commands — define project-specific actions launched from the command palette ([#2011](https://github.com/feritzcan2/termloop/pull/2011), [#2122](https://github.com/feritzcan2/termloop/pull/2122))
-- `cmux omo` command for oh-my-openagent integration ([#2087](https://github.com/feritzcan2/termloop/pull/2087), [#2230](https://github.com/feritzcan2/termloop/pull/2230), [#2280](https://github.com/feritzcan2/termloop/pull/2280))
 - Codex CLI hooks integration for terminal notifications ([#2103](https://github.com/feritzcan2/termloop/pull/2103))
 - Customizable number shortcuts for workspace switching ([#1951](https://github.com/feritzcan2/termloop/pull/1951))
 - Customizable sidebar selection highlight color ([#1824](https://github.com/feritzcan2/termloop/pull/1824))
@@ -108,9 +105,7 @@ All notable changes to termloop are documented here.
 - Support dropping folders onto the dock icon to open as workspaces ([#1571](https://github.com/feritzcan2/termloop/pull/1571))
 - Support modifier+key combinations in `send-key` CLI — ctrl+enter, shift+tab, arrow keys, home/end/delete/pageup/pagedown ([#1994](https://github.com/feritzcan2/termloop/pull/1994), [#1920](https://github.com/feritzcan2/termloop/pull/1920))
 - `--name` flag for `new-workspace` CLI command ([#2160](https://github.com/feritzcan2/termloop/pull/2160))
-- `--no-focus` flag for `cmux ssh` ([#2227](https://github.com/feritzcan2/termloop/pull/2227))
 - `--direction` flag for markdown open command ([#1763](https://github.com/feritzcan2/termloop/pull/1763))
-- Per-surface TTY exposed in `cmux tree` output ([#2040](https://github.com/feritzcan2/termloop/pull/2040))
 - `set-color` / `clear-color` workspace actions for tab color via CLI ([#1873](https://github.com/feritzcan2/termloop/pull/1873), [#1833](https://github.com/feritzcan2/termloop/pull/1833))
 - IntelliJ IDEA added to command palette Open Directory targets ([#1860](https://github.com/feritzcan2/termloop/pull/1860))
 - Open a new terminal tab from empty tab bar double-click ([#1601](https://github.com/feritzcan2/termloop/pull/1601))
@@ -223,7 +218,6 @@ All notable changes to termloop are documented here.
 - Fix PWD action routing to correct TabManager per tabId ([#2147](https://github.com/feritzcan2/termloop/pull/2147))
 - Fix socket returning wrong error when surface_id is provided but unresolvable ([#2150](https://github.com/feritzcan2/termloop/pull/2150))
 - Guard inherited terminal config against stale surfaces ([#2101](https://github.com/feritzcan2/termloop/pull/2101))
-- Suppress socat stdout in `_cmux_send` to prevent "OK" leak ([#1619](https://github.com/feritzcan2/termloop/pull/1619))
 - Add `-r` shorthand to skip session ID check in Claude wrapper ([#1992](https://github.com/feritzcan2/termloop/pull/1992))
 - Check git repo before running git commands to prevent TCC permission prompts ([#1677](https://github.com/feritzcan2/termloop/pull/1677))
 - Preserve explicit wheel scrollback against passive follow ([#1965](https://github.com/feritzcan2/termloop/pull/1965))
@@ -237,7 +231,6 @@ All notable changes to termloop are documented here.
 ### Added
 - Configurable sidebar tint color with separate light/dark mode support via Settings and config file (`sidebar-background`, `sidebar-tint-opacity`) ([#1465](https://github.com/feritzcan2/termloop/pull/1465))
 - Cmd+P all-surfaces search option ([#1382](https://github.com/feritzcan2/termloop/pull/1382))
-- `cmux themes` command with bundled Ghostty themes ([#1334](https://github.com/feritzcan2/termloop/pull/1334), [#1314](https://github.com/feritzcan2/termloop/pull/1314))
 - Sidebar can now shrink to smaller widths ([#1420](https://github.com/feritzcan2/termloop/pull/1420))
 - Menu bar visibility setting ([#1330](https://github.com/feritzcan2/termloop/pull/1330))
 
@@ -288,7 +281,6 @@ All notable changes to termloop are documented here.
 - Close other pane tabs with confirmation ([#475](https://github.com/feritzcan2/termloop/pull/475))
 - Flash Focused Panel command palette action ([#638](https://github.com/feritzcan2/termloop/pull/638))
 - Zoom/maximize focused pane in splits ([#634](https://github.com/feritzcan2/termloop/pull/634))
-- `cmux tree` command for full CLI hierarchy view ([#592](https://github.com/feritzcan2/termloop/pull/592))
 - Install or uninstall the `termloop` CLI from the command palette ([#626](https://github.com/feritzcan2/termloop/pull/626))
 - Clipboard image paste in terminal with Cmd+V ([#562](https://github.com/feritzcan2/termloop/pull/562), [#853](https://github.com/feritzcan2/termloop/pull/853))
 - Middle-click X11-style selection paste in terminal ([#369](https://github.com/feritzcan2/termloop/pull/369))
@@ -410,7 +402,6 @@ All notable changes to termloop are documented here.
 - Workspace color schemes and left-rail workspace indicator settings ([#324](https://github.com/feritzcan2/termloop/pull/324), [#329](https://github.com/feritzcan2/termloop/pull/329), [#332](https://github.com/feritzcan2/termloop/pull/332))
 - URL open-wrapper routing into the embedded browser ([#332](https://github.com/feritzcan2/termloop/pull/332))
 - Cmd+Q quit warning with suppression toggle ([#295](https://github.com/feritzcan2/termloop/pull/295))
-- `cmux --version` output now includes commit metadata
 
 ### Changed
 - Added light mode and unified theme refresh across app surfaces ([#258](https://github.com/feritzcan2/termloop/pull/258)) — thanks @ijpatricio for the report!
@@ -905,7 +896,6 @@ _No user-facing changes._
 - Update UI error details and pill visibility
 
 ### Changed
-- Renamed app to cmux
 - Improved CI UI test stability
 
 ## [0.1.0] - 2025-01-28

@@ -307,6 +307,26 @@ extension TermLoopSocketCommands {
         return URL(fileURLWithPath: trimmed).resolvingSymlinksInPath().path
     }
 
+    private static func reportedStateFallbackPath(
+        workspaceId: UUID,
+        params: [String: Any]
+    ) -> String? {
+        let cwd = rawString(params, "cwd")?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !cwd.isEmpty { return cwd }
+
+        guard let workspace = AppDelegate.shared?.workspaceFor(tabId: workspaceId) else {
+            return nil
+        }
+        let presentationPath = workspace.termLoopPresentationCwd()?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !presentationPath.isEmpty { return presentationPath }
+
+        let currentDirectory = workspace.currentDirectory
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return currentDirectory.isEmpty ? nil : currentDirectory
+    }
+
     /// Generic ability binding telemetry. Stores the opaque payload
     /// keyed by `<abilityId>.<bindingId>` in the worktree-scoped reported
     /// state store. Dedupes idempotent reports so observers don't churn.
@@ -364,7 +384,8 @@ extension TermLoopSocketCommands {
             value,
             abilityId: abilityId,
             bindingId: bindingId,
-            forWorkspaceId: wsId
+            forWorkspaceId: wsId,
+            fallbackPath: reportedStateFallbackPath(workspaceId: wsId, params: params)
         ) {
         case .noWorktree:
             return .err(code: "no_worktree",
@@ -405,7 +426,10 @@ extension TermLoopSocketCommands {
             return err
         }
         guard let path = WorkspaceMetadataStore.shared
-            .worktreeRootPath(forWorkspaceId: wsId) else {
+            .reportedStatePath(
+                forWorkspaceId: wsId,
+                fallbackPath: reportedStateFallbackPath(workspaceId: wsId, params: params)
+            ) else {
             return .err(code: "no_worktree",
                         message: "Workspace has no canonical worktree root",
                         data: nil)
@@ -443,8 +467,9 @@ extension TermLoopSocketCommands {
         case .missing(let err):
             return err
         }
+        let fallbackPath = reportedStateFallbackPath(workspaceId: wsId, params: params)
         guard let workspaceRootPath = WorkspaceMetadataStore.shared
-            .worktreeRootPath(forWorkspaceId: wsId) else {
+            .reportedStatePath(forWorkspaceId: wsId, fallbackPath: fallbackPath) else {
             return .err(code: "no_worktree",
                         message: "Workspace has no canonical worktree root",
                         data: nil)
@@ -497,7 +522,8 @@ extension TermLoopSocketCommands {
         let outcome = WorkspaceMetadataStore.shared.replaceReportedBindings(
             underAbilityId: abilityId,
             with: bindings,
-            forWorkspaceId: wsId
+            forWorkspaceId: wsId,
+            fallbackPath: fallbackPath
         )
         let labels = bindings.map { $0.bindingId }.joined(separator: ",")
         lifecycleLog(
@@ -538,7 +564,10 @@ extension TermLoopSocketCommands {
             return err
         }
         guard let path = WorkspaceMetadataStore.shared
-            .worktreeRootPath(forWorkspaceId: wsId) else {
+            .reportedStatePath(
+                forWorkspaceId: wsId,
+                fallbackPath: reportedStateFallbackPath(workspaceId: wsId, params: params)
+            ) else {
             return .err(code: "no_worktree",
                         message: "Workspace has no canonical worktree root",
                         data: nil)
