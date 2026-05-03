@@ -152,7 +152,7 @@ struct QuickActionAdvancedTable: View {
 
     private var promptDocumentRow: some View {
         row(
-            field: "prompt doc",
+            field: "message doc",
             persist: .session,
             value: AnyView(
                 VStack(alignment: .leading, spacing: 4) {
@@ -192,7 +192,7 @@ struct QuickActionAdvancedTable: View {
 
                     Text(String(
                         localized: "quickAction.advanced.promptDocument.hint",
-                        defaultValue: "Reusable prompt body. Used only when the main prompt box is empty.",
+                        defaultValue: "Reusable first message. Used only when the main composer is empty.",
                         table: "TermLoop"
                     ))
                     .font(.system(size: 10))
@@ -205,7 +205,7 @@ struct QuickActionAdvancedTable: View {
 
     private var systemPromptDocumentRow: some View {
         row(
-            field: "system doc",
+            field: "instructions doc",
             persist: .session,
             value: AnyView(
                 VStack(alignment: .leading, spacing: 4) {
@@ -245,7 +245,7 @@ struct QuickActionAdvancedTable: View {
 
                     Text(String(
                         localized: "quickAction.advanced.systemDocument.hint",
-                        defaultValue: "Reusable system prompt. Applied only when Advanced › System prompt is empty.",
+                        defaultValue: "Reusable system instructions. Applied only when Advanced › System instructions is empty.",
                         table: "TermLoop"
                     ))
                     .font(.system(size: 10))

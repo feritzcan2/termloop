@@ -88,11 +88,11 @@ struct QuickActionAdvancedPreviewTab: View {
     private var authoredSystemPromptSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(String(localized: "quickAction.preview.tab.userSystemPrompt",
-                        defaultValue: "Authored system prompt",
+                        defaultValue: "System instructions",
                         table: "TermLoop"))
                 .font(.headline)
             Text(String(localized: "quickAction.preview.tab.userSystemPromptSource",
-                        defaultValue: "Resolved direct system prompt before transport delivery.",
+                        defaultValue: "Resolved direct system instructions before transport delivery.",
                         table: "TermLoop"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -102,7 +102,7 @@ struct QuickActionAdvancedPreviewTab: View {
             monoBlock(
                 plan?.resolvedUserSystemPrompt,
                 empty: String(localized: "quickAction.preview.tab.noDirectSystemPrompt",
-                              defaultValue: "(empty — no system prompt document or advanced system prompt set)",
+                              defaultValue: "(empty — no system instructions document or advanced system instructions set)",
                               table: "TermLoop")
             )
             Divider()
@@ -211,7 +211,7 @@ struct QuickActionAdvancedPreviewTab: View {
     private var promptSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text("Prompt").font(.headline)
+                Text("First message").font(.headline)
                 Text(promptStatus.shortLabel)
                     .font(.system(size: 9, weight: .semibold, design: .monospaced))
                     .padding(.horizontal, 4)
@@ -234,7 +234,7 @@ struct QuickActionAdvancedPreviewTab: View {
                 .foregroundStyle(.secondary)
             monoBlock(
                 promptBodyForDisplay,
-                empty: "(empty — no prompt text, prompt document, or template prompt body)"
+                empty: "(empty — no prompt text, prompt document, or template default prompt)"
             )
         }
     }

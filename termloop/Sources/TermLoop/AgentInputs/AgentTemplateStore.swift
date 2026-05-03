@@ -19,6 +19,8 @@ final class AgentTemplateStore: ObservableObject {
     @Published private(set) var templates: [AgentTemplate] = []
     @Published private(set) var loadErrors: [LoadError] = []
 
+    private static let projectDeletedTemplatesFilename = ".deleted-template-ids"
+
     private let logger = Logger(subsystem: "ai.termloop", category: "template-store")
     private var stream: FSEventStreamRef?
     private var latestBuiltin: URL?
@@ -75,6 +77,7 @@ final class AgentTemplateStore: ObservableObject {
     func reloadSynchronously(builtinDir: URL?, userDir: URL?, projectDir: URL?) {
         var merged: [String: AgentTemplate] = [:]
         var errors: [LoadError] = []
+        let deletedProjectTemplateIds = Self.loadDeletedProjectTemplateIds(projectDir: projectDir)
 
         func ingest(_ dir: URL?, source: AgentTemplate.Source) {
             guard let dir, FileManager.default.fileExists(atPath: dir.path) else { return }
@@ -97,6 +100,11 @@ final class AgentTemplateStore: ObservableObject {
         ingest(builtinDir, source: .builtin)
         ingest(userDir, source: .user)
         ingest(projectDir, source: .project)
+        for id in deletedProjectTemplateIds {
+            if merged[id]?.source != .project {
+                merged[id] = nil
+            }
+        }
 
         templates = merged.values.sorted { $0.name < $1.name }
         loadErrors = errors
@@ -148,6 +156,23 @@ final class AgentTemplateStore: ObservableObject {
             return template
         }
         return nil
+    }
+
+    private static func loadDeletedProjectTemplateIds(projectDir: URL?) -> Set<String> {
+        guard let projectDir else { return [] }
+        let url = projectDir.appendingPathComponent(projectDeletedTemplatesFilename)
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        return Set(text
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("#") })
+    }
+
+    private static func saveDeletedProjectTemplateIds(_ ids: Set<String>, projectDir: URL) throws {
+        try FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
+        let url = projectDir.appendingPathComponent(projectDeletedTemplatesFilename)
+        let body = ids.sorted().joined(separator: "\n") + (ids.isEmpty ? "" : "\n")
+        try body.write(to: url, atomically: true, encoding: .utf8)
     }
 }
 
@@ -258,6 +283,23 @@ extension AgentTemplateStore {
         guard template.source == .project else { return }
         let projectDir = template.sourceURL.deletingLastPathComponent()
         try FileManager.default.removeItem(at: template.sourceURL)
+        reloadSynchronously(builtinDir: latestBuiltin, userDir: latestUser, projectDir: projectDir)
+    }
+
+    func deleteUserTemplate(_ template: AgentTemplate) throws {
+        guard template.source == .user else { return }
+        try FileManager.default.removeItem(at: template.sourceURL)
+        reloadSynchronously(builtinDir: latestBuiltin, userDir: latestUser, projectDir: latestProject)
+    }
+
+    func deleteBuiltInTemplateFromProject(_ template: AgentTemplate, projectFolderPath: String) throws {
+        guard template.source == .builtin else { return }
+        guard let projectDir = Self.projectTemplatesDir(projectFolderPath: projectFolderPath) else {
+            throw NSError(domain: "AgentTemplateStore", code: 5, userInfo: [NSLocalizedDescriptionKey: "Project templates directory is unavailable."])
+        }
+        var deletedIds = Self.loadDeletedProjectTemplateIds(projectDir: projectDir)
+        deletedIds.insert(template.id)
+        try Self.saveDeletedProjectTemplateIds(deletedIds, projectDir: projectDir)
         reloadSynchronously(builtinDir: latestBuiltin, userDir: latestUser, projectDir: projectDir)
     }
 

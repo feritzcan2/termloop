@@ -140,8 +140,9 @@ struct AgentsCatalogDetailPane: View {
                     .font(TermLoopSidebarTheme.sectionCaps)
                     .foregroundStyle(TermLoopSidebarTheme.dim)
                 Spacer(minLength: 0)
-                if template.source == .project {
-                    Button(canResetTemplateToDefault ? "Reset to Default" : "Delete", role: .destructive, action: onDeleteProjectTemplate)
+                if canDeleteTemplate(template) {
+                    Button(templateDeleteTitle(template), role: .destructive, action: onDeleteProjectTemplate)
+                        .help(templateDeleteHelp(template))
                 }
                 if canEditTemplate {
                     Button {
@@ -253,7 +254,7 @@ struct AgentsCatalogDetailPane: View {
                 }
             }
 
-            Text(TermLoopSidebarTheme.caps("Prompt Body"))
+            Text(TermLoopSidebarTheme.caps("Template Default Prompt"))
                 .font(TermLoopSidebarTheme.sectionCaps)
                 .foregroundStyle(TermLoopSidebarTheme.dim)
             if !canEditTemplate {
@@ -465,6 +466,35 @@ struct AgentsCatalogDetailPane: View {
             }
         }
         return "Read-only view. Runtime fragments remain projections from transport/runtime owners."
+    }
+
+    private func canDeleteTemplate(_ template: AgentTemplate) -> Bool {
+        switch template.source {
+        case .project, .user:
+            return true
+        case .builtin:
+            return canEditProjectTemplates
+        }
+    }
+
+    private func templateDeleteTitle(_ template: AgentTemplate) -> String {
+        if template.source == .project, canResetTemplateToDefault {
+            return "Reset to Default"
+        }
+        return "Delete"
+    }
+
+    private func templateDeleteHelp(_ template: AgentTemplate) -> String {
+        switch template.source {
+        case .project:
+            return canResetTemplateToDefault
+                ? "Delete this project override and show the default template again."
+                : "Delete this project template."
+        case .user:
+            return "Delete this user template from the global template catalog."
+        case .builtin:
+            return "Remove this built-in template from the active project catalog."
+        }
     }
 
     private func syncDrafts(for entry: AgentsCatalogEntry) {
