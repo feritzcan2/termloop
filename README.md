@@ -89,13 +89,13 @@ Branch, PR status, dirty file count, port forwards, agent state — every worksp
 
 Native iOS client pairs with your Mac over an authenticated TCP socket on your local network. Watch live agent output, switch projects, jump into a session — from the couch, the queue, or another room. Stable today; still under active development.
 
-<p align="center">
-  <img src="./termloop/docs/assets/mobile/connections.jpg" alt="iOS app pairing with a Mac" width="280" />
-  &nbsp;
-  <img src="./termloop/docs/assets/mobile/project-list.jpg" alt="iOS project workspace list" width="280" />
-  &nbsp;
-  <img src="./termloop/docs/assets/mobile/agent-session.jpg" alt="Live agent session in iOS" width="280" />
-</p>
+<table>
+<tr>
+<td width="33%" align="center"><img src="./termloop/docs/assets/mobile/connections.jpg" alt="iOS app pairing with a Mac" width="280" /></td>
+<td width="33%" align="center"><img src="./termloop/docs/assets/mobile/project-list.jpg" alt="iOS project workspace list" width="280" /></td>
+<td width="33%" align="center"><img src="./termloop/docs/assets/mobile/agent-session.jpg" alt="Live agent session in iOS" width="280" /></td>
+</tr>
+</table>
 
 ## Built on the cmux foundation
 
