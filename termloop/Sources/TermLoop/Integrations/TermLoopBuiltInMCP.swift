@@ -112,7 +112,7 @@ struct TermLoopBuiltInToolMeta {
     static let all: [TermLoopBuiltInToolMeta] = [
         TermLoopBuiltInToolMeta(
             name: TermLoopBuiltInMCP.askToToolName,
-            description: "Ask a helper agent (codex / claude / gemini). Returns a request_id; the helper should answer with reply_to_request when finished.",
+            description: "Ask a helper agent (codex / claude / gemini). Returns a single-use request_id and a reusable conversation_id/bridge_id for follow-ups to the same helper.",
             inputSchemaJSON: """
             {
               "type": "object",
@@ -126,9 +126,17 @@ struct TermLoopBuiltInToolMeta {
                 },
                 "target_prompt": {
                   "type": "string"
+                },
+                "conversation_id": {
+                  "type": "string",
+                  "description": "Optional bridge_id/conversation_id returned by a prior ask_to. Reuses the same helper and creates a fresh request_id."
+                },
+                "bridge_id": {
+                  "type": "string",
+                  "description": "Alias for conversation_id."
                 }
               },
-              "required": ["target", "message"]
+              "required": ["message"]
             }
             """,
             alwaysOn: true
