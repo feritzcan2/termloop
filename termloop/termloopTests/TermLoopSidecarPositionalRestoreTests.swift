@@ -44,8 +44,6 @@ final class TermLoopSidecarPositionalRestoreTests: XCTestCase {
 
     func testSnapshotV2PositionalMetadataRoundTripsThroughJSON() throws {
         let projectA = UUID()
-        let taskA = UUID()
-        let taskB = UUID()
         let snapshot = TermLoopSessionSnapshot(
             version: 2,
             projects: [],
@@ -53,11 +51,11 @@ final class TermLoopSidecarPositionalRestoreTests: XCTestCase {
             openProjectIds: [],
             workspaceMetadataByPosition: [
                 [
-                    WorkspaceMetadataStore.Metadata(projectId: projectA, taskId: taskA),
-                    WorkspaceMetadataStore.Metadata(projectId: projectA, taskId: nil)
+                    WorkspaceMetadataStore.Metadata(projectId: projectA, branch: "feature/a"),
+                    WorkspaceMetadataStore.Metadata(projectId: projectA, branch: nil)
                 ],
                 [
-                    WorkspaceMetadataStore.Metadata(projectId: projectA, taskId: taskB)
+                    WorkspaceMetadataStore.Metadata(projectId: projectA, branch: "feature/b")
                 ]
             ]
         )
@@ -69,9 +67,9 @@ final class TermLoopSidecarPositionalRestoreTests: XCTestCase {
         XCTAssertEqual(decoded.workspaceMetadataByPosition?.count, 2)
         XCTAssertEqual(decoded.workspaceMetadataByPosition?[0].count, 2)
         XCTAssertEqual(decoded.workspaceMetadataByPosition?[0][0].projectId, projectA)
-        XCTAssertEqual(decoded.workspaceMetadataByPosition?[0][0].taskId, taskA)
-        XCTAssertEqual(decoded.workspaceMetadataByPosition?[0][1].taskId, nil)
-        XCTAssertEqual(decoded.workspaceMetadataByPosition?[1][0].taskId, taskB)
+        XCTAssertEqual(decoded.workspaceMetadataByPosition?[0][0].branch, "feature/a")
+        XCTAssertEqual(decoded.workspaceMetadataByPosition?[0][1].branch, nil)
+        XCTAssertEqual(decoded.workspaceMetadataByPosition?[1][0].branch, "feature/b")
     }
 
     func testHiddenWorkspaceMetadataRoundTripsThroughJSON() throws {
@@ -79,7 +77,6 @@ final class TermLoopSidecarPositionalRestoreTests: XCTestCase {
         let projectId = UUID()
         let metadata = WorkspaceMetadataStore.Metadata(
             projectId: projectId,
-            taskId: nil,
             branch: "feature/collapsed",
             terminalAgentId: "codex",
             persistedAgentSession: PersistedAgentSession(
@@ -149,7 +146,6 @@ final class TermLoopSidecarPositionalRestoreTests: XCTestCase {
 
     func testLoadSidecarStampsRestoredWorkspacesByPosition() throws {
         let projectA = UUID()
-        let taskA = UUID()
 
         let sessionURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("cmux-sidecar-test-\(UUID().uuidString).json")
@@ -165,8 +161,8 @@ final class TermLoopSidecarPositionalRestoreTests: XCTestCase {
             openProjectIds: [],
             workspaceMetadataByPosition: [
                 [
-                    WorkspaceMetadataStore.Metadata(projectId: projectA, taskId: taskA),
-                    WorkspaceMetadataStore.Metadata(projectId: projectA, taskId: nil)
+                    WorkspaceMetadataStore.Metadata(projectId: projectA),
+                    WorkspaceMetadataStore.Metadata(projectId: projectA)
                 ]
             ]
         )
@@ -203,7 +199,6 @@ final class TermLoopSidecarPositionalRestoreTests: XCTestCase {
             hiddenWorkspaceMetadataById: [
                 hiddenId.uuidString: WorkspaceMetadataStore.Metadata(
                     projectId: projectId,
-                    taskId: nil,
                     branch: "feature/collapsed-worktree",
                     terminalAgentId: "codex",
                     persistedAgentSession: PersistedAgentSession(
@@ -251,7 +246,6 @@ final class TermLoopSidecarPositionalRestoreTests: XCTestCase {
             workspaceMetadataByPosition: [[
                 WorkspaceMetadataStore.Metadata(
                     projectId: UUID(),
-                    taskId: UUID(),
                     branch: "feature/test",
                     worktreeBaselineHead: "abc123",
                     suppressAgentsOnClose: true,
@@ -358,37 +352,6 @@ final class TermLoopSidecarPositionalRestoreTests: XCTestCase {
         )
     }
 
-    func testDidRestoreWorkspacesPreservesProjectWhenTaskIsMissing() throws {
-        let projectA = UUID()
-        let missingTask = UUID()
-
-        let sessionURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("cmux-sidecar-test-\(UUID().uuidString).json")
-        defer {
-            let sidecarURL = TermLoopSessionSnapshot.sidecarURL(for: sessionURL)
-            try? FileManager.default.removeItem(at: sidecarURL)
-        }
-
-        let snapshot = TermLoopSessionSnapshot(
-            version: 4,
-            projects: [],
-            activeProjectId: nil,
-            openProjectIds: [],
-            workspaceMetadataByPosition: [[
-                WorkspaceMetadataStore.Metadata(projectId: projectA, taskId: missingTask)
-            ]]
-        )
-
-        let sidecarURL = TermLoopSessionSnapshot.sidecarURL(for: sessionURL)
-        try JSONEncoder().encode(snapshot).write(to: sidecarURL, options: .atomic)
-        TermLoopHooks.loadSidecarSnapshot(alongside: sessionURL, onStoreMutation: {})
-
-        let workspace = Workspace(title: "restored")
-        TermLoopHooks.didRestoreWorkspaces(workspaces: [workspace])
-
-        XCTAssertEqual(workspace.projectId, projectA)
-    }
-
     func testDidRestoreWorkspacesIsNoOpAfterQueueDrains() throws {
         let projectA = UUID()
         let sessionURL = FileManager.default.temporaryDirectory
@@ -404,7 +367,7 @@ final class TermLoopSidecarPositionalRestoreTests: XCTestCase {
             activeProjectId: nil,
             openProjectIds: [],
             workspaceMetadataByPosition: [
-                [WorkspaceMetadataStore.Metadata(projectId: projectA, taskId: nil)]
+                [WorkspaceMetadataStore.Metadata(projectId: projectA)]
             ]
         )
         let sidecarURL = TermLoopSessionSnapshot.sidecarURL(for: sessionURL)
@@ -444,7 +407,6 @@ final class TermLoopSidecarPositionalRestoreTests: XCTestCase {
             workspaceMetadataByPosition: [[
                 WorkspaceMetadataStore.Metadata(
                     projectId: nil,
-                    taskId: nil,
                     branch: nil,
                     worktreeBaselineHead: nil,
                     suppressAgentsOnClose: nil,

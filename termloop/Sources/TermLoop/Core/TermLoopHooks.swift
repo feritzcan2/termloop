@@ -94,7 +94,6 @@ enum TermLoopHooks {
     private static func debugMetadata(_ metadata: WorkspaceMetadataStore.Metadata) -> String {
         [
             "project=\(debugProject(metadata.projectId))",
-            "task=\(debugShort(metadata.taskId))",
             "terminalAgent=\(debugClean(metadata.terminalAgentId))",
             "branch=\(debugClean(metadata.branch))",
             "worktree=\(debugClean(metadata.worktreePath))",

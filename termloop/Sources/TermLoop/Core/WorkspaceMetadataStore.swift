@@ -17,9 +17,6 @@ final class WorkspaceMetadataStore: ObservableObject {
 
     struct Metadata: Equatable, Codable {
         var projectId: UUID?
-        /// Task (see `TermLoopTask`) bound to this workspace. Nil for
-        /// workspaces that were not spawned from the TASKS sub-tab.
-        var taskId: UUID?
         var branch: String?
         /// Physical checkout path for the bound branch. This is the
         /// authoritative worktree location once known; branch names are a
@@ -407,21 +404,6 @@ final class WorkspaceMetadataStore: ObservableObject {
         byWorkspaceId[workspaceId] = current
         bumpAgentPresentation(for: workspaceId)
         return true
-    }
-
-    func taskId(for workspaceId: UUID) -> UUID? {
-        byWorkspaceId[workspaceId]?.taskId
-    }
-
-    /// Binds (or unbinds) a task to this workspace. Like the other setters
-    /// in this store, the change lives in memory; the value is persisted
-    /// the next time `TermLoopHooks.saveSidecarSnapshot` runs, via
-    /// `snapshot()` + `Metadata` Codable.
-    func setTaskId(_ id: UUID?, for workspaceId: UUID) {
-        var current = byWorkspaceId[workspaceId] ?? Metadata()
-        guard current.taskId != id else { return }
-        current.taskId = id
-        byWorkspaceId[workspaceId] = current
     }
 
     func assignedTicket(for workspaceId: UUID) -> AssignedTicket? {

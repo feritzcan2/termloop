@@ -266,12 +266,10 @@ enum WorktreeBaseComparisonProvider {
         seededCandidates: [String],
         currentBranch: String?,
         directory: String,
-        explicitTracked: [String]?,
         projectRoot: String
     ) -> [WorktreeBaseComparisonTarget] {
         var candidates = seededCandidates
-        let tracked = TrackedBranchesResolver(gitRunner: ProcessGitStateProvider())
-            .resolve(explicit: explicitTracked, projectRoot: projectRoot)
+        let tracked = defaultBranchCandidates(projectRoot: projectRoot)
         for branch in tracked where !branch.isEmpty && !candidates.contains(branch) {
             candidates.append(branch)
         }
@@ -288,6 +286,19 @@ enum WorktreeBaseComparisonProvider {
             targets.append(WorktreeBaseComparisonTarget(branch: candidate, ref: ref, mergeBase: mergeBase))
         }
         return targets
+    }
+
+    private static func defaultBranchCandidates(projectRoot: String) -> [String] {
+        let git = ProcessGitStateProvider()
+        var result: [String] = []
+        if let defaultBranch = git.defaultBranch(projectRoot: projectRoot) {
+            result.append(defaultBranch)
+        }
+        if git.hasRemoteBranch("dev", directory: projectRoot),
+           !result.contains("dev") {
+            result.append("dev")
+        }
+        return result
     }
 
     static func resolvePreferredRef(branch: String, directory: String) -> String? {
