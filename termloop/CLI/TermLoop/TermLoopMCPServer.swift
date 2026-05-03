@@ -2,6 +2,7 @@
 // Part of TermLoop — GPL-3.0-or-later
 
 import Foundation
+import Darwin
 
 enum TermLoopMCPServer {
     private static let supportedProtocolVersions = [
@@ -139,14 +140,14 @@ enum TermLoopMCPServer {
         ),
         BuiltInTool(
             name: askToToolName,
-            description: "Ask a helper agent (codex / claude / gemini) — use when the user wants to consult another agent. Returns a request_id; the helper should answer with reply_to_request when finished.",
+            description: "Ask a helper agent (codex / claude / gemini) — use when the user wants to consult another agent. Returns a single-use request_id plus a reusable conversation_id/bridge_id for follow-ups to the same helper.",
             inputSchema: [
                 "type": "object",
                 "properties": [
                     "target": [
                         "type": "string",
                         "enum": ["codex", "claude", "gemini"],
-                        "description": "Which agent should answer."
+                        "description": "Which agent should answer. Required for a new conversation; optional when conversation_id is supplied."
                     ],
                     "message": [
                         "type": "string",
@@ -155,9 +156,17 @@ enum TermLoopMCPServer {
                     "target_prompt": [
                         "type": "string",
                         "description": "Optional system-prompt override for the helper (extra persona / scope guidance). Empty for default."
+                    ],
+                    "conversation_id": [
+                        "type": "string",
+                        "description": "Optional bridge_id/conversation_id returned by a prior ask_to. Reuses the same helper and creates a fresh request_id."
+                    ],
+                    "bridge_id": [
+                        "type": "string",
+                        "description": "Alias for conversation_id."
                     ]
                 ],
-                "required": ["target", "message"]
+                "required": ["message"]
             ],
             alwaysOn: true,
             handler: runAskTo
@@ -668,11 +677,9 @@ enum TermLoopMCPServer {
         }
     }
 
-    /// `ask_to` — programmatic Ask-To bridge launcher. Forwards
-    /// `(target, message, target_prompt)` plus the resolved workspace target
-    /// to the daemon's `bridge.ask_to` v2 method, which spawns a hidden
-    /// helper workspace running the chosen agent and kicks off `message`
-    /// as the helper's first user turn.
+    /// `ask_to` — programmatic Ask-To bridge launcher. Forwards the message,
+    /// optional helper target / conversation id, and the resolved workspace
+    /// target to the daemon's `bridge.ask_to` v2 method.
     private static func runAskTo(
         id: Any,
         arguments: [String: Any],
@@ -682,7 +689,21 @@ enum TermLoopMCPServer {
         let target = ((arguments["target"] as? String) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-        guard ["codex", "claude", "gemini"].contains(target) else {
+        let conversationId = ((arguments["conversation_id"] as? String)
+            ?? (arguments["bridge_id"] as? String)
+            ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !conversationId.isEmpty, UUID(uuidString: conversationId) == nil {
+            return toolResult(id: id,
+                              text: "Invalid conversation_id: expected a UUID returned by ask_to.",
+                              isError: true)
+        }
+        guard !target.isEmpty || !conversationId.isEmpty else {
+            return toolResult(id: id,
+                              text: "Missing required argument: target (unless conversation_id is supplied)",
+                              isError: true)
+        }
+        guard target.isEmpty || ["codex", "claude", "gemini"].contains(target) else {
             return toolResult(id: id,
                               text: "Invalid target: must be codex, claude, or gemini.",
                               isError: true)
@@ -699,15 +720,20 @@ enum TermLoopMCPServer {
         let workspaceParams = workspaceTargetParams(env: processEnv)
         guard !workspaceParams.isEmpty else {
             return toolResult(id: id,
-                              text: "TermLoop daemon target unknown: TERMLOOP_WORKSPACE_ID env var is unset and current working directory is empty. ask_to requires a workspace-bound MCP session.",
+                              text: "TermLoop daemon target unknown: no workspace env, cwd, or MCP process identity is available. ask_to requires a workspace-bound MCP session.",
                               isError: true)
         }
 
         var params: [String: Any] = [
-            "target": target,
             "message": message,
             "target_prompt": targetPrompt
         ]
+        if !target.isEmpty {
+            params["target"] = target
+        }
+        if !conversationId.isEmpty {
+            params["conversation_id"] = conversationId
+        }
         for (key, value) in workspaceParams {
             params[key] = value
         }
@@ -723,9 +749,13 @@ enum TermLoopMCPServer {
             let bridgeId = (result["bridge_id"] as? String) ?? "?"
             let requestId = (result["request_id"] as? String) ?? bridgeId
             let helperId = (result["helper_workspace_id"] as? String) ?? "?"
+            let helperAgent = (result["helper_agent_id"] as? String)
+                ?? (result["target"] as? String)
+                ?? target
+            let reused = (result["reused_helper"] as? Bool) == true
             return toolResult(
                 id: id,
-                text: "Sent to \(target). request_id=\(requestId), bridge_id=\(bridgeId), helper_workspace_id=\(helperId). The helper must call reply_to_request exactly once with this request_id when the final answer is ready.",
+                text: "Sent to \(helperAgent). request_id=\(requestId), bridge_id=\(bridgeId), conversation_id=\(bridgeId), helper_workspace_id=\(helperId), reused_helper=\(reused). The helper must call reply_to_request exactly once with this request_id when the final answer is ready. For follow-up to this same helper, call ask_to again with conversation_id=\(bridgeId).",
                 isError: false
             )
         } catch {
@@ -762,7 +792,7 @@ enum TermLoopMCPServer {
         let workspaceParams = workspaceTargetParams(env: processEnv)
         guard !workspaceParams.isEmpty else {
             return toolResult(id: id,
-                              text: "TermLoop daemon target unknown: TERMLOOP_WORKSPACE_ID env var is unset and current working directory is empty. reply_to_request must run from the helper workspace.",
+                              text: "TermLoop daemon target unknown: no workspace env, cwd, or MCP process identity is available. reply_to_request must run from the helper workspace.",
                               isError: true)
         }
 
@@ -780,9 +810,11 @@ enum TermLoopMCPServer {
             defer { client.close() }
             let result = try client.sendV2(method: "bridge.reply_to_request", params: params)
             let deliveredId = (result["request_id"] as? String) ?? requestId
+            let conversationId = (result["conversation_id"] as? String)
+                ?? (result["bridge_id"] as? String)
             return toolResult(
                 id: id,
-                text: "Reply delivered for request_id=\(deliveredId). Do not continue this request; follow-up requires a new ask_to request.",
+                text: "Reply delivered for request_id=\(deliveredId). Do not continue this request; follow-up requires a new ask_to request\(conversationId.map { " with conversation_id=\($0)" } ?? "").",
                 isError: false
             )
         } catch {
@@ -947,8 +979,9 @@ enum TermLoopMCPServer {
     /// sends the MCP subprocess's `cwd` when available. Ask-To helper launches
     /// also carry `TERMLOOP_ASK_TO_REQUEST_ID` and a launch-only reply token;
     /// the daemon can use that pair to authenticate `reply_to_request` when
-    /// Codex/Claude hands the MCP server a stale workspace env. Empty result
-    /// means neither route can identify a workspace.
+    /// Codex/Claude hands the MCP server a stale workspace env. The MCP
+    /// process identity is still useful when env/cwd are missing, so send it
+    /// on its own as a last resort.
     private static func workspaceTargetParams(env: [String: String]) -> [String: Any] {
         let envId = env["TERMLOOP_WORKSPACE_ID"]?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -960,6 +993,7 @@ enum TermLoopMCPServer {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let askToReplyToken = env["TERMLOOP_ASK_TO_REPLY_TOKEN"]?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let processContext = mcpProcessContextParams()
         func addLaunchContext(to params: inout [String: Any]) {
             if !agentId.isEmpty {
                 params["agent_id"] = agentId
@@ -969,6 +1003,9 @@ enum TermLoopMCPServer {
             }
             if !askToReplyToken.isEmpty {
                 params["ask_to_reply_token"] = askToReplyToken
+            }
+            for (key, value) in processContext {
+                params[key] = value
             }
         }
         if !envId.isEmpty {
@@ -982,7 +1019,56 @@ enum TermLoopMCPServer {
             addLaunchContext(to: &params)
             return params
         }
-        return [:]
+        var params: [String: Any] = [:]
+        addLaunchContext(to: &params)
+        return params
+    }
+
+    /// Carries the MCP server process ancestry to the daemon. Some providers
+    /// (notably after session compaction/reload) spawn the stdio MCP server
+    /// without the per-workspace env from the original agent launch. The parent
+    /// process is still usually the agent CLI itself, so the daemon can match
+    /// this ancestry against its tracked agent PIDs and avoid cwd guessing.
+    private static func mcpProcessContextParams() -> [String: Any] {
+        let ancestry = processAncestorPIDs()
+        var params: [String: Any] = [:]
+        if let first = ancestry.first {
+            params["mcp_pid"] = first
+        }
+        let directParent = Int(getppid())
+        if directParent > 1 {
+            params["mcp_parent_pid"] = directParent
+        }
+        if !ancestry.isEmpty {
+            params["process_ancestor_pids"] = ancestry
+        }
+        return params
+    }
+
+    private static func processAncestorPIDs(limit: Int = 32) -> [Int] {
+        var result: [Int] = []
+        var seen = Set<pid_t>()
+        var current = getpid()
+        for _ in 0..<limit {
+            guard current > 1, !seen.contains(current) else { break }
+            seen.insert(current)
+            result.append(Int(current))
+
+            let parent = parentPID(of: current)
+            guard parent > 1, parent != current else { break }
+            current = parent
+        }
+        return result
+    }
+
+    private static func parentPID(of pid: pid_t) -> pid_t {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.size
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else {
+            return -1
+        }
+        return info.kp_eproc.e_ppid
     }
 
     /// Pulls a human-readable error message out of a v2 socket response when

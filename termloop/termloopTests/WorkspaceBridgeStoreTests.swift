@@ -69,6 +69,47 @@ final class WorkspaceBridgeStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.bridge(id: bridge.id)?.askToReplyToken, "reply-token")
     }
 
+    func testAskToLaunchCredentialMatchesRequestTokenAndAgent() {
+        var bridge = makeBridge()
+        bridge.intent = .askAgent
+        bridge.rightAgentId = "Claude"
+        bridge.askToReplyToken = " reply-token "
+        let request = AskToRequest(message: "question", kickoffMessage: "question")
+        bridge.askToRequests = [request]
+
+        XCTAssertTrue(bridge.acceptsAskToLaunchCredential(
+            requestId: request.id,
+            replyToken: "reply-token",
+            callerAgentId: "claude"
+        ))
+        XCTAssertTrue(bridge.containsAskToRequest(id: request.id))
+    }
+
+    func testAskToLaunchCredentialRejectsWrongRequestTokenOrAgent() {
+        var bridge = makeBridge()
+        bridge.intent = .askAgent
+        bridge.rightAgentId = "claude"
+        bridge.askToReplyToken = "reply-token"
+        let request = AskToRequest(message: "question", kickoffMessage: "question")
+        bridge.askToRequests = [request]
+
+        XCTAssertFalse(bridge.acceptsAskToLaunchCredential(
+            requestId: UUID(),
+            replyToken: "reply-token",
+            callerAgentId: "claude"
+        ))
+        XCTAssertFalse(bridge.acceptsAskToLaunchCredential(
+            requestId: request.id,
+            replyToken: "wrong-token",
+            callerAgentId: "claude"
+        ))
+        XCTAssertFalse(bridge.acceptsAskToLaunchCredential(
+            requestId: request.id,
+            replyToken: "reply-token",
+            callerAgentId: "codex"
+        ))
+    }
+
     func testSetForwardModeUpdatesMode() {
         let store = makeStore()
         let bridge = makeBridge()
@@ -100,29 +141,33 @@ final class WorkspaceBridgeStoreTests: XCTestCase {
         XCTAssertEqual(updated?.messages.first?.text, "hello")
     }
 
-    func testRecordFinalReplyStopsAskAgentBridgeAndStoresSingleReply() {
+    func testRecordFinalReplyClosesRequestButKeepsAskAgentBridgeRunning() {
         let store = makeStore()
         var bridge = makeBridge()
         bridge.intent = .askAgent
         bridge.rightAgentId = "codex"
+        let request = AskToRequest(message: "question", kickoffMessage: "question")
+        bridge.askToRequests = [request]
         store.add(bridge)
 
         let result = store.recordFinalReply(
-            bridgeId: bridge.id,
+            requestId: request.id,
             text: "final answer"
         )
 
-        guard case .recorded(let messageId) = result else {
+        guard case .recorded(let bridgeId, let messageId) = result else {
             return XCTFail("Expected final reply to be recorded")
         }
+        XCTAssertEqual(bridgeId, bridge.id)
         let updated = store.bridge(id: bridge.id)
-        XCTAssertEqual(updated?.state, .stopped(.replied))
+        XCTAssertEqual(updated?.state, .running)
         XCTAssertEqual(updated?.messages.count, 1)
         XCTAssertEqual(updated?.messages.first?.id, messageId)
         XCTAssertEqual(updated?.messages.first?.sender, .right)
         XCTAssertEqual(updated?.messages.first?.text, "final answer")
         XCTAssertEqual(updated?.finalReply?.messageId, messageId)
         XCTAssertEqual(updated?.finalReply?.text, "final answer")
+        XCTAssertEqual(updated?.askToRequest(id: request.id)?.finalReply?.messageId, messageId)
     }
 
     func testRecordFinalReplyRejectsDuplicateReply() {
@@ -130,10 +175,12 @@ final class WorkspaceBridgeStoreTests: XCTestCase {
         var bridge = makeBridge()
         bridge.intent = .askAgent
         bridge.rightAgentId = "codex"
+        let request = AskToRequest(message: "question", kickoffMessage: "question")
+        bridge.askToRequests = [request]
         store.add(bridge)
 
-        let first = store.recordFinalReply(bridgeId: bridge.id, text: "one")
-        let second = store.recordFinalReply(bridgeId: bridge.id, text: "two")
+        let first = store.recordFinalReply(requestId: request.id, text: "one")
+        let second = store.recordFinalReply(requestId: request.id, text: "two")
 
         guard case .recorded = first else {
             return XCTFail("Expected first final reply to be recorded")
@@ -142,16 +189,55 @@ final class WorkspaceBridgeStoreTests: XCTestCase {
         XCTAssertEqual(store.bridge(id: bridge.id)?.messages.map(\.text), ["one"])
     }
 
-    func testRepliedAskAgentBridgeDoesNotBlockFollowUpRequest() {
+    func testRepliedAskAgentBridgeAcceptsFollowUpRequestOnSameConversation() {
+        let store = makeStore()
+        var bridge = makeBridge()
+        bridge.intent = .askAgent
+        bridge.leftAgentId = "codex"
+        bridge.rightAgentId = "claude"
+        let firstRequest = AskToRequest(message: "first", kickoffMessage: "first")
+        bridge.askToRequests = [firstRequest]
+        XCTAssertTrue(store.add(bridge))
+        guard case .recorded = store.recordFinalReply(requestId: firstRequest.id, text: "done") else {
+            return XCTFail("Expected first final reply to be recorded")
+        }
+
+        let followUp = AskToRequest(message: "follow up", kickoffMessage: "follow up")
+        XCTAssertEqual(
+            store.appendAskToRequest(bridgeId: bridge.id, request: followUp),
+            .appended
+        )
+        XCTAssertEqual(store.bridge(id: bridge.id)?.state, .running)
+        XCTAssertEqual(store.bridge(id: bridge.id)?.askToRequests.map(\.id), [
+            firstRequest.id,
+            followUp.id
+        ])
+    }
+
+    func testOpenAskToRequestBlocksAnotherFollowUpUntilReplied() {
+        let store = makeStore()
+        var bridge = makeBridge()
+        bridge.intent = .askAgent
+        bridge.leftAgentId = "codex"
+        bridge.rightAgentId = "claude"
+        let firstRequest = AskToRequest(message: "first", kickoffMessage: "first")
+        bridge.askToRequests = [firstRequest]
+        XCTAssertTrue(store.add(bridge))
+
+        let second = AskToRequest(message: "second", kickoffMessage: "second")
+        XCTAssertEqual(
+            store.appendAskToRequest(bridgeId: bridge.id, request: second),
+            .requestAlreadyOpen
+        )
+    }
+
+    func testRunningAskAgentBridgeStillBlocksFreshSecondBridgeToSameSource() {
         let store = makeStore()
         var first = makeBridge()
         first.intent = .askAgent
         first.leftAgentId = "codex"
         first.rightAgentId = "claude"
         XCTAssertTrue(store.add(first))
-        guard case .recorded = store.recordFinalReply(bridgeId: first.id, text: "done") else {
-            return XCTFail("Expected first final reply to be recorded")
-        }
 
         let newRight = UUID()
         WorkspaceMetadataStore.shared.setTerminalAgentId("claude", for: newRight)
@@ -166,10 +252,10 @@ final class WorkspaceBridgeStoreTests: XCTestCase {
             firstSpeaker: .right
         )
 
-        XCTAssertTrue(store.add(second))
-        XCTAssertEqual(store.activeBridge(forWorkspaceId: first.leftWorkspaceId)?.id, second.id)
-        XCTAssertEqual(store.bridge(forWorkspaceId: first.leftWorkspaceId)?.id, second.id)
-        XCTAssertEqual(store.bridges.count, 2)
+        XCTAssertFalse(store.add(second))
+        XCTAssertEqual(store.activeBridge(forWorkspaceId: first.leftWorkspaceId)?.id, first.id)
+        XCTAssertEqual(store.bridge(forWorkspaceId: first.leftWorkspaceId)?.id, first.id)
+        XCTAssertEqual(store.bridges.count, 1)
     }
 
     func testDismissRemovesBridge() {
