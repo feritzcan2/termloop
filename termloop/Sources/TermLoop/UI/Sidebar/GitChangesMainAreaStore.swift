@@ -5,12 +5,11 @@ import Foundation
 import SwiftUI
 
 /// Drives the main-area swap so the Git Changes view can replace Ghostty
-/// instead of opening as a modal sheet. Follows the pattern documented in
-/// `docs/System/Systems/UILayout/UILayout.md`: an `ObservableObject` whose
-/// `@Published` presentation drives the overlay switch in
-/// `AgentMainAreaOverlaySwap`, with `setAllWorkspaceTerminalsVisible(...)`
-/// handled centrally by the swap on `overlayMode` transitions (so this
-/// store does not duplicate that bookkeeping).
+/// instead of opening as a modal sheet. The `@Published` presentation drives
+/// the overlay switch in `AgentMainAreaOverlaySwap`, with
+/// `setAllWorkspaceTerminalsVisible(...)` handled centrally by the swap on
+/// `overlayMode` transitions (so this store does not duplicate that
+/// bookkeeping).
 @MainActor
 final class GitChangesMainAreaStore: ObservableObject {
     static let shared = GitChangesMainAreaStore()

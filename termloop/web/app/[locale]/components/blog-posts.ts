@@ -2,7 +2,7 @@ export const blogPosts = [
   {
     slug: "cmux-ssh",
     key: "cmuxSsh",
-    title: "cmux SSH",
+    title: "TermLoop SSH",
     date: "2026-03-30",
     summary:
       "One command gives you persistent remote sessions, browser panes that reach remote ports, and agent notifications that come home.",
@@ -26,10 +26,10 @@ export const blogPosts = [
   {
     slug: "gpl",
     key: "gpl",
-    title: "cmux is now GPL",
+    title: "TermLoop is now GPL",
     date: "2026-03-30",
     summary:
-      "cmux relicensed from AGPL-3.0 to GPL-3.0.",
+      "TermLoop relicensed from AGPL-3.0 to GPL-3.0.",
   },
   {
     slug: "cmd-shift-u",
@@ -37,15 +37,15 @@ export const blogPosts = [
     title: "Cmd+Shift+U",
     date: "2026-03-04",
     summary:
-      "How Cmd+Shift+U navigates between finished agents across workspaces in cmux.",
+      "How Cmd+Shift+U navigates between finished agents across workspaces in TermLoop.",
   },
   {
     slug: "zen-of-cmux",
     key: "zenOfCmux",
-    title: "The Zen of cmux",
+    title: "The Zen of TermLoop",
     date: "2026-02-27",
     summary:
-      "cmux is a primitive, not a solution. It gives you composable pieces and your workflow is up to you.",
+      "TermLoop is a primitive, not a solution. It gives you composable pieces and your workflow is up to you.",
   },
   {
     slug: "show-hn-launch",
@@ -53,12 +53,12 @@ export const blogPosts = [
     title: "Launching termloop on Show HN",
     date: "2026-02-21",
     summary:
-      "cmux hit #2 on Hacker News, got shared by Mitchell Hashimoto, and went viral in Japan.",
+      "TermLoop hit #2 on Hacker News, got shared by Mitchell Hashimoto, and went viral in Japan.",
   },
   {
     slug: "introducing-cmux",
     key: "introducingCmux",
-    title: "Introducing cmux",
+    title: "Introducing TermLoop",
     date: "2026-02-12",
     summary:
       "A native macOS terminal built on Ghostty, designed for running multiple AI coding agents side by side.",

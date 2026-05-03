@@ -216,9 +216,6 @@ export default function ConfigurationPage() {
     schemaVersion: schemaProperties.schemaVersion,
   } satisfies Record<string, SchemaProperty | undefined>;
 
-  const shortcutsSection = schemaProperties.shortcuts;
-  const shortcutProperties = shortcutsSection?.properties ?? {};
-
   return (
     <>
       <h1>{t("title")}</h1>
@@ -246,7 +243,7 @@ scrollback-limit = 50000
 split-divider-color = #3e4451
 working-directory = ~/code`}</CodeBlock>
 
-      <h2>cmux settings.json</h2>
+      <h2>TermLoop settings.json</h2>
       <p>
         termloop keeps app-owned settings in a separate user file instead of mixing them into Ghostty
         config. On launch, if neither settings location exists, termloop writes a commented template to{" "}
@@ -267,7 +264,7 @@ working-directory = ~/code`}</CodeBlock>
       </Callout>
       <Callout type="info">
         <strong>Reload:</strong> edit the file, then use <code>Cmd+Shift+,</code> or{" "}
-        <code>cmux reload-config</code> to re-read it without restarting the app.
+        <code>termloop reload-config</code> to re-read it without restarting the app.
       </Callout>
       <Callout type="warn">
         <strong>Migrations:</strong> keep <code>schemaVersion</code> at <code>1</code> for now.
@@ -286,7 +283,7 @@ working-directory = ~/code`}</CodeBlock>
       <h2>Schema reference</h2>
       <p>
         This reference covers every supported key in <code>settings.json</code>. The embedded
-        browser, sidebar, notifications, automation, and cmux-owned keyboard shortcuts all live
+        browser, sidebar, notifications, automation, and TermLoop-owned keyboard shortcuts all live
         here.
       </p>
 
@@ -346,7 +343,7 @@ working-directory = ~/code`}</CodeBlock>
         the stored default and still match digits <code>1</code> through <code>9</code>.
       </p>
       <p>
-        The defaults below are the same cmux-owned actions listed on the{" "}
+        The defaults below are the same TermLoop-owned actions listed on the{" "}
         <Link href="/docs/keyboard-shortcuts">keyboard shortcuts page</Link>.
       </p>
       {shortcutCategories.map((category) => (
