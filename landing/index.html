@@ -742,6 +742,94 @@
   }
   .loop-closing::before { content: '↻  '; color: var(--cyan-2); font-style: normal; letter-spacing: 0.08em; }
 
+  .loop-proof {
+    margin: 64px auto 0;
+    max-width: 1200px;
+    padding: 0 24px;
+  }
+  .loop-proof-head {
+    max-width: 760px;
+    margin: 0 auto 28px;
+    text-align: center;
+  }
+  .loop-proof-title-h {
+    margin: 12px 0 14px;
+    font-size: clamp(22px, 3.4vw, 32px);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--fg);
+  }
+  .loop-proof-lede {
+    color: var(--fg-2);
+    font-size: 16px;
+    line-height: 1.7;
+    margin: 0;
+  }
+  .loop-proof-lede code {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.9em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    color: var(--cyan-3);
+  }
+  .loop-proof-figure { margin: 0; }
+  .loop-proof-frame {
+    border: 1px solid var(--border-2);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(34,211,238,0.05), rgba(168,85,247,0.05));
+    overflow: hidden;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.02) inset,
+      0 30px 80px -30px rgba(34,211,238,0.25),
+      0 30px 80px -30px rgba(168,85,247,0.2);
+  }
+  .loop-proof-bar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0,0,0,0.4);
+  }
+  .loop-proof-dots { display: flex; gap: 6px; }
+  .loop-proof-dots span {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--bg-3);
+  }
+  .loop-proof-dots span:nth-child(1) { background: #ef4444; }
+  .loop-proof-dots span:nth-child(2) { background: #eab308; }
+  .loop-proof-dots span:nth-child(3) { background: #22c55e; }
+  .loop-proof-bar-title {
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px;
+    color: var(--fg-3);
+    letter-spacing: 0.04em;
+  }
+  .loop-proof video {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: #000;
+  }
+  .loop-proof-beats {
+    margin-top: 18px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px 18px;
+    color: var(--fg-3);
+    font-size: 13px;
+    font-family: 'Geist Mono', monospace;
+    letter-spacing: 0.02em;
+  }
+  .loop-proof-beats span { display: inline-flex; align-items: baseline; gap: 6px; }
+  .loop-proof-beats b {
+    font-weight: 500;
+    color: var(--cyan-2);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+
   /* ── SECTION HEADING ──────────────────────────────────── */
   .eyebrow {
     font-family: 'Geist Mono', monospace;
@@ -1179,292 +1267,42 @@
       <span><span class="dot">●</span> No telemetry</span>
     </div>
 
-    <!-- PROMOTION PIPELINE MOCKUP -->
-    <div class="preview reveal" style="animation-delay: 0.7s" aria-label="TermLoop promotion pipeline">
-      <div class="preview-chrome">
-        <div class="dots"><span></span><span></span><span></span></div>
-        <div class="title">termloop · ~/Projects/termloop</div>
-      </div>
-
-      <div class="pipeline">
-        <!-- left rail: promotion pipeline visualization -->
-        <aside class="pipe-rail" aria-hidden="true">
-          <svg class="pipe-loop-svg" viewBox="0 0 90 46" preserveAspectRatio="xMidYMin meet">
-            <defs>
-              <linearGradient id="pipeLoopGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stop-color="rgba(34,197,94,0.75)"/>
-                <stop offset="100%" stop-color="rgba(6,182,212,0.2)"/>
-              </linearGradient>
-            </defs>
-            <!-- wraparound curve: from top of track up and over, returning down -->
-            <path d="M 45 46 Q 45 8 66 8 Q 80 8 80 28 L 80 46"
-                  fill="none" stroke="url(#pipeLoopGrad)" stroke-width="1.5"
-                  stroke-linecap="round" stroke-dasharray="2 4"/>
-            <!-- upward arrowhead -->
-            <path d="M 39 16 L 45 9 L 51 16"
-                  fill="none" stroke="var(--cyan-3)" stroke-width="1.8"
-                  stroke-linecap="round" stroke-linejoin="round"/>
-            <text x="58" y="42" font-family="Geist Mono, monospace"
-                  font-size="6.5" fill="#71717a" letter-spacing="0.8">cycle</text>
-          </svg>
-
-          <div class="pipe-track">
-            <span class="pipe-arrow"></span>
-            <span class="pipe-pulse"></span>
-            <span class="pipe-stop merged"><b></b><em>merged</em></span>
-            <span class="pipe-stop open"><b></b><em>open pr</em></span>
-            <span class="pipe-stop worktree"><b></b><em>worktree</em></span>
-            <span class="pipe-stop active"><b></b><em>active</em></span>
-          </div>
-          <div class="pipe-direction">promotes ↑</div>
-        </aside>
-
-        <!-- right column: stacked sections, MERGED at top → ACTIVE at bottom -->
-        <div class="pipe-body">
-          <!-- MERGED PRS -->
-          <section class="pipe-section merged">
-            <header class="pipe-section-head">
-              <span class="pipe-caret">▾</span>
-              <span class="pipe-section-title">Merged PRs</span>
-              <span class="pipe-section-count">4 · 9</span>
-            </header>
-            <article class="pipe-branch">
-              <div class="branch-head">
-                <span class="branch-name">Branch: collapse</span>
-                <span class="branch-meta">PR #42 → dev · 2 changes · 5 commits</span>
-              </div>
-              <div class="agent-row">
-                <span class="chip running">running</span>
-                <span class="agent-name">collapse <em>(Claude Code)</em></span>
-                <span class="agent-line">Kalan referanslar yapısal olarak farklı özelliklere ait…</span>
-                <span class="agent-time">29m</span>
-              </div>
-              <div class="agent-row">
-                <span class="chip ready">ready</span>
-                <span class="agent-name">collapse <em>(Claude Code)</em></span>
-                <span class="agent-line"><i>Claude is waiting for your input</i></span>
-                <span class="agent-time">116m</span>
-              </div>
-            </article>
-            <article class="pipe-branch">
-              <div class="branch-head">
-                <span class="branch-name">Branch: promths</span>
-                <span class="branch-meta">PR #31 → dev · 10 changes · 54 commits</span>
-              </div>
-              <div class="agent-row">
-                <span class="chip running">running</span>
-                <span class="agent-name">promths <em>(Claude Code)</em></span>
-                <span class="agent-line">Build sonucunu bekliyorum.</span>
-                <span class="agent-time">53m</span>
-              </div>
-              <div class="agent-row">
-                <span class="chip build">Build: TermLoop DEV promths.app</span>
-                <span class="agent-name">promths <em>(Codex CLI)</em></span>
-                <span class="agent-line"><i>ready to hand off</i></span>
-                <span class="agent-time">206m</span>
-              </div>
-            </article>
-            <article class="pipe-branch collapsed">
-              <div class="branch-head">
-                <span class="branch-name">Branch: hooks</span>
-                <span class="branch-meta">PR #39 → dev · 5 changes · 39 commits</span>
-              </div>
-            </article>
-            <article class="pipe-branch collapsed">
-              <div class="branch-head">
-                <span class="branch-name">Branch: contextbank</span>
-                <span class="branch-meta">PR #36 → dev · 3 changes · 13 commits</span>
-              </div>
-            </article>
-          </section>
-
-          <!-- OPEN PRS -->
-          <section class="pipe-section open">
-            <header class="pipe-section-head">
-              <span class="pipe-caret">▾</span>
-              <span class="pipe-section-title">Open PRs</span>
-              <span class="pipe-section-count">1 · 1</span>
-            </header>
-            <article class="pipe-branch">
-              <div class="branch-head">
-                <span class="branch-name">Branch: notify-overhaul</span>
-                <span class="branch-meta">PR #51 → dev · 4 changes · 12 commits</span>
-              </div>
-              <div class="agent-row">
-                <span class="chip ready">review</span>
-                <span class="agent-name">notify-overhaul <em>(Codex CLI)</em></span>
-                <span class="agent-line"><i>CI green · awaiting review</i></span>
-                <span class="agent-time">4m</span>
-              </div>
-            </article>
-          </section>
-
-          <!-- WORKTREE AGENTS -->
-          <section class="pipe-section worktree">
-            <header class="pipe-section-head">
-              <span class="pipe-caret">▾</span>
-              <span class="pipe-section-title">Worktree Agents</span>
-              <span class="pipe-section-count">1 · 2</span>
-            </header>
-            <article class="pipe-branch">
-              <div class="branch-head">
-                <span class="branch-name">Branch: askto</span>
-                <span class="branch-meta">.termloop-worktrees/askto · 1 change</span>
-              </div>
-              <div class="agent-row">
-                <span class="chip done">done</span>
-                <span class="agent-name">askto <em>(Claude Code)</em></span>
-                <span class="agent-line">Doğrulama tamamlandı. Üç iddianın da kod satırlarına göre…</span>
-                <span class="agent-time">2m</span>
-              </div>
-              <div class="agent-row">
-                <span class="chip ready">ready</span>
-                <span class="agent-name">askto <em>(Claude Code)</em></span>
-                <span class="agent-line"><i>Claude is waiting for your input</i></span>
-                <span class="agent-time">14m</span>
-              </div>
-            </article>
-          </section>
-
-          <!-- ACTIVE AGENTS -->
-          <section class="pipe-section active">
-            <header class="pipe-section-head">
-              <span class="pipe-caret">▾</span>
-              <span class="pipe-section-title">Active Agents</span>
-              <span class="pipe-section-count">1 · 1</span>
-            </header>
-            <article class="pipe-branch">
-              <div class="branch-head">
-                <span class="branch-name">dev (host)</span>
-                <span class="branch-meta">~/Projects/termloop · no worktree yet</span>
-              </div>
-              <div class="agent-row">
-                <span class="chip thinking">thinking</span>
-                <span class="agent-name">dev <em>(Claude Code)</em></span>
-                <span class="agent-line">Scoping TerminalAgentActivityStore refactor…</span>
-                <span class="agent-time">0:08</span>
-              </div>
-            </article>
-          </section>
-        </div>
-      </div>
-
-      <footer class="pipe-statusbar">
-        <span class="pipe-stat-tcp"><b></b>tcp:7878 · listening</span>
-        <span class="pipe-stat-sep">·</span>
-        <span class="pipe-stat-phone">↔ iPhone 192.168.1.42</span>
-        <span class="pipe-stat-spacer"></span>
-        <span class="pipe-stat-meta">dev · Opus 4.7 · bypass permissions on</span>
-      </footer>
-    </div>
   </div>
 </section>
 
 <!-- ═══ THE LOOP ═══ -->
 <section class="loop-section" id="loop">
   <div class="container">
-    <div class="section-head">
-      <div class="eyebrow">The loop</div>
-      <h2 class="section-title">Four states. One direction.<br>Forever upward.</h2>
-      <p class="section-sub">Every agent moves through four states, bottom to top. When a PR lands, its slot frees and a fresh agent takes its place. The cycle never stops.</p>
+    <div class="loop-proof">
+      <div class="loop-proof-head">
+        <div class="eyebrow">See it run</div>
+        <h3 class="loop-proof-title-h">Four agents. Four tasks. One workspace.</h3>
+        <p class="loop-proof-lede">
+          Hand four agents four tasks at once. Each runs in its own
+          <code>.termloop-worktrees/&lt;branch&gt;</code>, boots its own dev server,
+          opens its own PR. Your host checkout stays clean.
+        </p>
+      </div>
+      <figure class="loop-proof-figure">
+        <div class="loop-proof-frame">
+          <div class="loop-proof-bar">
+            <div class="loop-proof-dots"><span></span><span></span><span></span></div>
+            <div class="loop-proof-bar-title">termloop · 4 agents · 1 loop · 18 seconds</div>
+          </div>
+          <video autoplay muted loop playsinline preload="metadata" aria-label="Four TermLoop agents running in parallel worktrees, opening PRs, and merging">
+            <source src="/assets/videos/worktree-parallel.webm" type="video/webm">
+            <source src="/assets/videos/worktree-parallel.mp4" type="video/mp4">
+          </video>
+        </div>
+        <figcaption class="loop-proof-beats">
+          <span><b>01</b> Empty workspace</span>
+          <span><b>02</b> 4 agents kick off</span>
+          <span><b>03</b> Apps boot with live URLs</span>
+          <span><b>04</b> PRs open</span>
+          <span><b>05</b> Pull, done</span>
+        </figcaption>
+      </figure>
     </div>
-
-    <div class="loop-circuit">
-      <svg class="loop-rail-svg" viewBox="0 0 1200 340" preserveAspectRatio="none" aria-hidden="true">
-        <defs>
-          <linearGradient id="loopRailGrad" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%"   stop-color="rgba(103,232,249,0.8)"/>
-            <stop offset="33%"  stop-color="rgba(6,182,212,0.55)"/>
-            <stop offset="66%"  stop-color="rgba(168,85,247,0.55)"/>
-            <stop offset="100%" stop-color="rgba(34,197,94,0.85)"/>
-          </linearGradient>
-          <linearGradient id="loopReturnGrad" x1="1" y1="0" x2="0" y2="0">
-            <stop offset="0%"   stop-color="rgba(34,197,94,0.7)"/>
-            <stop offset="100%" stop-color="rgba(103,232,249,0.7)"/>
-          </linearGradient>
-        </defs>
-
-        <!-- bottom rail: main direction (left → right, active → merged) -->
-        <path class="rail-dash" d="M 180 298 L 1020 298"
-              fill="none" stroke="url(#loopRailGrad)" stroke-width="1.5" stroke-linecap="round"/>
-
-        <!-- left cap: active entry -->
-        <path d="M 180 298 Q 30 298 30 178 Q 30 40 180 40"
-              fill="none" stroke="rgba(103,232,249,0.35)" stroke-width="1.25"
-              stroke-dasharray="3 6" stroke-linecap="round"/>
-
-        <!-- right cap: merged exit -->
-        <path d="M 1020 298 Q 1170 298 1170 178 Q 1170 40 1020 40"
-              fill="none" stroke="rgba(34,197,94,0.4)" stroke-width="1.25"
-              stroke-dasharray="3 6" stroke-linecap="round"/>
-
-        <!-- top rail: return flow (right → left) -->
-        <path class="rail-dash" d="M 1020 40 L 180 40"
-              fill="none" stroke="url(#loopReturnGrad)" stroke-width="1.25"
-              stroke-dasharray="3 6" stroke-linecap="round"/>
-
-        <!-- return arrow (pointing left along top rail) -->
-        <path d="M 620 40 L 612 34 M 620 40 L 612 46"
-              stroke="var(--cyan-2)" stroke-width="1.8"
-              stroke-linecap="round" fill="none"/>
-
-        <!-- return label -->
-        <text x="600" y="28" font-family="Geist Mono, monospace"
-              font-size="11" fill="#71717a" letter-spacing="2"
-              text-anchor="middle">SLOT FREES · NEW AGENT TAKES IT</text>
-
-        <!-- tick marks on bottom rail, aligned with stage centers -->
-        <circle cx="180" cy="298" r="5" fill="#000"
-                stroke="var(--cyan-3)" stroke-width="2"/>
-        <circle cx="460" cy="298" r="5" fill="#000"
-                stroke="var(--cyan-2)" stroke-width="2"/>
-        <circle cx="740" cy="298" r="5" fill="#000"
-                stroke="var(--purple-3)" stroke-width="2"/>
-        <circle cx="1020" cy="298" r="5" fill="var(--green)"
-                stroke="var(--green)" stroke-width="2"/>
-      </svg>
-
-      <ol class="loop-stages">
-        <li class="loop-stage" style="--i:0">
-          <div class="loop-num">01 · ACTIVE</div>
-          <h4 class="loop-stage-name">An agent starts</h4>
-          <p class="loop-stage-desc">You hand a task to an agent on the host checkout. It reads, thinks, proposes — no branch yet, no isolation.</p>
-          <div class="loop-mini">
-            <span class="chip thinking">thinking</span>
-            <span class="loop-mini-name">dev <em>(Claude Code)</em></span>
-          </div>
-        </li>
-        <li class="loop-stage" style="--i:1">
-          <div class="loop-num">02 · WORKTREE</div>
-          <h4 class="loop-stage-name">Isolation kicks in</h4>
-          <p class="loop-stage-desc">As soon as it commits, TermLoop spins up <code>.termloop-worktrees/&lt;branch&gt;</code>. Your host stays clean; the agent keeps iterating.</p>
-          <div class="loop-mini">
-            <span class="chip ready">ready</span>
-            <span class="loop-mini-name">askto <em>(Claude Code)</em></span>
-          </div>
-        </li>
-        <li class="loop-stage" style="--i:2">
-          <div class="loop-num">03 · OPEN PR</div>
-          <h4 class="loop-stage-name">The work goes public</h4>
-          <p class="loop-stage-desc">Push, open, wait for CI. The agent stays attached to its worktree and keeps responding to review without blocking anything else.</p>
-          <div class="loop-mini">
-            <span class="chip ready">review</span>
-            <span class="loop-mini-name">notify-overhaul <em>(Codex CLI)</em></span>
-          </div>
-        </li>
-        <li class="loop-stage" style="--i:3">
-          <div class="loop-num">04 · MERGED</div>
-          <h4 class="loop-stage-name">Slot frees, cycle restarts</h4>
-          <p class="loop-stage-desc">PR lands, the worktree is archived, and the agent card disappears — making room for the next task the moment you're ready.</p>
-          <div class="loop-mini">
-            <span class="chip done">done</span>
-            <span class="loop-mini-name">collapse <em>(Claude Code)</em></span>
-          </div>
-        </li>
-      </ol>
-    </div>
-
-    <p class="loop-closing">You work in states, not commands. Four stops, one direction, forever upward.</p>
   </div>
 </section>
 
