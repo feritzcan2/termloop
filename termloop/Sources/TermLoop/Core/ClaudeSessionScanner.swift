@@ -67,7 +67,7 @@ final class ClaudeSessionScanner {
 
     /// Converts a POSIX cwd to Claude Code's project slug. Claude Code
     /// replaces both `/` and `.` with `-`, so `/Users/x/repo/.termloop-worktrees/b`
-    /// becomes `-Users-x-repo--cmux-worktrees-b` (double dash at the hidden
+    /// becomes `-Users-x-repo--termloop-worktrees-b` (double dash at the hidden
     /// segment). Missing the dot replacement makes worktree cwds miss their
     /// on-disk session directory.
     static func slug(forCwd cwd: String) -> String {

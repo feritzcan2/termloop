@@ -673,6 +673,7 @@ struct WorktreeAgentsPanel: View {
     @State private var branchTick: Int = 0
     @State private var pullRequestTick: UInt64 = 0
     @State private var activityTick: Int = 0
+    @State private var hasDeferredActivityTick = false
     @State private var bindingsTick: Int = 0
     @State private var hoveredBranch: String?
     @State private var renderMemo = RenderMemo()
@@ -832,7 +833,18 @@ struct WorktreeAgentsPanel: View {
                 .sink { _ in pullRequestTick &+= 1 }
             activitySubscription = TerminalAgentActivityStore.shared.workspacePresentationDidChange
                 .filter { idSet.contains($0) }
-                .sink { _ in activityTick &+= 1 }
+                .sink { _ in
+                    if AppMenuTrackingGate.shared.isTrackingMenu {
+                        hasDeferredActivityTick = true
+                    } else {
+                        activityTick &+= 1
+                    }
+                }
+        }
+        .onReceive(AppMenuTrackingGate.shared.trackingEnded) { _ in
+            guard hasDeferredActivityTick else { return }
+            hasDeferredActivityTick = false
+            activityTick &+= 1
         }
         .onAppear {
             if !didApplyInitialBranchAutoExpand {
