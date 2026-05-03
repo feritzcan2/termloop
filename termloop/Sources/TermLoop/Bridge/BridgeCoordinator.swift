@@ -198,6 +198,13 @@ final class BridgeCoordinator {
             send(rightPrompt, bridge.rightWorkspaceId)
         }
         guard let targetId = bridge.workspaceId(for: bridge.firstSpeaker) else { return }
+        if bridge.kickoffDeliveredAtLaunch == true {
+            BridgeDebugTrace.log("coord.kickoff skip-launch-delivered id=\(bridgeId.uuidString.prefix(8))")
+            if bridge.effectiveForwardMode == .auto {
+                attachAutoForwardSubscription(for: bridge)
+            }
+            return
+        }
         // Sheet path (firstSpeaker .left) sends to the warm source agent —
         // immediate is fine. MCP path (firstSpeaker .right) sends straight
         // into the freshly-spawned helper; wait for its CLI boot splash to
