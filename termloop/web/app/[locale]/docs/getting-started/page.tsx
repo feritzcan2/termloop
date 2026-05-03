@@ -55,8 +55,8 @@ brew install --cask termloop`}</CodeBlock>
       <p>{t("cliDesc")}</p>
       <CodeBlock lang="bash">{`sudo ln -sf "/Applications/TermLoop.app/Contents/Resources/bin/termloop" /usr/local/bin/termloop`}</CodeBlock>
       <p>{t("cliThen")}</p>
-      <CodeBlock lang="bash">{`cmux list-workspaces
-cmux notify --title "Build Complete" --body "Your build finished"`}</CodeBlock>
+      <CodeBlock lang="bash">{`termloop list-workspaces
+termloop notify --title "Build Complete" --body "Your build finished"`}</CodeBlock>
 
       <h2>{t("autoUpdates")}</h2>
       <p>{t("autoUpdatesDesc")}</p>

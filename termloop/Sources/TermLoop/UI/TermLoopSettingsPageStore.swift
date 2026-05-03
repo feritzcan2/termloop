@@ -5,7 +5,7 @@ import SwiftUI
 
 /// Drives the in-app TermLoop Settings overlay. When `isOpen` is true the
 /// `AgentMainAreaOverlaySwap` swaps the Ghostty terminal anchor for the
-/// `TermLoopSettingsPage` view (see `System/Systems/UILayout/UILayout.md`).
+/// `TermLoopSettingsPage` view.
 ///
 /// Terminal NSView hide/unhide is **not** done here on purpose. The swap's
 /// `onChange(of: overlayMode)` handler already calls

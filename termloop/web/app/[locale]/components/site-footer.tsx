@@ -38,8 +38,7 @@ export async function SiteFooter() {
       heading: t("social"),
       links: [
         { label: t("github"), href: "https://github.com/feritzcan2/termloop" },
-        { label: t("twitter"), href: "https://github.com/feritzcan2/termloop" },
-        { label: t("discord"), href: "https://github.com/feritzcan2/termloop/discussions" },
+        { label: t("discussions"), href: "https://github.com/feritzcan2/termloop/discussions" },
         { label: t("contact"), href: "mailto:feritzcan93@gmail.com" },
       ],
     },

@@ -36,7 +36,7 @@ export const shortcutCategories: ShortcutCategory[] = [
       { id: "closeWindow", combos: [["⌃", "⌘", "W"]], description: { en: "Close window", ja: "ウインドウを閉じる" } },
       { id: "toggleFullScreen", combos: [["⌃", "⌘", "F"]], description: { en: "Toggle full screen", ja: "フルスクリーンを切り替え" } },
       { id: "sendFeedback", combos: [["⌥", "⌘", "F"]], description: { en: "Send feedback", ja: "フィードバックを送信" } },
-      { id: "quit", combos: [["⌘", "Q"]], description: { en: "Quit cmux", ja: "cmuxを終了" } },
+      { id: "quit", combos: [["⌘", "Q"]], description: { en: "Quit TermLoop", ja: "TermLoopを終了" } },
     ],
   },
   {

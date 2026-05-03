@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Terms of Service — cmux",
-  description: "Terms of service for cmux",
+  title: "Terms of Service — TermLoop",
+  description: "Terms of service for TermLoop",
   alternates: { canonical: "https://termloop.ai/terms-of-service" },
 };
 

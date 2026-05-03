@@ -95,15 +95,15 @@ function applyToDOM(v: DevValues) {
 
 export function DevPanel() {
   const [visible, setVisible] = useState(false);
-  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const [pos, setPos] = useState(() =>
+    typeof window === "undefined"
+      ? { x: 0, y: 0 }
+      : { x: window.innerWidth - 340, y: window.innerHeight - 320 },
+  );
   const [dragging, setDragging] = useState(false);
   const [copied, setCopied] = useState(false);
   const vals = useDevValues();
   const dragOffset = useRef({ x: 0, y: 0 });
-
-  useEffect(() => {
-    setPos({ x: window.innerWidth - 340, y: window.innerHeight - 320 });
-  }, []);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
