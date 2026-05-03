@@ -73,22 +73,10 @@ final class AgentPromptStore: ObservableObject {
         reloadWorkItem = nil
     }
 
-    func duplicateBuiltInToProject(id: String) throws {
-        guard let projectDir = latestProjectDir else {
-            throw NSError(domain: "AgentPromptStore", code: 1, userInfo: [NSLocalizedDescriptionKey: "No active project selected."])
+    func hasDefaultDocument(id: String) -> Bool {
+        Self.loadDocuments(projectDir: nil).documents.contains {
+            $0.id == id && $0.scope == .builtin
         }
-        guard let document = Self.loadDocuments(projectDir: nil).documents.first(where: { $0.id == id && $0.scope == .builtin }) else {
-            throw NSError(domain: "AgentPromptStore", code: 2, userInfo: [NSLocalizedDescriptionKey: "Built-in prompt not found."])
-        }
-        try Self.saveProjectDocument(
-            id: document.id,
-            title: document.title,
-            kind: document.kind,
-            subtitle: document.subtitle,
-            body: document.body,
-            projectDir: projectDir
-        )
-        reloadSynchronously(projectDir: latestProjectDir)
     }
 
     @discardableResult
@@ -115,7 +103,8 @@ final class AgentPromptStore: ObservableObject {
         return created
     }
 
-    func saveProjectDocument(_ document: AgentPromptDocument, title: String, body: String) throws {
+    @discardableResult
+    func saveProjectDocument(_ document: AgentPromptDocument, title: String, body: String) throws -> AgentPromptDocument {
         guard let projectDir = latestProjectDir else {
             throw NSError(domain: "AgentPromptStore", code: 5, userInfo: [NSLocalizedDescriptionKey: "No active project selected."])
         }
@@ -128,6 +117,10 @@ final class AgentPromptStore: ObservableObject {
             projectDir: projectDir
         )
         reloadSynchronously(projectDir: latestProjectDir)
+        guard let saved = documents.first(where: { $0.id == document.id && $0.scope == .project }) else {
+            throw NSError(domain: "AgentPromptStore", code: 6, userInfo: [NSLocalizedDescriptionKey: "Project prompt was written but not found after reload."])
+        }
+        return saved
     }
 
     func deleteProjectDocument(_ document: AgentPromptDocument) throws {
@@ -150,7 +143,7 @@ final class AgentPromptStore: ObservableObject {
 
     private func defaultTitle(for kind: AgentPromptDocument.Kind) -> String {
         switch kind {
-        case .systemPromptTemplate: return "New System Prompt"
+        case .systemPromptTemplate: return "New System Instructions"
         case .bridgeSourcePrompt: return "New Bridge Source Prompt"
         case .bridgeTargetPrompt: return "New Bridge Target Prompt"
         case .forkHandoffPrompt: return "New Fork Handoff Prompt"
@@ -163,9 +156,9 @@ final class AgentPromptStore: ObservableObject {
 
     private func defaultSubtitle(for kind: AgentPromptDocument.Kind) -> String {
         switch kind {
-        case .systemPromptTemplate: return "Project-scoped reusable system prompt template."
+        case .systemPromptTemplate: return "Project-scoped reusable system instructions."
         case .bridgeSourcePrompt: return "Bridge source-side handoff template."
-        case .bridgeTargetPrompt: return "Bridge target-side system prompt template."
+        case .bridgeTargetPrompt: return "Bridge target-side system instructions template."
         case .forkHandoffPrompt: return "Quick Action fork/handoff template."
         case .abilityCreatorPrompt: return "Meta-prompt for creating a project ability."
         case .abilityRefinerPrompt: return "Meta-prompt for refining an existing project ability."
@@ -247,6 +240,10 @@ extension AgentPromptStore {
 
     static func bridgeTargetDocumentID(_ preset: AskAgentPreset, _ target: AskTargetAgent) -> String {
         "bridge.target.\(preset.rawValue).\(target.rawValue)"
+    }
+
+    static func askToHelperInstructionsDocumentID(_ target: AskTargetAgent) -> String {
+        "bridge.target.ask-to-helper.\(target.rawValue)"
     }
 
     static let forkHandoffDocumentID = "fork.handoff.default"
@@ -356,6 +353,24 @@ extension AgentPromptStore {
             )
         }
 
+        for target in AskTargetAgent.allCases where target.isRuntimeSupported {
+            docs.append(
+                AgentPromptDocument(
+                    id: askToHelperInstructionsDocumentID(target),
+                    title: "Ask-To helper instructions — \(target.title)",
+                    kind: .bridgeTargetPrompt,
+                    subtitle: "Default helper-side instructions for Ask-To requests sent to \(target.title).",
+                    body: BridgeHelperSystemPrompt.defaultInstructionsTemplate(target: target),
+                    scope: .builtin,
+                    sourceURL: nil,
+                    metadata: [
+                        .init(label: "Target", value: target.rawValue),
+                        .init(label: "Source", value: "BridgePromptCatalog")
+                    ]
+                )
+            )
+        }
+
         docs.append(
             AgentPromptDocument(
                 id: forkHandoffDocumentID,
@@ -425,9 +440,9 @@ extension AgentPromptStore {
         [
             AgentPromptDocument(
                 id: "system.template.edge-case-hunter",
-                title: "Edge Case Hunter — system prompt",
+                title: "Edge Case Hunter — system instructions",
                 kind: .systemPromptTemplate,
-                subtitle: "Default system prompt for the Edge Case Hunter template.",
+                subtitle: "Default system instructions for the Edge Case Hunter template.",
                 body: """
 You are the Edge Case Hunter for {{workspace_path}} on branch "{{branch_name}}".
 
@@ -478,9 +493,9 @@ If `git diff` and `git diff --cached` are both empty, write `[]` to the findings
             ),
             AgentPromptDocument(
                 id: "system.template.pr-agent",
-                title: "PR Agent — system prompt",
+                title: "PR Agent — system instructions",
                 kind: .systemPromptTemplate,
-                subtitle: "Default system prompt for the PR Agent template.",
+                subtitle: "Default system instructions for the PR Agent template.",
                 body: """
 You are the PR Agent for branch "{{branch_name}}" in repo "{{repo_name}}".
 
@@ -506,9 +521,9 @@ Never force-push. If the branch is already open as a PR (`gh pr view`), skip cre
             ),
             AgentPromptDocument(
                 id: "system.template.review-agent",
-                title: "Review Agent — system prompt",
+                title: "Review Agent — system instructions",
                 kind: .systemPromptTemplate,
-                subtitle: "Default system prompt for the Review Agent template.",
+                subtitle: "Default system instructions for the Review Agent template.",
                 body: """
 You are the Review Agent for {{workspace_path}} on branch "{{branch_name}}".
 
@@ -531,9 +546,9 @@ If there are zero findings, still create the file with "No issues found." and ex
             ),
             AgentPromptDocument(
                 id: "system.template.save-agent",
-                title: "Save Agent — system prompt",
+                title: "Save Agent — system instructions",
                 kind: .systemPromptTemplate,
-                subtitle: "Default system prompt for the Save Agent template.",
+                subtitle: "Default system instructions for the Save Agent template.",
                 body: """
 You are the Save Agent running in {{workspace_path}} on branch "{{branch_name}}".
 
@@ -558,9 +573,9 @@ If step 1 shows no changes, print "nothing to save" and exit 0 without a commit.
             ),
             AgentPromptDocument(
                 id: "system.template.scattered-orchestration-finder",
-                title: "Scattered Orchestration Finder — system prompt",
+                title: "Scattered Orchestration Finder — system instructions",
                 kind: .systemPromptTemplate,
-                subtitle: "Default system prompt for the Scattered Orchestration Finder template.",
+                subtitle: "Default system instructions for the Scattered Orchestration Finder template.",
                 body: """
 You are the Scattered Orchestration Finder for {{workspace_path}} on branch "{{branch_name}}".
 
@@ -637,9 +652,9 @@ Stay under 800 words.
             ),
             AgentPromptDocument(
                 id: "system.template.brainstorm-feature",
-                title: "Brainstorm Feature — system prompt",
+                title: "Brainstorm Feature — system instructions",
                 kind: .systemPromptTemplate,
-                subtitle: "Default system prompt for the Brainstorm Feature template.",
+                subtitle: "Default system instructions for the Brainstorm Feature template.",
                 body: """
 You are an autonomous brainstorming agent. Never ask the user a question. Never modify code. Never commit anything.
 
@@ -703,9 +718,9 @@ Hard rules:
             ),
             AgentPromptDocument(
                 id: "system.template.executor",
-                title: "Executor — system prompt",
+                title: "Executor — system instructions",
                 kind: .systemPromptTemplate,
-                subtitle: "Default system prompt for the Executor template.",
+                subtitle: "Default system instructions for the Executor template.",
                 body: """
 You are the **Executor**. You read `FINAL_SPEC.md` and `PLAN.md` and implement the feature, committing as you go.
 
@@ -761,9 +776,9 @@ Ends with a final block:
             ),
             AgentPromptDocument(
                 id: "system.template.planner",
-                title: "Planner — system prompt",
+                title: "Planner — system instructions",
                 kind: .systemPromptTemplate,
-                subtitle: "Default system prompt for the Planner template.",
+                subtitle: "Default system instructions for the Planner template.",
                 body: """
 You are the **Planner**. You read the approved `FINAL_SPEC.md` and produce a concrete, step-by-step implementation plan as `PLAN.md`.
 
@@ -819,9 +834,9 @@ When `PLAN.md` matches the shape above and every step has all four sub-fields fi
             ),
             AgentPromptDocument(
                 id: "system.template.pragmatic-engineer",
-                title: "Pragmatic Engineer — system prompt",
+                title: "Pragmatic Engineer — system instructions",
                 kind: .systemPromptTemplate,
-                subtitle: "Default system prompt for the Pragmatic Engineer template.",
+                subtitle: "Default system instructions for the Pragmatic Engineer template.",
                 body: """
 You are the **Pragmatic Engineer** in a three-person design debate. Your job is to ground the design in the real codebase and keep cost honest.
 
@@ -854,9 +869,9 @@ Contribute to `FINAL_SPEC.md` under `## Technical approach` only, plus inline fi
             ),
             AgentPromptDocument(
                 id: "system.template.product-architect",
-                title: "Product Architect — system prompt",
+                title: "Product Architect — system instructions",
                 kind: .systemPromptTemplate,
-                subtitle: "Default system prompt for the Product Architect template.",
+                subtitle: "Default system instructions for the Product Architect template.",
                 body: """
 You are the **Product Architect** in a three-person design debate. Your job is to propose and refine a minimal, clear feature design that solves the real user need described in `brief.txt`.
 
@@ -896,9 +911,9 @@ Do not exceed ~300 lines.
             ),
             AgentPromptDocument(
                 id: "system.template.reviewer",
-                title: "Reviewer — system prompt",
+                title: "Reviewer — system instructions",
                 kind: .systemPromptTemplate,
-                subtitle: "Default system prompt for the Reviewer template.",
+                subtitle: "Default system instructions for the Reviewer template.",
                 body: """
 You are the **Reviewer**. You read `FINAL_SPEC.md`, `PLAN.md`, `SHIPLOG.md`, and the resulting git diff, and you produce `REVIEW.md`.
 
@@ -960,9 +975,9 @@ When `REVIEW.md` is complete and a verdict is set. Never ship a review without r
             ),
             AgentPromptDocument(
                 id: "system.template.skeptical-critic",
-                title: "Skeptical Critic — system prompt",
+                title: "Skeptical Critic — system instructions",
                 kind: .systemPromptTemplate,
-                subtitle: "Default system prompt for the Skeptical Critic template.",
+                subtitle: "Default system instructions for the Skeptical Critic template.",
                 body: """
 You are the **Skeptical Critic** in a three-person design debate. Your job is to find what breaks, what is assumed, what is missing from the current `FINAL_SPEC.md`.
 
@@ -997,9 +1012,9 @@ When your `<position>` is empty for two consecutive turns, the debate has conver
             ),
             AgentPromptDocument(
                 id: "system.template.project-keywords",
-                title: "Project Keywords — system prompt",
+                title: "Project Keywords — system instructions",
                 kind: .systemPromptTemplate,
-                subtitle: "Default system prompt for the Project Keywords template.",
+                subtitle: "Default system instructions for the Project Keywords template.",
                 body: """
 You are the Project Keywords agent running in {{workspace_path}} (project "{{project_name}}").
 
@@ -1054,9 +1069,9 @@ If you find nothing new worth adding and nothing stale, just touch the `Last upd
             ),
             AgentPromptDocument(
                 id: "system.template.caveman",
-                title: "Caveman — system prompt",
+                title: "Caveman — system instructions",
                 kind: .systemPromptTemplate,
-                subtitle: "Default system prompt for the Caveman template (agent-agnostic ultra-terse style).",
+                subtitle: "Default system instructions for the Caveman template (agent-agnostic ultra-terse style).",
                 body: """
 Respond terse like smart caveman. All technical substance stay. Only fluff die.
 
@@ -1126,7 +1141,7 @@ Code/commits/PRs: write normal. "stop caveman" or "normal mode": revert. Level p
             ),
             AgentPromptDocument(
                 id: "system.template.concise-docs",
-                title: "Concise Docs — system prompt",
+                title: "Concise Docs — system instructions",
                 kind: .systemPromptTemplate,
                 subtitle: "Generic concise documentation style for any artifact-writing task (CLAUDE.md, instructions.md, READMEs, ability docs).",
                 body: """

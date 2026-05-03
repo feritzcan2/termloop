@@ -47,7 +47,6 @@ def _run_cli(cli: str, args: list[str], *, json_output: bool, extra_env: dict[st
     env = dict(os.environ)
     env.pop("TERMLOOP_WORKSPACE_ID", None)
     env.pop("TERMLOOP_SURFACE_ID", None)
-    env.pop("TERMLOOP_TAB_ID", None)
     if extra_env:
         env.update(extra_env)
 
@@ -264,10 +263,6 @@ def main() -> int:
             _must(
                 "export TERMLOOP_WORKSPACE_ID='__TERMLOOP_WORKSPACE_ID__'" in remote_bootstrap,
                 f"cmux ssh should export the remote workspace id into the bootstrap shell: {remote_bootstrap!r}",
-            )
-            _must(
-                "export TERMLOOP_TAB_ID='__TERMLOOP_WORKSPACE_ID__'" in remote_bootstrap,
-                f"cmux ssh should keep TERMLOOP_TAB_ID aligned with the workspace id for shell integration: {remote_bootstrap!r}",
             )
             _must(
                 "export TERMLOOP_SURFACE_ID='__TERMLOOP_SURFACE_ID__'" in remote_bootstrap,

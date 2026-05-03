@@ -1109,7 +1109,10 @@ struct WorktreeAgentsPanel: View {
             var seenPaths = Set<String>()
             var byKey: [String: AgentReportedStateStore.AgentReportedBinding] = [:]
             for workspace in group.workspaces {
-                guard let path = WorkspaceMetadataStore.shared.worktreeRootPath(forWorkspaceId: workspace.id),
+                guard let path = WorkspaceMetadataStore.shared.reportedStatePath(
+                    forWorkspaceId: workspace.id,
+                    fallbackPath: workspace.termLoopPresentationCwd()
+                ),
                       seenPaths.insert(path).inserted else { continue }
                 for binding in AgentReportedStateStore.shared.bindings(forPath: path) {
                     let key = AgentReportedStateStore.bindingKey(
@@ -1517,7 +1520,6 @@ struct WorktreeAgentsPanel: View {
         let groupBindings = renderSnapshot.bindingsByBranch[group.branch] ?? []
         let groupBindingBadges = renderSnapshot.bindingBadgeSnapshotsByBranch[group.branch] ?? []
         let partitionedBindings = partitionRunTargetBindings(groupBindings)
-        let compactPersistentBindingBadges = groupBindingBadges.filter { $0.isJira }
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: expanded ? "chevron.down" : "chevron.right")
@@ -1639,7 +1641,8 @@ struct WorktreeAgentsPanel: View {
                             if !partitionedBindings.runTargets.isEmpty {
                                 WorktreeGroupRunTargetsBadge(
                                     bindings: partitionedBindings.runTargets,
-                                    workspaceIds: group.workspaces.map(\.id)
+                                    workspaceIds: group.workspaces.map(\.id),
+                                    reportedStatePath: group.worktreePath
                                 )
                             }
                             ForEach(groupBindingBadges) { snapshot in
@@ -1654,9 +1657,9 @@ struct WorktreeAgentsPanel: View {
                             pullRequestLookupTick: pullRequestLookupTick
                         )
                     }
-                    // Compact fallbacks for narrow sidebars: keep PR status
-                    // and persistent ticket bindings visible, then drop git
-                    // metadata instead of crushing branch titles/count tokens.
+                    // Compact fallbacks for narrow sidebars: keep every
+                    // agent-reported badge visible, then drop git metadata
+                    // instead of crushing branch titles/count tokens.
                     HStack(alignment: .center, spacing: 4) {
                         WorktreeGroupPullRequestBadge(
                             summary: pullRequestSummary,
@@ -1665,7 +1668,14 @@ struct WorktreeAgentsPanel: View {
                             openSinglePullRequest: { NSWorkspace.shared.open($0) }
                         )
                         .equatable()
-                        ForEach(compactPersistentBindingBadges) { snapshot in
+                        if !partitionedBindings.runTargets.isEmpty {
+                            WorktreeGroupRunTargetsBadge(
+                                bindings: partitionedBindings.runTargets,
+                                workspaceIds: group.workspaces.map(\.id),
+                                reportedStatePath: group.worktreePath
+                            )
+                        }
+                        ForEach(groupBindingBadges) { snapshot in
                             WorktreeGroupBindingBadge(snapshot: snapshot)
                                 .equatable()
                         }
@@ -1678,9 +1688,18 @@ struct WorktreeAgentsPanel: View {
                             openSinglePullRequest: { NSWorkspace.shared.open($0) }
                         )
                         .equatable()
-                        ForEach(compactPersistentBindingBadges) { snapshot in
-                            WorktreeGroupBindingBadge(snapshot: snapshot)
-                                .equatable()
+                        HStack(alignment: .center, spacing: 4) {
+                            if !partitionedBindings.runTargets.isEmpty {
+                                WorktreeGroupRunTargetsBadge(
+                                    bindings: partitionedBindings.runTargets,
+                                    workspaceIds: group.workspaces.map(\.id),
+                                    reportedStatePath: group.worktreePath
+                                )
+                            }
+                            ForEach(groupBindingBadges) { snapshot in
+                                WorktreeGroupBindingBadge(snapshot: snapshot)
+                                    .equatable()
+                            }
                         }
                     }
                 }

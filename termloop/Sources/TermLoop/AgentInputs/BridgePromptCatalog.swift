@@ -144,12 +144,82 @@ enum AskAgentPreset: String, CaseIterable, Identifiable {
 /// the source as noise. Keep the text terse — appended after Claude's
 /// default system prompt via `--append-system-prompt`.
 enum BridgeHelperSystemPrompt {
-    static let antiPreamble: String = """
-    Answer the incoming message directly in one reply. No preamble, no acknowledgments, no "I'll do X first" — lead with the substantive answer. If the question needs code inspection, do it silently and return the conclusion in the same turn.
-    """
+    static func defaultInstructionsTemplate(target: AskTargetAgent) -> String {
+        """
+        Answer the incoming Ask-To request directly in one final reply as {{target_name}}.
 
-    static func compose(userOverride: String) -> String {
-        let trimmed = userOverride.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? antiPreamble : "\(antiPreamble)\n\n\(trimmed)"
+        No preamble, no acknowledgments, no "I'll do X first" — lead with the substantive answer. If the question needs code inspection, do it silently and return the conclusion in the same turn.
+        """
+    }
+
+    @MainActor
+    static func instructions(
+        target: AskTargetAgent,
+        projectFolderPath: String?
+    ) -> String {
+        let template = AgentPromptStore.body(
+            id: AgentPromptStore.askToHelperInstructionsDocumentID(target),
+            projectFolderPath: projectFolderPath
+        ) ?? defaultInstructionsTemplate(target: target)
+        return AgentPromptStore.render(
+            template: template,
+            replacements: [
+                "target_name": target.title,
+                "target_agent": target.agentId
+            ]
+        )
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    @MainActor
+    static func compose(
+        requestId: UUID,
+        target: AskTargetAgent,
+        userOverride: String,
+        projectFolderPath: String?
+    ) -> String {
+        let helperInstructions = instructions(
+            target: target,
+            projectFolderPath: projectFolderPath
+        )
+        let trimmedOverride = userOverride.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = """
+        \(helperInstructions)
+
+        \(requestProtocol(requestId: requestId))
+        """
+        return trimmedOverride.isEmpty ? base : "\(base)\n\n\(trimmedOverride)"
+    }
+
+    static func kickoffMessage(
+        _ message: String,
+        requestId: UUID,
+        firstSpeaker: BridgeSender
+    ) -> String {
+        switch firstSpeaker {
+        case .right:
+            return "\(requestProtocol(requestId: requestId))\n\nIncoming request:\n\(message)"
+        case .left:
+            return "\(message)\n\n\(sourceForwardingInstruction(requestId: requestId))"
+        }
+    }
+
+    private static func sourceForwardingInstruction(requestId: UUID) -> String {
+        """
+        When you write the message to the helper, include this TermLoop request protocol block verbatim so the helper can deliver the final answer:
+
+        \(requestProtocol(requestId: requestId))
+        """
+    }
+
+    private static func requestProtocol(requestId: UUID) -> String {
+        """
+        TermLoop Ask-To request protocol:
+        - Request ID: \(requestId.uuidString)
+        - Do all investigation, review, or requested work before replying.
+        - Do not use the reply tool for interim updates.
+        - When the final report or completed result is ready, call `reply_to_request` exactly once with `request_id: "\(requestId.uuidString)"` and the final answer in `message`.
+        - After that tool call succeeds, do not continue this request. If the source agent needs follow-up, it will create a new `ask_to` request.
+        """
     }
 }

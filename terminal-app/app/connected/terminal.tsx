@@ -1,10 +1,15 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
   type AppStateStatus,
+  FlatList,
   KeyboardAvoidingView,
+  type LayoutChangeEvent,
+  type ListRenderItemInfo,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   Platform,
   Pressable,
   ScrollView,
@@ -14,20 +19,31 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { parseAnsi, stripAnsi } from "../../lib/ansi";
-import { friendlyTransportError } from "../../lib/errors";
+import { parseAnsi, stripAnsi, type AnsiSegment } from "../../lib/ansi";
+import {
+  friendlyTransportError,
+  isTerminalSurfaceStartingError,
+} from "../../lib/errors";
 import { getActiveClient } from "../../lib/session";
-import type { SurfaceSubscription } from "../../lib/termloop-client";
+import { type SurfaceSubscription } from "../../lib/termloop-client";
 import { colors, monoFont, radii } from "../../lib/theme";
 
-const MAX_BUFFER_LINES = 1200;
+const MAX_BUFFER_LINES = 3000;
+const MAX_BUFFER_CHARS = 450_000;
+const MAX_RENDER_SEGMENTS = 2200;
 const HISTORY_LINES = 500;
 const POLL_INTERVAL_MS = 1800;
 const RECONNECT_INTERVAL_MS = 3000;
+const OUTPUT_FLUSH_MS = 90;
 const SEND_SETTLE_MS = 60;
 const NEAR_BOTTOM_PX = 80;
 const MAX_COMMAND_HISTORY = 50;
 const COMPOSER_MAX_HEIGHT = 96;
+const TERMINAL_HORIZONTAL_PADDING = 24;
+const TERMINAL_CONTENT_PADDING = 12;
+const TERMINAL_CHAR_WIDTH_RATIO = 0.72;
+const MAX_TERMINAL_CONTENT_WIDTH = 6000;
+const TERMINAL_WIDTH_BUCKET = 240;
 
 type LiveState = "connecting" | "live" | "degraded" | "closed";
 
@@ -49,8 +65,10 @@ const FONT_SIZES = [11, 13, 15] as const;
 type FontIndex = 0 | 1 | 2;
 
 function capTerminalBuffer(text: string): string {
-  const lines = text.split("\n");
-  if (lines.length <= MAX_BUFFER_LINES) return text;
+  const capped =
+    text.length > MAX_BUFFER_CHARS ? text.slice(-MAX_BUFFER_CHARS) : text;
+  const lines = capped.split("\n");
+  if (lines.length <= MAX_BUFFER_LINES) return capped;
   return lines.slice(lines.length - MAX_BUFFER_LINES).join("\n");
 }
 
@@ -61,6 +79,93 @@ interface KeyDef {
   /** Text fallback when send_key fails or `key` is omitted. */
   text?: string;
 }
+
+interface TerminalRenderLine {
+  key: string;
+  text: string;
+  segments: AnsiSegment[] | null;
+}
+
+function makeLine(key: number): TerminalRenderLine {
+  return { key: String(key), text: "", segments: [] };
+}
+
+function plainTerminalLines(text: string): TerminalRenderLine[] {
+  return normalizeTerminalLineBreaks(stripAnsi(text)).split("\n").map((line, idx) => ({
+    key: String(idx),
+    text: line,
+    segments: null,
+  }));
+}
+
+function normalizeTerminalLineBreaks(text: string): string {
+  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+function segmentTerminalLines(segments: AnsiSegment[]): TerminalRenderLine[] {
+  const lines = [makeLine(0)];
+  for (const segment of segments) {
+    const parts = normalizeTerminalLineBreaks(segment.text).split("\n");
+    for (let idx = 0; idx < parts.length; idx++) {
+      if (idx > 0) lines.push(makeLine(lines.length));
+      const part = parts[idx];
+      if (!part) continue;
+      const line = lines[lines.length - 1];
+      line.text += part;
+      line.segments?.push({ text: part, style: segment.style });
+    }
+  }
+  return lines;
+}
+
+function terminalLinesForBuffer(text: string): TerminalRenderLine[] {
+  try {
+    return segmentTerminalLines(
+      parseAnsi(text, { maxSegments: MAX_RENDER_SEGMENTS })
+    );
+  } catch {
+    return plainTerminalLines(text);
+  }
+}
+
+const TerminalLineRow = memo(function TerminalLineRow({
+  line,
+  fontSize,
+  lineHeight,
+  lineWidth,
+}: {
+  line: TerminalRenderLine;
+  fontSize: number;
+  lineHeight: number;
+  lineWidth: number;
+}) {
+  const textStyle = [styles.surfaceText, { fontSize, lineHeight }];
+  return (
+    <View
+      style={[
+        styles.terminalLineRow,
+        { width: lineWidth, height: lineHeight },
+      ]}
+    >
+      <Text
+        style={textStyle}
+        selectable
+        numberOfLines={1}
+        ellipsizeMode="clip"
+      >
+        {line.segments
+          ? line.segments.length > 0
+            ? line.segments.map((seg, idx) => (
+                <Text key={idx} style={seg.style}>
+                  {seg.text}
+                </Text>
+              ))
+            : " "
+          : line.text || " "}
+      </Text>
+    </View>
+  );
+});
 
 const KEYS: KeyDef[] = [
   { label: "Esc", key: "escape", text: "" },
@@ -99,21 +204,74 @@ export default function TerminalScreen() {
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [sending, setSending] = useState(false);
+  const [surfaceWidth, setSurfaceWidth] = useState(0);
 
   const aliveRef = useRef(true);
+  const liveStateRef = useRef<LiveState>("connecting");
+  const streamReasonRef = useRef<string | null>(null);
   const inFlightRef = useRef(false);
-  const scrollRef = useRef<ScrollView>(null);
+  const terminalListRef = useRef<FlatList<TerminalRenderLine>>(null);
   const subscriptionRef = useRef<SurfaceSubscription | null>(null);
   const inputRef = useRef<TextInput>(null);
   const nearBottomRef = useRef(true);
   const reconnectRef = useRef<() => void>(() => {});
+  const pendingOutputRef = useRef("");
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearOutputFlushTimer = useCallback(() => {
+    if (!flushTimerRef.current) return;
+    clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = null;
+  }, []);
+
+  const flushPendingOutput = useCallback(() => {
+    flushTimerRef.current = null;
+    const text = pendingOutputRef.current;
+    if (!text || !aliveRef.current) return;
+    pendingOutputRef.current = "";
+    setBuffer((current) => capTerminalBuffer(current + text));
+  }, []);
+
+  const queueSurfaceOutput = useCallback(
+    (text: string) => {
+      pendingOutputRef.current += text;
+      if (flushTimerRef.current) return;
+      flushTimerRef.current = setTimeout(flushPendingOutput, OUTPUT_FLUSH_MS);
+    },
+    [flushPendingOutput]
+  );
+
+  const replaceSurfaceBuffer = useCallback(
+    (text: string) => {
+      pendingOutputRef.current = "";
+      clearOutputFlushTimer();
+      if (aliveRef.current) setBuffer(capTerminalBuffer(text));
+    },
+    [clearOutputFlushTimer]
+  );
+
+  const setStreamStatus = useCallback(
+    (state: LiveState, reason: string | null = null) => {
+      if (liveStateRef.current !== state) {
+        liveStateRef.current = state;
+        setLiveState(state);
+      }
+      if (streamReasonRef.current !== reason) {
+        streamReasonRef.current = reason;
+        setStreamReason(reason);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     aliveRef.current = true;
     return () => {
       aliveRef.current = false;
+      pendingOutputRef.current = "";
+      clearOutputFlushTimer();
     };
-  }, []);
+  }, [clearOutputFlushTimer]);
 
   const refresh = useCallback(async () => {
     if (!client || !workspaceId) return;
@@ -128,10 +286,14 @@ export default function TerminalScreen() {
         HISTORY_LINES
       );
       if (aliveRef.current) {
-        setBuffer(capTerminalBuffer(s.text));
+        replaceSurfaceBuffer(s.text);
         setInlineError(null);
       }
     } catch (err) {
+      if (aliveRef.current && isTerminalSurfaceStartingError(err)) {
+        setInlineError(null);
+        return;
+      }
       if (aliveRef.current) {
         setInlineError(`Read failed: ${friendlyTransportError(err)}`);
       }
@@ -139,7 +301,7 @@ export default function TerminalScreen() {
       inFlightRef.current = false;
       if (aliveRef.current) setRefreshing(false);
     }
-  }, [client, workspaceId, surfaceId]);
+  }, [client, workspaceId, surfaceId, replaceSurfaceBuffer]);
 
   useEffect(() => {
     if (!client || !workspaceId) {
@@ -192,28 +354,28 @@ export default function TerminalScreen() {
               if (cancelled || !aliveRef.current) return;
               switch (event.type) {
                 case "surface.snapshot":
-                  setBuffer(capTerminalBuffer(event.text));
-                  setLiveState("live");
-                  setStreamReason(null);
+                  replaceSurfaceBuffer(event.text);
+                  setStreamStatus("live");
                   stopPolling();
                   clearReconnect();
                   return;
                 case "surface.output":
-                  setBuffer((b) => capTerminalBuffer(b + event.text));
-                  setLiveState("live");
-                  setStreamReason(null);
+                  queueSurfaceOutput(event.text);
+                  setStreamStatus("live");
                   stopPolling();
                   clearReconnect();
                   return;
                 case "surface.closed":
-                  setLiveState("closed");
+                  setStreamStatus("closed");
                   stopPolling();
                   clearReconnect();
                   dropSubscription();
                   return;
                 case "surface.error":
-                  setLiveState("degraded");
-                  setStreamReason(friendlyTransportError(new Error(event.message)));
+                  setStreamStatus(
+                    "degraded",
+                    friendlyTransportError(new Error(event.message))
+                  );
                   dropSubscription();
                   startPolling();
                   scheduleReconnect();
@@ -229,14 +391,12 @@ export default function TerminalScreen() {
           }
           subscription = sub;
           subscriptionRef.current = sub;
-          setLiveState("live");
-          setStreamReason(null);
+          setStreamStatus("live");
           stopPolling();
           clearReconnect();
         } catch (err) {
           if (cancelled) return;
-          setLiveState("degraded");
-          setStreamReason(friendlyTransportError(err));
+          setStreamStatus("degraded", friendlyTransportError(err));
           startPolling();
           scheduleReconnect();
           refresh().catch(() => {});
@@ -250,8 +410,7 @@ export default function TerminalScreen() {
           if (cancelled || subscription || AppState.currentState !== "active") {
             return;
           }
-          setLiveState("connecting");
-          setStreamReason(null);
+          setStreamStatus("connecting");
           trySubscribe();
         }, RECONNECT_INTERVAL_MS);
       };
@@ -264,7 +423,7 @@ export default function TerminalScreen() {
           clearReconnect();
           if (subscription) {
             dropSubscription();
-            setLiveState("connecting");
+            setStreamStatus("connecting");
           }
         }
       };
@@ -275,8 +434,7 @@ export default function TerminalScreen() {
         if (cancelled) return;
         if (subscription) return;
         clearReconnect();
-        setLiveState("connecting");
-        setStreamReason(null);
+        setStreamStatus("connecting");
         trySubscribe();
       };
 
@@ -287,9 +445,20 @@ export default function TerminalScreen() {
         appStateSub.remove();
         dropSubscription();
         reconnectRef.current = () => {};
-        setLiveState("connecting");
+        pendingOutputRef.current = "";
+        clearOutputFlushTimer();
+        setStreamStatus("connecting");
       };
-    }, [client, workspaceId, surfaceId, refresh])
+    }, [
+      client,
+      workspaceId,
+      surfaceId,
+      refresh,
+      queueSurfaceOutput,
+      replaceSurfaceBuffer,
+      clearOutputFlushTimer,
+      setStreamStatus,
+    ])
   );
 
   const sendKey = useCallback(
@@ -379,12 +548,6 @@ export default function TerminalScreen() {
     [commandHistory, historyIndex]
   );
 
-  const scrollToBottom = useCallback((animated = true) => {
-    nearBottomRef.current = true;
-    setIsNearBottom(true);
-    scrollRef.current?.scrollToEnd({ animated });
-  }, []);
-
   const clearDraft = useCallback(() => {
     setDraft("");
     setHistoryIndex(null);
@@ -401,6 +564,62 @@ export default function TerminalScreen() {
     return map;
   }, []);
 
+  const terminalLines = useMemo(() => terminalLinesForBuffer(buffer), [buffer]);
+
+  const maxLineChars = useMemo(
+    () => terminalLines.reduce((max, line) => Math.max(max, line.text.length), 1),
+    [terminalLines]
+  );
+
+  const onSurfaceLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextWidth = Math.floor(event.nativeEvent.layout.width);
+    setSurfaceWidth((current) => (current === nextWidth ? current : nextWidth));
+  }, []);
+
+  const onTerminalScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, contentSize, layoutMeasurement } =
+        event.nativeEvent;
+      const distanceFromBottom =
+        contentSize.height - (contentOffset.y + layoutMeasurement.height);
+      const next = distanceFromBottom < NEAR_BOTTOM_PX;
+      nearBottomRef.current = next;
+      setIsNearBottom((current) => (current === next ? current : next));
+    },
+    []
+  );
+
+  const fontSize = FONT_SIZES[fontIndex];
+  const lineHeight = Math.round(fontSize * 1.35);
+  const estimatedTerminalContentWidth = Math.max(
+    surfaceWidth,
+    Math.min(
+      MAX_TERMINAL_CONTENT_WIDTH,
+      Math.ceil(maxLineChars * fontSize * TERMINAL_CHAR_WIDTH_RATIO) +
+        TERMINAL_HORIZONTAL_PADDING
+    )
+  );
+  const terminalContentWidth = Math.min(
+    MAX_TERMINAL_CONTENT_WIDTH,
+    Math.ceil(estimatedTerminalContentWidth / TERMINAL_WIDTH_BUCKET) *
+      TERMINAL_WIDTH_BUCKET
+  );
+  const scrollToBottom = useCallback(
+    (animated = true) => {
+      nearBottomRef.current = true;
+      setIsNearBottom(true);
+      requestAnimationFrame(() => {
+        terminalListRef.current?.scrollToOffset({
+          animated,
+          offset: Math.max(
+            0,
+            terminalLines.length * lineHeight + TERMINAL_CONTENT_PADDING * 2
+          ),
+        });
+      });
+    },
+    [lineHeight, terminalLines.length]
+  );
   const accessoryItems = useMemo(() => {
     type Item =
       | { kind: "key"; def: KeyDef; disabled?: boolean }
@@ -460,18 +679,28 @@ export default function TerminalScreen() {
     scrollToBottom,
     isNearBottom,
   ]);
-
-  const segments = useMemo(() => {
-    try {
-      return parseAnsi(buffer);
-    } catch {
-      return null;
-    }
-  }, [buffer]);
+  const renderTerminalLine = useCallback(
+    ({ item }: ListRenderItemInfo<TerminalRenderLine>) => (
+      <TerminalLineRow
+        line={item}
+        fontSize={fontSize}
+        lineHeight={lineHeight}
+        lineWidth={terminalContentWidth}
+      />
+    ),
+    [fontSize, lineHeight, terminalContentWidth]
+  );
+  const terminalItemLayout = useCallback(
+    (_: ArrayLike<TerminalRenderLine> | null | undefined, index: number) => ({
+      length: lineHeight,
+      offset: TERMINAL_CONTENT_PADDING + lineHeight * index,
+      index,
+    }),
+    [lineHeight]
+  );
 
   if (!client || !workspaceId) return null;
 
-  const fontSize = FONT_SIZES[fontIndex];
   const workspaceTitle =
     typeof params.name === "string" && params.name.trim()
       ? params.name.trim()
@@ -490,6 +719,7 @@ export default function TerminalScreen() {
       : projectName
     : "TermLoop session";
   const canSend = Boolean(draft) && !sending;
+  const terminalIsEmpty = buffer.trim().length === 0;
 
   return (
     <SafeAreaView style={styles.root} edges={["top", "bottom"]}>
@@ -581,47 +811,52 @@ export default function TerminalScreen() {
           </Pressable>
         ) : null}
 
-        <View style={styles.surfaceFrame}>
+        <View style={styles.surfaceFrame} onLayout={onSurfaceLayout}>
           <ScrollView
-            ref={scrollRef}
-            style={styles.surfaceScroll}
-            contentContainerStyle={styles.surfaceContent}
-            onScroll={(e) => {
-              const { contentOffset, contentSize, layoutMeasurement } =
-                e.nativeEvent;
-              const distanceFromBottom =
-                contentSize.height - (contentOffset.y + layoutMeasurement.height);
-              const next = distanceFromBottom < NEAR_BOTTOM_PX;
-              nearBottomRef.current = next;
-              setIsNearBottom((current) => (current === next ? current : next));
-            }}
-            scrollEventThrottle={64}
-            onContentSizeChange={() => {
-              if (nearBottomRef.current) {
-                scrollRef.current?.scrollToEnd({ animated: false });
-              }
-            }}
+            horizontal
+            directionalLockEnabled
+            style={styles.surfaceHorizontal}
+            contentContainerStyle={styles.surfaceHorizontalContent}
+            showsHorizontalScrollIndicator={false}
+            nestedScrollEnabled
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
           >
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <Text
-                style={[
-                  styles.surfaceText,
-                  { fontSize, lineHeight: Math.round(fontSize * 1.35) },
-                ]}
-                selectable
-              >
-                {segments
-                  ? segments.map((seg, idx) => (
-                      <Text key={idx} style={seg.style}>
-                        {seg.text}
-                      </Text>
-                    ))
-                  : stripAnsi(buffer)}
-              </Text>
-            </ScrollView>
+            <FlatList
+              ref={terminalListRef}
+              data={terminalLines}
+              renderItem={renderTerminalLine}
+              keyExtractor={(item) => item.key}
+              style={[styles.surfaceList, { width: terminalContentWidth }]}
+              contentContainerStyle={styles.surfaceContent}
+              extraData={fontSize}
+              getItemLayout={terminalItemLayout}
+              initialNumToRender={48}
+              maxToRenderPerBatch={32}
+              removeClippedSubviews={Platform.OS === "android"}
+              nestedScrollEnabled
+              scrollEventThrottle={64}
+              showsVerticalScrollIndicator={false}
+              updateCellsBatchingPeriod={16}
+              windowSize={7}
+              onScroll={onTerminalScroll}
+              onContentSizeChange={() => {
+                if (nearBottomRef.current) {
+                  scrollToBottom(false);
+                }
+              }}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+            />
           </ScrollView>
+          {terminalIsEmpty ? (
+            <View style={styles.emptyTerminalOverlay} pointerEvents="none">
+              <ActivityIndicator color={colors.sub} />
+              <Text style={styles.emptyTerminalText}>
+                Waiting for terminal output…
+              </Text>
+            </View>
+          ) : null}
           {!isNearBottom ? (
             <Pressable
               style={styles.jumpBottomBtn}
@@ -846,17 +1081,43 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceBg,
     overflow: "hidden",
   },
-  surfaceScroll: {
+  surfaceHorizontal: {
     flex: 1,
   },
+  surfaceHorizontalContent: {
+    flexGrow: 1,
+  },
+  surfaceList: {
+    flexGrow: 0,
+    flexShrink: 0,
+  },
   surfaceContent: {
-    padding: 12,
+    padding: TERMINAL_CONTENT_PADDING,
     alignItems: "flex-start",
+  },
+  terminalLineRow: {
+    minWidth: "100%",
   },
   surfaceText: {
     color: colors.terminalText,
     fontFamily: monoFont,
     textAlign: "left",
+  },
+  emptyTerminalOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: colors.surfaceBg,
+  },
+  emptyTerminalText: {
+    color: colors.sub,
+    fontSize: 12,
+    fontFamily: monoFont,
   },
   jumpBottomBtn: {
     position: "absolute",

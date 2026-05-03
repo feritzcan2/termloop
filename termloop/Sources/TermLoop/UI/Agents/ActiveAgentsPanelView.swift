@@ -41,8 +41,9 @@ extension ActiveAgentsPanel {
             observedBranchKeys = nextKeys
             branchTick &+= 1
         }
-        .onReceive(activeAgentsWorkspaceTitleObservationPublisher(tabs: scopedTabs)) { _ in
-            workspaceTitleTick &+= 1
+        .onReceive(WorkspaceMetadataStore.shared.$titleVersion) { newValue in
+            guard newValue != workspaceTitleTick else { return }
+            workspaceTitleTick = newValue
         }
         .onReceive(bridgeStore.$overviewVersion) { newValue in
             guard newValue != bridgeOverviewTick else { return }

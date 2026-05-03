@@ -123,27 +123,7 @@ struct QuickActionView: View {
                 .padding(.vertical, 6)
 
             Divider()
-            QuickActionPreviewBar(
-                preview: viewModel.preview,
-                hasTarget: viewModel.targetWorkspaceId != nil
-                    || ProjectStore.shared.activeProjectId != nil,
-                onOpenAdvancedPreview: { viewModel.openAdvanced() },
-                onEditAbility: { ability in
-                    MarkdownDocumentStore.shared.open(
-                        fileURL: ability.filePath,
-                        folderName: String(localized: "abilities.section.title",
-                                           defaultValue: "ABILITIES",
-                                           table: "TermLoop"),
-                        displayTitle: ability.name
-                    )
-                },
-                onRevealAbility: { ability in
-                    NSWorkspace.shared.activateFileViewerSelecting([ability.filePath])
-                },
-                onDisablePermanently: { ability in
-                    viewModel.disableAbilityPermanently(ability)
-                }
-            )
+            previewBar
 
             if let err = viewModel.errorMessage {
                 Text(err)
@@ -166,14 +146,69 @@ struct QuickActionView: View {
         }
     }
 
+    @ViewBuilder
     private var worktreeSurface: some View {
+        switch viewModel.worktreeIntent {
+        case .createWorkspace:
+            worktreeCreateSurface
+        case .migrateConversationIfPossible:
+            worktreeMigrationSurface
+        }
+    }
+
+    private var worktreeCreateSurface: some View {
         VStack(alignment: .leading, spacing: 0) {
+            titleField
+                .padding(.horizontal, 12)
+                .padding(.top, 6)
+
             worktreeComposerSection
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
 
+            if viewModel.shouldShowRunCompositionSummary {
+                runCompositionSummary
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 6)
+            }
+
             Divider()
 
+            toolbarStrip
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+
+            Divider()
+            previewBar
+
+            if viewModel.isAdvancedOpen {
+                Divider()
+                QuickActionAdvancedTabs(
+                    viewModel: viewModel,
+                    settingsPrimaryAction: submitWorktreeFromComposer,
+                    settingsPrimaryLabel: String(
+                        localized: "quickAction.advanced.createWorktree",
+                        defaultValue: "Create worktree",
+                        table: "TermLoop"
+                    ),
+                    settingsPrimaryIcon: "arrow.triangle.branch"
+                )
+            }
+
+            Divider()
+            worktreeCreateForm
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+
+            Divider()
+            worktreeFooter
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+        }
+    }
+
+    private var worktreeMigrationSurface: some View {
+        VStack(alignment: .leading, spacing: 0) {
             switch worktreeRequestState {
             case .success(let request):
                 NewWorkspaceWithWorktreeForm(
@@ -203,6 +238,32 @@ struct QuickActionView: View {
         }
     }
 
+    @ViewBuilder
+    private var worktreeCreateForm: some View {
+        switch worktreeRequestState {
+        case .success(let request):
+            NewWorkspaceWithWorktreeForm(
+                request: request,
+                tabManager: AppDelegate.shared?.tabManager,
+                branchName: $viewModel.worktreeBranchName,
+                showsTitle: false,
+                showsCancelButton: false,
+                showsPromptEditors: false,
+                showsAgentPickerControl: false,
+                contentPadding: 0,
+                externalSubmitToken: worktreeSubmitToken,
+                onCancel: {},
+                onSuccess: handleWorktreeCreated
+            )
+        case .failure(let error):
+            Text(error.localizedDescription)
+                .font(.caption)
+                .foregroundColor(.red)
+                .padding(.horizontal, 2)
+                .padding(.vertical, 4)
+        }
+    }
+
     private var ticketSurface: some View {
         VStack(alignment: .leading, spacing: 0) {
             ticketComposerSection
@@ -229,6 +290,30 @@ struct QuickActionView: View {
         Result { try viewModel.newWorktreeRequest() }
     }
 
+    private var previewBar: some View {
+        QuickActionPreviewBar(
+            preview: viewModel.preview,
+            hasTarget: viewModel.targetWorkspaceId != nil
+                || ProjectStore.shared.activeProjectId != nil,
+            onOpenAdvancedPreview: { viewModel.openAdvanced() },
+            onEditAbility: { ability in
+                MarkdownDocumentStore.shared.open(
+                    fileURL: ability.filePath,
+                    folderName: String(localized: "abilities.section.title",
+                                       defaultValue: "ABILITIES",
+                                       table: "TermLoop"),
+                    displayTitle: ability.name
+                )
+            },
+            onRevealAbility: { ability in
+                NSWorkspace.shared.activateFileViewerSelecting([ability.filePath])
+            },
+            onDisablePermanently: { ability in
+                viewModel.disableAbilityPermanently(ability)
+            }
+        )
+    }
+
     private var runComposerSection: some View {
         composerSection(
             onSubmit: submitFromComposer,
@@ -240,8 +325,8 @@ struct QuickActionView: View {
     private var worktreeComposerSection: some View {
         composerSection(
             onSubmit: submitWorktreeFromComposer,
-            onCommandReturn: submitWorktreeFromComposer,
-            onToggleAdvanced: nil
+            onCommandReturn: handleWorktreeCommandReturn,
+            onToggleAdvanced: { viewModel.toggleAdvanced() }
         )
     }
 
@@ -557,7 +642,7 @@ struct QuickActionView: View {
 
     private var agentPill: some View {
         Menu {
-            ForEach(TerminalAgentRegistry.shared.agents, id: \.id) { agent in
+            ForEach(AgentCatalogStore.shared.agents, id: \.id) { agent in
                 Button(agent.displayName) {
                     viewModel.advancedTerminalAgentId = agent.id
                 }
@@ -618,7 +703,7 @@ struct QuickActionView: View {
     }
 
     private var agentPillLabel: String {
-        TerminalAgentRegistry.shared.agent(id: viewModel.advancedTerminalAgentId)?.id
+        AgentCatalogStore.shared.agent(id: viewModel.advancedTerminalAgentId)?.id
             ?? viewModel.advancedTerminalAgentId
     }
 
@@ -686,12 +771,21 @@ struct QuickActionView: View {
             .font(.system(size: 10, weight: .semibold))
             .foregroundColor(.secondary)
             Spacer()
-            footerHint("⌘K", String(localized: "quickAction.footer.hint.template", defaultValue: "template", table: "TermLoop"))
-            footerHint("↵", String(
-                localized: "quickAction.footer.hint.create",
-                defaultValue: "create",
-                table: "TermLoop"
-            ))
+            if viewModel.worktreeIntent == .createWorkspace {
+                footerHint("⌘K", String(localized: "quickAction.footer.hint.template", defaultValue: "template", table: "TermLoop"))
+                footerHint("⌘↵", String(localized: "quickAction.footer.hint.advanced", defaultValue: "advanced", table: "TermLoop"))
+                footerHint("↵", String(
+                    localized: "quickAction.footer.hint.create",
+                    defaultValue: "create",
+                    table: "TermLoop"
+                ))
+            } else {
+                footerHint("↵", String(
+                    localized: "quickAction.footer.hint.move",
+                    defaultValue: "move",
+                    table: "TermLoop"
+                ))
+            }
             footerHint("esc", String(localized: "quickAction.footer.hint.dismiss", defaultValue: "dismiss", table: "TermLoop"))
         }
     }
@@ -1050,6 +1144,19 @@ struct QuickActionView: View {
         worktreeSubmitToken &+= 1
     }
 
+    private func handleWorktreeCommandReturn() {
+        if viewModel.isAdvancedOpen {
+            submitWorktreeFromComposer()
+        } else {
+            viewModel.openAdvanced()
+        }
+    }
+
+    private func handleWorktreeCreated() {
+        viewModel.recordSuccessfulWorktreeCreate()
+        onWorktreeCreated()
+    }
+
     private func submitTicketFromComposer() {
         if viewModel.isDropdownOpen || viewModel.selectedTicket == nil { return }
         ticketSubmitToken &+= 1
@@ -1067,10 +1174,11 @@ struct QuickActionView: View {
     private func handleEscape() {
         if viewModel.isDropdownOpen {
             viewModel.closeTemplateDropdown()
+        } else if viewModel.isAdvancedOpen
+                    && (viewModel.activeSurface == .run || viewModel.activeSurface == .worktree) {
+            viewModel.closeAdvanced()
         } else if viewModel.activeSurface == .worktree || viewModel.activeSurface == .ticket {
             onDismiss()
-        } else if viewModel.isAdvancedOpen {
-            viewModel.closeAdvanced()
         } else if !viewModel.promptText.isEmpty || viewModel.errorMessage != nil {
             viewModel.promptText = ""
             viewModel.errorMessage = nil

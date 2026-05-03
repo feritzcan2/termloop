@@ -130,9 +130,14 @@ single line terminated by `\n`.
 | `surface.subscribe` | `{ workspace_id, surface_id?, format?, history_lines? }` | `{ subscription_id, format?, history_lines? }` |
 | `surface.unsubscribe` | `{ subscription_id }` | `{ ok: true }` |
 | `termloop.list_terminal_agents` | – | `{ agents: TerminalAgentSummary[] }` |
+| `push.register` | `{ device_token, platform, environment }` | `{ registered: true }` |
 
 `surface.resize` does not exist on the backend yet — `client.resize()` is a
 no-op until a real PTY resize API lands.
+
+On iOS, the app registers its native APNs token after a successful authenticated
+connection so TermLoop can deliver agent attention notifications to the current
+`ai.termloop.mobile` app install.
 
 The terminal Send button sends command text with `surface.send_text`, then
 sends `surface.send_key` with `key: "enter"`; if the key call fails it falls

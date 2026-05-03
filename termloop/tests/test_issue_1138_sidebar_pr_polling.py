@@ -203,7 +203,7 @@ def _run_case(base: Path, *, shell: str, shell_args: list[str], script: Path, sc
     env = dict(os.environ)
     env["PATH"] = f"{bindir}:{env.get('PATH', '')}"
     env["TERMLOOP_SOCKET_PATH"] = str(socket_path)
-    env["TERMLOOP_TAB_ID"] = "00000000-0000-0000-0000-000000000001"
+    env["TERMLOOP_WORKSPACE_ID"] = "00000000-0000-0000-0000-000000000001"
     env["TERMLOOP_PANEL_ID"] = "00000000-0000-0000-0000-000000000002"
     env["TERMLOOP_TEST_SCRIPT"] = str(script)
     env["TERMLOOP_TEST_REPO"] = str(repo)

@@ -9,6 +9,7 @@ struct AgentsSidebarView: View {
     @ObservedObject private var promptStore = AgentPromptStore.shared
     @ObservedObject private var projectStore = ProjectStore.shared
     @ObservedObject private var uiState = AgentsCatalogUIState.shared
+    @State private var errorMessage: String?
     @State private var searchText: String = ""
 
     var body: some View {
@@ -16,25 +17,21 @@ struct AgentsSidebarView: View {
             toolbar
             sectionFilterBar
                 .padding(.horizontal, 8)
+            if uiState.selectedFilter == .prompts {
+                promptTypeFilterBar
+                    .padding(.horizontal, 8)
+            }
             List(selection: $uiState.selectionId) {
-                if uiState.selectedSectionFilter != nil {
-                    catalogRows(filteredEntries)
+                if filteredEntries.isEmpty {
+                    catalogEmptyState
                 } else {
-                    ForEach(filteredSections, id: \.0.id) { section, entries in
-                        Section {
-                            catalogRows(entries)
-                        } header: {
-                            Text(TermLoopSidebarTheme.caps(section.title))
-                                .font(TermLoopSidebarTheme.sectionCaps)
-                                .foregroundStyle(TermLoopSidebarTheme.dim)
-                        }
-                    }
+                    catalogRows(filteredEntries)
                 }
             }
             .listStyle(.sidebar)
 
             HStack {
-                Text("Select an item to edit in the main area.")
+                Text("Editing a built-in template saves a project override.")
                     .font(TermLoopSidebarTheme.tinyMono)
                     .foregroundStyle(TermLoopSidebarTheme.dimmer)
                 Spacer(minLength: 0)
@@ -43,30 +40,45 @@ struct AgentsSidebarView: View {
             .padding(.bottom, 8)
         }
         .frame(minWidth: 270, idealWidth: 320)
+        .alert(
+            "Catalog action failed",
+            isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            ),
+            presenting: errorMessage
+        ) { _ in
+            Button("OK", role: .cancel) { errorMessage = nil }
+        } message: { message in
+            Text(message)
+        }
         .onAppear {
-            refreshPromptScope()
+            refreshProjectCatalogScope()
             reconcileSelection()
         }
-        .onChange(of: searchText) { _ in
+        .onChange(of: searchText) {
             handleCatalogChange()
         }
-        .onChange(of: templateStore.templates.map(\.id)) { _ in
+        .onChange(of: templateStore.templates.map(\.id)) {
             handleCatalogChange()
         }
-        .onChange(of: promptStore.documents.map(\.id)) { _ in
+        .onChange(of: promptStore.documents.map(\.id)) {
             handleCatalogChange()
         }
-        .onChange(of: projectStore.activeProjectId) { _ in
+        .onChange(of: projectStore.activeProjectId) {
             handleProjectChange()
         }
-        .onChange(of: uiState.selectedSectionFilter) { _ in
+        .onChange(of: uiState.selectedFilter) {
+            handleCatalogChange()
+        }
+        .onChange(of: uiState.selectedPromptFilter) {
             handleCatalogChange()
         }
     }
 
     private var toolbar: some View {
         HStack(spacing: 8) {
-            TextField("Search prompts and templates", text: $searchText)
+            TextField("Search templates and prompts", text: $searchText)
                 .textFieldStyle(.roundedBorder)
                 .font(TermLoopSidebarTheme.bodyMono)
             Menu {
@@ -93,7 +105,7 @@ struct AgentsSidebarView: View {
     private var createMenu: some View {
         Button("New Template") { createTemplate() }
         Divider()
-        Button("New System Prompt") { createPrompt(.systemPromptTemplate) }
+        Button("New System Instructions") { createPrompt(.systemPromptTemplate) }
         Divider()
         Button("New Bridge Source Prompt") { createPrompt(.bridgeSourcePrompt) }
         Button("New Bridge Target Prompt") { createPrompt(.bridgeTargetPrompt) }
@@ -112,11 +124,9 @@ struct AgentsSidebarView: View {
                 filterStepButton(systemName: "chevron.left", direction: -1, proxy: proxy)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        filterChip(title: "All", section: nil, proxy: proxy)
-                            .id("all")
-                        ForEach(AgentsCatalogEntry.Section.allCases) { section in
-                            filterChip(title: section.shortTitle, section: section, proxy: proxy)
-                                .id(section.id)
+                        ForEach(AgentsCatalogFilter.allCases) { filter in
+                            filterChip(filter: filter, proxy: proxy)
+                                .id(filter.id)
                         }
                     }
                     .fixedSize(horizontal: true, vertical: false)
@@ -126,18 +136,18 @@ struct AgentsSidebarView: View {
                 filterStepButton(systemName: "chevron.right", direction: 1, proxy: proxy)
             }
             .onAppear { scrollFilterSelection(into: proxy, animated: false) }
-            .onChange(of: uiState.selectedSectionFilter) { _ in
+            .onChange(of: uiState.selectedFilter) {
                 scrollFilterSelection(into: proxy, animated: true)
             }
         }
     }
 
-    private func filterChip(title: String, section: AgentsCatalogEntry.Section?, proxy: ScrollViewProxy) -> some View {
-        let isSelected = uiState.selectedSectionFilter == section
+    private func filterChip(filter: AgentsCatalogFilter, proxy: ScrollViewProxy) -> some View {
+        let isSelected = uiState.selectedFilter == filter
         return Button {
-            selectFilter(section)
+            selectFilter(filter)
         } label: {
-            Text(TermLoopSidebarTheme.caps(title))
+            Text(TermLoopSidebarTheme.caps(filter.shortTitle))
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
@@ -156,6 +166,43 @@ struct AgentsSidebarView: View {
         .buttonStyle(.plain)
     }
 
+    private var promptTypeFilterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(AgentsCatalogPromptFilter.allCases) { filter in
+                    promptTypeChip(filter)
+                }
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.trailing, 12)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func promptTypeChip(_ filter: AgentsCatalogPromptFilter) -> some View {
+        let isSelected = uiState.selectedPromptFilter == filter
+        return Button {
+            uiState.selectedPromptFilter = filter
+        } label: {
+            Text(TermLoopSidebarTheme.caps(filter.title))
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.68))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule()
+                        .fill(isSelected ? TermLoopSidebarTheme.accent.opacity(0.82) : Color.primary.opacity(0.045))
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(isSelected ? TermLoopSidebarTheme.accent.opacity(0.9) : Color.primary.opacity(0.07), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
     private func filterStepButton(systemName: String, direction: Int, proxy: ScrollViewProxy) -> some View {
         Button {
             stepFilterSelection(direction: direction)
@@ -168,20 +215,23 @@ struct AgentsSidebarView: View {
         .buttonStyle(.plain)
     }
 
-    private func selectFilter(_ section: AgentsCatalogEntry.Section?) {
-        guard uiState.selectedSectionFilter != section else { return }
-        uiState.selectedSectionFilter = section
+    private func selectFilter(_ filter: AgentsCatalogFilter) {
+        guard uiState.selectedFilter != filter else { return }
+        uiState.selectedFilter = filter
+        if filter != .prompts {
+            uiState.selectedPromptFilter = .system
+        }
     }
 
     private func stepFilterSelection(direction: Int) {
-        let all: [AgentsCatalogEntry.Section?] = [nil] + AgentsCatalogEntry.Section.allCases.map(Optional.some)
-        let currentIndex = all.firstIndex(where: { $0 == uiState.selectedSectionFilter }) ?? 0
+        let all = AgentsCatalogFilter.allCases
+        let currentIndex = all.firstIndex(of: uiState.selectedFilter) ?? 0
         let nextIndex = min(max(currentIndex + direction, 0), all.count - 1)
         selectFilter(all[nextIndex])
     }
 
     private func scrollFilterSelection(into proxy: ScrollViewProxy, animated: Bool) {
-        let target = uiState.selectedSectionFilter?.id ?? "all"
+        let target = uiState.selectedFilter.id
         if animated {
             withAnimation(.easeInOut(duration: 0.18)) {
                 proxy.scrollTo(target, anchor: .center)
@@ -194,14 +244,11 @@ struct AgentsSidebarView: View {
     private var filteredEntries: [AgentsCatalogEntry] {
         AgentsCatalogContent.filteredEntries(
             searchText: searchText,
-            sectionFilter: uiState.selectedSectionFilter,
+            filter: uiState.selectedFilter,
+            promptFilter: uiState.selectedPromptFilter,
             templateStore: templateStore,
             promptStore: promptStore
         )
-    }
-
-    private var filteredSections: [(AgentsCatalogEntry.Section, [AgentsCatalogEntry])] {
-        AgentsCatalogContent.filteredSections(entries: filteredEntries)
     }
 
     @ViewBuilder
@@ -212,7 +259,9 @@ struct AgentsSidebarView: View {
                     .font(TermLoopSidebarTheme.bodyMonoStrong)
                     .lineLimit(1)
                 Spacer(minLength: 0)
-                TermLoopSidebarToken(label: entry.scope.label, tone: tokenTone(for: entry.scope))
+                if entry.scope == .project {
+                    TermLoopSidebarToken(label: entry.scope.label, tone: tokenTone(for: entry.scope))
+                }
             }
             if !entry.subtitle.isEmpty {
                 Text(entry.subtitle)
@@ -222,6 +271,15 @@ struct AgentsSidebarView: View {
             }
         }
         .padding(.vertical, 2)
+    }
+
+    private var catalogEmptyState: some View {
+        Text(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+             ? "No catalog items in this group."
+             : "No matching catalog items.")
+            .font(TermLoopSidebarTheme.tinyMono)
+            .foregroundStyle(TermLoopSidebarTheme.dimmer)
+            .padding(.vertical, 6)
     }
 
 
@@ -238,8 +296,9 @@ struct AgentsSidebarView: View {
     }
 
     private func handleProjectChange() {
-        refreshPromptScope()
-        uiState.selectedSectionFilter = nil
+        refreshProjectCatalogScope()
+        uiState.selectedFilter = .templates
+        uiState.selectedPromptFilter = .system
         reconcileSelection()
     }
 
@@ -248,6 +307,7 @@ struct AgentsSidebarView: View {
             try action()
         } catch {
             NSSound.beep()
+            errorMessage = error.localizedDescription
         }
     }
 
@@ -264,7 +324,10 @@ struct AgentsSidebarView: View {
         }
     }
 
-    private func refreshPromptScope() {
+    private func refreshProjectCatalogScope() {
+        AgentEngine.shared.updateProjectLocalDir(
+            AgentTemplateStore.projectTemplatesDir(projectFolderPath: activeProjectFolderPath)
+        )
         promptStore.startWatching(projectDir: AgentPromptStore.projectPromptsDir(projectFolderPath: activeProjectFolderPath))
     }
 
@@ -293,7 +356,9 @@ final class AgentsCatalogUIState: ObservableObject {
     static let shared = AgentsCatalogUIState()
 
     @Published var selectionId: String?
-    @Published var selectedSectionFilter: AgentsCatalogEntry.Section?
+    @Published var selectedFilter: AgentsCatalogFilter = .templates
+    @Published var selectedPromptFilter: AgentsCatalogPromptFilter = .system
+    @Published var statusMessage: String?
 
     private init() {}
 
@@ -305,10 +370,97 @@ final class AgentsCatalogUIState: ObservableObject {
         selectionId = visibleEntries.first?.id
     }
 
-    func showCreatedItem(id: String, in section: AgentsCatalogEntry.Section) {
-        objectWillChange.send()
-        selectedSectionFilter = section
+    func showCreatedItem(id: String, in section: AgentsCatalogEntry.Section, message: String? = nil) {
+        selectedFilter = AgentsCatalogFilter.filter(for: section)
+        selectedPromptFilter = AgentsCatalogPromptFilter.filter(for: section)
         selectionId = id
+        statusMessage = message
+    }
+}
+
+enum AgentsCatalogFilter: String, CaseIterable, Identifiable {
+    case templates
+    case prompts
+    case abilities
+    case runtime
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .templates: return "Templates"
+        case .prompts: return "Prompts"
+        case .abilities: return "Abilities"
+        case .runtime: return "Runtime"
+        }
+    }
+
+    var shortTitle: String { title }
+
+    func contains(_ section: AgentsCatalogEntry.Section) -> Bool {
+        switch self {
+        case .templates:
+            return section == .templates
+        case .prompts:
+            return [.systemPrompts, .bridge, .fork].contains(section)
+        case .abilities:
+            return [.abilities, .systemAbilities].contains(section)
+        case .runtime:
+            return section == .runtimeFragments
+        }
+    }
+
+    static func filter(for section: AgentsCatalogEntry.Section) -> AgentsCatalogFilter {
+        switch section {
+        case .templates:
+            return .templates
+        case .systemPrompts, .bridge, .fork:
+            return .prompts
+        case .abilities, .systemAbilities:
+            return .abilities
+        case .runtimeFragments:
+            return .runtime
+        }
+    }
+}
+
+enum AgentsCatalogPromptFilter: String, CaseIterable, Identifiable {
+    case system
+    case bridge
+    case fork
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: return "System"
+        case .bridge: return "Bridge"
+        case .fork: return "Fork"
+        }
+    }
+
+    func contains(_ section: AgentsCatalogEntry.Section) -> Bool {
+        switch self {
+        case .system:
+            return section == .systemPrompts
+        case .bridge:
+            return section == .bridge
+        case .fork:
+            return section == .fork
+        }
+    }
+
+    static func filter(for section: AgentsCatalogEntry.Section) -> AgentsCatalogPromptFilter {
+        switch section {
+        case .systemPrompts:
+            return .system
+        case .bridge:
+            return .bridge
+        case .fork:
+            return .fork
+        case .templates, .abilities, .systemAbilities, .runtimeFragments:
+            return .system
+        }
     }
 }
 
@@ -325,23 +477,17 @@ enum AgentsCatalogContent {
 
     static func filteredEntries(
         searchText: String,
-        sectionFilter: AgentsCatalogEntry.Section? = nil,
+        filter: AgentsCatalogFilter = .templates,
+        promptFilter: AgentsCatalogPromptFilter = .system,
         templateStore: AgentTemplateStore,
         promptStore: AgentPromptStore
     ) -> [AgentsCatalogEntry] {
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         return entries(templateStore: templateStore, promptStore: promptStore).filter { entry in
             let matchesSearch = trimmed.isEmpty || entry.searchBlob.localizedCaseInsensitiveContains(trimmed)
-            let matchesSection = sectionFilter == nil || entry.section == sectionFilter
-            return matchesSearch && matchesSection
-        }
-    }
-
-    static func filteredSections(entries: [AgentsCatalogEntry]) -> [(AgentsCatalogEntry.Section, [AgentsCatalogEntry])] {
-        let grouped = Dictionary(grouping: entries, by: \.section)
-        return AgentsCatalogEntry.Section.allCases.compactMap { section in
-            guard let sectionEntries = grouped[section], !sectionEntries.isEmpty else { return nil }
-            return (section, sectionEntries)
+            let matchesSection = filter.contains(entry.section)
+            let matchesPromptType = filter != .prompts || promptFilter.contains(entry.section)
+            return matchesSearch && matchesSection && matchesPromptType
         }
     }
 
@@ -365,7 +511,7 @@ enum AgentsCatalogContent {
 
     static func kindLabel(for kind: AgentPromptDocument.Kind) -> String {
         switch kind {
-        case .systemPromptTemplate: return "System Prompt"
+        case .systemPromptTemplate: return "System Instructions"
         case .bridgeSourcePrompt: return "Bridge Source"
         case .bridgeTargetPrompt: return "Bridge Target"
         case .forkHandoffPrompt: return "Fork Prompt"
@@ -388,13 +534,14 @@ enum AgentsCatalogContent {
                 scope: scope(for: template.source),
                 metadata: [
                     .init(label: "ID", value: template.id),
+                    .init(label: "Agent", value: template.agentId ?? "default"),
                     .init(label: "Model", value: template.model.rawValue),
+                    .init(label: "Reason", value: template.reasoning?.rawValue ?? "default"),
                     .init(label: "Perm", value: template.permissionMode.rawValue),
                     .init(label: "Source", value: template.sourceURL.path),
                     .init(label: "Scope", value: template.scope.rawValue),
                     .init(label: "Lifecycle", value: template.lifecycle.rawValue),
-                    .init(label: "Prompt Doc", value: template.promptDocumentId ?? "—"),
-                    .init(label: "System Doc", value: template.systemPromptDocumentId ?? "—")
+                    .init(label: "System Instructions", value: template.systemPromptDocumentId ?? "—")
                 ],
                 isEditableHint: true,
                 promptDocument: nil,
@@ -427,9 +574,9 @@ enum AgentsCatalogContent {
         AgentsCatalogEntry(
             id: "system:none-yet",
             section: .systemPrompts,
-            title: "No project or built-in system prompt templates yet",
-            subtitle: "Add a project-scoped reusable system prompt from the + menu.",
-            body: "System prompts are still authored per-run in Quick Action. This section now supports project documents; built-in system prompt templates can land later without changing the owner model.",
+            title: "No project or built-in system instructions yet",
+            subtitle: "Add project-scoped reusable system instructions from the + menu.",
+            body: "System instructions are still authored per-run in Quick Action. This section now supports project documents; built-in system instruction templates can land later without changing the owner model.",
             kindLabel: "Placeholder",
             scope: .placeholder,
             metadata: [
@@ -500,18 +647,20 @@ struct AgentsCatalogMainAreaView: View {
     @ObservedObject private var promptStore = AgentPromptStore.shared
     @ObservedObject private var projectStore = ProjectStore.shared
     @ObservedObject private var uiState = AgentsCatalogUIState.shared
+    @State private var errorMessage: String?
 
     private var activeProjectFolderPath: String? {
         projectStore.activeProjectId.flatMap { projectStore.project(id: $0)?.folderPath }
     }
 
-    private var entries: [AgentsCatalogEntry] {
-        AgentsCatalogContent.entries(templateStore: templateStore, promptStore: promptStore)
-    }
-
     private var visibleEntries: [AgentsCatalogEntry] {
-        guard let selectedSectionFilter = uiState.selectedSectionFilter else { return entries }
-        return entries.filter { $0.section == selectedSectionFilter }
+        AgentsCatalogContent.filteredEntries(
+            searchText: "",
+            filter: uiState.selectedFilter,
+            promptFilter: uiState.selectedPromptFilter,
+            templateStore: templateStore,
+            promptStore: promptStore
+        )
     }
 
     private var selectedEntry: AgentsCatalogEntry? {
@@ -521,24 +670,21 @@ struct AgentsCatalogMainAreaView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Text("Agents Catalog")
+                Text("Templates & Prompts")
                     .font(.system(size: 18, weight: .semibold, design: .monospaced))
-                if let selectedSectionFilter = uiState.selectedSectionFilter {
-                    Text("·")
-                        .foregroundStyle(Color.primary.opacity(0.4))
-                    Text(selectedSectionFilter.title)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.primary.opacity(0.55))
-                } else if let selectedEntry {
-                    Text("·")
-                        .foregroundStyle(Color.primary.opacity(0.4))
-                    Text(selectedEntry.section.title)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.primary.opacity(0.55))
-                }
+                Text("·")
+                    .foregroundStyle(Color.primary.opacity(0.4))
+                Text(selectedFilterTitle)
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.primary.opacity(0.55))
                 Spacer(minLength: 0)
+                if let statusMessage = uiState.statusMessage {
+                    Text(statusMessage)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(TermLoopSidebarTheme.accent.opacity(0.9))
+                }
                 if activeProjectFolderPath == nil {
-                    Text("Select an active project to edit project catalog items.")
+                    Text("Select a project to customize catalog items.")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(Color.primary.opacity(0.55))
                 }
@@ -549,34 +695,53 @@ struct AgentsCatalogMainAreaView: View {
             Divider()
 
             if selectedEntry == nil,
-               let selectedSectionFilter = uiState.selectedSectionFilter,
                visibleEntries.isEmpty {
-                filterEmptyState(selectedSectionFilter)
+                filterEmptyState(uiState.selectedFilter)
             } else {
                 AgentsCatalogDetailPane(
                     entry: selectedEntry,
                     canEditProjectPrompts: activeProjectFolderPath != nil,
                     canEditProjectTemplates: activeProjectFolderPath != nil,
-                    onDuplicateTemplateToProject: duplicateSelectedTemplateToProject,
                     onSaveProjectTemplate: saveSelectedTemplate,
                     onDeleteProjectTemplate: deleteSelectedTemplate,
-                    onDuplicateToProject: duplicateSelectedPromptToProject,
+                    canResetTemplateToDefault: selectedTemplateCanReset,
+                    canResetPromptToDefault: selectedPromptCanReset,
                     onSaveProjectPrompt: saveSelectedPrompt,
                     onDeleteProjectPrompt: deleteSelectedPrompt
                 )
+                .id(selectedEntry.map { "\($0.id):\($0.scope.rawValue)" } ?? "none")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
+        .alert(
+            "Catalog action failed",
+            isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            ),
+            presenting: errorMessage
+        ) { _ in
+            Button("OK", role: .cancel) { errorMessage = nil }
+        } message: { message in
+            Text(message)
+        }
+    }
+
+    private var selectedFilterTitle: String {
+        if uiState.selectedFilter == .prompts {
+            return "\(uiState.selectedFilter.title) / \(uiState.selectedPromptFilter.title)"
+        }
+        return uiState.selectedFilter.title
     }
 
 
-    private func filterEmptyState(_ filter: AgentsCatalogEntry.Section) -> some View {
+    private func filterEmptyState(_ filter: AgentsCatalogFilter) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(TermLoopSidebarTheme.caps(filter.title))
                 .font(TermLoopSidebarTheme.sectionCaps)
                 .foregroundStyle(TermLoopSidebarTheme.dim)
-            Text("No items in this section for the active project yet.")
+            Text("No items in this group for the active project yet.")
                 .font(TermLoopSidebarTheme.bodyMonoStrong)
             Text(emptyStateBody(for: filter))
                 .font(TermLoopSidebarTheme.bodyMono)
@@ -586,95 +751,107 @@ struct AgentsCatalogMainAreaView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private func emptyStateBody(for filter: AgentsCatalogEntry.Section) -> String {
+    private func emptyStateBody(for filter: AgentsCatalogFilter) -> String {
         switch filter {
         case .templates:
-            return "Create a project template from the + menu, or duplicate a built-in template into the project catalog."
-        case .systemPrompts:
-            return "Create a reusable project system prompt from the + menu."
-        case .bridge:
-            return "Create bridge / ask-agent prompt overrides from the + menu."
-        case .fork:
-            return "Create a fork / handoff prompt override from the + menu."
+            return "Create a project template from the + menu, or edit a built-in template and save it as a project override."
+        case .prompts:
+            return "Create a reusable project prompt from the + menu, or edit a built-in prompt and save it as a project override."
         case .abilities:
-            return "Create ability creator or refiner prompt overrides from the + menu."
-        case .systemAbilities:
-            return "Create a system ability template or creator prompt override from the + menu."
-        case .runtimeFragments:
-            return "Runtime fragments are generated views. Clear the filter to see built-in runtime entries."
-        }
-    }
-
-    private func duplicateSelectedPromptToProject() {
-        guard let document = selectedEntry?.promptDocument, document.scope == .builtin else { return }
-        performCatalogAction {
-            try promptStore.duplicateBuiltInToProject(id: document.id)
-            uiState.showCreatedItem(id: "prompt:\(document.id)", in: AgentsCatalogContent.section(for: document.kind))
+            return "Create ability prompt overrides from the + menu, or edit a built-in ability prompt and save it as a project override."
+        case .runtime:
+            return "Runtime fragments are generated views."
         }
     }
 
     private func saveSelectedPrompt(title: String, body: String) {
-        guard let document = selectedEntry?.promptDocument, document.scope == .project else { return }
+        guard let document = selectedEntry?.promptDocument else { return }
         performCatalogAction {
-            try promptStore.saveProjectDocument(document, title: title, body: body)
+            let saved = try promptStore.saveProjectDocument(document, title: title, body: body)
+            uiState.showCreatedItem(
+                id: "prompt:\(saved.id)",
+                in: AgentsCatalogContent.section(for: saved.kind),
+                message: document.scope == .project ? "Prompt saved" : "Project override saved"
+            )
         }
     }
 
     private func deleteSelectedPrompt() {
         guard let document = selectedEntry?.promptDocument, document.scope == .project else { return }
+        let resetsToDefault = selectedPromptCanReset
         performCatalogAction {
             try promptStore.deleteProjectDocument(document)
-            reconcileAfterRemoving(id: "prompt:\(document.id)")
+            if resetsToDefault {
+                uiState.showCreatedItem(
+                    id: "prompt:\(document.id)",
+                    in: AgentsCatalogContent.section(for: document.kind),
+                    message: "Reset to default"
+                )
+            } else {
+                reconcileAfterRemoving(id: "prompt:\(document.id)")
+            }
         }
     }
 
-    private func duplicateSelectedTemplateToProject() {
+    private func saveSelectedTemplate(_ draft: AgentsCatalogTemplateDraft) {
         guard let template = selectedEntry?.template,
-              template.source != .project,
               let activeProjectFolderPath else { return }
         performCatalogAction {
-            try templateStore.duplicateTemplateToProject(id: template.id, projectFolderPath: activeProjectFolderPath)
-            uiState.showCreatedItem(id: "template:\(template.id)", in: .templates)
-        }
-    }
-
-    private func saveSelectedTemplate(
-        name: String,
-        description: String,
-        model: AgentTemplate.Model,
-        permissionMode: AgentTemplate.PermissionMode,
-        lifecycle: AgentTemplate.Lifecycle,
-        scope: AgentTemplate.Scope,
-        promptDocumentId: String?,
-        systemPromptDocumentId: String?,
-        body: String
-    ) {
-        guard let template = selectedEntry?.template,
-              template.source == .project,
-              let activeProjectFolderPath else { return }
-        performCatalogAction {
-            try templateStore.saveProjectTemplate(
+            let saved = try templateStore.saveProjectTemplate(
                 template,
                 projectFolderPath: activeProjectFolderPath,
-                name: name,
-                description: description,
-                model: model,
-                permissionMode: permissionMode,
-                lifecycle: lifecycle,
-                scope: scope,
-                promptDocumentId: promptDocumentId,
-                systemPromptDocumentId: systemPromptDocumentId,
-                body: body
+                name: draft.name,
+                description: draft.description,
+                icon: draft.icon,
+                agentId: draft.agentId,
+                model: draft.model,
+                reasoning: draft.reasoning,
+                permissionMode: draft.permissionMode,
+                lifecycle: draft.lifecycle,
+                scope: draft.scope,
+                logging: draft.logging,
+                triggers: draft.triggers,
+                defaultAttach: draft.defaultAttach,
+                cleanup: draft.cleanup,
+                variables: draft.variables,
+                timeoutSeconds: draft.timeoutSeconds,
+                promptDocumentId: nil,
+                systemPromptDocumentId: draft.systemPromptDocumentId,
+                body: draft.body
+            )
+            uiState.showCreatedItem(
+                id: "template:\(saved.id)",
+                in: .templates,
+                message: template.source == .project ? "Template saved" : "Project override saved"
             )
         }
     }
 
     private func deleteSelectedTemplate() {
         guard let template = selectedEntry?.template, template.source == .project else { return }
+        let resetsToDefault = selectedTemplateCanReset
         performCatalogAction {
             try templateStore.deleteProjectTemplate(template)
-            reconcileAfterRemoving(id: "template:\(template.id)")
+            if resetsToDefault {
+                uiState.showCreatedItem(
+                    id: "template:\(template.id)",
+                    in: .templates,
+                    message: "Reset to default"
+                )
+            } else {
+                reconcileAfterRemoving(id: "template:\(template.id)")
+            }
         }
+    }
+
+    private var selectedTemplateCanReset: Bool {
+        guard let template = selectedEntry?.template, template.source == .project else { return false }
+        return templateStore.hasDefaultTemplate(id: template.id)
+    }
+
+    private var selectedPromptCanReset: Bool {
+        guard let document = selectedEntry?.promptDocument, document.scope == .project else { return false }
+        return promptStore.hasDefaultDocument(id: document.id)
     }
 
     private func performCatalogAction(_ action: () throws -> Void) {
@@ -682,6 +859,7 @@ struct AgentsCatalogMainAreaView: View {
             try action()
         } catch {
             NSSound.beep()
+            errorMessage = error.localizedDescription
         }
     }
 

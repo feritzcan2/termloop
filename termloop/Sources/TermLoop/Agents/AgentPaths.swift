@@ -17,10 +17,13 @@ enum AgentPaths {
         try FileManager.default.createDirectory(at: userTemplatesDir, withIntermediateDirectories: true)
     }
 
-    /// Returns `<repoRoot>/.termloop/templates` if the given URL lives in a
-    /// git-tracked repo; otherwise nil. Walks up to 20 levels looking for `.git`.
+    /// Returns `<repoRoot>/.termloop/templates` when the given URL lives in a
+    /// git-tracked repo; otherwise falls back to `<path>/.termloop/templates`.
+    /// Catalog authoring should work for every project folder, not only git
+    /// repositories. Walks up to 20 levels looking for `.git`.
     static func projectLocalTemplatesDir(near path: URL) -> URL? {
-        var cursor = path.standardizedFileURL
+        let base = path.standardizedFileURL
+        var cursor = base
         for _ in 0..<20 {
             let git = cursor.appendingPathComponent(".git")
             if FileManager.default.fileExists(atPath: git.path) {
@@ -31,6 +34,7 @@ enum AgentPaths {
             if parent == cursor { break }
             cursor = parent
         }
-        return nil
+        return base.appendingPathComponent(".termloop", isDirectory: true)
+            .appendingPathComponent("templates", isDirectory: true)
     }
 }

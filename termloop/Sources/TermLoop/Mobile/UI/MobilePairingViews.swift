@@ -306,7 +306,7 @@ private struct MobilePairingSheet: View {
                 Text(bridgeStatus.isRunning ? "Mobile bridge is listening" : "Mobile bridge is not listening")
                     .font(.callout.weight(.medium))
                 Text(bridgeStatus.isRunning
-                     ? "QR uses \(pairing?.host ?? Self.localIPv4Address() ?? bridgeStatus.bindHost):\(bridgeStatus.port). Use the same Wi-Fi or Tailscale."
+                     ? "QR uses \(pairing?.host ?? Self.localIPv4Addresses().first ?? bridgeStatus.bindHost):\(bridgeStatus.port). Extra Wi-Fi/Tailscale addresses are included."
                      : "Click Connect Mobile again to enable the bridge.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -370,13 +370,15 @@ private struct MobilePairingSheet: View {
             errorMessage = "Could not create a mobile pairing token."
             return
         }
-        let host = Self.localIPv4Address() ?? "127.0.0.1"
+        let hosts = Self.localIPv4Addresses()
+        let host = hosts.first ?? "127.0.0.1"
         let port = Int(SocketControlSettings.resolvedTcpPort() ?? SocketControlSettings.tcpPortDefault)
         let qrPayload: [String: Any] = [
             "type": "termloop.pairing",
             "version": 1,
             "server_name": serverName,
             "host": host,
+            "alternate_hosts": hosts.filter { $0 != host },
             "port": port,
             "token": token,
             "expires_at": expiresAt
@@ -467,11 +469,12 @@ private struct MobilePairingSheet: View {
         return image
     }
 
-    private static func localIPv4Address() -> String? {
+    private static func localIPv4Addresses() -> [String] {
         var ifaddr: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&ifaddr) == 0 else { return nil }
+        guard getifaddrs(&ifaddr) == 0 else { return [] }
         defer { freeifaddrs(ifaddr) }
 
+        var addresses: [String] = []
         var pointer = ifaddr
         while pointer != nil {
             defer { pointer = pointer?.pointee.ifa_next }
@@ -492,11 +495,11 @@ private struct MobilePairingSheet: View {
             )
             guard result == 0 else { continue }
             let ip = String(cString: hostname)
-            if ip != "127.0.0.1" {
-                return ip
+            if ip != "127.0.0.1", !addresses.contains(ip) {
+                addresses.append(ip)
             }
         }
-        return nil
+        return addresses
     }
 
     private struct PairingDisplay {

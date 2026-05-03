@@ -75,7 +75,7 @@ enum BridgeCreationValidator {
             source: source,
             target: target,
             metadataSnapshot: metadataSnapshot,
-            isAlreadyBridged: { existingBridgeFor($0) != nil }
+            isAlreadyBridged: { existingBridgeFor($0)?.state == .running }
         )
     }
 
@@ -137,7 +137,7 @@ enum BridgeCreationValidator {
                     terminalAgentId: metadataStore.terminalAgentId(for: $0)
                 )
             },
-            existingBridgeFor: { WorkspaceBridgeStore.shared.bridge(forWorkspaceId: $0) }
+            existingBridgeFor: { WorkspaceBridgeStore.shared.activeBridge(forWorkspaceId: $0) }
         )
     }
 }

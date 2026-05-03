@@ -470,11 +470,11 @@ class TerminalController {
     nonisolated static func explicitSocketScope(
         options: [String: String]
     ) -> (workspaceId: UUID, panelId: UUID)? {
-        guard let tabRaw = options["tab"]?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !tabRaw.isEmpty,
+        guard let workspaceRaw = options["workspace"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !workspaceRaw.isEmpty,
               let panelRaw = (options["panel"] ?? options["surface"])?.trimmingCharacters(in: .whitespacesAndNewlines),
               !panelRaw.isEmpty,
-              let workspaceId = UUID(uuidString: tabRaw),
+              let workspaceId = UUID(uuidString: workspaceRaw),
               let panelId = UUID(uuidString: panelRaw) else {
             return nil
         }
@@ -3548,6 +3548,16 @@ class TerminalController {
                         data: ["terminal_agent_id": id])
         }
         let termLoopWorkspaceCreateContext = self.termLoopWorkspaceCreateContext(cwd: cwd, projectId: explicitProjectId, initialEnv: initialEnv)
+        let termLoopWorkspaceAgentLaunch: TerminalAgentLifecycle.PreparedFreshWorkspaceLaunch?
+        if initialCommand == nil {
+            do {
+                termLoopWorkspaceAgentLaunch = try self.termLoopPrepareWorkspaceAgentLaunch(terminalAgentId: explicitTerminalAgentId, cwd: cwd, context: termLoopWorkspaceCreateContext)
+            } catch {
+                return .err(code: "internal_error", message: "Failed to prepare terminal agent launch: \(error)", data: nil)
+            }
+        } else {
+            termLoopWorkspaceAgentLaunch = nil
+        }
         // MARK: /termloop-hook
 
         var newId: UUID?
@@ -3556,8 +3566,9 @@ class TerminalController {
             let ws = tabManager.addWorkspace(
                 title: title,
                 workingDirectory: cwd,
-                initialTerminalCommand: initialCommand,
-                initialTerminalEnvironment: termLoopWorkspaceCreateContext.launchEnvironment,
+                initialTerminalCommand: termLoopWorkspaceAgentLaunch?.plan.initialCommand ?? initialCommand,
+                initialTerminalEnvironment: termLoopWorkspaceAgentLaunch?.plan.initialEnvironment ?? termLoopWorkspaceCreateContext.launchEnvironment,
+                workspaceId: termLoopWorkspaceAgentLaunch?.plan.workspaceId,
                 select: shouldFocus,
                 eagerLoadTerminal: !shouldFocus,
                 // MARK: termloop-hook
@@ -3566,19 +3577,8 @@ class TerminalController {
                 // MARK: /termloop-hook
             )
             // MARK: termloop-hook
-            self.termLoopApplyWorkspaceCreateContext(termLoopWorkspaceCreateContext, to: ws)
+            self.termLoopFinishWorkspaceCreate(launch: termLoopWorkspaceAgentLaunch, context: termLoopWorkspaceCreateContext, workspace: ws)
             // MARK: /termloop-hook
-            if initialCommand == nil,
-               let agentId = explicitTerminalAgentId,
-               !agentId.isEmpty,
-               let agent = TerminalAgentRegistry.shared.agent(id: agentId) {
-                _ = TerminalAgentLifecycle.launchInExistingWorkspace(
-                    in: ws,
-                    agent: agent,
-                    cwd: cwd,
-                    env: termLoopWorkspaceCreateContext.launchEnvironment
-                )
-            }
             ws.setCustomDescription(description)
             newId = ws.id
         }
@@ -11631,18 +11631,18 @@ class TerminalController {
           list_log [--limit=N] [--tab=X] - List log entries
           set_progress <0.0-1.0> [--label=X] [--tab=X] - Set progress bar
           clear_progress [--tab=X] - Clear progress bar
-          report_git_branch <branch> [--status=dirty] [--tab=X] [--panel=Y] - Report git branch
-          clear_git_branch [--tab=X] [--panel=Y] - Clear git branch
-          report_pr <number> <url> [--label=PR] [--state=open|merged|closed] [--branch=<name>] [--tab=X] [--panel=Y] - Report pull request / review item
-          report_review <number> <url> [--label=MR] [--state=open|merged|closed] [--tab=X] [--panel=Y] - Alias for provider-specific review item
-          clear_pr [--tab=X] [--panel=Y] - Clear pull request
-          report_ports <port1> [port2...] [--tab=X] [--panel=Y] - Report listening ports
-          report_tty <tty_name> [--tab=X] [--panel=Y] - Register TTY for batched port scanning
-          ports_kick [--tab=X] [--panel=Y] [--reason=command|refresh] - Request batched port scan for panel
-          report_shell_state <prompt|running> [--tab=X] [--panel=Y] - Report whether the shell is idle at a prompt or running a command
-          report_pr_action <merge|close|reopen|create|checkout|ready|edit|view> [--target=X] [--tab=X] [--panel=Y] - Hint that a PR-affecting command completed in the panel
-          report_pwd <path> [--tab=X] [--panel=Y] - Report current working directory
-          clear_ports [--tab=X] [--panel=Y] - Clear listening ports
+          report_git_branch <branch> [--status=dirty] [--workspace=X] [--panel=Y] - Report git branch
+          clear_git_branch [--workspace=X] [--panel=Y] - Clear git branch
+          report_pr <number> <url> [--label=PR] [--state=open|merged|closed] [--branch=<name>] [--workspace=X] [--panel=Y] - Report pull request / review item
+          report_review <number> <url> [--label=MR] [--state=open|merged|closed] [--workspace=X] [--panel=Y] - Alias for provider-specific review item
+          clear_pr [--workspace=X] [--panel=Y] - Clear pull request
+          report_ports <port1> [port2...] [--workspace=X] [--panel=Y] - Report listening ports
+          report_tty <tty_name> [--workspace=X] [--panel=Y] - Register TTY for batched port scanning
+          ports_kick [--workspace=X] [--panel=Y] [--reason=command|refresh] - Request batched port scan for panel
+          report_shell_state <prompt|running> [--workspace=X] [--panel=Y] - Report whether the shell is idle at a prompt or running a command
+          report_pr_action <merge|close|reopen|create|checkout|ready|edit|view> [--target=X] [--workspace=X] [--panel=Y] - Hint that a PR-affecting command completed in the panel
+          report_pwd <path> [--workspace=X] [--panel=Y] - Report current working directory
+          clear_ports [--workspace=X] [--panel=Y] - Clear listening ports
           sidebar_state [--tab=X] - Dump sidebar metadata
           reset_sidebar [--tab=X] - Clear sidebar metadata
 
@@ -15263,7 +15263,7 @@ class TerminalController {
     private func reportGitBranch(_ args: String) -> String {
         let parsed = parseOptions(args)
         guard let branch = parsed.positional.first else {
-            return "ERROR: Missing branch name — usage: report_git_branch <branch> [--status=dirty] [--tab=X]"
+            return "ERROR: Missing branch name — usage: report_git_branch <branch> [--status=dirty] [--workspace=X] [--panel=Y]"
         }
         let isDirty = parsed.options["status"]?.lowercased() == "dirty"
 
@@ -15333,7 +15333,7 @@ class TerminalController {
     private func reportPullRequest(_ args: String) -> String {
         let parsed = parseOptions(args)
         guard parsed.positional.count >= 2 else {
-            return "ERROR: Missing pull request number or URL — usage: report_pr <number> <url> [--label=PR] [--state=open|draft|active|merged|completed|closed|abandoned] [--branch=<name>] [--tab=X] [--panel=Y]"
+            return "ERROR: Missing pull request number or URL — usage: report_pr <number> <url> [--label=PR] [--state=open|draft|active|merged|completed|closed|abandoned] [--branch=<name>] [--workspace=X] [--panel=Y]"
         }
 
         let rawNumber = parsed.positional[0].trimmingCharacters(in: .whitespacesAndNewlines)
@@ -15372,7 +15372,7 @@ class TerminalController {
 
         let labelRaw = normalizedOptionValue(parsed.options["label"]) ?? "PR"
         guard !labelRaw.isEmpty else {
-            return "ERROR: Invalid review label — usage: report_pr <number> <url> [--label=PR] [--state=open|draft|active|merged|completed|closed|abandoned] [--branch=<name>] [--tab=X] [--panel=Y]"
+            return "ERROR: Invalid review label — usage: report_pr <number> <url> [--label=PR] [--state=open|draft|active|merged|completed|closed|abandoned] [--branch=<name>] [--workspace=X] [--panel=Y]"
         }
         let label = String(labelRaw.prefix(16))
 
@@ -15381,7 +15381,7 @@ class TerminalController {
         return schedulePanelMetadataMutation(
             args: args,
             options: parsed.options,
-            missingPanelUsage: "report_pr <number> <url> [--label=PR] [--state=open|draft|active|merged|completed|closed|abandoned] [--branch=<name>] [--tab=X] [--panel=Y]"
+            missingPanelUsage: "report_pr <number> <url> [--label=PR] [--state=open|draft|active|merged|completed|closed|abandoned] [--branch=<name>] [--workspace=X] [--panel=Y]"
         ) { tab, surfaceId in
             guard Self.shouldReplacePullRequest(
                 current: tab.primaryPanelPullRequest(panelId: surfaceId),
@@ -15412,7 +15412,7 @@ class TerminalController {
         return schedulePanelMetadataMutation(
             args: args,
             options: parsed.options,
-            missingPanelUsage: "clear_pr [--tab=X] [--panel=Y]"
+            missingPanelUsage: "clear_pr [--workspace=X] [--panel=Y]"
         ) { tab, surfaceId in
             tab.clearPanelPullRequest(panelId: surfaceId)
         }
@@ -15421,7 +15421,7 @@ class TerminalController {
     private func reportPorts(_ args: String) -> String {
         let parsed = parseOptions(args)
         guard !parsed.positional.isEmpty else {
-            return "ERROR: Missing ports — usage: report_ports <port1> [port2...] [--tab=X] [--panel=Y]"
+            return "ERROR: Missing ports — usage: report_ports <port1> [port2...] [--workspace=X] [--panel=Y]"
         }
         var ports: [Int] = []
         for portStr in parsed.positional {
@@ -15445,7 +15445,7 @@ class TerminalController {
             let surfaceId: UUID
             if let panelArg {
                 if panelArg.isEmpty {
-                    result = "ERROR: Missing panel id — usage: report_ports <port1> [port2...] [--tab=X] [--panel=Y]"
+                    result = "ERROR: Missing panel id — usage: report_ports <port1> [port2...] [--workspace=X] [--panel=Y]"
                     return
                 }
                 guard let parsedId = UUID(uuidString: panelArg) else {
@@ -15476,7 +15476,7 @@ class TerminalController {
         guard let tabManager else { return "ERROR: TabManager not available" }
         let parsed = parseOptions(args)
         guard !parsed.positional.isEmpty else {
-            return "ERROR: Missing path — usage: report_pwd <path> [--tab=X] [--panel=Y]"
+            return "ERROR: Missing path — usage: report_pwd <path> [--workspace=X] [--panel=Y]"
         }
 
         let directory = parsed.positional.joined(separator: " ")
@@ -15507,7 +15507,7 @@ class TerminalController {
             let surfaceId: UUID
             if let panelArg {
                 if panelArg.isEmpty {
-                    result = "ERROR: Missing panel id — usage: report_pwd <path> [--tab=X] [--panel=Y]"
+                    result = "ERROR: Missing panel id — usage: report_pwd <path> [--workspace=X] [--panel=Y]"
                     return
                 }
                 guard let parsedId = UUID(uuidString: panelArg) else {
@@ -15536,7 +15536,7 @@ class TerminalController {
     private func reportShellState(_ args: String) -> String {
         let parsed = parseOptions(args)
         guard let rawState = parsed.positional.first, !rawState.isEmpty else {
-            return "ERROR: Missing shell state — usage: report_shell_state <prompt|running> [--tab=X] [--panel=Y]"
+            return "ERROR: Missing shell state — usage: report_shell_state <prompt|running> [--workspace=X] [--panel=Y]"
         }
         guard let state = Self.parseReportedShellActivityState(rawState) else {
             return "ERROR: Invalid shell state '\(rawState)' — expected prompt or running"
@@ -15573,7 +15573,7 @@ class TerminalController {
             let surfaceId: UUID
             if let panelArg {
                 if panelArg.isEmpty {
-                    result = "ERROR: Missing panel id — usage: report_shell_state <prompt|running> [--tab=X] [--panel=Y]"
+                    result = "ERROR: Missing panel id — usage: report_shell_state <prompt|running> [--workspace=X] [--panel=Y]"
                     return
                 }
                 guard let parsedId = UUID(uuidString: panelArg) else {
@@ -15602,7 +15602,7 @@ class TerminalController {
     private func reportPullRequestAction(_ args: String) -> String {
         let parsed = parseOptions(args)
         guard let rawAction = parsed.positional.first, !rawAction.isEmpty else {
-            return "ERROR: Missing PR action — usage: report_pr_action <merge|close|reopen|create|checkout|ready|edit|view> [--target=X] [--tab=X] [--panel=Y]"
+            return "ERROR: Missing PR action — usage: report_pr_action <merge|close|reopen|create|checkout|ready|edit|view> [--target=X] [--workspace=X] [--panel=Y]"
         }
 
         let action = rawAction.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -15615,7 +15615,7 @@ class TerminalController {
         return schedulePanelMetadataMutation(
             args: args,
             options: parsed.options,
-            missingPanelUsage: "report_pr_action <merge|close|reopen|create|checkout|ready|edit|view> [--target=X] [--tab=X] [--panel=Y]"
+            missingPanelUsage: "report_pr_action <merge|close|reopen|create|checkout|ready|edit|view> [--target=X] [--workspace=X] [--panel=Y]"
         ) { tab, surfaceId in
             guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: tab.id) else { return }
             tabManager.handleWorkspacePullRequestCommandHint(
@@ -15642,7 +15642,7 @@ class TerminalController {
             let panelArg = parsed.options["panel"] ?? parsed.options["surface"]
             if let panelArg {
                 if panelArg.isEmpty {
-                    result = "ERROR: Missing panel id — usage: clear_ports [--tab=X] [--panel=Y]"
+                    result = "ERROR: Missing panel id — usage: clear_ports [--workspace=X] [--panel=Y]"
                     return
                 }
                 guard let surfaceId = UUID(uuidString: panelArg) else {
@@ -15665,7 +15665,7 @@ class TerminalController {
     private func reportTTY(_ args: String) -> String {
         let parsed = parseOptions(args)
         guard let ttyName = parsed.positional.first, !ttyName.isEmpty else {
-            return "ERROR: Missing tty name — usage: report_tty <tty_name> [--tab=X] [--panel=Y]"
+            return "ERROR: Missing tty name — usage: report_tty <tty_name> [--workspace=X] [--panel=Y]"
         }
 
         if let scope = Self.explicitSocketScope(options: parsed.options) {
@@ -15699,7 +15699,7 @@ class TerminalController {
             let surfaceId: UUID
             if let panelArg {
                 if panelArg.isEmpty {
-                    result = "ERROR: Missing panel id — usage: report_tty <tty_name> [--tab=X] [--panel=Y]"
+                    result = "ERROR: Missing panel id — usage: report_tty <tty_name> [--workspace=X] [--panel=Y]"
                     return
                 }
                 guard let parsedId = UUID(uuidString: panelArg) else {
@@ -15773,7 +15773,7 @@ class TerminalController {
             let surfaceId: UUID
             if let panelArg {
                 if panelArg.isEmpty {
-                    result = "ERROR: Missing panel id — usage: ports_kick [--tab=X] [--panel=Y]"
+                    result = "ERROR: Missing panel id — usage: ports_kick [--workspace=X] [--panel=Y]"
                     return
                 }
                 guard let parsedId = UUID(uuidString: panelArg) else {

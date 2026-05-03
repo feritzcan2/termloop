@@ -1,4 +1,6 @@
-import type { SavedConnection } from "./connections";
+import * as Notifications from "expo-notifications";
+import { Platform } from "react-native";
+import { connectionHostCandidates, type SavedConnection } from "./connections";
 import { TcpTransport } from "./tcp-transport";
 import {
   createTermLoopClient,
@@ -40,22 +42,56 @@ export async function openSession(
   conn: SavedConnection
 ): Promise<OpenSessionResult> {
   await closeSession();
-  const transport: Transport = new TcpTransport({
-    host: conn.host,
-    port: conn.port,
-  });
-  const client = createTermLoopClient({ transport });
+  const hosts = connectionHostCandidates(conn);
+  let lastErr: unknown = null;
 
-  let auth: AuthResult | undefined;
-  try {
-    ({ auth } = await applyAuth(client, conn));
-  } catch (err) {
-    await client.close();
-    throw err;
+  for (const host of hosts) {
+    const transport: Transport = new TcpTransport({
+      host,
+      port: conn.port,
+      connectTimeoutMs: hosts.length > 1 ? 3500 : undefined,
+    });
+    const client = createTermLoopClient({ transport });
+
+    try {
+      const { auth } = await applyAuth(client, conn);
+      active = { connectionId: conn.id, client, transport, auth };
+      void registerPushToken(client).catch((err) => {
+        console.warn("Push registration skipped:", err);
+      });
+      return { client, auth };
+    } catch (err) {
+      lastErr = err;
+      await client.close().catch(() => {});
+    }
   }
 
-  active = { connectionId: conn.id, client, transport, auth };
-  return { client, auth };
+  throw lastErr ?? new Error("Connection failed.");
+}
+
+async function registerPushToken(client: TermLoopClient): Promise<void> {
+  if (Platform.OS !== "ios") return;
+
+  const permissions = await Notifications.getPermissionsAsync();
+  let granted = permissions.granted || permissions.status === "granted";
+  if (!granted && permissions.canAskAgain) {
+    const next = await Notifications.requestPermissionsAsync({
+      ios: { allowAlert: true, allowBadge: true, allowSound: true },
+    });
+    granted = next.granted || next.status === "granted";
+  }
+  if (!granted) return;
+
+  const token = await Notifications.getDevicePushTokenAsync();
+  if (token.type !== "ios" || typeof token.data !== "string" || !token.data) {
+    return;
+  }
+
+  await client.registerPushToken({
+    deviceToken: token.data,
+    platform: "ios",
+    environment: __DEV__ ? "development" : "production",
+  });
 }
 
 export function getActiveClient(): TermLoopClient | null {

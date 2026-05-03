@@ -3135,7 +3135,6 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
                 "TERMLOOP_TAG": "feat-tmux-notification-attention-state",
                 "TERMLOOP_WORKSPACE_ID": "11111111-1111-1111-1111-111111111111",
                 "TERMLOOP_SURFACE_ID": "22222222-2222-2222-2222-222222222222",
-                "TERMLOOP_TAB_ID": "11111111-1111-1111-1111-111111111111",
                 "TERMLOOP_PANEL_ID": "22222222-2222-2222-2222-222222222222",
             ]
         )
@@ -3182,7 +3181,6 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
                 "TERMLOOP_TAG": "feat-tmux-notification-attention-state",
                 "TERMLOOP_WORKSPACE_ID": "11111111-1111-1111-1111-111111111111",
                 "TERMLOOP_SURFACE_ID": "22222222-2222-2222-2222-222222222222",
-                "TERMLOOP_TAB_ID": "11111111-1111-1111-1111-111111111111",
                 "TERMLOOP_PANEL_ID": "22222222-2222-2222-2222-222222222222",
             ]
         )
@@ -3210,7 +3208,6 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
               printf '%s\\n' 'TERMLOOP_TAG=feat-tmux-notification-attention-state'
               printf '%s\\n' 'TERMLOOP_WORKSPACE_ID=11111111-1111-1111-1111-111111111111'
               printf '%s\\n' 'TERMLOOP_SURFACE_ID=99999999-9999-9999-9999-999999999999'
-              printf '%s\\n' 'TERMLOOP_TAB_ID=11111111-1111-1111-1111-111111111111'
               printf '%s\\n' 'TERMLOOP_PANEL_ID=99999999-9999-9999-9999-999999999999'
               exit 0
             fi
@@ -3229,7 +3226,6 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
                 "TERMLOOP_TAG": "feat-tmux-integration-experiments",
                 "TERMLOOP_WORKSPACE_ID": "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
                 "TERMLOOP_SURFACE_ID": "22222222-2222-2222-2222-222222222222",
-                "TERMLOOP_TAB_ID": "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
                 "TERMLOOP_PANEL_ID": "22222222-2222-2222-2222-222222222222",
             ]
         )
@@ -3250,12 +3246,12 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
             """,
             extraEnvironment: [
                 "TMUX": "/tmp/tmux-current,123,0",
-                "TERMLOOP_TAB_ID": "11111111-1111-1111-1111-111111111111",
+                "TERMLOOP_WORKSPACE_ID": "11111111-1111-1111-1111-111111111111",
                 "TERMLOOP_PANEL_ID": "99999999-9999-9999-9999-999999999999",
             ]
         )
 
-        XCTAssertEqual(output, "report_tty ttys999 --tab=11111111-1111-1111-1111-111111111111")
+        XCTAssertEqual(output, "report_tty ttys999 --workspace=11111111-1111-1111-1111-111111111111")
     }
 
     func testShellIntegrationRelayReportTTYUsesWorkspaceIDInZsh() throws {
@@ -3290,7 +3286,6 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
                 "PATH": "\(binDir.path):/usr/bin:/bin:/usr/sbin:/sbin",
                 "TERMLOOP_SOCKET_PATH": "127.0.0.1:64011",
                 "TERMLOOP_WORKSPACE_ID": "11111111-1111-1111-1111-111111111111",
-                "TERMLOOP_TAB_ID": "22222222-2222-2222-2222-222222222222",
                 "TERMLOOP_PANEL_ID": "22222222-2222-2222-2222-222222222222",
             ]
         )
@@ -3336,7 +3331,6 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
                 "PATH": "\(binDir.path):/usr/bin:/bin:/usr/sbin:/sbin",
                 "TERMLOOP_SOCKET_PATH": "127.0.0.1:64011",
                 "TERMLOOP_WORKSPACE_ID": "11111111-1111-1111-1111-111111111111",
-                "TERMLOOP_TAB_ID": "22222222-2222-2222-2222-222222222222",
                 "TERMLOOP_PANEL_ID": "",
             ]
         )
@@ -3385,7 +3379,6 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
                 "PATH": "\(binDir.path):/usr/bin:/bin:/usr/sbin:/sbin",
                 "TERMLOOP_SOCKET_PATH": "127.0.0.1:64011",
                 "TERMLOOP_WORKSPACE_ID": "11111111-1111-1111-1111-111111111111",
-                "TERMLOOP_TAB_ID": "22222222-2222-2222-2222-222222222222",
                 "TERMLOOP_PANEL_ID": "22222222-2222-2222-2222-222222222222",
             ]
         )
@@ -3427,7 +3420,6 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
                 "PATH": "\(binDir.path):/usr/bin:/bin:/usr/sbin:/sbin",
                 "TERMLOOP_SOCKET_PATH": "127.0.0.1:64011",
                 "TERMLOOP_WORKSPACE_ID": "11111111-1111-1111-1111-111111111111",
-                "TERMLOOP_TAB_ID": "22222222-2222-2222-2222-222222222222",
                 "TERMLOOP_PANEL_ID": "22222222-2222-2222-2222-222222222222",
             ]
         )
@@ -3474,7 +3466,6 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
                 "PATH": "\(binDir.path):/usr/bin:/bin:/usr/sbin:/sbin",
                 "TERMLOOP_SOCKET_PATH": "127.0.0.1:64011",
                 "TERMLOOP_WORKSPACE_ID": "11111111-1111-1111-1111-111111111111",
-                "TERMLOOP_TAB_ID": "22222222-2222-2222-2222-222222222222",
                 "TERMLOOP_PANEL_ID": "",
             ]
         )
@@ -3526,7 +3517,6 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
                 "PATH": "\(binDir.path):/usr/bin:/bin:/usr/sbin:/sbin",
                 "TERMLOOP_SOCKET_PATH": "127.0.0.1:64011",
                 "TERMLOOP_WORKSPACE_ID": "11111111-1111-1111-1111-111111111111",
-                "TERMLOOP_TAB_ID": "22222222-2222-2222-2222-222222222222",
                 "TERMLOOP_PANEL_ID": "22222222-2222-2222-2222-222222222222",
             ]
         )
@@ -3620,7 +3610,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
             process.environment?["TERMLOOP_SHELL_INTEGRATION"] = "1"
             process.environment?["TERMLOOP_SHELL_INTEGRATION_DIR"] = cmuxZdotdir.path
             process.environment?["TERMLOOP_SOCKET_PATH"] = root.appendingPathComponent("cmux-test.sock").path
-            process.environment?["TERMLOOP_TAB_ID"] = "tab-test"
+            process.environment?["TERMLOOP_WORKSPACE_ID"] = "workspace-test"
             process.environment?["TERMLOOP_PANEL_ID"] = "panel-test"
         }
         for (key, value) in extraEnvironment {
@@ -3735,7 +3725,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
             process.environment?["TERMLOOP_SHELL_INTEGRATION"] = "1"
             process.environment?["TERMLOOP_SHELL_INTEGRATION_DIR"] = cmuxZdotdir.path
             process.environment?["TERMLOOP_SOCKET_PATH"] = root.appendingPathComponent("cmux-test.sock").path
-            process.environment?["TERMLOOP_TAB_ID"] = "tab-test"
+            process.environment?["TERMLOOP_WORKSPACE_ID"] = "workspace-test"
             process.environment?["TERMLOOP_PANEL_ID"] = "panel-test"
         }
         for (key, value) in extraEnvironment {
@@ -3853,7 +3843,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         ]
         if cmuxLoadShellIntegration {
             process.environment?["TERMLOOP_SOCKET_PATH"] = root.appendingPathComponent("cmux-test.sock").path
-            process.environment?["TERMLOOP_TAB_ID"] = "tab-test"
+            process.environment?["TERMLOOP_WORKSPACE_ID"] = "workspace-test"
             process.environment?["TERMLOOP_PANEL_ID"] = "panel-test"
         }
         for (key, value) in extraEnvironment {

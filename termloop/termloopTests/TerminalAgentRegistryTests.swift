@@ -78,51 +78,59 @@ final class TerminalAgentRegistryTests: XCTestCase {
             command.hasPrefix("cd '/tmp/my repo' && A_VAR='alpha' B_VAR='two words' "),
             command
         )
+        let scriptPath = try embeddedShellScriptPath(in: command)
+        let script = try String(contentsOfFile: scriptPath, encoding: .utf8)
         assertCommand(
-            command,
+            script,
             invokesExecutableNamed: "codex",
             containsAll: ["--dangerously-bypass-approvals-and-sandbox"]
         )
     }
 
-    func testDefaultLaunchCommandFallsBackToBareAgentCommand() throws {
+    func testDefaultLaunchCommandFallsBackToBareAgentCommandForUnwrappedAgent() throws {
         let reg = TerminalAgentRegistry.shared
-        let codex = try XCTUnwrap(reg.agent(id: "codex"))
+        let gemini = try XCTUnwrap(reg.agent(id: "gemini"))
 
         let command = TerminalAgentRunner.defaultLaunchCommand(
-            for: codex,
+            for: gemini,
             cwd: nil,
             workspaceId: testWorkspaceId
         )
 
         assertCommand(
             command,
-            invokesExecutableNamed: "codex",
-            containsAll: ["--dangerously-bypass-approvals-and-sandbox"]
+            invokesExecutableNamed: "gemini",
+            containsAll: []
         )
     }
 
     func testDefaultLaunchCommandSynthesizesCodexReadyWhenWorkspaceIdExists() throws {
         let reg = TerminalAgentRegistry.shared
         let codex = try XCTUnwrap(reg.agent(id: "codex"))
+        let workspaceId = testWorkspaceId.uuidString
 
         let command = TerminalAgentRunner.defaultLaunchCommand(
             for: codex,
             cwd: nil,
-            env: ["TERMLOOP_WORKSPACE_ID": "ws-123"],
+            env: ["TERMLOOP_WORKSPACE_ID": "stale-ws"],
             workspaceId: testWorkspaceId
         )
 
         XCTAssertTrue(command.contains("TERMLOOP_CODEX_READY_MARKER="))
-        XCTAssertTrue(command.contains("TERMLOOP_WORKSPACE_ID='ws-123'"))
+        XCTAssertTrue(command.contains("TERMLOOP_WORKSPACE_ID='\(workspaceId)'"))
+        XCTAssertFalse(command.contains("TERMLOOP_WORKSPACE_ID='stale-ws'"))
         XCTAssertTrue(command.contains("sh "))
         XCTAssertTrue(command.contains("termloop-codex-launch"))
 
         let scriptPath = try embeddedShellScriptPath(in: command)
         let script = try String(contentsOfFile: scriptPath, encoding: .utf8)
         XCTAssertTrue(script.contains("workspace.report_agent_activity"))
-        XCTAssertTrue(script.contains("\"workspace_id\":\"ws-123\""))
+        XCTAssertTrue(script.contains("\"workspace_id\":\"\(workspaceId)\""))
         XCTAssertTrue(script.contains("\"phase\":\"ready\""))
+        XCTAssertTrue(script.contains("def fresh_lifecycle_activity(path):"))
+        XCTAssertTrue(script.contains("def fresh_activity_payload(session_id, session_cwd, activity):"))
+        XCTAssertTrue(script.contains("payload[\"phase\"] = \"running\""))
+        XCTAssertTrue(script.contains("payload[\"attention_kind\"] = \"completion\""))
         XCTAssertTrue(script.contains("workspace.clear_agent_activity"))
         XCTAssertTrue(script.contains("TERMLOOP_SHELL_INTEGRATION_DIR"))
         XCTAssertTrue(script.contains("cmux_termloop_bundle_bin"))
@@ -169,7 +177,7 @@ final class TerminalAgentRegistryTests: XCTestCase {
         let command = TerminalAgentRunner.defaultLaunchCommand(
             for: codex,
             cwd: nil,
-            env: ["TERMLOOP_WORKSPACE_ID": "ws-123"],
+            env: ["TERMLOOP_WORKSPACE_ID": testWorkspaceId.uuidString],
             workspaceId: testWorkspaceId
         )
         let scriptPath = try embeddedShellScriptPath(in: command)
@@ -183,7 +191,7 @@ final class TerminalAgentRegistryTests: XCTestCase {
             "TERMLOOP_SHELL_INTEGRATION_DIR": shellIntegrationDir.path,
             "TERMLOOP_REAL_CODEX_PATH": fakeCodex.path,
             "TERMLOOP_CODEX_READY_MARKER": root.appendingPathComponent("ready.flag").path,
-            "TERMLOOP_WORKSPACE_ID": "ws-123",
+            "TERMLOOP_WORKSPACE_ID": testWorkspaceId.uuidString,
         ]
 
         let stdout = Pipe()
@@ -214,10 +222,11 @@ final class TerminalAgentRegistryTests: XCTestCase {
     func testRestoreLaunchCommandResumesCodexSessionWhenAvailable() throws {
         let reg = TerminalAgentRegistry.shared
         let codex = try XCTUnwrap(reg.agent(id: "codex"))
+        let workspaceId = testWorkspaceId.uuidString
         let command = TerminalAgentRunner.restoreLaunchCommand(
             for: codex,
             cwd: "/tmp/fallback",
-            env: ["TERMLOOP_WORKSPACE_ID": "ws-123"],
+            env: ["TERMLOOP_WORKSPACE_ID": "stale-ws"],
             workspaceId: testWorkspaceId,
             persistedSession: .init(
                 agentId: "codex",
@@ -230,6 +239,9 @@ final class TerminalAgentRegistryTests: XCTestCase {
         XCTAssertTrue(command.hasPrefix("cd '/tmp/fallback' && "))
         let scriptPath = try embeddedShellScriptPath(in: command)
         let script = try String(contentsOfFile: scriptPath, encoding: .utf8)
+        XCTAssertTrue(command.contains("TERMLOOP_WORKSPACE_ID='\(workspaceId)'"))
+        XCTAssertFalse(command.contains("TERMLOOP_WORKSPACE_ID='stale-ws'"))
+        XCTAssertTrue(script.contains("TERMLOOP_TERMLOOP_WORKSPACE_ID=\"\(workspaceId)\""))
         assertCommand(
             script,
             invokesExecutableNamed: "codex",
@@ -266,7 +278,7 @@ final class TerminalAgentRegistryTests: XCTestCase {
             for: codex,
             parentSessionId: "codex-session-123",
             initialPrompt: "Continue from here",
-            cwd: "/tmp/forked",
+            cwd: "/tmp/forked worktree",
             permission: .bypassPermissions,
             systemPrompt: nil
         )
@@ -274,7 +286,13 @@ final class TerminalAgentRegistryTests: XCTestCase {
         assertCommand(
             command,
             invokesExecutableNamed: "codex",
-            containsAll: ["fork", "--dangerously-bypass-approvals-and-sandbox", "codex-session-123"]
+            containsAll: [
+                "fork",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--cd",
+                "'/tmp/forked worktree'",
+                "codex-session-123"
+            ]
         )
         XCTAssertTrue(command.contains("'Continue from here'"), command)
     }

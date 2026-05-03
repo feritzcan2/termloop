@@ -81,18 +81,14 @@ enum TerminalAgentDisplayState: String, Equatable {
 
     var activeAgentsSortPriority: Int {
         switch self {
-        case .running:
-            return 0
         case .needsInput:
-            return 1
+            return 0
         case .error:
+            return 1
+        case .running, .completed, .ready:
             return 2
-        case .completed:
-            return 3
-        case .ready:
-            return 4
         case .idle:
-            return 5
+            return 3
         }
     }
 

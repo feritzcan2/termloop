@@ -7634,6 +7634,9 @@ final class Workspace: Identifiable, ObservableObject {
         processTitle = title
         guard customTitle == nil else { return }
         self.title = title
+        // MARK: termloop-hook
+        TermLoopHooks.workspaceTitleDidChange(workspace: self)
+        // MARK: /termloop-hook
     }
 
     func setCustomColor(_ hex: String?) {
@@ -7662,6 +7665,9 @@ final class Workspace: Identifiable, ObservableObject {
             customTitle = trimmed
             self.title = trimmed
         }
+        // MARK: termloop-hook
+        TermLoopHooks.workspaceTitleDidChange(workspace: self)
+        // MARK: /termloop-hook
     }
 
     func setCustomDescription(_ description: String?) {
@@ -8036,6 +8042,9 @@ final class Workspace: Identifiable, ObservableObject {
             if processTitle != trimmed {
                 processTitle = trimmed
             }
+            // MARK: termloop-hook
+            TermLoopHooks.workspaceTitleDidChange(workspace: self)
+            // MARK: /termloop-hook
         }
 
         return didMutate

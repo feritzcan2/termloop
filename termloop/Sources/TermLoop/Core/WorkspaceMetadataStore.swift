@@ -139,6 +139,11 @@ final class WorkspaceMetadataStore: ObservableObject {
     /// re-rendering on every metadata write.
     @Published private(set) var hiddenVersion: Int = 0
 
+    /// Incremented when a workspace's visible title changes. Sidebar panels
+    /// use this narrow signal because `TabManager.tabs` does not republish
+    /// when a referenced `Workspace` mutates its own `@Published` title.
+    @Published private(set) var titleVersion: Int = 0
+
     /// Incremented whenever any presentation-relevant metadata field actually
     /// changes for a workspace (terminal agent id, persisted session,
     /// awaiting-input state, preview, attention kind, last prompt). Feeds
@@ -155,6 +160,18 @@ final class WorkspaceMetadataStore: ObservableObject {
     private func bumpAgentPresentation(for id: UUID) {
         agentPresentationVersion &+= 1
         agentPresentationDidChange.send(id)
+    }
+
+    private var observedWorkspaceTitlesById: [UUID: String] = [:]
+
+    func noteWorkspaceTitleDidChange(workspaceId: UUID, displayTitle: String) {
+        guard observedWorkspaceTitlesById[workspaceId] != displayTitle else { return }
+        observedWorkspaceTitlesById[workspaceId] = displayTitle
+        titleVersion &+= 1
+    }
+
+    func forgetObservedWorkspaceTitle(workspaceId: UUID) {
+        observedWorkspaceTitlesById.removeValue(forKey: workspaceId)
     }
 
     struct EphemeralClaudeSession: Equatable {
@@ -768,8 +785,8 @@ final class WorkspaceMetadataStore: ObservableObject {
     }
 
     /// Ability-driven binding setter. Takes a workspace id, resolves the
-    /// canonical worktree path internally (binding storage is path-keyed
-    /// because a binding belongs to the worktree, not the workspace UUID).
+    /// reported-state path internally (binding storage is path-keyed because a
+    /// binding belongs to the checkout/cwd, not the workspace UUID).
     /// Pass `nil` to clear.
     ///
     /// Returns an outcome the socket handler can map to its response: this is
@@ -780,9 +797,10 @@ final class WorkspaceMetadataStore: ObservableObject {
         _ value: AgentReportedStateStore.AgentReportedBinding?,
         abilityId: String,
         bindingId: String,
-        forWorkspaceId id: UUID
+        forWorkspaceId id: UUID,
+        fallbackPath: String? = nil
     ) -> ReportedBindingOutcome {
-        guard let path = worktreeRootPath(forWorkspaceId: id) else {
+        guard let path = reportedStatePath(forWorkspaceId: id, fallbackPath: fallbackPath) else {
             return .noWorktree
         }
         let prior = AgentReportedStateStore.shared.binding(
@@ -818,9 +836,10 @@ final class WorkspaceMetadataStore: ObservableObject {
     func replaceReportedBindings(
         underAbilityId abilityId: String,
         with values: [AgentReportedStateStore.AgentReportedBinding],
-        forWorkspaceId id: UUID
+        forWorkspaceId id: UUID,
+        fallbackPath: String? = nil
     ) -> ReportedBindingOutcome {
-        guard let path = worktreeRootPath(forWorkspaceId: id) else {
+        guard let path = reportedStatePath(forWorkspaceId: id, fallbackPath: fallbackPath) else {
             return .noWorktree
         }
         let didChange = AgentReportedStateStore.shared.replaceBindings(
@@ -1017,7 +1036,8 @@ final class WorkspaceMetadataStore: ObservableObject {
     /// subprocess, safe to call from SwiftUI body. Workspaces without a
     /// persisted branch + `worktreePath` (pre-attach, generic-shell, or
     /// fork-target before bind) return nil; their reported-state slot stays
-    /// unhydrated.
+    /// unhydrated unless a caller supplies a live cwd fallback through
+    /// `reportedStatePath(forWorkspaceId:fallbackPath:)`.
     func worktreeRootPath(forWorkspaceId id: UUID) -> String? {
         guard let meta = byWorkspaceId[id],
               let branch = meta.branch?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -1025,6 +1045,17 @@ final class WorkspaceMetadataStore: ObservableObject {
               let raw = meta.worktreePath,
               !raw.isEmpty else { return nil }
         return canonicalReportedPath(raw)
+    }
+
+    /// Path key for ability-reported state. Prefer the stored worktree path
+    /// when TermLoop owns one; otherwise use a caller-supplied live cwd /
+    /// presentation cwd so normal project-root sessions can still surface
+    /// run-target and ticket chips.
+    func reportedStatePath(forWorkspaceId id: UUID, fallbackPath: String? = nil) -> String? {
+        if let path = worktreeRootPath(forWorkspaceId: id) {
+            return path
+        }
+        return canonicalReportedPath(fallbackPath)
     }
 
     /// Reverse lookup: find the workspace whose canonical worktree root

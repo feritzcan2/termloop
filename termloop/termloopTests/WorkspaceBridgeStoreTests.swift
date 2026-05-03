@@ -9,6 +9,22 @@ import XCTest
 final class WorkspaceBridgeStoreTests: XCTestCase {
     /// Shared project UUID so all test workspaces satisfy the same-project check.
     private let testProjectId = UUID()
+    private var temporaryStoreURLs: [URL] = []
+
+    override func tearDown() {
+        for url in temporaryStoreURLs {
+            try? FileManager.default.removeItem(at: url)
+        }
+        temporaryStoreURLs.removeAll()
+        super.tearDown()
+    }
+
+    private func makeStore() -> WorkspaceBridgeStore {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WorkspaceBridgeStoreTests-\(UUID().uuidString).json")
+        temporaryStoreURLs.append(url)
+        return WorkspaceBridgeStore(fileURL: url)
+    }
 
     /// Creates a bridge whose workspace IDs are pre-registered in
     /// WorkspaceMetadataStore with matching projectId and agent "claude",
@@ -30,7 +46,7 @@ final class WorkspaceBridgeStoreTests: XCTestCase {
     }
 
     func testCreateAddsToBridges() {
-        let store = WorkspaceBridgeStore()
+        let store = makeStore()
         XCTAssertTrue(store.bridges.isEmpty)
         let bridge = makeBridge()
         store.add(bridge)
@@ -38,8 +54,23 @@ final class WorkspaceBridgeStoreTests: XCTestCase {
         XCTAssertEqual(store.bridges.first?.id, bridge.id)
     }
 
+    func testAskToReplyTokenPersistsAcrossStoreReload() {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WorkspaceBridgeStoreTests-\(UUID().uuidString).json")
+        temporaryStoreURLs.append(url)
+        let store = WorkspaceBridgeStore(fileURL: url)
+        var bridge = makeBridge()
+        bridge.intent = .askAgent
+        bridge.askToReplyToken = "reply-token"
+
+        XCTAssertTrue(store.add(bridge))
+
+        let reloaded = WorkspaceBridgeStore(fileURL: url)
+        XCTAssertEqual(reloaded.bridge(id: bridge.id)?.askToReplyToken, "reply-token")
+    }
+
     func testSetForwardModeUpdatesMode() {
-        let store = WorkspaceBridgeStore()
+        let store = makeStore()
         let bridge = makeBridge()
         store.add(bridge)
         store.setForwardMode(id: bridge.id, mode: .auto)
@@ -48,7 +79,7 @@ final class WorkspaceBridgeStoreTests: XCTestCase {
 
 
     func testStopSetsReason() {
-        let store = WorkspaceBridgeStore()
+        let store = makeStore()
         let bridge = makeBridge()
         store.add(bridge)
         store.stop(id: bridge.id, reason: .manual)
@@ -56,7 +87,7 @@ final class WorkspaceBridgeStoreTests: XCTestCase {
     }
 
     func testAppendMessageIncrementsTurnCount() {
-        let store = WorkspaceBridgeStore()
+        let store = makeStore()
         let bridge = makeBridge()
         store.add(bridge)
         store.appendMessage(
@@ -69,9 +100,80 @@ final class WorkspaceBridgeStoreTests: XCTestCase {
         XCTAssertEqual(updated?.messages.first?.text, "hello")
     }
 
+    func testRecordFinalReplyStopsAskAgentBridgeAndStoresSingleReply() {
+        let store = makeStore()
+        var bridge = makeBridge()
+        bridge.intent = .askAgent
+        bridge.rightAgentId = "codex"
+        store.add(bridge)
+
+        let result = store.recordFinalReply(
+            bridgeId: bridge.id,
+            text: "final answer"
+        )
+
+        guard case .recorded(let messageId) = result else {
+            return XCTFail("Expected final reply to be recorded")
+        }
+        let updated = store.bridge(id: bridge.id)
+        XCTAssertEqual(updated?.state, .stopped(.replied))
+        XCTAssertEqual(updated?.messages.count, 1)
+        XCTAssertEqual(updated?.messages.first?.id, messageId)
+        XCTAssertEqual(updated?.messages.first?.sender, .right)
+        XCTAssertEqual(updated?.messages.first?.text, "final answer")
+        XCTAssertEqual(updated?.finalReply?.messageId, messageId)
+        XCTAssertEqual(updated?.finalReply?.text, "final answer")
+    }
+
+    func testRecordFinalReplyRejectsDuplicateReply() {
+        let store = makeStore()
+        var bridge = makeBridge()
+        bridge.intent = .askAgent
+        bridge.rightAgentId = "codex"
+        store.add(bridge)
+
+        let first = store.recordFinalReply(bridgeId: bridge.id, text: "one")
+        let second = store.recordFinalReply(bridgeId: bridge.id, text: "two")
+
+        guard case .recorded = first else {
+            return XCTFail("Expected first final reply to be recorded")
+        }
+        XCTAssertEqual(second, .alreadyReplied)
+        XCTAssertEqual(store.bridge(id: bridge.id)?.messages.map(\.text), ["one"])
+    }
+
+    func testRepliedAskAgentBridgeDoesNotBlockFollowUpRequest() {
+        let store = makeStore()
+        var first = makeBridge()
+        first.intent = .askAgent
+        first.leftAgentId = "codex"
+        first.rightAgentId = "claude"
+        XCTAssertTrue(store.add(first))
+        guard case .recorded = store.recordFinalReply(bridgeId: first.id, text: "done") else {
+            return XCTFail("Expected first final reply to be recorded")
+        }
+
+        let newRight = UUID()
+        WorkspaceMetadataStore.shared.setTerminalAgentId("claude", for: newRight)
+        WorkspaceMetadataStore.shared.setProjectId(testProjectId, forWorkspaceId: newRight)
+        let second = WorkspaceBridge(
+            leftWorkspaceId: first.leftWorkspaceId,
+            rightWorkspaceId: newRight,
+            intent: .askAgent,
+            leftAgentId: "codex",
+            rightAgentId: "claude",
+            kickoffMessage: "follow up",
+            firstSpeaker: .right
+        )
+
+        XCTAssertTrue(store.add(second))
+        XCTAssertEqual(store.activeBridge(forWorkspaceId: first.leftWorkspaceId)?.id, second.id)
+        XCTAssertEqual(store.bridge(forWorkspaceId: first.leftWorkspaceId)?.id, second.id)
+        XCTAssertEqual(store.bridges.count, 2)
+    }
 
     func testDismissRemovesBridge() {
-        let store = WorkspaceBridgeStore()
+        let store = makeStore()
         let bridge = makeBridge()
         store.add(bridge)
         store.dismiss(id: bridge.id)
@@ -79,7 +181,7 @@ final class WorkspaceBridgeStoreTests: XCTestCase {
     }
 
     func testOverviewVersionIgnoresTranscriptAppends() {
-        let store = WorkspaceBridgeStore()
+        let store = makeStore()
         let bridge = makeBridge()
         let initialVersion = store.overviewVersion
         store.add(bridge)
@@ -98,7 +200,7 @@ final class WorkspaceBridgeStoreTests: XCTestCase {
     }
 
     func testAppendMessageCapsTranscriptHistory() {
-        let store = WorkspaceBridgeStore()
+        let store = makeStore()
         let bridge = makeBridge()
         store.add(bridge)
 
@@ -117,7 +219,7 @@ final class WorkspaceBridgeStoreTests: XCTestCase {
     }
 
     func testBridgeForWorkspaceFindsByEitherSide() {
-        let store = WorkspaceBridgeStore()
+        let store = makeStore()
         let bridge = makeBridge()
         store.add(bridge)
         XCTAssertEqual(
@@ -131,7 +233,7 @@ final class WorkspaceBridgeStoreTests: XCTestCase {
     }
 
     func testCannotAddSecondBridgeToSameWorkspace() {
-        let store = WorkspaceBridgeStore()
+        let store = makeStore()
         let a = makeBridge()
         store.add(a)
         let b = WorkspaceBridge(

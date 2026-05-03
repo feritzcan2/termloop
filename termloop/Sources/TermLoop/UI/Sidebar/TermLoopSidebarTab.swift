@@ -17,7 +17,7 @@ enum TermLoopSidebarTab: String, CaseIterable, Identifiable {
                           defaultValue: "WORK", table: "TermLoop")
         case .agents:
             return String(localized: "sidebar.tab.agents",
-                          defaultValue: "AGENTS", table: "TermLoop")
+                          defaultValue: "CATALOG", table: "TermLoop")
         case .integrations:
             return String(localized: "sidebar.tab.integrations",
                           defaultValue: "INTEGR.", table: "TermLoop")

@@ -426,7 +426,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "AGENTS"
+            "value": "CATALOG"
           }
         }
       }
@@ -3888,6 +3888,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "閉じる (Esc)"
+          }
+        }
+      }
+    },
+    "project.refresh.accessibilityLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refresh project status"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトの状態を更新"
+          }
+        }
+      }
+    },
+    "project.refresh.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refresh Git and PR status"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git と PR の状態を更新"
           }
         }
       }

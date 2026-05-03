@@ -3,7 +3,7 @@
 ## TermLoop
 TermLoop is a terminal editor with agentic side bar. Developers are our target users who uses coding agents in termloop. 
 You are also, running inside termloop now while we develop termloop. Everyfeature we develop, must target every possible project type. 
-
+Any prompth we pass to agents must be visible under promt tempaltes tab to user. No inline promths in code.
 Two sibling projects under one workspace, plus supporting material:
 
 - `terminal-app/` — Expo/React Native mobile SSH terminal (iOS/Android). See its own `terminal-app/CLAUDE.md` for mobile stack details.

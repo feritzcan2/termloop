@@ -18,12 +18,12 @@ struct AgentsCatalogEntry: Identifiable, Hashable {
         var title: String {
             switch self {
             case .templates: return "Templates"
-            case .systemPrompts: return "System Prompts"
-            case .bridge: return "Bridge / Ask-Agent"
-            case .fork: return "Fork / Handoff"
+            case .systemPrompts: return "System Instructions"
+            case .bridge: return "Bridge Prompts"
+            case .fork: return "Fork Prompts"
             case .abilities: return "Abilities"
-            case .systemAbilities: return "Sys Abil."
-            case .runtimeFragments: return "Runtime Fragments"
+            case .systemAbilities: return "System Abilities"
+            case .runtimeFragments: return "Runtime"
             }
         }
 
@@ -34,7 +34,7 @@ struct AgentsCatalogEntry: Identifiable, Hashable {
             case .bridge: return "Bridge"
             case .fork: return "Fork"
             case .abilities: return "Abilities"
-            case .systemAbilities: return "Sys Abil."
+            case .systemAbilities: return "System"
             case .runtimeFragments: return "Runtime"
             }
         }

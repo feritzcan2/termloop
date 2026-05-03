@@ -147,6 +147,12 @@ extension ActiveAgentsPanel {
             .compactMap {
                 WorkspaceMetadataStore.shared.abilitySession(forWorkspaceId: $0.id)
             }
+            .sorted {
+                if $0.spawnedAt != $1.spawnedAt {
+                    return $0.spawnedAt > $1.spawnedAt
+                }
+                return $0.workspaceId.uuidString < $1.workspaceId.uuidString
+            }
     }
 
     func computeTerminalSessions(
@@ -155,6 +161,11 @@ extension ActiveAgentsPanel {
         return snapshot.tabs
             .filter { snapshot.isVisibleInLoopPanel(workspaceId: $0.id) }
             .compactMap { workspace -> TerminalAgentLiveSession? in
+                // Ability-owned workspaces have their own Active Agents row;
+                // do not also render the same workspace as a generic terminal.
+                guard WorkspaceMetadataStore.shared.abilitySession(forWorkspaceId: workspace.id) == nil else {
+                    return nil
+                }
                 guard TerminalAgentActivityStore.shared.shouldAppearInActiveAgentsPanel(forWorkspace: workspace),
                       let presentation = TerminalAgentActivityStore.shared
                         .presentation(forWorkspaceId: workspace.id) else {
@@ -176,16 +187,13 @@ extension ActiveAgentsPanel {
                 )
             }
         .sorted {
-            let lhsUserPromptAt = $0.core.lastUserPromptAt ?? .distantPast
-            let rhsUserPromptAt = $1.core.lastUserPromptAt ?? .distantPast
-            if lhsUserPromptAt != rhsUserPromptAt {
-                return lhsUserPromptAt > rhsUserPromptAt
-            }
             if $0.phaseSortOrder != $1.phaseSortOrder {
                 return $0.phaseSortOrder < $1.phaseSortOrder
             }
-            if $0.updatedAt != $1.updatedAt {
-                return $0.updatedAt > $1.updatedAt
+            let lhsRecency = $0.core.lastUserPromptAt ?? $0.core.since ?? $0.updatedAt
+            let rhsRecency = $1.core.lastUserPromptAt ?? $1.core.since ?? $1.updatedAt
+            if lhsRecency != rhsRecency {
+                return lhsRecency > rhsRecency
             }
             return $0.core.workspaceId.uuidString < $1.core.workspaceId.uuidString
         }
@@ -215,7 +223,10 @@ extension ActiveAgentsPanel {
                 continue
             }
             if WorkspaceMetadataStore.shared.abilitySession(forWorkspaceId: workspace.id) != nil {
+                // Keep the collapsed header count aligned with the expanded
+                // row model: an ability workspace contributes exactly one row.
                 counts.abilitySessions += 1
+                continue
             }
             guard let presentation = TerminalAgentActivityStore.shared
                 .presentation(forWorkspaceId: workspace.id) else {
@@ -356,22 +367,6 @@ extension ActiveAgentsPanel {
 
 
 extension ActiveAgentsPanel {
-    func activeAgentsWorkspaceTitleObservationPublisher(tabs: [Workspace]) -> AnyPublisher<Void, Never> {
-        let publishers = tabs.map { workspace in
-            workspace.$title
-                .combineLatest(workspace.$customTitle)
-                .dropFirst()
-                .map { _ in () }
-                .eraseToAnyPublisher()
-        }
-        guard !publishers.isEmpty else {
-            return Empty().eraseToAnyPublisher()
-        }
-        return Publishers.MergeMany(publishers)
-            .throttle(for: .milliseconds(33), scheduler: RunLoop.main, latest: true)
-            .eraseToAnyPublisher()
-    }
-
     func activeAgentsActivityObservationPublisher() -> AnyPublisher<[ActiveAgentsActivityObservationKey], Never> {
         let relevantWorkspaceIds = Array(NSOrderedSet(array: projectScopedTabs().map(\.id))) as? [UUID] ?? []
         return Publishers.CombineLatest(

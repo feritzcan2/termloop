@@ -37,7 +37,6 @@ def _run_shell(
             "PATH": f"{bin_dir}:/usr/bin:/bin:/usr/sbin:/sbin",
             "TERMLOOP_SOCKET_PATH": "127.0.0.1:64011",
             "TERMLOOP_WORKSPACE_ID": "11111111-1111-1111-1111-111111111111",
-            "TERMLOOP_TAB_ID": "22222222-2222-2222-2222-222222222222",
             "TERMLOOP_PANEL_ID": "22222222-2222-2222-2222-222222222222",
             "TERMLOOP_TEST_LOG": str(log_path),
             "TERMLOOP_TEST_STATE": str(state_path),

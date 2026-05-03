@@ -49,24 +49,41 @@ enum AskToBridgeLauncher {
             throw LaunchError.targetAgentNotInCatalog
         }
 
+        let requestId = UUID()
+        let askToReplyToken = UUID().uuidString
         let sourceAgentId = resolveSourceAgentId(workspaceId: sourceWorkspaceId)
+        let sourceProjectId = resolveSourceProjectId(sourceWorkspace)
+        let kickoffMessage = BridgeHelperSystemPrompt.kickoffMessage(
+            sourcePrompt,
+            requestId: requestId,
+            firstSpeaker: firstSpeaker
+        )
+        let deliverKickoffAtLaunch = firstSpeaker == .right
+
+        let projectFolderPath = sourceProjectId
+            .flatMap { ProjectStore.shared.project(id: $0)?.folderPath }
 
         // Delivery mode comes from the catalog-backed injector, not a hard-
         // coded agent-id split. Claude (flag) / Codex (instructions file)
-        // can ship the antiPreamble + user override without it touching the
-        // helper's first user turn. Prompt-prefix agents (Gemini / OpenCode)
+        // can ship the Ask-To helper instructions + user override without it
+        // touching the helper's first user turn. Prompt-prefix agents (Gemini / OpenCode)
         // have no such mechanism — anything we'd inject would arrive as the
         // helper's first input and get "answered" before the source's real
         // handoff. So for prompt-prefix targets we drop targetPrompt entirely
         // and rely on the forwarded handoff to carry context. The kickoff
-        // template already mirrors the antiPreamble's "do all your research
+        // template already mirrors the helper prompt's "do all your research
         // in one go and reply once" guidance.
         let deliveryMode = AgentSystemPromptInjector.deliveryMode(forAgentId: target.agentId)
         let trimmedTargetPrompt = targetPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let systemPromptOverride: String? = {
             switch deliveryMode {
             case .appendSystemPromptFlag, .instructionsFile:
-                return BridgeHelperSystemPrompt.compose(userOverride: targetPrompt)
+                return BridgeHelperSystemPrompt.compose(
+                    requestId: requestId,
+                    target: target,
+                    userOverride: targetPrompt,
+                    projectFolderPath: projectFolderPath
+                )
             case .promptPrefix, .none:
                 #if DEBUG
                 if !trimmedTargetPrompt.isEmpty {
@@ -79,7 +96,9 @@ enum AskToBridgeLauncher {
 
         let request = AgentInvocationRequest(
             agentId: target.agentId,
+            userPrompt: deliverKickoffAtLaunch ? kickoffMessage : nil,
             workspaceId: sourceWorkspaceId,
+            projectId: sourceProjectId,
             systemPromptOverride: systemPromptOverride,
             source: .askAgent,
             reasonTag: "askTo.directLaunch"
@@ -99,7 +118,12 @@ enum AskToBridgeLauncher {
                 agent: agent,
                 title: target.defaultWorkspaceTitle,
                 cwd: sourceWorkspace.currentDirectory,
+                baseEnv: [
+                    "TERMLOOP_ASK_TO_REQUEST_ID": requestId.uuidString,
+                    "TERMLOOP_ASK_TO_REPLY_TOKEN": askToReplyToken
+                ],
                 initialPrompt: plan.resolvedPromptBody ?? "",
+                projectId: sourceProjectId,
                 permission: plan.resolvedPermission,
                 systemPrompt: plan.launchSystemInstructions,
                 model: plan.resolvedModel,
@@ -114,20 +138,29 @@ enum AskToBridgeLauncher {
             true,
             forWorkspaceId: helperWorkspace.id
         )
+        BridgeDebugTrace.log(
+            "askTo.launch helper request=\(requestId.uuidString.prefix(8)) source=\(sourceWorkspaceId.uuidString.prefix(8)) " +
+            "helper=\(helperWorkspace.id.uuidString.prefix(8)) target=\(target.agentId) " +
+            "sourceProject=\(sourceProjectId?.uuidString.prefix(8) ?? "nil") " +
+            "helperProject=\(helperWorkspace.projectId?.uuidString.prefix(8) ?? "nil")"
+        )
 
         // targetPrompt is delivered as the helper's system prompt via
         // `systemPromptOverride`; do not also set `rightPrompt` or the
         // helper would "answer" its own system prompt before the real
         // handoff arrives.
         let bridge = WorkspaceBridge(
+            id: requestId,
             leftWorkspaceId: sourceWorkspaceId,
             rightWorkspaceId: helperWorkspace.id,
             intent: .askAgent,
             leftAgentId: sourceAgentId,
             rightAgentId: target.agentId,
             rightWorkspaceTitleOverride: target.title,
-            kickoffMessage: sourcePrompt,
-            firstSpeaker: firstSpeaker
+            kickoffMessage: kickoffMessage,
+            firstSpeaker: firstSpeaker,
+            kickoffDeliveredAtLaunch: deliverKickoffAtLaunch,
+            askToReplyToken: askToReplyToken
         )
         guard WorkspaceBridgeStore.shared.add(bridge) else {
             throw LaunchError.bridgeRejected
@@ -142,5 +175,12 @@ enum AskToBridgeLauncher {
             ?? metadata.terminalAgentId
             ?? TerminalAgentResolver.resolve(workspaceId: workspaceId)?.id
             ?? TerminalAgent.claudeId
+    }
+
+    private static func resolveSourceProjectId(_ workspace: Workspace) -> UUID? {
+        workspace.projectId
+            ?? ProjectStore.shared.project(containingPath: workspace.currentDirectory)?.id
+            ?? ProjectStore.shared.activeProjectId
+            ?? ProjectStore.shared.fallbackProjectId
     }
 }

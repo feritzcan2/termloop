@@ -137,6 +137,8 @@ struct BridgeCableView: View {
         switch reason {
         case .manual:
             return "\(badgePrefix) \(count) msg · stopped"
+        case .replied:
+            return "\(badgePrefix) \(count) msg · replied"
         case .workspaceClosed:
             return "\(badgePrefix) \(count) msg · workspace closed"
         case .sendTimeout:
