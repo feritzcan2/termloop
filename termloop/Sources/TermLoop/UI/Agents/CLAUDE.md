@@ -137,7 +137,7 @@ Extremely important pre-install step (on this dev Mac): see `cocoapods_spm_setup
 
 ## Dev Server Connection Notes
 
-- The dev Mac and test iPhone are both on Tailscale; Mac IP `100.64.0.10`, iPhone `100.64.0.11`.
+- The dev Mac and test iPhone are both on Tailscale; use the IPs from your own Tailnet for both peers.
 - When running `npx expo run:ios --device`, Metro bundler must be reachable from the iPhone. If the device shows "No script URL provided", start Metro with `npx expo start --dev-client` on the Mac while the phone has Tailscale running.
 - `Info.plist` has `NSLocalNetworkUsageDescription` + `NSAllowsLocalNetworking: true` + `NSAllowsArbitraryLoads: true` (the last is debatable for production but fine for dev builds over Tailscale).
 - Bundle identifier is `com.feritzcan.sshterminal`.
