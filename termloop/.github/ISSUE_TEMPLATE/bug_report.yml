@@ -1,5 +1,5 @@
 name: Bug Report
-description: Report a bug in cmux
+description: Report a bug in TermLoop
 labels: ["bug"]
 body:
   - type: markdown
@@ -8,10 +8,10 @@ body:
         Thanks for reporting a bug! Please fill out the information below so we can reproduce and fix it.
 
   - type: input
-    id: cmux-version
+    id: termloop-version
     attributes:
-      label: termloop version
-      description: "Run `cmux --version` or check About termloop in the menu bar."
+      label: TermLoop version
+      description: "Run `termloop --version` or check About TermLoop in the menu bar."
       placeholder: "e.g. 0.3.2"
     validations:
       required: true
@@ -49,7 +49,7 @@ body:
   - type: dropdown
     id: nightly-repro
     attributes:
-      label: Can you reproduce this on termloop NIGHTLY?
+      label: Can you reproduce this on TermLoop NIGHTLY?
       description: "Please test with the latest NIGHTLY build first: https://github.com/feritzcan2/termloop?tab=readme-ov-file#nightly-builds"
       options:
         - Yes, it still reproduces on NIGHTLY
@@ -81,7 +81,7 @@ body:
       label: Steps to reproduce
       description: "Minimal steps to reproduce the bug."
       placeholder: |
-        1. Open cmux
+        1. Open TermLoop
         2. ...
         3. See error
     validations:
@@ -92,7 +92,7 @@ body:
     attributes:
       label: Shell and environment
       description: "Which shell are you using? Any relevant env config (oh-my-zsh, starship, tmux, etc.)?"
-      placeholder: "e.g. zsh with starship prompt, using tmux inside cmux"
+      placeholder: "e.g. zsh with starship prompt, using tmux inside TermLoop"
     validations:
       required: false
 
@@ -102,7 +102,7 @@ body:
       label: Relevant logs or crash reports
       description: |
         If applicable, paste logs or crash reports. Crash reports are in `~/Library/Logs/DiagnosticReports/`.
-        You can also check `Console.app` for cmux-related messages.
+        You can also check `Console.app` for TermLoop-related messages.
       render: text
     validations:
       required: false

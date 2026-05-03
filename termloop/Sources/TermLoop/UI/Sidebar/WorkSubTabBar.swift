@@ -7,7 +7,6 @@ enum WorkSubTab: String, CaseIterable, Identifiable {
     case loop
     case contextBank
     case agents
-    case tasks
 
     static let storageKey = "termloop.workSubTab"
 
@@ -27,10 +26,6 @@ enum WorkSubTab: String, CaseIterable, Identifiable {
             return String(localized: "sidebar.workSubTab.abilities",
                           defaultValue: "Abilities",
                           table: "TermLoop")
-        case .tasks:
-            return String(localized: "sidebar.workSubTab.tasks",
-                          defaultValue: "Tasks",
-                          table: "TermLoop")
         }
     }
 
@@ -46,8 +41,6 @@ enum WorkSubTab: String, CaseIterable, Identifiable {
                           table: "TermLoop")
         case .agents:
             return title
-        case .tasks:
-            return title
         }
     }
 
@@ -56,22 +49,19 @@ enum WorkSubTab: String, CaseIterable, Identifiable {
         case .loop: return "arrow.trianglehead.2.clockwise.rotate.90"
         case .contextBank: return "books.vertical"
         case .agents: return "person.2"
-        case .tasks: return "checklist"
         }
     }
 }
 
 struct WorkSubTabBar: View {
     @Binding var selection: WorkSubTab
-    let tasksBadgeCount: Int
 
     var body: some View {
         HStack(spacing: 6) {
             ForEach(WorkSubTab.allCases) { tab in
                 WorkSubTabButton(
                     tab: tab,
-                    isSelected: selection == tab,
-                    tasksBadgeCount: tasksBadgeCount
+                    isSelected: selection == tab
                 ) {
                     selection = tab
                 }
@@ -91,7 +81,6 @@ struct WorkSubTabBar: View {
 private struct WorkSubTabButton: View {
     let tab: WorkSubTab
     let isSelected: Bool
-    let tasksBadgeCount: Int
     let action: () -> Void
 
     var body: some View {
@@ -109,17 +98,6 @@ private struct WorkSubTabButton: View {
             .padding(.horizontal, 6)
             .background(backgroundShape.fill(backgroundColor))
             .overlay(backgroundShape.stroke(borderColor, lineWidth: 1))
-            .overlay(alignment: .topTrailing) {
-                if tab == .tasks, tasksBadgeCount > 0 {
-                    TermLoopSidebarToken(
-                        label: "\(tasksBadgeCount)",
-                        tone: isSelected ? .accent : .neutral,
-                        emphasized: true
-                    )
-                    .padding(.top, 4)
-                    .padding(.trailing, 4)
-                }
-            }
             .foregroundStyle(isSelected ? Color.primary : TermLoopSidebarTheme.dim)
             .contentShape(backgroundShape)
         }

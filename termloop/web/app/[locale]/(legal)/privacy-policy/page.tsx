@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { Link } from "../../../../i18n/navigation";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy — cmux",
-  description: "Privacy policy for cmux",
+  title: "Privacy Policy — TermLoop",
+  description: "Privacy policy for TermLoop",
   alternates: { canonical: "https://termloop.ai/privacy-policy" },
 };
 

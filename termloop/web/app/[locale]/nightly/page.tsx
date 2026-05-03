@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { getTranslations } from "next-intl/server";
 import { buildAlternates } from "../../../i18n/seo";
@@ -29,9 +30,9 @@ export default function NightlyPage() {
       <main className="w-full max-w-2xl mx-auto px-6 py-10">
         {/* Header */}
         <div className="flex items-center gap-4 mb-6">
-          <img
+          <Image
             src="/logo-nightly.png"
-            alt="cmux NIGHTLY icon"
+            alt="TermLoop NIGHTLY icon"
             width={48}
             height={48}
             className="rounded-xl"
@@ -53,7 +54,7 @@ export default function NightlyPage() {
 
         {/* Download button */}
         <a
-          href="https://github.com/feritzcan2/termloop/releases/download/nightly/cmux-nightly-macos.dmg"
+          href="https://github.com/feritzcan2/termloop/releases/download/nightly/termloop-nightly-macos.dmg"
           className="inline-flex items-center gap-2.5 rounded-full font-medium bg-foreground hover:opacity-85 transition-opacity px-5 py-2.5 text-[15px]"
           style={{ color: "var(--background)", textDecoration: "none" }}
         >

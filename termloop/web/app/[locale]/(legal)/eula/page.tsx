@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "EULA — cmux",
-  description: "End-User License Agreement for cmux",
+  title: "EULA — TermLoop",
+  description: "End-User License Agreement for TermLoop",
   alternates: { canonical: "https://termloop.ai/eula" },
 };
 
@@ -14,7 +14,7 @@ export default function EulaPage() {
 
       <p>
         Please read this End-User License Agreement carefully before
-        downloading or using cmux.
+        downloading or using TermLoop.
       </p>
 
       <h2>Interpretation and Definitions</h2>

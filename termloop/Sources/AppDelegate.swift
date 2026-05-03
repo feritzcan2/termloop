@@ -2803,10 +2803,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let pingResponse = health.isHealthy
             ? TerminalController.probeSocketCommand("ping", at: socketPath, timeout: 1.0)
             : nil
-        let isReady = health.isHealthy && pingResponse == "PONG"
+        let isReady = health.isHealthy && TermLoopSocketHealthProbe.isHealthyPingResponse(pingResponse, mode: config.mode)
         var failureSignals = health.failureSignals
-        if health.isHealthy && pingResponse != "PONG" {
-            failureSignals.append("ping_timeout")
+        if health.isHealthy, let failureSignal = TermLoopSocketHealthProbe.failureSignal(forPingResponse: pingResponse, mode: config.mode) {
+            failureSignals.append(failureSignal)
         }
 
         payload["socketExpectedPath"] = socketPath
@@ -3738,7 +3738,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let pingResponse = health.isHealthy
                 ? TerminalController.probeSocketCommand("ping", at: expectedPath, timeout: 1.0)
                 : nil
-            let isReady = health.isHealthy && pingResponse == "PONG"
+            let isReady = health.isHealthy && TermLoopSocketHealthProbe.isHealthyPingResponse(pingResponse, mode: config.mode)
             if isReady {
                 self.writeUITestDiagnosticsIfNeeded(stage: "socketSanityReady")
                 return
@@ -4415,7 +4415,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.socketHealthCheckInFlight = false
-                guard pingResponse != "PONG" else { return }
+                guard !TermLoopSocketHealthProbe.isHealthyPingResponse(pingResponse, mode: config.mode) else { return }
                 self.restartSocketListenerForHealthFailure(
                     source: source,
                     socketPath: socketPath,
@@ -10272,11 +10272,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 let pingResponse = health.isHealthy
                     ? TerminalController.probeSocketCommand("ping", at: socketPath, timeout: 1.0)
                     : nil
-                let isReady = health.isHealthy && pingResponse == "PONG"
+                let isReady = health.isHealthy && TermLoopSocketHealthProbe.isHealthyPingResponse(pingResponse, mode: config.mode)
                 let failureSignals = {
                     var signals = health.failureSignals
-                    if health.isHealthy && pingResponse != "PONG" {
-                        signals.append("ping_timeout")
+                    if health.isHealthy, let failureSignal = TermLoopSocketHealthProbe.failureSignal(forPingResponse: pingResponse, mode: config.mode) {
+                        signals.append(failureSignal)
                     }
                     return signals.joined(separator: ",")
                 }()

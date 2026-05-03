@@ -12,7 +12,7 @@ The active release/deploy entry points now live in:
 
 ### `TermLoop` app release
 
-Trigger: push a public semver tag like `v0.64.0` or run the workflow manually.
+Trigger: push a public semver tag like `v0.64.0`.
 
 Flow:
 
@@ -20,8 +20,7 @@ Flow:
 2. Build a universal macOS app from `termloop/`.
 3. Build remote daemon release assets and inject the manifest into the app bundle.
 4. Sign + notarize the app and DMG.
-5. Publish immutable release assets to the GitHub Release for that tag.
-6. Upload the stable Sparkle appcast to Cloudflare R2.
+5. Publish immutable release assets, including the Sparkle appcast, to the GitHub Release for that tag.
 
 This keeps the public release story open-source friendly:
 
@@ -32,14 +31,13 @@ This keeps the public release story open-source friendly:
 
 ### `TermLoop` nightly
 
-Trigger: push to `master` or run the workflow manually with `force=true`.
+Trigger: run the workflow manually, optionally with `force=true`.
 
 Flow:
 
 1. Compare `master` HEAD with the `nightly` tag.
 2. Build and notarize the nightly macOS app variant.
-3. Publish or refresh the `nightly` prerelease on GitHub.
-4. Upload the nightly Sparkle appcast to Cloudflare R2.
+3. Publish or refresh the `nightly` prerelease on GitHub with the nightly Sparkle appcast.
 
 ### Landing page deploy
 
@@ -65,9 +63,6 @@ Cloudflare Pages project assumptions:
 - `APPLE_ID`
 - `APPLE_APP_SPECIFIC_PASSWORD`
 - `APPLE_TEAM_ID`
-- `CF_R2_ACCESS_KEY_ID`
-- `CF_R2_SECRET_ACCESS_KEY`
-- `CF_R2_ACCOUNT_ID`
 
 Optional:
 
@@ -88,7 +83,7 @@ You can upload all required GitHub Actions secrets with:
 
 ```bash
 gh auth login -h github.com
-cp docs/release-secrets.example.env ~/release-secrets.env
+# Create ~/release-secrets.env with KEY=value lines for the required secrets.
 scripts/set-github-actions-secrets.sh --repo <owner/repo> --env-file ~/release-secrets.env
 ```
 

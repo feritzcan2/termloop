@@ -50,9 +50,17 @@ enum AskToBridgeLauncher {
         }
 
         let requestId = UUID()
+        let askToReplyToken = UUID().uuidString
         let sourceAgentId = resolveSourceAgentId(workspaceId: sourceWorkspaceId)
+        let sourceProjectId = resolveSourceProjectId(sourceWorkspace)
+        let kickoffMessage = BridgeHelperSystemPrompt.kickoffMessage(
+            sourcePrompt,
+            requestId: requestId,
+            firstSpeaker: firstSpeaker
+        )
+        let deliverKickoffAtLaunch = firstSpeaker == .right
 
-        let projectFolderPath = ProjectStore.shared.activeProjectId
+        let projectFolderPath = sourceProjectId
             .flatMap { ProjectStore.shared.project(id: $0)?.folderPath }
 
         // Delivery mode comes from the catalog-backed injector, not a hard-
@@ -88,7 +96,9 @@ enum AskToBridgeLauncher {
 
         let request = AgentInvocationRequest(
             agentId: target.agentId,
+            userPrompt: deliverKickoffAtLaunch ? kickoffMessage : nil,
             workspaceId: sourceWorkspaceId,
+            projectId: sourceProjectId,
             systemPromptOverride: systemPromptOverride,
             source: .askAgent,
             reasonTag: "askTo.directLaunch"
@@ -108,7 +118,12 @@ enum AskToBridgeLauncher {
                 agent: agent,
                 title: target.defaultWorkspaceTitle,
                 cwd: sourceWorkspace.currentDirectory,
+                baseEnv: [
+                    "TERMLOOP_ASK_TO_REQUEST_ID": requestId.uuidString,
+                    "TERMLOOP_ASK_TO_REPLY_TOKEN": askToReplyToken
+                ],
                 initialPrompt: plan.resolvedPromptBody ?? "",
+                projectId: sourceProjectId,
                 permission: plan.resolvedPermission,
                 systemPrompt: plan.launchSystemInstructions,
                 model: plan.resolvedModel,
@@ -123,6 +138,12 @@ enum AskToBridgeLauncher {
             true,
             forWorkspaceId: helperWorkspace.id
         )
+        BridgeDebugTrace.log(
+            "askTo.launch helper request=\(requestId.uuidString.prefix(8)) source=\(sourceWorkspaceId.uuidString.prefix(8)) " +
+            "helper=\(helperWorkspace.id.uuidString.prefix(8)) target=\(target.agentId) " +
+            "sourceProject=\(sourceProjectId?.uuidString.prefix(8) ?? "nil") " +
+            "helperProject=\(helperWorkspace.projectId?.uuidString.prefix(8) ?? "nil")"
+        )
 
         // targetPrompt is delivered as the helper's system prompt via
         // `systemPromptOverride`; do not also set `rightPrompt` or the
@@ -136,12 +157,10 @@ enum AskToBridgeLauncher {
             leftAgentId: sourceAgentId,
             rightAgentId: target.agentId,
             rightWorkspaceTitleOverride: target.title,
-            kickoffMessage: BridgeHelperSystemPrompt.kickoffMessage(
-                sourcePrompt,
-                requestId: requestId,
-                firstSpeaker: firstSpeaker
-            ),
-            firstSpeaker: firstSpeaker
+            kickoffMessage: kickoffMessage,
+            firstSpeaker: firstSpeaker,
+            kickoffDeliveredAtLaunch: deliverKickoffAtLaunch,
+            askToReplyToken: askToReplyToken
         )
         guard WorkspaceBridgeStore.shared.add(bridge) else {
             throw LaunchError.bridgeRejected
@@ -156,5 +175,12 @@ enum AskToBridgeLauncher {
             ?? metadata.terminalAgentId
             ?? TerminalAgentResolver.resolve(workspaceId: workspaceId)?.id
             ?? TerminalAgent.claudeId
+    }
+
+    private static func resolveSourceProjectId(_ workspace: Workspace) -> UUID? {
+        workspace.projectId
+            ?? ProjectStore.shared.project(containingPath: workspace.currentDirectory)?.id
+            ?? ProjectStore.shared.activeProjectId
+            ?? ProjectStore.shared.fallbackProjectId
     }
 }

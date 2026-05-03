@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/feritzcan2/termloop/main/web/data/cmux-settings.schema.json",
-  "title": "cmux settings.json",
+  "title": "TermLoop settings.json",
   "description": "User-level termloop settings. termloop accepts JSON with comments (JSONC) and trailing commas, but the underlying data model matches this schema.",
   "type": "object",
   "additionalProperties": false,
@@ -81,7 +81,7 @@
         "warnBeforeQuit": {
           "type": "boolean",
           "default": true,
-          "description": "Show a confirmation before quitting cmux."
+          "description": "Show a confirmation before quitting TermLoop."
         },
         "renameSelectsExistingName": {
           "type": "boolean",

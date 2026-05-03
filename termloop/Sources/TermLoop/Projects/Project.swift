@@ -14,10 +14,6 @@ struct Project: Identifiable, Hashable, Sendable {
     /// project when the caller does not override. Nil falls back to
     /// `TermLoopSettings.shared.defaultTerminalAgentId`.
     var defaultTerminalAgentId: String?
-    /// Branches that the Tasks tab tracks for this project. When `nil`, the
-    /// tracked set is auto-detected (default branch + `dev` if present) via
-    /// `TrackedBranchesResolver`.
-    var trackedBranches: [String]?
     /// Identifier of the `ClaudeCredentialProfile` that the Claude agent
     /// should authenticate as for workspaces in this project. The actual
     /// `CLAUDE_CODE_OAUTH_TOKEN` lives in the Keychain and is resolved at
@@ -31,7 +27,6 @@ struct Project: Identifiable, Hashable, Sendable {
         folderPath: String,
         createdAt: Date = Date(),
         defaultTerminalAgentId: String? = nil,
-        trackedBranches: [String]? = nil,
         claudeCredentialProfileId: String? = nil
     ) {
         self.id = id
@@ -39,7 +34,6 @@ struct Project: Identifiable, Hashable, Sendable {
         self.folderPath = folderPath
         self.createdAt = createdAt
         self.defaultTerminalAgentId = defaultTerminalAgentId
-        self.trackedBranches = trackedBranches
         self.claudeCredentialProfileId = claudeCredentialProfileId
     }
 }
@@ -52,7 +46,6 @@ struct SessionProjectSnapshot: Codable, Sendable {
     var folderPath: String
     var createdAt: TimeInterval
     var defaultTerminalAgentId: String?
-    var trackedBranches: [String]?
     var claudeCredentialProfileId: String?
 
     init(_ project: Project) {
@@ -61,7 +54,6 @@ struct SessionProjectSnapshot: Codable, Sendable {
         self.folderPath = project.folderPath
         self.createdAt = project.createdAt.timeIntervalSince1970
         self.defaultTerminalAgentId = project.defaultTerminalAgentId
-        self.trackedBranches = project.trackedBranches
         self.claudeCredentialProfileId = project.claudeCredentialProfileId
     }
 
@@ -73,7 +65,6 @@ struct SessionProjectSnapshot: Codable, Sendable {
             folderPath: folderPath,
             createdAt: Date(timeIntervalSince1970: createdAt),
             defaultTerminalAgentId: defaultTerminalAgentId,
-            trackedBranches: trackedBranches,
             claudeCredentialProfileId: claudeCredentialProfileId
         )
     }

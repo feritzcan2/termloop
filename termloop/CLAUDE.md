@@ -4,7 +4,7 @@ Terminal-agent presentation work must follow the architecture in `CLAUDE.md`: `T
 
 ## Git workflow (termloop)
 
-`termloop/` now lives as a normal tracked directory inside the parent repo. Default: commit in the parent repo branch you are working on. There is no separate nested remote to push from inside `termloop/`. If you need fresh upstream code for `termloop`, `ghostty`, `homebrew-cmux`, or `bonsplit`, run `../scripts/sync-upstreams.sh` from `termloop/` or `./scripts/sync-upstreams.sh` from the repo root. Skip ticket skills (`ticket-start`, `ticket-dev-pr`, `ticket-promote`) unless invoked by name. Tests and the pre-commit discipline hook still run — flattening the repo does not mean skipping safety checks.
+`termloop/` now lives as a normal tracked directory inside the parent repo. Default: commit in the parent repo branch you are working on. There is no separate nested remote to push from inside `termloop/`. If you need fresh upstream code for `termloop`, `ghostty`, or `bonsplit`, run `../scripts/sync-upstreams.sh` from `termloop/` or `./scripts/sync-upstreams.sh` from the repo root. Skip ticket skills (`ticket-start`, `ticket-dev-pr`, `ticket-promote`) unless invoked by name. Tests and the pre-commit discipline hook still run — flattening the repo does not mean skipping safety checks.
 
 ## TermLoop fork discipline
 
