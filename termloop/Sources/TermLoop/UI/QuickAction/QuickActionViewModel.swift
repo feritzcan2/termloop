@@ -1007,8 +1007,8 @@ final class QuickActionViewModel: ObservableObject {
         if !trimmedPrompt.isEmpty {
             return QuickActionInputStatus(
                 kind: .inlineText,
-                shortLabel: "typed prompt",
-                detail: "Prompt will come from the composer text.",
+                shortLabel: "typed message",
+                detail: "First message will come from the composer text.",
                 iconName: "character.cursor.ibeam"
             )
         }
@@ -1020,10 +1020,10 @@ final class QuickActionViewModel: ObservableObject {
                 kind: isTemplateDefault
                     ? .templateDocument(title: document.title)
                     : .selectedDocument(title: document.title),
-                shortLabel: isTemplateDefault ? "template prompt doc" : "prompt doc",
+                shortLabel: isTemplateDefault ? "template message doc" : "message doc",
                 detail: isTemplateDefault
-                    ? "Prompt will come from the template prompt document “\(document.title)”."
-                    : "Prompt will come from the selected prompt document “\(document.title)”.",
+                    ? "First message will come from the template message document “\(document.title)”."
+                    : "First message will come from the selected message document “\(document.title)”.",
                 iconName: "doc.text"
             )
         }
@@ -1032,8 +1032,8 @@ final class QuickActionViewModel: ObservableObject {
            !template.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return QuickActionInputStatus(
                 kind: .templateBody,
-                shortLabel: "template prompt",
-                detail: "Prompt will come from the template prompt body.",
+                shortLabel: "template default prompt",
+                detail: "First message will come from the template default prompt.",
                 iconName: "text.alignleft"
             )
         }
@@ -1041,7 +1041,7 @@ final class QuickActionViewModel: ObservableObject {
         return QuickActionInputStatus(
             kind: .none,
             shortLabel: "none",
-            detail: "No prompt source is currently selected.",
+            detail: "No first message source is currently selected.",
             iconName: "text.badge.xmark"
         )
     }
@@ -1051,8 +1051,8 @@ final class QuickActionViewModel: ObservableObject {
         if !trimmedSystem.isEmpty {
             return QuickActionInputStatus(
                 kind: .inlineText,
-                shortLabel: "typed system",
-                detail: "System instructions will come from the Advanced system prompt field.",
+                shortLabel: "typed instructions",
+                detail: "System instructions will come from the Advanced system instructions field.",
                 iconName: "slider.horizontal.3"
             )
         }
@@ -1064,10 +1064,10 @@ final class QuickActionViewModel: ObservableObject {
                 kind: isTemplateDefault
                     ? .templateDocument(title: document.title)
                     : .selectedDocument(title: document.title),
-                shortLabel: isTemplateDefault ? "template system doc" : "system doc",
+                shortLabel: isTemplateDefault ? "template instructions doc" : "instructions doc",
                 detail: isTemplateDefault
-                    ? "System instructions will come from the template system document “\(document.title)”."
-                    : "System instructions will come from the selected system document “\(document.title)”.",
+                    ? "System instructions will come from the template instructions document “\(document.title)”."
+                    : "System instructions will come from the selected instructions document “\(document.title)”.",
                 iconName: "gearshape.2"
             )
         }
@@ -1075,7 +1075,7 @@ final class QuickActionViewModel: ObservableObject {
         return QuickActionInputStatus(
             kind: .none,
             shortLabel: "none",
-            detail: "No direct system prompt is currently selected.",
+            detail: "No direct system instructions are currently selected.",
             iconName: "gearshape.2.fill"
         )
     }
@@ -1091,12 +1091,12 @@ final class QuickActionViewModel: ObservableObject {
 
         var parts: [String] = []
         if normalizedDocumentId(template.promptDocumentId) != nil {
-            parts.append("prompt doc")
+            parts.append("message doc")
         } else if !template.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            parts.append("default prompt")
+            parts.append("default message")
         }
         if normalizedDocumentId(template.systemPromptDocumentId) != nil {
-            parts.append("system doc")
+            parts.append("instructions doc")
         }
 
         return parts.isEmpty ? "template" : parts.joined(separator: " + ")
@@ -1139,13 +1139,13 @@ final class QuickActionViewModel: ObservableObject {
     var activeTemplatePromptSourceLabel: String {
         switch promptInputStatus.kind {
         case .inlineText:
-            return "Typed prompt"
+            return "Typed message"
         case .selectedDocument(let title):
-            return "Prompt document · \(title)"
+            return "Message document · \(title)"
         case .templateDocument(let title):
-            return "Template prompt document · \(title)"
+            return "Template message document · \(title)"
         case .templateBody:
-            return "Template prompt body"
+            return "Template default prompt"
         case .none:
             return "None"
         }
@@ -1156,11 +1156,11 @@ final class QuickActionViewModel: ObservableObject {
         case .inlineText, .none:
             return nil
         case .selectedDocument(let title):
-            return "Leave the composer empty to use prompt doc “\(title)”."
+            return "Leave the composer empty to use message doc “\(title)”."
         case .templateDocument(let title):
-            return "Leave the composer empty to use template prompt doc “\(title)”."
+            return "Leave the composer empty to use template message doc “\(title)”."
         case .templateBody:
-            return "Leave the composer empty to use the template’s default prompt."
+            return "Leave the composer empty to use the template default prompt."
         }
     }
 
