@@ -726,6 +726,17 @@ final class BridgeCoordinator {
     /// surface availability, not agent-TUI readiness — pasting into the boot
     /// splash gets dropped. Warm surfaces (source workspace) skip this.
     private let sendSettleAfterReady: TimeInterval = 0.8
+    private let submitInitialEnterDelay: TimeInterval = 0.2
+    private let submitRetryEnterDelay: TimeInterval = 1.0
+
+    private func shortId(_ id: UUID) -> String {
+        String(id.uuidString.prefix(8))
+    }
+
+    private func shortId(_ id: UUID?) -> String {
+        guard let id else { return "nil" }
+        return shortId(id)
+    }
 
     @discardableResult
     private func sendBridgeInput(
@@ -735,16 +746,22 @@ final class BridgeCoordinator {
         bridgeId: UUID? = nil
     ) -> Bool {
         #if DEBUG
-        dlog("bridge.send start ws=\(wsId.uuidString.prefix(8)) bid=\(bridgeId?.uuidString.prefix(8) ?? "nil") chars=\(text.count)")
+        dlog("bridge.send start ws=\(shortId(wsId)) bid=\(shortId(bridgeId)) chars=\(text.count)")
         #endif
+        BridgeDebugTrace.log(
+            "bridge.send start ws=\(shortId(wsId)) bid=\(shortId(bridgeId)) chars=\(text.count)"
+        )
         guard let ws = tabManager.tabs.first(where: { $0.id == wsId }),
               let panel = sendableTerminalPanel(in: ws) else {
             #if DEBUG
-            dlog("bridge.send no-panel ws=\(wsId.uuidString.prefix(8))")
+            dlog("bridge.send no-panel ws=\(shortId(wsId))")
             #endif
+            BridgeDebugTrace.log(
+                "bridge.send no-panel ws=\(shortId(wsId)) bid=\(shortId(bridgeId))"
+            )
             return false
         }
-        sendInputWhenReady(text, to: panel, bridgeId: bridgeId, attempt: 0)
+        sendInputWhenReady(text, to: panel, workspaceId: wsId, bridgeId: bridgeId, attempt: 0)
         return true
     }
 
@@ -789,14 +806,21 @@ final class BridgeCoordinator {
     private func sendInputWhenReady(
         _ text: String,
         to panel: TerminalPanel,
+        workspaceId: UUID,
         bridgeId: UUID?,
         attempt: Int
     ) {
         if panel.surface.surface != nil {
-            submitToClaudeTUI(text, on: panel)
+            BridgeDebugTrace.log(
+                "bridge.send surface-ready panel=\(shortId(panel.id)) ws=\(shortId(workspaceId)) bid=\(shortId(bridgeId)) attempt=\(attempt)"
+            )
+            submitToAgentTUI(text, on: panel, workspaceId: workspaceId, bridgeId: bridgeId)
             return
         }
 
+        BridgeDebugTrace.log(
+            "bridge.send surface-wait panel=\(shortId(panel.id)) ws=\(shortId(workspaceId)) bid=\(shortId(bridgeId)) attempt=\(attempt)"
+        )
         panel.surface.requestBackgroundSurfaceStartIfNeeded()
 
         var resolved = false
@@ -815,7 +839,10 @@ final class BridgeCoordinator {
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + settleAfterReady) { [weak panel] in
                 guard let panel else { return }
-                self.submitToClaudeTUI(text, on: panel)
+                BridgeDebugTrace.log(
+                    "bridge.send surface-ready-after-wait panel=\(self.shortId(panel.id)) ws=\(self.shortId(workspaceId)) bid=\(self.shortId(bridgeId)) attempt=\(attempt)"
+                )
+                self.submitToAgentTUI(text, on: panel, workspaceId: workspaceId, bridgeId: bridgeId)
             }
         }
 
@@ -829,14 +856,26 @@ final class BridgeCoordinator {
             let nextAttempt = attempt + 1
             if nextAttempt < self.sendMaxAttempts {
                 #if DEBUG
-                dlog("bridge.send retry attempt=\(nextAttempt)/\(self.sendMaxAttempts) panel=\(panel.id.uuidString.prefix(8))")
+                dlog("bridge.send retry attempt=\(nextAttempt)/\(self.sendMaxAttempts) panel=\(self.shortId(panel.id))")
                 #endif
-                self.sendInputWhenReady(text, to: panel, bridgeId: bridgeId, attempt: nextAttempt)
+                BridgeDebugTrace.log(
+                    "bridge.send retry panel=\(self.shortId(panel.id)) ws=\(self.shortId(workspaceId)) bid=\(self.shortId(bridgeId)) attempt=\(nextAttempt)"
+                )
+                self.sendInputWhenReady(
+                    text,
+                    to: panel,
+                    workspaceId: workspaceId,
+                    bridgeId: bridgeId,
+                    attempt: nextAttempt
+                )
                 return
             }
             #if DEBUG
-            dlog("bridge.send giveup panel=\(panel.id.uuidString.prefix(8)) chars=\(text.count)")
+            dlog("bridge.send giveup panel=\(self.shortId(panel.id)) chars=\(text.count)")
             #endif
+            BridgeDebugTrace.log(
+                "bridge.send giveup panel=\(self.shortId(panel.id)) ws=\(self.shortId(workspaceId)) bid=\(self.shortId(bridgeId)) chars=\(text.count)"
+            )
             if let bridgeId, self.store.bridge(id: bridgeId)?.state == .running {
                 self.store.stop(id: bridgeId, reason: .sendTimeout)
                 self.stop(bridgeId: bridgeId)
@@ -844,19 +883,64 @@ final class BridgeCoordinator {
         }
     }
 
-    /// Claude Code's TUI interprets Enter as "newline" when the input already
+    /// Agent TUIs can interpret Enter as "newline" when the input already
     /// contains newlines (multi-line mode). To submit a multi-line message, we
     /// paste the body via `sendText` (raw bytes, no key interpretation), then
-    /// fire a single kVK_Return via `sendInput("\n")` for the actual submit.
+    /// fire Return via `sendInput("\r")` for the actual submit.
     /// Trailing whitespace is trimmed so the final Return lands on a non-blank
     /// line and Claude accepts it.
-    private func submitToClaudeTUI(_ raw: String, on panel: TerminalPanel) {
+    private func submitToAgentTUI(
+        _ raw: String,
+        on panel: TerminalPanel,
+        workspaceId: UUID,
+        bridgeId: UUID?
+    ) {
         let body = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { return }
+        BridgeDebugTrace.log(
+            "bridge.submit.paste panel=\(shortId(panel.id)) ws=\(shortId(workspaceId)) bid=\(shortId(bridgeId)) chars=\(body.count)"
+        )
         panel.sendText(body)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak panel] in
-            panel?.sendInput("\n")
+        DispatchQueue.main.asyncAfter(deadline: .now() + submitInitialEnterDelay) { [weak self, weak panel] in
+            guard let self, let panel else { return }
+            self.sendSubmitEnter(on: panel, bridgeId: bridgeId, reason: "initial")
+            self.scheduleSubmitRetryIfStillNeedsInput(
+                on: panel,
+                workspaceId: workspaceId,
+                bridgeId: bridgeId
+            )
         }
+    }
+
+    private func scheduleSubmitRetryIfStillNeedsInput(
+        on panel: TerminalPanel,
+        workspaceId: UUID,
+        bridgeId: UUID?
+    ) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + submitRetryEnterDelay) { [weak self, weak panel] in
+            guard let self, let panel else { return }
+            let state = TerminalAgentActivityStore.shared
+                .presentation(forWorkspaceId: workspaceId)?
+                .displayState
+            guard state == .needsInput else {
+                BridgeDebugTrace.log(
+                    "bridge.submit.no-retry panel=\(self.shortId(panel.id)) ws=\(self.shortId(workspaceId)) bid=\(self.shortId(bridgeId)) state=\(state?.rawValue ?? "nil")"
+                )
+                return
+            }
+            self.sendSubmitEnter(on: panel, bridgeId: bridgeId, reason: "needs-input-retry")
+        }
+    }
+
+    private func sendSubmitEnter(
+        on panel: TerminalPanel,
+        bridgeId: UUID?,
+        reason: String
+    ) {
+        BridgeDebugTrace.log(
+            "bridge.submit.enter panel=\(shortId(panel.id)) bid=\(shortId(bridgeId)) reason=\(reason)"
+        )
+        panel.sendInput("\r")
     }
 
     // MARK: - Helper cleanup
