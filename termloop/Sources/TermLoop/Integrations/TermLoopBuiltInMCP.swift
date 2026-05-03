@@ -26,27 +26,6 @@ enum TermLoopBuiltInMCP {
     /// ability is active.
     static let runningYourApplicationAbilityId = "running-your-application"
 
-    /// Auto-injected one-liner appended to an ability's system-reminder
-    /// when it opts into the named built-in MCP tool. Lives next to the tool
-    /// names so a renamed tool can't drift from its instructions, and so
-    /// users editing SKILL.md never have to remember the canonical wording.
-    /// Returns `nil` when the tool needs no hint (always-on tools document
-    /// themselves elsewhere).
-    static func systemPromptHint(toolName: String) -> String? {
-        switch toolName {
-        case setJiraTicketToolName:
-            return "Telemetry: As soon as you parse the Jira key, call `mcp__termloop__set_jira_ticket` with `{ key, status, url }` so the TermLoop sidebar chip reflects the active ticket. Call again whenever the key, status, or URL changes — including after a transition (e.g. In Progress → In Review → Done) — so the chip stays current. Skip duplicate calls when nothing changed."
-        case getJiraTicketToolName:
-            return "When resuming an in-progress workspace, call `mcp__termloop__get_jira_ticket` first to read the ticket already bound to this workspace instead of guessing from the branch name."
-        case setRunTargetsToolName:
-            return "Telemetry: After you start, restart, or stop something the user can look at (a dev server URL, an app bundle path, a dashboard, a tail-able log), call `mcp__termloop__set_run_targets` with the FULL current set as `{ targets: [{ label, url|path, status }] }`. Full-replace semantics — anything you drop from the array disappears from the chip. Each target is one row in the worktree's Running popover. Recommended `status` values: \"running\", \"stopped\", \"error\". Skip duplicate calls when nothing changed."
-        case getRunTargetsToolName:
-            return "When resuming an in-progress workspace, call `mcp__termloop__get_run_targets` to see what's already reported as running before re-publishing or starting anything new."
-        default:
-            return nil
-        }
-    }
-
     static func item() -> IntegrationItem {
         IntegrationItem(
             id: IntegrationItem.makeId(kind: .mcp, name: serverName),

@@ -6,7 +6,7 @@ import Foundation
 /// Single public entry that turns an `AgentInvocationRequest` (caller intent)
 /// into an `AgentInvocationPlan` (semantic launch payload). The pipeline is
 /// split into internal step helpers so each concern is independently
-/// testable, but callers see exactly one method: `compose(_:)`.
+/// testable, but callers see exactly one method: `compose(_:overrides:)`.
 ///
 /// Transport-agnostic by design. The composer never builds argv, never
 /// chooses tempfile vs flag vs prompt-prefix. That belongs to
@@ -40,16 +40,24 @@ enum AgentInvocationComposer {
         }
     }
 
-    static func compose(_ request: AgentInvocationRequest) throws -> AgentInvocationPlan {
+    static func compose(
+        _ request: AgentInvocationRequest,
+        overrides: InstructionRunOverrides = .none
+    ) throws -> AgentInvocationPlan {
         let template = try resolveTemplate(request)
         let agent = try resolveAgent(request, template: template)
         let model = AgentCatalogStore.shared.resolveModel(request.modelOverride ?? template?.model, for: agent.id)
         let reasoning = AgentCatalogStore.shared.resolveReasoning(request.reasoningOverride ?? template?.reasoning, for: agent.id)
         let permission = resolvePermission(request, template: template)
         let projectFolderPath = projectFolderPath(for: request)
-        let instructions = ProjectInstructionStore.snapshot(
+        let baseInstructions = ProjectInstructionStore.snapshot(
             projectFolderPath: projectFolderPath,
             runCwd: request.runCwd?.path
+        )
+        let instructions = instructionSnapshot(
+            baseInstructions,
+            overrides: overrides,
+            projectFolderPath: projectFolderPath
         )
         let prompt = try resolvePromptBody(
             request,
@@ -61,19 +69,23 @@ enum AgentInvocationComposer {
             template: template,
             projectFolderPath: projectFolderPath
         )
-        let reportedContextBlock = AgentReportedContextSnapshotBuilder.composeBlock(
-            AgentReportedContextSnapshotBuilder.build(
-                workspaceId: request.workspaceId,
-                projectId: request.projectId,
+        let reportedContextBlock = overrides.disabledGenerated.contains(.reportedContext)
+            ? nil
+            : AgentReportedContextSnapshotBuilder.composeBlock(
+                AgentReportedContextSnapshotBuilder.build(
+                    workspaceId: request.workspaceId,
+                    projectId: request.projectId,
+                    branchName: request.branchName,
+                    runCwd: request.runCwd
+                )
+            )
+        let worktreeContextBlock = overrides.disabledGenerated.contains(.worktreeContext)
+            ? nil
+            : WorktreeContextBlock.compose(
+                isWorktree: instructions.isWorktree,
                 branchName: request.branchName,
                 runCwd: request.runCwd
             )
-        )
-        let worktreeContextBlock = WorktreeContextBlock.compose(
-            isWorktree: instructions.isWorktree,
-            branchName: request.branchName,
-            runCwd: request.runCwd
-        )
         let systemInstructions = joinSystemInstructions(
             userSystemPrompt,
             instructions.composedAppendSystemPrompt,
@@ -110,75 +122,40 @@ enum AgentInvocationComposer {
         )
     }
 
-    /// Composes a preview plan layered with per-run override state (chip
-    /// mutes, force-includes). D1(B) side-channel: these overrides never
-    /// flow into launch. Callers should still call `compose(_:)` when they
-    /// mean to actually launch.
-    static func previewPlan(
-        _ request: AgentInvocationRequest,
-        overrides: PreviewOverrides
-    ) throws -> AgentInvocationPlan {
-        let base = try compose(request)
+    private static func instructionSnapshot(
+        _ base: ProjectInstructionSnapshot,
+        overrides: InstructionRunOverrides,
+        projectFolderPath: String?
+    ) -> ProjectInstructionSnapshot {
         guard !overrides.isEmpty else { return base }
-        let (newActive, newListed) = PreviewOverrides.applyToBasePartition(
-            active: base.instructions.activeAbilities,
-            listed: base.instructions.listedAbilities,
+        let (active, listed) = InstructionRunOverrides.applyToBasePartition(
+            active: base.activeAbilities,
+            listed: base.listedAbilities,
             overrides: overrides
         )
-        let projectFolderPath = projectFolderPath(for: request)
         let referencedSkills = ProjectInstructionStore.resolveReferencedSkills(
-            abilities: newActive + newListed,
+            abilities: active + listed,
             projectFolderPath: projectFolderPath
         )
-        let composed: String? = (newActive.isEmpty && newListed.isEmpty)
+        let composed: String? = (active.isEmpty && listed.isEmpty)
             ? nil
             : ProjectInstructionStore.composeAbilityBlock(
-                activeAbilities: newActive,
-                listedAbilities: newListed,
-                isWorktree: base.instructions.isWorktree,
+                activeAbilities: active,
+                listedAbilities: listed,
+                isWorktree: base.isWorktree,
                 projectFolderPath: projectFolderPath,
-                referencedSkills: referencedSkills
+                referencedSkills: referencedSkills,
+                disabledGenerated: overrides.disabledGenerated
             )
-        let newSnapshot = ProjectInstructionSnapshot(
-            activeAbilities: newActive,
-            listedAbilities: newListed,
-            allAbilities: base.instructions.allAbilities,
+        return ProjectInstructionSnapshot(
+            activeAbilities: active,
+            listedAbilities: listed,
+            allAbilities: base.allAbilities,
             referencedSkills: referencedSkills,
             composedAppendSystemPrompt: composed,
-            isWorktree: base.instructions.isWorktree
-        )
-        let joined = joinSystemInstructions(
-            base.resolvedUserSystemPrompt,
-            composed,
-            base.worktreeContextBlock,
-            base.reportedContextBlock
-        )
-        return AgentInvocationPlan(
-            agentId: base.agentId,
-            resolvedModel: base.resolvedModel,
-            resolvedReasoning: base.resolvedReasoning,
-            resolvedPermission: base.resolvedPermission,
-            template: base.template,
-            resolvedPromptBody: base.resolvedPromptBody,
-            resolvedUserSystemPrompt: base.resolvedUserSystemPrompt,
-            resolvedSystemInstructions: joined,
-            reportedContextBlock: base.reportedContextBlock,
-            worktreeContextBlock: base.worktreeContextBlock,
-            instructions: newSnapshot,
-            runCwd: base.runCwd,
-            workspaceId: base.workspaceId,
-            projectId: base.projectId,
-            branchName: base.branchName,
-            repoRootPath: base.repoRootPath,
-            source: base.source,
-            reasonTag: base.reasonTag,
-            previewSummary: AgentInvocationPlan.PreviewSummary(
-                title: base.previewSummary.title,
-                snippet: base.previewSummary.snippet,
-                injectedAbilityNames: newActive.map(\.name),
-                listedAbilityNames: newListed.map(\.name),
-                referencedSkillNames: base.previewSummary.referencedSkillNames
-            )
+            disabledGeneratedParts: overrides.disabledGenerated,
+            hasRunOverrides: !overrides.isEmpty,
+            isWorktree: base.isWorktree
         )
     }
 

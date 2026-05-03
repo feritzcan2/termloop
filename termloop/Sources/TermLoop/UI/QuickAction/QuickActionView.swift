@@ -263,8 +263,9 @@ struct QuickActionView: View {
                 || ProjectStore.shared.activeProjectId != nil,
             onOpenAdvancedPreview: { viewModel.openAdvanced() },
             onEditAbility: { ability in
+                let sourceURL = ability.payloadBlocks.first?.fileURL ?? ability.metadataFilePath
                 MarkdownDocumentStore.shared.open(
-                    fileURL: ability.filePath,
+                    fileURL: sourceURL,
                     folderName: String(localized: "abilities.section.title",
                                        defaultValue: "ABILITIES",
                                        table: "TermLoop"),
@@ -272,7 +273,8 @@ struct QuickActionView: View {
                 )
             },
             onRevealAbility: { ability in
-                NSWorkspace.shared.activateFileViewerSelecting([ability.filePath])
+                let sourceURL = ability.payloadBlocks.first?.fileURL ?? ability.metadataFilePath
+                NSWorkspace.shared.activateFileViewerSelecting([sourceURL])
             },
             onDisablePermanently: { ability in
                 viewModel.disableAbilityPermanently(ability)

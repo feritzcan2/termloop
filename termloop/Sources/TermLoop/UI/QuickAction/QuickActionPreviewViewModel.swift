@@ -20,24 +20,29 @@ final class QuickActionPreviewViewModel: ObservableObject {
         case forceIncluded   // listed ability promoted to injected for this run
     }
 
-    /// Composer-produced plan layered with the VM's current `PreviewOverrides`.
+    /// Composer-produced plan layered with the VM's current run overrides.
     /// Source of truth for all derived state below.
     @Published private(set) var plan: AgentInvocationPlan?
     @Published private(set) var mutedIds: Set<String> = []
     @Published private(set) var forceIncludedIds: Set<String> = []
+    @Published private(set) var disabledGenerated: Set<InstructionRunOverrides.GeneratedPartKind> = []
 
     var allAbilities: [Ability] { plan?.instructions.allAbilities ?? [] }
     var isWorktree: Bool { plan?.instructions.isWorktree ?? false }
 
-    var currentOverrides: PreviewOverrides {
-        PreviewOverrides(muted: mutedIds, forceIncluded: forceIncludedIds)
+    var currentOverrides: InstructionRunOverrides {
+        InstructionRunOverrides(
+            mutedAbilityIds: mutedIds,
+            forceIncludedAbilityIds: forceIncludedIds,
+            disabledGenerated: disabledGenerated
+        )
     }
 
     /// Called by `QuickActionViewModel.refreshPreview()` after composing a
     /// fresh plan with the current overrides applied. Drops stale
     /// overrides for abilities that no longer exist. Writes to
-    /// `mutedIds` / `forceIncludedIds` are guarded so a no-op filter
-    /// doesn't bounce the parent's `$mutedIds` subscriber back into
+    /// Override sets are guarded so a no-op filter
+    /// doesn't bounce the parent's subscribers back into
     /// another `refreshPreview()`.
     func setPlan(_ newPlan: AgentInvocationPlan?) {
         if plan != newPlan {
@@ -48,6 +53,17 @@ final class QuickActionPreviewViewModel: ObservableObject {
         if filteredMuted != mutedIds { mutedIds = filteredMuted }
         let filteredForced = forceIncludedIds.intersection(existing)
         if filteredForced != forceIncludedIds { forceIncludedIds = filteredForced }
+        let filteredGenerated = disabledGenerated.filter { kind in
+            switch kind {
+            case .toolLinkedPayload(let abilityId, _):
+                return existing.contains(abilityId)
+            case .worktreeContext, .reportedContext:
+                return true
+            }
+        }
+        if filteredGenerated != disabledGenerated {
+            disabledGenerated = filteredGenerated
+        }
     }
 
     func togglePerRunMute(_ id: String) {
@@ -60,6 +76,24 @@ final class QuickActionPreviewViewModel: ObservableObject {
 
     func clearPerRunMutes() {
         mutedIds.removeAll()
+    }
+
+    func clearRunOverrides() {
+        mutedIds.removeAll()
+        forceIncludedIds.removeAll()
+        disabledGenerated.removeAll()
+    }
+
+    func toggleGeneratedPart(_ kind: InstructionRunOverrides.GeneratedPartKind) {
+        if disabledGenerated.contains(kind) {
+            disabledGenerated.remove(kind)
+        } else {
+            disabledGenerated.insert(kind)
+        }
+    }
+
+    func clearGeneratedPartDisables() {
+        disabledGenerated.removeAll()
     }
 
     /// Force-include is only meaningful for `listed` abilities; silently
@@ -108,7 +142,7 @@ final class QuickActionPreviewViewModel: ObservableObject {
     }
 
     /// The `--append-system-prompt` payload the composer produced for this
-    /// preview (overrides already applied in `composer.previewPlan`).
+    /// preview (run overrides already applied in `compose`).
     var renderedSystemPrompt: String? {
         plan?.instructions.composedAppendSystemPrompt
     }

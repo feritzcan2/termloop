@@ -13,13 +13,20 @@ final class ProjectInstructionStoreAbilityBlockTests: XCTestCase {
         activation: AbilityActivation,
         body: String = "body"
     ) -> Ability {
-        Ability(
+        let payload = AbilityPayloadBlock(
+            id: "010-rules",
+            title: id,
+            description: "",
+            enabled: true,
+            body: body,
+            fileURL: URL(fileURLWithPath: "/tmp/\(id)/payload/010-rules.md")
+        )
+        return Ability(
             id: id,
             name: id,
             description: "desc",
             activation: activation,
-            body: body,
-            filePath: URL(fileURLWithPath: "/tmp/\(id).md"),
+            payloadBlocks: [payload],
             metadataFilePath: URL(fileURLWithPath: "/tmp/\(id).json")
         )
     }
@@ -31,7 +38,7 @@ final class ProjectInstructionStoreAbilityBlockTests: XCTestCase {
             isWorktree: false
         )
         XCTAssertNotNil(prompt)
-        XCTAssertTrue(prompt!.contains("### git"))
+        XCTAssertTrue(prompt!.contains("## git"))
         XCTAssertTrue(prompt!.contains("# git body"))
     }
 
@@ -45,16 +52,16 @@ final class ProjectInstructionStoreAbilityBlockTests: XCTestCase {
             abilities: [always, dormant, listed, off],
             isWorktree: false
         )!
-        XCTAssertTrue(nonWorktree.contains("### a"))
+        XCTAssertTrue(nonWorktree.contains("### a") || nonWorktree.contains("## a"))
         XCTAssertFalse(nonWorktree.contains("### w"))
-        XCTAssertTrue(nonWorktree.contains("- **l**"))
+        XCTAssertTrue(nonWorktree.contains("### l"))
         XCTAssertFalse(nonWorktree.contains("### o"))
 
         let worktree = ProjectInstructionStore.composeAbilityBlock(
             abilities: [always, dormant, listed, off],
             isWorktree: true
         )!
-        XCTAssertTrue(worktree.contains("### a"))
+        XCTAssertTrue(worktree.contains("### a") || worktree.contains("## a"))
         XCTAssertTrue(worktree.contains("### w"))
     }
 
@@ -71,6 +78,7 @@ final class ProjectInstructionStoreAbilityBlockTests: XCTestCase {
             activation: .always,
             body: "SHOULD_NOT_RENDER_INSTRUCTIONS"
         )
+        ability.payloadBlocks = []
         ability.items = [.requiredSkill("working-with-jira")]
 
         let skill = SkillEntry(

@@ -138,6 +138,14 @@ struct ProjectInstructionSnapshot: Equatable {
     /// abilities, ready to feed into the agent. `nil` when no abilities
     /// resolved.
     let composedAppendSystemPrompt: String?
+    /// Generated instruction fragments disabled for this sheet-scoped run.
+    /// Ability partitions stay visible, but the composer and launch-time
+    /// skill materializer must not emit these generated fragments.
+    let disabledGeneratedParts: Set<InstructionRunOverrides.GeneratedPartKind>
+    /// True when a sheet-scoped override changed what the wrapper would
+    /// otherwise fetch from the socket. Launch must then skip wrapper-side
+    /// context fetch even if the composed prompt is empty.
+    let hasRunOverrides: Bool
     /// Whether the run's cwd sits under `.termloop-worktrees/`. Preview
     /// overrides re-format the ability block without re-detecting this.
     let isWorktree: Bool
@@ -148,6 +156,8 @@ struct ProjectInstructionSnapshot: Equatable {
         allAbilities: [],
         referencedSkills: [],
         composedAppendSystemPrompt: nil,
+        disabledGeneratedParts: [],
+        hasRunOverrides: false,
         isWorktree: false
     )
 }
@@ -311,6 +321,6 @@ struct AgentInvocationPlan: Equatable {
     }
 
     var launchProvidedFullContext: Bool {
-        resolvedSystemInstructions != nil
+        resolvedSystemInstructions != nil || instructions.hasRunOverrides
     }
 }

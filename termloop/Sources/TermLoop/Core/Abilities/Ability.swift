@@ -5,35 +5,22 @@ import Foundation
 
 /// Project-scoped AI ability. Stored as a bundle under
 /// `<projectRoot>/.termloop/abilities/<slug>/` with an `ability.json`
-/// manifest and a primary `instructions.md` body file.
+/// manifest plus editable `payload/*.md` sections.
 struct Ability: Identifiable, Hashable {
-    enum StorageKind: Hashable {
-        case bundle
-        case legacyMarkdownFile
-
-        var displayLabel: String {
-            switch self {
-            case .bundle: return "bundle"
-            case .legacyMarkdownFile: return "legacy md"
-            }
-        }
-    }
-
-    /// Slug derived from the filename (without `.md`). Acts as the stable id.
+    /// Slug derived from the bundle directory. Acts as the stable id.
     let id: String
     var name: String
     var description: String
     var activation: AbilityActivation
-    /// Primary instruction body stored in the bundle's markdown file.
-    var body: String
-    /// Optional baseline discipline shipped by the starter; lives in the bundle
-    /// as `system-reminder.md`. Composed before `body` when present.
-    var systemReminderBody: String? = nil
     /// Optional domain-expert prompt shipped by the starter; lives in the bundle
     /// as `prompt-customizer.md`. Used when the user runs "Customize with agent"
     /// — the launched Claude session is briefed by this prompt instead of the
     /// generic ability creator. Falls back to the generic creator when nil.
     var customizerPromptBody: String? = nil
+    /// Ordered, editable payload sections sent to agents when the ability is
+    /// active. Files live under `payload/*.md`; `ability.json` still owns tool
+    /// availability and other non-prompt config.
+    var payloadBlocks: [AbilityPayloadBlock] = []
     var tags: [String] = []
     var items: [AbilityItem] = []
     /// TermLoop built-in MCP tool bindings this ability ships. Each binding
@@ -50,9 +37,7 @@ struct Ability: Identifiable, Hashable {
     var enabledMCPToolNames: [String] {
         mcpTools.filter { $0.enabled }.map { $0.name }
     }
-    let filePath: URL
     let metadataFilePath: URL
-    var storageKind: StorageKind = .bundle
 
     var requiredMCPs: [AbilityMCPRequirement] {
         items.compactMap { item in
@@ -123,6 +108,24 @@ struct Ability: Identifiable, Hashable {
 struct AbilityCatalogSection: Hashable {
     var title: String
     var values: [String]
+}
+
+struct AbilityPayloadBlock: Identifiable, Hashable {
+    let id: String
+    var title: String
+    var description: String
+    var enabled: Bool
+    var body: String
+    var fileURL: URL
+    /// Optional internal link to a TermLoop MCP tool. The UI still presents
+    /// this as a normal payload block; the link lets per-run disables and
+    /// skill-file footers follow the right tool.
+    var mcpToolName: String? = nil
+    var includeInSkillFooter: Bool = false
+
+    var trimmedBody: String {
+        body.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 }
 
 enum AbilityAgentFamily: String, Codable, CaseIterable, Hashable {

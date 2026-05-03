@@ -6,8 +6,8 @@ Your job is to generate a short, practical, project-specific skill at:
 
 `.termloop/skills/working-with-jira/SKILL.md`
 
-Keep the final skill 150–350 words. Do not mention any external project unless the repository evidence explicitly shows that name.
-Generic Jira advice already lives in the ability system reminder; this prompt only captures the repo-specific workflow.
+Keep the final skill 200–450 words. Do not mention any external project unless the repository evidence explicitly shows that name.
+The ability's Agent payload only tells agents to use this skill; durable Jira behavior belongs in the skill body.
 
 Do not write the skill until the user explicitly approves the draft.
 
@@ -90,6 +90,9 @@ After approval, write `.termloop/skills/working-with-jira/SKILL.md` with:
 - `name: working-with-jira`
 - a project-specific context section
 - ticket identification rules
+- TermLoop workspace context rules:
+  - when resuming an in-progress workspace, call `mcp__termloop__get_jira_ticket` before guessing from the branch name
+  - after parsing a Jira key, or when status/URL changes, call `mcp__termloop__set_jira_ticket` with `{ key, status, url }`
 - pre-transition checks
 - transition rules
 - PR ↔ ticket linking rules

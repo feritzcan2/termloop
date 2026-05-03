@@ -25,7 +25,6 @@ struct QuickActionAdvancedRawTab: View {
                 promptBlock
                 authoredSystemPromptBlock
                 deliveredSystemInstructionsBlock
-                abilityContextBlock
                 commandBlock
             }
             .padding(12)
@@ -59,62 +58,49 @@ struct QuickActionAdvancedRawTab: View {
     private var templateInfoBlock: some View {
         let effectiveTemplate = plan?.template ?? selectedTemplate
         if let effectiveTemplate {
-            let effectivePath = plan?.template?.sourceURL.path ?? templateSourcePath
-            let mismatch: String = {
-                guard let selectedTemplate,
-                      let planTemplate = plan?.template,
-                      selectedTemplate.id != planTemplate.id else { return "selection_matches_plan: yes" }
-                return "selection_matches_plan: no"
-            }()
-            let originLabel = effectiveTemplate.source == .builtin ? "builtin" : templateOriginLabel
             VStack(alignment: .leading, spacing: 4) {
-                sectionHeader(title: "Template", flag: effectiveTemplate.id)
-                monoBlock("""
-name: \(effectiveTemplate.name)
-prompt_source: \(promptSourceLabel)
-source: \(originLabel)
-scope: \(effectiveTemplate.scope.rawValue)
-file: \(effectivePath ?? "—")
-\(mismatch)
-\(resolvedVariablesBlock)
-""", empty: "—")
+                sectionHeader(title: "Template", flag: "")
+                if let selectedTemplate,
+                   let planTemplate = plan?.template,
+                   selectedTemplate.id != planTemplate.id {
+                    Text("Selection and composed plan disagree.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                monoBlock(effectiveTemplate.name, empty: "—")
             }
         }
     }
 
     @ViewBuilder
     private var promptBlock: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            sectionHeader(
-                title: "First message",
-                flag: promptStatus.shortLabel
-            )
-            Text(promptStatus.detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            monoBlock(
-                plan?.resolvedPromptBody,
-                empty: "(empty — no prompt text, prompt document, or template default prompt)"
-            )
+        if plan?.resolvedPromptBody?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            VStack(alignment: .leading, spacing: 4) {
+                sectionHeader(
+                    title: "First message",
+                    flag: promptStatus.shortLabel
+                )
+                Text(promptStatus.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                monoBlock(plan?.resolvedPromptBody, empty: "")
+            }
         }
     }
 
     @ViewBuilder
     private var authoredSystemPromptBlock: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            sectionHeader(
-                title: "System instructions",
-                flag: systemStatus.shortLabel
-            )
-            Text(systemStatus.detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            monoBlock(
-                plan?.resolvedUserSystemPrompt,
-                empty: String(localized: "quickAction.raw.directEmpty",
-                              defaultValue: "(empty — no system instructions document or advanced system instructions)",
-                              table: "TermLoop")
-            )
+        if plan?.resolvedUserSystemPrompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            VStack(alignment: .leading, spacing: 4) {
+                sectionHeader(
+                    title: "System instructions",
+                    flag: systemStatus.shortLabel
+                )
+                Text(systemStatus.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                monoBlock(plan?.resolvedUserSystemPrompt, empty: "")
+            }
         }
     }
 
@@ -129,22 +115,6 @@ file: \(effectivePath ?? "—")
                 transport?.deliveredSystemInstructions,
                 empty: String(localized: "quickAction.raw.empty",
                               defaultValue: "(empty — no per-invocation system instructions will be delivered)",
-                              table: "TermLoop")
-            )
-        }
-    }
-
-    @ViewBuilder
-    private var abilityContextBlock: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            sectionHeader(
-                title: "Project ability block",
-                flag: "preview-only"
-            )
-            monoBlock(
-                preview.renderedSystemPrompt,
-                empty: String(localized: "quickAction.raw.abilitiesEmpty",
-                              defaultValue: "(no preview-only ability block)",
                               table: "TermLoop")
             )
         }
@@ -174,22 +144,18 @@ file: \(effectivePath ?? "—")
         }
     }
 
-    private var resolvedVariablesBlock: String {
-        guard !resolvedVariables.isEmpty else { return "resolved_variables: —" }
-        let lines = resolvedVariables.map { "\($0.name): \($0.value)" }
-        return "resolved_variables:\n" + lines.joined(separator: "\n")
-    }
-
     private func sectionHeader(title: String, flag: String) -> some View {
         HStack(spacing: 6) {
             Text(title).font(.headline)
-            Text(flag)
-                .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                .padding(.horizontal, 4)
-                .padding(.vertical, 1)
-                .background(Color.accentColor.opacity(0.18))
-                .foregroundStyle(Color.accentColor)
-                .cornerRadius(3)
+            if !flag.isEmpty {
+                Text(flag)
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(Color.accentColor.opacity(0.18))
+                    .foregroundStyle(Color.accentColor)
+                    .cornerRadius(3)
+            }
         }
     }
 

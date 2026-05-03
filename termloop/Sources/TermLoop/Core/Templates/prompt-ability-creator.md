@@ -18,19 +18,24 @@ Each ability is a bundle at:
 The bundle contains:
 
     ability.json
-    instructions.md
-    system-reminder.md   (optional, always-on short rules)
+    payload/*.md         (editable agent payload sections)
     prompt-customizer.md (optional, only used by the customizer agent)
 
 `ability.json` stores:
 
-    id, name, description, activation, tags, items, termLoopMCPTools, instructionFile
+    id, name, description, activation, tags, items, termLoopMCPTools
 
 Activation alone decides delivery — there is no `injectBodyAsSystemInstruction` flag. See "Activation values" below for what each mode does.
 
-`instructions.md` stores the primary markdown guidance body. For `activation: always` (and `worktree` runs that match), the body is injected into every run. For `activation: listed`, only the name + description appear in the prompt; the agent reads the file on demand.
+`payload/*.md` files are the source of truth for launch payload. Each file has frontmatter:
 
-`system-reminder.md`, when present, is **always** injected as a short reminder block — even for `listed` abilities. Put hard rules here that must reach the agent without depending on it reading `instructions.md`.
+    title: "<section title>"
+    description: "<short UI hint>"
+    enabled: true
+    mcpTool: "<optional TermLoop tool name>"
+    includeInSkillFooter: true|false
+
+The markdown body is injected as one section when the ability is active. Use multiple payload files for separate rules such as "Use the skill", "Resume bound ticket", and "Update UI chip". The `mcpTool` field is metadata only: it links a section to a TermLoop MCP tool for per-run toggles and optional skill footer materialization. Do not generate hidden or hardcoded prompt text outside payload files.
 
 `termLoopMCPTools` is an array of `{ "name": "tool_name", "enabled": true }` opt-ins. Listed names surface in the TermLoop built-in MCP server's `tools/list`. Available built-ins: `set_jira_ticket` (opt-in — Jira ability only; pair with a `bindings` declaration so the chip renders).
 
@@ -40,7 +45,7 @@ create or change all ability-related surfaces together:
 - `ability.json`: metadata, activation, tags, required MCPs, required/optional
   CLIs, required/optional skills, context docs, launch templates, and
   checklists.
-- `instructions.md`: the captured project workflow, including commands,
+- `payload/*.md`: the captured launch payload, including commands,
   guardrails, worktree-only rules, and normal-run rules.
 - linked prompt or system-prompt documents referenced by `ability.json`, when
   those documents are part of the same ability behavior.
@@ -84,19 +89,20 @@ user's answer before moving on.
      wants it auto-applied; skill-backed project abilities will flip to
      `worktree` automatically after their required SKILL.md is written.
 4. Draft. Propose the full ability bundle to the user: a compact
-   `ability.json`, an `instructions.md` body, and any linked prompt documents
-   that must change. Keep the body focused; 100-400 words is a good target.
+   `ability.json`, focused `payload/*.md` sections, and any linked prompt
+   documents that must change. Keep each payload block small; 50-200 words is
+   a good target.
    Use markdown headings and bullet lists for scannability.
 5. Confirm and write. Once the user approves, compute the slug as kebab-case
    of the `name` field: lowercase, non-alphanumerics become `-`, collapse
    repeats. Write the bundle to `.termloop/abilities/<slug>/`. If the
    directory does not exist, create it first. Write `ability.json` and
-   `instructions.md` together. If the ability declares a `requiredSkill`,
+   `payload/*.md` together. If the ability declares a `requiredSkill`,
    also write `.termloop/skills/<skillId>/SKILL.md` per the "Required
    skills" rules below — TermLoop will materialize it into the agent's
    native skill catalog and enable the ability for worktree agents
    automatically.
-6. Announce. Tell the user: "Created `.termloop/abilities/<slug>/` with `ability.json`, `instructions.md`, and (if applicable) `.termloop/skills/<skillId>/SKILL.md`. It
+6. Announce. Tell the user: "Created `.termloop/abilities/<slug>/` with `ability.json`, payload blocks, and (if applicable) `.termloop/skills/<skillId>/SKILL.md`. It
    should now appear in the Abilities panel in the TermLoop sidebar. Required
    skills sync automatically, and skill-backed abilities enable for worktrees
    automatically."
@@ -167,7 +173,7 @@ if you are unsure of the tool prefix, ask the user.
   keep them in the same ability but separate them with clear headings such as
   `Always` and `Worktree runs`.
 - Setup requirements belong in `ability.json` items; operational behavior and
-  fallback rules belong in `instructions.md`.
+  fallback rules belong in payload blocks.
 - No emoji. No marketing language.
 
 If the ability is about worktrees, branch-attached workspaces, or repo

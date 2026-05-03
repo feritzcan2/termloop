@@ -336,8 +336,9 @@ struct AbilitiesPanel: View {
     }
 
     private func openInMarkdownEditor(_ ability: Ability) {
+        let sourceURL = ability.payloadBlocks.first?.fileURL ?? ability.metadataFilePath
         MarkdownDocumentStore.shared.open(
-            fileURL: ability.filePath,
+            fileURL: sourceURL,
             folderName: String(localized: "abilities.section.title",
                                defaultValue: "ABILITIES", table: "TermLoop"),
             displayTitle: ability.name
@@ -425,13 +426,9 @@ struct AbilitiesPanel: View {
             name: name,
             description: description.isEmpty ? "Use when…" : description,
             activation: .listed,
-            body: "",
-            systemReminderBody: nil,
             tags: [],
             items: [],
-            filePath: bundleURL.appendingPathComponent(AbilityBundleManifest.defaultInstructionFile),
-            metadataFilePath: bundleURL.appendingPathComponent("ability.json"),
-            storageKind: .bundle
+            metadataFilePath: bundleURL.appendingPathComponent("ability.json")
         )
         store.save(ability)
         detailState.show(slug)
@@ -869,10 +866,7 @@ struct AbilityDetailPage: View {
                                 )
                             }
                         )
-                        AbilitySystemReminderCard(
-                            ability: ability,
-                            onEditSource: { editSystemReminder(for: ability) }
-                        )
+                        AbilityPayloadCard(ability: ability)
                         if ability.requiredSkillIDs.isEmpty {
                             AbilityInstructionsCard(
                                 ability: ability,
@@ -1005,16 +999,6 @@ struct AbilityDetailPage: View {
     }
 
     // MARK: - Actions
-
-    private func editSystemReminder(for ability: Ability) {
-        let url = ability.metadataFilePath
-            .deletingLastPathComponent()
-            .appendingPathComponent(AbilityBundleManifest.systemReminderFile)
-        if !FileManager.default.fileExists(atPath: url.path) {
-            try? "".write(to: url, atomically: true, encoding: .utf8)
-        }
-        open(url, title: "\(ability.name) — system reminder")
-    }
 
     private func open(_ url: URL, title: String) {
         MarkdownDocumentStore.shared.open(
