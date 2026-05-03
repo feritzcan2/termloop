@@ -206,13 +206,13 @@ struct QuickActionTemplateDropdown: View {
         var parts: [String] = []
         if let promptDocumentId = template.promptDocumentId,
            !promptDocumentId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            parts.append("prompt doc")
+            parts.append("message doc")
         } else if !template.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            parts.append("default prompt")
+            parts.append("default message")
         }
         if let systemDocumentId = template.systemPromptDocumentId,
            !systemDocumentId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            parts.append("system doc")
+            parts.append("instructions doc")
         }
         return parts.joined(separator: " · ")
     }
