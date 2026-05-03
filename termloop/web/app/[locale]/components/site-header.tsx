@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { Link } from "../../../i18n/navigation";
 import { NavLinks } from "./nav-links";
@@ -32,15 +33,15 @@ export function SiteHeader({
             {!hideLogo && (
               <>
                 <Link href="/" className="flex items-center gap-2.5">
-                  <img
+                  <Image
                     src="/logo.png"
-                    alt="cmux"
+                    alt="TermLoop"
                     width={24}
                     height={24}
                     className="rounded-md"
                   />
                   <span className="text-sm font-semibold tracking-tight">
-                    cmux
+                    TermLoop
                   </span>
                 </Link>
                 {section && (
@@ -62,7 +63,7 @@ export function SiteHeader({
           <div className="ml-auto flex min-w-0 items-center justify-end gap-3 min-[940px]:ml-0">
             <GitHubStarsBadge />
             <div className="hidden min-[940px]:block">
-              <DownloadButton size="sm" location="navbar" />
+              <DownloadButton size="sm" />
             </div>
             <ThemeToggle />
             <MobileDrawerToggle
@@ -138,7 +139,7 @@ export function SiteHeader({
           </Link>
           <GitHubStarsBadge location="mobile_drawer" />
           <div className="pt-2">
-            <DownloadButton size="sm" location="mobile_drawer" />
+            <DownloadButton size="sm" />
           </div>
         </div>
       </nav>

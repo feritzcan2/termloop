@@ -282,6 +282,7 @@ export function TestimonialCard({
     >
       <div className="flex items-center gap-3 mb-3">
         {testimonial.avatar ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={testimonial.avatar}
             alt={testimonial.name}

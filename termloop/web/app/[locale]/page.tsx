@@ -1,4 +1,5 @@
 import { useTranslations, useLocale } from "next-intl";
+import Image from "next/image";
 import { FadeImage } from "./components/fade-image";
 import Balancer from "react-wrap-balancer";
 import landingImage from "./assets/landing-image.png";
@@ -29,14 +30,15 @@ function HomeContent() {
       <main className="w-full max-w-2xl mx-auto px-6 py-16 sm:py-24">
         {/* Header */}
         <div className="flex items-center gap-4 mb-10" data-dev="header">
-          <img
+          <Image
             src="/icon-prompt-loop-animated.svg"
             alt="TermLoop icon"
             width={48}
             height={48}
+            unoptimized
             className="rounded-xl"
           />
-          <h1 className="text-2xl font-semibold tracking-tight">cmux</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">TermLoop</h1>
         </div>
 
         {/* Tagline */}
@@ -58,7 +60,7 @@ function HomeContent() {
           data-dev="download"
           style={{ marginTop: 21, marginBottom: 16 }}
         >
-          <DownloadButton location="hero" />
+          <DownloadButton />
           <GitHubButton />
         </div>
 
@@ -105,12 +107,12 @@ function HomeContent() {
                 <span className="text-muted">
                   {t.rich("feature.keyboardShortcutsDesc", {
                     link: (chunks) => (
-                      <a
+                      <Link
                         href="/docs/keyboard-shortcuts"
                         className={linkClass}
                       >
                         {chunks}
-                      </a>
+                      </Link>
                     ),
                   })}
                 </span>
@@ -126,7 +128,7 @@ function HomeContent() {
         >
           <FadeImage
             src={landingImage}
-            alt="cmux terminal app screenshot"
+            alt="TermLoop terminal app screenshot"
             priority
             className="w-full rounded-xl"
           />
@@ -170,14 +172,14 @@ function HomeContent() {
               <p className="text-muted">
                 {t.rich("faqNotificationsA", {
                   cliLink: (chunks) => (
-                    <a href="/docs/notifications" className={linkClass}>
+                    <Link href="/docs/notifications" className={linkClass}>
                       {chunks}
-                    </a>
+                    </Link>
                   ),
                   hooksLink: (chunks) => (
-                    <a href="/docs/notifications" className={linkClass}>
+                    <Link href="/docs/notifications" className={linkClass}>
                       {chunks}
-                    </a>
+                    </Link>
                   ),
                 })}
               </p>
@@ -192,9 +194,9 @@ function HomeContent() {
                     </code>
                   ),
                   link: (chunks) => (
-                    <a href="/docs/keyboard-shortcuts" className={linkClass}>
+                    <Link href="/docs/keyboard-shortcuts" className={linkClass}>
                       {chunks}
-                    </a>
+                    </Link>
                   ),
                 })}
               </p>
@@ -265,6 +267,7 @@ function HomeContent() {
                   >
                     —
                     {item.avatar && (
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={item.avatar}
                         alt={item.name}
@@ -287,7 +290,7 @@ function HomeContent() {
 
         {/* Bottom CTA */}
         <div className="flex flex-wrap items-center justify-center gap-3 mt-12">
-          <DownloadButton location="bottom" />
+          <DownloadButton />
           <GitHubButton />
         </div>
         <div className="flex justify-center gap-4 mt-6">

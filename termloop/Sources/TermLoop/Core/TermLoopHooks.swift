@@ -2665,32 +2665,22 @@ private struct AgentMainAreaOverlaySwap<Content: View>: View {
             TermLoopHooks.setAllWorkspaceTerminalsVisible(shouldShowWorkspaceTerminals(for: overlayMode))
         }
         .onChange(of: tabRawValue) { _ in
-            dismissAbilityDetailIfContextChanged()
             // Top-tab change is a strong "user moved on" signal — none of
-            // these overlays should outlive their originating context.
+            // these document-style overlays should outlive their originating
+            // context. Ability detail is intentionally preserved but gated by
+            // `.work + .agents`, so returning to Abilities restores the split
+            // instead of losing the open customizer session.
             markdownDocument.close()
             gitChanges.close()
         }
         .onChange(of: workSubTabRaw) { _ in
             // Sub-tab change is in-`.work` navigation (filter switching),
-            // not an application-level context switch — keep Markdown
-            // documents and GitChanges open so the user can flip between
-            // sub-tabs without losing what they were viewing. Only the
-            // ability detail is dismissed because its visibility is
-            // gated on `.work + .agents` by the factory.
-            dismissAbilityDetailIfContextChanged()
+            // not an application-level context switch. Keep ability detail,
+            // Markdown, and GitChanges selections latched; the overlay
+            // resolver decides which surface is currently visible.
         }
         .onChange(of: projectStore.activeProjectId) { _ in
             MainAreaActivation.closeAllMainAreaOverlays()
-        }
-    }
-
-    private func dismissAbilityDetailIfContextChanged() {
-        let selectedSidebarTab = TermLoopSidebarTab(rawValue: tabRawValue) ?? .work
-        let selectedWorkSubTab = WorkSubTab(rawValue: workSubTabRaw) ?? .loop
-        guard selectedSidebarTab == .work, selectedWorkSubTab == .agents else {
-            abilityDetail.close()
-            return
         }
     }
 }
@@ -2807,6 +2797,19 @@ extension TermLoopHooks {
         // document / GitChanges) would otherwise outlive the focus
         // intent. The helper dedupes `selectedTabId` internally.
         MainAreaActivation.activateWorkspaceTerminal(workspaceId, on: targetTM)
+        if let wid = appDelegate.windowId(for: targetTM) {
+            _ = appDelegate.focusMainWindow(windowId: wid)
+        }
+    }
+
+    static func focusAbilityWorkspace(workspaceId: UUID, abilityId: String) {
+        guard let appDelegate = AppDelegate.shared else { return }
+        guard let targetTM = appDelegate.tabManagerFor(tabId: workspaceId) else { return }
+        MainAreaActivation.activateAbilityWorkspaceTerminal(
+            workspaceId,
+            abilityId: abilityId,
+            on: targetTM
+        )
         if let wid = appDelegate.windowId(for: targetTM) {
             _ = appDelegate.focusMainWindow(windowId: wid)
         }

@@ -5,7 +5,7 @@ import { join } from "path";
 export const runtime = "nodejs";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
-export const alt = "cmux — The terminal built for multitasking";
+export const alt = "TermLoop — The terminal built for multitasking";
 
 const S = 2; // render at 2x for sharper images on social platforms
 
@@ -56,7 +56,11 @@ export default async function Image() {
               position: "relative",
             }}
           >
-            <img src={screenshotSrc} width={size.width * S} />
+            <img
+              src={screenshotSrc}
+              alt="TermLoop terminal screenshot"
+              width={size.width * S}
+            />
             <div
               style={{
                 position: "absolute",
@@ -88,6 +92,7 @@ export default async function Image() {
             >
               <img
                 src={logoSrc}
+                alt="TermLoop logo"
                 width={112 * S}
                 height={112 * S}
                 style={{ borderRadius: 20 * S }}
@@ -103,7 +108,7 @@ export default async function Image() {
                     marginTop: -8 * S,
                   }}
                 >
-                  cmux
+                  TermLoop
                 </div>
                 <div
                   style={{

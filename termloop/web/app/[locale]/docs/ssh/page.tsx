@@ -24,16 +24,16 @@ export default function SshPage() {
       <iframe
         className="my-6 rounded-lg w-full aspect-video"
         src="https://www.youtube.com/embed/RoR9pMOZWkk"
-        title="cmux SSH demo"
+        title="TermLoop SSH demo"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
         allowFullScreen
       />
 
       <h2>{t("usage")}</h2>
-      <CodeBlock lang="bash">{`cmux ssh user@remote
-cmux ssh user@remote --name "dev server"
-cmux ssh user@remote -p 2222
-cmux ssh user@remote -i ~/.ssh/id_ed25519`}</CodeBlock>
+      <CodeBlock lang="bash">{`termloop ssh user@remote
+termloop ssh user@remote --name "dev server"
+termloop ssh user@remote -p 2222
+termloop ssh user@remote -i ~/.ssh/id_ed25519`}</CodeBlock>
       <p>{t("usageDesc")}</p>
 
       <h2>{t("flagsTitle")}</h2>
@@ -65,8 +65,8 @@ cmux ssh user@remote -i ~/.ssh/id_ed25519`}</CodeBlock>
       <h2>{t("agentsTitle")}</h2>
       <p>{t("agentsDesc")}</p>
       <CodeBlock lang="bash">{`# Inside an SSH session:
-cmux claude-teams
-cmux omo`}</CodeBlock>
+termloop claude-teams
+termloop omo`}</CodeBlock>
 
       <h2>{t("reconnectTitle")}</h2>
       <p>{t("reconnectDesc")}</p>
