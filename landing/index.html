@@ -1606,16 +1606,44 @@
   });
 
   // Tap-to-fullscreen for demo videos
-  document.querySelectorAll('.loop-proof video').forEach(video => {
-    video.addEventListener('click', () => {
-      if (video.requestFullscreen) {
-        video.requestFullscreen().catch(() => {});
-      } else if (video.webkitEnterFullscreen) {
-        video.webkitEnterFullscreen();
-      } else if (video.webkitRequestFullscreen) {
-        video.webkitRequestFullscreen();
+  const isIOSLike = () => {
+    const ua = navigator.userAgent || '';
+    return /iPad|iPhone|iPod/.test(ua) ||
+           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  };
+  const enterFullscreen = (video) => {
+    // iOS Safari: prefer the native iOS fullscreen player
+    if (isIOSLike() && typeof video.webkitEnterFullscreen === 'function') {
+      try { video.webkitEnterFullscreen(); return; } catch (_) {}
+    }
+    if (typeof video.requestFullscreen === 'function') {
+      const p = video.requestFullscreen();
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => {
+          if (typeof video.webkitEnterFullscreen === 'function') {
+            try { video.webkitEnterFullscreen(); } catch (_) {}
+          }
+        });
       }
+      return;
+    }
+    if (typeof video.webkitEnterFullscreen === 'function') {
+      try { video.webkitEnterFullscreen(); } catch (_) {}
+    } else if (typeof video.webkitRequestFullscreen === 'function') {
+      video.webkitRequestFullscreen();
+    }
+  };
+  document.querySelectorAll('.loop-proof video').forEach(video => {
+    video.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      enterFullscreen(video);
     });
+    // iOS sometimes routes through touchend instead of click
+    video.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      enterFullscreen(video);
+    }, { passive: false });
   });
 
   // Caption overlays driven by video.currentTime

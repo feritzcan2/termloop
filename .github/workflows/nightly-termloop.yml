@@ -265,7 +265,7 @@ jobs:
           prepare_variant \
             "$APP_DIR" \
             "com.termloop.app.nightly" \
-            "https://files.cmux.com/nightly/termloop-nightly-appcast.xml"
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/nightly/termloop-nightly-appcast.xml"
 
       - name: Build remote daemon nightly assets and inject manifest
         if: needs.decide.outputs.should_publish != 'true' || (steps.current_head_prebuild.outputs.still_current == 'true' && steps.current_head_postbuild.outputs.still_current == 'true')
@@ -468,22 +468,6 @@ jobs:
             termloop/termloop-nightly-appcast-universal.xml
             termloop/remote-daemon-assets/termloopd-remote-*
           overwrite_files: true
-
-      - name: Upload nightly appcast to R2
-        if: needs.decide.outputs.should_publish == 'true' && steps.current_head_prebuild.outputs.still_current == 'true' && steps.current_head_postbuild.outputs.still_current == 'true'
-        continue-on-error: true
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_ENDPOINT: "https://${{ secrets.CF_R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
-        run: |
-          set -euo pipefail
-          command -v aws >/dev/null 2>&1 || { echo "Installing AWS CLI..."; brew install awscli; }
-          aws s3 cp termloop-nightly-appcast.xml \
-            "s3://cmux-binaries/nightly/termloop-nightly-appcast.xml" \
-            --endpoint-url "$R2_ENDPOINT" \
-            --cache-control "no-cache, no-store, must-revalidate"
 
       - name: Cleanup keychain
         if: always()
