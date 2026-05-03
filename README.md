@@ -62,7 +62,7 @@ When one agent gets stuck, it doesn't wait for you. The built-in <code>ask_to</c
 TermLoop catalogs every <code>CLAUDE.md</code>, <code>AGENTS.md</code>, <code>GEMINI.md</code> across your tree, scores how much each one actually helps, and lets you clone the strong ones into other agents.
 </td>
 <td width="60%">
-<img src="./termloop/docs/assets/context-bank.png" alt="Context Bank cataloging CLAUDE.md files with usage scores" width="100%" />
+<img src="./termloop/docs/assets/context-bank.png" alt="Context Bank cataloging CLAUDE.md files with usage scores" width="500" />
 </td>
 </tr>
 <tr>
@@ -80,7 +80,7 @@ Bind a different Claude login to each project — work in one, personal in anoth
 Branch, PR status, dirty file count, port forwards, agent state — every workspace at a glance. Skim ten active threads without switching tabs.
 </td>
 <td width="60%">
-<img src="./termloop/docs/assets/sidebar.png" alt="TermLoop sidebar showing worktree agents, open and merged PRs" width="100%" />
+<img src="./termloop/docs/assets/sidebar.png" alt="TermLoop sidebar showing worktree agents, open and merged PRs" width="400" />
 </td>
 </tr>
 <tr>
