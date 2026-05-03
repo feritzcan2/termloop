@@ -77,40 +77,14 @@ final class AbilityStore: ObservableObject {
     /// stays locked to the bundle directory name.
     func save(_ ability: Ability) {
         do {
-            let legacyFilePathToRemove: URL?
-            let abilityToSave: Ability
-            if ability.storageKind == .bundle {
-                abilityToSave = ability
-                legacyFilePathToRemove = nil
-            } else {
-                guard let dir = abilitiesDirectoryURL() else { return }
-                let legacyFilePath = ability.filePath
-                abilityToSave = Ability(
-                    id: ability.id,
-                    name: ability.name,
-                    description: ability.description,
-                    activation: ability.activation,
-                    body: ability.body,
-                    tags: ability.tags,
-                    items: ability.items,
-                    filePath: AbilityBundleStore.instructionFileURL(parentDirectory: dir, slug: ability.id),
-                    metadataFilePath: AbilityBundleStore.metadataFileURL(parentDirectory: dir, slug: ability.id),
-                    storageKind: .bundle
-                )
-                legacyFilePathToRemove = legacyFilePath != abilityToSave.filePath ? legacyFilePath : nil
-            }
-            try AbilityBundleStore.save(abilityToSave)
-            if let legacyFilePathToRemove {
-                try? FileManager.default.removeItem(at: legacyFilePathToRemove)
-            }
+            try AbilityBundleStore.save(ability)
         } catch {
             logger.error("abilities save failed: \(error.localizedDescription, privacy: .public)")
         }
         reload()
     }
 
-    /// Rewrites only the `activation` field on an existing file, preserving
-    /// the body byte-for-byte.
+    /// Rewrites only the activation field while preserving payload files.
     func setActivation(id: String, _ mode: AbilityActivation) {
         guard let ability = abilities.first(where: { $0.id == id }) else { return }
         if mode == .off {
@@ -165,21 +139,40 @@ final class AbilityStore: ObservableObject {
         save(updated)
     }
 
-    func delete(id: String) {
-        guard let ability = abilities.first(where: { $0.id == id }) else { return }
-        switch ability.storageKind {
-        case .bundle:
-            try? FileManager.default.removeItem(at: ability.metadataFilePath.deletingLastPathComponent())
-        case .legacyMarkdownFile:
-            try? FileManager.default.removeItem(at: ability.filePath)
+    func savePayloadBlock(abilityId: String, block: AbilityPayloadBlock) {
+        guard abilities.contains(where: { $0.id == abilityId }) else { return }
+        do {
+            try AbilityBundleStore.writePayloadBlock(block)
+        } catch {
+            logger.error("payload block save failed: \(error.localizedDescription, privacy: .public)")
         }
         reload()
     }
 
-    /// Target markdown URL for a new ability bundle's primary instruction file.
-    func fileURL(slug: String) -> URL? {
-        guard let dir = abilitiesDirectoryURL() else { return nil }
-        return AbilityBundleStore.instructionFileURL(parentDirectory: dir, slug: slug)
+    func addPayloadBlock(abilityId: String) {
+        guard let ability = abilities.first(where: { $0.id == abilityId }) else { return }
+        do {
+            _ = try AbilityBundleStore.createPayloadBlock(in: ability)
+        } catch {
+            logger.error("payload block create failed: \(error.localizedDescription, privacy: .public)")
+        }
+        reload()
+    }
+
+    func deletePayloadBlock(abilityId: String, block: AbilityPayloadBlock) {
+        guard abilities.contains(where: { $0.id == abilityId }) else { return }
+        do {
+            try AbilityBundleStore.deletePayloadBlock(block)
+        } catch {
+            logger.error("payload block delete failed: \(error.localizedDescription, privacy: .public)")
+        }
+        reload()
+    }
+
+    func delete(id: String) {
+        guard let ability = abilities.first(where: { $0.id == id }) else { return }
+        try? FileManager.default.removeItem(at: ability.metadataFilePath.deletingLastPathComponent())
+        reload()
     }
 
     func ability(id: String) -> Ability? {
@@ -545,52 +538,17 @@ final class AbilityStore: ObservableObject {
             includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles]
         )) ?? []
-        let loaded: [Ability] = entries
+        abilities = entries
             .compactMap { url -> Ability? in
-                if url.hasDirectoryPath {
-                    do {
-                        return try AbilityBundleStore.load(from: url)
-                    } catch {
-                        logger.warning("ability parse failed: \(url.lastPathComponent, privacy: .public)")
-                        return nil
-                    }
-                }
-                guard url.pathExtension.lowercased() == "md" else { return nil }
-                guard let text = try? String(contentsOf: url, encoding: .utf8),
-                      let parsed = AbilityFrontmatter.parse(text) else {
-                    logger.warning("legacy ability parse failed: \(url.lastPathComponent, privacy: .public)")
+                guard url.hasDirectoryPath else { return nil }
+                do {
+                    return try AbilityBundleStore.load(from: url)
+                } catch {
+                    logger.warning("ability parse failed: \(url.lastPathComponent, privacy: .public)")
                     return nil
                 }
-                let slug = url.deletingPathExtension().lastPathComponent
-                return Ability(
-                    id: slug,
-                    name: parsed.fields.name,
-                    description: parsed.fields.description,
-                    activation: parsed.fields.activation,
-                    body: parsed.body,
-                    tags: [],
-                    items: [],
-                    filePath: url,
-                    metadataFilePath: url,
-                    storageKind: .legacyMarkdownFile
-                )
             }
-        var preferredById: [String: Ability] = [:]
-        for ability in loaded {
-            if let existing = preferredById[ability.id] {
-                switch (existing.storageKind, ability.storageKind) {
-                case (.legacyMarkdownFile, .bundle):
-                    preferredById[ability.id] = ability
-                case (.bundle, .legacyMarkdownFile):
-                    continue
-                default:
-                    preferredById[ability.id] = ability
-                }
-            } else {
-                preferredById[ability.id] = ability
-            }
-        }
-        abilities = preferredById.values.sorted {
+            .sorted {
             $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
         // Mirror canonical skills into the project root's native catalogs as

@@ -12,10 +12,10 @@ contract for agent-invocation input assembly. Depth reference:
 | `AgentCatalogStore.swift` | Terminal-agent identity + per-agent model validity |
 | `AgentTemplateStore.swift` | Template catalog (builtin / user / project, FSEvents reload) |
 | `ProjectInstructionStore.swift` | Abilities + bundled prompts + system-ability templates (skills deferred) |
-| `AgentInvocationComposer.swift` | `compose(_:)` — semantic plan, single public entry |
+| `AgentInvocationComposer.swift` | `compose(_:overrides:)` — semantic plan, single public entry |
 | `AgentInvocationTransportAdapter.swift` | Semantic plan → argv / prefix / initial prompt |
 | `AgentInputQueries.swift` | Pure selectors over a plan |
-| `PreviewOverrides.swift` | D1(B) per-run preview override layer (mute / force-include) |
+| `InstructionRunOverrides.swift` | Per-run override layer (mute / force-include / generated-part disable) |
 | `BridgePromptCatalog.swift` | Ask-agent presets + bridge helper prompt content |
 
 Quick Action is now the default **authoring surface** for user-authored
@@ -34,11 +34,11 @@ the final user-visible launch review.
 3. **Disk/watcher truth.** `ProjectInstructionStore` reads abilities from
    disk per call. No in-memory cache. The old `AbilityInjector` cache-
    bypass workaround is now the design — not a comment.
-4. **Preview ⇄ launch share the base plan.** Both read from
-   `AgentInvocationPlan`. Preview is allowed to layer *local* per-run
-   overrides (ability mutes, force-includes — D1(B) side channel); those
-   do not flow into launch. Any disagreement on non-override fields is a
-   composer bug — fix the composer, not the consumer.
+4. **Preview ⇄ launch share one composition path.** Both read from
+   `AgentInvocationPlan` produced by `AgentInvocationComposer.compose(_:overrides:)`.
+   Sheet-scoped run overrides (ability mutes, force-includes, generated-part disables) must flow into
+   both preview and launch. Any disagreement is a composer/adapter bug — fix
+   the shared path, not the consumer.
 5. **Nothing hidden ships.** If text or flags reach the agent, the user
    must be able to see that exact payload in Quick Action preview/raw or
    the socket preview endpoint. Authored text and delivered text are not
@@ -63,7 +63,7 @@ the final user-visible launch review.
   `AgentInvocationTransportAdapter` or the backing
   `AgentSystemPromptInjector`. Do not teach the composer about CLIs.
 - **New caller wanting a plan**: build an `AgentInvocationRequest`, call
-  `AgentInvocationComposer.compose(_:)`. Don't re-implement variable
+  `AgentInvocationComposer.compose(_:overrides:)`. Don't re-implement variable
   substitution or system-prompt stitching at the call site.
 - **New user-authored create flow**: present Quick Action with a
   prefilled request. Do not add a second final-authoring UI unless the

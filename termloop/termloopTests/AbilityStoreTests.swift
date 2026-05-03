@@ -135,30 +135,19 @@ final class AbilityStoreTests: XCTestCase {
             .appendingPathComponent(".termloop/abilities", isDirectory: true)
         try FileManager.default.createDirectory(at: abilitiesDir, withIntermediateDirectories: true)
 
-        try """
-        ---
-        name: Always Rule
-        description: Use when always testing.
-        activation: always
-        ---
-        ALWAYS-TOKEN
-        """.write(
-            to: abilitiesDir.appendingPathComponent("always-rule.md"),
-            atomically: true,
-            encoding: .utf8
+        try writeAbilityBundle(
+            parentDirectory: abilitiesDir,
+            id: "always-rule",
+            name: "Always Rule",
+            activation: .always,
+            payloadBody: "ALWAYS-TOKEN"
         )
-
-        try """
-        ---
-        name: Worktree Rule
-        description: Use in worktrees.
-        activation: worktree
-        ---
-        WORKTREE-TOKEN
-        """.write(
-            to: abilitiesDir.appendingPathComponent("worktree-rule.md"),
-            atomically: true,
-            encoding: .utf8
+        try writeAbilityBundle(
+            parentDirectory: abilitiesDir,
+            id: "worktree-rule",
+            name: "Worktree Rule",
+            activation: .worktree,
+            payloadBody: "WORKTREE-TOKEN"
         )
 
         let rootPrompt = ProjectInstructionStore.snapshot(
@@ -263,7 +252,12 @@ final class AbilityStoreTests: XCTestCase {
         }
         XCTAssertEqual(installed.name, "Working With Jira")
         XCTAssertEqual(installed.activation, .off)
-        XCTAssertTrue(installed.systemReminderBody?.contains("Jira") ?? false)
+        XCTAssertTrue(installed.payloadBlocks.contains {
+            $0.body.contains("Jira") || $0.body.contains("jira")
+        })
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: repo.appendingPathComponent(".termloop/abilities/working-with-jira/payload").path
+        ))
 
         store.toggleActivation(id: "working-with-jira")
         XCTAssertEqual(store.ability(id: "working-with-jira")?.activation, .worktree)
@@ -499,10 +493,20 @@ final class AbilityStoreTests: XCTestCase {
             name: "Working With Jira",
             description: "Use when working with Jira.",
             activation: .worktree,
-            body: "",
+            payloadBlocks: [
+                AbilityPayloadBlock(
+                    id: "010-update-ticket-chip",
+                    title: "Update ticket chip",
+                    description: "",
+                    enabled: true,
+                    body: "Telemetry: call `mcp__termloop__set_jira_ticket`.",
+                    fileURL: URL(fileURLWithPath: "/tmp/working-with-jira/payload/010-update-ticket-chip.md"),
+                    mcpToolName: "set_jira_ticket",
+                    includeInSkillFooter: true
+                )
+            ],
             items: [.requiredSkill("working-with-jira")],
             mcpTools: [AbilityMCPToolBinding(name: "set_jira_ticket")],
-            filePath: URL(fileURLWithPath: "/tmp/jira.md"),
             metadataFilePath: URL(fileURLWithPath: "/tmp/jira.json")
         )
 
@@ -572,11 +576,9 @@ final class AbilityStoreTests: XCTestCase {
             name: "Running Your Application",
             description: "Use when running.",
             activation: .listed,
-            body: "",
             items: [
                 .requiredSkill("running-your-application")
             ],
-            filePath: URL(fileURLWithPath: "/tmp/running.md"),
             metadataFilePath: URL(fileURLWithPath: "/tmp/running.json")
         )
 
@@ -610,11 +612,9 @@ final class AbilityStoreTests: XCTestCase {
             name: "Running Your Application",
             description: "Use when running.",
             activation: .listed,
-            body: "",
             items: [
                 .requiredSkill("running-your-application")
             ],
-            filePath: URL(fileURLWithPath: "/tmp/running.md"),
             metadataFilePath: URL(fileURLWithPath: "/tmp/running.json")
         )
 
@@ -634,17 +634,24 @@ final class AbilityStoreTests: XCTestCase {
         ))
     }
 
-    func testComposeAbilityBlockFallsBackToBodyWhenRequiredSkillIsMissing() {
+    func testComposeAbilityBlockUsesPayloadWhenRequiredSkillIsMissing() {
+        let payload = AbilityPayloadBlock(
+            id: "010-rules",
+            title: "Rules",
+            description: "",
+            enabled: true,
+            body: "Payload content.",
+            fileURL: URL(fileURLWithPath: "/tmp/working-with-jira/payload/010-rules.md")
+        )
         let ability = Ability(
             id: "working-with-jira",
             name: "Working With Jira",
             description: "Use when...",
             activation: .listed,
-            body: "Fallback body content.",
+            payloadBlocks: [payload],
             items: [
                 .requiredSkill("working-with-jira")
             ],
-            filePath: URL(fileURLWithPath: "/tmp/working-with-jira.md"),
             metadataFilePath: URL(fileURLWithPath: "/tmp/working-with-jira.json")
         )
 
@@ -657,8 +664,37 @@ final class AbilityStoreTests: XCTestCase {
         )
 
         XCTAssertNotNil(output)
-        XCTAssertTrue(output?.contains("Fallback body content.") ?? false)
+        XCTAssertTrue(output?.contains("Payload content.") ?? false)
         XCTAssertTrue(output?.contains("Working With Jira") ?? false)
+    }
+
+    private func writeAbilityBundle(
+        parentDirectory: URL,
+        id: String,
+        name: String,
+        activation: AbilityActivation,
+        payloadBody: String
+    ) throws {
+        let bundleURL = AbilityBundleStore.bundleDirectoryURL(parentDirectory: parentDirectory, slug: id)
+        let payload = AbilityPayloadBlock(
+            id: "010-rules",
+            title: "Rules",
+            description: "",
+            enabled: true,
+            body: payloadBody,
+            fileURL: bundleURL
+                .appendingPathComponent(AbilityBundleManifest.payloadDirectoryName, isDirectory: true)
+                .appendingPathComponent("010-rules.md")
+        )
+        let ability = Ability(
+            id: id,
+            name: name,
+            description: "Test ability",
+            activation: activation,
+            payloadBlocks: [payload],
+            metadataFilePath: bundleURL.appendingPathComponent("ability.json")
+        )
+        try AbilityBundleStore.save(ability)
     }
 
 }

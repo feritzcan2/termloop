@@ -11,9 +11,8 @@
       "title" : "Jira Ticket"
     }
   ],
-  "description" : "Use when the task needs Jira issue lookup, transition discipline, estimate checks, or ticket-linked PR flow.",
+  "description" : "Use when working on Jira tickets.",
   "id" : "working-with-jira",
-  "instructionFile" : "instructions.md",
   "items" : [
     {
       "type" : "requiredSkill",

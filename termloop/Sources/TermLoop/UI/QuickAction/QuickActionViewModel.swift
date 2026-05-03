@@ -297,10 +297,9 @@ final class QuickActionViewModel: ObservableObject {
             .sink { [weak self] _ in self?.refreshPreview() }
             .store(in: &cancellables)
 
-        // Override toggles (mute / force-include) recompose the preview
-        // plan — the plan's ability block reflects overrides via the
-        // composer's `previewPlan(_:overrides:)` seam, so renderedSystemPrompt
-        // stays byte-identical to what launch would emit for the same layer.
+        // Override toggles recompose the same plan
+        // shape launch will use, so the reviewed payload stays byte-identical
+        // to the launch payload for the current sheet state.
         // `removeDuplicates` + `dropFirst` breaks the echo loop that
         // `setPlan`'s stale-filter pass could otherwise trigger.
         preview.$mutedIds
@@ -309,6 +308,11 @@ final class QuickActionViewModel: ObservableObject {
             .sink { [weak self] _ in self?.refreshPreview() }
             .store(in: &cancellables)
         preview.$forceIncludedIds
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in self?.refreshPreview() }
+            .store(in: &cancellables)
+        preview.$disabledGenerated
             .removeDuplicates()
             .dropFirst()
             .sink { [weak self] _ in self?.refreshPreview() }
@@ -346,7 +350,7 @@ final class QuickActionViewModel: ObservableObject {
         onLaunchedWorkspace = nil
         syncDocumentSelectionsToComposition()
 
-        preview.clearPerRunMutes()
+        preview.clearRunOverrides()
         refreshPreview()
     }
 
@@ -674,6 +678,7 @@ final class QuickActionViewModel: ObservableObject {
             modelOverride: advancedModel,
             reasoningOverride: advancedReasoning,
             variableValues: advancedVariableValues,
+            runOverrides: preview.currentOverrides,
             launchSource: .manualWorkspaceCreate,
             reasonTag: presentedReasonTag,
             suggestedBranchName: resolvedSuggestedWorktreeBranchName()
@@ -743,7 +748,10 @@ final class QuickActionViewModel: ObservableObject {
     private func launchTerminal(request: AgentInvocationRequest) throws {
         let plan: AgentInvocationPlan
         do {
-            plan = try AgentInvocationComposer.compose(request)
+            plan = try AgentInvocationComposer.compose(
+                request,
+                overrides: preview.currentOverrides
+            )
         } catch {
             throw QuickActionError.noTemplate
         }
@@ -1350,7 +1358,7 @@ final class QuickActionViewModel: ObservableObject {
             preview.setPlan(nil)
             return
         }
-        let plan = try? AgentInvocationComposer.previewPlan(
+        let plan = try? AgentInvocationComposer.compose(
             request,
             overrides: preview.currentOverrides
         )
