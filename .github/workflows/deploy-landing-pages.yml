@@ -1,6 +1,9 @@
 name: Deploy landing to Cloudflare Pages
 
 on:
+  push:
+    branches: [master]
+    paths: ['landing/**', '.github/workflows/deploy-landing-pages.yml']
   workflow_dispatch:
 
 permissions:
