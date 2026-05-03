@@ -1532,6 +1532,17 @@ final class SocketClient {
         if let error = response["error"] as? [String: Any] {
             let code = (error["code"] as? String) ?? "error"
             let message = (error["message"] as? String) ?? "Unknown v2 error"
+            if let data = error["data"] {
+                let detail: String = {
+                    guard JSONSerialization.isValidJSONObject(data),
+                          let encoded = try? JSONSerialization.data(withJSONObject: data, options: [.sortedKeys]),
+                          let rendered = String(data: encoded, encoding: .utf8) else {
+                        return String(describing: data)
+                    }
+                    return rendered
+                }()
+                throw CLIError(message: "\(code): \(message) \(detail)")
+            }
             throw CLIError(message: "\(code): \(message)")
         }
 

@@ -1174,6 +1174,9 @@ enum TermLoopSocketCommands {
         let result = BridgeCoordinator.shared.deliverFinalReply(
             requestId: requestId,
             callerWorkspaceId: callerId,
+            askToRequestId: uuid(params, "ask_to_request_id"),
+            askToReplyToken: rawString(params, "ask_to_reply_token"),
+            callerAgentId: rawString(params, "agent_id"),
             text: message
         )
         switch result {

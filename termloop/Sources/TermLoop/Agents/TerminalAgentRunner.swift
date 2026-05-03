@@ -1110,7 +1110,8 @@ enum TerminalAgentRunner {
 
         let prepared = IntegrationsSpawnPrep.prepare(
             items: dedupedById.values.sorted { $0.id < $1.id },
-            workspaceId: workspaceId.uuidString
+            workspaceId: workspaceId.uuidString,
+            launchEnvironment: baseEnv
         )
 
         var mergedEnv = prepared.envVars

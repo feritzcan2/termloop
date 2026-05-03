@@ -54,6 +54,21 @@ final class WorkspaceBridgeStoreTests: XCTestCase {
         XCTAssertEqual(store.bridges.first?.id, bridge.id)
     }
 
+    func testAskToReplyTokenPersistsAcrossStoreReload() {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WorkspaceBridgeStoreTests-\(UUID().uuidString).json")
+        temporaryStoreURLs.append(url)
+        let store = WorkspaceBridgeStore(fileURL: url)
+        var bridge = makeBridge()
+        bridge.intent = .askAgent
+        bridge.askToReplyToken = "reply-token"
+
+        XCTAssertTrue(store.add(bridge))
+
+        let reloaded = WorkspaceBridgeStore(fileURL: url)
+        XCTAssertEqual(reloaded.bridge(id: bridge.id)?.askToReplyToken, "reply-token")
+    }
+
     func testSetForwardModeUpdatesMode() {
         let store = makeStore()
         let bridge = makeBridge()

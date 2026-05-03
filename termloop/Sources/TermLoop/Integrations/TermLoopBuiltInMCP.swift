@@ -75,7 +75,10 @@ enum TermLoopBuiltInMCP {
         )
     }
 
-    static func configEntry(workspaceId: String? = nil) -> [String: Any] {
+    static func configEntry(
+        workspaceId: String? = nil,
+        launchEnvironment: [String: String] = [:]
+    ) -> [String: Any] {
         let socketPath = SocketControlSettings.socketPath()
         let bundledCLIPath = Bundle.main.bundleURL
             .appendingPathComponent("Contents/Resources/bin/termloop", isDirectory: false)
@@ -85,6 +88,12 @@ enum TermLoopBuiltInMCP {
             "TERMLOOP_SOCKET": socketPath,
             "TERMLOOP_BUNDLED_CLI_PATH": bundledCLIPath
         ]
+        for key in ["TERMLOOP_ASK_TO_REQUEST_ID", "TERMLOOP_ASK_TO_REPLY_TOKEN"] {
+            if let value = launchEnvironment[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !value.isEmpty {
+                env[key] = value
+            }
+        }
         if let workspaceId = workspaceId?.trimmingCharacters(in: .whitespacesAndNewlines),
            !workspaceId.isEmpty {
             env["TERMLOOP_WORKSPACE_ID"] = workspaceId
