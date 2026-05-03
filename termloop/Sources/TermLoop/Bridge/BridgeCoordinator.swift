@@ -394,6 +394,9 @@ final class BridgeCoordinator {
     func deliverFinalReply(
         requestId: UUID,
         callerWorkspaceId: UUID,
+        askToRequestId: UUID? = nil,
+        askToReplyToken: String? = nil,
+        callerAgentId: String? = nil,
         text: String
     ) -> FinalReplyDeliveryResult {
         guard let bridge = store.bridge(id: requestId) else {
@@ -402,10 +405,40 @@ final class BridgeCoordinator {
         guard bridge.intent == .askAgent else {
             return .notAskAgent
         }
-        guard callerWorkspaceId == bridge.rightWorkspaceId else {
+        let normalizedCallerAgentId = callerAgentId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedBridgeAgentId = bridge.rightAgentId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedAskToReplyToken = askToReplyToken?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedBridgeReplyToken = bridge.askToReplyToken?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasMatchingLaunchCredential = askToRequestId == requestId
+            && normalizedAskToReplyToken?.isEmpty == false
+            && normalizedAskToReplyToken == normalizedBridgeReplyToken
+        let hasMatchingAgent = normalizedCallerAgentId == nil
+            || normalizedCallerAgentId?.isEmpty == true
+            || normalizedBridgeAgentId == nil
+            || normalizedCallerAgentId == normalizedBridgeAgentId
+        let callerIsHelper = callerWorkspaceId == bridge.rightWorkspaceId
+            || (hasMatchingLaunchCredential && hasMatchingAgent)
+        guard callerIsHelper else {
+            BridgeDebugTrace.log(
+                "reply.reject wrong-caller request=\(requestId.uuidString.prefix(8)) " +
+                "expected=\(bridge.rightWorkspaceId.uuidString.prefix(8)) actual=\(callerWorkspaceId.uuidString.prefix(8)) " +
+                "askStamp=\(askToRequestId?.uuidString.prefix(8) ?? "nil") " +
+                "hasToken=\(normalizedAskToReplyToken?.isEmpty == false ? 1 : 0) " +
+                "callerAgent=\(normalizedCallerAgentId ?? "nil") bridgeAgent=\(normalizedBridgeAgentId ?? "nil")"
+            )
             return .wrongCaller(
                 expectedWorkspaceId: bridge.rightWorkspaceId,
                 actualWorkspaceId: callerWorkspaceId
+            )
+        }
+        if callerWorkspaceId != bridge.rightWorkspaceId {
+            BridgeDebugTrace.log(
+                "reply.accept launch-stamp request=\(requestId.uuidString.prefix(8)) " +
+                "expected=\(bridge.rightWorkspaceId.uuidString.prefix(8)) actual=\(callerWorkspaceId.uuidString.prefix(8))"
             )
         }
         guard let tabManager,

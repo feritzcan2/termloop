@@ -944,22 +944,43 @@ enum TermLoopMCPServer {
 
     /// Builds the workspace-targeting params for a daemon call. Prefers the
     /// canonical `TERMLOOP_WORKSPACE_ID` env injected by the runner, and also
-    /// sends the MCP subprocess's `cwd` when available. The daemon prefers the
-    /// workspace id for identity but uses cwd as the reported-state fallback
-    /// when a workspace has no persisted worktree path yet. Empty result means
-    /// neither route can identify a workspace.
+    /// sends the MCP subprocess's `cwd` when available. Ask-To helper launches
+    /// also carry `TERMLOOP_ASK_TO_REQUEST_ID` and a launch-only reply token;
+    /// the daemon can use that pair to authenticate `reply_to_request` when
+    /// Codex/Claude hands the MCP server a stale workspace env. Empty result
+    /// means neither route can identify a workspace.
     private static func workspaceTargetParams(env: [String: String]) -> [String: Any] {
         let envId = env["TERMLOOP_WORKSPACE_ID"]?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let cwd = FileManager.default.currentDirectoryPath
         let hasCwd = !cwd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let agentId = env["TERMLOOP_AGENT_ID"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let askToRequestId = env["TERMLOOP_ASK_TO_REQUEST_ID"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let askToReplyToken = env["TERMLOOP_ASK_TO_REPLY_TOKEN"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        func addLaunchContext(to params: inout [String: Any]) {
+            if !agentId.isEmpty {
+                params["agent_id"] = agentId
+            }
+            if !askToRequestId.isEmpty {
+                params["ask_to_request_id"] = askToRequestId
+            }
+            if !askToReplyToken.isEmpty {
+                params["ask_to_reply_token"] = askToReplyToken
+            }
+        }
         if !envId.isEmpty {
             var params: [String: Any] = ["workspace_id": envId]
             if hasCwd { params["cwd"] = cwd }
+            addLaunchContext(to: &params)
             return params
         }
         if hasCwd {
-            return ["cwd": cwd]
+            var params: [String: Any] = ["cwd": cwd]
+            addLaunchContext(to: &params)
+            return params
         }
         return [:]
     }
