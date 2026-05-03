@@ -909,6 +909,31 @@
     width: 100%;
     height: auto;
   }
+  .phone-trio {
+    display: flex;
+    gap: 18px;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 0 8px;
+  }
+  .phone-trio img {
+    flex: 1 1 0;
+    max-width: 280px;
+    width: 100%;
+    height: auto;
+    border-radius: 22px;
+    border: 1px solid var(--border-2);
+    background: #000;
+    box-shadow: 0 30px 80px -40px rgba(34,211,238,0.3),
+                0 30px 80px -40px rgba(168,85,247,0.25);
+  }
+  .phone-trio img:nth-child(1) { transform: translateY(12px) rotate(-2deg); }
+  .phone-trio img:nth-child(3) { transform: translateY(12px) rotate(2deg); }
+  @media (max-width: 640px) {
+    .phone-trio { gap: 8px; }
+    .phone-trio img:nth-child(1),
+    .phone-trio img:nth-child(3) { transform: none; }
+  }
   .more-text { padding: 8px 0; }
   .more-eyebrow {
     font-family: 'Geist Mono', monospace;
@@ -1533,6 +1558,19 @@
         <div class="more-eyebrow">Per-project accounts</div>
         <h3>Different Claude login per project.</h3>
         <p>Bind a separate Claude account to each project — work in one, personal in another. No terminal switching, no token juggling.</p>
+      </div>
+    </div>
+
+    <div class="more-row banner phone-row">
+      <div class="phone-trio">
+        <img src="/assets/screenshots/mobile/connections.jpg" alt="iOS app pairing screen connecting to a Mac">
+        <img src="/assets/screenshots/mobile/project-list.jpg" alt="iOS app showing the termloop project workspace list">
+        <img src="/assets/screenshots/mobile/agent-session.jpg" alt="Live agent terminal session viewed from the iOS app">
+      </div>
+      <div class="more-text">
+        <div class="more-eyebrow">Phone bridge</div>
+        <h3>Your sessions, in your pocket.</h3>
+        <p>Native iOS client pairs with your Mac over an authenticated TCP socket on your local network. Watch live agent output, switch projects, jump into a session — from the couch, the queue, or another room.</p>
       </div>
     </div>
   </div>

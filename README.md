@@ -35,7 +35,7 @@ The agent-loop layer — what makes TermLoop different from a plain terminal mul
 Hand four agents four tasks at once. Each runs in its own <code>.termloop-worktrees/&lt;branch&gt;</code>, boots its own dev server, opens its own PR. Your host checkout stays clean.
 </td>
 <td width="60%">
-<img src="./termloop/docs/assets/worktree-parallel.gif" alt="Four agents running in parallel worktrees, opening PRs, then merging" width="100%" />
+<img src="./termloop/docs/assets/worktree-parallel.gif" alt="Four agents running in parallel worktrees, opening PRs, then merging" width="600" />
 </td>
 </tr>
 <tr>
@@ -44,7 +44,7 @@ Hand four agents four tasks at once. Each runs in its own <code>.termloop-worktr
 Save an agent launch — name, prompt, model, even a starter command. One tap fires the whole set. No copy-pasting prompts, no per-agent setup.
 </td>
 <td width="60%">
-<img src="./termloop/docs/assets/quick-actions.gif" alt="Quick Actions panel launching multiple agents at once" width="100%" />
+<img src="./termloop/docs/assets/quick-actions.gif" alt="Quick Actions panel launching multiple agents at once" width="600" />
 </td>
 </tr>
 <tr>
@@ -53,7 +53,7 @@ Save an agent launch — name, prompt, model, even a starter command. One tap fi
 When one agent gets stuck, it doesn't wait for you. The built-in <code>ask_to</code> MCP tool lets it consult any other running agent — different model, different worktree. Cross-pollination, no human in the loop.
 </td>
 <td width="60%">
-<img src="./termloop/docs/assets/ask-to.gif" alt="One TermLoop agent asks another agent for help via the ask_to MCP tool" width="100%" />
+<img src="./termloop/docs/assets/ask-to.gif" alt="One TermLoop agent asks another agent for help via the ask_to MCP tool" width="600" />
 </td>
 </tr>
 <tr>
@@ -62,7 +62,7 @@ When one agent gets stuck, it doesn't wait for you. The built-in <code>ask_to</c
 TermLoop catalogs every <code>CLAUDE.md</code>, <code>AGENTS.md</code>, <code>GEMINI.md</code> across your tree, scores how much each one actually helps, and lets you clone the strong ones into other agents.
 </td>
 <td width="60%">
-<img src="./termloop/docs/assets/context-bank.png" alt="Context Bank cataloging CLAUDE.md files with usage scores" width="100%" />
+<img src="./termloop/docs/assets/context-bank.png" alt="Context Bank cataloging CLAUDE.md files with usage scores" width="500" />
 </td>
 </tr>
 <tr>
@@ -71,7 +71,7 @@ TermLoop catalogs every <code>CLAUDE.md</code>, <code>AGENTS.md</code>, <code>GE
 Bind a different Claude login to each project — work in one, personal in another. No terminal switching, no token juggling.
 </td>
 <td width="60%">
-<img src="./termloop/docs/assets/claude-accounts.png" alt="Settings panel binding one Claude account per project" width="100%" />
+<img src="./termloop/docs/assets/claude-accounts.png" alt="Settings panel binding one Claude account per project" width="600" />
 </td>
 </tr>
 <tr>
@@ -80,17 +80,20 @@ Bind a different Claude login to each project — work in one, personal in anoth
 Branch, PR status, dirty file count, port forwards, agent state — every workspace at a glance. Skim ten active threads without switching tabs.
 </td>
 <td width="60%">
-<img src="./termloop/docs/assets/sidebar.png" alt="TermLoop sidebar showing worktree agents, open and merged PRs" width="100%" />
+<img src="./termloop/docs/assets/sidebar.png" alt="TermLoop sidebar showing worktree agents, open and merged PRs" width="400" />
 </td>
 </tr>
+</table>
+
+## Phone bridge — your sessions, in your pocket
+
+Native iOS client pairs with your Mac over an authenticated TCP socket on your local network. Watch live agent output, switch projects, jump into a session — from the couch, the queue, or another room. Stable today; still under active development.
+
+<table>
 <tr>
-<td width="40%" valign="middle">
-<h3>iOS bridge</h3>
-Native iOS client connects to your TermLoop session over an authenticated TCP socket on your local network. Start an agent from the couch, watch output from a coffee-shop queue. Stable today; still under active development.
-</td>
-<td width="60%">
-<em>screenshots coming soon</em>
-</td>
+<td width="33%" align="center"><img src="./termloop/docs/assets/mobile/connections.jpg" alt="iOS app pairing with a Mac" width="280" /></td>
+<td width="33%" align="center"><img src="./termloop/docs/assets/mobile/project-list.jpg" alt="iOS project workspace list" width="280" /></td>
+<td width="33%" align="center"><img src="./termloop/docs/assets/mobile/agent-session.jpg" alt="Live agent session in iOS" width="280" /></td>
 </tr>
 </table>
 
@@ -105,7 +108,7 @@ TermLoop builds on [cmux](https://github.com/manaflow-ai/cmux), an open-source G
 Panes get a blue ring and tabs light up when coding agents need your attention.
 </td>
 <td width="60%">
-<img src="./termloop/docs/assets/notification-rings.png" alt="Notification rings" width="100%" />
+<img src="./termloop/docs/assets/notification-rings.png" alt="Notification rings" width="600" />
 </td>
 </tr>
 <tr>
@@ -114,7 +117,7 @@ Panes get a blue ring and tabs light up when coding agents need your attention.
 Split a browser alongside your terminal with a scriptable API ported from <a href="https://github.com/vercel-labs/agent-browser">agent-browser</a>.
 </td>
 <td width="60%">
-<img src="./termloop/docs/assets/built-in-browser.png" alt="Built-in browser" width="100%" />
+<img src="./termloop/docs/assets/built-in-browser.png" alt="Built-in browser" width="600" />
 </td>
 </tr>
 <tr>
@@ -123,7 +126,7 @@ Split a browser alongside your terminal with a scriptable API ported from <a hre
 Sidebar shows git branch, linked PR status/number, working directory, listening ports, and latest notification text. Split horizontally and vertically.
 </td>
 <td width="60%">
-<img src="./termloop/docs/assets/vertical-horizontal-tabs-and-splits.png" alt="Vertical tabs and split panes" width="100%" />
+<img src="./termloop/docs/assets/vertical-horizontal-tabs-and-splits.png" alt="Vertical tabs and split panes" width="600" />
 </td>
 </tr>
 <tr>
@@ -132,7 +135,7 @@ Sidebar shows git branch, linked PR status/number, working directory, listening 
 <code>termloop ssh user@remote</code> creates a workspace for a remote machine. Browser panes route through the remote network so localhost just works. Drag an image into a remote session to upload via scp.
 </td>
 <td width="60%">
-<img src="./termloop/docs/assets/ssh.png" alt="TermLoop SSH" width="100%" />
+<img src="./termloop/docs/assets/ssh.png" alt="TermLoop SSH" width="600" />
 </td>
 </tr>
 <tr>
@@ -141,7 +144,7 @@ Sidebar shows git branch, linked PR status/number, working directory, listening 
 <code>termloop claude-teams</code> runs Claude Code's teammate mode with one command. Teammates spawn as native splits with sidebar metadata and notifications. No tmux required.
 </td>
 <td width="60%">
-<img src="./termloop/docs/assets/claude-code-teams.png" alt="Claude Code Teams" width="100%" />
+<img src="./termloop/docs/assets/claude-code-teams.png" alt="Claude Code Teams" width="600" />
 </td>
 </tr>
 </table>
