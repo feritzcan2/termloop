@@ -78,7 +78,7 @@ What it does today:
 
 Persistence is real here, unlike AgentBridge. Loop definitions are stored at:
 
-- `~/Library/Application Support/cmux/termloop/loops.json`
+- `~/Library/Application Support/termloop/loops.json`
 
 ### TermLoopEngine
 
@@ -379,4 +379,4 @@ Best for:
 - `termloop/Sources/TermLoop/UI/Agents/AgentWorkspacePage.swift`
 - `termloop/Sources/TermLoop/UI/Agents/AgentWorkspacePageStore.swift`
 - `termloop/Sources/TermLoop/UI/QuickAction/QuickActionRunResolver.swift`
-- `.cmux/AgentSystem/UILayout.md`
+- `docs/System/Systems/UILayout/UILayout.md`

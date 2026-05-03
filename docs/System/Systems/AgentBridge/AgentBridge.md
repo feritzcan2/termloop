@@ -67,7 +67,7 @@ activation takes effect on the next run.
 
 ## 2. Terminal agent runner (`TerminalAgentRunner`)
 
-The one place the app uses for any pattern that spawns a new cmux workspace
+The one place the app uses for any pattern that spawns a new TermLoop workspace
 and sends it a command - especially interactive `claude` sessions with an
 initial prompt. Covered in detail in
 [`TerminalAgentRunner.md`](TerminalAgentRunner.md).
@@ -144,7 +144,7 @@ Recurring headless template execution lives in
 Short version:
 
 - `TermLoopStore` persists loop definitions at
-  `~/Library/Application Support/cmux/termloop/loops.json`.
+  `~/Library/Application Support/termloop/loops.json`.
 - `TermLoopEngine` is the runtime scheduler. It ticks every second,
   dispatches eligible loops, and tracks one in-flight run per loop.
 - Execution still goes through the normal headless path from section 3:
@@ -161,7 +161,7 @@ Do not confuse this with [`AgentBridge.md`](AgentBridge.md):
 
 ## 4. Text-injection patterns (where do text bytes go into a terminal)
 
-There is more than one way to send text into a cmux terminal surface.
+There is more than one way to send text into a TermLoop terminal surface.
 Pick the right tool for the situation - see the catalog in
 [`TerminalAgentRunner.md`](TerminalAgentRunner.md) under "Patterns
 catalog".

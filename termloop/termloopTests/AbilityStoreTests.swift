@@ -264,6 +264,9 @@ final class AbilityStoreTests: XCTestCase {
         XCTAssertEqual(installed.name, "Working With Jira")
         XCTAssertEqual(installed.activation, .off)
         XCTAssertTrue(installed.systemReminderBody?.contains("Jira") ?? false)
+
+        store.toggleActivation(id: "working-with-jira")
+        XCTAssertEqual(store.ability(id: "working-with-jira")?.activation, .worktree)
     }
 
     func testInstallSystemTemplateCreatesWorkingWithDebuggingAbilityFromBundledMarkdown() throws {

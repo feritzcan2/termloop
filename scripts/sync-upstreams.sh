@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Usage: ./scripts/sync-upstreams.sh [--force] [all|termloop|ghostty|homebrew-termloop|bonsplit]
+Usage: ./scripts/sync-upstreams.sh [--force] [all|termloop|ghostty|bonsplit]
 
 Syncs vendored upstream directories into the current repo and updates
 upstreams.lock with the resolved commit SHA for each synced component.
@@ -34,7 +34,7 @@ while [[ $# -gt 0 ]]; do
             usage
             exit 0
             ;;
-        all|termloop|ghostty|homebrew-termloop|bonsplit)
+        all|termloop|ghostty|bonsplit)
             TARGET="$1"
             shift
             ;;
@@ -131,23 +131,17 @@ preflight_sync() {
         all)
             require_clean_path "termloop" "$TERMLOOP_PATH" \
                 "$GHOSTTY_PATH" \
-                "$HOMEBREW_TERMLOOP_PATH" \
                 "$BONSPLIT_PATH"
             require_clean_path "ghostty" "$GHOSTTY_PATH"
-            require_clean_path "homebrew-termloop" "$HOMEBREW_TERMLOOP_PATH"
             require_clean_path "bonsplit" "$BONSPLIT_PATH"
             ;;
         termloop)
             require_clean_path "termloop" "$TERMLOOP_PATH" \
                 "$GHOSTTY_PATH" \
-                "$HOMEBREW_TERMLOOP_PATH" \
                 "$BONSPLIT_PATH"
             ;;
         ghostty)
             require_clean_path "ghostty" "$GHOSTTY_PATH"
-            ;;
-        homebrew-termloop)
-            require_clean_path "homebrew-termloop" "$HOMEBREW_TERMLOOP_PATH"
             ;;
         bonsplit)
             require_clean_path "bonsplit" "$BONSPLIT_PATH"
@@ -203,15 +197,6 @@ sync_ghostty() {
     update_lock_value "GHOSTTY_TREE_KEY" "$(tree_key_for_worktree_path "$GHOSTTY_PATH")"
 }
 
-sync_homebrew_termloop() {
-    sync_repo \
-        "homebrew-termloop" \
-        "$HOMEBREW_TERMLOOP_UPSTREAM_REPO" \
-        "$HOMEBREW_TERMLOOP_UPSTREAM_BRANCH" \
-        "$HOMEBREW_TERMLOOP_PATH" \
-        "HOMEBREW_TERMLOOP_COMMIT"
-}
-
 sync_bonsplit() {
     sync_repo \
         "bonsplit" \
@@ -227,7 +212,6 @@ case "$TARGET" in
     all)
         sync_termloop
         sync_ghostty
-        sync_homebrew_termloop
         sync_bonsplit
         ;;
     termloop)
@@ -235,9 +219,6 @@ case "$TARGET" in
         ;;
     ghostty)
         sync_ghostty
-        ;;
-    homebrew-termloop)
-        sync_homebrew_termloop
         ;;
     bonsplit)
         sync_bonsplit

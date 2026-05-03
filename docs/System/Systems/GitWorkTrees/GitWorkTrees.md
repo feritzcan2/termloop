@@ -1,14 +1,14 @@
 # GitWorkTrees
 
 Project-level reference for how TermLoop models Git worktrees and how that
-relates to cmux workspaces. Read this before changing attach/detach behavior,
+relates to TermLoop workspaces. Read this before changing attach/detach behavior,
 workspace cwd resolution, or any UI that shows branch/worktree state.
 
 ## 1. Core model
 
 In this system, a **workspace is not a Git worktree**.
 
-- A workspace is a cmux UI/runtime object: tabs, panels, terminal surfaces,
+- A workspace is a TermLoop UI/runtime object: tabs, panels, terminal surfaces,
   agent state, notifications.
 - A worktree is a Git checkout on disk, identified by `(projectId, branch)`.
 - The bridge between them is `WorkspaceMetadataStore.Metadata.branch`.
@@ -42,13 +42,13 @@ Three layers matter:
    are actually registered.
 3. Resolved filesystem path
    Worktree paths live at:
-   `<project>/.cmux-worktrees/<sanitized-branch>/`
+   `<project>/.termloop-worktrees/<sanitized-branch>/`
 
 The important distinction is:
 
 - `workspace.branch` says what the workspace is attached to.
 - Git says whether that worktree really exists and where.
-- A directory under `.cmux-worktrees/` by itself is not enough. If it is not
+- A directory under `.termloop-worktrees/` by itself is not enough. If it is not
   in `git worktree list`, treat it as an unregistered/stale folder, not a live
   worktree.
 
@@ -64,7 +64,7 @@ High-level flow:
 4. If the branch is already the main checkout branch, bind the workspace to the
    project root.
 5. If another worktree already has that branch, reuse that existing path.
-6. Otherwise create a new Git worktree under `.cmux-worktrees/<branch>`.
+6. Otherwise create a new Git worktree under `.termloop-worktrees/<branch>`.
 7. Reject the transition if the workspace is currently rooted at the main
    checkout and the target is a non-main worktree.
 8. Persist the workspace's `branch` metadata.
@@ -104,7 +104,7 @@ The sheet asks for:
 
 Then it:
 
-1. Resolves `<project>/.cmux-worktrees/<sanitized-branch>/`
+1. Resolves `<project>/.termloop-worktrees/<sanitized-branch>/`
 2. Reuses an existing worktree for that branch when present
 3. Otherwise runs `git worktree add` / `git worktree add -b`
 4. Creates a workspace with `workingDirectory = worktreePath`
@@ -196,7 +196,7 @@ If you change this subsystem, these invariants should remain true:
   non-main worktree.
 - Two workspaces attached to the same branch share the same filesystem
   checkout.
-- Unregistered folders under `.cmux-worktrees/` are not trusted as live state.
+- Unregistered folders under `.termloop-worktrees/` are not trusted as live state.
   Git registration wins.
 - Submodules in a newly created worktree are initialized automatically so the
   checkout is usable without a manual repair step.
@@ -209,7 +209,7 @@ When the system looks wrong, check in this order:
    Confirm the workspace's `branch` and `worktree_path`.
 2. `git worktree list --porcelain`
    Confirm Git agrees that the branch/path exists.
-3. `.cmux-worktrees/`
+3. `.termloop-worktrees/`
    Check whether the folder exists only on disk but is no longer registered.
 4. Submodule branch state inside the worktree
    Direct submodules like `termloop` should be on the matching branch, not on
@@ -221,7 +221,7 @@ Common failure modes:
   They will not.
 - User thinks a clean submodule means the parent repo is also clean. A parent
   repo can still be dirty because its submodule pointer changed.
-- A stale folder exists under `.cmux-worktrees/` and gets mistaken for a live
+- A stale folder exists under `.termloop-worktrees/` and gets mistaken for a live
   worktree.
 - A direct submodule inside a worktree ends up detached and someone commits on
   top of that detached HEAD.

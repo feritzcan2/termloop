@@ -1,6 +1,6 @@
 # UILayout — main-area swap + hiding the Ghostty terminal
 
-The cmux main window has a single "main content area" to the right of the
+The TermLoop main window has a single "main content area" to the right of the
 sidebar. Most of the time it hosts a Ghostty terminal, but several
 features need to take that space over: BMAD artifact reader, Scratchpad
 doc editor, AgentRun inline log viewer. This doc explains **how** that

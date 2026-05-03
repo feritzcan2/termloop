@@ -188,8 +188,16 @@
     padding: 96px 0 72px;
     text-align: center;
   }
+  .hero-eyebrow {
+    margin: 0 auto;
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--cyan-2);
+  }
   h1.hero-title {
-    margin: 24px auto 0;
+    margin: 18px auto 0;
     max-width: 900px;
     font-family: 'Geist', sans-serif;
     font-weight: 500;
@@ -776,6 +784,7 @@
   }
   .loop-proof-figure { margin: 0; }
   .loop-proof-frame {
+    position: relative;
     border: 1px solid var(--border-2);
     border-radius: 14px;
     background: linear-gradient(180deg, rgba(34,211,238,0.05), rgba(168,85,247,0.05));
@@ -784,6 +793,38 @@
       0 0 0 1px rgba(255,255,255,0.02) inset,
       0 30px 80px -30px rgba(34,211,238,0.25),
       0 30px 80px -30px rgba(168,85,247,0.2);
+  }
+  .loop-proof-overlay {
+    position: absolute;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 14px;
+    background: rgba(0,0,0,0.62);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    color: var(--fg);
+    font-family: 'Geist Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    text-align: center;
+    pointer-events: none;
+    white-space: nowrap;
+    max-width: calc(100% - 32px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: opacity 0.18s ease;
+  }
+  .loop-proof-overlay:empty { display: none; }
+  @media (max-width: 640px) {
+    .loop-proof-overlay {
+      font-size: 11.5px;
+      padding: 6px 10px;
+      bottom: 10px;
+      max-width: calc(100% - 16px);
+    }
   }
   .loop-proof-bar {
     display: flex; align-items: center; gap: 12px;
@@ -834,6 +875,79 @@
     color: var(--cyan-2);
     font-size: 11px;
     letter-spacing: 0.08em;
+  }
+
+  /* ── MORE INSIDE (screenshot showcase) ────────────────── */
+  section.more { padding: 64px 0 40px; }
+  section.more .section-head { margin-bottom: 48px; }
+  .more-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    align-items: center;
+    margin-bottom: 56px;
+    grid-template-areas: "image text";
+  }
+  .more-row .more-image { grid-area: image; }
+  .more-row .more-text { grid-area: text; }
+  .more-row.reverse { grid-template-areas: "text image"; }
+  .more-row.banner {
+    grid-template-areas: "image image" "text text";
+    grid-template-columns: 1fr;
+    gap: 24px;
+    margin-bottom: 0;
+  }
+  .more-image {
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    background: var(--bg-1);
+    box-shadow: 0 30px 80px -40px rgba(0,0,0,0.6);
+  }
+  .more-image img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .more-text { padding: 8px 0; }
+  .more-eyebrow {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--cyan-2);
+    margin-bottom: 10px;
+  }
+  .more-text h3 {
+    font-size: clamp(20px, 2.4vw, 26px);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--fg);
+    margin-bottom: 12px;
+  }
+  .more-text p {
+    color: var(--fg-2);
+    font-size: 15.5px;
+    line-height: 1.65;
+  }
+  .more-text code {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.88em;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    color: var(--cyan-3);
+  }
+  @media (max-width: 800px) {
+    .more-row,
+    .more-row.reverse,
+    .more-row.banner {
+      grid-template-areas: "image" "text";
+      grid-template-columns: 1fr;
+      gap: 18px;
+      margin-bottom: 48px;
+    }
   }
 
   /* ── SECTION HEADING ──────────────────────────────────── */
@@ -1231,7 +1345,8 @@
       <span>TermLoop</span>
     </a>
     <div class="nav-links">
-      <a href="/github" class="nav-cta">GitHub →</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/feritzcan2/termloop" class="nav-cta">GitHub →</a>
     </div>
   </div>
 </nav>
@@ -1239,6 +1354,9 @@
 <!-- ═══ HERO ═══ -->
 <section class="hero">
   <div class="container">
+    <p class="hero-eyebrow reveal" style="animation-delay: 0.05s">
+      For devs running Claude Code, Codex, Gemini CLI, Aider, Cline — in parallel
+    </p>
     <h1 class="hero-title reveal" style="animation-delay: 0.15s">
       The terminal IDE<br>
       for <span class="grad">your AI agents.</span>
@@ -1253,7 +1371,7 @@
         Download for macOS
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
       </a>
-      <a href="/github" class="btn btn-ghost">
+      <a href="https://github.com/feritzcan2/termloop" class="btn btn-ghost">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55v-1.92c-3.2.7-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.2-3.09-.12-.29-.52-1.48.11-3.09 0 0 .98-.31 3.2 1.18.93-.26 1.92-.38 2.91-.38.99 0 1.98.13 2.91.38 2.22-1.5 3.19-1.18 3.19-1.18.64 1.61.24 2.8.12 3.09.75.81 1.2 1.84 1.2 3.09 0 4.42-2.69 5.39-5.25 5.68.41.36.78 1.05.78 2.12v3.14c0 .3.21.66.79.55A11.5 11.5 0 0 0 23.5 12C23.5 5.73 18.27.5 12 .5z"/></svg>
         Star on GitHub
       </a>
@@ -1287,15 +1405,16 @@
             <div class="loop-proof-dots"><span></span><span></span><span></span></div>
             <div class="loop-proof-bar-title">termloop · quick action · all agents in one tap</div>
           </div>
-          <video autoplay muted loop playsinline preload="metadata" aria-label="One Quick Action launches every TermLoop agent at once">
+          <video autoplay muted loop playsinline preload="metadata" aria-label="One Quick Action launches every TermLoop agent at once" data-captions='[{"t":0,"text":"Open Quick Actions"},{"t":4,"text":"One tap"},{"t":9,"text":"Each on its own task"}]'>
             <source src="/assets/videos/quick-actions.webm" type="video/webm">
             <source src="/assets/videos/quick-actions.mp4" type="video/mp4">
           </video>
+          <div class="loop-proof-overlay" aria-live="polite"></div>
         </div>
         <figcaption class="loop-proof-beats">
           <span><b>01</b> Open Quick Actions</span>
           <span><b>02</b> One tap</span>
-          <span><b>03</b> Every agent boots in its worktree</span>
+          <span><b>03</b> Each on its own task</span>
         </figcaption>
       </figure>
     </div>
@@ -1321,10 +1440,11 @@
             <div class="loop-proof-dots"><span></span><span></span><span></span></div>
             <div class="loop-proof-bar-title">termloop · 4 agents · 1 loop · 18 seconds</div>
           </div>
-          <video autoplay muted loop playsinline preload="metadata" aria-label="Four TermLoop agents running in parallel worktrees, opening PRs, and merging">
+          <video autoplay muted loop playsinline preload="metadata" aria-label="Four TermLoop agents running in parallel worktrees, opening PRs, and merging" data-captions='[{"t":0,"text":"Empty workspace"},{"t":4,"text":"4 agents kick off"},{"t":10,"text":"Apps boot · live URLs come in"},{"t":13,"text":"PRs open in the sidebar"},{"t":16,"text":"Pull → finished"}]'>
             <source src="/assets/videos/worktree-parallel.webm" type="video/webm">
             <source src="/assets/videos/worktree-parallel.mp4" type="video/mp4">
           </video>
+          <div class="loop-proof-overlay" aria-live="polite"></div>
         </div>
         <figcaption class="loop-proof-beats">
           <span><b>01</b> Empty workspace</span>
@@ -1358,10 +1478,11 @@
             <div class="loop-proof-dots"><span></span><span></span><span></span></div>
             <div class="loop-proof-bar-title">termloop · ask_to · cross-agent consult</div>
           </div>
-          <video autoplay muted loop playsinline preload="metadata" aria-label="One TermLoop agent asks another for help via the built-in ask_to MCP tool">
+          <video autoplay muted loop playsinline preload="metadata" aria-label="One TermLoop agent asks another for help via the built-in ask_to MCP tool" data-captions='[{"t":0,"text":"Agent prepares the question"},{"t":6,"text":"New agent picks it up"},{"t":9,"text":"Back to the asker"},{"t":12,"text":"Answer arrives"}]'>
             <source src="/assets/videos/ask-to.webm" type="video/webm">
             <source src="/assets/videos/ask-to.mp4" type="video/mp4">
           </video>
+          <div class="loop-proof-overlay" aria-live="polite"></div>
         </div>
         <figcaption class="loop-proof-beats">
           <span><b>01</b> Agent prepares the question</span>
@@ -1374,6 +1495,90 @@
   </div>
 </section>
 
+<!-- ═══ MORE INSIDE ═══ -->
+<section class="more" id="more">
+  <div class="container">
+    <div class="section-head">
+      <div class="eyebrow">More inside</div>
+      <h2 class="section-title">Built for serious agent workflows.</h2>
+    </div>
+
+    <div class="more-row">
+      <div class="more-image">
+        <img src="/assets/screenshots/sidebar.png" alt="TermLoop sidebar showing worktree agents, open and merged PRs">
+      </div>
+      <div class="more-text">
+        <div class="more-eyebrow">Sidebar</div>
+        <h3>Every thread, one rail.</h3>
+        <p>Branch, PR status, dirty file count, port forwards, agent state — every workspace at a glance. Skim ten active threads without switching tabs.</p>
+      </div>
+    </div>
+
+    <div class="more-row reverse">
+      <div class="more-image">
+        <img src="/assets/screenshots/context-bank.png" alt="Context Bank cataloging CLAUDE.md files across the project with usage scores">
+      </div>
+      <div class="more-text">
+        <div class="more-eyebrow">Context Bank</div>
+        <h3>Shared, scored context.</h3>
+        <p>TermLoop catalogs every <code>CLAUDE.md</code>, <code>AGENTS.md</code>, <code>GEMINI.md</code> across your tree, scores how much each one actually helps, and lets you clone the strong ones into other agents.</p>
+      </div>
+    </div>
+
+    <div class="more-row banner">
+      <div class="more-image">
+        <img src="/assets/screenshots/claude-accounts.png" alt="Settings panel binding one Claude account per project">
+      </div>
+      <div class="more-text">
+        <div class="more-eyebrow">Per-project accounts</div>
+        <h3>Different Claude login per project.</h3>
+        <p>Bind a separate Claude account to each project — work in one, personal in another. No terminal switching, no token juggling.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ FAQ ═══ -->
+<section class="faq" id="faq">
+  <div class="container">
+    <div class="section-head">
+      <div class="eyebrow">Questions</div>
+      <h2 class="section-title">Frequently asked.</h2>
+    </div>
+
+    <div class="faq-list">
+      <details class="q">
+        <summary>Do I pay separately for the AI?</summary>
+        <p>No. TermLoop runs the agent CLIs you already use — Claude Code, Codex, Gemini CLI, Aider, Cline. You stay logged in with your existing subscription. TermLoop never proxies your API traffic and adds no billing layer.</p>
+      </details>
+      <details class="q">
+        <summary>Which agents and models can I run?</summary>
+        <p>Anything with a CLI: Claude Code (Anthropic), Codex (OpenAI), Gemini CLI (Google), Aider, Cline, local Ollama, or your own scripts. TermLoop just hands each one a worktree and a pane — it's model-agnostic.</p>
+      </details>
+      <details class="q">
+        <summary>Is TermLoop a fork of something?</summary>
+        <p>TermLoop builds on <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener" style="color: var(--cyan-2); text-decoration: underline; text-decoration-color: rgba(34,211,238,0.3);">cmux</a>, an open-source GPL-3.0 terminal multiplexer by Manaflow. cmux gives us the multiplexer foundation — splits, panes, the renderer. The agent-loop layer, worktree orchestration, ask_to MCP, Context Bank, mobile bridge, and per-project Claude accounts — all of it is what TermLoop adds on top.</p>
+      </details>
+      <details class="q">
+        <summary>Is it really open source?</summary>
+        <p>Yes. The macOS app is a free download and the source is public. Inspect the socket protocol, the agent loop, the worktree orchestration — everything. No telemetry, no phone-home.</p>
+      </details>
+      <details class="q">
+        <summary>Linux or Windows?</summary>
+        <p>macOS only today. Linux is on the roadmap. Windows isn't, for now — we wanted a native, low-latency UI before we wanted broad reach.</p>
+      </details>
+      <details class="q">
+        <summary>Does the iOS app actually work?</summary>
+        <p>Yes — the iOS client connects to your TermLoop session over an authenticated TCP socket on your local network. It's stable today but still under active development, so expect ongoing iteration. Desktop is the primary surface for now.</p>
+      </details>
+      <details class="q">
+        <summary>What about my code and credentials?</summary>
+        <p>They never leave your machine. Agents call their providers directly with your own subscription. The only network call TermLoop itself makes is checking for app updates, which you can disable.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
 <!-- ═══ FOOTER ═══ -->
 <footer class="site">
   <div class="container inner">
@@ -1382,7 +1587,8 @@
       <span>TermLoop</span>
     </div>
     <div class="links">
-      <a href="/github">GitHub</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/feritzcan2/termloop">GitHub</a>
       <a href="mailto:feritzcan93@gmail.com">Contact</a>
     </div>
     <div class="copy">© 2026 · termloop.ai</div>
@@ -1410,6 +1616,29 @@
         video.webkitRequestFullscreen();
       }
     });
+  });
+
+  // Caption overlays driven by video.currentTime
+  document.querySelectorAll('.loop-proof video[data-captions]').forEach(video => {
+    const overlay = video.parentElement.querySelector('.loop-proof-overlay');
+    if (!overlay) return;
+    let captions;
+    try { captions = JSON.parse(video.dataset.captions); } catch (_) { return; }
+    if (!Array.isArray(captions) || captions.length === 0) return;
+    let lastText = '';
+    const update = () => {
+      const t = video.currentTime;
+      let active = captions[0];
+      for (const c of captions) if (t >= c.t) active = c;
+      if (active.text !== lastText) {
+        overlay.textContent = active.text;
+        lastText = active.text;
+      }
+    };
+    video.addEventListener('timeupdate', update);
+    video.addEventListener('loadedmetadata', update);
+    video.addEventListener('seeked', update);
+    update();
   });
 </script>
 

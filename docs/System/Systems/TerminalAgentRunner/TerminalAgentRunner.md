@@ -1,13 +1,13 @@
 # TerminalAgentRunner
 
-Single entry point for "open a new cmux workspace and run a command in its
+Single entry point for "open a new TermLoop workspace and run a command in its
 shell". The primary use case is starting an interactive `claude` agent
 with an initial prompt pre-loaded; a generic shell variant handles
 everything else (BMAD skills, custom one-offs, etc.).
 
 ## Why this exists
 
-Starting `claude` and handing it an initial prompt inside a cmux terminal
+Starting `claude` and handing it an initial prompt inside a TermLoop terminal
 panel seems straightforward but is surprisingly easy to get wrong. Every
 call site that rolled its own approach ended up with the same three bugs.
 
