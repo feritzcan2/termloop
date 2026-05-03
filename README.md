@@ -31,20 +31,20 @@ The agent-loop layer — what makes TermLoop different from a plain terminal mul
 <table>
 <tr>
 <td width="40%" valign="middle">
-<h3>Parallel worktree agents</h3>
-Hand four agents four tasks at once. Each runs in its own <code>.termloop-worktrees/&lt;branch&gt;</code>, boots its own dev server, opens its own PR. Your host checkout stays clean.
-</td>
-<td width="60%">
-<img src="./termloop/docs/assets/worktree-parallel.gif" alt="Four agents running in parallel worktrees, opening PRs, then merging" width="600" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
 <h3>Quick Actions — all your agents in one tap</h3>
 Save an agent launch — name, prompt, model, even a starter command. One tap fires the whole set. No copy-pasting prompts, no per-agent setup.
 </td>
 <td width="60%">
 <img src="./termloop/docs/assets/quick-actions.gif" alt="Quick Actions panel launching multiple agents at once" width="600" />
+</td>
+</tr>
+<tr>
+<td width="40%" valign="middle">
+<h3>Parallel worktree agents</h3>
+Hand four agents four tasks at once. Each runs in its own <code>.termloop-worktrees/&lt;branch&gt;</code>, boots its own dev server, opens its own PR. Your host checkout stays clean.
+</td>
+<td width="60%">
+<img src="./termloop/docs/assets/worktree-parallel.gif" alt="Four agents running in parallel worktrees, opening PRs, then merging" width="600" />
 </td>
 </tr>
 <tr>
