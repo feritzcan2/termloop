@@ -1,7 +1,7 @@
 # Notification System Architecture
 
 Centralized architecture for terminal-agent activity, attention, and notification
-state in `bmadworkflowtest/termloop`.
+state in `TermLoop`.
 
 This document describes the model used to make `Claude`, `Codex`, and future
 terminal agents behave the same way for:
@@ -281,7 +281,7 @@ Code:
 
 Remote/mobile push follows the same intent:
 
-- if cmux is focused and the selected workspace is the one that entered
+- if TermLoop is focused and the selected workspace is the one that entered
   `waiting`, APNs push is suppressed
 - repeated non-urgent pushes for the same workspace are rate-limited with a
   short cooldown
@@ -347,8 +347,8 @@ done first because it is shared across all agents.
 
 Primary coverage lives in:
 
-- `termloop/cmuxTests/InternalHookEventTests.swift`
-- `termloop/cmuxTests/WorkspaceResumedEventTests.swift`
+- `termloop/termloopTests/InternalHookEventTests.swift`
+- `termloop/termloopTests/WorkspaceResumedEventTests.swift`
 
 What should be tested:
 

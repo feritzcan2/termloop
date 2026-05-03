@@ -48,15 +48,31 @@ Check whether Atlassian/Jira MCP is configured in repo or global config, but nev
 Prefer MCP. If MCP is unavailable, try Atlassian's official CLI (`acli`):
 
 ```bash
+command -v acli || true
 acli --version 2>&1 | head -3 || true
 acli jira auth status 2>&1 | head -5 || true
 ```
+
+If neither Jira MCP nor authenticated `acli` is available, do not continue to Phase 3 yet. Help the user get Jira access working first:
+
+- Explain that Jira access is needed before repo-specific workflow recommendations can be grounded in real tickets.
+- Offer to install `acli` on macOS with Homebrew:
+
+```bash
+brew tap atlassian/homebrew-acli
+brew install acli
+acli auth login
+```
+
+- Offer to register Atlassian's official remote MCP under the server name `atlassian` for the current agent, using that agent's MCP configuration mechanism. Use `https://mcp.atlassian.com/v1/mcp` as the remote MCP URL. Do not print or request secrets in chat; direct the user through the agent's auth/config flow.
+- After the user installs or authenticates one access path, rerun Phase 2 checks.
+- Only proceed without Jira access if the user explicitly says to continue in offline mode; mark the resulting skill as evidence-only and do not claim Jira-backed workflow facts.
 
 If a likely issue key was detected and Jira is reachable, inspect 1–3 matching issues and note status, assignee, and available transitions.
 
 ## Phase 3 — Ask only missing questions
 
-Ask only narrow questions the evidence did not answer. Group them in one message with defaults:
+Ask only narrow questions the evidence and Jira access did not answer. Group them in one message with defaults:
 - workflow states
 - when to move to In Review
 - when to move to Done
