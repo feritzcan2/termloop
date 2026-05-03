@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <img src="./termloop/docs/assets/main-first-image.png" alt="TermLoop screenshot" width="900" />
+  <img src="./termloop/docs/assets/quick-actions.gif" alt="One Quick Action launches all your agents in their own worktrees" width="900" />
 </p>
 
 <p align="center">

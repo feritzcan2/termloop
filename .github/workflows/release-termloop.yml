@@ -390,31 +390,6 @@ jobs:
           generate_release_notes: true
           overwrite_files: false
 
-      - name: Upload release appcast to R2
-        if: steps.guard_release_assets.outputs.skip_upload != 'true' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-        continue-on-error: true
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_ENDPOINT: "https://${{ secrets.CF_R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          command -v aws >/dev/null 2>&1 || { echo "Installing AWS CLI..."; brew install awscli; }
-
-          LATEST=$(gh release list --exclude-drafts --exclude-pre-releases \
-            --json tagName -q '.[].tagName' | sort -V | tail -1)
-          if [ -n "$LATEST" ] && [ "$LATEST" != "$GITHUB_REF_NAME" ]; then
-            echo "Skipping R2 stable upload: $GITHUB_REF_NAME is not the latest release ($LATEST)"
-            exit 0
-          fi
-
-          aws s3 cp termloop-appcast.xml \
-            "s3://cmux-binaries/stable/termloop-appcast.xml" \
-            --endpoint-url "$R2_ENDPOINT" \
-            --cache-control "no-cache, no-store, must-revalidate"
-
       - name: Cleanup keychain
         if: always()
         run: |
