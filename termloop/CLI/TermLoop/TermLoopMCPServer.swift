@@ -996,18 +996,22 @@ enum TermLoopMCPServer {
     }
 
     /// Builds the workspace-targeting params for a daemon call. Prefers the
-    /// canonical `TERMLOOP_WORKSPACE_ID` env injected by the runner; falls
-    /// back to the MCP subprocess's `cwd` so plain login-shell invocations
-    /// (`cd <worktree> && claude`) still resolve. Empty result means neither
-    /// route can identify a workspace.
+    /// canonical `TERMLOOP_WORKSPACE_ID` env injected by the runner, and also
+    /// sends the MCP subprocess's `cwd` when available. The daemon prefers the
+    /// workspace id for identity but uses cwd as the reported-state fallback
+    /// when a workspace has no persisted worktree path yet. Empty result means
+    /// neither route can identify a workspace.
     private static func workspaceTargetParams(env: [String: String]) -> [String: Any] {
         let envId = env["TERMLOOP_WORKSPACE_ID"]?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !envId.isEmpty {
-            return ["workspace_id": envId]
-        }
         let cwd = FileManager.default.currentDirectoryPath
-        if !cwd.isEmpty {
+        let hasCwd = !cwd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if !envId.isEmpty {
+            var params: [String: Any] = ["workspace_id": envId]
+            if hasCwd { params["cwd"] = cwd }
+            return params
+        }
+        if hasCwd {
             return ["cwd": cwd]
         }
         return [:]

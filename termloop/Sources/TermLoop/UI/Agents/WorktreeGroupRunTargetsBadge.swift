@@ -15,6 +15,7 @@ import SwiftUI
 struct WorktreeGroupRunTargetsBadge: View {
     let bindings: [AgentReportedStateStore.AgentReportedBinding]
     let workspaceIds: [UUID]
+    let reportedStatePath: String?
 
     @State private var popoverShown = false
 
@@ -190,7 +191,8 @@ struct WorktreeGroupRunTargetsBadge: View {
             nil,
             abilityId: binding.abilityId,
             bindingId: binding.bindingId,
-            forWorkspaceId: firstId
+            forWorkspaceId: firstId,
+            fallbackPath: reportedStatePath
         )
     }
 
