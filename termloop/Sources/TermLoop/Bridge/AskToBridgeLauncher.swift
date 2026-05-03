@@ -52,6 +52,12 @@ enum AskToBridgeLauncher {
         let requestId = UUID()
         let sourceAgentId = resolveSourceAgentId(workspaceId: sourceWorkspaceId)
         let sourceProjectId = resolveSourceProjectId(sourceWorkspace)
+        let kickoffMessage = BridgeHelperSystemPrompt.kickoffMessage(
+            sourcePrompt,
+            requestId: requestId,
+            firstSpeaker: firstSpeaker
+        )
+        let deliverKickoffAtLaunch = firstSpeaker == .right
 
         let projectFolderPath = sourceProjectId
             .flatMap { ProjectStore.shared.project(id: $0)?.folderPath }
@@ -89,6 +95,7 @@ enum AskToBridgeLauncher {
 
         let request = AgentInvocationRequest(
             agentId: target.agentId,
+            userPrompt: deliverKickoffAtLaunch ? kickoffMessage : nil,
             workspaceId: sourceWorkspaceId,
             projectId: sourceProjectId,
             systemPromptOverride: systemPromptOverride,
@@ -145,12 +152,9 @@ enum AskToBridgeLauncher {
             leftAgentId: sourceAgentId,
             rightAgentId: target.agentId,
             rightWorkspaceTitleOverride: target.title,
-            kickoffMessage: BridgeHelperSystemPrompt.kickoffMessage(
-                sourcePrompt,
-                requestId: requestId,
-                firstSpeaker: firstSpeaker
-            ),
-            firstSpeaker: firstSpeaker
+            kickoffMessage: kickoffMessage,
+            firstSpeaker: firstSpeaker,
+            kickoffDeliveredAtLaunch: deliverKickoffAtLaunch
         )
         guard WorkspaceBridgeStore.shared.add(bridge) else {
             throw LaunchError.bridgeRejected
