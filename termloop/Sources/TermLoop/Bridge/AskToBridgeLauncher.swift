@@ -51,8 +51,9 @@ enum AskToBridgeLauncher {
 
         let requestId = UUID()
         let sourceAgentId = resolveSourceAgentId(workspaceId: sourceWorkspaceId)
+        let sourceProjectId = resolveSourceProjectId(sourceWorkspace)
 
-        let projectFolderPath = ProjectStore.shared.activeProjectId
+        let projectFolderPath = sourceProjectId
             .flatMap { ProjectStore.shared.project(id: $0)?.folderPath }
 
         // Delivery mode comes from the catalog-backed injector, not a hard-
@@ -89,6 +90,7 @@ enum AskToBridgeLauncher {
         let request = AgentInvocationRequest(
             agentId: target.agentId,
             workspaceId: sourceWorkspaceId,
+            projectId: sourceProjectId,
             systemPromptOverride: systemPromptOverride,
             source: .askAgent,
             reasonTag: "askTo.directLaunch"
@@ -109,6 +111,7 @@ enum AskToBridgeLauncher {
                 title: target.defaultWorkspaceTitle,
                 cwd: sourceWorkspace.currentDirectory,
                 initialPrompt: plan.resolvedPromptBody ?? "",
+                projectId: sourceProjectId,
                 permission: plan.resolvedPermission,
                 systemPrompt: plan.launchSystemInstructions,
                 model: plan.resolvedModel,
@@ -122,6 +125,12 @@ enum AskToBridgeLauncher {
         WorkspaceMetadataStore.shared.setHideFromWorkspaceTree(
             true,
             forWorkspaceId: helperWorkspace.id
+        )
+        BridgeDebugTrace.log(
+            "askTo.launch helper request=\(requestId.uuidString.prefix(8)) source=\(sourceWorkspaceId.uuidString.prefix(8)) " +
+            "helper=\(helperWorkspace.id.uuidString.prefix(8)) target=\(target.agentId) " +
+            "sourceProject=\(sourceProjectId?.uuidString.prefix(8) ?? "nil") " +
+            "helperProject=\(helperWorkspace.projectId?.uuidString.prefix(8) ?? "nil")"
         )
 
         // targetPrompt is delivered as the helper's system prompt via
@@ -156,5 +165,12 @@ enum AskToBridgeLauncher {
             ?? metadata.terminalAgentId
             ?? TerminalAgentResolver.resolve(workspaceId: workspaceId)?.id
             ?? TerminalAgent.claudeId
+    }
+
+    private static func resolveSourceProjectId(_ workspace: Workspace) -> UUID? {
+        workspace.projectId
+            ?? ProjectStore.shared.project(containingPath: workspace.currentDirectory)?.id
+            ?? ProjectStore.shared.activeProjectId
+            ?? ProjectStore.shared.fallbackProjectId
     }
 }

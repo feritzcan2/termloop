@@ -7021,8 +7021,9 @@ struct CMUXCLI {
         }
 
         let bridgeId = (result["bridge_id"] as? String) ?? "?"
+        let requestId = (result["request_id"] as? String) ?? bridgeId
         let helperId = (result["helper_workspace_id"] as? String) ?? "?"
-        print("Sent to \(target). bridge_id=\(bridgeId), helper_workspace_id=\(helperId)")
+        print("Sent to \(target). request_id=\(requestId), bridge_id=\(bridgeId), helper_workspace_id=\(helperId). The helper must call reply_to_request exactly once with this request_id when the final answer is ready.")
     }
 
     /// Return the help/usage text for a subcommand, or nil if the command is unknown.
