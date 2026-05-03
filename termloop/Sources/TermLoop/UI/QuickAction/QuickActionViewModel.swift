@@ -385,6 +385,7 @@ final class QuickActionViewModel: ObservableObject {
     @Published var selectedPromptDocumentId: String?
     @Published var selectedSystemPromptDocumentId: String?
     @Published var advancedTitle: String = ""
+    @Published var worktreeBranchName: String = ""
     @Published var ticketSearchText: String = ""
     @Published var ticketAssignedToMeOnly: Bool = false
     @Published var selectedTicketID: String?
@@ -495,6 +496,10 @@ final class QuickActionViewModel: ObservableObject {
             .removeDuplicates(by: ==)
             .sink { [weak self] _ in self?.refreshPreview() }
             .store(in: &cancellables)
+        $worktreeBranchName
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.refreshPreview() }
+            .store(in: &cancellables)
         $selectedPromptDocumentId
             .removeDuplicates()
             .sink { [weak self] _ in self?.refreshPreview() }
@@ -552,6 +557,7 @@ final class QuickActionViewModel: ObservableObject {
         advancedTerminalAgentId = lru.lastTerminalAgentId() ?? "claude"
         applyAdvancedMemory(mem)
         advancedTitle = ""
+        worktreeBranchName = ""
         didRestoreFromMemory = mem != nil || lru.lastRunMode() != nil
         isSubmitting = false
         presentedLaunchSource = nil
@@ -572,6 +578,7 @@ final class QuickActionViewModel: ObservableObject {
         errorMessage = nil
         advancedVariableValues = [:]
         advancedTitle = ""
+        worktreeBranchName = ""
         advancedReasoning = .default
         isSubmitting = false
         worktreeIntent = .createWorkspace
@@ -611,6 +618,7 @@ final class QuickActionViewModel: ObservableObject {
         if let advancedTitle = prefill.advancedTitle {
             self.advancedTitle = advancedTitle
         }
+        worktreeBranchName = prefill.suggestedBranchName ?? ""
         if let advancedTerminalAgentId = prefill.advancedTerminalAgentId {
             self.advancedTerminalAgentId = advancedTerminalAgentId
         }
@@ -899,7 +907,7 @@ final class QuickActionViewModel: ObservableObject {
             variableValues: advancedVariableValues,
             launchSource: .manualWorkspaceCreate,
             reasonTag: presentedReasonTag,
-            suggestedBranchName: launchPrefillContext?.suggestedBranchName,
+            suggestedBranchName: resolvedSuggestedWorktreeBranchName(),
             assignedTicket: launchPrefillContext?.assignedTicket
         )
     }
@@ -965,6 +973,11 @@ final class QuickActionViewModel: ObservableObject {
     private func resolvedWorktreeInitialPrompt() -> String? {
         let trimmed = promptText.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : promptText
+    }
+
+    private func resolvedSuggestedWorktreeBranchName() -> String? {
+        let trimmed = worktreeBranchName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? launchPrefillContext?.suggestedBranchName : worktreeBranchName
     }
 
     private func resolvedWorktreeSystemPrompt() -> String? {
@@ -1088,6 +1101,10 @@ final class QuickActionViewModel: ObservableObject {
             }
             lru.setFreePromptAdvanced(mem)
         }
+    }
+
+    func recordSuccessfulWorktreeCreate() {
+        persistLRUOnSuccess()
     }
 
     func terminalWorkspaceTitle(
@@ -1415,7 +1432,9 @@ final class QuickActionViewModel: ObservableObject {
     }
 
     var shouldShowRunCompositionSummary: Bool {
-        activeSurface == .run && (promptInputStatus.hasValue || systemInputStatus.hasValue)
+        let supportsSummary = activeSurface == .run
+            || (activeSurface == .worktree && worktreeIntent == .createWorkspace)
+        return supportsSummary && (promptInputStatus.hasValue || systemInputStatus.hasValue)
     }
 
     var canSubmitCurrentPrompt: Bool {
@@ -1424,6 +1443,33 @@ final class QuickActionViewModel: ObservableObject {
     }
 
     // MARK: Preview
+
+    private func resolvedWorktreePreviewContext() -> QuickActionRunResolver.ResolvedContext? {
+        guard activeSurface == .worktree,
+              worktreeIntent == .createWorkspace else {
+            return nil
+        }
+        let branch = worktreeBranchName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !branch.isEmpty,
+              let projectId = resolvedLaunchProjectId,
+              let project = ProjectStore.shared.project(id: projectId) else {
+            return nil
+        }
+        let projectPath = (project.folderPath as NSString).expandingTildeInPath
+        guard let worktreePath = WorktreeResolver.path(
+            projectFolder: projectPath,
+            branch: branch
+        ) else {
+            return nil
+        }
+        return QuickActionRunResolver.ResolvedContext(
+            workspaceId: nil,
+            projectId: projectId,
+            workspaceCwd: URL(fileURLWithPath: worktreePath),
+            branchName: branch,
+            repoRootPath: projectPath
+        )
+    }
 
     func refreshPreview() {
         guard let agent = AgentCatalogStore.shared.agent(id: advancedTerminalAgentId)
@@ -1440,6 +1486,7 @@ final class QuickActionViewModel: ObservableObject {
         }()
         let promptDocumentIdOverride = promptDocumentOverrideForCurrentSelection()
         let systemPromptDocumentIdOverride = systemPromptDocumentOverrideForCurrentSelection()
+        let worktreePreviewContext = resolvedWorktreePreviewContext()
 
         switch composition {
         case .template(let id):
@@ -1447,29 +1494,63 @@ final class QuickActionViewModel: ObservableObject {
                 preview.setPlan(nil)
                 return
             }
-            request = try? QuickActionRunResolver.resolvePreview(
-                template: tpl,
-                targetWorkspaceId: targetWorkspaceId,
-                agentId: agent.id,
-                promptOverride: trimmedPrompt.isEmpty ? nil : promptText,
-                promptDocumentIdOverride: promptDocumentIdOverride,
-                permissionOverride: advancedPermission,
-                variableOverrides: advancedVariableValues,
-                source: source,
-                modelOverride: advancedModel,
-                reasoningOverride: advancedReasoning,
-                systemPromptOverride: effectiveSystemPrompt,
-                systemPromptDocumentIdOverride: systemPromptDocumentIdOverride,
-                reasonTag: presentedReasonTag,
-                projectId: resolvedLaunchProjectId
-            )
+            if let worktreePreviewContext {
+                request = try? QuickActionRunResolver.resolve(
+                    template: tpl,
+                    context: worktreePreviewContext,
+                    agentId: agent.id,
+                    promptOverride: trimmedPrompt.isEmpty ? nil : promptText,
+                    promptDocumentIdOverride: promptDocumentIdOverride,
+                    permissionOverride: advancedPermission,
+                    variableOverrides: advancedVariableValues,
+                    source: source,
+                    modelOverride: advancedModel,
+                    reasoningOverride: advancedReasoning,
+                    systemPromptOverride: effectiveSystemPrompt,
+                    systemPromptDocumentIdOverride: systemPromptDocumentIdOverride,
+                    reasonTag: presentedReasonTag
+                )
+            } else {
+                request = try? QuickActionRunResolver.resolvePreview(
+                    template: tpl,
+                    targetWorkspaceId: targetWorkspaceId,
+                    agentId: agent.id,
+                    promptOverride: trimmedPrompt.isEmpty ? nil : promptText,
+                    promptDocumentIdOverride: promptDocumentIdOverride,
+                    permissionOverride: advancedPermission,
+                    variableOverrides: advancedVariableValues,
+                    source: source,
+                    modelOverride: advancedModel,
+                    reasoningOverride: advancedReasoning,
+                    systemPromptOverride: effectiveSystemPrompt,
+                    systemPromptDocumentIdOverride: systemPromptDocumentIdOverride,
+                    reasonTag: presentedReasonTag,
+                    projectId: resolvedLaunchProjectId
+                )
+            }
         case .freePrompt(let resolvedId):
             guard let id = resolvedId,
                   let tpl = templateStore.template(id: id) else {
                 preview.setPlan(nil)
                 return
             }
-            if targetWorkspaceId == nil {
+            if let worktreePreviewContext {
+                request = try? QuickActionRunResolver.resolve(
+                    template: tpl,
+                    context: worktreePreviewContext,
+                    agentId: agent.id,
+                    promptOverride: trimmedPrompt.isEmpty ? nil : promptText,
+                    promptDocumentIdOverride: promptDocumentIdOverride,
+                    permissionOverride: advancedPermission,
+                    variableOverrides: advancedVariableValues,
+                    source: source,
+                    modelOverride: advancedModel,
+                    reasoningOverride: advancedReasoning,
+                    systemPromptOverride: effectiveSystemPrompt,
+                    systemPromptDocumentIdOverride: systemPromptDocumentIdOverride,
+                    reasonTag: presentedReasonTag
+                )
+            } else if targetWorkspaceId == nil {
                 if let projectId = resolvedLaunchProjectId,
                    let project = ProjectStore.shared.project(id: projectId) {
                     let expanded = (project.folderPath as NSString).expandingTildeInPath
@@ -1599,6 +1680,9 @@ final class QuickActionViewModel: ObservableObject {
     }
 
     func resolvedRunCwdForPreview() -> String? {
+        if let worktreeContext = resolvedWorktreePreviewContext() {
+            return worktreeContext.workspaceCwd?.path
+        }
         let key = RunCwdCacheKey(
             targetWorkspaceId: targetWorkspaceId,
             prefillProjectId: launchPrefillContext?.projectId,
@@ -1625,6 +1709,12 @@ final class QuickActionViewModel: ObservableObject {
     }
 
     func resolvedProjectFolderForPreview() -> String? {
+        if activeSurface == .worktree,
+           worktreeIntent == .createWorkspace,
+           let projectId = resolvedLaunchProjectId,
+           let project = ProjectStore.shared.project(id: projectId) {
+            return project.folderPath
+        }
         if let wsId = targetWorkspaceId {
             return ProjectInstructionStore.resolvedProjectFolderPath(
                 forWorkspaceId: wsId,
@@ -1635,6 +1725,10 @@ final class QuickActionViewModel: ObservableObject {
     }
 
     func resolvedBranchForPreview() -> String? {
+        if activeSurface == .worktree, worktreeIntent == .createWorkspace {
+            let branch = worktreeBranchName.trimmingCharacters(in: .whitespacesAndNewlines)
+            return branch.isEmpty ? nil : branch
+        }
         guard let wsId = targetWorkspaceId,
               let ws = AppDelegate.shared?.workspaceFor(tabId: wsId) else { return nil }
         return WorkspaceMetadataStore.shared.branch(for: ws)

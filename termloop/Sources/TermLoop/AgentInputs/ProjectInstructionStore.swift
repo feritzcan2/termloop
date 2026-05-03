@@ -242,26 +242,55 @@ enum ProjectInstructionStore {
     ) -> String {
         let systemReminder = (ability.systemReminderBody ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        if !systemReminder.isEmpty { return systemReminder }
+        if !systemReminder.isEmpty {
+            return appendMCPToolHints(to: systemReminder, for: ability)
+        }
 
         let body = ability.body.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !body.isEmpty else { return "" }
+        guard !body.isEmpty else {
+            return appendMCPToolHints(to: "", for: ability)
+        }
 
         // Active legacy/simple abilities still need their body injected. For
         // on-demand abilities backed by native skills, the skill file is the
         // preferred context path; only fall back to the body when a declared
         // required skill is not available.
         if ability.activation == .always || ability.activation == .worktree {
-            return body
+            return appendMCPToolHints(to: body, for: ability)
         }
         if !canRelyOnProjectNativeSkills, !ability.requiredSkillIDs.isEmpty {
-            return body
+            return appendMCPToolHints(to: body, for: ability)
         }
         if !ability.requiredSkillIDs.isEmpty,
            ability.requiredSkillIDs.contains(where: { !referencedSkillNames.contains($0) }) {
-            return body
+            return appendMCPToolHints(to: body, for: ability)
         }
         return ""
+    }
+
+    private static func appendMCPToolHints(to base: String, for ability: Ability) -> String {
+        var toolNames = Set(ability.enabledMCPToolNames)
+        // Mirror TerminalAgentRunner's defensive auto-exposure: these ability
+        // ids own their sidebar telemetry tools, even if an older project
+        // manifest predates `termLoopMCPTools`.
+        if ability.id == TermLoopBuiltInMCP.jiraAbilityId {
+            toolNames.insert(TermLoopBuiltInMCP.setJiraTicketToolName)
+            toolNames.insert(TermLoopBuiltInMCP.getJiraTicketToolName)
+        }
+        if ability.id == TermLoopBuiltInMCP.runningYourApplicationAbilityId {
+            toolNames.insert(TermLoopBuiltInMCP.setRunTargetsToolName)
+            toolNames.insert(TermLoopBuiltInMCP.getRunTargetsToolName)
+        }
+
+        let hints = toolNames
+            .sorted()
+            .compactMap { TermLoopBuiltInMCP.systemPromptHint(toolName: $0) }
+        guard !hints.isEmpty else { return base }
+
+        let hintBlock = hints.map { "- \($0)" }.joined(separator: "\n")
+        let trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return hintBlock }
+        return "\(trimmed)\n\n\(hintBlock)"
     }
 
     @MainActor

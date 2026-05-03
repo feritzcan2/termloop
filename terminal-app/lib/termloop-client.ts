@@ -41,6 +41,14 @@ export interface ProjectSummary {
   id: string;
   name: string;
   path?: string;
+  folder_path?: string;
+}
+
+export function projectSummaryPath(
+  project: ProjectSummary | null | undefined
+): string | undefined {
+  const path = project?.folder_path?.trim() || project?.path?.trim();
+  return path || undefined;
 }
 
 export interface WorkspaceSummary {
