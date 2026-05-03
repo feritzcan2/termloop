@@ -36,7 +36,7 @@ if [[ "$MISMATCHED" != "1" ]]; then
 fi
 
 PUBLISHED_BUILD=$(curl -fsSL --max-time 15 \
-  https://github.com/feritzcan2/termloop/releases/latest/download/appcast.xml 2>/dev/null \
+  https://github.com/feritzcan2/termloop/releases/latest/download/termloop-appcast.xml 2>/dev/null \
   | sed -n 's#.*<sparkle:version>\([0-9][0-9]*\)</sparkle:version>.*#\1#p' \
   | head -n1 || true)
 

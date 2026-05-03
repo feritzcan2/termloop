@@ -26,7 +26,6 @@ struct QuickActionPresentationRequest {
     var projectId: UUID? = nil
     var placementOverride: NewWorkspacePlacement? = nil
     var suggestedBranchName: String? = nil
-    var assignedTicket: WorkspaceMetadataStore.AssignedTicket? = nil
     var openAdvanced: Bool = false
     var onLaunchedWorkspace: ((Workspace) -> Void)? = nil
 }
