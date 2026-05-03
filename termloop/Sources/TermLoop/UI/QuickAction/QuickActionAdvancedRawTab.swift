@@ -35,13 +35,13 @@ struct QuickActionAdvancedRawTab: View {
     private var copyRow: some View {
         HStack {
             Button(String(localized: "quickAction.raw.copyPrompt",
-                          defaultValue: "Copy resolved prompt",
+                          defaultValue: "Copy first message",
                           table: "TermLoop")) {
                 copy(plan?.resolvedPromptBody ?? "")
             }
             .keyboardShortcut("c", modifiers: .command)
             Button(String(localized: "quickAction.raw.copyDirect",
-                          defaultValue: "Copy authored system prompt",
+                          defaultValue: "Copy system instructions",
                           table: "TermLoop")) {
                 copy(plan?.resolvedUserSystemPrompt ?? "")
             }
@@ -86,7 +86,7 @@ file: \(effectivePath ?? "—")
     private var promptBlock: some View {
         VStack(alignment: .leading, spacing: 4) {
             sectionHeader(
-                title: "Resolved prompt",
+                title: "First message",
                 flag: promptStatus.shortLabel
             )
             Text(promptStatus.detail)
@@ -94,7 +94,7 @@ file: \(effectivePath ?? "—")
                 .foregroundStyle(.secondary)
             monoBlock(
                 plan?.resolvedPromptBody,
-                empty: "(empty — no prompt text, prompt document, or template prompt body)"
+                empty: "(empty — no prompt text, prompt document, or template default prompt)"
             )
         }
     }
@@ -103,7 +103,7 @@ file: \(effectivePath ?? "—")
     private var authoredSystemPromptBlock: some View {
         VStack(alignment: .leading, spacing: 4) {
             sectionHeader(
-                title: "Authored system prompt",
+                title: "System instructions",
                 flag: systemStatus.shortLabel
             )
             Text(systemStatus.detail)
@@ -112,7 +112,7 @@ file: \(effectivePath ?? "—")
             monoBlock(
                 plan?.resolvedUserSystemPrompt,
                 empty: String(localized: "quickAction.raw.directEmpty",
-                              defaultValue: "(empty — no system prompt document or advanced system prompt)",
+                              defaultValue: "(empty — no system instructions document or advanced system instructions)",
                               table: "TermLoop")
             )
         }
