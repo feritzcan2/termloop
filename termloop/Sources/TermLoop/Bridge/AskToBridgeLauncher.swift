@@ -13,7 +13,10 @@ import Foundation
 enum AskToBridgeLauncher {
     struct Outcome {
         let bridgeId: UUID
+        let requestId: UUID
         let helperWorkspaceId: UUID
+        let helperAgentId: String
+        let reusedHelper: Bool
     }
 
     enum LaunchError: Error {
@@ -21,7 +24,14 @@ enum AskToBridgeLauncher {
         case targetNotSupported
         case targetAgentNotInCatalog
         case helperLaunchFailed(Error)
+        case helperWorkspaceNotFound
         case bridgeRejected
+        case bridgeNotFound
+        case bridgeNotAskAgent
+        case bridgeSourceMismatch
+        case bridgeTargetMismatch
+        case bridgeStopped
+        case requestAlreadyOpen
     }
 
     /// `targetPrompt` is the optional helper system-prompt override the user
@@ -37,6 +47,7 @@ enum AskToBridgeLauncher {
         sourcePrompt: String,
         targetPrompt: String,
         firstSpeaker: BridgeSender = .left,
+        conversationId: UUID? = nil,
         tabManager: TabManager
     ) throws -> Outcome {
         guard let sourceWorkspace = tabManager.tabs.first(where: { $0.id == sourceWorkspaceId }) else {
@@ -49,12 +60,29 @@ enum AskToBridgeLauncher {
             throw LaunchError.targetAgentNotInCatalog
         }
 
+        if let conversationId {
+            return try appendRequestToExistingBridge(
+                bridgeId: conversationId,
+                sourceWorkspaceId: sourceWorkspaceId,
+                target: target,
+                sourcePrompt: sourcePrompt,
+                targetPrompt: targetPrompt,
+                tabManager: tabManager
+            )
+        }
+
+        let bridgeId = UUID()
         let requestId = UUID()
         let askToReplyToken = UUID().uuidString
         let sourceAgentId = resolveSourceAgentId(workspaceId: sourceWorkspaceId)
         let sourceProjectId = resolveSourceProjectId(sourceWorkspace)
+        BridgeDebugTrace.log(
+            "askTo.launch begin bridge=\(bridgeId.uuidString.prefix(8)) request=\(requestId.uuidString.prefix(8)) " +
+            "source=\(sourceWorkspaceId.uuidString.prefix(8)) target=\(target.agentId) first=\(firstSpeaker) " +
+            "sourceAgent=\(sourceAgentId) msgChars=\(sourcePrompt.count) targetPromptChars=\(targetPrompt.count)"
+        )
         let kickoffMessage = BridgeHelperSystemPrompt.kickoffMessage(
-            sourcePrompt,
+            requestMessage(sourcePrompt, targetPrompt: targetPrompt, isFollowUp: false),
             requestId: requestId,
             firstSpeaker: firstSpeaker
         )
@@ -131,6 +159,10 @@ enum AskToBridgeLauncher {
                 launchProvidedFullContext: plan.launchProvidedFullContext
             )
         } catch {
+            BridgeDebugTrace.log(
+                "askTo.launch helper-failed bridge=\(bridgeId.uuidString.prefix(8)) request=\(requestId.uuidString.prefix(8)) " +
+                "source=\(sourceWorkspaceId.uuidString.prefix(8)) target=\(target.agentId) error=\(error)"
+            )
             throw LaunchError.helperLaunchFailed(error)
         }
 
@@ -150,23 +182,154 @@ enum AskToBridgeLauncher {
         // helper would "answer" its own system prompt before the real
         // handoff arrives.
         let bridge = WorkspaceBridge(
-            id: requestId,
+            id: bridgeId,
             leftWorkspaceId: sourceWorkspaceId,
             rightWorkspaceId: helperWorkspace.id,
             intent: .askAgent,
             leftAgentId: sourceAgentId,
             rightAgentId: target.agentId,
             rightWorkspaceTitleOverride: target.title,
+            askToRequests: [
+                AskToRequest(
+                    id: requestId,
+                    message: sourcePrompt,
+                    kickoffMessage: kickoffMessage
+                )
+            ],
             kickoffMessage: kickoffMessage,
             firstSpeaker: firstSpeaker,
             kickoffDeliveredAtLaunch: deliverKickoffAtLaunch,
             askToReplyToken: askToReplyToken
         )
         guard WorkspaceBridgeStore.shared.add(bridge) else {
+            BridgeDebugTrace.log(
+                "askTo.launch bridge-rejected bridge=\(bridgeId.uuidString.prefix(8)) request=\(requestId.uuidString.prefix(8)) " +
+                "source=\(sourceWorkspaceId.uuidString.prefix(8)) helper=\(helperWorkspace.id.uuidString.prefix(8)) target=\(target.agentId)"
+            )
             throw LaunchError.bridgeRejected
         }
+        BridgeDebugTrace.log(
+            "askTo.launch bridge-added bridge=\(bridge.id.uuidString.prefix(8)) request=\(requestId.uuidString.prefix(8)) " +
+            "source=\(sourceWorkspaceId.uuidString.prefix(8)) helper=\(helperWorkspace.id.uuidString.prefix(8)) target=\(target.agentId)"
+        )
         BridgeCoordinator.shared.kickoff(bridgeId: bridge.id)
-        return Outcome(bridgeId: bridge.id, helperWorkspaceId: helperWorkspace.id)
+        return Outcome(
+            bridgeId: bridge.id,
+            requestId: requestId,
+            helperWorkspaceId: helperWorkspace.id,
+            helperAgentId: target.agentId,
+            reusedHelper: false
+        )
+    }
+
+    private static func appendRequestToExistingBridge(
+        bridgeId: UUID,
+        sourceWorkspaceId: UUID,
+        target: AskTargetAgent,
+        sourcePrompt: String,
+        targetPrompt: String,
+        tabManager: TabManager
+    ) throws -> Outcome {
+        BridgeDebugTrace.log(
+            "askTo.followup begin bridge=\(bridgeId.uuidString.prefix(8)) source=\(sourceWorkspaceId.uuidString.prefix(8)) " +
+            "target=\(target.agentId) msgChars=\(sourcePrompt.count) targetPromptChars=\(targetPrompt.count)"
+        )
+        guard let bridge = WorkspaceBridgeStore.shared.bridge(id: bridgeId) else {
+            BridgeDebugTrace.log("askTo.followup reject bridge=\(bridgeId.uuidString.prefix(8)) reason=not-found")
+            throw LaunchError.bridgeNotFound
+        }
+        guard bridge.intent == .askAgent else {
+            BridgeDebugTrace.log("askTo.followup reject bridge=\(bridgeId.uuidString.prefix(8)) reason=not-ask-agent intent=\(bridge.intent)")
+            throw LaunchError.bridgeNotAskAgent
+        }
+        guard bridge.state == .running else {
+            BridgeDebugTrace.log("askTo.followup reject bridge=\(bridgeId.uuidString.prefix(8)) reason=stopped state=\(bridge.state)")
+            throw LaunchError.bridgeStopped
+        }
+        guard bridge.leftWorkspaceId == sourceWorkspaceId else {
+            BridgeDebugTrace.log(
+                "askTo.followup reject bridge=\(bridgeId.uuidString.prefix(8)) reason=source-mismatch " +
+                "expected=\(bridge.leftWorkspaceId.uuidString.prefix(8)) actual=\(sourceWorkspaceId.uuidString.prefix(8))"
+            )
+            throw LaunchError.bridgeSourceMismatch
+        }
+        guard bridge.rightAgentId == nil || bridge.rightAgentId == target.agentId else {
+            BridgeDebugTrace.log(
+                "askTo.followup reject bridge=\(bridgeId.uuidString.prefix(8)) reason=target-mismatch " +
+                "expected=\(bridge.rightAgentId ?? "nil") actual=\(target.agentId)"
+            )
+            throw LaunchError.bridgeTargetMismatch
+        }
+        guard tabManager.tabs.contains(where: { $0.id == bridge.rightWorkspaceId }) else {
+            BridgeDebugTrace.log(
+                "askTo.followup reject bridge=\(bridgeId.uuidString.prefix(8)) reason=helper-missing " +
+                "helper=\(bridge.rightWorkspaceId.uuidString.prefix(8))"
+            )
+            throw LaunchError.helperWorkspaceNotFound
+        }
+
+        let requestId = UUID()
+        let kickoffMessage = BridgeHelperSystemPrompt.kickoffMessage(
+            requestMessage(sourcePrompt, targetPrompt: targetPrompt, isFollowUp: true),
+            requestId: requestId,
+            firstSpeaker: .right
+        )
+        let request = AskToRequest(
+            id: requestId,
+            message: sourcePrompt,
+            kickoffMessage: kickoffMessage
+        )
+        switch WorkspaceBridgeStore.shared.appendAskToRequest(
+            bridgeId: bridgeId,
+            request: request
+        ) {
+        case .appended:
+            BridgeDebugTrace.log(
+                "askTo.followup appended bridge=\(bridgeId.uuidString.prefix(8)) request=\(requestId.uuidString.prefix(8)) " +
+                "source=\(sourceWorkspaceId.uuidString.prefix(8)) helper=\(bridge.rightWorkspaceId.uuidString.prefix(8)) target=\(target.agentId)"
+            )
+            BridgeCoordinator.shared.sendAskToRequest(
+                bridgeId: bridgeId,
+                requestId: requestId
+            )
+            return Outcome(
+                bridgeId: bridgeId,
+                requestId: requestId,
+                helperWorkspaceId: bridge.rightWorkspaceId,
+                helperAgentId: target.agentId,
+                reusedHelper: true
+            )
+        case .notFound:
+            BridgeDebugTrace.log("askTo.followup append-reject bridge=\(bridgeId.uuidString.prefix(8)) reason=not-found")
+            throw LaunchError.bridgeNotFound
+        case .notAskAgent:
+            BridgeDebugTrace.log("askTo.followup append-reject bridge=\(bridgeId.uuidString.prefix(8)) reason=not-ask-agent")
+            throw LaunchError.bridgeNotAskAgent
+        case .notRunning:
+            BridgeDebugTrace.log("askTo.followup append-reject bridge=\(bridgeId.uuidString.prefix(8)) reason=not-running")
+            throw LaunchError.bridgeStopped
+        case .requestAlreadyOpen:
+            BridgeDebugTrace.log("askTo.followup append-reject bridge=\(bridgeId.uuidString.prefix(8)) reason=request-already-open")
+            throw LaunchError.requestAlreadyOpen
+        }
+    }
+
+    private static func requestMessage(
+        _ sourcePrompt: String,
+        targetPrompt: String,
+        isFollowUp: Bool
+    ) -> String {
+        let trimmedTargetPrompt = targetPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedSourcePrompt = sourcePrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        var parts: [String] = []
+        if isFollowUp {
+            parts.append("Follow-up request on the existing TermLoop Ask-To conversation.")
+        }
+        parts.append(trimmedSourcePrompt.isEmpty ? sourcePrompt : trimmedSourcePrompt)
+        if !trimmedTargetPrompt.isEmpty {
+            parts.append("Additional guidance for this request:\n\(trimmedTargetPrompt)")
+        }
+        return parts.joined(separator: "\n\n")
     }
 
     private static func resolveSourceAgentId(workspaceId: UUID) -> String {

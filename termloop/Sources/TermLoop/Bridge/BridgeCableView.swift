@@ -127,10 +127,18 @@ struct BridgeCableView: View {
     private var badgeText: String {
         switch bridge.state {
         case .running:
-            return "\(badgePrefix) \(bridge.messages.count) msg · running"
+            return "\(badgePrefix) \(bridge.messages.count) msg · \(runningLabel)"
         case .stopped(let reason):
             return stoppedLabel(reason: reason, count: bridge.messages.count)
         }
+    }
+
+    private var runningLabel: String {
+        guard bridge.intent == .askAgent,
+              let latest = bridge.latestAskToRequest else {
+            return "running"
+        }
+        return latest.finalReply == nil ? "waiting" : "replied"
     }
 
     private func stoppedLabel(reason: BridgeStopReason, count: Int) -> String {

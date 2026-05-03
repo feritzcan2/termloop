@@ -287,6 +287,31 @@ enum TermLoopSocketCommands {
         return s
     }
 
+    private static func shortId(_ id: UUID?) -> String {
+        guard let id else { return "nil" }
+        return String(id.uuidString.prefix(8))
+    }
+
+    private static func shortId(_ raw: String?) -> String {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else {
+            return "nil"
+        }
+        return String(raw.prefix(8))
+    }
+
+    private static func bridgeToolParamSummary(_ params: [String: Any]) -> String {
+        let hasWorkspace = nonEmptyString(params, "workspace_id") != nil
+        let hasCwd = nonEmptyString(params, "cwd") != nil
+        let hasProcess = params["mcp_pid"] != nil
+            || params["mcp_parent_pid"] != nil
+            || (params["process_ancestor_pids"] as? [Any])?.isEmpty == false
+        let agent = nonEmptyString(params, "agent_id") ?? "nil"
+        let hasAskStamp = nonEmptyString(params, "ask_to_request_id") != nil
+        let hasReplyToken = nonEmptyString(params, "ask_to_reply_token") != nil
+        return "hasWs=\(hasWorkspace ? 1 : 0) hasCwd=\(hasCwd ? 1 : 0) hasProc=\(hasProcess ? 1 : 0) agent=\(agent) askStamp=\(hasAskStamp ? 1 : 0) hasToken=\(hasReplyToken ? 1 : 0)"
+    }
+
     private static func orNull(_ value: Any?) -> Any {
         if let value { return value }
         return NSNull()
@@ -1075,29 +1100,85 @@ enum TermLoopSocketCommands {
 
     // MARK: - Bridge
 
-    /// Programmatic Ask-To launcher for the `ask_to` MCP tool. Equivalent to
-    /// the user clicking Start in `AskToSheet`: spawns a hidden helper
-    /// workspace running the chosen target agent (codex/gemini/claude),
-    /// creates an `.askAgent` bridge from the source workspace, and kicks
-    /// off `message` as the helper's first user turn.
+    private static func resolveAskToReplyCallerId(
+        from params: [String: Any],
+        bridge: WorkspaceBridge
+    ) -> WorkspaceLookup {
+        if let wsIdStr = rawString(params, "workspace_id")?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !wsIdStr.isEmpty {
+            BridgeDebugTrace.log(
+                "reply.resolve explicit bridge=\(bridge.id.uuidString.prefix(8)) ws=\(shortId(wsIdStr)) \(bridgeToolParamSummary(params))"
+            )
+            return resolveWorkspaceId(from: params)
+        }
+
+        // Fresh Ask-To helpers carry a launch-only request stamp + bearer
+        // token in their MCP environment. If the provider drops
+        // TERMLOOP_WORKSPACE_ID, use that credential to identify the helper
+        // side instead of falling back to cwd and risking another same-cwd
+        // agent workspace.
+        if bridge.acceptsAskToLaunchCredential(
+            requestId: uuid(params, "ask_to_request_id"),
+            replyToken: rawString(params, "ask_to_reply_token"),
+            callerAgentId: rawString(params, "agent_id")
+        ) {
+            BridgeDebugTrace.log(
+                "reply.resolve launch-credential bridge=\(bridge.id.uuidString.prefix(8)) helper=\(bridge.rightWorkspaceId.uuidString.prefix(8)) " +
+                "request=\(shortId(uuid(params, "ask_to_request_id"))) \(bridgeToolParamSummary(params))"
+            )
+            return .found(
+                id: bridge.rightWorkspaceId,
+                idString: bridge.rightWorkspaceId.uuidString
+            )
+        }
+
+        return resolveAgentToolWorkspaceId(
+            from: params,
+            commandName: "bridge.reply_to_request"
+        )
+    }
+
+    /// Programmatic Ask-To launcher for the `ask_to` MCP tool. Without a
+    /// `conversation_id` this spawns a hidden helper workspace, creates a
+    /// long-lived `.askAgent` bridge, and kicks off `message` as the helper's
+    /// first user turn. With `conversation_id`/`bridge_id`, it reuses that
+    /// helper bridge and creates a fresh one-shot request on it.
     private static func bridgeAskTo(_ params: [String: Any]) -> TerminalController.V2CallResult {
         let sourceId: UUID
-        switch resolveWorkspaceId(from: params) {
+        switch resolveAgentToolWorkspaceId(from: params, commandName: "bridge.ask_to") {
         case .found(let id, _):
             sourceId = id
         case .missing(let error):
             return error
         }
-        guard let targetRaw = nonEmptyString(params, "target")?.lowercased(),
-              let target = AskTargetAgent(rawValue: targetRaw) else {
-            return .err(code: "invalid_params",
-                        message: "Missing or invalid target (expected: codex, claude, gemini)",
-                        data: nil)
-        }
         guard let message = nonEmptyString(params, "message") else {
             return .err(code: "invalid_params", message: "Missing message", data: nil)
         }
         let targetPrompt = rawString(params, "target_prompt") ?? ""
+        let conversationId = uuid(params, "conversation_id") ?? uuid(params, "bridge_id")
+        let target: AskTargetAgent
+        if let targetRaw = nonEmptyString(params, "target")?.lowercased() {
+            guard let parsed = AskTargetAgent(rawValue: targetRaw) else {
+                return .err(code: "invalid_params",
+                            message: "Invalid target (expected: codex, claude, gemini)",
+                            data: nil)
+            }
+            target = parsed
+        } else if let conversationId,
+                  let bridge = WorkspaceBridgeStore.shared.bridge(id: conversationId),
+                  let raw = bridge.rightAgentId?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                  let parsed = AskTargetAgent(rawValue: raw) {
+            target = parsed
+        } else {
+            return .err(code: "invalid_params",
+                        message: "Missing target (required unless conversation_id points to an existing Ask-To bridge)",
+                        data: nil)
+        }
+        BridgeDebugTrace.log(
+            "askTo.socket start source=\(shortId(sourceId)) target=\(target.agentId) conversation=\(shortId(conversationId)) " +
+            "msgChars=\(message.count) targetPromptChars=\(targetPrompt.count) \(bridgeToolParamSummary(params))"
+        )
 
         guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: sourceId)
                 ?? AppDelegate.shared?.tabManager else {
@@ -1115,13 +1196,21 @@ enum TermLoopSocketCommands {
                 // source agent (which would just see its own outgoing
                 // message echoed back).
                 firstSpeaker: .right,
+                conversationId: conversationId,
                 tabManager: tabManager
             )
+            BridgeDebugTrace.log(
+                "askTo.socket ok bridge=\(shortId(outcome.bridgeId)) request=\(shortId(outcome.requestId)) " +
+                "source=\(shortId(sourceId)) helper=\(shortId(outcome.helperWorkspaceId)) target=\(outcome.helperAgentId) reused=\(outcome.reusedHelper ? 1 : 0)"
+            )
             return .ok([
-                "request_id": outcome.bridgeId.uuidString,
+                "request_id": outcome.requestId.uuidString,
                 "bridge_id": outcome.bridgeId.uuidString,
+                "conversation_id": outcome.bridgeId.uuidString,
                 "helper_workspace_id": outcome.helperWorkspaceId.uuidString,
-                "target": target.agentId
+                "helper_agent_id": outcome.helperAgentId,
+                "target": target.agentId,
+                "reused_helper": outcome.reusedHelper
             ])
         } catch AskToBridgeLauncher.LaunchError.sourceWorkspaceNotFound {
             return .err(code: "not_found",
@@ -1133,13 +1222,47 @@ enum TermLoopSocketCommands {
             return .err(code: "invalid_params",
                         message: "Target agent not registered in AgentCatalogStore",
                         data: nil)
+        } catch AskToBridgeLauncher.LaunchError.helperWorkspaceNotFound {
+            return .err(code: "not_found",
+                        message: "Ask-To helper workspace not found",
+                        data: conversationId.map { ["conversation_id": $0.uuidString] })
         } catch AskToBridgeLauncher.LaunchError.bridgeRejected {
             return .err(code: "conflict",
-                        message: "Bridge rejected: source workspace already has a running bridge",
+                        message: "Bridge rejected: source workspace already has a running bridge; pass that bridge_id as conversation_id to create a follow-up request",
                         data: [
                             "source_workspace_id": sourceId.uuidString,
                             "target": target.agentId
                         ])
+        } catch AskToBridgeLauncher.LaunchError.bridgeNotFound {
+            return .err(code: "not_found",
+                        message: "Ask-To conversation not found",
+                        data: conversationId.map { ["conversation_id": $0.uuidString] })
+        } catch AskToBridgeLauncher.LaunchError.bridgeNotAskAgent {
+            return .err(code: "invalid_params",
+                        message: "conversation_id does not refer to an Ask-To bridge",
+                        data: conversationId.map { ["conversation_id": $0.uuidString] })
+        } catch AskToBridgeLauncher.LaunchError.bridgeSourceMismatch {
+            return .err(code: "forbidden",
+                        message: "Ask-To conversation belongs to a different source workspace",
+                        data: [
+                            "source_workspace_id": sourceId.uuidString,
+                            "conversation_id": conversationId?.uuidString ?? ""
+                        ])
+        } catch AskToBridgeLauncher.LaunchError.bridgeTargetMismatch {
+            return .err(code: "invalid_params",
+                        message: "target does not match the existing Ask-To conversation helper",
+                        data: [
+                            "conversation_id": conversationId?.uuidString ?? "",
+                            "target": target.agentId
+                        ])
+        } catch AskToBridgeLauncher.LaunchError.bridgeStopped {
+            return .err(code: "conflict",
+                        message: "Ask-To conversation is stopped",
+                        data: conversationId.map { ["conversation_id": $0.uuidString] })
+        } catch AskToBridgeLauncher.LaunchError.requestAlreadyOpen {
+            return .err(code: "conflict",
+                        message: "Ask-To conversation already has an open request; wait for reply_to_request before starting a follow-up",
+                        data: conversationId.map { ["conversation_id": $0.uuidString] })
         } catch AskToBridgeLauncher.LaunchError.helperLaunchFailed(let underlying) {
             return .err(code: "internal_error",
                         message: "Helper launch failed: \(underlying.localizedDescription)",
@@ -1151,7 +1274,8 @@ enum TermLoopSocketCommands {
     }
 
     /// Final, one-shot Ask-To reply delivery for the `reply_to_request` MCP
-    /// tool. The request id is the bridge id created by `bridge.ask_to`.
+    /// tool. The request id identifies a single request inside a long-lived
+    /// askAgent bridge.
     private static func bridgeReplyToRequest(_ params: [String: Any]) -> TerminalController.V2CallResult {
         guard let requestIdString = nonEmptyString(params, "request_id"),
               let requestId = UUID(uuidString: requestIdString) else {
@@ -1163,11 +1287,31 @@ enum TermLoopSocketCommands {
             return .err(code: "invalid_params", message: "Missing message", data: nil)
         }
 
+        guard let bridge = WorkspaceBridgeStore.shared.bridge(containingAskToRequestId: requestId) else {
+            return .err(code: "not_found",
+                        message: "Ask-To request not found",
+                        data: ["request_id": requestId.uuidString])
+        }
+        BridgeDebugTrace.log(
+            "reply.socket start bridge=\(shortId(bridge.id)) request=\(shortId(requestId)) " +
+            "helper=\(shortId(bridge.rightWorkspaceId)) msgChars=\(message.count) \(bridgeToolParamSummary(params))"
+        )
+
         let callerId: UUID
-        switch resolveWorkspaceId(from: params) {
+        switch resolveAskToReplyCallerId(
+            from: params,
+            bridge: bridge
+        ) {
         case .found(let id, _):
             callerId = id
+            BridgeDebugTrace.log(
+                "reply.socket caller bridge=\(shortId(bridge.id)) request=\(shortId(requestId)) " +
+                "caller=\(shortId(callerId)) helper=\(shortId(bridge.rightWorkspaceId))"
+            )
         case .missing(let error):
+            BridgeDebugTrace.log(
+                "reply.socket caller-reject bridge=\(shortId(bridge.id)) request=\(shortId(requestId)) \(bridgeToolParamSummary(params))"
+            )
             return error
         }
 
@@ -1181,9 +1325,15 @@ enum TermLoopSocketCommands {
         )
         switch result {
         case .delivered(let messageId):
+            let bridgeId = WorkspaceBridgeStore.shared
+                .bridge(containingAskToRequestId: requestId)?.id
+            BridgeDebugTrace.log(
+                "reply.socket ok bridge=\(shortId(bridgeId)) request=\(shortId(requestId)) message=\(shortId(messageId))"
+            )
             return .ok([
                 "request_id": requestId.uuidString,
-                "bridge_id": requestId.uuidString,
+                "bridge_id": bridgeId?.uuidString ?? requestId.uuidString,
+                "conversation_id": bridgeId?.uuidString ?? requestId.uuidString,
                 "message_id": messageId.uuidString,
                 "delivered": true
             ])
