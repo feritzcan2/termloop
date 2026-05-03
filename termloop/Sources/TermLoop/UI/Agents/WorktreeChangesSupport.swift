@@ -294,10 +294,6 @@ enum WorktreeBaseComparisonProvider {
         if let defaultBranch = git.defaultBranch(projectRoot: projectRoot) {
             result.append(defaultBranch)
         }
-        if git.hasRemoteBranch("dev", directory: projectRoot),
-           !result.contains("dev") {
-            result.append("dev")
-        }
         return result
     }
 

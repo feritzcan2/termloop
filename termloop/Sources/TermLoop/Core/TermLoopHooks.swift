@@ -369,12 +369,11 @@ enum TermLoopHooks {
     }
 
     static func migrateSidebarWorkSubTabDefaultIfNeeded(defaults: UserDefaults = .standard) {
-        // Key must match `TermLoopSidebarRoot`'s `@AppStorage("termloop.workSubTab")`.
-        // Earlier the migration wrote to the camel-case `termLoop.workSubTab`,
-        // which the UI never read — leaving the migration silently ineffective.
+        // Earlier the migration wrote to the camel-case key instead of
+        // `WorkSubTab.storageKey`, leaving the migration silently ineffective.
         let migrationKey = "termloop.workSubTab.loopDefaultMigration.v1"
         guard !defaults.bool(forKey: migrationKey) else { return }
-        defaults.set(WorkSubTab.loop.rawValue, forKey: "termloop.workSubTab")
+        defaults.set(WorkSubTab.loop.rawValue, forKey: WorkSubTab.storageKey)
         defaults.set(true, forKey: migrationKey)
     }
 
