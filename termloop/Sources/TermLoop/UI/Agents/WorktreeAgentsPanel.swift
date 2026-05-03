@@ -1381,11 +1381,47 @@ struct WorktreeAgentsPanel: View {
         return String.localizedStringWithFormat(format, agent.displayName)
     }
 
-    private func openPullRequests(_ pullRequests: [SidebarPullRequestState]) {
+    private func openPullRequests(
+        _ pullRequests: [SidebarPullRequestState],
+        workspaceIds: [UUID],
+        preferredWorkspaceId: UUID?
+    ) {
         let uniquePullRequests = WorktreeAgentsPullRequestSummary.orderedUniquePullRequests(from: pullRequests)
         for pullRequest in uniquePullRequests {
-            NSWorkspace.shared.open(pullRequest.url)
+            WorktreeURLRouter.open(
+                pullRequest.url,
+                workspaceIds: workspaceIds,
+                preferredWorkspaceId: preferredWorkspaceId
+            )
         }
+    }
+
+    private func pullRequestBadge(
+        summary: WorktreeAgentsPullRequestSummary.Summary?,
+        allPullRequests: [SidebarPullRequestState],
+        group: WorktreeAgentsGroup
+    ) -> some View {
+        let workspaceIds = group.workspaces.map(\.id)
+        let preferredWorkspaceId = sourceWorkspace(for: group)?.id
+        return WorktreeGroupPullRequestBadge(
+            summary: summary,
+            allPullRequests: allPullRequests,
+            openPullRequests: {
+                openPullRequests(
+                    $0,
+                    workspaceIds: workspaceIds,
+                    preferredWorkspaceId: preferredWorkspaceId
+                )
+            },
+            openSinglePullRequest: {
+                WorktreeURLRouter.open(
+                    $0,
+                    workspaceIds: workspaceIds,
+                    preferredWorkspaceId: preferredWorkspaceId
+                )
+            }
+        )
+        .equatable()
     }
 
     private func addAgent(to group: WorktreeAgentsGroup, agent: TerminalAgent) {
@@ -1630,13 +1666,11 @@ struct WorktreeAgentsPanel: View {
                 // git summary (commits/changes) sits at the trailing end.
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .center, spacing: 4) {
-                        WorktreeGroupPullRequestBadge(
+                        pullRequestBadge(
                             summary: pullRequestSummary,
                             allPullRequests: allBranchPullRequests,
-                            openPullRequests: openPullRequests,
-                            openSinglePullRequest: { NSWorkspace.shared.open($0) }
+                            group: group
                         )
-                        .equatable()
                         if !groupBindings.isEmpty {
                             if !partitionedBindings.runTargets.isEmpty {
                                 WorktreeGroupRunTargetsBadge(
@@ -1661,13 +1695,11 @@ struct WorktreeAgentsPanel: View {
                     // agent-reported badge visible, then drop git metadata
                     // instead of crushing branch titles/count tokens.
                     HStack(alignment: .center, spacing: 4) {
-                        WorktreeGroupPullRequestBadge(
+                        pullRequestBadge(
                             summary: pullRequestSummary,
                             allPullRequests: allBranchPullRequests,
-                            openPullRequests: openPullRequests,
-                            openSinglePullRequest: { NSWorkspace.shared.open($0) }
+                            group: group
                         )
-                        .equatable()
                         if !partitionedBindings.runTargets.isEmpty {
                             WorktreeGroupRunTargetsBadge(
                                 bindings: partitionedBindings.runTargets,
@@ -1681,13 +1713,11 @@ struct WorktreeAgentsPanel: View {
                         }
                     }
                     VStack(alignment: .trailing, spacing: 2) {
-                        WorktreeGroupPullRequestBadge(
+                        pullRequestBadge(
                             summary: pullRequestSummary,
                             allPullRequests: allBranchPullRequests,
-                            openPullRequests: openPullRequests,
-                            openSinglePullRequest: { NSWorkspace.shared.open($0) }
+                            group: group
                         )
-                        .equatable()
                         HStack(alignment: .center, spacing: 4) {
                             if !partitionedBindings.runTargets.isEmpty {
                                 WorktreeGroupRunTargetsBadge(

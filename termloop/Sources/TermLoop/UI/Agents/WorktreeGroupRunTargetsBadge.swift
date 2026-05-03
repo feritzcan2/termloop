@@ -160,25 +160,10 @@ struct WorktreeGroupRunTargetsBadge: View {
 
     /// Plain click → external browser (`NSWorkspace.open`). Cmd- or
     /// Option-click on an http(s) URL → open in a new browser pane inside
-    /// the worktree's focused workspace, split right of whatever's there
-    /// so the existing terminal stays visible. `file://` URLs (app
-    /// bundles, log files) always go to the system regardless of
-    /// modifier — internal WKWebView wouldn't render those usefully.
+    /// the worktree's focused workspace. `file://` URLs (app bundles, log
+    /// files) always go to the system regardless of modifier.
     private func openTarget(_ url: URL) {
-        let modifiers = NSEvent.modifierFlags.intersection([.command, .option])
-        let isWebURL = (url.scheme?.lowercased()).map { $0 == "http" || $0 == "https" } ?? false
-        let openInternally = !modifiers.isEmpty && isWebURL
-        guard openInternally,
-              let workspaceId = workspaceIds.first,
-              let tabManager = AppDelegate.shared?.tabManagerFor(tabId: workspaceId) else {
-            NSWorkspace.shared.open(url)
-            return
-        }
-        _ = tabManager.openBrowser(
-            inWorkspace: workspaceId,
-            url: url,
-            preferSplitRight: true
-        )
+        WorktreeURLRouter.open(url, workspaceIds: workspaceIds)
     }
 
     private func clear(
@@ -251,5 +236,46 @@ struct WorktreeGroupRunTargetsBadge: View {
 
     private var runTargetBorder: Color {
         runTargetForeground.opacity(0.45)
+    }
+}
+
+@MainActor
+enum WorktreeURLRouter {
+    /// Plain click opens in the system default app. Command- or Option-click
+    /// on http(s) opens in TermLoop's internal browser for the worktree.
+    static func open(
+        _ url: URL,
+        workspaceIds: [UUID],
+        preferredWorkspaceId: UUID? = nil
+    ) {
+        let modifiers = NSEvent.modifierFlags.intersection([.command, .option])
+        let isWebURL = (url.scheme?.lowercased()).map { $0 == "http" || $0 == "https" } ?? false
+        guard !modifiers.isEmpty, isWebURL else {
+            NSWorkspace.shared.open(url)
+            return
+        }
+
+        let candidateWorkspaceIds = ([preferredWorkspaceId].compactMap { $0 } + workspaceIds)
+            .uniquedPreservingOrder()
+        for workspaceId in candidateWorkspaceIds {
+            guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: workspaceId) else {
+                continue
+            }
+            _ = tabManager.openBrowser(
+                inWorkspace: workspaceId,
+                url: url,
+                preferSplitRight: true
+            )
+            return
+        }
+
+        NSWorkspace.shared.open(url)
+    }
+}
+
+private extension Array where Element: Hashable {
+    func uniquedPreservingOrder() -> [Element] {
+        var seen = Set<Element>()
+        return filter { seen.insert($0).inserted }
     }
 }
