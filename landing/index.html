@@ -810,6 +810,12 @@
     width: 100%;
     height: auto;
     background: #000;
+    cursor: zoom-in;
+  }
+  .loop-proof video:hover { filter: brightness(1.04); }
+  .loop-proof video:fullscreen,
+  .loop-proof video:-webkit-full-screen {
+    cursor: default;
   }
   .loop-proof-beats {
     margin-top: 18px;
@@ -1271,8 +1277,8 @@
         <h3 class="loop-proof-title-h">All your agents in one tap.</h3>
         <p class="loop-proof-lede">
           Quick Actions are saved agent launches — name, prompt, model,
-          even a starter command. One tap fires the whole set — every agent
-          boots in its own <code>worktree</code>, ready to work.
+          even a starter command. One tap fires the whole set, each agent
+          ready to work on its own task.
         </p>
       </div>
       <figure class="loop-proof-figure">
@@ -1393,6 +1399,18 @@
     });
   });
 
+  // Tap-to-fullscreen for demo videos
+  document.querySelectorAll('.loop-proof video').forEach(video => {
+    video.addEventListener('click', () => {
+      if (video.requestFullscreen) {
+        video.requestFullscreen().catch(() => {});
+      } else if (video.webkitEnterFullscreen) {
+        video.webkitEnterFullscreen();
+      } else if (video.webkitRequestFullscreen) {
+        video.webkitRequestFullscreen();
+      }
+    });
+  });
 </script>
 
 </body>
