@@ -225,7 +225,7 @@ function PermissionBox({
       <Text style={styles.viewfinderText}>{message}</Text>
       {state === "prompt" && (
         <Pressable style={styles.permissionBtn} onPress={onRequest}>
-          <Text style={styles.permissionBtnText}>Enable camera</Text>
+          <Text style={styles.permissionBtnText}>Continue</Text>
         </Pressable>
       )}
     </View>
