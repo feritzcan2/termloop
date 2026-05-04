@@ -1788,40 +1788,6 @@ enum WorkspaceMountPolicy {
     }
 }
 
-struct MountedWorkspacePresentation: Equatable {
-    let isRenderedVisible: Bool
-    let isPanelVisible: Bool
-    let renderOpacity: Double
-}
-
-enum MountedWorkspacePresentationPolicy {
-    static func resolve(
-        isSelectedWorkspace: Bool,
-        isRetiringWorkspace: Bool,
-        shouldPrimeInBackground: Bool
-    ) -> MountedWorkspacePresentation {
-        let isRenderedVisible = isSelectedWorkspace || isRetiringWorkspace
-        let renderOpacity: Double = {
-            if isRenderedVisible {
-                return 1
-            }
-            if shouldPrimeInBackground {
-                // Keep the workspace mounted long enough to warm the terminal surface, but do
-                // not mark it panel-visible. Visible portal entries intentionally survive
-                // transient anchor loss during bonsplit drag/reparent churn.
-                return 0.001
-            }
-            return 0
-        }()
-
-        return MountedWorkspacePresentation(
-            isRenderedVisible: isRenderedVisible,
-            isPanelVisible: isRenderedVisible,
-            renderOpacity: renderOpacity
-        )
-    }
-}
-
 /// Installs a FileDropOverlayView on the window's theme frame for Finder file drag support.
 func installFileDropOverlay(on window: NSWindow, tabManager: TabManager) {
     guard objc_getAssociatedObject(window, &fileDropOverlayKey) == nil,
@@ -1874,7 +1840,6 @@ struct ContentView: View {
     @State private var previousSelectedWorkspaceId: UUID?
     @State private var retiringWorkspaceId: UUID?
     @State private var workspaceHandoffGeneration: UInt64 = 0
-    @State private var workspaceHandoffFallbackTask: Task<Void, Never>?
     @State private var didApplyUITestSidebarSelection = false
     @State private var titlebarThemeGeneration: UInt64 = 0
     @State private var sidebarDraggedTabId: UUID?
@@ -2726,32 +2691,23 @@ struct ContentView: View {
     private var terminalContent: some View {
         let mountedWorkspaceIdSet = Set(mountedWorkspaceIds)
         let mountedWorkspaces = tabManager.tabs.filter { mountedWorkspaceIdSet.contains($0.id) }
-        let selectedWorkspaceId = tabManager.selectedTabId
         let retiringWorkspaceId = self.retiringWorkspaceId
+        // MARK: termloop-hook
+        let mainAreaPresentation = TermLoopHooks.mainAreaPresentationSnapshot(windowId: windowId, tabManager: tabManager, retiringWorkspaceId: retiringWorkspaceId, mountedWorkspaceIds: mountedWorkspaceIds, handoffGeneration: workspaceHandoffGeneration, hasCommandPaletteOrFileDropOverlay: isCommandPalettePresented || sidebarDraggedTabId != nil)
+        // MARK: /termloop-hook
 
         return ZStack {
             ZStack {
                 ForEach(mountedWorkspaces) { tab in
-                    let isSelectedWorkspace = selectedWorkspaceId == tab.id
-                    let isRetiringWorkspace = retiringWorkspaceId == tab.id
                     let shouldPrimeInBackground = tabManager.pendingBackgroundWorkspaceLoadIds.contains(tab.id)
-                    let presentation = MountedWorkspacePresentationPolicy.resolve(
-                        isSelectedWorkspace: isSelectedWorkspace,
-                        isRetiringWorkspace: isRetiringWorkspace,
-                        shouldPrimeInBackground: shouldPrimeInBackground
-                    )
-                    // Keep the retiring workspace visible during handoff, but never input-active.
-                    // Allowing both selected+retiring workspaces to be input-active lets the
-                    // old workspace steal first responder (notably with WKWebView), which can
-                    // delay handoff completion and make browser returns feel laggy.
-                    let isInputActive = isSelectedWorkspace
-                    let portalPriority = isSelectedWorkspace ? 2 : (isRetiringWorkspace ? 1 : 0)
+                    let presentation = mainAreaPresentation.presentation(for: tab.id)
+                        ?? .hidden(workspaceId: tab.id, shouldPrimeInBackground: shouldPrimeInBackground)
                     WorkspaceContentView(
                         workspace: tab,
                         isWorkspaceVisible: presentation.isPanelVisible,
-                        isWorkspaceInputActive: isInputActive,
+                        isWorkspaceInputActive: presentation.isInputActive,
                         isFullScreen: isFullScreen,
-                        workspacePortalPriority: portalPriority,
+                        workspacePortalPriority: presentation.portalPriority,
                         onThemeRefreshRequest: { reason, eventId, source, payloadHex in
                             scheduleTitlebarThemeRefreshFromWorkspace(
                                 workspaceId: tab.id,
@@ -2763,9 +2719,9 @@ struct ContentView: View {
                         }
                     )
                     .opacity(presentation.renderOpacity)
-                    .allowsHitTesting(isSelectedWorkspace)
+                    .allowsHitTesting(presentation.isInputActive)
                     .accessibilityHidden(!presentation.isRenderedVisible)
-                    .zIndex(isSelectedWorkspace ? 2 : (isRetiringWorkspace ? 1 : 0))
+                    .zIndex(Double(presentation.portalPriority))
                     .task(id: shouldPrimeInBackground ? tab.id : nil) {
                         await primeBackgroundWorkspaceIfNeeded(workspaceId: tab.id)
                     }
@@ -3325,6 +3281,12 @@ struct ContentView: View {
             attemptCommandPaletteFocusRestoreIfNeeded()
         })
 
+        // MARK: termloop-hook
+        view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .terminalSurfaceDidBecomeReady)) { notification in TermLoopHooks.handleWorkspaceHandoffReadiness(notification: notification, selectedWorkspaceId: tabManager.selectedTabId, canComplete: { canCompleteWorkspaceHandoffImmediately(for: $0) }, complete: { completeWorkspaceHandoffIfNeeded(focusedTabId: $0, reason: $1) }) })
+        view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .terminalSurfaceHostedViewDidMoveToWindow)) { notification in TermLoopHooks.handleWorkspaceHandoffReadiness(notification: notification, selectedWorkspaceId: tabManager.selectedTabId, canComplete: { canCompleteWorkspaceHandoffImmediately(for: $0) }, complete: { completeWorkspaceHandoffIfNeeded(focusedTabId: $0, reason: $1) }) })
+        view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .termLoopMainAreaPresentationRequiresHandoffCompletion)) { notification in TermLoopHooks.handleMainAreaHandoffPresentationEvent(notification: notification, windowId: windowId, retiringWorkspaceId: retiringWorkspaceId, complete: { completeWorkspaceHandoff(reason: $0) }) })
+        // MARK: /termloop-hook
+
         view = AnyView(view.onReceive(NotificationCenter.default.publisher(
             for: NSWindow.didBecomeKeyNotification,
             object: observedWindow
@@ -3358,8 +3320,6 @@ struct ContentView: View {
             let existingIds = Set(tabs.map { $0.id })
             if let retiringWorkspaceId, !existingIds.contains(retiringWorkspaceId) {
                 self.retiringWorkspaceId = nil
-                workspaceHandoffFallbackTask?.cancel()
-                workspaceHandoffFallbackTask = nil
             }
             if let previousSelectedWorkspaceId, !existingIds.contains(previousSelectedWorkspaceId) {
                 self.previousSelectedWorkspaceId = tabManager.selectedTabId
@@ -3994,15 +3954,11 @@ struct ContentView: View {
         guard let oldSelectedId, let newSelectedId, oldSelectedId != newSelectedId else {
             tabManager.completePendingWorkspaceUnfocus(reason: "no_handoff")
             retiringWorkspaceId = nil
-            workspaceHandoffFallbackTask?.cancel()
-            workspaceHandoffFallbackTask = nil
             return
         }
 
         workspaceHandoffGeneration &+= 1
-        let generation = workspaceHandoffGeneration
         retiringWorkspaceId = oldSelectedId
-        workspaceHandoffFallbackTask?.cancel()
 
 #if DEBUG
         if let snapshot = tabManager.debugCurrentWorkspaceSwitchSnapshot() {
@@ -4018,6 +3974,10 @@ struct ContentView: View {
         }
 #endif
 
+        // MARK: termloop-hook
+        guard TermLoopHooks.shouldKeepRetiringWorkspaceVisibleForHandoff(windowId: windowId, tabManager: tabManager, oldWorkspaceId: oldSelectedId, newWorkspaceId: newSelectedId, mountedWorkspaceIds: mountedWorkspaceIds, handoffGeneration: workspaceHandoffGeneration, hasCommandPaletteOrFileDropOverlay: isCommandPalettePresented || sidebarDraggedTabId != nil) else { completeWorkspaceHandoff(reason: "presentation_policy"); return }
+        // MARK: /termloop-hook
+
         if canCompleteWorkspaceHandoffImmediately(for: newSelectedId) {
 #if DEBUG
             if let snapshot = tabManager.debugCurrentWorkspaceSwitchSnapshot() {
@@ -4031,18 +3991,6 @@ struct ContentView: View {
 #endif
             completeWorkspaceHandoff(reason: "ready")
             return
-        }
-
-        workspaceHandoffFallbackTask = Task { [generation] in
-            do {
-                try await Task.sleep(nanoseconds: 150_000_000)
-            } catch {
-                return
-            }
-            await MainActor.run {
-                guard workspaceHandoffGeneration == generation else { return }
-                completeWorkspaceHandoff(reason: "timeout")
-            }
         }
     }
 
@@ -4062,15 +4010,13 @@ struct ContentView: View {
     }
 
     private func completeWorkspaceHandoff(reason: String) {
-        workspaceHandoffFallbackTask?.cancel()
-        workspaceHandoffFallbackTask = nil
         let retiring = retiringWorkspaceId
 
-        // Hide portal-hosted views for the retiring workspace BEFORE clearing
-        // retiringWorkspaceId. Once cleared, reconcileMountedWorkspaceIds unmounts
-        // the workspace — but dismantleNSView intentionally doesn't hide portal views
-        // during transient rebuilds. Hiding here prevents stale terminal/browser
-        // portals from covering the newly selected workspace.
+        // Belt-and-braces portal hide before clearing retiringWorkspaceId.
+        // MainAreaPresentationCoordinator is the canonical route/handoff hide
+        // driver, but this idempotent cleanup preserves the old ordering:
+        // hide while the retiring workspace is still known, then let
+        // reconcileMountedWorkspaceIds unmount it.
         if let retiring, let workspace = tabManager.tabs.first(where: { $0.id == retiring }) {
             workspace.hideAllTerminalPortalViews()
             workspace.hideAllBrowserPortalViews()
