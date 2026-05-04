@@ -1000,7 +1000,21 @@ struct WorktreeAgentsPanel: View {
             refreshWorktreePullRequests(inputs, reason: "inputsChanged")
         }
         .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
+            if hasAttachedWorktree(in: scopedTabs) {
+                // External `git switch` / rebase / bisect edits `.git/HEAD`
+                // without touching TermLoop metadata. Tick presentation so
+                // the disk-only HEAD overlay in `termLoopCachedWorktreeStatus`
+                // can surface drift without waiting for a registry refresh or
+                // app restart.
+                worktreeRegistryTick &+= 1
+            }
             refreshWorktreePullRequests(renderSnapshot.pullRequestLookupInputs, reason: "timer")
+        }
+    }
+
+    private func hasAttachedWorktree(in workspaces: [Workspace]) -> Bool {
+        workspaces.contains { workspace in
+            WorkspaceMetadataStore.shared.branch(for: workspace) != nil
         }
     }
 
@@ -2397,17 +2411,36 @@ struct WorktreeAgentsPanel: View {
         let alert = NSAlert()
         alert.messageText = String(
             localized: "worktreeAgents.group.move.localChangesTitle",
-            defaultValue: "Worktree has local changes",
+            defaultValue: "Local changes in worktree",
             table: "TermLoop"
         )
         alert.informativeText = String(
             localized: "worktreeAgents.group.move.localChangesBody",
-            defaultValue: "Detach \(workspaceCount) workspace(s) from \(inspection.worktreeBranch) and decide what to do with the worktree-only changes before moving back to \(inspection.currentLocalBranch).",
+            defaultValue: "TermLoop will move \(workspaceCount) workspace(s) from “\(inspection.worktreeBranch)” back to “\(inspection.currentLocalBranch)”. This worktree has local changes that may only exist in:\n\(inspection.worktreePath)\n\nChoose how to handle those changes.",
             table: "TermLoop"
         )
         alert.addButton(withTitle: String(
-            localized: "worktreeAgents.group.move.continue",
-            defaultValue: "Continue",
+            localized: "worktreeAgents.group.move.optionLeave.short",
+            defaultValue: "Keep Worktree",
+            table: "TermLoop"
+        ))
+
+        if inspection.rootHasLocalChanges {
+            alert.informativeText += "\n\n" + String(
+                localized: "worktreeAgents.group.move.rootDirtyNote",
+                defaultValue: "The current local branch already has local changes, so bringing worktree changes over is disabled until that checkout is clean.",
+                table: "TermLoop"
+            )
+        } else {
+            alert.addButton(withTitle: String(
+                localized: "worktreeAgents.group.move.optionBring.short",
+                defaultValue: "Bring Changes",
+                table: "TermLoop"
+            ))
+        }
+        alert.addButton(withTitle: String(
+            localized: "worktreeAgents.group.move.optionDiscard.short",
+            defaultValue: "Discard Changes",
             table: "TermLoop"
         ))
         alert.addButton(withTitle: String(
@@ -2416,65 +2449,18 @@ struct WorktreeAgentsPanel: View {
             table: "TermLoop"
         ))
 
-        let stack = NSStackView()
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
-
-        var buttons: [(button: NSButton, policy: WorktreeCoordinator.LocalChangesPolicy)] = []
-        func addOption(
-            _ policy: WorktreeCoordinator.LocalChangesPolicy,
-            title: String,
-            selected: Bool
-        ) {
-            let button = NSButton(radioButtonWithTitle: title, target: nil, action: nil)
-            button.state = selected ? .on : .off
-            buttons.append((button, policy))
-            stack.addArrangedSubview(button)
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return .leaveInWorktree
+        case .alertSecondButtonReturn where !inspection.rootHasLocalChanges:
+            return .moveToCurrentBranch
+        case .alertSecondButtonReturn:
+            return .discardAll
+        case .alertThirdButtonReturn where !inspection.rootHasLocalChanges:
+            return .discardAll
+        default:
+            return nil
         }
-
-        if inspection.rootHasLocalChanges {
-            let note = NSTextField(wrappingLabelWithString: String(
-                localized: "worktreeAgents.group.move.rootDirtyNote",
-                defaultValue: "The current local branch already has local changes, so bringing worktree changes over is disabled until that checkout is clean.",
-                table: "TermLoop"
-            ))
-            note.textColor = .secondaryLabelColor
-            stack.addArrangedSubview(note)
-        } else {
-            addOption(
-                .moveToCurrentBranch,
-                title: String(
-                    localized: "worktreeAgents.group.move.optionBring",
-                    defaultValue: "Bring local changes to \(inspection.currentLocalBranch) and remove the worktree",
-                    table: "TermLoop"
-                ),
-                selected: false
-            )
-        }
-
-        addOption(
-            .leaveInWorktree,
-            title: String(
-                localized: "worktreeAgents.group.move.optionLeave",
-                defaultValue: "Leave local changes in the worktree and keep it on disk",
-                table: "TermLoop"
-            ),
-            selected: true
-        )
-        addOption(
-            .discardAll,
-            title: String(
-                localized: "worktreeAgents.group.move.optionDiscard",
-                defaultValue: "Discard all worktree-only changes and remove the worktree",
-                table: "TermLoop"
-            ),
-            selected: false
-        )
-
-        alert.accessoryView = stack
-        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-        return buttons.first(where: { $0.button.state == .on })?.policy ?? .leaveInWorktree
     }
 
     private func presentGroupMoveError(_ message: String) {

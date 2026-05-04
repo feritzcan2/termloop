@@ -34,6 +34,15 @@ enum TermLoopWorktreeHeadReader {
     /// `git` from there can hang the whole app if git or pipe draining stalls,
     /// so this only uses direct `.git/HEAD` file reads.
     static func currentBranchWithoutGit(checkoutPath: String) -> String? {
+        currentObservedRefWithoutGit(checkoutPath: checkoutPath)?.branchName
+    }
+
+    /// Best-effort HEAD read for a checkout without spawning git.
+    ///
+    /// Unlike `currentBranchWithoutGit`, this preserves detached HEAD state so
+    /// presentation can surface rebase/bisect drift instead of treating it as
+    /// an unknown/missing worktree.
+    static func currentObservedRefWithoutGit(checkoutPath: String) -> WorktreeObservedRef? {
         let folderURL = URL(fileURLWithPath: checkoutPath).standardizedFileURL
         let gitURL = folderURL.appendingPathComponent(".git")
         let headURL: URL
@@ -63,10 +72,15 @@ enum TermLoopWorktreeHeadReader {
 
         guard let head = try? String(contentsOf: headURL, encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines),
-              head.hasPrefix("ref: refs/heads/") else {
+              !head.isEmpty else {
             return nil
         }
-        return String(head.dropFirst("ref: refs/heads/".count))
+        guard head.hasPrefix("ref: refs/heads/") else {
+            return .detached(head)
+        }
+        let branch = String(head.dropFirst("ref: refs/heads/".count))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return branch.isEmpty ? nil : .branch(branch)
     }
 }
 
@@ -422,22 +436,66 @@ extension Workspace {
     /// until `WorktreeRegistry` has refreshed the project off-main.
     @MainActor
     func termLoopCachedWorktreeStatus(maximumAge: TimeInterval? = nil) -> WorktreeStatus? {
-        guard let projectId,
-              let project = ProjectStore.shared.project(id: projectId),
-              let snapshot = WorktreeRegistry.shared.cachedSnapshot(
-                  projectFolder: project.folderPath,
-                  maximumAge: maximumAge
-              )
-        else {
-            return nil
-        }
         let metadata = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: id)
-        return WorktreeReconciler.status(
+        guard let projectId,
+              let project = ProjectStore.shared.project(id: projectId)
+        else {
+            return termLoopDirectHeadDriftStatus(
+                metadata: metadata,
+                baseStatus: nil
+            )
+        }
+        guard let snapshot = WorktreeRegistry.shared.cachedSnapshot(
+            projectFolder: project.folderPath,
+            maximumAge: maximumAge
+        ) else {
+            return termLoopDirectHeadDriftStatus(
+                metadata: metadata,
+                baseStatus: nil
+            )
+        }
+        let status = WorktreeReconciler.status(
             for: WorktreeReconciler.Binding(
                 expectedBranch: metadata.branch,
                 worktreePath: metadata.worktreePath
             ),
             entries: snapshot.entries
+        )
+        return termLoopDirectHeadDriftStatus(
+            metadata: metadata,
+            baseStatus: status
+        ) ?? status
+    }
+
+    @MainActor
+    private func termLoopDirectHeadDriftStatus(
+        metadata: WorkspaceMetadataStore.Metadata,
+        baseStatus: WorktreeStatus?
+    ) -> WorktreeStatus? {
+        let expected = metadata.branch?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !expected.isEmpty else {
+            return baseStatus
+        }
+        let path = WorktreeResolver.normalizePath(baseStatus?.path)
+            ?? WorktreeResolver.normalizePath(metadata.worktreePath)
+        guard let path,
+              let observed = TermLoopWorktreeHeadReader.currentObservedRefWithoutGit(
+                  checkoutPath: path
+              ),
+              observed.branchName != expected else {
+            return baseStatus
+        }
+        return WorktreeStatus(
+            kind: .branchDrift,
+            expectedBranch: expected,
+            path: path,
+            pathSource: baseStatus?.pathSource ?? .metadata,
+            observedRef: observed,
+            isMain: baseStatus?.isMain ?? false,
+            isLocked: baseStatus?.isLocked ?? false,
+            isPrunable: baseStatus?.isPrunable ?? false,
+            message: baseStatus?.message
         )
     }
 
