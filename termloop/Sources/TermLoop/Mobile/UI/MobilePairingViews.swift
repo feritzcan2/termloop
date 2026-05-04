@@ -5,6 +5,7 @@ import AppKit
 import Combine
 import CoreImage.CIFilterBuiltins
 import Darwin
+import os
 import SwiftUI
 
 private enum TermLoopMobilePasteboard {
@@ -90,14 +91,20 @@ struct MobilePairingButton: View {
 
 struct CLISocketStatusChip: View {
     private static let refreshInterval: TimeInterval = 5.0
-    @State private var failureSignals: [String] = Self.currentFailureSignals()
+    private static let logger = Logger(
+        subsystem: "com.termloop.fork",
+        category: "mobile.cliSocketChip"
+    )
+
+    @State private var status = Self.currentStatusSnapshot()
+    @State private var didLogInitialStatus = false
     private let timer = Timer.publish(
         every: refreshInterval,
         on: .main,
         in: .common
     ).autoconnect()
 
-    private var isHealthy: Bool { failureSignals.isEmpty }
+    private var isHealthy: Bool { status.failureSignals.isEmpty }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -120,9 +127,14 @@ struct CLISocketStatusChip: View {
                 .stroke(TermLoopSidebarTheme.rule, lineWidth: 1)
         )
         .help(helpText)
+        .onAppear {
+            guard !didLogInitialStatus else { return }
+            didLogInitialStatus = true
+            Self.logStatus(status, source: "appear", previous: nil)
+        }
         .onReceive(timer) { _ in refresh() }
         .onReceive(NotificationCenter.default.publisher(for: .socketListenerDidStart)) { _ in
-            refresh()
+            refresh(source: "socketListenerDidStart")
         }
     }
 
@@ -130,27 +142,80 @@ struct CLISocketStatusChip: View {
         if isHealthy {
             return "CLI socket is reachable. Agent hooks and termloop rpc can report status."
         }
-        return "CLI socket is not reachable: \(failureSignals.joined(separator: ", ")). Agent hooks may not report status until the listener restarts."
+        return "CLI socket is not reachable: \(status.failureSignals.joined(separator: ", ")). Agent hooks may not report status until the listener restarts."
     }
 
-    private func refresh() {
-        let next = Self.currentFailureSignals()
-        guard next != failureSignals else { return }
-        failureSignals = next
+    private func refresh(source: String = "timer") {
+        let next = Self.currentStatusSnapshot()
+        guard next != status else { return }
+        let previous = status
+        status = next
+        Self.logStatus(next, source: source, previous: previous)
     }
 
-    private static func currentFailureSignals() -> [String] {
+    private static func currentStatusSnapshot() -> StatusSnapshot {
         let raw = UserDefaults.standard.string(forKey: SocketControlSettings.appStorageKey)
             ?? SocketControlSettings.defaultMode.rawValue
         let userMode = SocketControlSettings.migrateMode(raw)
         let mode = SocketControlSettings.effectiveMode(userMode: userMode)
-        guard mode != .off else { return ["off"] }
+        guard mode != .off else {
+            return StatusSnapshot(
+                mode: mode.rawValue,
+                socketPath: "",
+                failureSignals: ["off"],
+                isRunning: false,
+                acceptLoopAlive: false,
+                socketPathMatches: false,
+                socketPathExists: false
+            )
+        }
 
         let socketPath = TerminalController.shared.activeSocketPath(
             preferredPath: SocketControlSettings.socketPath()
         )
         let health = TerminalController.shared.socketListenerHealth(expectedSocketPath: socketPath)
-        return health.failureSignals
+        return StatusSnapshot(
+            mode: mode.rawValue,
+            socketPath: socketPath,
+            failureSignals: health.failureSignals,
+            isRunning: health.isRunning,
+            acceptLoopAlive: health.acceptLoopAlive,
+            socketPathMatches: health.socketPathMatches,
+            socketPathExists: health.socketPathExists
+        )
+    }
+
+    private static func logStatus(
+        _ snapshot: StatusSnapshot,
+        source: String,
+        previous: StatusSnapshot?
+    ) {
+        let previousSignals = previous?.failureSignals.joined(separator: ",") ?? "<none>"
+        let nextSignals = snapshot.failureSignals.joined(separator: ",")
+        let displaySignals = nextSignals.isEmpty ? "healthy" : nextSignals
+        logger.info(
+            """
+            cli socket chip status source=\(source, privacy: .public) \
+            previous=\(previousSignals, privacy: .public) \
+            current=\(displaySignals, privacy: .public) \
+            mode=\(snapshot.mode, privacy: .public) \
+            path=\(snapshot.socketPath, privacy: .public) \
+            isRunning=\(snapshot.isRunning ? 1 : 0, privacy: .public) \
+            acceptLoopAlive=\(snapshot.acceptLoopAlive ? 1 : 0, privacy: .public) \
+            pathMatches=\(snapshot.socketPathMatches ? 1 : 0, privacy: .public) \
+            pathExists=\(snapshot.socketPathExists ? 1 : 0, privacy: .public)
+            """
+        )
+    }
+
+    private struct StatusSnapshot: Equatable {
+        var mode: String
+        var socketPath: String
+        var failureSignals: [String]
+        var isRunning: Bool
+        var acceptLoopAlive: Bool
+        var socketPathMatches: Bool
+        var socketPathExists: Bool
     }
 }
 

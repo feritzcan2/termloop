@@ -43,6 +43,10 @@ final class WorkspaceMetadataStore: ObservableObject {
         /// Persisted agent session used for relaunch restore. This is the
         /// only on-disk source for `resume` metadata (agent/session/cwd).
         var persistedAgentSession: PersistedAgentSession?
+        /// Mobile can spawn a blank Claude workspace before Claude has written
+        /// a resumable transcript. While this is true, observed session-start
+        /// IDs stay live-only until a prompt or transcript proves resumability.
+        var deferObservedAgentSessionPersistenceUntilPrompt: Bool?
         /// Unix epoch seconds when the workspace last entered "awaiting input"
         /// state from the agent. Nil means the workspace is not awaiting input.
         /// Used by the mobile quick-reply surface.
@@ -533,10 +537,12 @@ final class WorkspaceMetadataStore: ObservableObject {
         if let prior,
            prior.agentId == next.agentId,
            prior.sessionId == next.sessionId,
-           prior.cwd == next.cwd {
+           prior.cwd == next.cwd,
+           current.deferObservedAgentSessionPersistenceUntilPrompt == nil {
             return false
         }
         current.persistedAgentSession = next
+        current.deferObservedAgentSessionPersistenceUntilPrompt = nil
         byWorkspaceId[workspaceId] = current
         bumpAgentPresentation(for: workspaceId)
         return true
@@ -548,8 +554,12 @@ final class WorkspaceMetadataStore: ObservableObject {
         for workspaceId: UUID
     ) -> Bool {
         var current = byWorkspaceId[workspaceId, default: Metadata()]
-        guard current.persistedAgentSession != session else { return false }
+        guard current.persistedAgentSession != session
+            || current.deferObservedAgentSessionPersistenceUntilPrompt != nil else {
+            return false
+        }
         current.persistedAgentSession = session
+        current.deferObservedAgentSessionPersistenceUntilPrompt = nil
         byWorkspaceId[workspaceId] = current
         bumpAgentPresentation(for: workspaceId)
         return true
@@ -558,11 +568,36 @@ final class WorkspaceMetadataStore: ObservableObject {
     @discardableResult
     func clearPersistedAgentSession(for workspaceId: UUID) -> Bool {
         var current = byWorkspaceId[workspaceId, default: Metadata()]
-        guard current.persistedAgentSession != nil else { return false }
+        guard current.persistedAgentSession != nil
+            || current.deferObservedAgentSessionPersistenceUntilPrompt != nil else {
+            return false
+        }
         current.persistedAgentSession = nil
+        current.deferObservedAgentSessionPersistenceUntilPrompt = nil
         byWorkspaceId[workspaceId] = current
         pendingNativeForkByWorkspaceId.removeValue(forKey: workspaceId)
         bumpAgentPresentation(for: workspaceId)
+        return true
+    }
+
+    func shouldDeferObservedAgentSessionPersistenceUntilPrompt(
+        forWorkspaceId workspaceId: UUID
+    ) -> Bool {
+        byWorkspaceId[workspaceId]?.deferObservedAgentSessionPersistenceUntilPrompt == true
+    }
+
+    @discardableResult
+    func setDeferObservedAgentSessionPersistenceUntilPrompt(
+        _ deferPersistence: Bool,
+        forWorkspaceId workspaceId: UUID
+    ) -> Bool {
+        var current = byWorkspaceId[workspaceId, default: Metadata()]
+        let next: Bool? = deferPersistence ? true : nil
+        guard current.deferObservedAgentSessionPersistenceUntilPrompt != next else {
+            return false
+        }
+        current.deferObservedAgentSessionPersistenceUntilPrompt = next
+        byWorkspaceId[workspaceId] = current
         return true
     }
 
@@ -1071,4 +1106,41 @@ final class WorkspaceMetadataStore: ObservableObject {
         return URL(fileURLWithPath: raw).resolvingSymlinksInPath().path
     }
 
+}
+
+@MainActor
+enum TerminalAgentSessionPersistencePolicy {
+    static func shouldPersistObservedSession(
+        workspaceId: UUID,
+        agentId: String,
+        sessionId: String?,
+        cwd: String?,
+        userPromptSubmitted: Bool,
+        claudeScanner: ClaudeSessionScanner = .shared
+    ) -> Bool {
+        let normalizedAgentId = agentId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalizedAgentId == TerminalAgent.claudeId else {
+            return true
+        }
+        guard WorkspaceMetadataStore.shared
+            .shouldDeferObservedAgentSessionPersistenceUntilPrompt(forWorkspaceId: workspaceId) else {
+            return true
+        }
+        guard let normalizedSessionId = sessionId?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !normalizedSessionId.isEmpty else {
+            return false
+        }
+        if userPromptSubmitted {
+            return true
+        }
+        return claudeScanner.sessionFileURL(sessionId: normalizedSessionId, cwd: cwd) != nil
+    }
+
+    static func clearDeferredPersistenceIfNeeded(workspaceId: UUID, agentId: String) {
+        let normalizedAgentId = agentId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalizedAgentId == TerminalAgent.claudeId else { return }
+        _ = WorkspaceMetadataStore.shared
+            .setDeferObservedAgentSessionPersistenceUntilPrompt(false, forWorkspaceId: workspaceId)
+    }
 }
