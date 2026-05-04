@@ -40,6 +40,9 @@ interface ActiveSession {
 
 let active: ActiveSession | null = null;
 
+const SESSION_CONNECT_TIMEOUT_MS = 12_000;
+const SESSION_REQUEST_TIMEOUT_MS = 15_000;
+
 export interface OpenSessionResult {
   client: TermLoopClient;
   auth?: AuthResult;
@@ -86,26 +89,55 @@ async function connectSavedConnection(
   conn: SavedConnection
 ): Promise<ConnectedClient> {
   const hosts = connectionHostCandidates(conn);
+  if (hosts.length === 0) throw new Error("Connection has no host.");
+  if (hosts.length === 1) return connectHost(conn, hosts[0]);
+
   let lastErr: unknown = null;
+  let failures = 0;
+  let settled = false;
 
-  for (const host of hosts) {
-    const transport = new TcpTransport({
-      host,
-      port: conn.port,
-      connectTimeoutMs: hosts.length > 1 ? 3500 : undefined,
-    });
-    const client = createTermLoopClient({ transport });
-
-    try {
-      const { auth } = await applyAuth(client, conn);
-      return { client, auth };
-    } catch (err) {
-      lastErr = err;
-      await client.close().catch(() => {});
+  return new Promise<ConnectedClient>((resolve, reject) => {
+    for (const host of hosts) {
+      void connectHost(conn, host)
+        .then(async (next) => {
+          if (settled) {
+            await next.client.close().catch(() => {});
+            return;
+          }
+          settled = true;
+          resolve(next);
+        })
+        .catch((err) => {
+          lastErr = err;
+          failures += 1;
+          if (!settled && failures === hosts.length) {
+            settled = true;
+            reject(lastErr ?? new Error("Connection failed."));
+          }
+        });
     }
-  }
+  });
+}
 
-  throw lastErr ?? new Error("Connection failed.");
+async function connectHost(
+  conn: SavedConnection,
+  host: string
+): Promise<ConnectedClient> {
+  const transport = new TcpTransport({
+    host,
+    port: conn.port,
+    connectTimeoutMs: SESSION_CONNECT_TIMEOUT_MS,
+    requestTimeoutMs: SESSION_REQUEST_TIMEOUT_MS,
+  });
+  const client = createTermLoopClient({ transport });
+
+  try {
+    const { auth } = await applyAuth(client, conn);
+    return { client, auth };
+  } catch (err) {
+    await client.close().catch(() => {});
+    throw err;
+  }
 }
 
 function createSessionClient(session: ActiveSession): TermLoopClient {
@@ -116,8 +148,10 @@ function createSessionClient(session: ActiveSession): TermLoopClient {
       deviceName: string,
       existingDeviceId?: string
     ): Promise<PairingClaimResult> =>
-      withReconnect(session, (client) =>
-        client.claimPairing(payload, deviceName, existingDeviceId)
+      withReconnect(
+        session,
+        (client) => client.claimPairing(payload, deviceName, existingDeviceId),
+        "prewrite"
       ),
     authWithToken: (deviceId: string, accessToken: string) =>
       withReconnect(session, (client) =>
@@ -219,6 +253,9 @@ async function withReconnect<T>(
     if (!shouldReconnect(err) || session.closed || active !== session) {
       throw err;
     }
+    if (retryMode === "prewrite" && !isPrewriteReconnectError(err)) {
+      throw err;
+    }
     if (session.current.client === client) {
       await reconnectSession(session);
     } else if (session.reconnectPromise) {
@@ -226,9 +263,6 @@ async function withReconnect<T>(
     }
     if (session.closed || active !== session) {
       throw new Error("Session is closed.");
-    }
-    if (retryMode === "prewrite" && !isPrewriteReconnectError(err)) {
-      throw err;
     }
     return operation(session.current.client);
   }
@@ -270,6 +304,8 @@ function shouldReconnect(err: unknown): boolean {
 
   const message = String((err as Error)?.message ?? err).toLowerCase();
   return (
+    message.includes("connect timeout") ||
+    message.includes("request timeout") ||
     message.includes("socket not found") ||
     message.includes("socket not available") ||
     message.includes("transport is closed") ||
@@ -290,6 +326,7 @@ function isPrewriteReconnectError(err: unknown): boolean {
 
   const message = String((err as Error)?.message ?? err).toLowerCase();
   return (
+    message.includes("connect timeout") ||
     message.includes("socket not found") ||
     message.includes("socket not available") ||
     message.includes("transport is closed")
