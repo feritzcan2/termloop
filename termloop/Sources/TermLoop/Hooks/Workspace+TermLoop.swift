@@ -27,63 +27,14 @@ struct TermLoopWorktreeExpectation: Equatable, Sendable {
     }
 }
 
-enum TermLoopWorktreeBindingResolver {
-    static func resolvePath(
-        projectFolder: String,
-        branch: String,
-        service _: GitWorktreeService = GitWorktreeService()
-    ) throws -> String {
-        let trimmedBranch = branch.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedBranch.isEmpty else {
-            throw WorktreeError.invalidParams(reason: "branch is empty")
-        }
-        #if DEBUG
-        workspaceTermLoopDebugLog("worktree.binding.resolve.begin projectFolder=\(projectFolder) branch=\(trimmedBranch)")
-        #endif
-
-        guard let candidate = WorktreeResolver.path(
-            projectFolder: projectFolder,
-            branch: trimmedBranch
-        ) else {
-            throw WorktreeError.invalidParams(reason: "could not resolve path")
-        }
-        var isDir: ObjCBool = false
-        if FileManager.default.fileExists(atPath: candidate, isDirectory: &isDir),
-           isDir.boolValue {
-            #if DEBUG
-            workspaceTermLoopDebugLog("worktree.binding.resolve.hit candidate=\(candidate) reason=directoryExists")
-            #endif
-            return candidate
-        }
-
-        if currentBranchWithoutGit(projectFolder: projectFolder) == trimmedBranch {
-            let normalizedProject = URL(fileURLWithPath: projectFolder)
-                .standardizedFileURL
-                .path
-            var projectIsDir: ObjCBool = false
-            if FileManager.default.fileExists(atPath: normalizedProject, isDirectory: &projectIsDir),
-               projectIsDir.boolValue {
-                #if DEBUG
-                workspaceTermLoopDebugLog("worktree.binding.resolve.hit candidate=\(normalizedProject) reason=projectRootBranchMatch")
-                #endif
-                return normalizedProject
-            }
-        }
-
-        #if DEBUG
-        workspaceTermLoopDebugLog("worktree.binding.resolve.fail projectFolder=\(projectFolder) branch=\(trimmedBranch) candidate=\(candidate)")
-        #endif
-        throw WorktreeError.worktreeMissingOnDisk(path: candidate)
-    }
-
-    /// Best-effort branch read for the main checkout without spawning git.
+enum TermLoopWorktreeHeadReader {
+    /// Best-effort branch read for a checkout without spawning git.
     ///
-    /// Restore/startup paths call this resolver on the main actor. Shelling out
-    /// to `git worktree list` from there can hang the whole app if git or pipe
-    /// draining stalls, so the resolver only uses TermLoop's canonical
-    /// worktree path plus direct `.git/HEAD` file reads.
-    private static func currentBranchWithoutGit(projectFolder: String) -> String? {
-        let folderURL = URL(fileURLWithPath: projectFolder).standardizedFileURL
+    /// Restore/startup paths call this on the main actor. Shelling out to
+    /// `git` from there can hang the whole app if git or pipe draining stalls,
+    /// so this only uses direct `.git/HEAD` file reads.
+    static func currentBranchWithoutGit(checkoutPath: String) -> String? {
+        let folderURL = URL(fileURLWithPath: checkoutPath).standardizedFileURL
         let gitURL = folderURL.appendingPathComponent(".git")
         let headURL: URL
 
@@ -117,22 +68,6 @@ enum TermLoopWorktreeBindingResolver {
         }
         return String(head.dropFirst("ref: refs/heads/".count))
     }
-
-    static func resolveExpectation(
-        projectFolder: String?,
-        branch: String?
-    ) throws -> TermLoopWorktreeExpectation? {
-        guard let projectFolder,
-              let branch = branch?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !projectFolder.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !branch.isEmpty else {
-            return nil
-        }
-        return TermLoopWorktreeExpectation(
-            path: try resolvePath(projectFolder: projectFolder, branch: branch),
-            branch: branch
-        )
-    }
 }
 
 extension Workspace {
@@ -155,26 +90,28 @@ extension Workspace {
         guard let branch = WorkspaceMetadataStore.shared.branch(for: self),
               let repoRootPath = termLoopRepoRootPath()
         else { return nil }
-        if let recorded = termLoopRecordedWorktreeCwd() {
+        if let recorded = termLoopRecordedWorktreeCwd(
+            projectRootPath: repoRootPath,
+            expectedBranch: branch
+        ) {
             #if DEBUG
             workspaceTermLoopDebugLog("workspace.newTabCwd ws=\(id.uuidString.prefix(8)) branch=\(branch) source=recorded path=\(recorded)")
             #endif
             return recorded
         }
-        if let liveWorktree = termLoopLiveWorktreeCwd(repoRootPath: repoRootPath) {
+        if let liveWorktree = termLoopLiveWorktreeCwd(
+            repoRootPath: repoRootPath,
+            expectedBranch: branch
+        ) {
             #if DEBUG
             workspaceTermLoopDebugLog("workspace.newTabCwd ws=\(id.uuidString.prefix(8)) branch=\(branch) source=live path=\(liveWorktree)")
             #endif
             return liveWorktree
         }
-        let resolved = try? TermLoopWorktreeBindingResolver.resolvePath(
-            projectFolder: repoRootPath,
-            branch: branch
-        )
         #if DEBUG
-        workspaceTermLoopDebugLog("workspace.newTabCwd ws=\(id.uuidString.prefix(8)) branch=\(branch) source=resolved path=\(resolved ?? "nil")")
+        workspaceTermLoopDebugLog("workspace.newTabCwd ws=\(id.uuidString.prefix(8)) branch=\(branch) source=missing")
         #endif
-        return resolved
+        return nil
     }
 
     /// Trimmed, nil-if-empty variant of `termLoopNewTabCwd`.
@@ -193,26 +130,40 @@ extension Workspace {
     func termLoopSpawnCwd() throws -> String? {
         if let branch = WorkspaceMetadataStore.shared.branch(for: self),
            let repoRootPath = termLoopRepoRootPath() {
-            if let recorded = termLoopRecordedWorktreeCwd() {
+            if let status = termLoopCachedWorktreeStatus(),
+               status.isAttached,
+               !status.permitsAgentLaunch {
+                #if DEBUG
+                workspaceTermLoopDebugLog("workspace.spawnCwd.blocked ws=\(id.uuidString.prefix(8)) branch=\(branch) status=\(status.kind.rawValue)")
+                #endif
+                throw WorktreeError.worktreeMissingOnDisk(
+                    path: status.path ?? WorkspaceMetadataStore.shared.worktreePath(for: self) ?? branch
+                )
+            }
+            if let recorded = termLoopRecordedWorktreeCwd(
+                projectRootPath: repoRootPath,
+                expectedBranch: branch
+            ) {
                 #if DEBUG
                 workspaceTermLoopDebugLog("workspace.spawnCwd ws=\(id.uuidString.prefix(8)) branch=\(branch) source=recorded path=\(recorded)")
                 #endif
                 return recorded
             }
-            if let liveWorktree = termLoopLiveWorktreeCwd(repoRootPath: repoRootPath) {
+            if let liveWorktree = termLoopLiveWorktreeCwd(
+                repoRootPath: repoRootPath,
+                expectedBranch: branch
+            ) {
                 #if DEBUG
                 workspaceTermLoopDebugLog("workspace.spawnCwd ws=\(id.uuidString.prefix(8)) branch=\(branch) source=live path=\(liveWorktree)")
                 #endif
                 return liveWorktree
             }
-            let resolved = try TermLoopWorktreeBindingResolver.resolvePath(
-                projectFolder: repoRootPath,
-                branch: branch
-            )
             #if DEBUG
-            workspaceTermLoopDebugLog("workspace.spawnCwd ws=\(id.uuidString.prefix(8)) branch=\(branch) source=resolved path=\(resolved)")
+            workspaceTermLoopDebugLog("workspace.spawnCwd.fail ws=\(id.uuidString.prefix(8)) branch=\(branch) source=missing")
             #endif
-            return resolved
+            throw WorktreeError.worktreeMissingOnDisk(
+                path: WorkspaceMetadataStore.shared.worktreePath(for: self) ?? branch
+            )
         }
         if let repoRootPath = termLoopRepoRootPath() {
             #if DEBUG
@@ -232,39 +183,36 @@ extension Workspace {
     /// Presentation-only cwd for previews and labels.
     ///
     /// Unlike `termLoopSpawnCwd()`, this never shells out to git, so it is
-    /// safe to call from SwiftUI render/update paths. If an attached branch's
-    /// canonical worktree directory is missing on disk, prefer the live
-    /// shell-reported `.termloop-worktrees/` cwd before falling back to the
-    /// project root for display purposes.
+    /// safe to call from SwiftUI render/update paths. Attached workspaces do
+    /// not fall back to the project root when their physical checkout is
+    /// broken; returning nil lets callers show a broken/unknown state instead
+    /// of silently presenting `main` as the worktree.
     @MainActor
     func termLoopPresentationCwd() -> String? {
         if let branch = WorkspaceMetadataStore.shared.branch(for: self),
            let repoRootPath = termLoopRepoRootPath() {
-            if let recorded = termLoopRecordedWorktreeCwd() {
+            if let recorded = termLoopRecordedWorktreeCwd(
+                projectRootPath: repoRootPath,
+                expectedBranch: branch
+            ) {
                 #if DEBUG
                 workspaceTermLoopDebugLog("workspace.presentationCwd ws=\(id.uuidString.prefix(8)) branch=\(branch) source=recorded path=\(recorded)")
                 #endif
                 return recorded
             }
-            if let liveWorktree = termLoopLiveWorktreeCwd(repoRootPath: repoRootPath) {
+            if let liveWorktree = termLoopLiveWorktreeCwd(
+                repoRootPath: repoRootPath,
+                expectedBranch: branch
+            ) {
                 #if DEBUG
                 workspaceTermLoopDebugLog("workspace.presentationCwd ws=\(id.uuidString.prefix(8)) branch=\(branch) source=live path=\(liveWorktree)")
                 #endif
                 return liveWorktree
             }
-            if let resolved = try? TermLoopWorktreeBindingResolver.resolvePath(
-                projectFolder: repoRootPath,
-                branch: branch
-            ) {
-                #if DEBUG
-                workspaceTermLoopDebugLog("workspace.presentationCwd ws=\(id.uuidString.prefix(8)) branch=\(branch) source=resolved path=\(resolved)")
-                #endif
-                return resolved
-            }
             #if DEBUG
-            workspaceTermLoopDebugLog("workspace.presentationCwd ws=\(id.uuidString.prefix(8)) branch=\(branch) source=repoRoot path=\(repoRootPath)")
+            workspaceTermLoopDebugLog("workspace.presentationCwd ws=\(id.uuidString.prefix(8)) branch=\(branch) source=missing")
             #endif
-            return repoRootPath
+            return nil
         }
         if let repoRootPath = termLoopRepoRootPath() {
             #if DEBUG
@@ -282,12 +230,27 @@ extension Workspace {
     }
 
     @MainActor
-    private func termLoopRecordedWorktreeCwd() -> String? {
+    private func termLoopRecordedWorktreeCwd(
+        projectRootPath: String? = nil,
+        expectedBranch: String? = nil
+    ) -> String? {
         guard let raw = WorkspaceMetadataStore.shared.worktreePath(for: self) else { return nil }
         let normalized = URL(fileURLWithPath: raw)
             .standardizedFileURL
             .path
-        guard Self.termLoopDirectoryExists(normalized) else { return nil }
+        guard Self.termLoopRegisteredCheckoutExists(
+            normalized,
+            projectRootPath: projectRootPath
+        ) else { return nil }
+        guard Self.termLoopCheckout(
+            at: normalized,
+            matchesExpectedBranch: expectedBranch
+        ) else {
+            #if DEBUG
+            workspaceTermLoopDebugLog("workspace.recordedWorktree.drift ws=\(id.uuidString.prefix(8)) expected=\(expectedBranch ?? "nil") path=\(normalized)")
+            #endif
+            return nil
+        }
         #if DEBUG
         workspaceTermLoopDebugLog("workspace.recordedWorktree ws=\(id.uuidString.prefix(8)) path=\(normalized)")
         #endif
@@ -295,7 +258,10 @@ extension Workspace {
     }
 
     @MainActor
-    private func termLoopLiveWorktreeCwd(repoRootPath: String) -> String? {
+    private func termLoopLiveWorktreeCwd(
+        repoRootPath: String,
+        expectedBranch: String? = nil
+    ) -> String? {
         let projectNorm = URL(fileURLWithPath: repoRootPath)
             .standardizedFileURL
             .path
@@ -313,7 +279,19 @@ extension Workspace {
                 containing: normalized,
                 projectFolder: projectNorm
             ) else { continue }
-            guard Self.termLoopDirectoryExists(worktreeRoot) else { continue }
+            guard Self.termLoopRegisteredCheckoutExists(
+                worktreeRoot,
+                projectRootPath: projectNorm
+            ) else { continue }
+            guard Self.termLoopCheckout(
+                at: worktreeRoot,
+                matchesExpectedBranch: expectedBranch
+            ) else {
+                #if DEBUG
+                workspaceTermLoopDebugLog("workspace.liveWorktree.drift ws=\(id.uuidString.prefix(8)) expected=\(expectedBranch ?? "nil") root=\(worktreeRoot)")
+                #endif
+                continue
+            }
             #if DEBUG
             workspaceTermLoopDebugLog("workspace.liveWorktree ws=\(id.uuidString.prefix(8)) candidate=\(normalized) root=\(worktreeRoot)")
             #endif
@@ -329,21 +307,174 @@ extension Workspace {
             && isDir.boolValue
     }
 
+    private static func termLoopRegisteredCheckoutExists(
+        _ path: String,
+        projectRootPath: String?
+    ) -> Bool {
+        guard termLoopDirectoryExists(path) else { return false }
+
+        let normalized = URL(fileURLWithPath: path).standardizedFileURL.path
+        let projectRoot = projectRootPath.map {
+            URL(fileURLWithPath: $0).standardizedFileURL.path
+        }
+        if normalized == projectRoot {
+            return checkoutHasGitMetadata(at: normalized)
+        }
+
+        let gitURL = URL(fileURLWithPath: normalized).appendingPathComponent(".git")
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: gitURL.path, isDirectory: &isDir) {
+            if isDir.boolValue {
+                return projectRoot == nil
+            }
+            guard let gitDirURL = linkedGitDirURL(gitFileURL: gitURL) else {
+                return false
+            }
+            guard FileManager.default.fileExists(atPath: gitDirURL.path) else {
+                return false
+            }
+            guard let projectRoot else { return true }
+            return commonDir(forGitDir: gitDirURL).map {
+                $0.resolvingSymlinksInPath().standardizedFileURL.path
+            } == URL(fileURLWithPath: projectRoot)
+                .appendingPathComponent(".git")
+                .resolvingSymlinksInPath()
+                .standardizedFileURL
+                .path
+        }
+        return false
+    }
+
+    private static func checkoutHasGitMetadata(at path: String) -> Bool {
+        let gitURL = URL(fileURLWithPath: path).appendingPathComponent(".git")
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: gitURL.path, isDirectory: &isDir) {
+            return isDir.boolValue || linkedGitDirURL(gitFileURL: gitURL) != nil
+        }
+        return false
+    }
+
+    private static func linkedGitDirURL(gitFileURL: URL) -> URL? {
+        guard let gitFile = try? String(contentsOf: gitFileURL, encoding: .utf8),
+              let gitDirLine = gitFile
+                  .split(whereSeparator: { $0.isNewline })
+                  .first(where: { $0.lowercased().hasPrefix("gitdir:") }) else {
+            return nil
+        }
+        let rawGitDir = gitDirLine
+            .dropFirst("gitdir:".count)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawGitDir.isEmpty else { return nil }
+        if rawGitDir.hasPrefix("/") {
+            return URL(fileURLWithPath: rawGitDir).standardizedFileURL
+        }
+        return gitFileURL
+            .deletingLastPathComponent()
+            .appendingPathComponent(rawGitDir)
+            .standardizedFileURL
+    }
+
+    private static func commonDir(forGitDir gitDirURL: URL) -> URL? {
+        let commonDirURL = gitDirURL.appendingPathComponent("commondir")
+        guard let raw = try? String(contentsOf: commonDirURL, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !raw.isEmpty else {
+            return nil
+        }
+        if raw.hasPrefix("/") {
+            return URL(fileURLWithPath: raw).standardizedFileURL
+        }
+        return gitDirURL.appendingPathComponent(raw).standardizedFileURL
+    }
+
+    private static func termLoopCheckout(
+        at path: String,
+        matchesExpectedBranch expectedBranch: String?
+    ) -> Bool {
+        let expected = expectedBranch?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !expected.isEmpty else { return true }
+        return TermLoopWorktreeHeadReader.currentBranchWithoutGit(checkoutPath: path) == expected
+    }
+
     @MainActor
     func termLoopWorktreeExpectation() throws -> TermLoopWorktreeExpectation? {
         if let branch = WorkspaceMetadataStore.shared.branch(for: self),
            let repoRootPath = termLoopRepoRootPath() {
-            if let recorded = termLoopRecordedWorktreeCwd() {
+            if let recorded = termLoopRecordedWorktreeCwd(
+                projectRootPath: repoRootPath,
+                expectedBranch: branch
+            ) {
                 return TermLoopWorktreeExpectation(path: recorded, branch: branch)
             }
-            if let liveWorktree = termLoopLiveWorktreeCwd(repoRootPath: repoRootPath) {
+            if let liveWorktree = termLoopLiveWorktreeCwd(
+                repoRootPath: repoRootPath,
+                expectedBranch: branch
+            ) {
                 return TermLoopWorktreeExpectation(path: liveWorktree, branch: branch)
             }
         }
-        return try TermLoopWorktreeBindingResolver.resolveExpectation(
-            projectFolder: termLoopRepoRootPath(),
-            branch: WorkspaceMetadataStore.shared.branch(for: self)
+        return nil
+    }
+
+    /// Cached read-only worktree status for presentation/diagnostics. This is
+    /// intentionally non-blocking: it never shells out to Git and returns nil
+    /// until `WorktreeRegistry` has refreshed the project off-main.
+    @MainActor
+    func termLoopCachedWorktreeStatus(maximumAge: TimeInterval? = nil) -> WorktreeStatus? {
+        guard let projectId,
+              let project = ProjectStore.shared.project(id: projectId),
+              let snapshot = WorktreeRegistry.shared.cachedSnapshot(
+                  projectFolder: project.folderPath,
+                  maximumAge: maximumAge
+              )
+        else {
+            return nil
+        }
+        let metadata = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: id)
+        return WorktreeReconciler.status(
+            for: WorktreeReconciler.Binding(
+                expectedBranch: metadata.branch,
+                worktreePath: metadata.worktreePath
+            ),
+            entries: snapshot.entries
         )
+    }
+
+    /// Schedules a background Git refresh and reports the reduced status on
+    /// the main queue. Product state is not mutated here; this is the safe
+    /// bridge for future badges/modals.
+    @MainActor
+    func termLoopRefreshWorktreeStatus(
+        reason: String = "workspaceStatus",
+        completion: @escaping (WorktreeStatus) -> Void
+    ) {
+        let metadata = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: id)
+        let binding = WorktreeReconciler.Binding(
+            expectedBranch: metadata.branch,
+            worktreePath: metadata.worktreePath
+        )
+        guard let projectId,
+              let project = ProjectStore.shared.project(id: projectId) else {
+            completion(
+                WorktreeReconciler.status(
+                    for: binding,
+                    failure: WorktreeStatusLookupError.missingProject
+                )
+            )
+            return
+        }
+        WorktreeRegistry.shared.refresh(
+            projectFolder: project.folderPath,
+            reason: reason
+        ) { result in
+            switch result {
+            case .success(let snapshot):
+                completion(WorktreeReconciler.status(for: binding, entries: snapshot.entries))
+            case .failure(let error):
+                completion(WorktreeReconciler.status(for: binding, failure: error))
+            }
+        }
     }
 
     /// Panels whose shell-reported cwd sits under the project folder but is
@@ -356,17 +487,20 @@ extension Workspace {
     /// `WorktreeMenuItems`. Pure: does not touch disk.
     @MainActor
     var divergentPanelPaths: [(panelId: UUID, path: String)] {
-        guard let branch = WorkspaceMetadataStore.shared.branch(for: self),
+        let attachedBranch = WorkspaceMetadataStore.shared.branch(for: self)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !attachedBranch.isEmpty,
               let repoRootPath = termLoopRepoRootPath()
         else { return [] }
 
-        let worktree = termLoopRecordedWorktreeCwd()
-            ?? termLoopLiveWorktreeCwd(repoRootPath: repoRootPath)
-            ?? (try? TermLoopWorktreeBindingResolver.resolvePath(
-                projectFolder: repoRootPath,
-                branch: branch
-            ))
-            ?? repoRootPath
+        guard let worktree = termLoopRecordedWorktreeCwd(
+            projectRootPath: repoRootPath,
+            expectedBranch: attachedBranch
+        ) ?? termLoopLiveWorktreeCwd(
+            repoRootPath: repoRootPath,
+            expectedBranch: attachedBranch
+        )
+        else { return [] }
         let target = URL(fileURLWithPath: worktree).standardizedFileURL.path
         let projectNorm = URL(fileURLWithPath: repoRootPath)
             .standardizedFileURL.path
@@ -383,5 +517,16 @@ extension Workspace {
             out.append((panelId, trimmed))
         }
         return out
+    }
+}
+
+private enum WorktreeStatusLookupError: Error, CustomStringConvertible {
+    case missingProject
+
+    var description: String {
+        switch self {
+        case .missingProject:
+            return "workspace has no project"
+        }
     }
 }

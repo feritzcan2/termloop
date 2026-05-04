@@ -20,14 +20,7 @@ extension ActiveAgentsPanel {
         if !persisted.isEmpty {
             return persisted
         }
-
-        let cwd = workspace.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard WorktreeResolver.worktreeRoot(containing: cwd) != nil else {
-            return nil
-        }
-        let inferred = (workspace.gitBranch?.branch ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return inferred.isEmpty ? nil : inferred
+        return nil
     }
 
     func currentHeaderBranch(snapshot: ActiveAgentsWorkspaceSnapshot) -> String? {
