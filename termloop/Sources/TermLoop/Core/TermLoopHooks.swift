@@ -33,11 +33,6 @@ enum TermLoopHooks {
         let userPreview: String?
     }
 
-    struct WorktreeReconcileEntry: Equatable {
-        let branch: String
-        let path: String
-    }
-
     private struct PendingRestoreWorkspaceMetadata {
         let metadata: WorkspaceMetadataStore.Metadata
         let processTitle: String?
@@ -912,11 +907,11 @@ enum TermLoopHooks {
     }
 
     /// Runs `git worktree prune` for every project folder in the background,
-    /// then lists the surviving worktrees and reconciles `branch` metadata
-    /// for every workspace. If a workspace's persisted branch no longer
-    /// appears in `git worktree list` (user deleted the worktree out of
-    /// band, or the branch was pruned), we clear the metadata so the UI
-    /// does not advertise a phantom attachment.
+    /// then lists the surviving worktrees and reconciles persisted worktree
+    /// paths for every workspace. Reconcile is deliberately non-destructive:
+    /// missing/drifted paths are preserved as product state so the UI can show
+    /// a repair surface instead of silently dropping tickets, baselines, or
+    /// agent sessions.
     ///
     /// The reconcile step is delayed so windows have a chance to finish
     /// restoring (`didRestoreWorkspaces` re-applies persisted branches on
@@ -929,21 +924,27 @@ enum TermLoopHooks {
         guard !projectSnapshots.isEmpty else { return }
 
         DispatchQueue.global(qos: .utility).async {
-            var worktreesByProject: [UUID: [WorktreeReconcileEntry]] = [:]
+            var worktreesByProject: [UUID: [GitWorktreeService.ListEntry]] = [:]
+            let backgroundLogger = Logger(subsystem: "com.termloop.fork", category: "hooks")
             let lock = NSLock()
             DispatchQueue.concurrentPerform(iterations: projectSnapshots.count) { idx in
                 let (projectId, folder) = projectSnapshots[idx]
                 let service = GitWorktreeService()
                 try? service.prune(folder: folder)
-                let listed = (try? service.list(in: folder)) ?? []
-                let worktrees = listed.compactMap { entry -> WorktreeReconcileEntry? in
-                    guard let branch = entry.branch?.trimmingCharacters(in: .whitespacesAndNewlines),
-                          !branch.isEmpty else { return nil }
-                    return WorktreeReconcileEntry(branch: branch, path: entry.path)
+                do {
+                    let listed = try service.list(in: folder)
+                    WorktreeRegistry.shared.record(projectFolder: folder, entries: listed)
+                    lock.lock()
+                    worktreesByProject[projectId] = listed
+                    lock.unlock()
+                } catch {
+                    // Git failure is not an empty worktree list. Skip this
+                    // project so transient repo/disk issues cannot destroy
+                    // TermLoop-owned metadata.
+                    backgroundLogger.info(
+                        "worktree reconcile: skipping project \(projectId.uuidString, privacy: .public) after git list failure \(String(describing: error), privacy: .public)"
+                    )
                 }
-                lock.lock()
-                worktreesByProject[projectId] = worktrees
-                lock.unlock()
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                 reconcileWorktreeMetadata(worktreesByProject: worktreesByProject)
@@ -951,25 +952,30 @@ enum TermLoopHooks {
         }
     }
 
-    /// Clears `branch` on every workspace whose stored branch does not
-    /// appear in `worktreesByProject[projectId]`. If the branch still exists
-    /// but the persisted physical path is stale or missing, repair the path
-    /// instead of clearing the branch. Called on the main thread after startup
-    /// reconcile data is ready.
+    /// Reconciles persisted worktree paths against Git's registered worktree
+    /// list. This is intentionally non-destructive: missing, drifted, locked,
+    /// and prunable worktrees keep TermLoop product state intact so the UI can
+    /// surface a repair affordance instead of silently losing tickets,
+    /// baselines, or persisted agent sessions.
+    ///
+    /// The optional `bindings` parameter is for callers/tests that captured a
+    /// branch-binding snapshot before doing async Git work; `setWorktreePath`
+    /// uses the captured generation as a compare-and-swap so a stale snapshot
+    /// cannot overwrite a fresh attach. Normal startup callers leave it nil
+    /// and reconcile the current metadata snapshot inline.
     static func reconcileWorktreeMetadata(
-        worktreesByProject: [UUID: [WorktreeReconcileEntry]]
+        worktreesByProject: [UUID: [GitWorktreeService.ListEntry]],
+        bindings: [WorkspaceMetadataStore.WorktreeBranchBinding]? = nil
     ) {
-        for binding in WorkspaceMetadataStore.shared.branchBindings() {
+        for binding in bindings ?? WorkspaceMetadataStore.shared.branchBindings() {
             guard let projectId = binding.projectId,
                   let entries = worktreesByProject[projectId] else { continue }
-            let pathByBranch = Dictionary(
-                entries.map { entry in
-                    (
-                        entry.branch,
-                        URL(fileURLWithPath: entry.path).standardizedFileURL.path
-                    )
-                },
-                uniquingKeysWith: { first, _ in first }
+            let status = WorktreeReconciler.status(
+                for: WorktreeReconciler.Binding(
+                    expectedBranch: binding.branch,
+                    worktreePath: binding.worktreePath
+                ),
+                entries: entries
             )
             let currentPath: String? = {
                 let trimmed = binding.worktreePath?
@@ -980,41 +986,36 @@ enum TermLoopHooks {
                 URL(fileURLWithPath: $0).standardizedFileURL.path
             }
 
-            if let actualPath = pathByBranch[binding.branch] {
+            switch status.kind {
+            case .healthy, .locked:
+                guard let actualPath = status.path else { continue }
                 if normalizedCurrentPath != actualPath {
                     WorkspaceMetadataStore.shared.copyReportedBindingsIfNeeded(
                         fromPath: normalizedCurrentPath,
                         toPath: actualPath,
                         forWorkspaceId: binding.workspaceId
                     )
-                    WorkspaceMetadataStore.shared.setBranch(
-                        binding.branch,
-                        worktreePath: actualPath,
-                        forWorkspaceId: binding.workspaceId
+                    let didRepair = WorkspaceMetadataStore.shared.setWorktreePath(
+                        actualPath,
+                        forWorkspaceId: binding.workspaceId,
+                        expectedGeneration: binding.generation
                     )
-                    logger.info(
-                        "worktree reconcile: repaired branch \(binding.branch, privacy: .public) on workspace \(binding.workspaceId.uuidString, privacy: .public) path=\(actualPath, privacy: .public)"
-                    )
+                    if didRepair {
+                        logger.info(
+                            "worktree reconcile: repaired path for branch \(binding.branch, privacy: .public) on workspace \(binding.workspaceId.uuidString, privacy: .public) path=\(actualPath, privacy: .public)"
+                        )
+                    } else {
+                        logger.info(
+                            "worktree reconcile: skipped stale path repair for branch \(binding.branch, privacy: .public) on workspace \(binding.workspaceId.uuidString, privacy: .public)"
+                        )
+                    }
                 }
-                continue
-            }
-
-            if let worktreePath = currentPath,
-               !worktreePath.isEmpty,
-               FileManager.default.fileExists(atPath: worktreePath) {
+            case .branchDrift, .prunable, .missingRegistration, .missingPath, .unknown:
                 logger.info(
-                    "worktree reconcile: keeping branch \(binding.branch, privacy: .public) for existing worktree path \(worktreePath, privacy: .public)"
+                    "worktree reconcile: preserving branch \(binding.branch, privacy: .public) on workspace \(binding.workspaceId.uuidString, privacy: .public) status=\(status.kind.rawValue, privacy: .public) path=\(status.path ?? currentPath ?? "nil", privacy: .public)"
                 )
+            case .unattached:
                 continue
-            }
-
-            if pathByBranch[binding.branch] == nil {
-                logger.info(
-                    "worktree reconcile: clearing stale branch \(binding.branch, privacy: .public) on workspace \(binding.workspaceId.uuidString, privacy: .public)"
-                )
-                WorkspaceMetadataStore.shared.setBranch(
-                    nil, forWorkspaceId: binding.workspaceId
-                )
             }
         }
     }
@@ -1309,11 +1310,9 @@ enum TermLoopHooks {
     }
 
     private static func projectRootCheckout(_ projectRoot: String, matchesBranch branch: String) -> Bool {
-        guard let resolved = try? TermLoopWorktreeBindingResolver.resolvePath(
-            projectFolder: projectRoot,
-            branch: branch
-        ) else { return false }
-        return URL(fileURLWithPath: resolved).standardizedFileURL.path == projectRoot
+        TermLoopWorktreeHeadReader.currentBranchWithoutGit(
+            checkoutPath: projectRoot
+        ) == branch
     }
 
     private static func normalizedRestoreTitle(_ entry: PendingRestoreWorkspaceMetadata) -> String? {

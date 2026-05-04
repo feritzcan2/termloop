@@ -268,6 +268,69 @@ final class InternalHookEventTests: XCTestCase {
         )
     }
 
+    func testDeferredClaudeReadyActivityDoesNotPersistMissingTranscriptSession() {
+        let store = WorkspaceMetadataStore.shared
+        let wsId = UUID()
+        let sessionId = "termloop-test-missing-\(UUID().uuidString)"
+        defer {
+            store.setTerminalAgentId(nil, for: wsId)
+            store.clearPersistedAgentSession(for: wsId)
+            TerminalAgentActivityStore.shared.clear(workspaceId: wsId)
+        }
+
+        store.setTerminalAgentId("claude", for: wsId)
+        store.setDeferObservedAgentSessionPersistenceUntilPrompt(true, forWorkspaceId: wsId)
+
+        let result = TermLoopSocketCommands.workspaceReportAgentActivity([
+            "workspace_id": wsId.uuidString,
+            "agent_id": "claude",
+            "phase": "ready",
+            "session_id": sessionId,
+            "cwd": "/tmp/termloop-missing-transcript"
+        ])
+
+        guard case .ok = result else {
+            XCTFail("Expected .ok result, got \(result)")
+            return
+        }
+
+        XCTAssertNil(store.persistedAgentSession(for: wsId))
+        XCTAssertTrue(store.shouldDeferObservedAgentSessionPersistenceUntilPrompt(forWorkspaceId: wsId))
+        XCTAssertEqual(TerminalAgentActivityStore.shared.state(forWorkspaceId: wsId)?.sessionId, sessionId)
+    }
+
+    func testDeferredClaudePromptActivityPersistsSession() {
+        let store = WorkspaceMetadataStore.shared
+        let wsId = UUID()
+        let sessionId = "termloop-test-prompt-\(UUID().uuidString)"
+        defer {
+            store.setTerminalAgentId(nil, for: wsId)
+            store.clearPersistedAgentSession(for: wsId)
+            TerminalAgentActivityStore.shared.clear(workspaceId: wsId)
+        }
+
+        store.setTerminalAgentId("claude", for: wsId)
+        store.setDeferObservedAgentSessionPersistenceUntilPrompt(true, forWorkspaceId: wsId)
+
+        let result = TermLoopSocketCommands.workspaceReportAgentActivity([
+            "workspace_id": wsId.uuidString,
+            "agent_id": "claude",
+            "phase": "running",
+            "user_prompt_submitted": true,
+            "session_id": sessionId,
+            "cwd": "/tmp/termloop-prompt-transcript"
+        ])
+
+        guard case .ok = result else {
+            XCTFail("Expected .ok result, got \(result)")
+            return
+        }
+
+        XCTAssertEqual(store.persistedAgentSession(for: wsId)?.sessionId, sessionId)
+        XCTAssertFalse(store.shouldDeferObservedAgentSessionPersistenceUntilPrompt(forWorkspaceId: wsId))
+        XCTAssertEqual(TerminalAgentActivityStore.shared.state(forWorkspaceId: wsId)?.sessionId, sessionId)
+    }
+
     func testReportAgentActivityWithoutTrustedSessionDoesNotAdoptWorkspaceAgent() {
         let store = WorkspaceMetadataStore.shared
         let wsId = UUID()

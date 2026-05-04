@@ -39,6 +39,10 @@ enum ClaudeProjectFiles {
         let modificationDate: Date
     }
 
+    private static func sessionJsonlName(sessionId: String) -> String {
+        "\(sessionId).jsonl"
+    }
+
     /// Claude encodes the absolute cwd by replacing both `/` and `.` with `-`,
     /// so `/Users/me/repo/.termloop-worktrees/b` becomes
     /// `-Users-me-repo--cmux-worktrees-b`. This must stay aligned with
@@ -79,12 +83,19 @@ enum ClaudeProjectFiles {
         return directories
     }
 
-    private static func sessionEntries(sessionId: String, cwd: String) -> [SessionEntry] {
+    private static func sessionEntries(
+        sessionId: String,
+        cwd: String,
+        includeCompatibilityVariants: Bool = true
+    ) -> [SessionEntry] {
         let fm = FileManager.default
         var entries: [SessionEntry] = []
         var seen = Set<String>()
+        let directories: [URL] = includeCompatibilityVariants
+            ? projectDirectories(forCwd: cwd)
+            : [projectDirectory(forCwd: cwd)]
 
-        for dir in projectDirectories(forCwd: cwd) {
+        for dir in directories {
             guard let dirEntries = try? fm.contentsOfDirectory(
                 at: dir,
                 includingPropertiesForKeys: [.contentModificationDateKey],
@@ -93,6 +104,16 @@ enum ClaudeProjectFiles {
                 continue
             }
             for url in dirEntries where url.lastPathComponent.hasPrefix(sessionId) {
+                var isDirectory: ObjCBool = false
+                // `contentsOfDirectory` returns broken symlinks too. Claude
+                // cannot resume through those, so don't count them as an
+                // available session. `fileExists` follows valid symlinks,
+                // which keeps the intentional seedAllSessions symlinks
+                // working while filtering stale/broken entries.
+                guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                      !isDirectory.boolValue else {
+                    continue
+                }
                 let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
                 let name = url.lastPathComponent
                 if seen.insert(name).inserted {
@@ -106,6 +127,13 @@ enum ClaudeProjectFiles {
             }
         }
         return entries.sorted { $0.name < $1.name }
+    }
+
+    private static func hasResumableSessionFile(
+        _ entries: [SessionEntry],
+        sessionId: String
+    ) -> Bool {
+        entries.contains { $0.name == sessionJsonlName(sessionId: sessionId) }
     }
 
     private static func latestModificationDate(_ entries: [SessionEntry]) -> Date? {
@@ -132,11 +160,26 @@ enum ClaudeProjectFiles {
         return sourceLatest > targetLatest
     }
 
-    /// Returns true if at least one file in the encoded project directory
-    /// begins with the given session id (the id is the filename stem, with
-    /// `.jsonl` and optional sidecar suffixes).
+    /// Returns true if Claude's resumable JSONL exists in the encoded project
+    /// directory. Sidecars or broken symlinks are not enough: `claude --resume`
+    /// needs the concrete `<sessionId>.jsonl` file at the cwd it is launched
+    /// from.
     static func sessionExists(sessionId: String, cwd: String) -> Bool {
-        !sessionEntries(sessionId: sessionId, cwd: cwd).isEmpty
+        hasResumableSessionFile(
+            sessionEntries(sessionId: sessionId, cwd: cwd),
+            sessionId: sessionId
+        )
+    }
+
+    private static func exactSessionExists(sessionId: String, cwd: String) -> Bool {
+        hasResumableSessionFile(
+            sessionEntries(
+                sessionId: sessionId,
+                cwd: cwd,
+                includeCompatibilityVariants: false
+            ),
+            sessionId: sessionId
+        )
     }
 
     /// Copies every file matching `<sessionId>*` from the encoded `fromCwd`
@@ -174,12 +217,28 @@ enum ClaudeProjectFiles {
         let dstDir = projectDirectory(forCwd: toCwd)
         if let firstSrcDir = srcDirs.first,
            firstSrcDir.standardizedFileURL == dstDir.standardizedFileURL {
-            return sessionExists(sessionId: sessionId, cwd: toCwd)
+            return exactSessionExists(sessionId: sessionId, cwd: toCwd)
         }
         let matchesBySourceDir: [(URL, [String])] = srcDirs.compactMap { srcDir in
             guard fm.fileExists(atPath: srcDir.path) else { return nil }
-            let entries = (try? fm.contentsOfDirectory(atPath: srcDir.path)) ?? []
-            let matches = entries.filter { $0.hasPrefix(sessionId) }
+            let entries = (try? fm.contentsOfDirectory(
+                at: srcDir,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )) ?? []
+            let matches = entries.compactMap { url -> String? in
+                let name = url.lastPathComponent
+                guard name.hasPrefix(sessionId) else { return nil }
+                var isDirectory: ObjCBool = false
+                guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                      !isDirectory.boolValue else {
+                    return nil
+                }
+                return name
+            }
+            guard matches.contains(sessionJsonlName(sessionId: sessionId)) else {
+                return nil
+            }
             return matches.isEmpty ? nil : (srcDir, matches)
         }
         guard let (srcDir, matches) = matchesBySourceDir.first else { return false }
@@ -195,7 +254,6 @@ enum ClaudeProjectFiles {
             try? fm.removeItem(at: dstDir.appendingPathComponent(name))
         }
 
-        var copiedAny = false
         for name in matches {
             let src = srcDir.appendingPathComponent(name)
             let dst = dstDir.appendingPathComponent(name)
@@ -204,14 +262,12 @@ enum ClaudeProjectFiles {
                let raw = try? Data(contentsOf: src),
                let text = String(data: raw, encoding: .utf8) {
                 let rewritten = transform(text)
-                if (try? rewritten.write(to: dst, atomically: true, encoding: .utf8)) != nil {
-                    copiedAny = true
-                }
+                try? rewritten.write(to: dst, atomically: true, encoding: .utf8)
             } else if (try? fm.copyItem(at: src, to: dst)) != nil {
-                copiedAny = true
+                continue
             }
         }
-        return copiedAny
+        return exactSessionExists(sessionId: sessionId, cwd: toCwd)
     }
 
     /// Symlinks every non-hidden session entry from `fromCwd` into `toCwd`,
@@ -332,7 +388,7 @@ enum ClaudeProjectFiles {
     /// target and any source that wouldn't refresh, and invokes `copy` for
     /// each viable source. Shared by `ensureSessionAvailable` (byte-copy)
     /// and `migrateSession` (copy + rewrite). Returns true iff the target
-    /// ends up containing at least one `<sessionId>*` entry.
+    /// ends up containing the resumable `<sessionId>.jsonl` entry.
     private static func selectSourceAndCopy(
         sessionId: String,
         targetCwd: String,
@@ -340,7 +396,11 @@ enum ClaudeProjectFiles {
         copy: (_ fromCwd: String, _ toCwd: String) -> Bool
     ) -> Bool {
         var seen = Set<String>()
-        var targetEntries = sessionEntries(sessionId: sessionId, cwd: targetCwd)
+        var targetEntries = sessionEntries(
+            sessionId: sessionId,
+            cwd: targetCwd,
+            includeCompatibilityVariants: false
+        )
         for raw in sourceCwds {
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
@@ -353,16 +413,23 @@ enum ClaudeProjectFiles {
                 guard !expanded.isEmpty, seen.insert(expanded).inserted else { continue }
                 guard expanded != targetCwd else { continue }
                 let sourceEntries = sessionEntries(sessionId: sessionId, cwd: expanded)
+                guard hasResumableSessionFile(sourceEntries, sessionId: sessionId) else {
+                    continue
+                }
                 guard shouldRefreshTarget(
                     targetEntries: targetEntries,
                     sourceEntries: sourceEntries
                 ) else { continue }
                 if copy(expanded, targetCwd) {
-                    targetEntries = sessionEntries(sessionId: sessionId, cwd: targetCwd)
+                    targetEntries = sessionEntries(
+                        sessionId: sessionId,
+                        cwd: targetCwd,
+                        includeCompatibilityVariants: false
+                    )
                 }
             }
         }
-        return !targetEntries.isEmpty
+        return hasResumableSessionFile(targetEntries, sessionId: sessionId)
     }
 
     /// Splits `text` on newlines, parses each line as JSON, recursively

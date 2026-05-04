@@ -335,8 +335,16 @@ final class ClaudeRestoreCoordinator {
             dlog("claude-restore.fire skip=sessionFileMissing ws=\(wsIdStr.prefix(8)) sid=\(session.sessionId.prefix(8))")
 #endif
             pending.removeValue(forKey: workspaceId)
-            _ = WorkspaceMetadataStore.shared.clearPersistedAgentSession(for: workspaceId)
-            surfaceFailure(.missingSessionFile(session.sessionId), in: panel, workspaceId: workspaceId, session: session)
+            if WorkspaceMetadataStore.shared.clearPersistedAgentSession(for: workspaceId) {
+                TermLoopHooks.saveCriticalAgentRestoreStateSync()
+            }
+            surfaceFailure(
+                .missingSessionFile(session.sessionId),
+                in: panel,
+                workspaceId: workspaceId,
+                session: session,
+                includeSessionId: false
+            )
             return false
         }
         // Use `c` so the user's shell alias resolves (e.g. `alias c='claude
@@ -379,7 +387,8 @@ final class ClaudeRestoreCoordinator {
         _ reason: FailureReason,
         in panel: TerminalPanel,
         workspaceId: UUID,
-        session: PersistedAgentSession
+        session: PersistedAgentSession,
+        includeSessionId: Bool = true
     ) {
         let message = reason.message
         Self.logger.info(
@@ -393,7 +402,7 @@ final class ClaudeRestoreCoordinator {
             "agent_id": session.agentId,
             "phase": "failed",
             "message_preview": message,
-            "session_id": session.sessionId,
+            "session_id": includeSessionId ? session.sessionId : NSNull(),
             "cwd": session.cwd as Any
         ])
         let command = "printf '\\n%s\\n\\n' \(TermLoopShell.quoteSingle(message))"
