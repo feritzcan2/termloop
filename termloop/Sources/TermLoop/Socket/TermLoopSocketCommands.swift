@@ -391,14 +391,22 @@ enum TermLoopSocketCommands {
             cwd: cwd,
             pid: pid
         )
-        let didUpdate = WorkspaceMetadataStore.shared.setPersistedAgentSession(
+        if TerminalAgentSessionPersistencePolicy.shouldPersistObservedSession(
+            workspaceId: workspaceId,
             agentId: TerminalAgent.claudeId,
             sessionId: acceptedSessionId,
             cwd: cwd,
-            for: workspaceId
-        )
-        if didUpdate {
-            TermLoopHooks.saveCriticalAgentRestoreStateSync()
+            userPromptSubmitted: false
+        ) {
+            let didUpdate = WorkspaceMetadataStore.shared.setPersistedAgentSession(
+                agentId: TerminalAgent.claudeId,
+                sessionId: acceptedSessionId,
+                cwd: cwd,
+                for: workspaceId
+            )
+            if didUpdate {
+                TermLoopHooks.saveCriticalAgentRestoreStateSync()
+            }
         }
         return .ok([
             "workspace_id": workspaceIdStr,
