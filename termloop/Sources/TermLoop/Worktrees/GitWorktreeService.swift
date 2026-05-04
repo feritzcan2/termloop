@@ -183,6 +183,20 @@ struct GitWorktreeService {
         return branch
     }
 
+    func switchBranch(worktreePath: String, branch: String) throws {
+        let trimmed = branch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw WorktreeError.invalidParams(reason: "branch is empty")
+        }
+        #if DEBUG
+        Self.debugLog("switch.begin path=\(worktreePath) branch=\(trimmed)")
+        #endif
+        _ = try run(["switch", trimmed], in: worktreePath)
+        #if DEBUG
+        Self.debugLog("switch.result path=\(worktreePath) branch=\(trimmed)")
+        #endif
+    }
+
     func isAncestor(revision: String, of descendantRevision: String, in folder: String) throws -> Bool {
         guard FileManager.default.isExecutableFile(atPath: gitPath) else {
             throw WorktreeError.gitNotFound

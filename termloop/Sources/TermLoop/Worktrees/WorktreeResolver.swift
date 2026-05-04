@@ -9,12 +9,16 @@ import CryptoKit
 enum WorktreeResolver {
     static let worktreesDirName = ".termloop-worktrees"
 
+    static func normalizePath(_ rawPath: String?) -> String? {
+        let trimmed = rawPath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return nil }
+        return URL(fileURLWithPath: trimmed).standardizedFileURL.path
+    }
+
     static func path(projectFolder: String, branch: String) -> String? {
         let trimmedBranch = branch.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedBranch.isEmpty else { return nil }
-        let normalizedFolder = URL(fileURLWithPath: projectFolder)
-            .standardizedFileURL
-            .path
+        guard let normalizedFolder = normalizePath(projectFolder) else { return nil }
 
         let base = sanitize(trimmedBranch)
         let suffix = (base == trimmedBranch) ? "" : "-" + shortHash(of: trimmedBranch)
@@ -23,17 +27,12 @@ enum WorktreeResolver {
     }
 
     static func worktreeRoot(containing rawPath: String?, projectFolder: String? = nil) -> String? {
-        guard let rawPath,
-              case let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines),
-              !trimmed.isEmpty else {
+        guard let normalized = normalizePath(rawPath) else {
             return nil
         }
-        let normalized = URL(fileURLWithPath: trimmed).standardizedFileURL.path
         let projectPrefix: String
         if let projectFolder {
-            let projectRoot = URL(fileURLWithPath: projectFolder)
-                .standardizedFileURL
-                .path
+            guard let projectRoot = normalizePath(projectFolder) else { return nil }
             projectPrefix = projectRoot + "/" + worktreesDirName + "/"
         } else {
             let marker = "/" + worktreesDirName + "/"

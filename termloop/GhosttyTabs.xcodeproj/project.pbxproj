@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A9E70110A6EAC0DE00000001 /* WorktreeStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70100A6EAC0DE00000001 /* WorktreeStatus.swift */; };
+		A9E70111A6EAC0DE00000001 /* WorktreeReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70101A6EAC0DE00000001 /* WorktreeReconciler.swift */; };
+		A9E70112A6EAC0DE00000001 /* WorktreeRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70102A6EAC0DE00000001 /* WorktreeRegistry.swift */; };
+		A9E70113A6EAC0DE00000001 /* WorktreeReconcilerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70103A6EAC0DE00000001 /* WorktreeReconcilerTests.swift */; };
+		A9E70114A6EAC0DE00000001 /* TerminalAgentRunnerForkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70104A6EAC0DE00000001 /* TerminalAgentRunnerForkTests.swift */; };
 		002FFEC16193AC6231CEB731 /* VariableSubstitution.swift in Sources */ = {isa = PBXBuildFile; fileRef = 474487A66D69F0FB8B7F9E44 /* VariableSubstitution.swift */; };
 		006086BADBD0F620E49685B3 /* GitWorktreeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA1393F617B7D50F8BBA3D94 /* GitWorktreeService.swift */; };
 		01E3A84F9B03F0D633F9354F /* ProjectInstructionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 468DE153DCD1BEF88F6FAE6D /* ProjectInstructionStore.swift */; };
@@ -129,6 +134,7 @@
 		9F70F49A6BBF3FA62AECA326 /* TermLoopTCPBridge+ForceTake.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A105A4759A38A9DD2AECF3F /* TermLoopTCPBridge+ForceTake.swift */; };
 		A0D488C1D277E928C99F5CFB /* WorktreeCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97DA21A6EE5D471C47B3F66D /* WorktreeCoordinator.swift */; };
 		A181F058DF39F34D6FA71AE8 /* ContextBankFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 367F329C321243F22462D541 /* ContextBankFile.swift */; };
+		C1A0DE000000000000000002 /* ClaudeProjectFilesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0DE000000000000000001 /* ClaudeProjectFilesTests.swift */; };
 		A1B2C3D4E5F60718293A4B5C /* ClaudeSessionScannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5D /* ClaudeSessionScannerTests.swift */; };
 		A1B2C3D4E5F60718293A4B5E /* ClaudeSessionJSONLFormatterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5F /* ClaudeSessionJSONLFormatterTests.swift */; };
 		A1ED84498198F00C08F7D4DA /* AgentInputQueries.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBF3540A294D83293BF5811E /* AgentInputQueries.swift */; };
@@ -345,6 +351,7 @@
 		AC710019A1B2C3D4E5F60719 /* ActiveAgentsPanelFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC710009A1B2C3D4E5F60719 /* ActiveAgentsPanelFormatting.swift */; };
 		AC71001AA1B2C3D4E5F60719 /* ActiveBridgeRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC71000AA1B2C3D4E5F60719 /* ActiveBridgeRowView.swift */; };
 		AC710099A1B2C3D4E5F6ABCD /* WorktreeAgentsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC710098A1B2C3D4E5F6ABCD /* WorktreeAgentsPanel.swift */; };
+		AC71009CA1B2C3D4E5F6ABCD /* WorktreeRepairCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC71009DA1B2C3D4E5F6ABCD /* WorktreeRepairCoordinator.swift */; };
 		AC71009BA1B2C3D4E5F6ABCD /* WorktreeGroupRunTargetsBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC71009AA1B2C3D4E5F6ABCD /* WorktreeGroupRunTargetsBadge.swift */; };
 		ADB40F7E462EDC392E0B70A1 /* ContextBankMirror.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96E3FD276CB1CD037C5ABAD /* ContextBankMirror.swift */; };
 		AF34EE6989206364FC849784 /* BridgeCreationValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B4DD757CC19811DD5233F60 /* BridgeCreationValidator.swift */; };
@@ -640,6 +647,8 @@
 		DCED57051E0A411F44444444 /* MarkdownDocumentSurface.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MarkdownDocumentSurface.swift; sourceTree = "<group>"; };
 		58C7B1B978620BE162CC057E /* BrowserPanelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPanelTests.swift; sourceTree = "<group>"; };
 		5F74A553933047EB0BB143BD /* TermLoopHooksRestorePruneTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TermLoopHooksRestorePruneTests.swift; sourceTree = "<group>"; };
+		A9E70103A6EAC0DE00000001 /* WorktreeReconcilerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorktreeReconcilerTests.swift; sourceTree = "<group>"; };
+		A9E70104A6EAC0DE00000001 /* TerminalAgentRunnerForkTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TerminalAgentRunnerForkTests.swift; sourceTree = "<group>"; };
 		6083A7DAD962E287FC2FFE94 /* ShortcutAndCommandPaletteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutAndCommandPaletteTests.swift; sourceTree = "<group>"; };
 		61D437A637636429D1C39369 /* ContextBankPrompt.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextBankPrompt.swift; sourceTree = "<group>"; };
 		6331BF777ACD88AB13CD6AF3 /* TermLoopSidebarTab.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Sidebar/TermLoopSidebarTab.swift; sourceTree = "<group>"; };
@@ -649,6 +658,9 @@
 		71F8ED91A4B55D34BE6A0668 /* WorkspaceUnitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceUnitTests.swift; sourceTree = "<group>"; };
 		74BD0E2B4864B58FB9F64E46 /* TermLoopSidebarTabTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TermLoopSidebarTabTests.swift; sourceTree = "<group>"; };
 		75AA10B1C49A22E34676787C /* WorktreeResolver.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorktreeResolver.swift; sourceTree = "<group>"; };
+		A9E70100A6EAC0DE00000001 /* WorktreeStatus.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorktreeStatus.swift; sourceTree = "<group>"; };
+		A9E70101A6EAC0DE00000001 /* WorktreeReconciler.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorktreeReconciler.swift; sourceTree = "<group>"; };
+		A9E70102A6EAC0DE00000001 /* WorktreeRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorktreeRegistry.swift; sourceTree = "<group>"; };
 		79A78B7DCA1B1576A9B5C281 /* SidebarInlineCreateCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/SidebarInlineCreateCoordinator.swift; sourceTree = "<group>"; };
 		79CE5DA33780C5326E756E18 /* PermissionModeCatalog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PermissionModeCatalog.swift; sourceTree = "<group>"; };
 		7A0430E183B9A1B11E9365FA /* PushDispatcher.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PushDispatcher.swift; sourceTree = "<group>"; };
@@ -683,6 +695,7 @@
 		9F3A3126370C217B01582710 /* IntegrationsSpawnPrep.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = IntegrationsSpawnPrep.swift; sourceTree = "<group>"; };
 		A04C23F010C262B740E4823D /* TaggedBuildSharedStateTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaggedBuildSharedStateTests.swift; sourceTree = "<group>"; };
 		A11D9BAFF8953AE774F84733 /* IntegrationsDetailPane.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = IntegrationsDetailPane.swift; sourceTree = "<group>"; };
+		C1A0DE000000000000000001 /* ClaudeProjectFilesTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClaudeProjectFilesTests.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5D /* ClaudeSessionScannerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClaudeSessionScannerTests.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5F /* ClaudeSessionJSONLFormatterTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClaudeSessionJSONLFormatterTests.swift; sourceTree = "<group>"; };
 		A1F00001A1B2C3D4E5F60730 /* AgentPromptDocument.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentPromptDocument.swift; sourceTree = "<group>"; };
@@ -893,6 +906,7 @@
 		AC710009A1B2C3D4E5F60719 /* ActiveAgentsPanelFormatting.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActiveAgentsPanelFormatting.swift; sourceTree = "<group>"; };
 		AC71000AA1B2C3D4E5F60719 /* ActiveBridgeRowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActiveBridgeRowView.swift; sourceTree = "<group>"; };
 		AC710098A1B2C3D4E5F6ABCD /* WorktreeAgentsPanel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorktreeAgentsPanel.swift; sourceTree = "<group>"; };
+		AC71009DA1B2C3D4E5F6ABCD /* WorktreeRepairCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorktreeRepairCoordinator.swift; sourceTree = "<group>"; };
 		AC71009AA1B2C3D4E5F6ABCD /* WorktreeGroupRunTargetsBadge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorktreeGroupRunTargetsBadge.swift; sourceTree = "<group>"; };
 		ACF7EA12F6E9F582091F6482 /* ClaudeProjectFiles.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClaudeProjectFiles.swift; sourceTree = "<group>"; };
 		AD9206AEB3F3DE61E89020F1 /* RestoreClaudeSessionMenuItem.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RestoreClaudeSessionMenuItem.swift; sourceTree = "<group>"; };
@@ -1372,6 +1386,7 @@
 				AC710005A1B2C3D4E5F60719 /* ActiveAgentsPanelModels.swift */,
 				AC710006A1B2C3D4E5F60719 /* ActiveAgentsPanelData.swift */,
 				AC710098A1B2C3D4E5F6ABCD /* WorktreeAgentsPanel.swift */,
+				AC71009DA1B2C3D4E5F6ABCD /* WorktreeRepairCoordinator.swift */,
 				AC71009AA1B2C3D4E5F6ABCD /* WorktreeGroupRunTargetsBadge.swift */,
 				8C5E8498088B19D4A2D70906 /* WorktreeChangesSupport.swift */,
 				220445D607819A27670D30D2 /* WorktreeChangesPanes.swift */,
@@ -1921,6 +1936,7 @@
 				903C571F8C73544DD5A5D6E1 /* TinyYAMLTests.swift */,
 				00E1E4550C54F96C9409FC64 /* FrontmatterParserTests.swift */,
 				FFBB2CAFFE28DCCB1B030B1E /* AgentTemplateTests.swift */,
+				C1A0DE000000000000000001 /* ClaudeProjectFilesTests.swift */,
 				A1B2C3D4E5F60718293A4B5D /* ClaudeSessionScannerTests.swift */,
 				A1B2C3D4E5F60718293A4B5F /* ClaudeSessionJSONLFormatterTests.swift */,
 				AA0083A1B2C3D4E5F6071830 /* ClaudeSessionScannerLastAssistantTests.swift */,
@@ -1928,6 +1944,7 @@
 				844AD02D34F55AA429380BE4 /* TemplateRegistryTests.swift */,
 				AA01F4A6EAC0DE12345672 /* AgentPaneInvariantTests.swift */,
 				AA00C8A6EAC0DE12345672 /* TerminalAgentRegistryTests.swift */,
+				A9E70104A6EAC0DE00000001 /* TerminalAgentRunnerForkTests.swift */,
 				AA00C9A6EAC0DE12345672 /* WorkspaceMetadataStoreTerminalAgentTests.swift */,
 				AA00E1A6EAC0DE12345672 /* WorkspaceMetadataStoreWorktreePathTests.swift */,
 				AA00CCA6EAC0DE12345672 /* WorkspaceMetadataStoreQuickReplyTests.swift */,
@@ -1942,6 +1959,7 @@
 				18FC6989889E7918B4611617 /* AgentSocketCommandsTests.swift */,
 				7FCC2D822DEC2ADC3B4ADE6E /* AbilityStoreTests.swift */,
 				5F74A553933047EB0BB143BD /* TermLoopHooksRestorePruneTests.swift */,
+				A9E70103A6EAC0DE00000001 /* WorktreeReconcilerTests.swift */,
 				CB5AFE001111222233334444 /* ContextBankMirrorTests.swift */,
 				CB1E00001111222233334448 /* ContextBankIntegrityTests.swift */,
 				3BC41841A0027C5FCF28E38F /* AgentWorkspaceKindTests.swift */,
@@ -1977,6 +1995,9 @@
 			isa = PBXGroup;
 			children = (
 				75AA10B1C49A22E34676787C /* WorktreeResolver.swift */,
+				A9E70100A6EAC0DE00000001 /* WorktreeStatus.swift */,
+				A9E70101A6EAC0DE00000001 /* WorktreeReconciler.swift */,
+				A9E70102A6EAC0DE00000001 /* WorktreeRegistry.swift */,
 				FD994C07167BC290DA4FA005 /* WorktreeError.swift */,
 				BA1393F617B7D50F8BBA3D94 /* GitWorktreeService.swift */,
 				97DA21A6EE5D471C47B3F66D /* WorktreeCoordinator.swift */,
@@ -2432,6 +2453,9 @@
 				E39342E02E3DB9307617474B /* TermLoopSidebarTabBar.swift in Sources */,
 				5661D9171917AD6D053E7C2C /* Workspace+MainAreaPortalVisibility.swift in Sources */,
 				A30C2397171AAF3E25D50451 /* WorktreeResolver.swift in Sources */,
+				A9E70110A6EAC0DE00000001 /* WorktreeStatus.swift in Sources */,
+				A9E70111A6EAC0DE00000001 /* WorktreeReconciler.swift in Sources */,
+				A9E70112A6EAC0DE00000001 /* WorktreeRegistry.swift in Sources */,
 				5857C2177302897A99ACE683 /* WorktreeError.swift in Sources */,
 				006086BADBD0F620E49685B3 /* GitWorktreeService.swift in Sources */,
 				A0D488C1D277E928C99F5CFB /* WorktreeCoordinator.swift in Sources */,
@@ -2460,6 +2484,7 @@
 				AC710015A1B2C3D4E5F60719 /* ActiveAgentsPanelModels.swift in Sources */,
 				AC710016A1B2C3D4E5F60719 /* ActiveAgentsPanelData.swift in Sources */,
 				AC710099A1B2C3D4E5F6ABCD /* WorktreeAgentsPanel.swift in Sources */,
+				AC71009CA1B2C3D4E5F6ABCD /* WorktreeRepairCoordinator.swift in Sources */,
 				AC71009BA1B2C3D4E5F6ABCD /* WorktreeGroupRunTargetsBadge.swift in Sources */,
 				5B19B08DA4074410763E3EC6 /* WorktreeChangesSupport.swift in Sources */,
 				25C18DBE4401C3C71F994BCF /* WorktreeChangesPanes.swift in Sources */,
@@ -2683,12 +2708,14 @@
 				80E474EA8A8E26B257DFB3F6 /* TinyYAMLTests.swift in Sources */,
 				36A6AFA1B8556068A8F27B87 /* FrontmatterParserTests.swift in Sources */,
 				9C2848BA786CC7CEC620C181 /* AgentTemplateTests.swift in Sources */,
+				C1A0DE000000000000000002 /* ClaudeProjectFilesTests.swift in Sources */,
 				A1B2C3D4E5F60718293A4B5C /* ClaudeSessionScannerTests.swift in Sources */,
 				A1B2C3D4E5F60718293A4B5E /* ClaudeSessionJSONLFormatterTests.swift in Sources */,
 				AA0083A1B2C3D4E5F6071829 /* ClaudeSessionScannerLastAssistantTests.swift in Sources */,
 				E0FFBB47CDB05D6D8DC88342 /* TemplateRegistryTests.swift in Sources */,
 				AA01F4A6EAC0DE12345671 /* AgentPaneInvariantTests.swift in Sources */,
 				AA00C8A6EAC0DE12345671 /* TerminalAgentRegistryTests.swift in Sources */,
+				A9E70114A6EAC0DE00000001 /* TerminalAgentRunnerForkTests.swift in Sources */,
 				AA00C9A6EAC0DE12345671 /* WorkspaceMetadataStoreTerminalAgentTests.swift in Sources */,
 				AA00E1A6EAC0DE12345671 /* WorkspaceMetadataStoreWorktreePathTests.swift in Sources */,
 				AA00CCA6EAC0DE12345671 /* WorkspaceMetadataStoreQuickReplyTests.swift in Sources */,
@@ -2703,6 +2730,7 @@
 				1455A834FB638DA1024FBACD /* AgentSocketCommandsTests.swift in Sources */,
 				02451E50F192AF65292A8B30 /* AbilityStoreTests.swift in Sources */,
 				4C2396DEFE9BB247135A9693 /* TermLoopHooksRestorePruneTests.swift in Sources */,
+				A9E70113A6EAC0DE00000001 /* WorktreeReconcilerTests.swift in Sources */,
 				CB5AFE001111222233334443 /* ContextBankMirrorTests.swift in Sources */,
 				CB1E00001111222233334447 /* ContextBankIntegrityTests.swift in Sources */,
 				23D2FF5D5CACFBBB0CC38058 /* AgentWorkspaceKindTests.swift in Sources */,

@@ -40,12 +40,12 @@ final class TermLoopHooksRestorePruneTests: XCTestCase {
         TermLoopHooks.reconcileWorktreeMetadata(
             worktreesByProject: [
                 projectId: [
-                    TermLoopHooks.WorktreeReconcileEntry(
-                        branch: "feature/ticket",
+                    gitWorktreeEntry(
                         path: WorktreeResolver.path(
                             projectFolder: "/tmp/project",
                             branch: "feature/ticket"
-                        )!
+                        )!,
+                        branch: "feature/ticket"
                     )
                 ]
             ]
@@ -59,18 +59,25 @@ final class TermLoopHooksRestorePruneTests: XCTestCase {
         )
     }
 
-    func testWorktreeReconcileClearsMissingBranchWithoutExistingPath() {
+    func testWorktreeReconcilePreservesMissingBranchAndProductState() {
         let store = WorkspaceMetadataStore.shared
         let workspaceId = UUID()
         let projectId = UUID()
+        let missingPath = WorktreeResolver.path(
+            projectFolder: "/tmp/project",
+            branch: "feature/missing"
+        )
 
         store.restoreMetadata(
             WorkspaceMetadataStore.Metadata(
                 projectId: projectId,
                 branch: "feature/missing",
-                worktreePath: WorktreeResolver.path(
-                    projectFolder: "/tmp/project",
-                    branch: "feature/missing"
+                worktreePath: missingPath,
+                worktreeBaselineHead: "abc123",
+                assignedTicket: WorkspaceMetadataStore.AssignedTicket(
+                    providerName: "jira",
+                    key: "KAN-1",
+                    title: "Ticket"
                 )
             ),
             forWorkspaceId: workspaceId
@@ -79,7 +86,99 @@ final class TermLoopHooksRestorePruneTests: XCTestCase {
         TermLoopHooks.reconcileWorktreeMetadata(worktreesByProject: [projectId: []])
 
         let restored = store.metadata(forWorkspaceId: workspaceId)
-        XCTAssertNil(restored.branch)
-        XCTAssertNil(restored.worktreePath)
+        XCTAssertEqual(restored.branch, "feature/missing")
+        XCTAssertEqual(restored.worktreePath, missingPath)
+        XCTAssertEqual(restored.worktreeBaselineHead, "abc123")
+        XCTAssertEqual(restored.assignedTicket?.key, "KAN-1")
+    }
+
+    func testWorktreeReconcilePathRepairPreservesBaselineAndTicket() {
+        let store = WorkspaceMetadataStore.shared
+        let workspaceId = UUID()
+        let projectId = UUID()
+        let repairedPath = WorktreeResolver.path(
+            projectFolder: "/tmp/project",
+            branch: "feature/ticket"
+        )!
+
+        store.restoreMetadata(
+            WorkspaceMetadataStore.Metadata(
+                projectId: projectId,
+                branch: "feature/ticket",
+                worktreePath: "/tmp/project/old",
+                worktreeBaselineHead: "def456",
+                assignedTicket: WorkspaceMetadataStore.AssignedTicket(
+                    providerName: "jira",
+                    key: "KAN-2",
+                    title: "Ticket"
+                )
+            ),
+            forWorkspaceId: workspaceId
+        )
+
+        TermLoopHooks.reconcileWorktreeMetadata(
+            worktreesByProject: [
+                projectId: [
+                    gitWorktreeEntry(path: repairedPath, branch: "feature/ticket")
+                ]
+            ]
+        )
+
+        let restored = store.metadata(forWorkspaceId: workspaceId)
+        XCTAssertEqual(restored.branch, "feature/ticket")
+        XCTAssertEqual(restored.worktreePath, repairedPath)
+        XCTAssertEqual(restored.worktreeBaselineHead, "def456")
+        XCTAssertEqual(restored.assignedTicket?.key, "KAN-2")
+    }
+
+    func testWorktreeReconcileSkipsStaleSnapshotRepairAfterFreshAttach() {
+        let store = WorkspaceMetadataStore.shared
+        let workspaceId = UUID()
+        let projectId = UUID()
+        let stalePath = "/tmp/project/.termloop-worktrees/stale"
+        let freshPath = "/tmp/project/.termloop-worktrees/fresh"
+
+        store.restoreMetadata(
+            WorkspaceMetadataStore.Metadata(
+                projectId: projectId,
+                branch: "feature/ticket",
+                worktreePath: "/tmp/project/old"
+            ),
+            forWorkspaceId: workspaceId
+        )
+        let staleBindings = store.branchBindings()
+
+        store.setBranch("feature/ticket", worktreePath: freshPath, forWorkspaceId: workspaceId)
+
+        TermLoopHooks.reconcileWorktreeMetadata(
+            worktreesByProject: [
+                projectId: [
+                    gitWorktreeEntry(path: stalePath, branch: "feature/ticket")
+                ]
+            ],
+            bindings: staleBindings
+        )
+
+        let restored = store.metadata(forWorkspaceId: workspaceId)
+        XCTAssertEqual(restored.branch, "feature/ticket")
+        XCTAssertEqual(restored.worktreePath, freshPath)
+    }
+
+    private func gitWorktreeEntry(
+        path: String,
+        branch: String?,
+        head: String = "feedfacecafebeef",
+        isMain: Bool = false,
+        isLocked: Bool = false,
+        isPrunable: Bool = false
+    ) -> GitWorktreeService.ListEntry {
+        GitWorktreeService.ListEntry(
+            path: path,
+            branch: branch,
+            head: head,
+            isMain: isMain,
+            isLocked: isLocked,
+            isPrunable: isPrunable
+        )
     }
 }

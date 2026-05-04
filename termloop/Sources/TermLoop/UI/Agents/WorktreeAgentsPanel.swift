@@ -185,11 +185,35 @@ enum WorktreeAgentsPullRequestSummary {
 }
 
 struct WorktreeAgentsGroup: Identifiable {
+    let id: String
     let branch: String
     let workspaces: [Workspace]
     let worktreePath: String?
 
-    var id: String { branch }
+    let statusKind: WorktreeStatus.Kind?
+    let observedRef: WorktreeObservedRef?
+    let expectedBranches: [String]
+    let needsAttention: Bool
+
+    init(
+        id: String? = nil,
+        branch: String,
+        workspaces: [Workspace],
+        worktreePath: String?,
+        statusKind: WorktreeStatus.Kind? = nil,
+        observedRef: WorktreeObservedRef? = nil,
+        expectedBranches: [String]? = nil,
+        needsAttention: Bool = false
+    ) {
+        self.id = id ?? branch
+        self.branch = branch
+        self.workspaces = workspaces
+        self.worktreePath = worktreePath
+        self.statusKind = statusKind
+        self.observedRef = observedRef
+        self.expectedBranches = expectedBranches ?? [branch]
+        self.needsAttention = needsAttention
+    }
 }
 
 @MainActor
@@ -197,34 +221,48 @@ final class WorktreeDeletionCoordinator {
     static let shared = WorktreeDeletionCoordinator()
 
     enum DeletionMode {
+        case worktreeOnly
         case branchOnly
         case branchAndWorktree
     }
 
     private struct Target {
         let project: Project
-        let branch: String
+        let requestedBranch: String?
+        let registeredBranch: String?
         let worktreePath: String?
+        let workspaceIds: [UUID]
         let liveWorkspaces: [Workspace]
         let hasLocalChanges: Bool
         let runningWorkspaceIds: [UUID]
+        let assignedTicketKeys: [String]
+
+        var branchToDelete: String? {
+            if worktreePath != nil {
+                guard registeredBranch == requestedBranch else { return nil }
+                return registeredBranch
+            }
+            return requestedBranch
+        }
     }
 
     private let worktreeService = GitWorktreeService()
 
     private init() {}
 
-    func confirmAndDeleteBranch(
-        branch: String,
+    func confirmAndDelete(
+        branch: String?,
+        worktreePath: String?,
         projectId: UUID?,
         fallbackWorkspaceIds: [UUID]
     ) {
         #if DEBUG
-        dlog("worktree.delete.confirm.begin branch=\(branch) projectId=\(projectId?.uuidString.prefix(8) ?? "nil") fallbackIds=\(fallbackWorkspaceIds.map { $0.uuidString.prefix(8) }.joined(separator: ","))")
+        dlog("worktree.delete.confirm.begin branch=\(branch ?? "nil") worktreePath=\(worktreePath ?? "nil") projectId=\(projectId?.uuidString.prefix(8) ?? "nil") fallbackIds=\(fallbackWorkspaceIds.map { $0.uuidString.prefix(8) }.joined(separator: ","))")
         #endif
         do {
             let target = try resolveTarget(
                 branch: branch,
+                worktreePath: worktreePath,
                 projectId: projectId,
                 fallbackWorkspaceIds: fallbackWorkspaceIds
             )
@@ -233,7 +271,7 @@ final class WorktreeDeletionCoordinator {
 
             // Branch-only deletion keeps the worktree open, so we still
             // require any active agents to stop first. If the user chose
-            // "Delete Branch + Worktree", the workspaces are closed as part
+            // "Delete Branch + Worktree" or "Delete Worktree", workspaces are closed as part
             // of the delete flow, so running agents are allowed to proceed.
             if mode == .branchOnly, !target.runningWorkspaceIds.isEmpty {
                 presentError(
@@ -253,13 +291,16 @@ final class WorktreeDeletionCoordinator {
     }
 
     private func resolveTarget(
-        branch: String,
+        branch: String?,
+        worktreePath: String?,
         projectId: UUID?,
         fallbackWorkspaceIds: [UUID]
     ) throws -> Target {
-        let trimmedBranch = branch.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedBranch.isEmpty else {
-            throw WorktreeError.invalidParams(reason: "branch is empty")
+        let trimmedBranch = branch?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let requestedBranch = (trimmedBranch?.isEmpty ?? true) ? nil : trimmedBranch
+        let normalizedWorktreePath = WorktreeResolver.normalizePath(worktreePath)
+        guard requestedBranch != nil || normalizedWorktreePath != nil else {
+            throw WorktreeError.invalidParams(reason: "branch or worktree path is required")
         }
 
         let resolvedProjectId = projectId
@@ -273,43 +314,83 @@ final class WorktreeDeletionCoordinator {
         }
 
         let worktrees = try worktreeService.list(in: project.folderPath)
-        let entry = worktrees.first(where: { $0.branch == trimmedBranch && !$0.isMain })
+        let entry: GitWorktreeService.ListEntry?
+        if let normalizedWorktreePath {
+            entry = worktrees.first(where: {
+                WorktreeResolver.normalizePath($0.path) == normalizedWorktreePath && !$0.isMain
+            })
+        } else if let requestedBranch {
+            entry = worktrees.first(where: { $0.branch == requestedBranch && !$0.isMain })
+        } else {
+            entry = nil
+        }
+        if let normalizedWorktreePath, entry == nil {
+            throw WorktreeError.notFound(what: "registered Git worktree at \(normalizedWorktreePath)")
+        }
 
-        let liveWorkspaceIds = WorkspaceMetadataStore.shared
-            .workspaceIds(withBranch: trimmedBranch, projectId: project.id)
+        let liveWorkspaceIds: [UUID]
+        if let normalizedWorktreePath {
+            let ids = WorkspaceMetadataStore.shared.workspaceIds(
+                withWorktreePath: normalizedWorktreePath,
+                projectId: project.id
+            )
+            liveWorkspaceIds = ids.isEmpty ? fallbackWorkspaceIds : ids
+        } else if let requestedBranch {
+            liveWorkspaceIds = WorkspaceMetadataStore.shared
+                .workspaceIds(withBranch: requestedBranch, projectId: project.id)
+        } else {
+            liveWorkspaceIds = fallbackWorkspaceIds
+        }
         let liveWorkspaces = liveWorkspaceIds.compactMap { AppDelegate.shared?.workspaceFor(tabId: $0) }
         let hasLocalChanges = try entry.map { try !worktreeService.isClean(worktreePath: $0.path) } ?? false
         let runningWorkspaceIds = liveWorkspaces.compactMap { workspace in
             TerminalAgentActivityStore.shared.isRunning(forWorkspace: workspace) ? workspace.id : nil
         }
+        let assignedTicketKeys = Array(Set(liveWorkspaceIds.compactMap { workspaceId in
+            WorkspaceMetadataStore.shared.assignedTicket(for: workspaceId)?.key
+        })).sorted()
         #if DEBUG
         dlog(
-            "worktree.delete.resolve branch=\(trimmedBranch) project=\(project.name)[\(project.id.uuidString.prefix(8))] worktreePath=\(entry?.path ?? "nil") live=\(liveWorkspaces.count) running=\(runningWorkspaceIds.map { $0.uuidString.prefix(8) }.joined(separator: ","))"
+            "worktree.delete.resolve requestedBranch=\(requestedBranch ?? "nil") registeredBranch=\(entry?.branch ?? "nil") project=\(project.name)[\(project.id.uuidString.prefix(8))] worktreePath=\(entry?.path ?? normalizedWorktreePath ?? "nil") live=\(liveWorkspaces.count) running=\(runningWorkspaceIds.map { $0.uuidString.prefix(8) }.joined(separator: ","))"
         )
         #endif
 
         return Target(
             project: project,
-            branch: trimmedBranch,
+            requestedBranch: requestedBranch,
+            registeredBranch: entry?.branch,
             worktreePath: entry?.path,
+            workspaceIds: liveWorkspaceIds,
             liveWorkspaces: liveWorkspaces,
             hasLocalChanges: hasLocalChanges,
-            runningWorkspaceIds: runningWorkspaceIds
+            runningWorkspaceIds: runningWorkspaceIds,
+            assignedTicketKeys: assignedTicketKeys
         )
     }
 
     private func confirmDeleteMode(target: Target) -> DeletionMode? {
+        let branchToDelete = target.branchToDelete
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = String(
-            localized: "worktreeDeletion.confirm.branch.title",
-            defaultValue: "Delete branch “\(target.branch)”?",
-            table: "TermLoop"
-        )
+        if target.worktreePath != nil {
+            alert.messageText = String(
+                localized: "worktreeDeletion.confirm.worktree.title",
+                defaultValue: "Delete this Git worktree?",
+                table: "TermLoop"
+            )
+        } else if let branchToDelete {
+            alert.messageText = String(
+                localized: "worktreeDeletion.confirm.branch.title",
+                defaultValue: "Delete branch “\(branchToDelete)”?",
+                table: "TermLoop"
+            )
+        } else {
+            return nil
+        }
 
         let closeLine = String(
             localized: "worktreeDeletion.confirm.closeLine",
-            defaultValue: "This closes \(target.liveWorkspaces.count) workspace(s).",
+            defaultValue: "This detaches \(target.workspaceIds.count) workspace(s); \(target.liveWorkspaces.count) currently open workspace(s) will close.",
             table: "TermLoop"
         )
         let runningLine = !target.runningWorkspaceIds.isEmpty
@@ -319,15 +400,31 @@ final class WorktreeDeletionCoordinator {
                 table: "TermLoop"
             )
             : ""
-        let deleteLine = String(
-            localized: "worktreeDeletion.confirm.branch.body",
-            defaultValue: "The local Git branch will be deleted.",
-            table: "TermLoop"
-        )
+        let deleteLine: String
+        if let branchToDelete {
+            deleteLine = String(
+                localized: "worktreeDeletion.confirm.branch.body",
+                defaultValue: "The local Git branch “\(branchToDelete)” will be deleted.",
+                table: "TermLoop"
+            )
+        } else if let requestedBranch = target.requestedBranch,
+                  let registeredBranch = target.registeredBranch {
+            deleteLine = String(
+                localized: "worktreeDeletion.confirm.drift.body",
+                defaultValue: "Git currently reports “\(registeredBranch)” at this path, so TermLoop will not delete the expected branch “\(requestedBranch)”.",
+                table: "TermLoop"
+            )
+        } else {
+            deleteLine = String(
+                localized: "worktreeDeletion.confirm.worktreeOnly.body",
+                defaultValue: "Only the Git worktree folder will be removed. No branch will be deleted.",
+                table: "TermLoop"
+            )
+        }
         let worktreeLine = target.worktreePath.map {
             String(
                 localized: "worktreeDeletion.confirm.worktreeQuestion",
-                defaultValue: "A worktree exists at \($0). Delete that worktree too?",
+                defaultValue: "Worktree path:\n\($0)",
                 table: "TermLoop"
             )
         } ?? ""
@@ -338,20 +435,49 @@ final class WorktreeDeletionCoordinator {
                 table: "TermLoop"
             )
             : ""
+        let ticketLine: String = {
+            guard !target.assignedTicketKeys.isEmpty else { return "" }
+            let keys = target.assignedTicketKeys.joined(separator: ", ")
+            if target.worktreePath != nil, branchToDelete != nil {
+                return String(
+                    localized: "worktreeDeletion.confirm.ticketLine.worktreeChoicePrefix",
+                    defaultValue: "Jira binding(s) will be preserved if you choose Delete Worktree Only; deleting the branch releases binding(s): ",
+                    table: "TermLoop"
+                ) + keys
+            }
+            if branchToDelete != nil {
+                return String(
+                    localized: "worktreeDeletion.confirm.ticketLine.branchPrefix",
+                    defaultValue: "Deleting the branch releases Jira binding(s): ",
+                    table: "TermLoop"
+                ) + keys
+            }
+            return String(
+                localized: "worktreeDeletion.confirm.ticketLine.preservePrefix",
+                defaultValue: "Jira binding(s) will be preserved: ",
+                table: "TermLoop"
+            ) + keys
+        }()
 
-        alert.informativeText = [closeLine, runningLine, deleteLine, worktreeLine, dirtyLine]
+        alert.informativeText = [closeLine, runningLine, deleteLine, worktreeLine, dirtyLine, ticketLine]
             .filter { !$0.isEmpty }
             .joined(separator: "\n\n")
 
-        if target.worktreePath != nil {
+        if target.worktreePath != nil, branchToDelete != nil {
             alert.addButton(withTitle: String(
                 localized: "worktreeDeletion.confirm.deleteBranchAndWorktree",
                 defaultValue: "Delete Branch + Worktree",
                 table: "TermLoop"
             ))
             alert.addButton(withTitle: String(
-                localized: "worktreeDeletion.confirm.deleteBranchOnly",
-                defaultValue: "Delete Branch Only",
+                localized: "worktreeDeletion.confirm.deleteWorktreeOnly",
+                defaultValue: "Delete Worktree Only",
+                table: "TermLoop"
+            ))
+        } else if target.worktreePath != nil {
+            alert.addButton(withTitle: String(
+                localized: "worktreeDeletion.confirm.deleteWorktree",
+                defaultValue: "Delete Worktree",
                 table: "TermLoop"
             ))
         } else {
@@ -368,15 +494,18 @@ final class WorktreeDeletionCoordinator {
         ))
 
         let response = alert.runModal()
-        if target.worktreePath != nil {
+        if target.worktreePath != nil, branchToDelete != nil {
             switch response {
             case .alertFirstButtonReturn:
                 return .branchAndWorktree
             case .alertSecondButtonReturn:
-                return .branchOnly
+                return .worktreeOnly
             default:
                 return nil
             }
+        }
+        if target.worktreePath != nil {
+            return response == .alertFirstButtonReturn ? .worktreeOnly : nil
         }
 
         return response == .alertFirstButtonReturn ? .branchOnly : nil
@@ -384,13 +513,17 @@ final class WorktreeDeletionCoordinator {
 
     private func performDelete(target: Target, mode: DeletionMode) throws {
         #if DEBUG
-        dlog("worktree.delete.perform.begin branch=\(target.branch) mode=\(mode) project=\(target.project.name)[\(target.project.id.uuidString.prefix(8))] worktreePath=\(target.worktreePath ?? "nil") localChanges=\(target.hasLocalChanges ? 1 : 0) live=\(target.liveWorkspaces.count)")
+        dlog("worktree.delete.perform.begin requestedBranch=\(target.requestedBranch ?? "nil") registeredBranch=\(target.registeredBranch ?? "nil") mode=\(mode) project=\(target.project.name)[\(target.project.id.uuidString.prefix(8))] worktreePath=\(target.worktreePath ?? "nil") localChanges=\(target.hasLocalChanges ? 1 : 0) live=\(target.liveWorkspaces.count)")
         #endif
-        if mode == .branchAndWorktree {
+        if mode == .branchAndWorktree || mode == .worktreeOnly {
             primeClosableWindows(for: target.liveWorkspaces)
 
-            for workspace in target.liveWorkspaces {
-                WorkspaceMetadataStore.shared.setBranch(nil, forWorkspaceId: workspace.id)
+            for workspaceId in target.workspaceIds {
+                if mode == .worktreeOnly {
+                    WorkspaceMetadataStore.shared.setWorktreePath(nil, forWorkspaceId: workspaceId)
+                } else {
+                    WorkspaceMetadataStore.shared.setBranch(nil, forWorkspaceId: workspaceId)
+                }
             }
 
             for workspace in target.liveWorkspaces {
@@ -407,8 +540,11 @@ final class WorktreeDeletionCoordinator {
         }
 
         if mode == .branchAndWorktree || mode == .branchOnly {
+            guard let branchToDelete = target.branchToDelete else {
+                throw WorktreeError.invalidParams(reason: "No safe branch deletion target.")
+            }
             _ = try GitCommandRunner.runMutation(
-                ["branch", "-D", target.branch],
+                ["branch", "-D", branchToDelete],
                 in: target.project.folderPath,
                 kind: .mutation,
                 caller: "WorktreeDeletionCoordinator.branchDelete",
@@ -418,7 +554,7 @@ final class WorktreeDeletionCoordinator {
 
         AppDelegate.shared?.saveSessionSnapshot(includeScrollback: false, forceSync: true)
         #if DEBUG
-        dlog("worktree.delete.perform.result branch=\(target.branch) mode=\(mode) project=\(target.project.name)[\(target.project.id.uuidString.prefix(8))]")
+        dlog("worktree.delete.perform.result branch=\(target.branchToDelete ?? "nil") mode=\(mode) project=\(target.project.name)[\(target.project.id.uuidString.prefix(8))]")
         #endif
     }
 
@@ -613,6 +749,7 @@ struct WorktreeAgentsPanel: View {
     private struct RenderSignature: Equatable {
         let workspaceFingerprint: [WorkspaceIdentity]
         let branchTick: Int
+        let worktreeRegistryTick: UInt64
         let pullRequestTick: UInt64
         let worktreePullRequestLookupTick: UInt64
         let agentSessionTick: Int
@@ -671,6 +808,7 @@ struct WorktreeAgentsPanel: View {
     @State private var agentSessionTick: Int = 0
     @State private var projectScopeTick: Int = 0
     @State private var branchTick: Int = 0
+    @State private var worktreeRegistryTick: UInt64 = 0
     @State private var pullRequestTick: UInt64 = 0
     @State private var activityTick: Int = 0
     @State private var hasDeferredActivityTick = false
@@ -716,6 +854,7 @@ struct WorktreeAgentsPanel: View {
             for: RenderSignature(
                 workspaceFingerprint: fingerprint,
                 branchTick: branchTick,
+                worktreeRegistryTick: worktreeRegistryTick,
                 pullRequestTick: pullRequestTick,
                 worktreePullRequestLookupTick: worktreePullRequestStore.version,
                 agentSessionTick: agentSessionTick,
@@ -851,7 +990,11 @@ struct WorktreeAgentsPanel: View {
                 autoExpandActiveBranches(renderSnapshot.branchesNeedingInitialExpansion)
                 didApplyInitialBranchAutoExpand = true
             }
+            refreshWorktreeRegistry(for: scopedTabs, reason: "appear")
             refreshWorktreePullRequests(renderSnapshot.pullRequestLookupInputs, reason: "appear")
+        }
+        .onChange(of: scopedTabs.map(\.id)) { _ in
+            refreshWorktreeRegistry(for: scopedTabs, reason: "tabsChanged")
         }
         .onChange(of: renderSnapshot.pullRequestLookupInputs) { inputs in
             refreshWorktreePullRequests(inputs, reason: "inputsChanged")
@@ -862,14 +1005,14 @@ struct WorktreeAgentsPanel: View {
     }
 
     private func groupSummaryKey(
-        branch: String,
+        groupId: String,
         statuses: Set<SidebarPullRequestStatus>?
     ) -> String {
         let statusKey = statuses?
             .map(\.rawValue)
             .sorted()
             .joined(separator: ",") ?? "all"
-        return "\(branch)|\(statusKey)"
+        return "\(groupId)|\(statusKey)"
     }
 
     private func workspaceSummaryKey(
@@ -889,11 +1032,7 @@ struct WorktreeAgentsPanel: View {
         if !persisted.isEmpty {
             return persisted
         }
-        let cwd = workspace.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard WorktreeResolver.worktreeRoot(containing: cwd) != nil else { return nil }
-        let inferred = (workspace.gitBranch?.branch ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return inferred.isEmpty ? nil : inferred
+        return nil
     }
 
     private func summarySet(for pullRequests: [SidebarPullRequestState]) -> WorktreePullRequestSummarySet {
@@ -943,32 +1082,71 @@ struct WorktreeAgentsPanel: View {
                 normalizedBranch(for: workspace).map { (workspace.id, $0) }
             }
         )
+        let workspaceStatusById = Dictionary(
+            uniqueKeysWithValues: tabs.compactMap { workspace in
+                workspace.termLoopCachedWorktreeStatus(maximumAge: 60)
+                    .map { (workspace.id, $0) }
+            }
+        )
+        func groupPath(for workspace: Workspace) -> String? {
+            if let statusPath = WorktreeResolver.normalizePath(workspaceStatusById[workspace.id]?.path) {
+                return statusPath
+            }
+            if let storedPath = WorktreeResolver.normalizePath(
+                WorkspaceMetadataStore.shared.worktreePath(forWorkspaceId: workspace.id)
+            ) {
+                return storedPath
+            }
+            return WorktreeResolver.normalizePath(workspace.termLoopPresentationCwd())
+        }
+        func groupKey(for workspace: Workspace, branch: String) -> String {
+            if let path = groupPath(for: workspace) {
+                return "path:\(path)"
+            }
+            let projectKey = workspace.projectId?.uuidString ?? "unknown-project"
+            return "branch:\(projectKey):\(branch)"
+        }
+
         var buckets: [String: [Workspace]] = [:]
         var order: [String] = []
         for workspace in tabs {
             guard let branch = workspaceBranchById[workspace.id] else { continue }
-            if buckets[branch] == nil {
-                buckets[branch] = []
-                order.append(branch)
+            let key = groupKey(for: workspace, branch: branch)
+            if buckets[key] == nil {
+                buckets[key] = []
+                order.append(key)
             }
-            buckets[branch, default: []].append(workspace)
+            buckets[key, default: []].append(workspace)
         }
-        let groups = order.map { branch in
-            let workspaces = buckets[branch] ?? []
-            let worktreePath = workspaces.first(where: {
-                let launchCwd = $0.termLoopPresentationCwd()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                let currentDirectory = $0.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-                return !launchCwd.isEmpty || !currentDirectory.isEmpty
-            }).map {
-                let launchCwd = $0.termLoopPresentationCwd()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                return launchCwd.isEmpty ? $0.currentDirectory : launchCwd
+        let groups = order.map { key in
+            let workspaces = buckets[key] ?? []
+            let expectedBranches = Array(Set(workspaces.compactMap { workspaceBranchById[$0.id] })).sorted()
+            let displayBranch: String
+            if let first = expectedBranches.first {
+                displayBranch = expectedBranches.count == 1
+                    ? first
+                    : "\(first) +\(expectedBranches.count - 1)"
+            } else {
+                displayBranch = "worktree"
             }
+            let worktreePath = workspaces.lazy.compactMap { groupPath(for: $0) }.first
+            let statuses = workspaces.compactMap { workspaceStatusById[$0.id] }
+            let representativeStatus = statuses.first(where: { $0.needsUserAttention }) ?? statuses.first
             #if DEBUG
             dlog(
-                "worktree.panel.group branch=\(branch) workspaces=\(workspaces.map { $0.id.uuidString.prefix(8) }.joined(separator: ",")) worktreePath=\(worktreePath ?? "nil")"
+                "worktree.panel.group id=\(key) branch=\(displayBranch) workspaces=\(workspaces.map { $0.id.uuidString.prefix(8) }.joined(separator: ",")) worktreePath=\(worktreePath ?? "nil") status=\(representativeStatus?.kind.rawValue ?? "nil")"
             )
             #endif
-            return WorktreeAgentsGroup(branch: branch, workspaces: workspaces, worktreePath: worktreePath)
+            return WorktreeAgentsGroup(
+                id: key,
+                branch: displayBranch,
+                workspaces: workspaces,
+                worktreePath: worktreePath,
+                statusKind: representativeStatus?.kind,
+                observedRef: representativeStatus?.observedRef,
+                expectedBranches: expectedBranches,
+                needsAttention: statuses.contains(where: { $0.needsUserAttention })
+            )
         }
         let allWorkspaces = groups.flatMap(\.workspaces)
         let directPullRequestsByBranch: [String: [SidebarPullRequestState]] = Dictionary(
@@ -978,7 +1156,7 @@ struct WorktreeAgentsPanel: View {
                     branch: group.branch
                 )
                 guard !pullRequests.isEmpty else { return nil }
-                return (group.branch, pullRequests)
+                return (group.id, pullRequests)
             }
         )
         let pullRequestsByWorkspaceId = Dictionary(
@@ -1010,13 +1188,13 @@ struct WorktreeAgentsPanel: View {
         var worktrees: [WorktreeAgentsGroup] = []
         let store = TerminalAgentActivityStore.shared
         let branchesNeedingInitialExpansion = groups.compactMap { group in
-            store.aggregate(for: group.workspaces).hasVisibleActivity ? group.branch : nil
+            store.aggregate(for: group.workspaces).hasVisibleActivity ? group.id : nil
         }
 
         var allPullRequestsByBranch: [String: [SidebarPullRequestState]] = [:]
         for group in groups {
             var groupPullRequests = group.workspaces.flatMap { pullRequestsByWorkspaceId[$0.id] ?? [] }
-            if let directPullRequests = directPullRequestsByBranch[group.branch] {
+            if let directPullRequests = directPullRequestsByBranch[group.id] {
                 groupPullRequests.append(contentsOf: directPullRequests)
             }
             let summarySet = summarySet(for: groupPullRequests)
@@ -1024,17 +1202,17 @@ struct WorktreeAgentsPanel: View {
             // reuse it for the badge popover instead of re-running
             // `orderedUniquePullRequests` on the same input.
             if let allSummary = summarySet.all {
-                allPullRequestsByBranch[group.branch] = allSummary.pullRequests
+                allPullRequestsByBranch[group.id] = allSummary.pullRequests
             }
             if let openSummary = summarySet.open {
-                groupSummaryByKey[groupSummaryKey(branch: group.branch, statuses: [.open])] = openSummary
+                groupSummaryByKey[groupSummaryKey(groupId: group.id, statuses: [.open])] = openSummary
                 openPullRequests.append(group)
             } else if let mergedSummary = summarySet.merged {
-                groupSummaryByKey[groupSummaryKey(branch: group.branch, statuses: [.merged])] = mergedSummary
+                groupSummaryByKey[groupSummaryKey(groupId: group.id, statuses: [.merged])] = mergedSummary
                 mergedPullRequests.append(group)
             } else {
                 if let anySummary = summarySet.all {
-                    groupSummaryByKey[groupSummaryKey(branch: group.branch, statuses: nil)] = anySummary
+                    groupSummaryByKey[groupSummaryKey(groupId: group.id, statuses: nil)] = anySummary
                 }
                 worktrees.append(group)
             }
@@ -1074,16 +1252,19 @@ struct WorktreeAgentsPanel: View {
 
         let groupPriorityByBranch = Dictionary(
             uniqueKeysWithValues: groups.map { group in
-                (group.branch, group.workspaces.lazy.map(rowPriority).min() ?? 6)
+                (group.id, group.workspaces.lazy.map(rowPriority).min() ?? 6)
             }
         )
 
         func orderedGroups(_ groups: [WorktreeAgentsGroup]) -> [WorktreeAgentsGroup] {
             groups.sorted { lhs, rhs in
-                let lhsPriority = groupPriorityByBranch[lhs.branch] ?? 6
-                let rhsPriority = groupPriorityByBranch[rhs.branch] ?? 6
+                let lhsPriority = groupPriorityByBranch[lhs.id] ?? 6
+                let rhsPriority = groupPriorityByBranch[rhs.id] ?? 6
                 if lhsPriority != rhsPriority { return lhsPriority < rhsPriority }
-                return lhs.branch.localizedStandardCompare(rhs.branch) == .orderedAscending
+                if lhs.branch != rhs.branch {
+                    return lhs.branch.localizedStandardCompare(rhs.branch) == .orderedAscending
+                }
+                return (lhs.worktreePath ?? lhs.id).localizedStandardCompare(rhs.worktreePath ?? rhs.id) == .orderedAscending
             }
         }
 
@@ -1094,12 +1275,12 @@ struct WorktreeAgentsPanel: View {
         )
         let orderedWorkspacesByBranch = Dictionary(
             uniqueKeysWithValues: groups.map { group in
-                (group.branch, orderedWorkspaces(group.workspaces))
+                (group.id, orderedWorkspaces(group.workspaces))
             }
         )
         let branchAttributedStringByBranch = Dictionary(
             uniqueKeysWithValues: groups.map { group in
-                (group.branch, Self.branchAttributedString(group.branch))
+                (group.id, Self.branchAttributedString(group.branch))
             }
         )
 
@@ -1137,12 +1318,12 @@ struct WorktreeAgentsPanel: View {
             if !byKey.isEmpty {
                 let sortedBindings = Array(byKey.values)
                     .sorted { ($0.abilityId, $0.bindingId) < ($1.abilityId, $1.bindingId) }
-                bindingsByBranch[group.branch] = sortedBindings
+                bindingsByBranch[group.id] = sortedBindings
                 let badgeSnapshots = sortedBindings
                     .filter { $0.abilityId != TermLoopBuiltInMCP.runningYourApplicationAbilityId }
                     .map(WorktreeGroupBindingBadgeSnapshot.init(binding:))
                 if !badgeSnapshots.isEmpty {
-                    bindingBadgeSnapshotsByBranch[group.branch] = badgeSnapshots
+                    bindingBadgeSnapshotsByBranch[group.id] = badgeSnapshots
                 }
             }
         }
@@ -1372,6 +1553,21 @@ struct WorktreeAgentsPanel: View {
         }
     }
 
+    private func refreshWorktreeRegistry(for workspaces: [Workspace], reason: String) {
+        guard !isHidden else { return }
+        let projectFolders = Set(workspaces.compactMap { workspace -> String? in
+            guard let projectId = workspace.projectId,
+                  let project = ProjectStore.shared.project(id: projectId) else { return nil }
+            return project.folderPath
+        })
+        guard !projectFolders.isEmpty else { return }
+        for projectFolder in projectFolders {
+            WorktreeRegistry.shared.refresh(projectFolder: projectFolder, reason: "panel.\(reason)") { _ in
+                worktreeRegistryTick &+= 1
+            }
+        }
+    }
+
     private func branchSet(from raw: String) -> Set<String> {
         Set(raw.split(separator: "\n").map(String.init))
     }
@@ -1545,6 +1741,58 @@ struct WorktreeAgentsPanel: View {
         return headAttr + tailAttr
     }
 
+    private func worktreeStatusLabel(for group: WorktreeAgentsGroup) -> String? {
+        guard group.needsAttention, let kind = group.statusKind else { return nil }
+        switch kind {
+        case .branchDrift:
+            return "drift"
+        case .locked:
+            return "locked"
+        case .prunable:
+            return "prunable"
+        case .missingRegistration:
+            return "unregistered"
+        case .missingPath:
+            return "missing"
+        case .unknown:
+            return "unknown"
+        case .unattached, .healthy:
+            return nil
+        }
+    }
+
+    private func worktreeStatusTooltip(for group: WorktreeAgentsGroup) -> String {
+        let path = group.worktreePath.map { ($0 as NSString).abbreviatingWithTildeInPath }
+        let observed = group.observedRef?.displayName
+        var lines: [String] = []
+        switch group.statusKind {
+        case .branchDrift:
+            lines.append("Git HEAD no longer matches TermLoop's expected branch.")
+        case .locked:
+            lines.append("Git reports this worktree as locked.")
+        case .prunable:
+            lines.append("Git reports this worktree registration as prunable.")
+        case .missingRegistration:
+            lines.append("The folder exists, but Git does not list it as a registered worktree.")
+        case .missingPath:
+            lines.append("The recorded worktree path is missing on disk.")
+        case .unknown:
+            lines.append("TermLoop could not refresh Git worktree state.")
+        case .unattached, .healthy, nil:
+            lines.append("Worktree is healthy.")
+        }
+        if !group.expectedBranches.isEmpty {
+            lines.append("Expected: \(group.expectedBranches.joined(separator: ", "))")
+        }
+        if let observed {
+            lines.append("Observed: \(observed)")
+        }
+        if let path {
+            lines.append(path)
+        }
+        return lines.joined(separator: "\n")
+    }
+
     @ViewBuilder
     private func worktreeGroupView(
         _ group: WorktreeAgentsGroup,
@@ -1554,18 +1802,33 @@ struct WorktreeAgentsPanel: View {
         collapsedBranchSet: Set<String>,
         pullRequestLookupTick: UInt64
     ) -> some View {
-        let expanded = !collapsedBranchSet.contains(group.branch)
+        let expanded = !collapsedBranchSet.contains(group.id)
         let path = group.worktreePath.map {
             ($0 as NSString).abbreviatingWithTildeInPath
         }
+        let pathLeaf = group.worktreePath.map {
+            URL(fileURLWithPath: $0).lastPathComponent
+        }?.trimmingCharacters(in: .whitespacesAndNewlines)
         let availableAgents = TerminalAgentRegistry.shared.agents
-        let showsAddAction = hoveredBranch == group.branch && !availableAgents.isEmpty
+        let canPerformBranchActions = group.expectedBranches.count == 1
+        let singleExpectedBranch = canPerformBranchActions ? group.expectedBranches.first : nil
+        let canDeletePhysicalWorktree: Bool = {
+            guard group.worktreePath != nil else { return false }
+            switch group.statusKind {
+            case .missingRegistration, .missingPath, .unknown, .prunable:
+                return false
+            default:
+                return true
+            }
+        }()
+        let canDeleteGroup = canDeletePhysicalWorktree || canPerformBranchActions
+        let showsAddAction = hoveredBranch == group.id && !availableAgents.isEmpty
         let showsCollapseAction = !group.workspaces.isEmpty
-        let showsDeleteAction = hoveredBranch == group.branch
+        let showsDeleteAction = hoveredBranch == group.id && canDeleteGroup
         let isArchivedSection = sectionKind.isArchived
-        let orderedWorkspaces = renderSnapshot.orderedWorkspacesByBranch[group.branch] ?? group.workspaces
-        let groupBindings = renderSnapshot.bindingsByBranch[group.branch] ?? []
-        let groupBindingBadges = renderSnapshot.bindingBadgeSnapshotsByBranch[group.branch] ?? []
+        let orderedWorkspaces = renderSnapshot.orderedWorkspacesByBranch[group.id] ?? group.workspaces
+        let groupBindings = renderSnapshot.bindingsByBranch[group.id] ?? []
+        let groupBindingBadges = renderSnapshot.bindingBadgeSnapshotsByBranch[group.id] ?? []
         let partitionedBindings = partitionRunTargetBindings(groupBindings)
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .top, spacing: 6) {
@@ -1589,11 +1852,28 @@ struct WorktreeAgentsPanel: View {
                 // dim so the meaningful tail (ticket ID / topic) gets visual
                 // weight. Renders as a single attributed Text so truncation
                 // still works as one unit.
-                Text(renderSnapshot.branchAttributedStringByBranch[group.branch] ?? Self.branchAttributedString(group.branch))
+                Text(renderSnapshot.branchAttributedStringByBranch[group.id] ?? Self.branchAttributedString(group.branch))
                     .font(WorktreeAgentsPanelTypography.branchValue)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(path ?? group.branch)
+                if let pathLeaf, !pathLeaf.isEmpty {
+                    Text(verbatim: "· \(pathLeaf)")
+                        .font(TermLoopSidebarTheme.tinyMono)
+                        .foregroundStyle(TermLoopSidebarTheme.dimmer)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(path ?? pathLeaf)
+                }
+                if let statusLabel = worktreeStatusLabel(for: group) {
+                    TermLoopSidebarToken(
+                        label: statusLabel,
+                        iconSystemName: "exclamationmark.triangle.fill",
+                        tone: .warning,
+                        emphasized: true
+                    )
+                    .help(worktreeStatusTooltip(for: group))
+                }
                 Spacer()
                 SidebarActionSlot(isVisible: showsCollapseAction, width: 14, height: 14) {
                     Button {
@@ -1641,9 +1921,21 @@ struct WorktreeAgentsPanel: View {
                     ))
                 }
                 SidebarActionSlot(isVisible: showsDeleteAction, width: 14, height: 14) {
+                    let deleteTooltip = canDeletePhysicalWorktree
+                        ? String(
+                            localized: "worktreeAgents.group.hoverDelete.worktreeTooltip",
+                            defaultValue: "Delete this worktree",
+                            table: "TermLoop"
+                        )
+                        : String(
+                            localized: "worktreeAgents.group.hoverDelete.branchTooltip",
+                            defaultValue: "Delete this branch",
+                            table: "TermLoop"
+                        )
                     Button {
-                        WorktreeDeletionCoordinator.shared.confirmAndDeleteBranch(
-                            branch: group.branch,
+                        WorktreeDeletionCoordinator.shared.confirmAndDelete(
+                            branch: singleExpectedBranch,
+                            worktreePath: canDeletePhysicalWorktree ? group.worktreePath : nil,
                             projectId: sourceWorkspace(for: group)?.projectId,
                             fallbackWorkspaceIds: group.workspaces.map(\.id)
                         )
@@ -1655,11 +1947,7 @@ struct WorktreeAgentsPanel: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .help(String(
-                        localized: "worktreeAgents.group.hoverDelete.tooltip",
-                        defaultValue: "Delete this branch",
-                        table: "TermLoop"
-                    ))
+                    .help(deleteTooltip)
                 }
                 Text(verbatim: "\(group.workspaces.count)")
                     .font(TermLoopSidebarTheme.tinyMono)
@@ -1667,9 +1955,9 @@ struct WorktreeAgentsPanel: View {
                     .monospacedDigit()
                     .padding(.top, 2)
                 let pullRequestSummary = renderSnapshot.groupSummaryByKey[
-                    groupSummaryKey(branch: group.branch, statuses: pullRequestStatuses)
+                    groupSummaryKey(groupId: group.id, statuses: pullRequestStatuses)
                 ]
-                let allBranchPullRequests = renderSnapshot.allPullRequestsByBranch[group.branch] ?? []
+                let allBranchPullRequests = renderSnapshot.allPullRequestsByBranch[group.id] ?? []
                 // Headline pills run on a single horizontal line so MERGED
                 // PRs / OPEN PRs / WORKTREE branch headers are one row tall
                 // instead of stacking PR pill + commit pill + binding badges
@@ -1760,6 +2048,143 @@ struct WorktreeAgentsPanel: View {
             .contentShape(Rectangle())
             .contextMenu {
                 Button {
+                    WorktreeRepairCoordinator.shared.refreshStatus(
+                        group: group,
+                        sourceWorkspace: sourceWorkspace(for: group)
+                    ) {
+                        worktreeRegistryTick &+= 1
+                    }
+                } label: {
+                    Label(
+                        String(
+                            localized: "worktreeAgents.group.refreshStatus",
+                            defaultValue: "Refresh Git Worktree Status",
+                            table: "TermLoop"
+                        ),
+                        systemImage: "arrow.clockwise"
+                    )
+                }
+
+                if let worktreePath = group.worktreePath {
+                    Button {
+                        WorktreeRepairCoordinator.shared.reveal(path: worktreePath)
+                    } label: {
+                        Label(
+                            String(
+                                localized: "worktreeAgents.group.revealWorktree",
+                                defaultValue: "Reveal Worktree Folder",
+                                table: "TermLoop"
+                            ),
+                            systemImage: "folder"
+                        )
+                    }
+                }
+
+                if group.statusKind == .branchDrift,
+                   canPerformBranchActions,
+                   group.worktreePath != nil {
+                    Button {
+                        WorktreeRepairCoordinator.shared.switchToExpectedBranch(
+                            group: group,
+                            sourceWorkspace: sourceWorkspace(for: group)
+                        ) {
+                            worktreeRegistryTick &+= 1
+                        }
+                    } label: {
+                        Label(
+                            String(
+                                localized: "worktreeAgents.group.switchToExpectedBranch",
+                                defaultValue: "Switch Git Back to Expected Branch…",
+                                table: "TermLoop"
+                            ),
+                            systemImage: "arrow.triangle.2.circlepath"
+                        )
+                    }
+                }
+
+                if group.statusKind == .branchDrift,
+                   group.observedRef?.branchName != nil,
+                   group.worktreePath != nil {
+                    Button {
+                        WorktreeRepairCoordinator.shared.acceptObservedBranch(
+                            group: group
+                        ) {
+                            worktreeRegistryTick &+= 1
+                        }
+                    } label: {
+                        Label(
+                            String(
+                                localized: "worktreeAgents.group.acceptObservedBranch",
+                                defaultValue: "Use Current Git Branch as Expected…",
+                                table: "TermLoop"
+                            ),
+                            systemImage: "checkmark.circle"
+                        )
+                    }
+                }
+
+                if group.statusKind == .missingRegistration, group.worktreePath != nil {
+                    Button {
+                        WorktreeRepairCoordinator.shared.repairRegistration(
+                            group: group,
+                            sourceWorkspace: sourceWorkspace(for: group)
+                        ) {
+                            worktreeRegistryTick &+= 1
+                        }
+                    } label: {
+                        Label(
+                            String(
+                                localized: "worktreeAgents.group.repairRegistration",
+                                defaultValue: "Repair Git Registration…",
+                                table: "TermLoop"
+                            ),
+                            systemImage: "wrench.and.screwdriver"
+                        )
+                    }
+                }
+
+                if group.statusKind == .prunable {
+                    Button {
+                        WorktreeRepairCoordinator.shared.pruneStaleRegistrations(
+                            group: group,
+                            sourceWorkspace: sourceWorkspace(for: group)
+                        ) {
+                            worktreeRegistryTick &+= 1
+                        }
+                    } label: {
+                        Label(
+                            String(
+                                localized: "worktreeAgents.group.pruneRegistrations",
+                                defaultValue: "Prune Stale Registrations…",
+                                table: "TermLoop"
+                            ),
+                            systemImage: "scissors"
+                        )
+                    }
+                }
+
+                Divider()
+
+                if group.needsAttention {
+                    Button {
+                        WorktreeRepairCoordinator.shared.detachGroupFromWorktree(
+                            group: group
+                        ) {
+                            worktreeRegistryTick &+= 1
+                        }
+                    } label: {
+                        Label(
+                            String(
+                                localized: "worktreeAgents.group.detachFromWorktree",
+                                defaultValue: "Detach from Worktree…",
+                                table: "TermLoop"
+                            ),
+                            systemImage: "rectangle.portrait.and.arrow.right"
+                        )
+                    }
+                }
+
+                Button {
                     _ = WorkspaceHideCoordinator.confirmAndCollapse(
                         workspaces: group.workspaces,
                         tabManager: tabManager,
@@ -1776,17 +2201,19 @@ struct WorktreeAgentsPanel: View {
                     )
                 }
 
-                Button {
-                    moveGroupToCurrentLocalBranch(group)
-                } label: {
-                    Label(
-                        String(
-                            localized: "worktreeAgents.group.moveToCurrentLocalBranch",
-                            defaultValue: "Move to current local branch…",
-                            table: "TermLoop"
-                        ),
-                        systemImage: "arrow.turn.up.left"
-                    )
+                if canPerformBranchActions {
+                    Button {
+                        moveGroupToCurrentLocalBranch(group)
+                    } label: {
+                        Label(
+                            String(
+                                localized: "worktreeAgents.group.moveToCurrentLocalBranch",
+                                defaultValue: "Move to current local branch…",
+                                table: "TermLoop"
+                            ),
+                            systemImage: "arrow.turn.up.left"
+                        )
+                    }
                 }
 
                 if JiraTicketBindingPrompt.isJiraAbilityActive(forGroupWorkspaces: group.workspaces) {
@@ -1807,27 +2234,37 @@ struct WorktreeAgentsPanel: View {
 
                 Divider()
 
-                Button {
-                    WorktreeDeletionCoordinator.shared.confirmAndDeleteBranch(
-                        branch: group.branch,
-                        projectId: sourceWorkspace(for: group)?.projectId,
-                        fallbackWorkspaceIds: group.workspaces.map(\.id)
-                    )
-                } label: {
-                    Label(
-                        String(
+                if canDeleteGroup {
+                    let deleteLabel = canDeletePhysicalWorktree
+                        ? String(
+                            localized: "worktreeAgents.group.deleteWorktree",
+                            defaultValue: "Delete Worktree…",
+                            table: "TermLoop"
+                        )
+                        : String(
                             localized: "worktreeAgents.group.deleteBranch",
                             defaultValue: "Delete Branch…",
                             table: "TermLoop"
-                        ),
-                        systemImage: "trash.fill"
-                    )
+                        )
+                    Button {
+                        WorktreeDeletionCoordinator.shared.confirmAndDelete(
+                            branch: singleExpectedBranch,
+                            worktreePath: canDeletePhysicalWorktree ? group.worktreePath : nil,
+                            projectId: sourceWorkspace(for: group)?.projectId,
+                            fallbackWorkspaceIds: group.workspaces.map(\.id)
+                        )
+                    } label: {
+                        Label(
+                            deleteLabel,
+                            systemImage: "trash.fill"
+                        )
+                    }
                 }
             }
             .onHover { hovering in
-                hoveredBranch = hovering ? group.branch : (hoveredBranch == group.branch ? nil : hoveredBranch)
+                hoveredBranch = hovering ? group.id : (hoveredBranch == group.id ? nil : hoveredBranch)
             }
-            .onTapGesture { toggleExpanded(branch: group.branch) }
+            .onTapGesture { toggleExpanded(branch: group.id) }
 
             if expanded {
                 LazyVStack(alignment: .leading, spacing: 1) {
@@ -1865,7 +2302,8 @@ struct WorktreeAgentsPanel: View {
     private func moveGroupToCurrentLocalBranch(_ group: WorktreeAgentsGroup) {
         do {
             let inspection = try WorktreeCoordinator.shared.inspectDetachToCurrentLocalBranch(
-                workspaces: group.workspaces
+                workspaces: group.workspaces,
+                worktreePath: group.worktreePath
             )
 
             guard inspection.runningWorkspaceIds.isEmpty else {
@@ -1907,6 +2345,7 @@ struct WorktreeAgentsPanel: View {
 
             let result = try WorktreeCoordinator.shared.detachToCurrentLocalBranch(
                 workspaces: group.workspaces,
+                worktreePath: group.worktreePath,
                 localChangesPolicy: policy
             )
             if !result.worktreeRemoved {
