@@ -6,10 +6,9 @@ import SwiftUI
 
 /// Drives the main-area swap so the Git Changes view can replace Ghostty
 /// instead of opening as a modal sheet. The `@Published` presentation drives
-/// the overlay switch in `AgentMainAreaOverlaySwap`, with
-/// `setAllWorkspaceTerminalsVisible(...)` handled centrally by the swap on
-/// `overlayMode` transitions (so this store does not duplicate that
-/// bookkeeping).
+/// the overlay switch in `AgentMainAreaOverlaySwap`; portal visibility is
+/// handled centrally by the main-area presentation coordinator so this store
+/// does not duplicate that bookkeeping.
 @MainActor
 final class GitChangesMainAreaStore: ObservableObject {
     static let shared = GitChangesMainAreaStore()

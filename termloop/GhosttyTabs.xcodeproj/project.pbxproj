@@ -52,6 +52,8 @@
 		35E3ECA29E41FFE8CE21D260 /* SidebarInlineCreateCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79A78B7DCA1B1576A9B5C281 /* SidebarInlineCreateCoordinator.swift */; };
 		360C1889BB0468A3BFA3B365 /* TabManager+TermLoopPrune.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3047859637D21DD6871E11DF /* TabManager+TermLoopPrune.swift */; };
 		36102CD71581C6AE58F1AD40 /* TermLoopSettingsPageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 571E2A8FB5D32E054C372483 /* TermLoopSettingsPageStore.swift */; };
+		A9E70600A6EAC0DE00000002 /* MainAreaPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70600A6EAC0DE00000001 /* MainAreaPresentation.swift */; };
+		A9E70601A6EAC0DE00000002 /* MainAreaPresentationPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70601A6EAC0DE00000001 /* MainAreaPresentationPolicyTests.swift */; };
 		DCED57051E0A411F11111111 /* MarkdownDocumentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCED57051E0A411F22222222 /* MarkdownDocumentStore.swift */; };
 		DCED57051E0A411F33333333 /* MarkdownDocumentSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCED57051E0A411F44444444 /* MarkdownDocumentSurface.swift */; };
 		36A6AFA1B8556068A8F27B87 /* FrontmatterParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00E1E4550C54F96C9409FC64 /* FrontmatterParserTests.swift */; };
@@ -643,6 +645,7 @@
 		52ADC271E06D103B0F01D03A /* QuickActionAbilityChip.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickActionAbilityChip.swift; sourceTree = "<group>"; };
 		56FDC12A3F7F15766D417844 /* AgentInvocationComposer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentInvocationComposer.swift; sourceTree = "<group>"; };
 		571E2A8FB5D32E054C372483 /* TermLoopSettingsPageStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TermLoopSettingsPageStore.swift; sourceTree = "<group>"; };
+		A9E70600A6EAC0DE00000001 /* MainAreaPresentation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MainAreaPresentation.swift; sourceTree = "<group>"; };
 		DCED57051E0A411F22222222 /* MarkdownDocumentStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MarkdownDocumentStore.swift; sourceTree = "<group>"; };
 		DCED57051E0A411F44444444 /* MarkdownDocumentSurface.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MarkdownDocumentSurface.swift; sourceTree = "<group>"; };
 		58C7B1B978620BE162CC057E /* BrowserPanelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPanelTests.swift; sourceTree = "<group>"; };
@@ -1054,6 +1057,7 @@
 		F6000001A1B2C3D4E5F60718 /* AppDelegateShortcutRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegateShortcutRoutingTests.swift; sourceTree = "<group>"; };
 		F6100001A1B2C3D4E5F60718 /* WorkspaceRemoteConnectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceRemoteConnectionTests.swift; sourceTree = "<group>"; };
 		F7000001A1B2C3D4E5F60718 /* WorkspaceContentViewVisibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceContentViewVisibilityTests.swift; sourceTree = "<group>"; };
+		A9E70601A6EAC0DE00000001 /* MainAreaPresentationPolicyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MainAreaPresentationPolicyTests.swift; sourceTree = "<group>"; };
 		F8000001A1B2C3D4E5F60718 /* SocketControlPasswordStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocketControlPasswordStoreTests.swift; sourceTree = "<group>"; };
 		F9000001A1B2C3D4E5F60718 /* GhosttyEnsureFocusWindowActivationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyEnsureFocusWindowActivationTests.swift; sourceTree = "<group>"; };
 		F935897229585174F4CB2014 /* AgentSocketCommands.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentSocketCommands.swift; sourceTree = "<group>"; };
@@ -1428,6 +1432,7 @@
 				FC68FE009F31E791E66E9F54 /* SidebarDeleteConfirmationPopover.swift */,
 				BF66DDCC42FF756FC7AF4BF7 /* TermLoopSettingsPage.swift */,
 				571E2A8FB5D32E054C372483 /* TermLoopSettingsPageStore.swift */,
+				A9E70600A6EAC0DE00000001 /* MainAreaPresentation.swift */,
 				DCED57051E0A411F22222222 /* MarkdownDocumentStore.swift */,
 				DCED57051E0A411F44444444 /* MarkdownDocumentSurface.swift */,
 			);
@@ -1908,6 +1913,7 @@
 				F6000001A1B2C3D4E5F60718 /* AppDelegateShortcutRoutingTests.swift */,
 				F6100001A1B2C3D4E5F60718 /* WorkspaceRemoteConnectionTests.swift */,
 				F7000001A1B2C3D4E5F60718 /* WorkspaceContentViewVisibilityTests.swift */,
+				A9E70601A6EAC0DE00000001 /* MainAreaPresentationPolicyTests.swift */,
 				F8000001A1B2C3D4E5F60718 /* SocketControlPasswordStoreTests.swift */,
 				F9000001A1B2C3D4E5F60718 /* GhosttyEnsureFocusWindowActivationTests.swift */,
 				F1C1AA20B7E84D10A1C10001 /* InactivePaneFirstClickFocusTests.swift */,
@@ -2608,6 +2614,7 @@
 				EE9DC847590BF5F168E0D238 /* ClaudeCredentialEnvResolver.swift in Sources */,
 				6892E777DF35D17DE65EAD04 /* TermLoopSettingsPage.swift in Sources */,
 				36102CD71581C6AE58F1AD40 /* TermLoopSettingsPageStore.swift in Sources */,
+				A9E70600A6EAC0DE00000002 /* MainAreaPresentation.swift in Sources */,
 				DCED57051E0A411F11111111 /* MarkdownDocumentStore.swift in Sources */,
 				DCED57051E0A411F33333333 /* MarkdownDocumentSurface.swift in Sources */,
 			);
@@ -2680,6 +2687,7 @@
 				F6000000A1B2C3D4E5F60718 /* AppDelegateShortcutRoutingTests.swift in Sources */,
 				F6100000A1B2C3D4E5F60718 /* WorkspaceRemoteConnectionTests.swift in Sources */,
 				F7000000A1B2C3D4E5F60718 /* WorkspaceContentViewVisibilityTests.swift in Sources */,
+				A9E70601A6EAC0DE00000002 /* MainAreaPresentationPolicyTests.swift in Sources */,
 				F8000000A1B2C3D4E5F60718 /* SocketControlPasswordStoreTests.swift in Sources */,
 				F9000000A1B2C3D4E5F60718 /* GhosttyEnsureFocusWindowActivationTests.swift in Sources */,
 				F1C1AA21B7E84D10A1C10001 /* InactivePaneFirstClickFocusTests.swift in Sources */,

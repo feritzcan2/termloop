@@ -21,9 +21,13 @@ enum MainAreaActivation {
     static func activateWorkspaceTerminal(_ workspaceId: UUID, on tabManager: TabManager?) {
         guard let tabManager else { return }
 
-        // 1. Close overlays first — synchronous mutations on @Published
-        //    properties so the overlay swap recomputes against a clean state.
-        closeAllMainAreaOverlays()
+        // 1. Close overlays/settings first — synchronous mutations on
+        //    @Published properties so the overlay swap recomputes against a
+        //    clean state.
+        MainAreaPresentationCoordinator.shared.handleNavigationEvent(
+            .workspaceActivation(workspaceId),
+            tabManager: tabManager
+        )
 
         // 2. If user is on the agents catalog top-tab, flip back to work/loop.
         //    Direct UserDefaults writes propagate to all `@AppStorage`
@@ -43,8 +47,7 @@ enum MainAreaActivation {
     }
 
     static func activateAbilityDetailSurface(abilityId: String) {
-        MarkdownDocumentStore.shared.close()
-        GitChangesMainAreaStore.shared.close()
+        MainAreaPresentationCoordinator.shared.handleNavigationEvent(.abilityActivation(abilityId))
         AbilityDetailUIState.shared.show(abilityId)
 
         let defaults = UserDefaults.standard
@@ -67,7 +70,7 @@ enum MainAreaActivation {
         if tabManager.selectedTabId != workspaceId {
             tabManager.selectedTabId = workspaceId
         }
-        TermLoopHooks.setAllWorkspaceTerminalsVisible(true)
+        TermLoopHooks.applyMainAreaPresentation(tabManager: tabManager, reason: "abilityWorkspaceActivation")
     }
 
     /// Idempotent close of every main-area overlay store. Each store's

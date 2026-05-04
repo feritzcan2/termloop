@@ -507,9 +507,8 @@ enum TermLoopMCPServer {
         ]
         for (k, v) in workspaceParams { params[k] = v }
 
-        let client = SocketClient(path: socketPath)
         do {
-            try client.connect()
+            let client = try authenticatedDaemonClient(socketPath: socketPath)
             defer { client.close() }
             let response = try client.sendV2(
                 method: "workspace.report_agent_binding",
@@ -543,9 +542,8 @@ enum TermLoopMCPServer {
                               text: "TermLoop daemon target unknown: TERMLOOP_WORKSPACE_ID env var is unset and current working directory is empty.",
                               isError: true)
         }
-        let client = SocketClient(path: socketPath)
         do {
-            try client.connect()
+            let client = try authenticatedDaemonClient(socketPath: socketPath)
             defer { client.close() }
             let response = try client.sendV2(
                 method: "workspace.get_jira_ticket",
@@ -601,9 +599,8 @@ enum TermLoopMCPServer {
         }
         var params: [String: Any] = ["targets": targetsRaw]
         for (k, v) in workspaceParams { params[k] = v }
-        let client = SocketClient(path: socketPath)
         do {
-            try client.connect()
+            let client = try authenticatedDaemonClient(socketPath: socketPath)
             defer { client.close() }
             let response = try client.sendV2(
                 method: "workspace.set_run_targets",
@@ -639,9 +636,8 @@ enum TermLoopMCPServer {
                               text: "TermLoop daemon target unknown: TERMLOOP_WORKSPACE_ID env var is unset and current working directory is empty.",
                               isError: true)
         }
-        let client = SocketClient(path: socketPath)
         do {
-            try client.connect()
+            let client = try authenticatedDaemonClient(socketPath: socketPath)
             defer { client.close() }
             let response = try client.sendV2(
                 method: "workspace.get_run_targets",
@@ -738,9 +734,8 @@ enum TermLoopMCPServer {
             params[key] = value
         }
 
-        let client = SocketClient(path: socketPath)
         do {
-            try client.connect()
+            let client = try authenticatedDaemonClient(socketPath: socketPath)
             defer { client.close() }
             // sendV2 unwraps the {"ok":true,"result":{...}} envelope and
             // returns the inner result dict; on a v2 error it throws with
@@ -804,9 +799,8 @@ enum TermLoopMCPServer {
             params[key] = value
         }
 
-        let client = SocketClient(path: socketPath)
         do {
-            try client.connect()
+            let client = try authenticatedDaemonClient(socketPath: socketPath)
             defer { client.close() }
             let result = try client.sendV2(method: "bridge.reply_to_request", params: params)
             let deliveredId = (result["request_id"] as? String) ?? requestId
@@ -854,9 +848,8 @@ enum TermLoopMCPServer {
         let confidence = (arguments["confidence"] as? Double)
             ?? Double(arguments["confidence"] as? Int ?? 0)
 
-        let client = SocketClient(path: socketPath)
         do {
-            try client.connect()
+            let client = try authenticatedDaemonClient(socketPath: socketPath)
             defer { client.close() }
             let response = try client.sendV2(
                 method: "workspace.context_bank_propose_suggestion",
@@ -900,9 +893,8 @@ enum TermLoopMCPServer {
         let summary = (arguments["summary"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let client = SocketClient(path: socketPath)
         do {
-            try client.connect()
+            let client = try authenticatedDaemonClient(socketPath: socketPath)
             defer { client.close() }
             let response = try client.sendV2(
                 method: "workspace.context_bank_finalize_run",
@@ -972,6 +964,31 @@ enum TermLoopMCPServer {
                 "isError": isError
             ]
         )
+    }
+
+    /// Opens a daemon socket and mirrors the normal CLI auth handshake. MCP
+    /// server subprocesses run outside the main CLI command path, so they must
+    /// authenticate here before issuing v2 calls when TermLoop is in password
+    /// mode (for example after mobile bridge/pairing enables it).
+    private static func authenticatedDaemonClient(socketPath: String) throws -> SocketClient {
+        let client = SocketClient(path: socketPath)
+        do {
+            try client.connect()
+            if let socketPassword = SocketPasswordResolver.resolve(
+                explicit: nil,
+                socketPath: socketPath
+            ) {
+                let authResponse = try client.send(command: "auth \(socketPassword)")
+                if authResponse.hasPrefix("ERROR:"),
+                   !authResponse.contains("Unknown command 'auth'") {
+                    throw CLIError(message: authResponse)
+                }
+            }
+            return client
+        } catch {
+            client.close()
+            throw error
+        }
     }
 
     /// Builds the workspace-targeting params for a daemon call. Prefers the

@@ -1669,20 +1669,11 @@ enum TermLoopHooks {
     /// new overlay branch, update both. (Codex flagged drift on the original
     /// settings-page rollout; keep them aligned.)
     static func currentMainAreaOverlayMode() -> AgentMainAreaOverlayMode {
-        if TermLoopSettingsPageStore.shared.isOpen {
-            return .settings
-        }
-        let selectedSidebarTab = TermLoopSidebarTab(
-            rawValue: UserDefaults.standard.string(forKey: TermLoopSidebarTab.storageKey)
-                ?? TermLoopSidebarTab.work.rawValue
-        ) ?? .work
-        let selectedWorkSubTab = WorkSubTab(
-            rawValue: UserDefaults.standard.string(forKey: WorkSubTab.storageKey)
-                ?? WorkSubTab.loop.rawValue
-        ) ?? .loop
+        let routeSelection = storedMainAreaRouteSelection()
         return AgentMainAreaOverlayMode.resolveCurrent(
-            sidebarTab: selectedSidebarTab,
-            workSubTab: selectedWorkSubTab
+            sidebarTab: routeSelection.sidebarTab,
+            workSubTab: routeSelection.workSubTab,
+            tabManager: AppDelegate.shared?.tabManager
         )
     }
 
@@ -1690,11 +1681,97 @@ enum TermLoopHooks {
         currentMainAreaOverlayMode() != .content
     }
 
-    static func setAllWorkspaceTerminalsVisible(_ visible: Bool) {
-        guard let tabManager = AppDelegate.shared?.tabManager else { return }
-        for workspace in tabManager.tabs {
-            workspace.termLoopSetTerminalsVisible(visible)
+    private static func storedMainAreaRouteSelection() -> (sidebarTab: TermLoopSidebarTab, workSubTab: WorkSubTab) {
+        MainAreaPresentationCoordinator.storedRouteSelection()
+    }
+
+    static func applyMainAreaPresentation(tabManager: TabManager, reason: String) {
+        guard let windowId = AppDelegate.shared?.windowId(for: tabManager) else { return }
+        let routeSelection = storedMainAreaRouteSelection()
+        MainAreaPresentationCoordinator.shared.applyCurrent(
+            windowId: windowId,
+            tabManager: tabManager,
+            sidebarTab: routeSelection.sidebarTab,
+            workSubTab: routeSelection.workSubTab,
+            reason: reason
+        )
+    }
+
+    static func mainAreaPresentationSnapshot(
+        windowId: UUID,
+        tabManager: TabManager,
+        retiringWorkspaceId: UUID?,
+        mountedWorkspaceIds: [UUID],
+        handoffGeneration: UInt64,
+        hasCommandPaletteOrFileDropOverlay: Bool = false
+    ) -> MainAreaPresentationSnapshot {
+        let routeSelection = storedMainAreaRouteSelection()
+        return MainAreaPresentationCoordinator.shared.snapshot(
+            windowId: windowId,
+            tabManager: tabManager,
+            sidebarTab: routeSelection.sidebarTab,
+            workSubTab: routeSelection.workSubTab,
+            retiringWorkspaceId: retiringWorkspaceId,
+            mountedWorkspaceIds: mountedWorkspaceIds,
+            handoffGeneration: handoffGeneration,
+            hasCommandPaletteOrFileDropOverlay: hasCommandPaletteOrFileDropOverlay
+        )
+    }
+
+    static func shouldKeepRetiringWorkspaceVisibleForHandoff(
+        windowId: UUID,
+        tabManager: TabManager,
+        oldWorkspaceId: UUID,
+        newWorkspaceId: UUID,
+        mountedWorkspaceIds: [UUID],
+        handoffGeneration: UInt64,
+        hasCommandPaletteOrFileDropOverlay: Bool = false
+    ) -> Bool {
+        let routeSelection = storedMainAreaRouteSelection()
+        let input = MainAreaPresentationCoordinator.shared.liveInput(
+            windowId: windowId,
+            tabManager: tabManager,
+            sidebarTab: routeSelection.sidebarTab,
+            workSubTab: routeSelection.workSubTab,
+            retiringWorkspaceId: oldWorkspaceId,
+            mountedWorkspaceIds: mountedWorkspaceIds,
+            handoffGeneration: handoffGeneration,
+            hasCommandPaletteOrFileDropOverlay: hasCommandPaletteOrFileDropOverlay
+        ).replacingSelectedWorkspaceId(newWorkspaceId)
+        return MainAreaPresentationPolicy.allowsSameProjectContentHandoff(
+            input: input,
+            oldWorkspaceId: oldWorkspaceId,
+            newWorkspaceId: newWorkspaceId
+        )
+    }
+
+    static func handleMainAreaHandoffPresentationEvent(
+        notification: Notification,
+        windowId: UUID,
+        retiringWorkspaceId: UUID?,
+        complete: (String) -> Void
+    ) {
+        guard let retiringWorkspaceId else { return }
+        guard notification.userInfo?["windowId"] as? UUID == windowId else { return }
+        if let workspaceId = notification.userInfo?["workspaceId"] as? UUID {
+            guard workspaceId == retiringWorkspaceId else { return }
         }
+        let reason = notification.userInfo?["reason"] as? String ?? "presentation_policy"
+        complete(reason)
+    }
+
+    static func handleWorkspaceHandoffReadiness(
+        notification: Notification,
+        selectedWorkspaceId: UUID?,
+        canComplete: (UUID) -> Bool,
+        complete: (UUID, String) -> Void
+    ) {
+        guard let selectedWorkspaceId else { return }
+        let workspaceId = notification.userInfo?["workspaceId"] as? UUID
+            ?? notification.userInfo?[GhosttyNotificationKey.tabId] as? UUID
+        guard workspaceId == selectedWorkspaceId else { return }
+        guard canComplete(selectedWorkspaceId) else { return }
+        complete(selectedWorkspaceId, notification.name == .terminalSurfaceHostedViewDidMoveToWindow ? "hosted_view_ready" : "surface_ready")
     }
 
     /// Footer view appended under the terminal area for a given workspace.
@@ -2399,6 +2476,7 @@ export const CmuxTermLoop = async ({ $, directory }) => {
         BridgeCoordinator.shared.workspaceDidClose(workspaceId: workspaceId)
         WorkspaceMetadataStore.shared.forgetObservedWorkspaceTitle(workspaceId: workspaceId)
         WorkspaceMetadataStore.shared.clearAgentSession(forWorkspaceId: workspaceId)
+        MainAreaPresentationCoordinator.shared.handleNavigationEvent(.workspaceDidClose(workspaceId))
     }
 
     static func workspaceTitleDidChange(workspace: Workspace) {
@@ -2445,6 +2523,10 @@ enum AgentMainAreaOverlayMode: Equatable {
     case settings
     case projectEmpty
 
+    private static let fallbackMainAreaWindowId = UUID(
+        uuidString: "00000000-0000-0000-0000-000000000001"
+    )!
+
     var identity: String {
         switch self {
         case .content: return "content"
@@ -2458,10 +2540,6 @@ enum AgentMainAreaOverlayMode: Equatable {
         }
     }
 
-    var hidesTerminals: Bool {
-        self != .content
-    }
-
     /// Single source of truth for "which overlay should the main pane render
     /// right now?" — both the live SwiftUI swap and the static
     /// `currentMainAreaOverlayMode()` helper resolve through this so the
@@ -2469,63 +2547,37 @@ enum AgentMainAreaOverlayMode: Equatable {
     @MainActor
     static func resolveCurrent(
         sidebarTab: TermLoopSidebarTab,
-        workSubTab: WorkSubTab
+        workSubTab: WorkSubTab,
+        tabManager: TabManager?
     ) -> AgentMainAreaOverlayMode {
-        // Settings page wins everything else — user explicitly opened the
-        // titlebar gear / Cmd+Option+, and expects the page to stay up
-        // regardless of sidebar tab or active overlay underneath.
-        if TermLoopSettingsPageStore.shared.isOpen { return .settings }
-        if sidebarTab == .agents { return .agents }
-        if sidebarTab == .work, workSubTab == .contextBank {
-            return .contextBank
+        guard let tabManager,
+              let windowId = AppDelegate.shared?.windowId(for: tabManager) else {
+            let fallbackInput = MainAreaPresentationInput(
+                windowId: fallbackMainAreaWindowId,
+                sidebarTab: sidebarTab,
+                workSubTab: workSubTab,
+                selectedWorkspaceId: nil,
+                retiringWorkspaceId: nil,
+                mountedWorkspaceIds: [],
+                pendingBackgroundWorkspaceLoadIds: [],
+                activeProjectId: nil,
+                workspaceProjectIds: [:],
+                settingsIsOpen: TermLoopSettingsPageStore.shared.isOpen,
+                markdownDocumentURL: MarkdownDocumentStore.shared.selectedFileURL,
+                gitChangesWorkspaceId: GitChangesMainAreaStore.shared.presentation?.workspaceId,
+                abilityDetailId: AbilityDetailUIState.shared.selectedAbilityId,
+                abilityDetailIsSplit: false,
+                hasCommandPaletteOrFileDropOverlay: false,
+                handoffGeneration: 0
+            )
+            return MainAreaPresentationPolicy.resolveMainPage(fallbackInput).overlayMode
         }
-        // Markdown documents take precedence over ability detail so that
-        // clicking "Open" on a skill file from inside an ability page swaps
-        // the main pane to the editor instead of being shadowed by the
-        // ability route. Context Bank is excluded above because its tree
-        // selection owns the right pane and must stay responsive.
-        if let url = MarkdownDocumentStore.shared.selectedFileURL {
-            return .markdownDocument(url)
-        }
-        if sidebarTab == .work,
-           workSubTab == .agents,
-           let abilityId = AbilityDetailUIState.shared.selectedAbilityId {
-            return .ability(abilityId)
-        }
-        if let presentation = GitChangesMainAreaStore.shared.presentation {
-            return .gitChanges(presentation.workspaceId)
-        }
-        // Context Bank sub-tab owns the main area when it's active. The
-        // file/suggestion viewer renders here so the previously-selected
-        // workspace terminal does not bleed through (per UILayout.md, a
-        // SwiftUI `.overlay` cannot cover the Ghostty portal — the swap
-        // path + setAllWorkspaceTerminalsVisible(false) is the only thing
-        // that actually hides the terminal NSView).
-        if shouldShowProjectEmptyState() {
-            return .projectEmpty
-        }
-        return .content
-    }
-
-    /// Triggers the empty-state main pane when the active project has no
-    /// workspace to display — either because the project itself has none,
-    /// or because `selectedTabId` is stale (e.g. it still points at a
-    /// workspace from the previous project right after a switch).
-    @MainActor
-    private static func shouldShowProjectEmptyState() -> Bool {
-        guard let tabManager = AppDelegate.shared?.tabManager else { return false }
-        let activeProjectId = ProjectStore.shared.activeProjectId
-        let selectedId = tabManager.selectedTabId
-        let metadataStore = WorkspaceMetadataStore.shared
-        for tab in tabManager.tabs {
-            guard metadataStore.projectId(forWorkspaceId: tab.id) == activeProjectId else {
-                continue
-            }
-            if let selectedId = selectedId, tab.id == selectedId {
-                return false
-            }
-        }
-        return true
+        return MainAreaPresentationCoordinator.shared.snapshot(
+            windowId: windowId,
+            tabManager: tabManager,
+            sidebarTab: sidebarTab,
+            workSubTab: workSubTab
+        ).mainPage.overlayMode
     }
 }
 
@@ -2549,7 +2601,8 @@ private struct AgentMainAreaOverlaySwap<Content: View>: View {
         // `.projectEmpty` / etc. in one place.
         AgentMainAreaOverlayMode.resolveCurrent(
             sidebarTab: TermLoopSidebarTab(rawValue: tabRawValue) ?? .work,
-            workSubTab: WorkSubTab(rawValue: workSubTabRaw) ?? .loop
+            workSubTab: WorkSubTab(rawValue: workSubTabRaw) ?? .loop,
+            tabManager: tabManager
         )
     }
 
@@ -2573,15 +2626,8 @@ private struct AgentMainAreaOverlaySwap<Content: View>: View {
         }
     }
 
-    private func shouldShowWorkspaceTerminals(for mode: AgentMainAreaOverlayMode) -> Bool {
-        switch mode {
-        case .content:
-            return true
-        case .ability(let id):
-            return shouldSplitAbilityDetail(abilityId: id)
-        case .agents, .markdownDocument, .gitChanges, .contextBank, .settings, .projectEmpty:
-            return false
-        }
+    private func applyPresentation(reason: String) {
+        TermLoopHooks.applyMainAreaPresentation(tabManager: tabManager, reason: reason)
     }
 
     private func abilityDetailSplit(abilityId: String) -> some View {
@@ -2650,34 +2696,37 @@ private struct AgentMainAreaOverlaySwap<Content: View>: View {
         }
         .id(overlayMode.identity)
         .onAppear {
-            TermLoopHooks.setAllWorkspaceTerminalsVisible(shouldShowWorkspaceTerminals(for: overlayMode))
+            applyPresentation(reason: "appear")
         }
         .onChange(of: overlayMode) { mode in
-            TermLoopHooks.setAllWorkspaceTerminalsVisible(shouldShowWorkspaceTerminals(for: mode))
+            applyPresentation(reason: "overlayMode.\(mode.identity)")
         }
         .onChange(of: tabManager.selectedTabId) { _ in
-            TermLoopHooks.setAllWorkspaceTerminalsVisible(shouldShowWorkspaceTerminals(for: overlayMode))
+            applyPresentation(reason: "selectedWorkspace")
         }
         .onChange(of: workspaceMetadata.agentSessionVersion) { _ in
-            TermLoopHooks.setAllWorkspaceTerminalsVisible(shouldShowWorkspaceTerminals(for: overlayMode))
+            applyPresentation(reason: "agentSessionVersion")
         }
         .onChange(of: tabRawValue) { _ in
-            // Top-tab change is a strong "user moved on" signal — none of
-            // these document-style overlays should outlive their originating
-            // context. Ability detail is intentionally preserved but gated by
-            // `.work + .agents`, so returning to Abilities restores the split
-            // instead of losing the open customizer session.
-            markdownDocument.close()
-            gitChanges.close()
+            MainAreaPresentationCoordinator.shared.handleNavigationEvent(
+                .sidebarTopTabChanged,
+                tabManager: tabManager
+            )
+            applyPresentation(reason: "sidebarTopTab")
         }
         .onChange(of: workSubTabRaw) { _ in
-            // Sub-tab change is in-`.work` navigation (filter switching),
-            // not an application-level context switch. Keep ability detail,
-            // Markdown, and GitChanges selections latched; the overlay
-            // resolver decides which surface is currently visible.
+            MainAreaPresentationCoordinator.shared.handleNavigationEvent(
+                .workSubTabChanged,
+                tabManager: tabManager
+            )
+            applyPresentation(reason: "workSubTab")
         }
         .onChange(of: projectStore.activeProjectId) { _ in
-            MainAreaActivation.closeAllMainAreaOverlays()
+            MainAreaPresentationCoordinator.shared.handleNavigationEvent(
+                .projectChanged,
+                tabManager: tabManager
+            )
+            applyPresentation(reason: "activeProject")
         }
     }
 }
