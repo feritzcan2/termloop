@@ -349,18 +349,27 @@ final class WorktreeCoordinator: ObservableObject {
     // MARK: - Root detach preflight
 
     func inspectDetachToCurrentLocalBranch(
-        workspaces: [Workspace]
+        workspaces: [Workspace],
+        worktreePath explicitWorktreePath: String? = nil
     ) throws -> DetachToCurrentLocalBranchInspection {
         guard let first = workspaces.first else {
             throw WorktreeError.invalidParams(reason: "No workspaces selected.")
         }
         let project = try resolveProject(for: first)
-        guard let branch = metadata.branch(for: first) else {
+        let expectedBranch = metadata.branch(for: first)
+        func boundPath(for workspace: Workspace) -> String? {
+            WorktreeResolver.normalizePath(metadata.worktreePath(for: workspace))
+                ?? WorktreeResolver.normalizePath(workspace.termLoopCachedWorktreeStatus(maximumAge: 60)?.path)
+                ?? WorktreeResolver.normalizePath(workspace.termLoopPresentationCwd())
+        }
+        let normalizedExplicitPath = WorktreeResolver.normalizePath(explicitWorktreePath)
+        let normalizedFirstPath = normalizedExplicitPath ?? boundPath(for: first)
+        guard expectedBranch != nil || normalizedFirstPath != nil else {
             throw WorktreeError.invalidParams(reason: "This workspace is not attached to a worktree.")
         }
         #if DEBUG
         Self.debugLog(
-            "inspectDetach.begin project=\(project.name)[\(project.id.uuidString.prefix(8))] branch=\(branch) workspaces=\(workspaces.map { $0.id.uuidString.prefix(8) }.joined(separator: ","))"
+            "inspectDetach.begin project=\(project.name)[\(project.id.uuidString.prefix(8))] expectedBranch=\(expectedBranch ?? "nil") worktreePath=\(normalizedFirstPath ?? "nil") workspaces=\(workspaces.map { $0.id.uuidString.prefix(8) }.joined(separator: ","))"
         )
         #endif
 
@@ -370,20 +379,59 @@ final class WorktreeCoordinator: ObservableObject {
                     reason: "Selected workspaces must belong to the same project."
                 )
             }
-            guard metadata.branch(for: workspace) == branch else {
-                throw WorktreeError.invalidParams(
-                    reason: "Selected workspaces must point at the same worktree branch."
-                )
+            if let normalizedFirstPath {
+                guard boundPath(for: workspace) == normalizedFirstPath else {
+                    throw WorktreeError.invalidParams(
+                        reason: "Selected workspaces must point at the same physical worktree path."
+                    )
+                }
+            } else {
+                guard metadata.branch(for: workspace) == expectedBranch else {
+                    throw WorktreeError.invalidParams(
+                        reason: "Selected workspaces must point at the same worktree branch."
+                    )
+                }
             }
         }
 
         let worktrees = try service.list(in: project.folderPath)
-        guard let entry = worktrees.first(where: { $0.branch == branch }),
-              !entry.isMain else {
-            throw WorktreeError.worktreeMissingOnDisk(
-                path: WorktreeResolver.path(projectFolder: project.folderPath, branch: branch)
-                ?? branch
+        let entry: GitWorktreeService.ListEntry?
+        if let normalizedFirstPath {
+            entry = worktrees.first(where: {
+                WorktreeResolver.normalizePath($0.path) == normalizedFirstPath && !$0.isMain
+            })
+        } else if let expectedBranch {
+            entry = worktrees.first(where: { $0.branch == expectedBranch && !$0.isMain })
+        } else {
+            entry = nil
+        }
+
+        guard let entry else {
+            let missingPath = normalizedFirstPath
+                ?? expectedBranch.flatMap {
+                    WorktreeResolver.path(projectFolder: project.folderPath, branch: $0)
+                }
+                ?? "worktree"
+            throw WorktreeError.worktreeMissingOnDisk(path: missingPath)
+        }
+
+        let worktreeBranch = entry.branch
+            ?? expectedBranch
+            ?? "detached@\(String(entry.head.prefix(12)))"
+        if let expectedBranch, entry.branch != nil, entry.branch != expectedBranch {
+            #if DEBUG
+            Self.debugLog(
+                "inspectDetach.drift project=\(project.name)[\(project.id.uuidString.prefix(8))] expected=\(expectedBranch) observed=\(entry.branch ?? "nil") path=\(entry.path)"
             )
+            #endif
+        }
+
+        for workspace in workspaces where normalizedFirstPath == nil {
+            guard metadata.branch(for: workspace) == expectedBranch else {
+                throw WorktreeError.invalidParams(
+                    reason: "Selected workspaces must point at the same worktree branch."
+                )
+            }
         }
 
         let currentLocalBranch = try service.currentBranch(in: project.folderPath)
@@ -401,7 +449,7 @@ final class WorktreeCoordinator: ObservableObject {
         }
         #if DEBUG
         Self.debugLog(
-            "inspectDetach.result project=\(project.name)[\(project.id.uuidString.prefix(8))] branch=\(branch) " +
+            "inspectDetach.result project=\(project.name)[\(project.id.uuidString.prefix(8))] branch=\(worktreeBranch) " +
             "worktreePath=\(entry.path) currentLocalBranch=\(currentLocalBranch) hasUnmerged=\(hasUnmergedCommits) " +
             "hasLocalChanges=\(hasLocalChanges) rootHasLocalChanges=\(rootHasLocalChanges) running=\(runningWorkspaceIds.map { $0.uuidString.prefix(8) }.joined(separator: ","))"
         )
@@ -410,7 +458,7 @@ final class WorktreeCoordinator: ObservableObject {
         return DetachToCurrentLocalBranchInspection(
             projectFolder: project.folderPath,
             currentLocalBranch: currentLocalBranch,
-            worktreeBranch: branch,
+            worktreeBranch: worktreeBranch,
             worktreePath: entry.path,
             hasUnmergedCommits: hasUnmergedCommits,
             hasLocalChanges: hasLocalChanges,
@@ -421,9 +469,13 @@ final class WorktreeCoordinator: ObservableObject {
 
     func detachToCurrentLocalBranch(
         workspaces: [Workspace],
+        worktreePath: String? = nil,
         localChangesPolicy: LocalChangesPolicy
     ) throws -> DetachToCurrentLocalBranchResult {
-        let inspection = try inspectDetachToCurrentLocalBranch(workspaces: workspaces)
+        let inspection = try inspectDetachToCurrentLocalBranch(
+            workspaces: workspaces,
+            worktreePath: worktreePath
+        )
         #if DEBUG
         Self.debugLog(
             "detachToLocal.begin branch=\(inspection.worktreeBranch) worktreePath=\(inspection.worktreePath) " +
@@ -892,7 +944,14 @@ final class WorktreeCoordinator: ObservableObject {
         else { return 0 }
         let toPath = metadata.worktreePath(for: workspace)
             ?? workspace.termLoopPresentationCwd()
-            ?? project.folderPath
+        guard let toPath else {
+            #if DEBUG
+            Self.debugLog(
+                "respawnMismatched.skip ws=\(workspace.id.uuidString.prefix(8)) project=\(project.name)[\(project.id.uuidString.prefix(8))] reason=missingWorktreePath"
+            )
+            #endif
+            return 0
+        }
         #if DEBUG
         Self.debugLog(
             "respawnMismatched.begin ws=\(workspace.id.uuidString.prefix(8)) project=\(project.name)[\(project.id.uuidString.prefix(8))] toPath=\(toPath)"
@@ -1089,14 +1148,8 @@ final class WorktreeCoordinator: ObservableObject {
             #endif
             return existing.path
         }
-        if let resolved = WorktreeResolver.path(projectFolder: projectFolder, branch: branch) {
-            #if DEBUG
-            Self.debugLog("resolvedWorkspacePath.resolver ws=\(workspace.id.uuidString.prefix(8)) branch=\(branch) path=\(resolved)")
-            #endif
-            return resolved
-        }
         #if DEBUG
-        Self.debugLog("resolvedWorkspacePath.fallback ws=\(workspace.id.uuidString.prefix(8)) branch=\(branch) projectFolder=\(projectFolder)")
+        Self.debugLog("resolvedWorkspacePath.missing ws=\(workspace.id.uuidString.prefix(8)) branch=\(branch) projectFolder=\(projectFolder)")
         #endif
         return projectFolder
     }
