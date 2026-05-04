@@ -407,12 +407,16 @@ enum GitCommandRunner {
         let group = DispatchGroup()
         let lock = NSLock()
         var data = Data()
+        // Cache the fd before the async reader starts. On timeout the waiter
+        // closes `handle` to unblock `read`; asking FileHandle for
+        // `fileDescriptor` again after that can raise NSFileHandleOperationException.
+        let fileDescriptor = handle.fileDescriptor
         group.enter()
         DispatchQueue.global(qos: .utility).async {
             var buffer = [UInt8](repeating: 0, count: 64 * 1024)
             while true {
                 let count = buffer.withUnsafeMutableBytes { rawBuffer in
-                    Darwin.read(handle.fileDescriptor, rawBuffer.baseAddress, rawBuffer.count)
+                    Darwin.read(fileDescriptor, rawBuffer.baseAddress, rawBuffer.count)
                 }
                 if count > 0 {
                     lock.lock()
