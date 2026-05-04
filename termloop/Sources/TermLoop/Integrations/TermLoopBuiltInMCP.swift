@@ -112,7 +112,7 @@ struct TermLoopBuiltInToolMeta {
     static let all: [TermLoopBuiltInToolMeta] = [
         TermLoopBuiltInToolMeta(
             name: TermLoopBuiltInMCP.askToToolName,
-            description: "Ask a helper agent (codex / claude / gemini). Returns a single-use request_id and a reusable conversation_id/bridge_id for follow-ups to the same helper.",
+            description: "MCP Ask-To / bridge.ask_to: ask, consult, or hand off to a helper agent (codex / claude / gemini). Use this when the user says to ask Claude/Codex/Gemini, consult another agent, review with another agent, use Ask-To, use ask_to, or says Turkish phrases like \"MCP ile Claude'a sor\" / \"Claude'a danış\". Returns a single-use request_id plus a reusable conversation_id/bridge_id for follow-ups to the same helper.",
             inputSchemaJSON: """
             {
               "type": "object",
