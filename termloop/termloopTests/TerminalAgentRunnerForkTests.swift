@@ -312,4 +312,131 @@ final class TerminalAgentRunnerForkTests: XCTestCase {
         }
         XCTAssertNil(workspace.termLoopPresentationCwd())
     }
+
+    func testCachedWorktreeStatusDetectsExternalBranchSwitchWithStaleRegistry() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let repo = tmp.appendingPathComponent("repo", isDirectory: true)
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try runGit(["init", "-q", "-b", "main"], cwd: repo)
+        try runGit(["config", "user.email", "tests@example.com"], cwd: repo)
+        try runGit(["config", "user.name", "Tests"], cwd: repo)
+        try runGit(["commit", "--allow-empty", "-q", "-m", "init"], cwd: repo)
+        defer {
+            WorktreeRegistry.shared.invalidate(projectFolder: repo.path)
+            try? FileManager.default.removeItem(at: tmp)
+        }
+
+        let expectedBranch = "feature/expected"
+        let observedBranch = "feature/other"
+        let service = GitWorktreeService()
+        let worktreePath = try XCTUnwrap(
+            WorktreeResolver.path(projectFolder: repo.path, branch: expectedBranch)
+        )
+        try service.addCreatingBranch(
+            folder: repo.path,
+            path: worktreePath,
+            branch: expectedBranch,
+            baseRef: "HEAD"
+        )
+        let staleEntries = try service.list(in: repo.path)
+        WorktreeRegistry.shared.record(projectFolder: repo.path, entries: staleEntries)
+        try runGit(["switch", "-q", "-c", observedBranch], cwd: URL(fileURLWithPath: worktreePath))
+
+        let projectStore = ProjectStore.shared
+        let projectSnapshot = projectStore.sessionSnapshot
+        let activeProjectId = projectStore.activeProjectId
+        let openProjectIds = projectStore.openProjectIds
+        let metadataStore = WorkspaceMetadataStore.shared
+        let metadataSnapshot = metadataStore.snapshot()
+        defer {
+            metadataStore.restore(metadataSnapshot)
+            projectStore.restoreFromSidecar(
+                projects: projectSnapshot,
+                activeProjectId: activeProjectId,
+                openProjectIds: openProjectIds
+            )
+        }
+
+        let project = try projectStore.create(
+            name: "stale-registry-\(UUID().uuidString.prefix(6))",
+            folderPath: repo.path
+        )
+        let workspace = TabManager().addWorkspace(
+            title: "Drifted",
+            workingDirectory: worktreePath,
+            select: true,
+            projectId: project.id
+        )
+        metadataStore.setBranch(expectedBranch, worktreePath: worktreePath, for: workspace)
+
+        let status = try XCTUnwrap(workspace.termLoopCachedWorktreeStatus(maximumAge: 60))
+        XCTAssertEqual(status.kind, .branchDrift)
+        XCTAssertEqual(status.expectedBranch, expectedBranch)
+        XCTAssertEqual(status.observedRef, .branch(observedBranch))
+        XCTAssertFalse(status.permitsAgentLaunch)
+    }
+
+    func testCachedWorktreeStatusDetectsExternalDetachedHeadWithoutRegistrySnapshot() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let repo = tmp.appendingPathComponent("repo", isDirectory: true)
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try runGit(["init", "-q", "-b", "main"], cwd: repo)
+        try runGit(["config", "user.email", "tests@example.com"], cwd: repo)
+        try runGit(["config", "user.name", "Tests"], cwd: repo)
+        try runGit(["commit", "--allow-empty", "-q", "-m", "init"], cwd: repo)
+        defer {
+            WorktreeRegistry.shared.invalidate(projectFolder: repo.path)
+            try? FileManager.default.removeItem(at: tmp)
+        }
+
+        let expectedBranch = "feature/detached-live"
+        let service = GitWorktreeService()
+        let worktreePath = try XCTUnwrap(
+            WorktreeResolver.path(projectFolder: repo.path, branch: expectedBranch)
+        )
+        try service.addCreatingBranch(
+            folder: repo.path,
+            path: worktreePath,
+            branch: expectedBranch,
+            baseRef: "HEAD"
+        )
+        WorktreeRegistry.shared.invalidate(projectFolder: repo.path)
+        try runGit(["checkout", "-q", "--detach", "HEAD"], cwd: URL(fileURLWithPath: worktreePath))
+
+        let projectStore = ProjectStore.shared
+        let projectSnapshot = projectStore.sessionSnapshot
+        let activeProjectId = projectStore.activeProjectId
+        let openProjectIds = projectStore.openProjectIds
+        let metadataStore = WorkspaceMetadataStore.shared
+        let metadataSnapshot = metadataStore.snapshot()
+        defer {
+            metadataStore.restore(metadataSnapshot)
+            projectStore.restoreFromSidecar(
+                projects: projectSnapshot,
+                activeProjectId: activeProjectId,
+                openProjectIds: openProjectIds
+            )
+        }
+
+        let project = try projectStore.create(
+            name: "detached-live-\(UUID().uuidString.prefix(6))",
+            folderPath: repo.path
+        )
+        let workspace = TabManager().addWorkspace(
+            title: "Detached",
+            workingDirectory: worktreePath,
+            select: true,
+            projectId: project.id
+        )
+        metadataStore.setBranch(expectedBranch, worktreePath: worktreePath, for: workspace)
+
+        let status = try XCTUnwrap(workspace.termLoopCachedWorktreeStatus(maximumAge: 60))
+        XCTAssertEqual(status.kind, .branchDrift)
+        guard case .detached? = status.observedRef else {
+            return XCTFail("expected detached observed ref, got \(String(describing: status.observedRef))")
+        }
+        XCTAssertFalse(status.permitsAgentLaunch)
+    }
 }
