@@ -16,7 +16,7 @@ export interface PingResult {
 
 export async function pingConnection(
   conn: SavedConnection,
-  timeoutMs = 2500
+  timeoutMs = 8000
 ): Promise<PingResult> {
   const hosts = connectionHostCandidates(conn);
   if (hosts.length === 0) return { ok: false, err: new Error("No host") };

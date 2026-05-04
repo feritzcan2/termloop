@@ -42,15 +42,17 @@ interface PendingCall {
 export interface TcpTransportOptions {
   host: string;
   port: number;
-  /** Per-request timeout in ms. Default 10s. */
+  /** Per-request timeout in ms. Default 15s. */
   requestTimeoutMs?: number;
-  /** Connect timeout in ms. Default 8s. */
+  /** Connect timeout in ms. Default 12s. */
   connectTimeoutMs?: number;
   /** Max bytes buffered on the read side before the socket is dropped. */
   maxRxBufferBytes?: number;
 }
 
 const DEFAULT_MAX_RX_BUFFER = 1 << 20; // 1 MiB
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
+const DEFAULT_CONNECT_TIMEOUT_MS = 12_000;
 
 export class TcpTransport implements Transport {
   private socket: ReturnType<TcpSocketsModule["createConnection"]> | null = null;
@@ -66,8 +68,8 @@ export class TcpTransport implements Transport {
   private readonly maxRxBufferBytes: number;
 
   constructor(private readonly opts: TcpTransportOptions) {
-    this.requestTimeoutMs = opts.requestTimeoutMs ?? 10_000;
-    this.connectTimeoutMs = opts.connectTimeoutMs ?? 8_000;
+    this.requestTimeoutMs = opts.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.connectTimeoutMs = opts.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
     this.maxRxBufferBytes = opts.maxRxBufferBytes ?? DEFAULT_MAX_RX_BUFFER;
   }
 
@@ -75,6 +77,7 @@ export class TcpTransport implements Transport {
     if (this.connectPromise) return this.connectPromise;
     const promise = new Promise<void>((resolve, reject) => {
       let settled = false;
+      let sock: ReturnType<TcpSocketsModule["createConnection"]> | null = null;
       const finish = (err?: Error) => {
         if (settled) return;
         settled = true;
@@ -82,6 +85,14 @@ export class TcpTransport implements Transport {
         if (err) {
           // Allow the next send() to retry instead of latching the failure.
           if (this.connectPromise === promise) this.connectPromise = null;
+          if (sock && this.socket === sock) {
+            this.socket = null;
+            try {
+              sock.destroy();
+            } catch {
+              /* ignore */
+            }
+          }
           reject(err);
         } else {
           resolve();
@@ -97,7 +108,6 @@ export class TcpTransport implements Transport {
         this.connectTimeoutMs
       );
 
-      let sock: ReturnType<TcpSocketsModule["createConnection"]>;
       try {
         const tcp = loadTcpModule();
         sock = tcp.createConnection(
@@ -111,10 +121,15 @@ export class TcpTransport implements Transport {
       this.socket = sock;
 
       sock.on("data", (data: string | Buffer) => {
+        if (this.socket !== sock) return;
         const chunk = typeof data === "string" ? data : data.toString("utf8");
         this.onData(chunk);
       });
       sock.on("error", (err: Error) => {
+        if (this.socket !== sock) {
+          finish(err);
+          return;
+        }
         this.closed = true;
         this.socket = null;
         this.connectPromise = null;
@@ -123,6 +138,7 @@ export class TcpTransport implements Transport {
         this.notifyClose(err);
       });
       sock.on("close", () => {
+        if (this.socket !== sock) return;
         if (!this.closed) {
           this.closed = true;
           this.connectPromise = null;

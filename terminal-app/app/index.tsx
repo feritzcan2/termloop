@@ -65,6 +65,7 @@ export default function ConnectionListScreen() {
   const [items, setItems] = useState<SavedConnection[] | null>(null);
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const [health, setHealth] = useState<Record<string, HealthStatus>>({});
+  const healthFailuresRef = useRef<Record<string, number>>({});
   // Once per mount: a failed auto-connect must not retry on re-focus.
   const autoTriedRef = useRef(false);
   const onConnectRef = useRef<(c: SavedConnection) => void>(() => {});
@@ -83,13 +84,25 @@ export default function ConnectionListScreen() {
             pingConnection(c)
               .then((res) => {
                 if (!alive) return;
-                const next: HealthStatus = res.ok ? "online" : "offline";
+                if (res.ok) {
+                  healthFailuresRef.current[c.id] = 0;
+                  setHealth((prev) =>
+                    prev[c.id] === "online" ? prev : { ...prev, [c.id]: "online" }
+                  );
+                  return;
+                }
+                const failures = (healthFailuresRef.current[c.id] ?? 0) + 1;
+                healthFailuresRef.current[c.id] = failures;
+                if (failures < 2) return;
                 setHealth((prev) =>
-                  prev[c.id] === next ? prev : { ...prev, [c.id]: next }
+                  prev[c.id] === "offline" ? prev : { ...prev, [c.id]: "offline" }
                 );
               })
               .catch(() => {
                 if (!alive) return;
+                const failures = (healthFailuresRef.current[c.id] ?? 0) + 1;
+                healthFailuresRef.current[c.id] = failures;
+                if (failures < 2) return;
                 setHealth((prev) =>
                   prev[c.id] === "offline"
                     ? prev
