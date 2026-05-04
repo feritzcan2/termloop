@@ -218,11 +218,7 @@ struct ActiveAgentWorkspaceContextMenu: View {
             }
 
             if snapshot.isWorktree {
-                Button(String(
-                    localized: "contextMenu.deleteBranch",
-                    defaultValue: "Delete Branch…",
-                    table: "TermLoop"
-                )) {
+                Button(deleteWorktreeActionTitle(for: workspace)) {
                     handleDeleteBranch(workspace: workspace)
                 }
             }
@@ -273,6 +269,21 @@ struct ActiveAgentWorkspaceContextMenu: View {
         )
     }
 
+    private func deleteWorktreeActionTitle(for workspace: Workspace) -> String {
+        if WorktreeResolver.normalizePath(WorkspaceMetadataStore.shared.worktreePath(for: workspace)) != nil {
+            return String(
+                localized: "contextMenu.deleteWorktree",
+                defaultValue: "Delete Worktree…",
+                table: "TermLoop"
+            )
+        }
+        return String(
+            localized: "contextMenu.deleteBranch",
+            defaultValue: "Delete Branch…",
+            table: "TermLoop"
+        )
+    }
+
     private func handlePrimaryWorktreeAction(for workspace: Workspace) {
         if snapshot.isWorktree {
             handleDetach(workspace: workspace)
@@ -290,7 +301,8 @@ struct ActiveAgentWorkspaceContextMenu: View {
         do {
             let workspaces = detachTargetWorkspaces(for: workspace)
             let inspection = try WorktreeCoordinator.shared.inspectDetachToCurrentLocalBranch(
-                workspaces: workspaces
+                workspaces: workspaces,
+                worktreePath: WorkspaceMetadataStore.shared.worktreePath(for: workspace)
             )
 
             guard inspection.runningWorkspaceIds.isEmpty else {
@@ -328,6 +340,7 @@ struct ActiveAgentWorkspaceContextMenu: View {
 
             let result = try WorktreeCoordinator.shared.detachToCurrentLocalBranch(
                 workspaces: workspaces,
+                worktreePath: WorkspaceMetadataStore.shared.worktreePath(for: workspace),
                 localChangesPolicy: policy
             )
             if !result.worktreeRemoved {
@@ -343,11 +356,23 @@ struct ActiveAgentWorkspaceContextMenu: View {
     }
 
     private func detachTargetWorkspaces(for workspace: Workspace) -> [Workspace] {
-        guard let branch = WorkspaceMetadataStore.shared.branch(for: workspace),
-              let projectId = workspace.projectId else {
+        guard let projectId = workspace.projectId else {
             return [workspace]
         }
 
+        if let path = WorktreeResolver.normalizePath(WorkspaceMetadataStore.shared.worktreePath(for: workspace)) {
+            let workspaceIds = Set(
+                WorkspaceMetadataStore.shared.workspaceIds(withWorktreePath: path, projectId: projectId)
+            )
+            let grouped = tabManager.tabs.filter { workspaceIds.contains($0.id) }
+            if !grouped.isEmpty {
+                return grouped
+            }
+        }
+
+        guard let branch = WorkspaceMetadataStore.shared.branch(for: workspace) else {
+            return [workspace]
+        }
         let workspaceIds = Set(
             WorkspaceMetadataStore.shared.workspaceIds(withBranch: branch, projectId: projectId)
         )
@@ -472,8 +497,9 @@ struct ActiveAgentWorkspaceContextMenu: View {
 
     private func handleDeleteBranch(workspace: Workspace) {
         guard let branch = WorkspaceMetadataStore.shared.branch(for: workspace) else { return }
-        WorktreeDeletionCoordinator.shared.confirmAndDeleteBranch(
+        WorktreeDeletionCoordinator.shared.confirmAndDelete(
             branch: branch,
+            worktreePath: WorkspaceMetadataStore.shared.worktreePath(for: workspace),
             projectId: workspace.projectId,
             fallbackWorkspaceIds: [workspace.id]
         )

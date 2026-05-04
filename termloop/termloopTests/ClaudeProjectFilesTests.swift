@@ -79,6 +79,73 @@ final class ClaudeProjectFilesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: targetFile.path))
     }
 
+    func testSessionExistsRequiresJsonlNotOnlySidecar() throws {
+        let sessionId = "22222222-3333-4444-5555-666666666666"
+        let cwd = "/tmp/repo-sidecar-only"
+
+        let dir = ClaudeProjectFiles.projectDirectory(forCwd: cwd)
+        try FileManager.default.createDirectory(
+            at: dir,
+            withIntermediateDirectories: true
+        )
+        try "sidecar".write(
+            to: dir.appendingPathComponent("\(sessionId).jsonl.lock"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        XCTAssertFalse(
+            ClaudeProjectFiles.sessionExists(sessionId: sessionId, cwd: cwd),
+            "A sidecar without the concrete JSONL would make TermLoop launch `claude --resume`, which Claude then rejects."
+        )
+    }
+
+    func testSessionExistsIgnoresBrokenSymlink() throws {
+        let sessionId = "77777777-8888-9999-aaaa-bbbbbbbbbbbb"
+        let cwd = "/tmp/repo-broken-symlink"
+
+        let dir = ClaudeProjectFiles.projectDirectory(forCwd: cwd)
+        try FileManager.default.createDirectory(
+            at: dir,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createSymbolicLink(
+            at: dir.appendingPathComponent("\(sessionId).jsonl"),
+            withDestinationURL: dir.appendingPathComponent("missing-source.jsonl")
+        )
+
+        XCTAssertFalse(
+            ClaudeProjectFiles.sessionExists(sessionId: sessionId, cwd: cwd),
+            "A broken seeded symlink must not be treated as resumable."
+        )
+    }
+
+    func testMigrateSessionDoesNotSucceedWithOnlyStaleTargetSidecar() throws {
+        let sessionId = "99999999-aaaa-bbbb-cccc-dddddddddddd"
+        let sourceCwd = "/tmp/repo-missing-source"
+        let targetCwd = "/tmp/repo-missing-source/.termloop-worktrees/feature"
+
+        let targetDir = ClaudeProjectFiles.projectDirectory(forCwd: targetCwd)
+        try FileManager.default.createDirectory(
+            at: targetDir,
+            withIntermediateDirectories: true
+        )
+        try "sidecar".write(
+            to: targetDir.appendingPathComponent("\(sessionId).jsonl.lock"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        XCTAssertFalse(
+            ClaudeProjectFiles.migrateSession(
+                sessionId: sessionId,
+                targetCwd: targetCwd,
+                sourceCwds: [sourceCwd]
+            ),
+            "Migration must fail closed when the target has only stale sidecars and no source JSONL exists."
+        )
+    }
+
     /// Regression: when a running agent is moved into a worktree, the
     /// resumed conversation must edit files in the WORKTREE, not in the
     /// source cwd. The transcript carries absolute file_path references

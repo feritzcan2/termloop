@@ -1107,7 +1107,14 @@ extension TermLoopSocketCommands {
         var shouldSaveCriticalRestoreState = didAdoptObservedAgent
         var didUpdatePersistedSession = false
         if let sessionId = normalizedSessionId,
-           !sessionId.isEmpty {
+           !sessionId.isEmpty,
+           TerminalAgentSessionPersistencePolicy.shouldPersistObservedSession(
+                workspaceId: workspaceId,
+                agentId: agentId,
+                sessionId: sessionId,
+                cwd: cwd,
+                userPromptSubmitted: userPromptSubmitted
+           ) {
             let didUpdate = metadata.setPersistedAgentSession(
                 agentId: agentId,
                 sessionId: sessionId,
@@ -1125,6 +1132,10 @@ extension TermLoopSocketCommands {
         }
         if phase == .inactive || phase == .failed {
             metadata.clearPendingNativeFork(forWorkspaceId: workspaceId)
+            TerminalAgentSessionPersistencePolicy.clearDeferredPersistenceIfNeeded(
+                workspaceId: workspaceId,
+                agentId: agentId
+            )
         }
         if userPromptSubmitted {
             metadata.setLastUserPromptAt(Date(), forWorkspaceId: workspaceId)

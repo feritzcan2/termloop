@@ -3541,6 +3541,11 @@ class TerminalController {
         let explicitProjectId = v2UUID(params, "project_id")
         let explicitTerminalAgentId = v2RawString(params, "terminal_agent_id")?
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        let isTcpClient = TermLoopTCPBridge.isCurrentThreadTcpClient()
+        let shouldDeferMobileBlankClaudeSessionPersistence =
+            isTcpClient
+            && initialCommand == nil
+            && explicitTerminalAgentId == TerminalAgent.claudeId
         if let id = explicitTerminalAgentId, !id.isEmpty,
            !TermLoopHooks.isKnownTerminalAgentId(id) {
             return .err(code: "invalid_params",
@@ -3577,6 +3582,10 @@ class TerminalController {
                 // MARK: /termloop-hook
             )
             // MARK: termloop-hook
+            if shouldDeferMobileBlankClaudeSessionPersistence {
+                WorkspaceMetadataStore.shared
+                    .setDeferObservedAgentSessionPersistenceUntilPrompt(true, forWorkspaceId: ws.id)
+            }
             self.termLoopFinishWorkspaceCreate(launch: termLoopWorkspaceAgentLaunch, context: termLoopWorkspaceCreateContext, workspace: ws)
             // MARK: /termloop-hook
             ws.setCustomDescription(description)

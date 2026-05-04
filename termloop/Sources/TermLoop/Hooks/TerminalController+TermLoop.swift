@@ -170,11 +170,51 @@ extension TerminalController {
         )
         guard let worktreeRoot else { return nil }
 
-        return TermLoopWorkspaceWorktreeBindingResolver.resolve(
-            worktreeRoot: worktreeRoot,
-            projectId: project.id,
-            projectFolder: project.folderPath
-        )
+        if let snapshot = WorktreeRegistry.shared.cachedSnapshot(
+            projectFolder: project.folderPath,
+            maximumAge: 60
+        ) {
+            if let binding = TermLoopWorkspaceWorktreeBindingResolver.resolve(
+                worktreeRoot: worktreeRoot,
+                projectId: project.id,
+                projectFolder: project.folderPath,
+                entries: snapshot.entries
+            ) {
+                return binding
+            }
+        }
+
+        // Socket-driven workspace creation runs off the main thread before the
+        // `v2MainSync` workspace mutation. Warm the registry synchronously
+        // here when the cache is cold or stale for this path, so the agent
+        // process gets TERMLOOP_WORKTREE_* on its first launch instead of
+        // relying on the later summary repair pass. Never shell out on the
+        // main thread; UI callers get an async refresh and a conservative nil
+        // binding until the cache is warm.
+        guard !Thread.isMainThread else {
+            WorktreeRegistry.shared.refresh(
+                projectFolder: project.folderPath,
+                reason: "workspaceCreateBinding"
+            )
+            return nil
+        }
+
+        do {
+            let entries = try GitWorktreeService().list(in: project.folderPath)
+            WorktreeRegistry.shared.record(projectFolder: project.folderPath, entries: entries)
+            return TermLoopWorkspaceWorktreeBindingResolver.resolve(
+                worktreeRoot: worktreeRoot,
+                projectId: project.id,
+                projectFolder: project.folderPath,
+                entries: entries
+            )
+        } catch {
+            WorktreeRegistry.shared.refresh(
+                projectFolder: project.folderPath,
+                reason: "workspaceCreateBinding.retry"
+            )
+            return nil
+        }
     }
 
     @MainActor
@@ -247,7 +287,8 @@ private enum TermLoopWorkspaceWorktreeBindingResolver {
     static func resolve(
         worktreeRoot: String,
         projectId: UUID,
-        projectFolder: String
+        projectFolder: String,
+        entries: [GitWorktreeService.ListEntry]
     ) -> TermLoopWorkspaceWorktreeBinding? {
         guard let normalizedRoot = WorktreeResolver.worktreeRoot(
             containing: worktreeRoot,
@@ -255,105 +296,22 @@ private enum TermLoopWorkspaceWorktreeBindingResolver {
         ) else {
             return nil
         }
-        guard let gitDirectory = gitDirectory(forWorktreeRoot: normalizedRoot),
-              let head = headReference(in: gitDirectory),
-              let branch = branchName(fromHead: head) else {
+
+        guard let entry = entries.first(where: { entry in
+            URL(fileURLWithPath: entry.path).standardizedFileURL.path == normalizedRoot
+        }), !entry.isMain else {
             return nil
         }
+
+        let branch = entry.branch?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !branch.isEmpty else { return nil }
+        let head = entry.head.trimmingCharacters(in: .whitespacesAndNewlines)
+
         return TermLoopWorkspaceWorktreeBinding(
             projectId: projectId,
             expectation: TermLoopWorktreeExpectation(path: normalizedRoot, branch: branch),
-            baselineHead: headRevision(branch: branch, gitDirectory: gitDirectory)
+            baselineHead: head.isEmpty ? nil : head
         )
-    }
-
-    private static func gitDirectory(forWorktreeRoot root: String) -> URL? {
-        let rootURL = URL(fileURLWithPath: root).standardizedFileURL
-        let dotGit = rootURL.appendingPathComponent(".git")
-        var isDirectory: ObjCBool = false
-        if FileManager.default.fileExists(
-            atPath: dotGit.path,
-            isDirectory: &isDirectory
-        ), isDirectory.boolValue {
-            return dotGit.standardizedFileURL
-        }
-
-        guard let text = try? String(contentsOf: dotGit, encoding: .utf8),
-              let firstLine = text.split(whereSeparator: \.isNewline).first else {
-            return nil
-        }
-        let line = String(firstLine)
-        guard line.hasPrefix("gitdir:") else { return nil }
-        let rawPath = String(line.dropFirst("gitdir:".count))
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !rawPath.isEmpty else { return nil }
-        if rawPath.hasPrefix("/") {
-            return URL(fileURLWithPath: rawPath).standardizedFileURL
-        }
-        return rootURL.appendingPathComponent(rawPath).standardizedFileURL
-    }
-
-    private static func headReference(in gitDirectory: URL) -> String? {
-        let headURL = gitDirectory.appendingPathComponent("HEAD")
-        let raw = (try? String(contentsOf: headURL, encoding: .utf8)) ?? ""
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private static func branchName(fromHead head: String) -> String? {
-        let prefix = "ref: refs/heads/"
-        guard head.hasPrefix(prefix) else { return nil }
-        let branch = String(head.dropFirst(prefix.count))
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return branch.isEmpty ? nil : branch
-    }
-
-    private static func headRevision(
-        branch: String,
-        gitDirectory: URL
-    ) -> String? {
-        let commonDirectory = commonGitDirectory(from: gitDirectory)
-        let looseRef = commonDirectory
-            .appendingPathComponent("refs/heads")
-            .appendingPathComponent(branch)
-        if let raw = try? String(contentsOf: looseRef, encoding: .utf8) {
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty { return trimmed }
-        }
-        return packedRef(
-            named: "refs/heads/\(branch)",
-            commonDirectory: commonDirectory
-        )
-    }
-
-    private static func commonGitDirectory(from gitDirectory: URL) -> URL {
-        let commonDirURL = gitDirectory.appendingPathComponent("commondir")
-        guard let raw = try? String(contentsOf: commonDirURL, encoding: .utf8) else {
-            return gitDirectory
-        }
-        let path = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !path.isEmpty else { return gitDirectory }
-        if path.hasPrefix("/") {
-            return URL(fileURLWithPath: path).standardizedFileURL
-        }
-        return gitDirectory.appendingPathComponent(path).standardizedFileURL
-    }
-
-    private static func packedRef(
-        named refName: String,
-        commonDirectory: URL
-    ) -> String? {
-        let packedRefsURL = commonDirectory.appendingPathComponent("packed-refs")
-        guard let text = try? String(contentsOf: packedRefsURL, encoding: .utf8) else {
-            return nil
-        }
-        for rawLine in text.split(whereSeparator: \.isNewline) {
-            if rawLine.hasPrefix("#") || rawLine.hasPrefix("^") { continue }
-            let parts = rawLine.split(separator: " ", maxSplits: 1)
-            guard parts.count == 2, String(parts[1]) == refName else { continue }
-            return String(parts[0])
-        }
-        return nil
     }
 }
 
@@ -386,10 +344,18 @@ private enum TermLoopWorkspaceWorktreeBindingRepairScheduler {
         lock.unlock()
 
         DispatchQueue.global(qos: .utility).async {
+            let entries: [GitWorktreeService.ListEntry]
+            do {
+                entries = try GitWorktreeService().list(in: projectFolder)
+                WorktreeRegistry.shared.record(projectFolder: projectFolder, entries: entries)
+            } catch {
+                return
+            }
             guard let binding = TermLoopWorkspaceWorktreeBindingResolver.resolve(
                 worktreeRoot: worktreeRoot,
                 projectId: projectId,
-                projectFolder: projectFolder
+                projectFolder: projectFolder,
+                entries: entries
             ) else {
                 return
             }

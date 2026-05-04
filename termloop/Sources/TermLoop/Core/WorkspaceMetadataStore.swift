@@ -23,6 +23,10 @@ final class WorkspaceMetadataStore: ObservableObject {
         /// logical identity and are not sufficient to reconstruct legacy or
         /// user-renamed or externally moved worktree folders.
         var worktreePath: String?
+        /// Per-workspace generation for branch/path binding writes. Startup
+        /// reconcile snapshots compare this before repairing paths so a stale
+        /// async snapshot cannot overwrite a fresh user attach.
+        var worktreeBindingGeneration: UInt64?
         /// Immutable HEAD commit recorded when this workspace attached to the
         /// current branch. Used to tell whether the worktree has diverged from
         /// its attach-time baseline even after the working tree becomes clean.
@@ -43,6 +47,10 @@ final class WorkspaceMetadataStore: ObservableObject {
         /// Persisted agent session used for relaunch restore. This is the
         /// only on-disk source for `resume` metadata (agent/session/cwd).
         var persistedAgentSession: PersistedAgentSession?
+        /// Mobile can spawn a blank Claude workspace before Claude has written
+        /// a resumable transcript. While this is true, observed session-start
+        /// IDs stay live-only until a prompt or transcript proves resumability.
+        var deferObservedAgentSessionPersistenceUntilPrompt: Bool?
         /// Unix epoch seconds when the workspace last entered "awaiting input"
         /// state from the agent. Nil means the workspace is not awaiting input.
         /// Used by the mobile quick-reply surface.
@@ -195,6 +203,14 @@ final class WorkspaceMetadataStore: ObservableObject {
         let parentSessionId: String
     }
 
+    struct WorktreeBranchBinding: Equatable {
+        let workspaceId: UUID
+        let projectId: UUID?
+        let branch: String
+        let worktreePath: String?
+        let generation: UInt64?
+    }
+
     /// Transient fork-guard state for native same-agent conversation forks.
     /// While present, hook/session-start updates that repeat the parent
     /// session id are ignored until a child session id is observed.
@@ -311,6 +327,9 @@ final class WorkspaceMetadataStore: ObservableObject {
         let didClearAssignedTicket = didChangeBranch && current.assignedTicket != nil
         current.branch = newBranch
         current.worktreePath = newWorktreePath
+        current.worktreeBindingGeneration = nextWorktreeBindingGeneration(
+            after: current.worktreeBindingGeneration
+        )
         current.worktreeBaselineHead = nil
         if didChangeBranch {
             current.assignedTicket = nil
@@ -325,10 +344,16 @@ final class WorkspaceMetadataStore: ObservableObject {
     /// Read-only snapshot of every workspace id + its recorded branch/path.
     /// Empty `branch` entries are excluded. Used by startup reconciliation
     /// to walk attached workspaces without needing `Workspace` objects.
-    func branchBindings() -> [(workspaceId: UUID, projectId: UUID?, branch: String, worktreePath: String?)] {
+    func branchBindings() -> [WorktreeBranchBinding] {
         byWorkspaceId.compactMap { (id, meta) in
             guard let branch = meta.branch else { return nil }
-            return (id, meta.projectId, branch, meta.worktreePath)
+            return WorktreeBranchBinding(
+                workspaceId: id,
+                projectId: meta.projectId,
+                branch: branch,
+                worktreePath: meta.worktreePath,
+                generation: meta.worktreeBindingGeneration
+            )
         }
     }
 
@@ -342,6 +367,85 @@ final class WorkspaceMetadataStore: ObservableObject {
 
     func worktreePath(forWorkspaceId id: UUID) -> String? {
         byWorkspaceId[id]?.worktreePath
+    }
+
+    /// Updates only the physical checkout path for an existing branch binding.
+    /// Reconcile/backfill paths use this instead of `setBranch` so product
+    /// state owned by TermLoop (Jira ticket, attach baseline, persisted agent
+    /// session) survives Git metadata repair.
+    func setWorktreePath(_ worktreePath: String?, forWorkspaceId id: UUID) {
+        _ = setWorktreePathCore(
+            worktreePath,
+            forWorkspaceId: id,
+            expectedGeneration: nil,
+            requiresGenerationMatch: false
+        )
+    }
+
+    @discardableResult
+    func setWorktreePath(
+        _ worktreePath: String?,
+        forWorkspaceId id: UUID,
+        expectedGeneration: UInt64?
+    ) -> Bool {
+        setWorktreePathCore(
+            worktreePath,
+            forWorkspaceId: id,
+            expectedGeneration: expectedGeneration,
+            requiresGenerationMatch: true
+        )
+    }
+
+    private func setWorktreePathCore(
+        _ worktreePath: String?,
+        forWorkspaceId id: UUID,
+        expectedGeneration: UInt64?,
+        requiresGenerationMatch: Bool
+    ) -> Bool {
+        var current = byWorkspaceId[id, default: Metadata()]
+        guard current.branch != nil else { return false }
+        if requiresGenerationMatch,
+           current.worktreeBindingGeneration != expectedGeneration {
+            return false
+        }
+        let newWorktreePath = normalizeWorktreePath(worktreePath)
+        guard current.worktreePath != newWorktreePath else { return false }
+        current.worktreePath = newWorktreePath
+        current.worktreeBindingGeneration = nextWorktreeBindingGeneration(
+            after: current.worktreeBindingGeneration
+        )
+        byWorkspaceId[id] = current
+        branchVersion &+= 1
+        return true
+    }
+
+    /// Adopts the branch Git currently reports for an existing physical
+    /// worktree without clearing TermLoop-owned product state such as ticket
+    /// bindings or persisted agent sessions. Used by explicit drift repair
+    /// UI, not by normal branch attach flows.
+    func adoptWorktreeBranch(
+        _ branch: String,
+        worktreePath: String?,
+        baselineHead: String?,
+        forWorkspaceId id: UUID
+    ) {
+        var current = byWorkspaceId[id, default: Metadata()]
+        let trimmedBranch = branch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedBranch.isEmpty else { return }
+        let newPath = normalizeWorktreePath(worktreePath)
+        let normalizedBaseline = normalizePath(baselineHead)
+        guard current.branch != trimmedBranch
+            || current.worktreePath != newPath
+            || current.worktreeBaselineHead != normalizedBaseline
+        else { return }
+        current.branch = trimmedBranch
+        current.worktreePath = newPath
+        current.worktreeBaselineHead = normalizedBaseline
+        current.worktreeBindingGeneration = nextWorktreeBindingGeneration(
+            after: current.worktreeBindingGeneration
+        )
+        byWorkspaceId[id] = current
+        branchVersion &+= 1
     }
 
     func worktreeBaselineHead(for workspace: Workspace) -> String? {
@@ -363,6 +467,19 @@ final class WorkspaceMetadataStore: ObservableObject {
     func workspaceIds(withBranch branch: String, projectId: UUID? = nil) -> [UUID] {
         byWorkspaceId.compactMap { (wsId, meta) in
             guard meta.branch == branch else { return nil }
+            if let projectId, meta.projectId != projectId { return nil }
+            return wsId
+        }
+    }
+
+    /// Returns workspace ids whose recorded physical checkout path matches.
+    /// This is the preferred grouping key for worktree lifecycle operations:
+    /// a worktree path can drift to another branch, detach, or be renamed
+    /// independently of TermLoop's expected branch metadata.
+    func workspaceIds(withWorktreePath path: String, projectId: UUID? = nil) -> [UUID] {
+        guard let normalizedPath = normalizeWorktreePath(path) else { return [] }
+        return byWorkspaceId.compactMap { (wsId, meta) in
+            guard normalizeWorktreePath(meta.worktreePath) == normalizedPath else { return nil }
             if let projectId, meta.projectId != projectId { return nil }
             return wsId
         }
@@ -533,10 +650,12 @@ final class WorkspaceMetadataStore: ObservableObject {
         if let prior,
            prior.agentId == next.agentId,
            prior.sessionId == next.sessionId,
-           prior.cwd == next.cwd {
+           prior.cwd == next.cwd,
+           current.deferObservedAgentSessionPersistenceUntilPrompt == nil {
             return false
         }
         current.persistedAgentSession = next
+        current.deferObservedAgentSessionPersistenceUntilPrompt = nil
         byWorkspaceId[workspaceId] = current
         bumpAgentPresentation(for: workspaceId)
         return true
@@ -548,8 +667,12 @@ final class WorkspaceMetadataStore: ObservableObject {
         for workspaceId: UUID
     ) -> Bool {
         var current = byWorkspaceId[workspaceId, default: Metadata()]
-        guard current.persistedAgentSession != session else { return false }
+        guard current.persistedAgentSession != session
+            || current.deferObservedAgentSessionPersistenceUntilPrompt != nil else {
+            return false
+        }
         current.persistedAgentSession = session
+        current.deferObservedAgentSessionPersistenceUntilPrompt = nil
         byWorkspaceId[workspaceId] = current
         bumpAgentPresentation(for: workspaceId)
         return true
@@ -558,11 +681,36 @@ final class WorkspaceMetadataStore: ObservableObject {
     @discardableResult
     func clearPersistedAgentSession(for workspaceId: UUID) -> Bool {
         var current = byWorkspaceId[workspaceId, default: Metadata()]
-        guard current.persistedAgentSession != nil else { return false }
+        guard current.persistedAgentSession != nil
+            || current.deferObservedAgentSessionPersistenceUntilPrompt != nil else {
+            return false
+        }
         current.persistedAgentSession = nil
+        current.deferObservedAgentSessionPersistenceUntilPrompt = nil
         byWorkspaceId[workspaceId] = current
         pendingNativeForkByWorkspaceId.removeValue(forKey: workspaceId)
         bumpAgentPresentation(for: workspaceId)
+        return true
+    }
+
+    func shouldDeferObservedAgentSessionPersistenceUntilPrompt(
+        forWorkspaceId workspaceId: UUID
+    ) -> Bool {
+        byWorkspaceId[workspaceId]?.deferObservedAgentSessionPersistenceUntilPrompt == true
+    }
+
+    @discardableResult
+    func setDeferObservedAgentSessionPersistenceUntilPrompt(
+        _ deferPersistence: Bool,
+        forWorkspaceId workspaceId: UUID
+    ) -> Bool {
+        var current = byWorkspaceId[workspaceId, default: Metadata()]
+        let next: Bool? = deferPersistence ? true : nil
+        guard current.deferObservedAgentSessionPersistenceUntilPrompt != next else {
+            return false
+        }
+        current.deferObservedAgentSessionPersistenceUntilPrompt = next
+        byWorkspaceId[workspaceId] = current
         return true
     }
 
@@ -1001,8 +1149,12 @@ final class WorkspaceMetadataStore: ObservableObject {
     }
 
     private func normalizeWorktreePath(_ value: String?) -> String? {
-        guard let trimmed = normalizePath(value) else { return nil }
-        return URL(fileURLWithPath: trimmed).standardizedFileURL.path
+        WorktreeResolver.normalizePath(value)
+    }
+
+    private func nextWorktreeBindingGeneration(after current: UInt64?) -> UInt64 {
+        guard let current else { return 1 }
+        return current == UInt64.max ? 1 : current + 1
     }
 
     // MARK: - Worktree-scoped reported state
@@ -1071,4 +1223,41 @@ final class WorkspaceMetadataStore: ObservableObject {
         return URL(fileURLWithPath: raw).resolvingSymlinksInPath().path
     }
 
+}
+
+@MainActor
+enum TerminalAgentSessionPersistencePolicy {
+    static func shouldPersistObservedSession(
+        workspaceId: UUID,
+        agentId: String,
+        sessionId: String?,
+        cwd: String?,
+        userPromptSubmitted: Bool,
+        claudeScanner: ClaudeSessionScanner = .shared
+    ) -> Bool {
+        let normalizedAgentId = agentId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalizedAgentId == TerminalAgent.claudeId else {
+            return true
+        }
+        guard WorkspaceMetadataStore.shared
+            .shouldDeferObservedAgentSessionPersistenceUntilPrompt(forWorkspaceId: workspaceId) else {
+            return true
+        }
+        guard let normalizedSessionId = sessionId?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !normalizedSessionId.isEmpty else {
+            return false
+        }
+        if userPromptSubmitted {
+            return true
+        }
+        return claudeScanner.sessionFileURL(sessionId: normalizedSessionId, cwd: cwd) != nil
+    }
+
+    static func clearDeferredPersistenceIfNeeded(workspaceId: UUID, agentId: String) {
+        let normalizedAgentId = agentId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalizedAgentId == TerminalAgent.claudeId else { return }
+        _ = WorkspaceMetadataStore.shared
+            .setDeferObservedAgentSessionPersistenceUntilPrompt(false, forWorkspaceId: workspaceId)
+    }
 }

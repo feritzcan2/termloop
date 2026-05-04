@@ -111,6 +111,10 @@ final class TerminalAgentRunnerForkTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        try runGit(["init", "-q", "-b", "main"], cwd: tmp)
+        try runGit(["config", "user.email", "tests@example.com"], cwd: tmp)
+        try runGit(["config", "user.name", "Tests"], cwd: tmp)
+        try runGit(["commit", "--allow-empty", "-q", "-m", "init"], cwd: tmp)
 
         let metadataStore = WorkspaceMetadataStore.shared
         let metadataSnapshot = metadataStore.snapshot()
@@ -189,5 +193,123 @@ final class TerminalAgentRunnerForkTests: XCTestCase {
         XCTAssertEqual(metadataStore.branch(for: workspace), featureBranch)
         XCTAssertNotNil(metadataStore.worktreeBaselineHead(for: workspace))
         XCTAssertEqual(workspace.currentDirectory, worktreePath)
+    }
+
+    func testAttachedWorkspaceSpawnFailsClosedWhenWorktreeBranchDrifts() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let repo = tmp.appendingPathComponent("repo", isDirectory: true)
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try runGit(["init", "-q", "-b", "main"], cwd: repo)
+        try runGit(["config", "user.email", "tests@example.com"], cwd: repo)
+        try runGit(["config", "user.name", "Tests"], cwd: repo)
+        try runGit(["commit", "--allow-empty", "-q", "-m", "init"], cwd: repo)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let expectedBranch = "feature/expected"
+        let service = GitWorktreeService()
+        let worktreePath = try XCTUnwrap(
+            WorktreeResolver.path(projectFolder: repo.path, branch: expectedBranch)
+        )
+        try service.addCreatingBranch(
+            folder: repo.path,
+            path: worktreePath,
+            branch: expectedBranch,
+            baseRef: "HEAD"
+        )
+        try runGit(["switch", "-q", "-c", "feature/other"], cwd: URL(fileURLWithPath: worktreePath))
+
+        let projectStore = ProjectStore.shared
+        let projectSnapshot = projectStore.sessionSnapshot
+        let activeProjectId = projectStore.activeProjectId
+        let openProjectIds = projectStore.openProjectIds
+        let metadataStore = WorkspaceMetadataStore.shared
+        let metadataSnapshot = metadataStore.snapshot()
+        defer {
+            metadataStore.restore(metadataSnapshot)
+            projectStore.restoreFromSidecar(
+                projects: projectSnapshot,
+                activeProjectId: activeProjectId,
+                openProjectIds: openProjectIds
+            )
+        }
+
+        let project = try projectStore.create(
+            name: "drift-workspace-\(UUID().uuidString.prefix(6))",
+            folderPath: repo.path
+        )
+        let workspace = TabManager().addWorkspace(
+            title: "Drifted",
+            workingDirectory: worktreePath,
+            select: true,
+            projectId: project.id
+        )
+        metadataStore.setBranch(expectedBranch, worktreePath: worktreePath, for: workspace)
+
+        XCTAssertThrowsError(try workspace.termLoopSpawnCwd()) { error in
+            guard case WorktreeError.worktreeMissingOnDisk = error else {
+                return XCTFail("expected fail-closed worktree error, got \(error)")
+            }
+        }
+        XCTAssertNil(workspace.termLoopPresentationCwd())
+    }
+
+    func testAttachedWorkspaceSpawnFailsClosedWhenWorktreeDetached() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let repo = tmp.appendingPathComponent("repo", isDirectory: true)
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try runGit(["init", "-q", "-b", "main"], cwd: repo)
+        try runGit(["config", "user.email", "tests@example.com"], cwd: repo)
+        try runGit(["config", "user.name", "Tests"], cwd: repo)
+        try runGit(["commit", "--allow-empty", "-q", "-m", "init"], cwd: repo)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let expectedBranch = "feature/detached"
+        let service = GitWorktreeService()
+        let worktreePath = try XCTUnwrap(
+            WorktreeResolver.path(projectFolder: repo.path, branch: expectedBranch)
+        )
+        try service.addCreatingBranch(
+            folder: repo.path,
+            path: worktreePath,
+            branch: expectedBranch,
+            baseRef: "HEAD"
+        )
+        try runGit(["checkout", "-q", "--detach", "HEAD"], cwd: URL(fileURLWithPath: worktreePath))
+
+        let projectStore = ProjectStore.shared
+        let projectSnapshot = projectStore.sessionSnapshot
+        let activeProjectId = projectStore.activeProjectId
+        let openProjectIds = projectStore.openProjectIds
+        let metadataStore = WorkspaceMetadataStore.shared
+        let metadataSnapshot = metadataStore.snapshot()
+        defer {
+            metadataStore.restore(metadataSnapshot)
+            projectStore.restoreFromSidecar(
+                projects: projectSnapshot,
+                activeProjectId: activeProjectId,
+                openProjectIds: openProjectIds
+            )
+        }
+
+        let project = try projectStore.create(
+            name: "detached-workspace-\(UUID().uuidString.prefix(6))",
+            folderPath: repo.path
+        )
+        let workspace = TabManager().addWorkspace(
+            title: "Detached",
+            workingDirectory: worktreePath,
+            select: true,
+            projectId: project.id
+        )
+        metadataStore.setBranch(expectedBranch, worktreePath: worktreePath, for: workspace)
+
+        XCTAssertThrowsError(try workspace.termLoopSpawnCwd()) { error in
+            guard case WorktreeError.worktreeMissingOnDisk = error else {
+                return XCTFail("expected fail-closed worktree error, got \(error)")
+            }
+        }
+        XCTAssertNil(workspace.termLoopPresentationCwd())
     }
 }
