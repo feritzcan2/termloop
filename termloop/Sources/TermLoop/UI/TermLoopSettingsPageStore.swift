@@ -7,15 +7,12 @@ import SwiftUI
 /// `AgentMainAreaOverlaySwap` swaps the Ghostty terminal anchor for the
 /// `TermLoopSettingsPage` view.
 ///
-/// Terminal NSView hide/unhide is **not** done here on purpose. The swap's
-/// `onChange(of: overlayMode)` handler already calls
-/// `setAllWorkspaceTerminalsVisible(...)` from the unified
-/// `shouldShowWorkspaceTerminals(for:)` reducer, so a manual call here would
-/// race that reducer and create a terminal-visible flicker when closing
-/// Settings while another overlay (Markdown Document / Git Changes /
-/// Context Bank / Agents) is still active. Match the overlay-store pattern:
-/// just flip
-/// the `@Published` flag and let the swap reconcile.
+/// Terminal/browser portal hide/unhide is **not** done here on purpose. The
+/// main-area presentation coordinator owns that reconciliation, so a manual
+/// call here would race the route policy and create a portal-visible flicker
+/// when closing Settings while another overlay (Markdown Document / Git
+/// Changes / Context Bank / Agents) is still active. Match the overlay-store
+/// pattern: just flip the `@Published` flag and let the coordinator reconcile.
 ///
 /// Replaces the legacy standalone settings NSWindow — the menu shortcut
 /// (`Cmd+Option+,`) and the titlebar gear button both route through here.
