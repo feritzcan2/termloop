@@ -1,20 +1,37 @@
 # TermLoop Workspace — Agent Context
 
-## TermLoop
-TermLoop is a terminal editor with an agentic sidebar. Developers who use coding agents are the target users.
-We are developing TermLoop from inside TermLoop. Every feature should work across project types, not just this repository.
+## Scope
+
+This repository is the only working repo. `termloop/`, `termloop/ghostty/`, `termloop/homebrew-cmux/`, and `termloop/vendor/bonsplit/` are tracked as normal directories, not submodules.
+
+TermLoop is a terminal editor with an agentic sidebar. Developers who use coding agents are the target users. We are developing TermLoop from inside TermLoop. Every feature should work across project types, not just this repository.
+Any prompt we pass to agents must be visible to users under the prompt templates tab. No inline prompts in code.
 
 Two sibling projects under one workspace, plus supporting material:
 
 - `terminal-app/` — Expo/React Native mobile SSH terminal (iOS/Android). See its own `terminal-app/CLAUDE.md` for mobile stack details.
-- `termloop/` — **TermLoop**, our AI-first macOS terminal product. All product code lives under `Sources/TermLoop/`; upstream engine code and nested dependencies are vendored into this repo and synced via `./scripts/sync-upstreams.sh`. See `termloop/CLAUDE.md` for fork discipline and `termloop/docs/termloop/` for deep-dive references.
+- `termloop/` — TermLoop, our AI-first macOS terminal product. Start with `termloop/CLAUDE.md`, then use the area docs in `termloop/Sources/TermLoop/` for narrower rules.
 - `docs/` — public architecture notes, upstream provenance, and release documentation.
 
-## Upstream Sync Model
+## Instruction hierarchy
 
-This repo is the only working repo. `termloop/`, `termloop/ghostty/`, `termloop/homebrew-cmux/`, and `termloop/vendor/bonsplit/` are tracked as normal directories, not submodules.
+- Root files (`AGENTS.md` / `CLAUDE.md` / `GEMINI.md`) are workspace-wide.
+- `termloop/CLAUDE.md` is the product-level hub for TermLoop-only workflow and fork discipline.
+- Area-specific rules live next to the code they govern:
+  - `termloop/Sources/TermLoop/Core/CLAUDE.md` — terminal-agent presentation and shared core state
+  - `termloop/Sources/TermLoop/UI/CLAUDE.md` — main-area/page/portal policy
+  - `termloop/Sources/TermLoop/UI/Agents/CLAUDE.md` — sidebar, worktree, and agent panels
+  - `termloop/Sources/TermLoop/AgentInputs/CLAUDE.md` — agent launch/input composition
+  - `termloop/Sources/TermLoop/Git/CLAUDE.md` — git command runner, stores, and invalidation
+  - `termloop/Sources/TermLoop/AgentTerminals/CLAUDE.md` — lifecycle for terminal agents
+
+## Upstream sync model
 
 Treat the configured fork/upstream repos as read-only sync sources. To refresh vendored code, use `./scripts/sync-upstreams.sh` from the repo root; that script pulls the configured refs into the tracked directories and updates `upstreams.lock`.
+
+`sync-upstreams.sh` refuses to overwrite dirty vendored directories unless `--force` is passed. Use `--force` only when intentionally discarding local vendor edits.
+
+GhosttyKit prebuilts are keyed by the vendored Ghostty source tree (`GHOSTTY_TREE_KEY` in `upstreams.lock`), not only by the upstream commit SHA. If `termloop/ghostty/` changes in a way that can affect `libghostty.a` or the exported C API, run `termloop/scripts/publish-ghosttykit.sh` so the release asset, checksum file, and lock key stay together. Fresh clones should get the checksum-pinned prebuilt via `termloop/scripts/ensure-ghosttykit.sh`; local Zig is only the fallback. `termloop/ghostty/src/build/` and `termloop/ghostty/src/apprt/gtk/build/` are source directories and must be tracked. Generated `termloop/ghostty/zig-pkg/` stays ignored.
 
 | Path | Discipline |
 |---|---|
@@ -27,32 +44,13 @@ When designing: if Swift only sees an opaque C API and the feature needs more, c
 
 The end goal: the mobile app connects to a running `termloop` session and drives it over the socket, with a "Project" layer on top for organizing workspaces by folder.
 
-## TermLoop terminal-agent presentation contract
-
-For `termloop` / TermLoop work, terminal-agent UI state now follows one structure and should stay there:
-
-- **Source of truth:** `TerminalAgentActivityStore`
-- **Truth access / predicates:** `TerminalAgentActivityStore` + `TerminalAgentActivityStore+Queries`
-- **Formatting only:** `TerminalAgentDisplayFormatting`
-- **Status-key lookup only:** `TerminalAgentStatusKeys`
-- **No resolver layer:** `TerminalAgentActivityResolver` was removed on purpose; do not reintroduce a replacement facade.
-
-Rules:
-
-- UI must read **presentation state** (`presentation(forWorkspaceId:)`, `displayState(...)`, query helpers), not raw activity state, `workspace.statusEntries`, `workspace.agentPIDs`, or ad-hoc metadata fallbacks for agent presentation.
-- Panel-style consumers should prefer **parent-built snapshots** and pure row renderers.
-- If you need new agent UI behavior, put it in the store/query layer if it changes truth, or in formatting helpers if it is display-only. Prefer existing stores over creating new ones.
-- Do not add a new "easy" wrapper namespace that hides the store as the real source of truth.
-
 ## TermLoop agent-input contract
 
-For agent launch/input work under `termloop/Sources/TermLoop/AgentInputs/`,
-follow the local rules in:
+For agent launch/input work under `termloop/Sources/TermLoop/AgentInputs/`, follow the local rules in:
 - `termloop/Sources/TermLoop/AgentInputs/CLAUDE.md`
 - `termloop/Sources/TermLoop/AgentInputs/AGENTS.md`
 
-That folder owns the invocation input plane: catalog truth, composition,
-delivery preview, and Quick Action authoring rules.
+That folder owns the invocation input plane: catalog truth, composition, delivery preview, and Quick Action authoring rules.
 
 ## Mobile ↔ termloop TCP bridge (shipped)
 
@@ -66,7 +64,7 @@ iPhone can't reach Unix sockets, so `termloop` exposes a second listener (TCP, A
 
 TermLoop owns worktree lifecycle in `termloop/` — `WorktreeCoordinator` creates them at `<project>/.termloop-worktrees/<sanitized-branch>/` and keeps `WorkspaceMetadataStore` in sync. Path is gitignored at `.gitignore:85`, so no ignore-verification step is needed. Don't run `git worktree add` by hand in `termloop/` unless you're debugging — go through the app/CLI so metadata stays consistent.
 
-## TermLoop ability starter authoring
+## Ability starter authoring
 
 For customizer-based starters under `termloop/Sources/TermLoop/Core/Templates/starters/<id>/` (empty runtime + `prompt-customizer.md` that fills in project-specific content):
 
