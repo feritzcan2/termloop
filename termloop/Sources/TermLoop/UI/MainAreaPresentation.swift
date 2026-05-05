@@ -62,6 +62,7 @@ enum MainAreaMainPageKind: Equatable {
     case contextBank
     case settings
     case projectEmpty
+    case taskBoard(projectId: UUID)
 
     var identity: String {
         switch self {
@@ -81,6 +82,8 @@ enum MainAreaMainPageKind: Equatable {
             return "settings"
         case .projectEmpty:
             return "projectEmpty"
+        case let .taskBoard(projectId):
+            return "taskBoard:\(projectId.uuidString)"
         }
     }
 
@@ -93,7 +96,7 @@ enum MainAreaMainPageKind: Equatable {
             return true
         case .ability(_, let split):
             return split
-        case .agents, .markdownDocument, .gitChanges, .contextBank, .settings, .projectEmpty:
+        case .agents, .markdownDocument, .gitChanges, .contextBank, .settings, .projectEmpty, .taskBoard:
             return false
         }
     }
@@ -200,6 +203,9 @@ enum MainAreaPresentationPolicy {
     static func resolveMainPage(_ input: MainAreaPresentationInput) -> MainAreaMainPageKind {
         if input.settingsIsOpen {
             return .settings
+        }
+        if input.sidebarTab == .tasks, let projectId = input.activeProjectId {
+            return .taskBoard(projectId: projectId)
         }
         if input.sidebarTab == .agents {
             return .agents
@@ -311,6 +317,8 @@ extension MainAreaMainPageKind {
             return .settings
         case .projectEmpty:
             return .projectEmpty
+        case let .taskBoard(projectId):
+            return .taskBoard(projectId)
         }
     }
 }
