@@ -2522,6 +2522,9 @@ enum AgentMainAreaOverlayMode: Equatable {
     case contextBank
     case settings
     case projectEmpty
+    /// Project-scoped Tasks (kanban) page. Selected when the sidebar is on
+    /// `.tasks` and a project is active.
+    case taskBoard(UUID)
 
     private static let fallbackMainAreaWindowId = UUID(
         uuidString: "00000000-0000-0000-0000-000000000001"
@@ -2537,6 +2540,7 @@ enum AgentMainAreaOverlayMode: Equatable {
         case .contextBank: return "contextBank"
         case .settings: return "settings"
         case .projectEmpty: return "projectEmpty"
+        case let .taskBoard(projectId): return "taskBoard:\(projectId.uuidString)"
         }
     }
 
