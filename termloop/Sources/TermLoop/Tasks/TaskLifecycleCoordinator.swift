@@ -194,3 +194,30 @@ extension TaskLifecycleCoordinator {
         }
     }
 }
+
+extension TaskLifecycleCoordinator {
+    /// Update brief (or other text fields) — debounced save, last-write-wins
+    /// across windows.
+    public func updateBrief(taskId: UUID, brief: String?) throws {
+        try mutateTask(taskId) { $0.brief = brief; $0.updatedAt = Date() }
+        store.scheduleSave()
+    }
+
+    public func updateTitle(taskId: UUID, title: String) throws {
+        try mutateTask(taskId) { $0.title = title; $0.updatedAt = Date() }
+        store.scheduleSave()
+    }
+
+    /// Unbind without removing the worktree (user used "Unbind" from repair banner).
+    public func unbindWorktree(taskId: UUID) throws {
+        try mutateTask(taskId) { t in
+            t.workspaceId = nil
+            t.worktreePath = nil
+            t.branch = nil
+            t.bindingGeneration += 1
+            t.provisionState = .none
+            t.updatedAt = Date()
+        }
+        try store.saveNow()
+    }
+}
