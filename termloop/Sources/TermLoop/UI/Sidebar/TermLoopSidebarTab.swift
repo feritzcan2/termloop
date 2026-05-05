@@ -4,7 +4,7 @@
 import Foundation
 
 enum TermLoopSidebarTab: String, CaseIterable, Identifiable {
-    case work, agents, integrations, plan
+    case work, agents, integrations, plan, tasks
 
     static let storageKey = "termloop.sidebarTab"
 
@@ -24,6 +24,18 @@ enum TermLoopSidebarTab: String, CaseIterable, Identifiable {
         case .plan:
             return String(localized: "sidebar.tab.plan",
                           defaultValue: "PLAN", table: "TermLoop")
+        case .tasks:
+            return String(localized: "sidebar.tab.tasks",
+                          defaultValue: "TASKS", table: "TermLoop")
         }
+    }
+
+    /// Restore from UserDefaults with fallback to `.work` for unknown raw values.
+    static func restore(from defaults: UserDefaults = .standard) -> TermLoopSidebarTab {
+        guard let raw = defaults.string(forKey: storageKey),
+              let value = TermLoopSidebarTab(rawValue: raw) else {
+            return .work
+        }
+        return value
     }
 }
