@@ -72,9 +72,22 @@ struct TaskBoardColumnView: View {
     private func handleDrop(providers: [NSItemProvider]) -> Bool {
         guard let onMove, let provider = providers.first else { return false }
         let targetColumn = snapshot.id
-        provider.loadObject(ofClass: NSString.self) { object, _ in
-            guard let text = object as? String, let id = UUID(uuidString: text) else { return }
+        provider.loadObject(ofClass: NSString.self) { object, error in
+            #if DEBUG
+            if let error {
+                print("TaskBoardColumnView drop loadObject error: \(error)")
+            }
+            #endif
+            guard let text = object as? String, let id = UUID(uuidString: text) else {
+                #if DEBUG
+                print("TaskBoardColumnView drop: invalid payload (object=\(String(describing: object)))")
+                #endif
+                return
+            }
             DispatchQueue.main.async {
+                #if DEBUG
+                print("TaskBoardColumnView drop dispatch: id=\(id) → \(targetColumn)")
+                #endif
                 onMove(id, targetColumn)
             }
         }

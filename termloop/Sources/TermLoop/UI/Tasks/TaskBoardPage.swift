@@ -66,8 +66,6 @@ private struct TaskBoardCanvas: View {
             .padding(8)
         }
         .background(Color(nsColor: .windowBackgroundColor))
-        .focusable(true)
         .onExitCommand { selection.select(nil) }
-        .onMoveCommand { _ in /* swallow focus-traversal beep */ }
     }
 }
