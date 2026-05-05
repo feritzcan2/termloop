@@ -49,25 +49,37 @@ public final class TaskBoardImportReconciler {
         }
 
         // Validate existing tasks.
-        store.mutate { file in
-            for i in file.tasks.indices {
-                var t = file.tasks[i]
-                guard let path = t.worktreePath else { continue }
-                let normalized = TaskPathNormalization.normalize(path, relativeTo: projectRoot)
-                let key = Key(projectId: store.projectId, normalizedPath: normalized)
-                if descriptorByKey[key] == nil {
-                    if t.provisionState == .pending {
+        // Use direct workspace-id membership instead of path-keyed lookup —
+        // descriptors can be empty during a startup race, which would
+        // otherwise mark every bound task as "worktree missing" on every
+        // relaunch. If descriptorWorkspaceIds is empty, SKIP validation
+        // entirely (we can't trust the listing yet).
+        // Self-recovering: a task previously stuck on .failed("worktree
+        // missing"/"interrupted") that now resolves cleanly is reset to .ready.
+        let descriptorWorkspaceIds = Set(descriptors.map(\.workspaceId))
+        if !descriptorWorkspaceIds.isEmpty {
+            store.mutate { file in
+                for i in file.tasks.indices {
+                    var t = file.tasks[i]
+                    guard let workspaceId = t.workspaceId else { continue }
+                    let exists = descriptorWorkspaceIds.contains(workspaceId)
+                    switch (exists, t.provisionState) {
+                    case (true, .pending):
                         t.provisionState = .failed(reason: "interrupted")
-                    } else if !t.provisionState.isFailed {
+                        t.updatedAt = Date()
+                        file.tasks[i] = t
+                    case (true, .failed(let reason))
+                         where reason == "worktree missing" || reason == "interrupted":
+                        t.provisionState = .ready
+                        t.updatedAt = Date()
+                        file.tasks[i] = t
+                    case (false, _) where !t.provisionState.isFailed:
                         t.provisionState = .failed(reason: "worktree missing")
+                        t.updatedAt = Date()
+                        file.tasks[i] = t
+                    default:
+                        break
                     }
-                    t.updatedAt = Date()
-                    file.tasks[i] = t
-                } else if t.provisionState == .pending {
-                    // pending without coordinator continuation → also interrupted
-                    t.provisionState = .failed(reason: "interrupted")
-                    t.updatedAt = Date()
-                    file.tasks[i] = t
                 }
             }
         }
