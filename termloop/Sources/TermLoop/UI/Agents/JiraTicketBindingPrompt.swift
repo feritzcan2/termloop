@@ -15,12 +15,6 @@ enum JiraTicketBindingPrompt {
 
     static let bindingId = "ticket"
 
-    /// Cached so we don't recompile on every paste-and-save.
-    /// Pattern: 1+ uppercase letter project code, dash, 1+ digits.
-    private static let keyRegex: NSRegularExpression? = {
-        try? NSRegularExpression(pattern: #"\b[A-Z][A-Z0-9_]*-\d+\b"#)
-    }()
-
     /// Whether the Jira ability is enabled for the project that owns this
     /// workspace. Reads `.termloop/abilities/working-with-jira/ability.json`
     /// directly because `AbilityStore.shared` only mirrors the *active*
@@ -245,6 +239,17 @@ enum JiraTicketBindingPrompt {
         )
         if case .noWorktree = outcome {
             presentNoWorktreeError()
+            return
+        }
+        if let input = RemoteWorkItemBindingRefreshCoordinator.input(
+            workspaceId: firstId,
+            reportedStatePath: reportedStatePath,
+            binding: value
+        ) {
+            RemoteWorkItemBindingRefreshCoordinator.shared.refresh(
+                inputs: [input],
+                reason: "manualRemoteWorkItemLink"
+            )
         }
     }
 
@@ -262,7 +267,7 @@ enum JiraTicketBindingPrompt {
     private static func parse(_ raw: String) -> (key: String, url: String?)? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        guard let key = extractKey(from: trimmed) else { return nil }
+        guard let key = RemoteWorkItemParser.extractJiraKey(from: trimmed) else { return nil }
 
         let url: String?
         if let parsed = URL(string: trimmed),
@@ -273,15 +278,6 @@ enum JiraTicketBindingPrompt {
             url = nil
         }
         return (key, url)
-    }
-
-    private static func extractKey(from input: String) -> String? {
-        guard let regex = keyRegex else { return nil }
-        let upper = input.uppercased()
-        let range = NSRange(upper.startIndex..<upper.endIndex, in: upper)
-        guard let match = regex.firstMatch(in: upper, range: range),
-              let r = Range(match.range, in: upper) else { return nil }
-        return String(upper[r])
     }
 
     private static func presentNoWorktreeError() {
