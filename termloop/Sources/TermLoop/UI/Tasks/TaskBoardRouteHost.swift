@@ -14,7 +14,11 @@ struct TaskBoardRouteHost: View {
 
     var body: some View {
         if let store = TaskBoardStoreProvider.shared.store(for: projectId) {
-            TaskBoardPage(store: store, selection: selection)
+            TaskBoardPage(
+                store: store,
+                selection: selection,
+                coordinator: TaskLifecycleCoordinator.makeForProject(store: store)
+            )
         } else {
             // Project not yet registered (rare race during startup) — placeholder
             // until reconcile registers it. The host re-renders on store mutation.

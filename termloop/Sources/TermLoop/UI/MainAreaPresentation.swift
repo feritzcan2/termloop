@@ -204,7 +204,9 @@ enum MainAreaPresentationPolicy {
         if input.settingsIsOpen {
             return .settings
         }
-        if input.sidebarTab == .tasks, let projectId = input.activeProjectId {
+        if input.sidebarTab == .work,
+           input.workSubTab == .tasks,
+           let projectId = input.activeProjectId {
             return .taskBoard(projectId: projectId)
         }
         if input.sidebarTab == .agents {
