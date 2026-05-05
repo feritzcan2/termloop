@@ -165,3 +165,32 @@ public final class TaskLifecycleCoordinator {
         return "feat/\(collapsed)-\(UUID().uuidString.prefix(4))"
     }
 }
+
+extension TaskLifecycleCoordinator {
+    /// Cancel an in-flight or completed bind. Implements ignore-and-cleanup:
+    /// bumps `bindingGeneration` immediately so any stale async completion is ignored,
+    /// then attempts teardown of the underlying worktree if one already exists.
+    public func cancelBinding(taskId: UUID) throws {
+        let task = try requireTask(taskId)
+        try mutateTask(taskId) { t in
+            t.bindingGeneration += 1
+            t.provisionState = .none
+            t.workspaceId = nil
+            t.worktreePath = nil
+            t.branch = nil
+            t.columnId = .todo
+            t.rank = self.nextRank(in: .todo)
+            t.updatedAt = Date()
+        }
+        try store.saveNow()
+
+        if let workspaceId = task.workspaceId, let path = task.worktreePath {
+            // Fire-and-forget teardown. Failure leaves a repair banner on next reconcile.
+            _Concurrency.Task { [weak self] in
+                guard let self else { return }
+                try? self.workspaces.clearBinding(workspaceId: workspaceId)
+                try? await self.worktrees.teardown(workspaceId: workspaceId, worktreePath: path)
+            }
+        }
+    }
+}
