@@ -1,0 +1,188 @@
+// Copyright (c) 2026-present Ferit Özcan. All rights reserved.
+// Part of TermLoop — GPL-3.0-or-later
+
+import Foundation
+import SwiftUI
+
+public enum TaskBoardStoreError: Error, Equatable {
+    case unsupportedSchema(found: Int, supported: Int)
+    case decodingFailed(String)
+    case writeFailed(String)
+}
+
+@MainActor
+public final class TaskBoardStore: ObservableObject {
+    public let projectRoot: URL
+    public let projectId: UUID
+
+    /// Normalized board view — exactly five columns in declared order.
+    @Published public private(set) var columnSnapshots: [TaskColumnSnapshot] = []
+    /// Currently-selected task's detail snapshot, or nil.
+    @Published public private(set) var selectedTaskDetailSnapshot: TaskDetailSnapshot?
+
+    private var file: TaskBoardFile = TaskBoardFile()
+    private var saveDebounce: DispatchWorkItem?
+    private var selectedTaskId: UUID?
+    /// Per-task agent count (injected by the agent projection). Not persisted.
+    private var agentCounts: [UUID: Int] = [:]
+
+    public init(projectRoot: URL, projectId: UUID) {
+        self.projectRoot = projectRoot
+        self.projectId = projectId
+    }
+
+    public func loadOrCreate() throws {
+        let url = boardFileURL()
+        if FileManager.default.fileExists(atPath: url.path) {
+            let data = try Data(contentsOf: url)
+            let decoded: TaskBoardFile
+            do {
+                decoded = try JSONDecoder.tasks.decode(TaskBoardFile.self, from: data)
+            } catch {
+                throw TaskBoardStoreError.decodingFailed(String(describing: error))
+            }
+            guard decoded.schemaVersion <= TaskBoardFile.currentSchemaVersion else {
+                throw TaskBoardStoreError.unsupportedSchema(
+                    found: decoded.schemaVersion,
+                    supported: TaskBoardFile.currentSchemaVersion
+                )
+            }
+            file = decoded
+        } else {
+            file = TaskBoardFile()
+        }
+        rebuildSnapshots()
+    }
+
+    public func fileSnapshot() -> TaskBoardFile { file }
+
+    public func selectTask(_ id: UUID?) {
+        guard selectedTaskId != id else { return }
+        selectedTaskId = id
+        rebuildDetailSnapshot()
+    }
+
+    public func updateAgentCount(_ count: Int, for taskId: UUID) {
+        guard agentCounts[taskId] != count else { return }
+        agentCounts[taskId] = count
+        rebuildSnapshots()
+    }
+
+    /// Synchronous, lifecycle-critical save. Skips debounce.
+    public func saveNow() throws {
+        saveDebounce?.cancel()
+        saveDebounce = nil
+        try writeAtomically()
+    }
+
+    /// Used by text-only mutations (brief). Coalesces rapid edits.
+    public func scheduleSave(after seconds: TimeInterval = 0.5) {
+        saveDebounce?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            try? self.writeAtomically()
+        }
+        saveDebounce = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+    }
+
+    // MARK: - Internal mutators (TaskLifecycleCoordinator only)
+
+    /// Apply a mutation. Caller is responsible for invoking saveNow()
+    /// or scheduleSave() depending on whether the mutation is lifecycle-critical.
+    internal func mutate(_ block: (inout TaskBoardFile) throws -> Void) rethrows {
+        try block(&file)
+        file.updatedAt = Date()
+        rebuildSnapshots()
+    }
+
+    // MARK: - Test seam
+
+    /// Test-only helper. Production code uses TaskLifecycleCoordinator.
+    internal func appendForTesting(_ task: TaskRecord) throws {
+        mutate { $0.tasks.append(task) }
+    }
+
+    // MARK: - Persistence helpers
+
+    private func writeAtomically() throws {
+        let url = boardFileURL()
+        let dir = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let data: Data
+        do {
+            data = try JSONEncoder.tasks.encode(file)
+        } catch {
+            throw TaskBoardStoreError.writeFailed("encode: \(error)")
+        }
+        let tmp = url.appendingPathExtension("tmp-\(UUID().uuidString)")
+        do {
+            try data.write(to: tmp, options: .atomic)
+            _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)
+        } catch {
+            try? FileManager.default.removeItem(at: tmp)
+            throw TaskBoardStoreError.writeFailed(String(describing: error))
+        }
+    }
+
+    private func boardFileURL() -> URL {
+        projectRoot.appendingPathComponent(".termloop/tasks.json")
+    }
+
+    // MARK: - Snapshot rebuilds
+
+    private func rebuildSnapshots() {
+        rebuildColumnSnapshots()
+        rebuildDetailSnapshot()
+    }
+
+    private func rebuildColumnSnapshots() {
+        let active = file.tasks.filter { $0.archivedAt == nil }
+        let grouped = Dictionary(grouping: active, by: { $0.columnId })
+        let snapshots: [TaskColumnSnapshot] = TaskColumnId.allCases.map { columnId in
+            let cards = (grouped[columnId] ?? [])
+                .sorted { $0.rank < $1.rank }
+                .map { task in
+                    TaskCardSummary(
+                        id: task.id,
+                        title: task.title,
+                        provisionState: task.provisionState,
+                        branch: task.branch,
+                        agentCount: agentCounts[task.id] ?? 0,
+                        hasTicket: false // v2 — Jira projection
+                    )
+                }
+            return TaskColumnSnapshot(id: columnId, cards: cards)
+        }
+        columnSnapshots = snapshots
+    }
+
+    private func rebuildDetailSnapshot() {
+        guard let id = selectedTaskId,
+              let task = file.tasks.first(where: { $0.id == id }) else {
+            selectedTaskDetailSnapshot = nil
+            return
+        }
+        selectedTaskDetailSnapshot = TaskDetailSnapshot(task: task)
+    }
+}
+
+// MARK: - JSON coders
+
+extension JSONEncoder {
+    static let tasks: JSONEncoder = {
+        let e = JSONEncoder()
+        e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        e.dateEncodingStrategy = .iso8601
+        return e
+    }()
+}
+
+extension JSONDecoder {
+    static let tasks: JSONDecoder = {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return d
+    }()
+}
