@@ -12,7 +12,17 @@ import Foundation
 /// state ends up in the per-project `TaskBoardStore` for the UI to display.
 @MainActor
 public enum TaskBoardReconcileHook {
+    /// Idempotent setup: registers the workspace lister so subsequent
+    /// `projectDidActivate` calls have something to project from. Safe to call
+    /// multiple times. Invoked from app start (TermLoopHooks).
+    public static func bootstrap() {
+        if TaskBoardStoreProvider.shared.workspaceLister == nil {
+            TaskBoardStoreProvider.shared.workspaceLister = TaskBoardWorkspaceListingAdapter.shared
+        }
+    }
+
     public static func projectDidActivate(_ projectId: UUID?) {
+        bootstrap()
         guard let projectId else { return }
         guard let store = TaskBoardStoreProvider.shared.store(for: projectId) else { return }
         guard let workspaces = TaskBoardStoreProvider.shared.workspaceLister else { return }

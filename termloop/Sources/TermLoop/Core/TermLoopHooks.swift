@@ -2735,6 +2735,12 @@ private struct AgentMainAreaOverlaySwap<Content: View>: View {
             applyPresentation(reason: "activeProject")
             TaskBoardReconcileHook.projectDidActivate(newValue)
         }
+        .task {
+            // Fires once when the host view appears with whatever activeProjectId
+            // is currently restored — covers the bootstrap case where .onChange
+            // does not fire for the initial value.
+            TaskBoardReconcileHook.projectDidActivate(projectStore.activeProjectId)
+        }
     }
 }
 
