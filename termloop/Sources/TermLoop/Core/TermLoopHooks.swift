@@ -2696,6 +2696,8 @@ private struct AgentMainAreaOverlaySwap<Content: View>: View {
                 content()
             case .projectEmpty:
                 overlayContainer { MainAreaProjectEmptyState() }
+            case let .taskBoard(projectId):
+                overlayContainer { TaskBoardRouteHost(projectId: projectId) }
             }
         }
         .id(overlayMode.identity)
