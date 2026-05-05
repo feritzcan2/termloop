@@ -1781,7 +1781,18 @@ struct WorktreeAgentsPanel: View {
         var lines: [String] = []
         switch group.statusKind {
         case .branchDrift:
-            lines.append("Git HEAD no longer matches TermLoop's expected branch.")
+            let expected = group.expectedBranches.joined(separator: ", ")
+            if let observed, !expected.isEmpty {
+                lines.append("Branch drift: TermLoop expected \(expected), but this worktree is currently on \(observed).")
+            } else if !expected.isEmpty {
+                lines.append("Branch drift: TermLoop expected \(expected), but Git HEAD moved away.")
+            } else if let observed {
+                lines.append("Branch drift: this worktree is currently on \(observed), but TermLoop expected a different branch.")
+            } else {
+                lines.append("Branch drift: Git HEAD no longer matches TermLoop's expected branch.")
+            }
+            lines.append("This usually happens after running git switch, checkout, rebase, or bisect outside TermLoop.")
+            lines.append("Agents are blocked until you switch Git back or choose “Use Current Git Branch as Expected…” from the menu.")
         case .locked:
             lines.append("Git reports this worktree as locked.")
         case .prunable:
@@ -1795,16 +1806,42 @@ struct WorktreeAgentsPanel: View {
         case .unattached, .healthy, nil:
             lines.append("Worktree is healthy.")
         }
-        if !group.expectedBranches.isEmpty {
+        if group.statusKind != .branchDrift, !group.expectedBranches.isEmpty {
             lines.append("Expected: \(group.expectedBranches.joined(separator: ", "))")
         }
-        if let observed {
+        if group.statusKind != .branchDrift, let observed {
             lines.append("Observed: \(observed)")
         }
         if let path {
             lines.append(path)
         }
         return lines.joined(separator: "\n")
+    }
+
+    private func openTargetLabel(for target: WorktreeOpenTarget?) -> String {
+        guard let target else {
+            return String(
+                localized: "worktreeAgents.group.openTarget.configureFirst",
+                defaultValue: "Open Target…",
+                table: "TermLoop"
+            )
+        }
+        let rawRelative = target.relativePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let relative = rawRelative.isEmpty ? "." : rawRelative
+        if let appName = target.applicationDisplayName?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !appName.isEmpty {
+            return String(
+                localized: "worktreeAgents.group.openTarget.withApp",
+                defaultValue: "Open \(relative) in \(appName)",
+                table: "TermLoop"
+            )
+        }
+        return String(
+            localized: "worktreeAgents.group.openTarget.default",
+            defaultValue: "Open \(relative)",
+            table: "TermLoop"
+        )
     }
 
     @ViewBuilder
@@ -2080,16 +2117,102 @@ struct WorktreeAgentsPanel: View {
                 }
 
                 if let worktreePath = group.worktreePath {
-                    Button {
-                        WorktreeRepairCoordinator.shared.reveal(path: worktreePath)
+                    let projectId = sourceWorkspace(for: group)?.projectId
+                        ?? group.workspaces.first?.projectId
+                    let openTarget = projectId
+                        .flatMap { ProjectStore.shared.project(id: $0)?.worktreeOpenTarget }
+                    Menu {
+                        Button {
+                            WorktreeRepairCoordinator.shared.openFolder(path: worktreePath)
+                        } label: {
+                            Label(
+                                String(
+                                    localized: "worktreeAgents.group.openFolder",
+                                    defaultValue: "Open Folder",
+                                    table: "TermLoop"
+                                ),
+                                systemImage: "folder"
+                            )
+                        }
+
+                        Button {
+                            WorktreeRepairCoordinator.shared.openConfiguredTarget(
+                                projectId: projectId,
+                                worktreePath: worktreePath
+                            )
+                        } label: {
+                            Label(
+                                openTargetLabel(for: openTarget),
+                                systemImage: "arrow.up.right.square"
+                            )
+                        }
+
+                        Button {
+                            WorktreeRepairCoordinator.shared.configureOpenTarget(
+                                projectId: projectId,
+                                worktreePath: worktreePath
+                            )
+                        } label: {
+                            Label(
+                                String(
+                                    localized: "worktreeAgents.group.configureOpenTarget",
+                                    defaultValue: "Configure Open Target…",
+                                    table: "TermLoop"
+                                ),
+                                systemImage: "slider.horizontal.3"
+                            )
+                        }
+
+                        if openTarget != nil {
+                            Button {
+                                WorktreeRepairCoordinator.shared.clearOpenTarget(projectId: projectId)
+                            } label: {
+                                Label(
+                                    String(
+                                        localized: "worktreeAgents.group.clearOpenTarget",
+                                        defaultValue: "Clear Open Target",
+                                        table: "TermLoop"
+                                    ),
+                                    systemImage: "xmark.circle"
+                                )
+                            }
+                        }
+
+                        Divider()
+
+                        Button {
+                            WorktreeRepairCoordinator.shared.reveal(path: worktreePath)
+                        } label: {
+                            Label(
+                                String(
+                                    localized: "worktreeAgents.group.revealWorktree",
+                                    defaultValue: "Reveal in Finder",
+                                    table: "TermLoop"
+                                ),
+                                systemImage: "magnifyingglass"
+                            )
+                        }
+
+                        Button {
+                            WorktreeRepairCoordinator.shared.copyPath(worktreePath)
+                        } label: {
+                            Label(
+                                String(
+                                    localized: "worktreeAgents.group.copyPath",
+                                    defaultValue: "Copy Path",
+                                    table: "TermLoop"
+                                ),
+                                systemImage: "doc.on.doc"
+                            )
+                        }
                     } label: {
                         Label(
                             String(
-                                localized: "worktreeAgents.group.revealWorktree",
-                                defaultValue: "Reveal Worktree Folder",
+                                localized: "worktreeAgents.group.openWorktreeMenu",
+                                defaultValue: "Open Worktree",
                                 table: "TermLoop"
                             ),
-                            systemImage: "folder"
+                            systemImage: "arrow.up.right.square"
                         )
                     }
                 }

@@ -3,6 +3,31 @@
 
 import Foundation
 
+/// User-configured entrypoint for opening a worktree in an external app.
+///
+/// `relativePath` is resolved against each physical worktree path, so a user
+/// can configure `MyApp.sln` once on the project and have TermLoop open the
+/// matching solution in every branch worktree without understanding the
+/// project's language or build system.
+struct WorktreeOpenTarget: Hashable, Sendable, Codable {
+    var relativePath: String
+    var applicationBundleIdentifier: String?
+    var applicationURLPath: String?
+    var applicationDisplayName: String?
+
+    init(
+        relativePath: String = ".",
+        applicationBundleIdentifier: String? = nil,
+        applicationURLPath: String? = nil,
+        applicationDisplayName: String? = nil
+    ) {
+        self.relativePath = relativePath
+        self.applicationBundleIdentifier = applicationBundleIdentifier
+        self.applicationURLPath = applicationURLPath
+        self.applicationDisplayName = applicationDisplayName
+    }
+}
+
 /// App-level project entry. A project is a named folder that groups one
 /// or more workspaces. Projects span windows and persist across app launches.
 struct Project: Identifiable, Hashable, Sendable {
@@ -20,6 +45,9 @@ struct Project: Identifiable, Hashable, Sendable {
     /// launch time. `nil` means "use whatever the user is logged in with
     /// in `~/.claude/`" (legacy behavior).
     var claudeCredentialProfileId: String?
+    /// Optional project-level worktree entrypoint. Stored as a relative path
+    /// so the same target can be opened across every worktree checkout.
+    var worktreeOpenTarget: WorktreeOpenTarget?
 
     init(
         id: UUID = UUID(),
@@ -27,7 +55,8 @@ struct Project: Identifiable, Hashable, Sendable {
         folderPath: String,
         createdAt: Date = Date(),
         defaultTerminalAgentId: String? = nil,
-        claudeCredentialProfileId: String? = nil
+        claudeCredentialProfileId: String? = nil,
+        worktreeOpenTarget: WorktreeOpenTarget? = nil
     ) {
         self.id = id
         self.name = name
@@ -35,6 +64,7 @@ struct Project: Identifiable, Hashable, Sendable {
         self.createdAt = createdAt
         self.defaultTerminalAgentId = defaultTerminalAgentId
         self.claudeCredentialProfileId = claudeCredentialProfileId
+        self.worktreeOpenTarget = worktreeOpenTarget
     }
 }
 
@@ -47,6 +77,7 @@ struct SessionProjectSnapshot: Codable, Sendable {
     var createdAt: TimeInterval
     var defaultTerminalAgentId: String?
     var claudeCredentialProfileId: String?
+    var worktreeOpenTarget: WorktreeOpenTarget?
 
     init(_ project: Project) {
         self.id = project.id.uuidString
@@ -55,6 +86,7 @@ struct SessionProjectSnapshot: Codable, Sendable {
         self.createdAt = project.createdAt.timeIntervalSince1970
         self.defaultTerminalAgentId = project.defaultTerminalAgentId
         self.claudeCredentialProfileId = project.claudeCredentialProfileId
+        self.worktreeOpenTarget = project.worktreeOpenTarget
     }
 
     var project: Project? {
@@ -65,7 +97,8 @@ struct SessionProjectSnapshot: Codable, Sendable {
             folderPath: folderPath,
             createdAt: Date(timeIntervalSince1970: createdAt),
             defaultTerminalAgentId: defaultTerminalAgentId,
-            claudeCredentialProfileId: claudeCredentialProfileId
+            claudeCredentialProfileId: claudeCredentialProfileId,
+            worktreeOpenTarget: worktreeOpenTarget
         )
     }
 }
