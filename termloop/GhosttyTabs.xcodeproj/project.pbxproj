@@ -475,6 +475,7 @@
 		D1320AA0D1320AA0D1320AA1 /* AppIconDockTilePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1320AA0D1320AA0D1320AA4 /* AppIconDockTilePlugin.swift */; };
 		D1320AA0D1320AA0D1320AA2 /* TermLoopDockTilePlugin.plugin in Copy Dock Tile Plugin */ = {isa = PBXBuildFile; fileRef = D1320AA0D1320AA0D1320AA5 /* TermLoopDockTilePlugin.plugin */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		D1BEF00002A1B2C3D4E5F719 /* open in Copy CLI */ = {isa = PBXBuildFile; fileRef = D1BEF00001A1B2C3D4E5F719 /* open */; };
+		D27748943B71F2008103F954 /* TaskBoardPageRenderingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE39141B233E3C75658ED9FE /* TaskBoardPageRenderingTests.swift */; };
 		D383B93B27E0DE17A52B57D1 /* QuickActionPreviewBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DDB9A196E62734D60CF8C81 /* QuickActionPreviewBar.swift */; };
 		D95C2927E9A52EC6BC63CDD1 /* QuickActionAbilityChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52ADC271E06D103B0F01D03A /* QuickActionAbilityChip.swift */; };
 		D9B10001A6EAC0DE00000001 /* WorktreeContextBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9B10001A6EAC0DE00000002 /* WorktreeContextBlock.swift */; };
@@ -1070,6 +1071,7 @@
 		CCF2EFA4A693DFB011E49A41 /* APNsConfig.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = APNsConfig.swift; sourceTree = "<group>"; };
 		CDD43A7966611CFB48533E86 /* JiraMCPPreset.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = JiraMCPPreset.swift; sourceTree = "<group>"; };
 		CE10B94B229F22A0413E4DA3 /* TaskAgentsSection.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskAgentsSection.swift; sourceTree = "<group>"; };
+		CE39141B233E3C75658ED9FE /* TaskBoardPageRenderingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskBoardPageRenderingTests.swift; sourceTree = "<group>"; };
 		CEC82B7E6651D0AC127F2EA4 /* PushTokenStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PushTokenStore.swift; sourceTree = "<group>"; };
 		CF47B56E1F4AD8F58680B060 /* TaskSidebarTaskListView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskSidebarTaskListView.swift; sourceTree = "<group>"; };
 		CF965E071F199593E39F3E0D /* ContextBankMirrorSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextBankMirrorSheet.swift; sourceTree = "<group>"; };
@@ -2099,6 +2101,7 @@
 				D55E14A95F044F0DB8456A01 /* TaskLifecycleCoordinatorTests.swift */,
 				9F9875760AC9F9D43AC7820C /* TaskBoardImportReconcilerTests.swift */,
 				334F04CDF93586294C380D55 /* TaskSelectionStoreTests.swift */,
+				CE39141B233E3C75658ED9FE /* TaskBoardPageRenderingTests.swift */,
 			);
 			path = termloopTests;
 			sourceTree = "<group>";
@@ -2903,6 +2906,7 @@
 				EC474E83E4FEA40D26F7D136 /* TaskLifecycleCoordinatorTests.swift in Sources */,
 				FEA93B31B4915D2225D2B238 /* TaskBoardImportReconcilerTests.swift in Sources */,
 				1D58E5DC719760980EA2984B /* TaskSelectionStoreTests.swift in Sources */,
+				D27748943B71F2008103F954 /* TaskBoardPageRenderingTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
