@@ -1,0 +1,116 @@
+// Copyright (c) 2026-present Ferit Özcan. All rights reserved.
+// Part of TermLoop — GPL-3.0-or-later
+
+import Foundation
+
+public struct TaskWorkspaceDescriptor: Equatable, Sendable {
+    public let workspaceId: UUID
+    public let projectId: UUID
+    public let branch: String?
+    public let worktreePath: String
+
+    public init(workspaceId: UUID, projectId: UUID, branch: String?, worktreePath: String) {
+        self.workspaceId = workspaceId
+        self.projectId = projectId
+        self.branch = branch
+        self.worktreePath = worktreePath
+    }
+}
+
+@MainActor
+public protocol TaskBoardWorkspaceListing: AnyObject {
+    func workspaces(in projectId: UUID) -> [TaskWorkspaceDescriptor]
+    func projectRoot(for projectId: UUID) -> URL
+}
+
+@MainActor
+public final class TaskBoardImportReconciler {
+    private let store: TaskBoardStore
+    private let workspaces: TaskBoardWorkspaceListing
+
+    public init(store: TaskBoardStore, workspaces: TaskBoardWorkspaceListing) {
+        self.store = store
+        self.workspaces = workspaces
+    }
+
+    public func run() throws {
+        let projectRoot = workspaces.projectRoot(for: store.projectId)
+        let descriptors = workspaces.workspaces(in: store.projectId)
+        // Use bucketed dictionary, NOT `Dictionary(uniqueKeysWithValues:)` — duplicates would crash.
+        // Two metadata records pointing at the same normalized path is corruption; keep first, surface repair banner via reconcile.
+        var descriptorByKey: [Key: TaskWorkspaceDescriptor] = [:]
+        for d in descriptors {
+            let normalized = TaskPathNormalization.normalize(d.worktreePath, relativeTo: projectRoot)
+            let key = Key(projectId: store.projectId, normalizedPath: normalized)
+            if descriptorByKey[key] == nil {
+                descriptorByKey[key] = d
+            }
+            // Else: duplicate path — first wins; reconcile pass on existing tasks will flag mismatched workspaceIds via repair banner.
+        }
+
+        // Validate existing tasks.
+        store.mutate { file in
+            for i in file.tasks.indices {
+                var t = file.tasks[i]
+                guard let path = t.worktreePath else { continue }
+                let normalized = TaskPathNormalization.normalize(path, relativeTo: projectRoot)
+                let key = Key(projectId: store.projectId, normalizedPath: normalized)
+                if descriptorByKey[key] == nil {
+                    if t.provisionState == .pending {
+                        t.provisionState = .failed(reason: "interrupted")
+                    } else if !t.provisionState.isFailed {
+                        t.provisionState = .failed(reason: "worktree missing")
+                    }
+                    t.updatedAt = Date()
+                    file.tasks[i] = t
+                } else if t.provisionState == .pending {
+                    // pending without coordinator continuation → also interrupted
+                    t.provisionState = .failed(reason: "interrupted")
+                    t.updatedAt = Date()
+                    file.tasks[i] = t
+                }
+            }
+        }
+
+        // Build set of keys already present in tasks.
+        var existingKeys: Set<Key> = []
+        for task in store.fileSnapshot().tasks {
+            guard let path = task.worktreePath else { continue }
+            let key = Key(
+                projectId: store.projectId,
+                normalizedPath: TaskPathNormalization.normalize(path, relativeTo: projectRoot)
+            )
+            existingKeys.insert(key)
+        }
+
+        // Import any orphan workspaces.
+        store.mutate { file in
+            for (key, d) in descriptorByKey where !existingKeys.contains(key) {
+                let title = d.branch ?? (URL(fileURLWithPath: d.worktreePath).lastPathComponent)
+                let inProgressRanks = file.tasks
+                    .filter { $0.columnId == .inProgress && $0.archivedAt == nil }
+                    .map(\.rank)
+                    .sorted()
+                let rank: String = inProgressRanks.last.map(TaskRanking.after) ?? TaskRanking.initial()
+                let task = TaskRecord(
+                    projectId: store.projectId,
+                    title: title,
+                    columnId: .inProgress,
+                    rank: rank,
+                    workspaceId: d.workspaceId,
+                    worktreePath: d.worktreePath,
+                    branch: d.branch,
+                    bindingGeneration: 1,
+                    provisionState: .ready
+                )
+                file.tasks.append(task)
+            }
+        }
+        try store.saveNow()
+    }
+
+    private struct Key: Hashable {
+        let projectId: UUID
+        let normalizedPath: String
+    }
+}
