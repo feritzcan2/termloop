@@ -47,6 +47,17 @@ private struct TaskBoardCanvas: View {
                                     try? await c.moveColumn(taskId: taskId, to: target)
                                 }
                             }
+                        },
+                        onCommandClick: { card in
+                            // Look up the task's bound workspaceId on demand
+                            // so card summaries don't need to carry it.
+                            if let task = store.fileSnapshot().tasks.first(where: { $0.id == card.id }),
+                               let workspaceId = task.workspaceId {
+                                TaskQuickActions.openWorktree(workspaceId: workspaceId)
+                            }
+                        },
+                        onArchive: coordinator.map { c in
+                            { id in try? c.archiveTask(id) }
                         }
                     )
                     .frame(minWidth: 220)
@@ -55,5 +66,8 @@ private struct TaskBoardCanvas: View {
             .padding(8)
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .focusable(true)
+        .onExitCommand { selection.select(nil) }
+        .onMoveCommand { _ in /* swallow focus-traversal beep */ }
     }
 }

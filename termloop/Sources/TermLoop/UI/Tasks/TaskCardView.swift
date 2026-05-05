@@ -10,6 +10,8 @@ import SwiftUI
 struct TaskCardView: View {
     let card: TaskCardSummary
     @ObservedObject var selection: TaskSelectionStore
+    var onCommandClick: ((TaskCardSummary) -> Void)?
+    var onArchive: ((UUID) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -51,11 +53,27 @@ struct TaskCardView: View {
         )
         .opacity(card.provisionState == .pending ? 0.7 : 1.0)
         .contentShape(Rectangle())
-        .onTapGesture { selection.select(card.id) }
+        .onTapGesture {
+            if NSEvent.modifierFlags.contains(.command), let onCommandClick {
+                onCommandClick(card)
+            } else {
+                selection.select(card.id)
+            }
+        }
         .onDrag {
             // Pending cards still produce a provider but the column drop handler
             // is responsible for ignoring stale ids; we expose the id either way.
             NSItemProvider(object: card.id.uuidString as NSString)
+        }
+        .contextMenu {
+            Button(String(localized: "tasks.card.menu.openInWorkTab",
+                          defaultValue: "Open in Work tab", table: "TermLoop")) {
+                onCommandClick?(card)
+            }
+            Button(String(localized: "tasks.card.menu.archive",
+                          defaultValue: "Archive", table: "TermLoop")) {
+                onArchive?(card.id)
+            }
         }
     }
 

@@ -12,6 +12,8 @@ struct TaskBoardColumnView: View {
     let snapshot: TaskColumnSnapshot
     @ObservedObject var selection: TaskSelectionStore
     var onMove: ((_ taskId: UUID, _ to: TaskColumnId) -> Void)?
+    var onCommandClick: ((TaskCardSummary) -> Void)?
+    var onArchive: ((UUID) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -29,7 +31,12 @@ struct TaskBoardColumnView: View {
             ScrollView(.vertical) {
                 LazyVStack(spacing: 4) {
                     ForEach(snapshot.cards) { card in
-                        TaskCardView(card: card, selection: selection)
+                        TaskCardView(
+                            card: card,
+                            selection: selection,
+                            onCommandClick: onCommandClick,
+                            onArchive: onArchive
+                        )
                     }
                 }
                 .padding(.horizontal, 4)
