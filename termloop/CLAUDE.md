@@ -10,6 +10,8 @@
 - `Sources/TermLoop/AgentInputs/CLAUDE.md` — agent launch/input composition
 - `Sources/TermLoop/Git/CLAUDE.md` — git command runner, stores, and invalidation
 - `Sources/TermLoop/AgentTerminals/CLAUDE.md` — terminal-agent lifecycle
+- `Sources/TermLoop/Tasks/CLAUDE.md` — Task domain (single-writer coordinator, store, reconciler, ranking, store provider)
+- `Sources/TermLoop/UI/Tasks/CLAUDE.md` — Tasks page UI (board, card, sidebar drill-in, projection sections)
 
 ## Git workflow (termloop)
 
