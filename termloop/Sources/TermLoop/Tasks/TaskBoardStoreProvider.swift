@@ -22,10 +22,27 @@ public final class TaskBoardStoreProvider {
 
     public func store(for projectId: UUID) -> TaskBoardStore? {
         if let existing = stores[projectId] { return existing }
-        guard let root = projectRoots[projectId] else { return nil }
+        let root: URL
+        if let registered = projectRoots[projectId] {
+            root = registered
+        } else if let resolved = Self.resolveRoot(projectId) {
+            // Lazy fallback: resolve via ProjectStore when no explicit registration
+            // happened. Idempotent — caches the answer for next call.
+            projectRoots[projectId] = resolved
+            root = resolved
+        } else {
+            return nil
+        }
         let store = TaskBoardStore(projectRoot: root, projectId: projectId)
         try? store.loadOrCreate()
         stores[projectId] = store
         return store
+    }
+
+    /// Looks up the project's folder via the existing `ProjectStore`. Static so
+    /// tests can replace the closure with their own resolver.
+    static var resolveRoot: (UUID) -> URL? = { projectId in
+        guard let project = ProjectStore.shared.project(id: projectId) else { return nil }
+        return URL(fileURLWithPath: project.folderPath)
     }
 }

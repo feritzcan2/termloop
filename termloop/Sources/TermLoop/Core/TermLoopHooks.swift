@@ -2721,12 +2721,13 @@ private struct AgentMainAreaOverlaySwap<Content: View>: View {
             )
             applyPresentation(reason: "workSubTab")
         }
-        .onChange(of: projectStore.activeProjectId) { _ in
+        .onChange(of: projectStore.activeProjectId) { newValue in
             MainAreaPresentationCoordinator.shared.handleNavigationEvent(
                 .projectChanged,
                 tabManager: tabManager
             )
             applyPresentation(reason: "activeProject")
+            TaskBoardReconcileHook.projectDidActivate(newValue)
         }
     }
 }
