@@ -90,3 +90,48 @@ final class FakeWorktreeCoordinator: TaskBoundWorktreeProvisioning {
 
     func teardown(workspaceId: UUID, worktreePath: String) async throws {}
 }
+
+extension TaskLifecycleCoordinatorTests {
+    func testBindFailureRevertsToPreviousColumn() async throws {
+        struct E: Error {}
+        fakeWorktrees.nextResult = .failure(E())
+        let id = try coordinator.createTask(title: "feat", columnId: .todo)
+        do {
+            try await coordinator.moveColumn(taskId: id, to: .inProgress)
+            XCTFail("expected throw")
+        } catch {}
+        let task = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == id })
+        XCTAssertEqual(task.columnId, .todo)
+        XCTAssertTrue(task.provisionState.isFailed)
+        XCTAssertNil(task.workspaceId)
+        XCTAssertEqual(task.bindingGeneration, 0)
+    }
+
+    func testCancelIgnoresStaleCompletion() async throws {
+        let id = try coordinator.createTask(title: "feat", columnId: .todo)
+        try await coordinator.moveColumn(taskId: id, to: .inProgress)
+        let beforeGen = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == id }).bindingGeneration
+
+        try coordinator.cancelBinding(taskId: id) // bumps generation, marks pending teardown
+        let afterGen = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == id }).bindingGeneration
+        XCTAssertGreaterThan(afterGen, beforeGen)
+    }
+
+    func testRebindAfterUnbindSucceeds() async throws {
+        let id = try coordinator.createTask(title: "feat", columnId: .todo)
+        try await coordinator.moveColumn(taskId: id, to: .inProgress)
+        try coordinator.cancelBinding(taskId: id)
+
+        // Reset fake to a fresh result and re-trigger bind.
+        fakeWorktrees.nextResult = .success(
+            TaskWorktreeProvisionResult(
+                workspaceId: UUID(),
+                branch: "feat/auto-2",
+                worktreePath: "/tmp/wt2"
+            )
+        )
+        try await coordinator.bindWorktree(taskId: id)
+        let task = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == id })
+        XCTAssertEqual(task.provisionState, .ready)
+    }
+}
