@@ -3,6 +3,7 @@
 
 import AppKit
 import Foundation
+import UniformTypeIdentifiers
 
 @MainActor
 final class WorktreeRepairCoordinator {
@@ -11,6 +12,18 @@ final class WorktreeRepairCoordinator {
     private struct SwitchPreflight {
         let isClean: Bool
         let changes: [SidebarGitChangeItem]?
+    }
+
+    private struct OpenApplicationChoice {
+        let url: URL?
+        let bundleIdentifier: String?
+        let displayName: String?
+
+        static let systemDefault = OpenApplicationChoice(
+            url: nil,
+            bundleIdentifier: nil,
+            displayName: nil
+        )
     }
 
     private init() {}
@@ -70,6 +83,94 @@ final class WorktreeRepairCoordinator {
         let parent = url.deletingLastPathComponent()
         if FileManager.default.fileExists(atPath: parent.path) {
             NSWorkspace.shared.open(parent)
+        }
+    }
+
+    func openFolder(path rawPath: String) {
+        let path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty else { return }
+        NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: true))
+    }
+
+    func copyPath(_ rawPath: String) {
+        let path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(path, forType: .string)
+    }
+
+    func openConfiguredTarget(projectId: UUID?, worktreePath rawWorktreePath: String) {
+        do {
+            let project = try resolveProject(projectId: projectId, fallbackWorkspaceIds: [])
+            guard let target = project.worktreeOpenTarget else {
+                configureOpenTarget(projectId: project.id, worktreePath: rawWorktreePath)
+                return
+            }
+            guard let targetURL = try resolveOpenTargetURL(
+                target,
+                worktreePath: rawWorktreePath
+            ) else { return }
+            open(targetURL: targetURL, target: target)
+        } catch {
+            presentError(
+                title: String(
+                    localized: "worktreeOpenTarget.open.errorTitle",
+                    defaultValue: "Could not open worktree target",
+                    table: "TermLoop"
+                ),
+                message: displayMessage(for: error)
+            )
+        }
+    }
+
+    func configureOpenTarget(projectId: UUID?, worktreePath rawWorktreePath: String) {
+        do {
+            let project = try resolveProject(projectId: projectId, fallbackWorkspaceIds: [])
+            let worktreeURL = URL(fileURLWithPath: rawWorktreePath)
+                .standardizedFileURL
+            guard let targetURL = try chooseOpenTargetURL(worktreeURL: worktreeURL) else {
+                return
+            }
+            let relativePath = try relativeOpenTargetPath(
+                targetURL: targetURL,
+                worktreeURL: worktreeURL
+            )
+            guard let appChoice = chooseOpenTargetApplication() else { return }
+            ProjectStore.shared.setWorktreeOpenTarget(
+                WorktreeOpenTarget(
+                    relativePath: relativePath,
+                    applicationBundleIdentifier: appChoice.bundleIdentifier,
+                    applicationURLPath: appChoice.url?.path,
+                    applicationDisplayName: appChoice.displayName
+                ),
+                project: project.id
+            )
+            openConfiguredTarget(projectId: project.id, worktreePath: rawWorktreePath)
+        } catch {
+            presentError(
+                title: String(
+                    localized: "worktreeOpenTarget.configure.errorTitle",
+                    defaultValue: "Could not configure open target",
+                    table: "TermLoop"
+                ),
+                message: displayMessage(for: error)
+            )
+        }
+    }
+
+    func clearOpenTarget(projectId: UUID?) {
+        do {
+            let project = try resolveProject(projectId: projectId, fallbackWorkspaceIds: [])
+            ProjectStore.shared.setWorktreeOpenTarget(nil, project: project.id)
+        } catch {
+            presentError(
+                title: String(
+                    localized: "worktreeOpenTarget.clear.errorTitle",
+                    defaultValue: "Could not clear open target",
+                    table: "TermLoop"
+                ),
+                message: displayMessage(for: error)
+            )
         }
     }
 
@@ -359,6 +460,192 @@ final class WorktreeRepairCoordinator {
             throw WorktreeError.invalidParams(reason: "worktree path is empty")
         }
         return path
+    }
+
+    private func chooseOpenTargetURL(worktreeURL: URL) throws -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = String(
+            localized: "worktreeOpenTarget.targetPanel.title",
+            defaultValue: "Choose Worktree Open Target",
+            table: "TermLoop"
+        )
+        panel.message = String(
+            localized: "worktreeOpenTarget.targetPanel.message",
+            defaultValue: "Choose the file or folder TermLoop should open for every worktree in this project. The path is saved relative to the worktree.",
+            table: "TermLoop"
+        )
+        panel.prompt = String(
+            localized: "worktreeOpenTarget.targetPanel.prompt",
+            defaultValue: "Choose Target",
+            table: "TermLoop"
+        )
+        panel.directoryURL = worktreeURL
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        return url.standardizedFileURL
+    }
+
+    private func chooseOpenTargetApplication() -> OpenApplicationChoice? {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = String(
+            localized: "worktreeOpenTarget.appChoice.title",
+            defaultValue: "Which app should open this target?",
+            table: "TermLoop"
+        )
+        alert.informativeText = String(
+            localized: "worktreeOpenTarget.appChoice.body",
+            defaultValue: "Use the system default app, or choose a specific app such as Rider, Xcode, VS Code, or Cursor.",
+            table: "TermLoop"
+        )
+        alert.addButton(withTitle: String(
+            localized: "worktreeOpenTarget.appChoice.default",
+            defaultValue: "Use Default App",
+            table: "TermLoop"
+        ))
+        alert.addButton(withTitle: String(
+            localized: "worktreeOpenTarget.appChoice.choose",
+            defaultValue: "Choose App…",
+            table: "TermLoop"
+        ))
+        alert.addButton(withTitle: String(
+            localized: "common.cancel",
+            defaultValue: "Cancel",
+            table: "TermLoop"
+        ))
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return .systemDefault
+        case .alertSecondButtonReturn:
+            return chooseApplicationBundle()
+        default:
+            return nil
+        }
+    }
+
+    private func chooseApplicationBundle() -> OpenApplicationChoice? {
+        let panel = NSOpenPanel()
+        panel.title = String(
+            localized: "worktreeOpenTarget.appPanel.title",
+            defaultValue: "Choose Application",
+            table: "TermLoop"
+        )
+        panel.prompt = String(
+            localized: "worktreeOpenTarget.appPanel.prompt",
+            defaultValue: "Choose App",
+            table: "TermLoop"
+        )
+        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.applicationBundle]
+
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        let bundle = Bundle(url: url)
+        let displayName = bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            ?? bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? url.deletingPathExtension().lastPathComponent
+        return OpenApplicationChoice(
+            url: url.standardizedFileURL,
+            bundleIdentifier: bundle?.bundleIdentifier,
+            displayName: displayName
+        )
+    }
+
+    private func relativeOpenTargetPath(
+        targetURL: URL,
+        worktreeURL: URL
+    ) throws -> String {
+        let root = worktreeURL.standardizedFileURL.path
+        let target = targetURL.standardizedFileURL.path
+        if target == root { return "." }
+        guard target.hasPrefix(root + "/") else {
+            throw WorktreeError.invalidParams(
+                reason: "Choose a file or folder inside the worktree."
+            )
+        }
+        let relative = String(target.dropFirst(root.count + 1))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !relative.isEmpty, !relative.hasPrefix("/") else {
+            throw WorktreeError.invalidParams(reason: "invalid open target path")
+        }
+        return relative
+    }
+
+    private func resolveOpenTargetURL(
+        _ target: WorktreeOpenTarget,
+        worktreePath rawWorktreePath: String
+    ) throws -> URL? {
+        let worktreeURL = URL(fileURLWithPath: rawWorktreePath)
+            .standardizedFileURL
+        let trimmedRelative = target.relativePath
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let relativePath = trimmedRelative.isEmpty ? "." : trimmedRelative
+        let targetURL = relativePath == "."
+            ? worktreeURL
+            : worktreeURL.appendingPathComponent(relativePath)
+        if FileManager.default.fileExists(atPath: targetURL.path) {
+            return targetURL
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(
+            localized: "worktreeOpenTarget.missing.title",
+            defaultValue: "Open target not found",
+            table: "TermLoop"
+        )
+        alert.informativeText = String(
+            localized: "worktreeOpenTarget.missing.body",
+            defaultValue: "TermLoop could not find \(relativePath) in this worktree.",
+            table: "TermLoop"
+        )
+        alert.addButton(withTitle: String(
+            localized: "worktreeOpenTarget.missing.openFolder",
+            defaultValue: "Open Folder",
+            table: "TermLoop"
+        ))
+        alert.addButton(withTitle: String(
+            localized: "common.cancel",
+            defaultValue: "Cancel",
+            table: "TermLoop"
+        ))
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return worktreeURL
+        default:
+            return nil
+        }
+    }
+
+    private func open(targetURL: URL, target: WorktreeOpenTarget) {
+        if let bundleId = target.applicationBundleIdentifier,
+           let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
+            open(targetURL: targetURL, applicationURL: appURL)
+            return
+        }
+        if let appPath = target.applicationURLPath,
+           FileManager.default.fileExists(atPath: appPath) {
+            open(targetURL: targetURL, applicationURL: URL(fileURLWithPath: appPath))
+            return
+        }
+        NSWorkspace.shared.open(targetURL)
+    }
+
+    private func open(targetURL: URL, applicationURL: URL) {
+        let configuration = NSWorkspace.OpenConfiguration()
+        NSWorkspace.shared.open(
+            [targetURL],
+            withApplicationAt: applicationURL,
+            configuration: configuration
+        )
     }
 
     private func runGitMutation(

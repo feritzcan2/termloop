@@ -236,6 +236,13 @@ final class ProjectStore: ObservableObject {
         onMutation?()
     }
 
+    func setWorktreeOpenTarget(_ target: WorktreeOpenTarget?, project id: UUID) {
+        guard let index = projects.firstIndex(where: { $0.id == id }) else { return }
+        guard projects[index].worktreeOpenTarget != target else { return }
+        projects[index].worktreeOpenTarget = target
+        onMutation?()
+    }
+
     /// Removes a project from the catalog. Callers are responsible for
     /// handling workspaces that referenced the deleted project (either
     /// reassigning them to another project or closing them) before calling
