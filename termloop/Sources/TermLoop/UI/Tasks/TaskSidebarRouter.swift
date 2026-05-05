@@ -56,7 +56,11 @@ struct TaskSidebarRoot: View {
 
     var body: some View {
         if let projectId, let store = TaskBoardStoreProvider.shared.store(for: projectId) {
-            TaskSidebarRouter(store: store, selection: selection)
+            TaskSidebarRouter(
+                store: store,
+                selection: selection,
+                coordinator: TaskLifecycleCoordinator.makeForProject(store: store)
+            )
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 Text(String(localized: "tasks.sidebar.noProject",

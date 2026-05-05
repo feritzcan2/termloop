@@ -4,7 +4,7 @@
 import Foundation
 
 enum TermLoopSidebarTab: String, CaseIterable, Identifiable {
-    case work, agents, integrations, plan, tasks
+    case work, agents, integrations, plan
 
     static let storageKey = "termloop.sidebarTab"
 
@@ -24,9 +24,6 @@ enum TermLoopSidebarTab: String, CaseIterable, Identifiable {
         case .plan:
             return String(localized: "sidebar.tab.plan",
                           defaultValue: "PLAN", table: "TermLoop")
-        case .tasks:
-            return String(localized: "sidebar.tab.tasks",
-                          defaultValue: "TASKS", table: "TermLoop")
         }
     }
 
