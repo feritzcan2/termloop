@@ -77,12 +77,26 @@ public final class TaskLifecycleCoordinator {
     // MARK: - Column move (with bind side-effect on Todo→InProgress)
 
     public func moveColumn(taskId: UUID, to columnId: TaskColumnId) async throws {
-        let needsBind = try requireTask(taskId).workspaceId == nil && columnId == .inProgress
-        try mutateTask(taskId) { task in
-            task.columnId = columnId
-            task.rank = self.nextRank(in: columnId)
-            task.updatedAt = Date()
-            if needsBind { task.provisionState = .pending }
+        #if DEBUG
+        print("TaskLifecycleCoordinator.moveColumn taskId=\(taskId) → \(columnId)")
+        #endif
+        guard let task = store.fileSnapshot().tasks.first(where: { $0.id == taskId }) else {
+            #if DEBUG
+            print("TaskLifecycleCoordinator.moveColumn: task missing")
+            #endif
+            return
+        }
+        guard task.columnId != columnId else { return }
+        let needsBind = task.workspaceId == nil && columnId == .inProgress
+        // Compute new rank OUTSIDE the mutate closure — `nextRank` reads
+        // store.fileSnapshot(), and Swift's exclusive-access checker traps
+        // when a read happens during an in-flight inout modification.
+        let newRank = nextRank(in: columnId)
+        try mutateTask(taskId) { t in
+            t.columnId = columnId
+            t.rank = newRank
+            t.updatedAt = Date()
+            if needsBind { t.provisionState = .pending }
         }
         try store.saveNow()
         if needsBind {
@@ -115,9 +129,12 @@ public final class TaskLifecycleCoordinator {
             }
             try store.saveNow()
         } catch {
+            let revertedColumn: TaskColumnId = (priorColumn == .inProgress) ? .todo : priorColumn
+            // Pre-compute outside the mutate closure (exclusive-access rule).
+            let newRank = nextRank(in: revertedColumn)
             try mutateTask(taskId) { t in
-                t.columnId = priorColumn == .inProgress ? .todo : priorColumn
-                t.rank = self.nextRank(in: t.columnId)
+                t.columnId = revertedColumn
+                t.rank = newRank
                 t.provisionState = .failed(reason: String(describing: error))
                 t.updatedAt = Date()
             }
@@ -172,6 +189,8 @@ extension TaskLifecycleCoordinator {
     /// then attempts teardown of the underlying worktree if one already exists.
     public func cancelBinding(taskId: UUID) throws {
         let task = try requireTask(taskId)
+        // Pre-compute outside the mutate closure (exclusive-access rule).
+        let newRank = nextRank(in: .todo)
         try mutateTask(taskId) { t in
             t.bindingGeneration += 1
             t.provisionState = .none
@@ -179,7 +198,7 @@ extension TaskLifecycleCoordinator {
             t.worktreePath = nil
             t.branch = nil
             t.columnId = .todo
-            t.rank = self.nextRank(in: .todo)
+            t.rank = newRank
             t.updatedAt = Date()
         }
         try store.saveNow()
