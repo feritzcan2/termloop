@@ -95,7 +95,7 @@ struct TaskSidebarTaskListView: View {
                 .fill(statusPresentation.color)
                 .frame(width: 6, height: 6)
             VStack(alignment: .leading, spacing: 2) {
-                Text(card.title)
+                Text(rowTitle(card, workItem: workItem))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.primary)
                     .lineLimit(1)
@@ -142,6 +142,10 @@ struct TaskSidebarTaskListView: View {
         }
         return String(localized: "tasks.sidebar.row.manualTask",
                       defaultValue: "Manual task", table: "TermLoop")
+    }
+
+    private func rowTitle(_ card: TaskCardSummary, workItem: TaskWorkItemSnapshot?) -> String {
+        workItem?.title ?? card.title
     }
 
     private var createButton: some View {

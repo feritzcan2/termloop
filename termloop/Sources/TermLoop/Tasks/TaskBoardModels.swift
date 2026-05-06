@@ -191,6 +191,10 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
     public var syncAssignedToMe: Bool
     public var syncColumnMovesToRemote: Bool
     public var provider: RemoteWorkItemProviderId
+    /// Jira: optional Atlassian site host, e.g. "company.atlassian.net".
+    public var jiraSite: String?
+    /// Jira: optional account email used when switching between multiple ACLI accounts.
+    public var jiraEmail: String?
     /// Jira: optional project key. GitHub/GitLab: owner/repo or group/project.
     public var container: String?
     public var limit: Int
@@ -201,6 +205,8 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
         syncAssignedToMe: Bool = false,
         syncColumnMovesToRemote: Bool = false,
         provider: RemoteWorkItemProviderId = .jira,
+        jiraSite: String? = nil,
+        jiraEmail: String? = nil,
         container: String? = nil,
         limit: Int = 30,
         lastSyncedAt: Date? = nil,
@@ -209,6 +215,8 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
         self.syncAssignedToMe = syncAssignedToMe
         self.syncColumnMovesToRemote = syncColumnMovesToRemote
         self.provider = provider
+        self.jiraSite = jiraSite?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.jiraEmail = jiraEmail?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         self.container = container
         self.limit = max(1, min(limit, 100))
         self.lastSyncedAt = lastSyncedAt
@@ -219,6 +227,8 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
         case syncAssignedToMe
         case syncColumnMovesToRemote
         case provider
+        case jiraSite
+        case jiraEmail
         case container
         case limit
         case lastSyncedAt
@@ -230,6 +240,10 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
         self.syncAssignedToMe = try container.decodeIfPresent(Bool.self, forKey: .syncAssignedToMe) ?? false
         self.syncColumnMovesToRemote = try container.decodeIfPresent(Bool.self, forKey: .syncColumnMovesToRemote) ?? false
         self.provider = try container.decodeIfPresent(RemoteWorkItemProviderId.self, forKey: .provider) ?? .jira
+        self.jiraSite = try container.decodeIfPresent(String.self, forKey: .jiraSite)?
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.jiraEmail = try container.decodeIfPresent(String.self, forKey: .jiraEmail)?
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         self.container = try container.decodeIfPresent(String.self, forKey: .container)
         let decodedLimit = try container.decodeIfPresent(Int.self, forKey: .limit) ?? 30
         self.limit = max(1, min(decodedLimit, 100))
@@ -462,4 +476,8 @@ public struct TaskDetailSnapshot: Equatable, Sendable {
         self.provisionState = task.provisionState
         self.bindingGeneration = task.bindingGeneration
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
