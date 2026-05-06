@@ -96,7 +96,35 @@ actor RemoteWorkItemCommandRunner: RemoteWorkItemCommandRunning {
         for key in ["PATH", "HOME", "LANG", "LC_ALL", "SHELL", "TERM"] {
             if let value = env[key] { result[key] = value }
         }
+        result["PATH"] = Self.cliSearchPath(from: result["PATH"])
         return result
+    }
+
+    private static func cliSearchPath(from existingPath: String?) -> String {
+        var seen = Set<String>()
+        var parts: [String] = []
+
+        func appendPath(_ path: String?) {
+            guard let path, !path.isEmpty else { return }
+            for rawPart in path.split(separator: ":", omittingEmptySubsequences: true) {
+                let part = String(rawPart)
+                guard seen.insert(part).inserted else { continue }
+                parts.append(part)
+            }
+        }
+
+        appendPath(existingPath)
+        appendPath(getenv("PATH").map { String(cString: $0) })
+        [
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin"
+        ].forEach { appendPath($0) }
+
+        return parts.joined(separator: ":")
     }
 }
 
