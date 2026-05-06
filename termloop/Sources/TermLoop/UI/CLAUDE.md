@@ -14,7 +14,7 @@ Rules:
 - Same-project content handoff is allowed only on content routes and only without command palette/file-drop overlays. Cross-project switches and non-content routes hide retiring portals synchronously.
 - Mount/unmount remains upstream `ContentView.reconcileMountedWorkspaceIds` territory. UI policy may not materialize or tear down workspaces directly.
 - Browser `visible == true` is intentionally a no-op in the portal helper because `BrowserPanelView` owns showing/rebinding via its anchor. Revisit only with a full browser-host ownership redesign.
-- `taskBoard(projectId:)` is a **non-content route**: `allowsSelectedWorkspaceContent == false`, `allowsRetiringWorkspaceHandoff == false`. Task detail is local selection state of `TaskBoardPage` (driven by per-window `TaskSelectionStore`) and must not be a route — selecting a card must NOT trigger `MainAreaPresentationCoordinator.apply`. Renderer lives in `Core/TermLoopHooks.swift` overlayMode switch alongside the other route renderers.
+- `taskBoard(projectId:)` owns the Tasks board route and may embed the selected workspace terminal inside its local bottom split. Task selection and inline-terminal selection are local state of `TaskBoardPage` / per-window `TaskSelectionStore`; selecting a card must NOT become a route.
 
 ## Testing and debugging
 

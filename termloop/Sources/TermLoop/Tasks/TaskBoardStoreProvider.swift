@@ -34,7 +34,14 @@ public final class TaskBoardStoreProvider {
             return nil
         }
         let store = TaskBoardStore(projectRoot: root, projectId: projectId)
-        try? store.loadOrCreate()
+        do {
+            try store.loadOrCreate()
+        } catch {
+            #if DEBUG
+            print("TaskBoardStoreProvider: failed to load tasks for \(projectId): \(error)")
+            #endif
+            return nil
+        }
         stores[projectId] = store
         return store
     }

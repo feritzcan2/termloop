@@ -3,9 +3,8 @@
 
 import SwiftUI
 
-/// Yellow banner shown in the sidebar drill-in when the selected task's
-/// provision state is `.failed`. Surfaces three actions: rebind, unbind,
-/// archive.
+/// Compact repair callout shown when the selected task's provision state is
+/// `.failed`. Surfaces three actions: rebind, unbind, archive.
 struct TaskRepairBanner: View {
     let reason: String
     let onRebind: () -> Void
@@ -13,11 +12,23 @@ struct TaskRepairBanner: View {
     let onArchive: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(reason).font(.system(size: 11)).foregroundColor(.primary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "wrench.and.screwdriver")
+                    .foregroundColor(.orange)
+                Text(reason)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.primary)
+            }
+            Text(String(localized: "tasks.repair.hint",
+                        defaultValue: "Repair the binding, detach stale metadata, or archive this task.",
+                        table: "TermLoop"))
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 6) {
                 Button(String(localized: "tasks.repair.rebind",
-                              defaultValue: "Rebind…", table: "TermLoop"),
+                              defaultValue: "Rebind", table: "TermLoop"),
                        action: onRebind)
                 Button(String(localized: "tasks.repair.unbind",
                               defaultValue: "Unbind", table: "TermLoop"),
@@ -26,10 +37,15 @@ struct TaskRepairBanner: View {
                               defaultValue: "Archive", table: "TermLoop"),
                        action: onArchive)
             }
-            .font(.system(size: 11))
+            .buttonStyle(.bordered)
+            .controlSize(.small)
         }
-        .padding(8)
-        .background(Color.yellow.opacity(0.18))
-        .cornerRadius(4)
+        .padding(9)
+        .background(Color.orange.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.orange.opacity(0.22), lineWidth: 1)
+        )
     }
 }

@@ -88,7 +88,7 @@ final class TaskBoardStorePersistenceTests: XCTestCase {
         }
         let path = tempRoot.appendingPathComponent(".termloop/tasks.json")
         XCTAssertTrue(FileManager.default.fileExists(atPath: path.path))
-        let decoded = try JSONDecoder().decode(TaskBoardFile.self, from: Data(contentsOf: path))
+        let decoded = try JSONDecoder.tasks.decode(TaskBoardFile.self, from: Data(contentsOf: path))
         XCTAssertEqual(decoded.tasks.count, 10)
     }
 }

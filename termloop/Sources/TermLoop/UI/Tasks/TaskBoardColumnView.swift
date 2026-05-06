@@ -12,41 +12,83 @@ struct TaskBoardColumnView: View {
     let snapshot: TaskColumnSnapshot
     @ObservedObject var selection: TaskSelectionStore
     var onMove: ((_ taskId: UUID, _ to: TaskColumnId) -> Void)?
+    var onSelect: ((TaskCardSummary) -> Void)?
     var onCommandClick: ((TaskCardSummary) -> Void)?
     var onArchive: ((UUID) -> Void)?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(displayTitle)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
-                Spacer()
-                Text("\(snapshot.cards.count)")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-            }
-            .padding(.horizontal, 6)
-
+        VStack(alignment: .leading, spacing: 9) {
+            header
             ScrollView(.vertical) {
-                LazyVStack(spacing: 4) {
-                    ForEach(snapshot.cards) { card in
-                        TaskCardView(
-                            card: card,
-                            selection: selection,
-                            onCommandClick: onCommandClick,
-                            onArchive: onArchive
-                        )
+                LazyVStack(spacing: 8) {
+                    if snapshot.cards.isEmpty {
+                        emptyDropHint
+                    } else {
+                        ForEach(snapshot.cards) { card in
+                            TaskCardView(
+                                card: card,
+                                selection: selection,
+                                onSelect: onSelect,
+                                onCommandClick: onCommandClick,
+                                onArchive: onArchive
+                            )
+                        }
                     }
                 }
-                .padding(.horizontal, 4)
-                .padding(.bottom, 8)
+                .padding(.horizontal, 7)
+                .padding(.bottom, 12)
             }
-            .frame(maxWidth: .infinity, alignment: .top)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .background(Color(nsColor: .underPageBackgroundColor).opacity(0.5))
-        .cornerRadius(6)
+        .padding(.top, 10)
+        .background(columnBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.white.opacity(0.05), lineWidth: 1)
+        )
         .onDrop(of: [.text], isTargeted: nil, perform: handleDrop(providers:))
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Text(displayTitle)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.secondary)
+                .kerning(0.45)
+            Spacer(minLength: 0)
+            Text("\(snapshot.cards.count)")
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundColor(.secondary)
+                .padding(.vertical, 2)
+                .padding(.horizontal, 6)
+                .background(Color.white.opacity(0.05))
+                .clipShape(Capsule())
+        }
+        .padding(.horizontal, 10)
+    }
+
+    private var emptyDropHint: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "arrow.down.to.line.compact")
+                .font(.system(size: 14, weight: .medium))
+            Text(String(localized: "tasks.column.emptyDropHint",
+                        defaultValue: "Drop tasks here", table: "TermLoop"))
+                .font(.system(size: 11, weight: .medium))
+        }
+        .foregroundColor(.secondary.opacity(0.55))
+        .frame(maxWidth: .infinity, minHeight: 96)
+        .background(Color.black.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                .foregroundColor(.secondary.opacity(0.16))
+        )
+    }
+
+    private var columnBackground: Color {
+        Color(nsColor: .underPageBackgroundColor).opacity(0.70)
     }
 
     private var displayTitle: String {

@@ -41,4 +41,51 @@ final class TaskSelectionStoreTests: XCTestCase {
         store.select(id)
         XCTAssertEqual(changeCount, baseline, "selecting the same id must be a no-op")
     }
+
+    func testOpenInlineTerminalIsIdempotentForSameWorkspace() {
+        let store = TaskSelectionStore()
+        let workspaceId = UUID()
+
+        store.openInlineTerminal(workspaceId: workspaceId)
+        XCTAssertEqual(store.inlineTerminalWorkspaceId, workspaceId)
+
+        store.openInlineTerminal(workspaceId: workspaceId)
+        XCTAssertEqual(store.inlineTerminalWorkspaceId, workspaceId)
+    }
+
+
+    func testCloseInlineTerminalClearsWorkspace() {
+        let store = TaskSelectionStore()
+        let workspaceId = UUID()
+
+        XCTAssertTrue(store.openInlineTerminal(workspaceId: workspaceId))
+        XCTAssertEqual(store.inlineTerminalWorkspaceId, workspaceId)
+        XCTAssertTrue(store.closeInlineTerminal())
+        XCTAssertNil(store.inlineTerminalWorkspaceId)
+        XCTAssertFalse(store.closeInlineTerminal())
+    }
+
+    func testSelectingDifferentTaskKeepsInlineTerminalOpen() {        let store = TaskSelectionStore()
+        let workspaceId = UUID()
+        store.openInlineTerminal(workspaceId: workspaceId)
+
+        store.select(UUID())
+
+        XCTAssertEqual(store.inlineTerminalWorkspaceId, workspaceId)
+    }
+
+    func testProviderSharesSelectionOnlyWithinWindow() {
+        let windowId = UUID()
+        let otherWindowId = UUID()
+        let first = TaskSelectionStoreProvider.shared.store(for: windowId)
+        let second = TaskSelectionStoreProvider.shared.store(for: windowId)
+        let other = TaskSelectionStoreProvider.shared.store(for: otherWindowId)
+        let selected = UUID()
+
+        first.select(selected)
+
+        XCTAssertTrue(first === second)
+        XCTAssertEqual(second.selectedTaskId, selected)
+        XCTAssertNil(other.selectedTaskId, "selection must stay scoped to one window")
+    }
 }

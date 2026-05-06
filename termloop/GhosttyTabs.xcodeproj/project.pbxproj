@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		ABCD10000000000000000001 /* TaskSelectionStoreProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCD10000000000000000002 /* TaskSelectionStoreProvider.swift */; };
 		002FFEC16193AC6231CEB731 /* VariableSubstitution.swift in Sources */ = {isa = PBXBuildFile; fileRef = 474487A66D69F0FB8B7F9E44 /* VariableSubstitution.swift */; };
 		006086BADBD0F620E49685B3 /* GitWorktreeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA1393F617B7D50F8BBA3D94 /* GitWorktreeService.swift */; };
 		01E3A84F9B03F0D633F9354F /* ProjectInstructionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 468DE153DCD1BEF88F6FAE6D /* ProjectInstructionStore.swift */; };
@@ -33,7 +34,6 @@
 		1D58E5DC719760980EA2984B /* TaskSelectionStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 334F04CDF93586294C380D55 /* TaskSelectionStoreTests.swift */; };
 		1F14445B9627DE9D3AF4FD2E /* BrowserPanelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58C7B1B978620BE162CC057E /* BrowserPanelTests.swift */; };
 		1FD668FDBF4FBE6FBCD36A1C /* HorizontalResizableSplit.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9A7A9BAE5100920772EE049 /* HorizontalResizableSplit.swift */; };
-		203EAC8A36BA51B23CA281DA /* TaskActivityLogProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CD686C10BA71391CF904C90 /* TaskActivityLogProjection.swift */; };
 		2119B1470E9B59532487A526 /* IntegrationItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA9CB90BA4EA5BBC0F8EEC3E /* IntegrationItem.swift */; };
 		22D8E335AF1DC24C6E4D3AAA /* BridgeCableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00D7D639B2C644A283D77366 /* BridgeCableView.swift */; };
 		23D2FF5D5CACFBBB0CC38058 /* AgentWorkspaceKindTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BC41841A0027C5FCF28E38F /* AgentWorkspaceKindTests.swift */; };
@@ -388,7 +388,6 @@
 		B9000025A1B2C3D4E5F60719 /* CloseWindowConfirmDialogUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000026A1B2C3D4E5F60719 /* CloseWindowConfirmDialogUITests.swift */; };
 		B9000027A1B2C3D4E5F60719 /* RemoteRelayZshBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001641 /* RemoteRelayZshBootstrap.swift */; };
 		B988CD8E09078754C798CA46 /* GeminiCliPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47AC9A50FA00FF218B84A218 /* GeminiCliPreset.swift */; };
-		BB1EC39902D9A7F3C85EFB99 /* TaskDetailPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1651846A18357BE6795473CC /* TaskDetailPaneView.swift */; };
 		BC42CB07C2562DE2F81E104C /* AgentsSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D0D3D588EFBC781B772976F /* AgentsSidebarView.swift */; };
 		BC42CB08C2562DE2F81E104C /* AgentsCatalogEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D0D3D598EFBC781B772976F /* AgentsCatalogEntry.swift */; };
 		BC42CB09C2562DE2F81E104C /* AgentsCatalogDetailPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D0D3D5A8EFBC781B772976F /* AgentsCatalogDetailPane.swift */; };
@@ -490,7 +489,6 @@
 		DCEA26C1F3DE7D888B5B8FEC /* ContextBankStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F23EF81276FD33440DD43D0 /* ContextBankStore.swift */; };
 		DCED57051E0A411F11111111 /* MarkdownDocumentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCED57051E0A411F22222222 /* MarkdownDocumentStore.swift */; };
 		DCED57051E0A411F33333333 /* MarkdownDocumentSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCED57051E0A411F44444444 /* MarkdownDocumentSurface.swift */; };
-		DD47EA87B79DEA9FDFEAE8B7 /* TaskAgentsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE10B94B229F22A0413E4DA3 /* TaskAgentsSection.swift */; };
 		DLOGB001A6EAC0DE00000001 /* DebugLogging.swift in Sources */ = {isa = PBXBuildFile; fileRef = DLOGF001A6EAC0DE00000001 /* DebugLogging.swift */; };
 		E0FFBB47CDB05D6D8DC88342 /* TemplateRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 844AD02D34F55AA429380BE4 /* TemplateRegistryTests.swift */; };
 		E1000000A1B2C3D4E5F60718 /* MenuKeyEquivalentRoutingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1000001A1B2C3D4E5F60718 /* MenuKeyEquivalentRoutingUITests.swift */; };
@@ -615,6 +613,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		ABCD10000000000000000002 /* TaskSelectionStoreProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskSelectionStoreProvider.swift; sourceTree = "<group>"; };
 		00D7D639B2C644A283D77366 /* BridgeCableView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BridgeCableView.swift; sourceTree = "<group>"; };
 		00E1E4550C54F96C9409FC64 /* FrontmatterParserTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FrontmatterParserTests.swift; sourceTree = "<group>"; };
 		01782EDA2DCC054464BC2B80 /* RecommendationEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RecommendationEngine.swift; sourceTree = "<group>"; };
@@ -636,7 +635,6 @@
 		131357A3C0E97550FD3B82EC /* CodexCliPreset.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CodexCliPreset.swift; sourceTree = "<group>"; };
 		145829DA1A9FC4777A23EDC4 /* BridgeTurnCompletedHookTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BridgeTurnCompletedHookTests.swift; sourceTree = "<group>"; };
 		14A7DC53B9CA33BE2A421711 /* WorkspacePullRequestSidebarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspacePullRequestSidebarTests.swift; sourceTree = "<group>"; };
-		1651846A18357BE6795473CC /* TaskDetailPaneView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskDetailPaneView.swift; sourceTree = "<group>"; };
 		1672F5E84FE9B62A2D373947 /* AgentTemplate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentTemplate.swift; sourceTree = "<group>"; };
 		16FB12B3682EEF72B115BFB9 /* ContextBankDecisionLog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextBankDecisionLog.swift; sourceTree = "<group>"; };
 		18202AB16C41E91A7F05791A /* Workspace+MainAreaPortalVisibility.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "Workspace+MainAreaPortalVisibility.swift"; sourceTree = "<group>"; };
@@ -666,7 +664,6 @@
 		3B4DD757CC19811DD5233F60 /* BridgeCreationValidator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BridgeCreationValidator.swift; sourceTree = "<group>"; };
 		3BC13776B648248C703042D0 /* TerminalAgentLifecycle+Plan.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "TerminalAgentLifecycle+Plan.swift"; sourceTree = "<group>"; };
 		3BC41841A0027C5FCF28E38F /* AgentWorkspaceKindTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceKindTests.swift; sourceTree = "<group>"; };
-		3CD686C10BA71391CF904C90 /* TaskActivityLogProjection.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskActivityLogProjection.swift; sourceTree = "<group>"; };
 		3DDB9A196E62734D60CF8C81 /* QuickActionPreviewBar.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickActionPreviewBar.swift; sourceTree = "<group>"; };
 		3E20C67F1FE9ACEBA3ED50D3 /* QuickActionAdvancedRawTab.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickActionAdvancedRawTab.swift; sourceTree = "<group>"; };
 		3F68CF86E9315DFD8961D2F7 /* InstructionRunOverrides.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InstructionRunOverrides.swift; sourceTree = "<group>"; };
@@ -1072,7 +1069,6 @@
 		CB6DF9D095FF9F1126509FE9 /* BuiltinTemplates */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; path = BuiltinTemplates; sourceTree = "<group>"; };
 		CCF2EFA4A693DFB011E49A41 /* APNsConfig.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = APNsConfig.swift; sourceTree = "<group>"; };
 		CDD43A7966611CFB48533E86 /* JiraMCPPreset.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = JiraMCPPreset.swift; sourceTree = "<group>"; };
-		CE10B94B229F22A0413E4DA3 /* TaskAgentsSection.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskAgentsSection.swift; sourceTree = "<group>"; };
 		CE39141B233E3C75658ED9FE /* TaskBoardPageRenderingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskBoardPageRenderingTests.swift; sourceTree = "<group>"; };
 		CEC82B7E6651D0AC127F2EA4 /* PushTokenStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PushTokenStore.swift; sourceTree = "<group>"; };
 		CF47B56E1F4AD8F58680B060 /* TaskSidebarTaskListView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskSidebarTaskListView.swift; sourceTree = "<group>"; };
@@ -1507,13 +1503,12 @@
 			isa = PBXGroup;
 			children = (
 				9BB066C04DF19B8F2D3E0E6A /* TaskSelectionStore.swift */,
+				ABCD10000000000000000002 /* TaskSelectionStoreProvider.swift */,
 				B9A7A9BAE5100920772EE049 /* HorizontalResizableSplit.swift */,
 				A6559824C5AB13864BA844C9 /* TaskBoardPage.swift */,
 				034F15CB5CF63B04FA5094FB /* TaskBoardRouteHost.swift */,
 				C42965391F233A3C7EA0893A /* TaskBoardColumnView.swift */,
 				69BB089F65440F5522E918C6 /* TaskCardView.swift */,
-				1651846A18357BE6795473CC /* TaskDetailPaneView.swift */,
-				3CD686C10BA71391CF904C90 /* TaskActivityLogProjection.swift */,
 				1228B562071C74D746BE0E7D /* TaskQuickActions.swift */,
 				07B5D022F18718D7B9FE9898 /* TaskSidebarRouter.swift */,
 				CF47B56E1F4AD8F58680B060 /* TaskSidebarTaskListView.swift */,
@@ -1559,7 +1554,6 @@
 		816B94E15A86804656F97F3C /* Sections */ = {
 			isa = PBXGroup;
 			children = (
-				CE10B94B229F22A0413E4DA3 /* TaskAgentsSection.swift */,
 				03D88D6AD4CE56AC958FFEA0 /* TaskGitChangesSection.swift */,
 				D862BDCFA1866A02277EE921 /* TaskOpenPRsSection.swift */,
 				292D544ADC5AF6850D50E275 /* TaskBranchesSection.swift */,
@@ -2752,19 +2746,17 @@
 				13F57177D03310BBFE9F732A /* TaskBoardReconcileHook.swift in Sources */,
 				465F0DBE1F6C74FEAB2EF3AE /* TaskBoardStoreProvider.swift in Sources */,
 				AE784569A22BBEB146204E79 /* TaskSelectionStore.swift in Sources */,
+				ABCD10000000000000000001 /* TaskSelectionStoreProvider.swift in Sources */,
 				1FD668FDBF4FBE6FBCD36A1C /* HorizontalResizableSplit.swift in Sources */,
 				12B312203F52231348444BE8 /* TaskBoardPage.swift in Sources */,
 				3C6A8CA43DDF21EF2B7A4DB0 /* TaskBoardRouteHost.swift in Sources */,
 				4692B10B6AF45E02BBFDE485 /* TaskBoardColumnView.swift in Sources */,
 				C722B41C7031D70E1C73B0A2 /* TaskCardView.swift in Sources */,
-				BB1EC39902D9A7F3C85EFB99 /* TaskDetailPaneView.swift in Sources */,
-				203EAC8A36BA51B23CA281DA /* TaskActivityLogProjection.swift in Sources */,
 				5818F3246BC760F81D63A5C3 /* TaskQuickActions.swift in Sources */,
 				06B5A053713A177AB2F96B39 /* TaskSidebarRouter.swift in Sources */,
 				483D7FA289E4209FB80D7314 /* TaskSidebarTaskListView.swift in Sources */,
 				ED4AEAE63A90C67B72F777AD /* TaskSidebarDrillInView.swift in Sources */,
 				8CF6AAFA0A0F21503237D88C /* TaskRepairBanner.swift in Sources */,
-				DD47EA87B79DEA9FDFEAE8B7 /* TaskAgentsSection.swift in Sources */,
 				CBEA29BEE7A5A36E7101BB8D /* TaskGitChangesSection.swift in Sources */,
 				B40450799023AD8DB069E1E9 /* TaskOpenPRsSection.swift in Sources */,
 				F29C2D92A051E4E7527C94C5 /* TaskBranchesSection.swift in Sources */,

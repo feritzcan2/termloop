@@ -33,6 +33,7 @@ public enum TaskLifecycleError: Error, Equatable {
     case taskNotFound(UUID)
     case alreadyBound(UUID)
     case notBound(UUID)
+    case provisionInFlight(UUID)
     case provisionFailed(String)
 }
 
@@ -87,7 +88,21 @@ public final class TaskLifecycleCoordinator {
             return
         }
         guard task.columnId != columnId else { return }
-        let needsBind = task.workspaceId == nil && columnId == .inProgress
+        guard task.provisionState != .pending else {
+            #if DEBUG
+            print("TaskLifecycleCoordinator.moveColumn: ignored pending task")
+            #endif
+            throw TaskLifecycleError.provisionInFlight(taskId)
+        }
+        // Only create/provision when the task has no worktree identity at all.
+        // Reconciled tasks can be "path-only": the git worktree exists on disk
+        // but there is no live WorkspaceMetadata row/workspaceId yet. Moving
+        // those cards between board columns must stay a pure status/rank move;
+        // otherwise we incorrectly hit the v1 provisioner stub and overwrite a
+        // ready task with "provisioning unavailable".
+        let needsBind = task.workspaceId == nil
+            && task.worktreePath == nil
+            && columnId == .inProgress
         // Compute new rank OUTSIDE the mutate closure — `nextRank` reads
         // store.fileSnapshot(), and Swift's exclusive-access checker traps
         // when a read happens during an in-flight inout modification.
@@ -109,38 +124,57 @@ public final class TaskLifecycleCoordinator {
     public func bindWorktree(taskId: UUID) async throws {
         let task = try requireTask(taskId)
         let priorColumn = task.columnId
+        let expectedGeneration = task.bindingGeneration
+
+        let result: TaskWorktreeProvisionResult
         do {
-            let result = try await worktrees.provision(
+            result = try await worktrees.provision(
                 projectRoot: store.projectRoot,
                 branchHint: task.branch ?? slugFrom(title: task.title)
             )
+        } catch {
+            guard try failBindingIfCurrent(
+                taskId: taskId,
+                expectedGeneration: expectedGeneration,
+                priorColumn: priorColumn,
+                error: error
+            ) else { return }
+            throw TaskLifecycleError.provisionFailed(failureReason(from: error))
+        }
+
+        guard isCurrentBindingAttempt(taskId: taskId, generation: expectedGeneration) else {
+            try? await worktrees.teardown(
+                workspaceId: result.workspaceId,
+                worktreePath: result.worktreePath
+            )
+            return
+        }
+
+        do {
             try workspaces.setBinding(
                 workspaceId: result.workspaceId,
                 branch: result.branch,
                 path: result.worktreePath
             )
-            try mutateTask(taskId) { t in
-                t.workspaceId = result.workspaceId
-                t.branch = result.branch
-                t.worktreePath = result.worktreePath
-                t.bindingGeneration += 1
-                t.provisionState = .ready
-                t.updatedAt = Date()
-            }
-            try store.saveNow()
         } catch {
-            let revertedColumn: TaskColumnId = (priorColumn == .inProgress) ? .todo : priorColumn
-            // Pre-compute outside the mutate closure (exclusive-access rule).
-            let newRank = nextRank(in: revertedColumn)
-            try mutateTask(taskId) { t in
-                t.columnId = revertedColumn
-                t.rank = newRank
-                t.provisionState = .failed(reason: String(describing: error))
-                t.updatedAt = Date()
-            }
-            try store.saveNow()
-            throw TaskLifecycleError.provisionFailed(String(describing: error))
+            guard try failBindingIfCurrent(
+                taskId: taskId,
+                expectedGeneration: expectedGeneration,
+                priorColumn: priorColumn,
+                error: error
+            ) else { return }
+            throw TaskLifecycleError.provisionFailed(failureReason(from: error))
         }
+
+        try mutateTask(taskId) { t in
+            t.workspaceId = result.workspaceId
+            t.branch = result.branch
+            t.worktreePath = result.worktreePath
+            t.bindingGeneration += 1
+            t.provisionState = .ready
+            t.updatedAt = Date()
+        }
+        try store.saveNow()
     }
 
     // MARK: - Internals
@@ -161,6 +195,43 @@ public final class TaskLifecycleCoordinator {
             }
         }
         if !found { throw TaskLifecycleError.taskNotFound(id) }
+    }
+
+    private func failBindingIfCurrent(
+        taskId: UUID,
+        expectedGeneration: Int,
+        priorColumn: TaskColumnId,
+        error: Error
+    ) throws -> Bool {
+        guard isCurrentBindingAttempt(taskId: taskId, generation: expectedGeneration) else {
+            return false
+        }
+        let persistedReason = failureReason(from: error)
+        let revertedColumn: TaskColumnId = (priorColumn == .inProgress) ? .todo : priorColumn
+        // Pre-compute outside the mutate closure (exclusive-access rule).
+        let newRank = nextRank(in: revertedColumn)
+        try mutateTask(taskId) { t in
+            t.columnId = revertedColumn
+            t.rank = newRank
+            t.provisionState = .failed(reason: persistedReason)
+            t.updatedAt = Date()
+        }
+        try store.saveNow()
+        return true
+    }
+
+    private func isCurrentBindingAttempt(taskId: UUID, generation: Int) -> Bool {
+        guard let current = store.fileSnapshot().tasks.first(where: { $0.id == taskId }) else {
+            return false
+        }
+        return current.bindingGeneration == generation
+    }
+
+    private func failureReason(from error: Error) -> String {
+        if case let TaskLifecycleError.provisionFailed(reason) = error {
+            return reason
+        }
+        return String(describing: error)
     }
 
     private func nextRank(in column: TaskColumnId) -> String {

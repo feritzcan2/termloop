@@ -16,8 +16,9 @@ public final class TaskBoardWorkspaceListingAdapter: TaskBoardWorkspaceListing {
 
     public func workspaces(in projectId: UUID) -> [TaskWorkspaceDescriptor] {
         let store = WorkspaceMetadataStore.shared
+        let projectRoot = projectRoot(for: projectId)
         let workspaceIds = store.workspaceIds(inProject: projectId)
-        return workspaceIds.compactMap { workspaceId in
+        var descriptors: [TaskWorkspaceDescriptor] = workspaceIds.compactMap { workspaceId in
             guard let path = store.worktreePath(forWorkspaceId: workspaceId) else { return nil }
             let metadata = store.metadata(forWorkspaceId: workspaceId)
             return TaskWorkspaceDescriptor(
@@ -27,6 +28,43 @@ public final class TaskBoardWorkspaceListingAdapter: TaskBoardWorkspaceListing {
                 worktreePath: path
             )
         }
+
+        // Metadata is not the source of truth for whether a git worktree
+        // exists. After restores, metadata cleanup, or external git worktree
+        // operations, the physical checkout can be present while no live
+        // workspace metadata row points at it. Include `git worktree list`
+        // entries so Tasks can recover by path instead of painting every
+        // existing branch red as "Worktree missing".
+        var seenPaths = Set(descriptors.map {
+            TaskPathNormalization.normalize($0.worktreePath, relativeTo: projectRoot)
+        })
+        let gitEntries: [GitWorktreeService.ListEntry]
+        if let cached = WorktreeRegistry.shared.cachedSnapshot(projectFolder: projectRoot.path, maximumAge: 30) {
+            gitEntries = cached.entries
+        } else {
+            gitEntries = (try? GitWorktreeService().list(in: projectRoot.path)) ?? []
+            if !gitEntries.isEmpty {
+                _ = WorktreeRegistry.shared.record(projectFolder: projectRoot.path, entries: gitEntries)
+            }
+        }
+        for entry in gitEntries where !entry.isMain {
+            guard WorktreeResolver.worktreeRoot(
+                containing: entry.path,
+                projectFolder: projectRoot.path
+            ) != nil else {
+                continue
+            }
+            let normalized = TaskPathNormalization.normalize(entry.path, relativeTo: projectRoot)
+            guard seenPaths.insert(normalized).inserted else { continue }
+            descriptors.append(TaskWorkspaceDescriptor(
+                workspaceId: nil,
+                projectId: projectId,
+                branch: entry.branch,
+                worktreePath: entry.path
+            ))
+        }
+
+        return descriptors
     }
 
     public func projectRoot(for projectId: UUID) -> URL {

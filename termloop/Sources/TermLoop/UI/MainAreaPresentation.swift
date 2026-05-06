@@ -28,6 +28,7 @@ struct MainAreaPresentationInput: Equatable {
     let gitChangesWorkspaceId: UUID?
     let abilityDetailId: String?
     let abilityDetailIsSplit: Bool
+    let taskBoardInlineWorkspaceId: UUID?
     let hasCommandPaletteOrFileDropOverlay: Bool
     let handoffGeneration: UInt64
 
@@ -47,6 +48,7 @@ struct MainAreaPresentationInput: Equatable {
             gitChangesWorkspaceId: gitChangesWorkspaceId,
             abilityDetailId: abilityDetailId,
             abilityDetailIsSplit: abilityDetailIsSplit,
+            taskBoardInlineWorkspaceId: taskBoardInlineWorkspaceId,
             hasCommandPaletteOrFileDropOverlay: hasCommandPaletteOrFileDropOverlay,
             handoffGeneration: handoffGeneration
         )
@@ -63,6 +65,11 @@ enum MainAreaMainPageKind: Equatable {
     case settings
     case projectEmpty
     case taskBoard(projectId: UUID)
+
+    var isTaskBoard: Bool {
+        if case .taskBoard = self { return true }
+        return false
+    }
 
     var identity: String {
         switch self {
@@ -96,7 +103,9 @@ enum MainAreaMainPageKind: Equatable {
             return true
         case .ability(_, let split):
             return split
-        case .agents, .markdownDocument, .gitChanges, .contextBank, .settings, .projectEmpty, .taskBoard:
+        case .taskBoard:
+            return false
+        case .agents, .markdownDocument, .gitChanges, .contextBank, .settings, .projectEmpty:
             return false
         }
     }
@@ -172,8 +181,10 @@ enum MainAreaPresentationPolicy {
 
             let shouldShowSelected = isSelected && page.allowsSelectedWorkspaceContent
             let shouldShowRetiring = isRetiring && canShowRetiring
+            let shouldShowTaskBoardInlineTerminal = page.isTaskBoard
+                && input.taskBoardInlineWorkspaceId == workspaceId
             let isVisible = shouldShowSelected || shouldShowRetiring
-            let portalPriority = shouldShowSelected ? 2 : (shouldShowRetiring ? 1 : 0)
+            let portalPriority = shouldShowTaskBoardInlineTerminal ? 3 : (shouldShowSelected ? 2 : (shouldShowRetiring ? 1 : 0))
 
             workspacePresentations[workspaceId] = MainAreaWorkspacePresentation(
                 workspaceId: workspaceId,
@@ -182,7 +193,7 @@ enum MainAreaPresentationPolicy {
                 renderOpacity: isVisible ? 1 : (shouldPrime ? 0.001 : 0),
                 isInputActive: shouldShowSelected,
                 portalPriority: portalPriority,
-                terminalPortalsVisible: isVisible,
+                terminalPortalsVisible: isVisible || shouldShowTaskBoardInlineTerminal,
                 browserPortalsVisible: isVisible
             )
         }
@@ -402,9 +413,19 @@ final class MainAreaPresentationCoordinator {
             gitChangesWorkspaceId: GitChangesMainAreaStore.shared.presentation?.workspaceId,
             abilityDetailId: selectedAbilityId,
             abilityDetailIsSplit: abilitySplit,
+            taskBoardInlineWorkspaceId: taskBoardInlineWorkspaceId(windowId: windowId, sidebarTab: sidebarTab, workSubTab: workSubTab),
             hasCommandPaletteOrFileDropOverlay: hasCommandPaletteOrFileDropOverlay,
             handoffGeneration: handoffGeneration
         )
+    }
+
+    private func taskBoardInlineWorkspaceId(
+        windowId: UUID,
+        sidebarTab: TermLoopSidebarTab,
+        workSubTab: WorkSubTab
+    ) -> UUID? {
+        guard sidebarTab == .work, workSubTab == .tasks else { return nil }
+        return TaskSelectionStoreProvider.shared.store(for: windowId).inlineTerminalWorkspaceId
     }
 
     func snapshot(
@@ -686,7 +707,9 @@ final class MainAreaPresentationCoordinator {
         let visibleWorkspaceIds = snapshot.workspacePresentations.values
             .filter { $0.terminalPortalsVisible || $0.browserPortalsVisible }
             .map(\.workspaceId)
-        if !snapshot.mainPage.allowsSelectedWorkspaceContent && !visibleWorkspaceIds.isEmpty {
+        if !snapshot.mainPage.allowsSelectedWorkspaceContent &&
+            !snapshot.mainPage.isTaskBoard &&
+            !visibleWorkspaceIds.isEmpty {
             dlog(
                 "mainArea.policy.violation route=\(snapshot.mainPage.identity) visible=\(visibleWorkspaceIds.map { $0.uuidString.prefix(5) }.joined(separator: ","))"
             )

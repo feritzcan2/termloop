@@ -38,7 +38,7 @@ public final class TaskBoardWorktreeProvisioningStub: TaskBoundWorktreeProvision
         -> TaskWorktreeProvisionResult
     {
         throw TaskLifecycleError.provisionFailed(
-            "Worktree provisioning not yet wired. Spawn the worktree from the existing Work-tab UI for now."
+            TaskProvisionFailureReason.provisioningUnavailable
         )
     }
 

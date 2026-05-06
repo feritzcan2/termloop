@@ -3,26 +3,429 @@
 
 import SwiftUI
 
-/// Sidebar drill-in section: worktree branches for the selected task.
-/// v1 renders just the bound branch (passed via the snapshot); Task 23
-/// expands to WorktreeGroup projection.
+/// Sidebar drill-in section: agents attached to the selected task worktree,
+/// with the live checkout as compact context. The task sidebar should not make
+/// expected-branch drift the primary story; the current checkout already tells
+/// the user where the agents are running.
 struct TaskBranchesSection: View {
     let branch: String?
+    let worktreePath: String?
+    var selectedAgentWorkspaceId: UUID? = nil
+    var onOpenAgentTerminal: ((UUID) -> Void)? = nil
+
+    @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
+    @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(String(localized: "tasks.sidebar.section.branches",
-                        defaultValue: "WORKTREE BRANCHES", table: "TermLoop"))
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.secondary)
-            if let branch {
-                Text(branch).font(.system(size: 11))
+        VStack(alignment: .leading, spacing: 8) {
+            TaskSidebarSectionTitle(
+                String(localized: "tasks.sidebar.section.branches",
+                       defaultValue: "WORKTREE AGENTS", table: "TermLoop")
+            )
+
+            if normalizedWorktreePath == nil && currentBranchName == nil {
+                TaskSidebarEmptyText(
+                    String(localized: "tasks.sidebar.section.branches.empty",
+                           defaultValue: "No worktree info.", table: "TermLoop")
+                )
             } else {
-                Text(String(localized: "tasks.sidebar.section.branches.empty",
-                            defaultValue: "No branch info.", table: "TermLoop"))
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    liveCheckoutStrip
+                    agentsPanel
+
+                    let others = secondaryBranches
+                    if !others.isEmpty {
+                        recordedBranchesStrip(others)
+                    }
+
+                    if let path = normalizedWorktreePath {
+                        pathLine(path)
+                    }
+                }
             }
         }
     }
+
+    private var liveCheckoutStrip: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "largecircle.fill.circle")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.accentColor)
+                .frame(width: 14)
+            Text(String(localized: "tasks.sidebar.section.branches.currentCheckout",
+                        defaultValue: "current", table: "TermLoop"))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.accentColor)
+            Text(currentBranchName ?? detachedLabel)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+            let agents = currentAgents
+            if !agents.isEmpty {
+                Text(agentCountText(agents.count))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .padding(.vertical, 2)
+                    .padding(.horizontal, 6)
+                    .background(Color.white.opacity(0.055))
+                    .clipShape(Capsule())
+            }
+        }
+        .padding(.vertical, 7)
+        .padding(.horizontal, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.accentColor.opacity(0.075))
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+    }
+
+    private var agentsPanel: some View {
+        let agents = currentAgents
+        return VStack(alignment: .leading, spacing: 7) {
+            if agents.isEmpty {
+                TaskSidebarEmptyText(
+                    String(localized: "tasks.sidebar.section.branches.noAgents",
+                           defaultValue: "No agents are attached to this worktree.", table: "TermLoop")
+                )
+                .padding(.vertical, 4)
+            } else {
+                ForEach(agents) { agent in
+                    WorktreeAgentCard(
+                        agent: agent,
+                        isSelected: selectedAgentWorkspaceId == agent.workspaceId,
+                        onOpenAgentTerminal: onOpenAgentTerminal,
+                        stateColor: color(for: agent.displayState)
+                    )
+                }
+            }
+        }
+        .padding(7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.black.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func recordedBranchesStrip(_ branches: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(String(localized: "tasks.sidebar.section.branches.otherBindings",
+                        defaultValue: "RECORDED BRANCHES", table: "TermLoop"))
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(.secondary.opacity(0.75))
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(branches, id: \.self) { branch in
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.triangle.branch")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.secondary.opacity(0.75))
+                        Text(branch)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.2))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func pathLine(_ path: String) -> some View {
+        HStack(spacing: 4) {
+            Text(String(localized: "tasks.sidebar.section.branches.pathLabel",
+                        defaultValue: "path", table: "TermLoop"))
+            Text("·")
+            Text(compactPath(path))
+                .truncationMode(.middle)
+        }
+        .font(.system(size: 10, design: .monospaced))
+        .foregroundColor(.secondary.opacity(0.78))
+        .lineLimit(1)
+        .help(path)
+    }
+
+    fileprivate struct BranchAgentState: Equatable, Identifiable {
+        let workspaceId: UUID
+        let agentLabel: String
+        let displayState: TerminalAgentDisplayState
+        let preview: String?
+
+        var id: UUID { workspaceId }
+    }
+
+    private var currentAgents: [BranchAgentState] {
+        guard let path = normalizedWorktreePath else { return [] }
+        return metadataStore.workspaceIds(withWorktreePath: path).compactMap { workspaceId in
+            let metadata = metadataStore.metadata(forWorkspaceId: workspaceId)
+            if let presentation = activityStore.presentation(forWorkspaceId: workspaceId) {
+                return BranchAgentState(
+                    workspaceId: workspaceId,
+                    agentLabel: presentation.agentId ?? metadata.terminalAgentId ?? fallbackAgentLabel,
+                    displayState: presentation.displayState,
+                    preview: presentation.preview
+                )
+            }
+            let agentLabel = metadata.terminalAgentId ?? metadata.persistedAgentSession?.agentId
+            guard let agentLabel else { return nil }
+            return BranchAgentState(
+                workspaceId: workspaceId,
+                agentLabel: agentLabel,
+                displayState: .ready,
+                preview: metadata.lastMessagePreview
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.displayState.activeAgentsSortPriority != rhs.displayState.activeAgentsSortPriority {
+                return lhs.displayState.activeAgentsSortPriority < rhs.displayState.activeAgentsSortPriority
+            }
+            return lhs.agentLabel.localizedCaseInsensitiveCompare(rhs.agentLabel) == .orderedAscending
+        }
+    }
+
+    private var currentBranchName: String? {
+        liveBranch ?? normalizedBranch
+    }
+
+    private var secondaryBranches: [String] {
+        var values: [String] = []
+        if let path = normalizedWorktreePath {
+            values.append(contentsOf: metadataStore.workspaceIds(withWorktreePath: path).compactMap { id in
+                metadataStore.metadata(forWorkspaceId: id).branch?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .nilIfEmpty
+            })
+        }
+        if let normalizedBranch {
+            values.append(normalizedBranch)
+        }
+        let current = currentBranchName
+        return Array(Set(values))
+            .filter { $0 != current }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private var liveBranch: String? {
+        guard let path = normalizedWorktreePath else { return nil }
+        return GitWorktreePresentationStore.shared.branch(for: path)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty
+    }
+
+    private var detachedLabel: String {
+        if let path = normalizedWorktreePath,
+           let head = GitWorktreePresentationStore.shared.snapshot(for: path)?.headSHA {
+            return "detached@\(String(head.prefix(12)))"
+        }
+        return String(localized: "tasks.sidebar.section.branches.detached",
+                      defaultValue: "Detached HEAD", table: "TermLoop")
+    }
+
+    private var normalizedBranch: String? {
+        branch?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty
+    }
+
+    private var normalizedWorktreePath: String? {
+        guard let worktreePath else { return nil }
+        let trimmed = worktreePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return WorktreeResolver.normalizePath(trimmed) ?? URL(fileURLWithPath: trimmed).standardizedFileURL.path
+    }
+
+    private var fallbackAgentLabel: String {
+        String(localized: "tasks.sidebar.section.branches.agent",
+               defaultValue: "agent", table: "TermLoop")
+    }
+
+    private func agentCountText(_ count: Int) -> String {
+        if count == 1 {
+            return String(localized: "tasks.sidebar.section.branches.agentCount.one",
+                          defaultValue: "1 agent",
+                          table: "TermLoop")
+        }
+        return String(localized: "tasks.sidebar.section.branches.agentCount.many",
+                      defaultValue: "\(count) agents",
+                      table: "TermLoop")
+    }
+
+    private func compactPath(_ path: String) -> String {
+        let url = URL(fileURLWithPath: path)
+        let leaf = url.lastPathComponent
+        let parent = url.deletingLastPathComponent().lastPathComponent
+        guard !parent.isEmpty else { return leaf }
+        return "…/\(parent)/\(leaf)"
+    }
+
+    private func color(for displayState: TerminalAgentDisplayState) -> Color {
+        switch displayState {
+        case .idle, .ready: return .secondary
+        case .running: return .accentColor
+        case .needsInput: return .orange
+        case .completed: return .green
+        case .error: return .red
+        }
+    }
+}
+
+private struct WorktreeAgentCard: View {
+    let agent: TaskBranchesSection.BranchAgentState
+    let isSelected: Bool
+    let onOpenAgentTerminal: ((UUID) -> Void)?
+    let stateColor: Color
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: { onOpenAgentTerminal?(agent.workspaceId) }) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .center, spacing: 10) {
+                    statusDot
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(agent.agentLabel)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            statePill
+                        }
+                        Text(isSelected ? selectedSubtitle : idleSubtitle)
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(isSelected ? .accentColor : .secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    actionPill
+                }
+
+                if let preview = agent.preview?.trimmingCharacters(in: .whitespacesAndNewlines), !preview.isEmpty {
+                    Text(preview)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(3)
+                        .truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.leading, 22)
+                }
+            }
+            .padding(.vertical, 11)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .strokeBorder(borderColor, lineWidth: isSelected ? 1.25 : 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(onOpenAgentTerminal == nil)
+        .onHover { isHovering = $0 }
+        .help(onOpenAgentTerminal == nil ? "" : String(localized: "tasks.sidebar.section.branches.openTerminal",
+                                                        defaultValue: "Open this agent terminal below the board",
+                                                        table: "TermLoop"))
+    }
+
+    private var statusDot: some View {
+        Circle()
+            .fill(stateColor)
+            .frame(width: 9, height: 9)
+            .overlay {
+                Circle()
+                    .strokeBorder(Color.white.opacity(0.22), lineWidth: 1)
+            }
+    }
+
+    private var statePill: some View {
+        Text(agent.displayState.sidebarLabel ?? agent.displayState.rawValue)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundColor(stateColor)
+            .lineLimit(1)
+            .padding(.vertical, 2)
+            .padding(.horizontal, 6)
+            .background(stateColor.opacity(0.14))
+            .clipShape(Capsule())
+    }
+
+    private var actionPill: some View {
+        HStack(spacing: 5) {
+            Image(systemName: isSelected ? "rectangle.split.2x1.fill" : "rectangle.split.2x1")
+                .font(.system(size: 10, weight: .semibold))
+            Text(isSelected ? String(localized: "tasks.sidebar.agent.opened",
+                                      defaultValue: "Shown",
+                                      table: "TermLoop")
+                : String(localized: "tasks.sidebar.agent.openTerminalShort",
+                         defaultValue: "Terminal",
+                         table: "TermLoop"))
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .foregroundColor(isSelected ? .white : .secondary)
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .background(isSelected ? Color.accentColor : Color.white.opacity(isHovering ? 0.10 : 0.055))
+        .clipShape(Capsule())
+    }
+
+    private var cardBackground: Color {
+        if isSelected { return Color.accentColor.opacity(0.14) }
+        if isHovering { return Color(nsColor: .controlBackgroundColor).opacity(0.72) }
+        return Color(nsColor: .controlBackgroundColor).opacity(0.42)
+    }
+
+    private var borderColor: Color {
+        if isSelected { return .accentColor.opacity(0.75) }
+        if isHovering { return .accentColor.opacity(0.30) }
+        return Color.white.opacity(0.055)
+    }
+
+    private var selectedSubtitle: String {
+        String(localized: "tasks.sidebar.agent.selectedSubtitle",
+               defaultValue: "Shown below the board",
+               table: "TermLoop")
+    }
+
+    private var idleSubtitle: String {
+        String(localized: "tasks.sidebar.agent.idleSubtitle",
+               defaultValue: "Click to open terminal",
+               table: "TermLoop")
+    }
+}
+
+struct TaskSidebarSectionTitle: View {
+    let title: String
+
+    init(_ title: String) {
+        self.title = title
+    }
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 10, weight: .medium))
+            .foregroundColor(.secondary)
+    }
+}
+
+struct TaskSidebarEmptyText: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11))
+            .foregroundColor(.secondary)
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

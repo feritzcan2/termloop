@@ -12,6 +12,32 @@ public enum TaskColumnId: String, Codable, CaseIterable, Hashable, Sendable {
     case done
 }
 
+
+public enum TaskProvisionFailureReason {
+    public static let interrupted = "interrupted"
+    public static let worktreeMissing = "worktree missing"
+    public static let provisioningUnavailable = "provisioning unavailable"
+
+    public static func localizedDisplayText(for reason: String) -> String {
+        switch reason {
+        case interrupted:
+            return String(localized: "tasks.provision.failure.interrupted",
+                          defaultValue: "Interrupted while provisioning",
+                          table: "TermLoop")
+        case worktreeMissing:
+            return String(localized: "tasks.provision.failure.worktreeMissing",
+                          defaultValue: "Worktree missing",
+                          table: "TermLoop")
+        case provisioningUnavailable:
+            return String(localized: "tasks.provision.failure.provisioningUnavailable",
+                          defaultValue: "Worktree provisioning is not wired yet. Create the worktree from the Work tab for now.",
+                          table: "TermLoop")
+        default:
+            return reason
+        }
+    }
+}
+
 public enum TaskProvisionState: Codable, Equatable, Hashable, Sendable {
     case none
     case pending
@@ -21,6 +47,30 @@ public enum TaskProvisionState: Codable, Equatable, Hashable, Sendable {
     public var isFailed: Bool {
         if case .failed = self { return true }
         return false
+    }
+
+    public var displayLabel: String {
+        switch self {
+        case .none:
+            return ""
+        case .pending:
+            return String(localized: "tasks.provision.pending",
+                          defaultValue: "Provisioning…",
+                          table: "TermLoop")
+        case .ready:
+            return String(localized: "tasks.provision.ready",
+                          defaultValue: "Active",
+                          table: "TermLoop")
+        case .failed:
+            return String(localized: "tasks.provision.failed",
+                          defaultValue: "Failed",
+                          table: "TermLoop")
+        }
+    }
+
+    public var failureDisplayText: String? {
+        guard case .failed(let reason) = self else { return nil }
+        return TaskProvisionFailureReason.localizedDisplayText(for: reason)
     }
 }
 
@@ -110,6 +160,7 @@ public struct TaskCardSummary: Equatable, Identifiable, Hashable, Sendable {
     public let branch: String?
     public let agentCount: Int
     public let hasTicket: Bool
+    public let worktreePath: String?
 
     public init(
         id: UUID,
@@ -117,7 +168,8 @@ public struct TaskCardSummary: Equatable, Identifiable, Hashable, Sendable {
         provisionState: TaskProvisionState,
         branch: String?,
         agentCount: Int,
-        hasTicket: Bool
+        hasTicket: Bool,
+        worktreePath: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -125,6 +177,7 @@ public struct TaskCardSummary: Equatable, Identifiable, Hashable, Sendable {
         self.branch = branch
         self.agentCount = agentCount
         self.hasTicket = hasTicket
+        self.worktreePath = worktreePath
     }
 }
 
