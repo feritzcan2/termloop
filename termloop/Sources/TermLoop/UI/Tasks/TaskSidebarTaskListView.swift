@@ -10,6 +10,7 @@ struct TaskSidebarTaskListView: View {
     @ObservedObject var store: TaskBoardStore
     @ObservedObject var selection: TaskSelectionStore
     var onCreateTask: ((TaskColumnId) -> UUID?)?
+    var onOpenSettings: () -> Void = {}
 
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
@@ -17,21 +18,29 @@ struct TaskSidebarTaskListView: View {
     var body: some View {
         let statuses = agentStatusesByTaskId
         let workItems = workItemsByTaskId
-        return ScrollView {
-            LazyVStack(alignment: .leading, spacing: 10) {
-                ForEach(store.columnSnapshots) { col in
-                    if !col.cards.isEmpty {
-                        section(
-                            title: title(for: col.id),
-                            cards: col.cards,
-                            statuses: statuses,
-                            workItems: workItems
-                        )
+        return VStack(spacing: 0) {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(store.columnSnapshots) { col in
+                        if !col.cards.isEmpty {
+                            section(
+                                title: store.columnTitle(for: col.id).uppercased(),
+                                cards: col.cards,
+                                statuses: statuses,
+                                workItems: workItems
+                            )
+                        }
                     }
+                    createButton
                 }
-                createButton
+                .padding(10)
             }
-            .padding(10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            TaskSidebarSettingsButton(action: onOpenSettings)
+                .padding(10)
+                .padding(.top, 1)
+                .background(Color(nsColor: .windowBackgroundColor))
         }
     }
 
@@ -167,16 +176,6 @@ struct TaskSidebarTaskListView: View {
         guard let onCreateTask else { return }
         if let id = onCreateTask(.backlog) {
             selection.select(id)
-        }
-    }
-
-    private func title(for id: TaskColumnId) -> String {
-        switch id {
-        case .backlog: return String(localized: "tasks.column.backlog", defaultValue: "BACKLOG", table: "TermLoop")
-        case .todo: return String(localized: "tasks.column.todo", defaultValue: "TODO", table: "TermLoop")
-        case .inProgress: return String(localized: "tasks.column.in_progress", defaultValue: "IN PROGRESS", table: "TermLoop")
-        case .inReview: return String(localized: "tasks.column.in_review", defaultValue: "IN REVIEW", table: "TermLoop")
-        case .done: return String(localized: "tasks.column.done", defaultValue: "DONE", table: "TermLoop")
         }
     }
 

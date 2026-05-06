@@ -1,6 +1,7 @@
 // Copyright (c) 2026-present Ferit Özcan. All rights reserved.
 // Part of TermLoop — GPL-3.0-or-later
 
+import AppKit
 import SwiftUI
 
 /// Single kanban card. Pure projection of `TaskCardSummary`. Selection state
@@ -75,6 +76,13 @@ struct TaskCardView: View {
                               defaultValue: "Open work item",
                               table: "TermLoop")) {
                     openWorkItem(workItem)
+                }
+            }
+            if let workItem, workItem.taskFilePath != nil {
+                Button(String(localized: "tasks.card.menu.openTaskFile",
+                              defaultValue: "Open task.md",
+                              table: "TermLoop")) {
+                    openTaskFile(workItem)
                 }
             }
             Button(String(localized: "tasks.card.menu.archive",
@@ -239,6 +247,11 @@ struct TaskCardView: View {
             workspaceIds: workItem.workspaceId.map { [$0] } ?? [],
             preferredWorkspaceId: workItem.workspaceId
         )
+    }
+
+    private func openTaskFile(_ workItem: TaskWorkItemSnapshot) {
+        guard let path = workItem.taskFilePath else { return }
+        NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: false))
     }
 }
 
