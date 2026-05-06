@@ -440,6 +440,8 @@
 		C9A10004A6EAC0DE00000001 /* TermLoopBuiltInMCP.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A10004A6EAC0DE00000002 /* TermLoopBuiltInMCP.swift */; };
 		C9A10007A6EAC0DE00000001 /* AgentReportedContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A10007A6EAC0DE00000002 /* AgentReportedContext.swift */; };
 		C9A10008A6EAC0DE00000001 /* AgentReportedStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A10008A6EAC0DE00000002 /* AgentReportedStateStore.swift */; };
+		RWIT0002A6EAC0DE00000001 /* RemoteWorkItemCLIProviders.swift in Sources */ = {isa = PBXBuildFile; fileRef = RWIT0002A6EAC0DE00000002 /* RemoteWorkItemCLIProviders.swift */; };
+		RWIT0001A6EAC0DE00000001 /* RemoteWorkItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = RWIT0001A6EAC0DE00000002 /* RemoteWorkItems.swift */; };
 		CA39C0304FE351A21C372429 /* SidebarWidthPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0171AF1F49F7547191CEE5 /* SidebarWidthPolicyTests.swift */; };
 		CA5E359BFAD949CF913BB7B7 /* CodexHookDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = E224911A515BEA186BA1CC28 /* CodexHookDiscovery.swift */; };
 		CAFE00000000000000010000 /* QuickActionSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAFE00000000000000000000 /* QuickActionSettings.swift */; };
@@ -1045,6 +1047,8 @@
 		C9A10004A6EAC0DE00000002 /* TermLoopBuiltInMCP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TermLoop/Integrations/TermLoopBuiltInMCP.swift; sourceTree = "<group>"; };
 		C9A10007A6EAC0DE00000002 /* AgentReportedContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TermLoop/Core/AgentReportedContext.swift; sourceTree = "<group>"; };
 		C9A10008A6EAC0DE00000002 /* AgentReportedStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TermLoop/Core/AgentReportedStateStore.swift; sourceTree = "<group>"; };
+		RWIT0002A6EAC0DE00000002 /* RemoteWorkItemCLIProviders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TermLoop/RemoteWorkItems/RemoteWorkItemCLIProviders.swift; sourceTree = "<group>"; };
+		RWIT0001A6EAC0DE00000002 /* RemoteWorkItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TermLoop/RemoteWorkItems/RemoteWorkItems.swift; sourceTree = "<group>"; };
 		CAFE00000000000000000000 /* QuickActionSettings.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickActionSettings.swift; sourceTree = "<group>"; };
 		CAFE00000000000000000001 /* QuickActionLRUStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickActionLRUStore.swift; sourceTree = "<group>"; };
 		CAFE00000000000000000002 /* QuickActionRunResolver.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickActionRunResolver.swift; sourceTree = "<group>"; };
@@ -2454,6 +2458,8 @@
 				C9A10007A6EAC0DE00000001 /* AgentReportedContext.swift in Sources */,
 				D9B10001A6EAC0DE00000001 /* WorktreeContextBlock.swift in Sources */,
 				C9A10008A6EAC0DE00000001 /* AgentReportedStateStore.swift in Sources */,
+				RWIT0002A6EAC0DE00000001 /* RemoteWorkItemCLIProviders.swift in Sources */,
+				RWIT0001A6EAC0DE00000001 /* RemoteWorkItems.swift in Sources */,
 				AA00CDA6EAC0DE12345671 /* EventBus.swift in Sources */,
 				AA00CFA6EAC0DE12345671 /* TermLoopSubscriptionTracker.swift in Sources */,
 				A9E70003A6EAC0DE00000003 /* Workspace+TermLoop.swift in Sources */,
