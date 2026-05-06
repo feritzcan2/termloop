@@ -2135,6 +2135,18 @@ enum TermLoopHooks {
     @MainActor
     static func bootstrapSidebar(tabManager: TabManager) {
         BridgeCoordinator.shared.start(tabManager: tabManager)
+        TaskQuickActionsBridge.requestFocusWorkspace = { workspaceId in
+            TermLoopHooks.focusWorkspace(workspaceId: workspaceId)
+        }
+        TaskQuickActionsBridge.requestSelectWorkspaceInline = { workspaceId in
+            TermLoopHooks.selectWorkspaceForTaskBoard(workspaceId: workspaceId)
+        }
+        TaskQuickActionsBridge.requestOpenWorktreePath = { path in
+            WorktreeRepairCoordinator.shared.openFolder(path: path)
+        }
+        TaskQuickActionsBridge.requestNewAgentPanel = { workspaceId in
+            TermLoopHooks.presentTaskAgentQuickAction(workspaceId: workspaceId)
+        }
     }
 
     /// Silently writes the six teleport hooks into `~/.claude/settings.json`
@@ -2522,6 +2534,9 @@ enum AgentMainAreaOverlayMode: Equatable {
     case contextBank
     case settings
     case projectEmpty
+    /// Project-scoped Tasks (kanban) page. Selected when the sidebar is on
+    /// `.tasks` and a project is active.
+    case taskBoard(UUID)
 
     private static let fallbackMainAreaWindowId = UUID(
         uuidString: "00000000-0000-0000-0000-000000000001"
@@ -2537,6 +2552,7 @@ enum AgentMainAreaOverlayMode: Equatable {
         case .contextBank: return "contextBank"
         case .settings: return "settings"
         case .projectEmpty: return "projectEmpty"
+        case let .taskBoard(projectId): return "taskBoard:\(projectId.uuidString)"
         }
     }
 
@@ -2567,6 +2583,7 @@ enum AgentMainAreaOverlayMode: Equatable {
                 gitChangesWorkspaceId: GitChangesMainAreaStore.shared.presentation?.workspaceId,
                 abilityDetailId: AbilityDetailUIState.shared.selectedAbilityId,
                 abilityDetailIsSplit: false,
+                taskBoardInlineWorkspaceId: nil,
                 hasCommandPaletteOrFileDropOverlay: false,
                 handoffGeneration: 0
             )
@@ -2653,6 +2670,25 @@ private struct AgentMainAreaOverlaySwap<Content: View>: View {
         }
     }
 
+    private var taskSelectionStore: TaskSelectionStore? {
+        guard TermLoopSidebarTab(rawValue: tabRawValue) == .work,
+              WorkSubTab(rawValue: workSubTabRaw) == .tasks,
+              let windowId = AppDelegate.shared?.windowId(for: tabManager) else {
+            return nil
+        }
+        return TaskSelectionStoreProvider.shared.store(for: windowId)
+    }
+
+    @ViewBuilder
+    private func gitChangesSurface() -> some View {
+        if let selection = taskSelectionStore,
+           selection.inlineTerminalWorkspaceId != nil {
+            TaskGitChangesWithInlineTerminal(selection: selection, tabManager: tabManager)
+        } else {
+            GitChangesMainAreaHost()
+        }
+    }
+
     var body: some View {
         Group {
             switch overlayMode {
@@ -2678,7 +2714,7 @@ private struct AgentMainAreaOverlaySwap<Content: View>: View {
                 }
             case .gitChanges:
                 overlayContainer {
-                    GitChangesMainAreaHost()
+                    gitChangesSurface()
                 }
             case .contextBank:
                 overlayContainer {
@@ -2692,6 +2728,13 @@ private struct AgentMainAreaOverlaySwap<Content: View>: View {
                 content()
             case .projectEmpty:
                 overlayContainer { MainAreaProjectEmptyState() }
+            case let .taskBoard(projectId):
+                overlayContainer {
+                    TaskBoardRouteHost(
+                        projectId: projectId,
+                        windowId: AppDelegate.shared?.windowId(for: tabManager)
+                    )
+                }
             }
         }
         .id(overlayMode.identity)
@@ -2721,12 +2764,59 @@ private struct AgentMainAreaOverlaySwap<Content: View>: View {
             )
             applyPresentation(reason: "workSubTab")
         }
-        .onChange(of: projectStore.activeProjectId) { _ in
+        .onChange(of: projectStore.activeProjectId) { newValue in
             MainAreaPresentationCoordinator.shared.handleNavigationEvent(
                 .projectChanged,
                 tabManager: tabManager
             )
             applyPresentation(reason: "activeProject")
+            TaskBoardReconcileHook.projectDidActivate(newValue)
+        }
+        .task {
+            // Fires once when the host view appears with whatever activeProjectId
+            // is currently restored — covers the bootstrap case where .onChange
+            // does not fire for the initial value.
+            TaskBoardReconcileHook.projectDidActivate(projectStore.activeProjectId)
+        }
+    }
+}
+
+/// Tasks can open Git Changes as the top pane while preserving an already
+/// opened task-agent terminal underneath. The route is still `.gitChanges`;
+/// only the Tasks-tab local split is reused.
+@MainActor
+private struct TaskGitChangesWithInlineTerminal: View {
+    @ObservedObject var selection: TaskSelectionStore
+    @ObservedObject var tabManager: TabManager
+
+    var body: some View {
+        if selection.inlineTerminalWorkspaceId != nil {
+            HorizontalResizableSplit(
+                topMinHeight: 320,
+                bottomMinHeight: 260,
+                bottomPreferredHeight: 430,
+                top: { GitChangesMainAreaHost() },
+                bottom: {
+                    TaskBoardEmbeddedWorkspaceTerminal(
+                        tabManager: tabManager,
+                        workspaceId: selection.inlineTerminalWorkspaceId
+                    )
+                }
+            )
+            .onChange(of: selection.inlineTerminalWorkspaceId) { _, _ in
+                TermLoopHooks.applyMainAreaPresentation(
+                    tabManager: tabManager,
+                    reason: "gitChanges.taskInlineTerminalWorkspace"
+                )
+            }
+        } else {
+            GitChangesMainAreaHost()
+                .onAppear {
+                    TermLoopHooks.applyMainAreaPresentation(
+                        tabManager: tabManager,
+                        reason: "gitChanges.taskInlineTerminalClosed"
+                    )
+                }
         }
     }
 }
@@ -2738,11 +2828,12 @@ private struct AgentMainAreaOverlaySwap<Content: View>: View {
 @MainActor
 private struct GitChangesMainAreaHost: View {
     @ObservedObject private var store = GitChangesMainAreaStore.shared
+    @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
 
     var body: some View {
         if let presentation = store.presentation,
            let tabManager = AppDelegate.shared?.tabManager,
-           let workspace = tabManager.tabs.first(where: { $0.id == presentation.workspaceId }) {
+           let workspace = resolvedWorkspace(for: presentation, in: tabManager) {
             WorktreeChangesSheet(
                 workspace: workspace,
                 branch: presentation.branch,
@@ -2768,6 +2859,29 @@ private struct GitChangesMainAreaHost: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear { store.close() }
         }
+    }
+
+    private func resolvedWorkspace(
+        for presentation: WorktreeChangesPresentation,
+        in tabManager: TabManager
+    ) -> Workspace? {
+        if let exact = tabManager.tabs.first(where: { $0.id == presentation.workspaceId }) {
+            return exact
+        }
+        guard let pathKey = TaskPathNormalization.resolveDisplayAndKey(presentation.worktreePath)?.keyPath else {
+            return nil
+        }
+        return tabManager.tabs.first { workspace in
+            workspacePathKeys(workspace).contains(pathKey)
+        }
+    }
+
+    private func workspacePathKeys(_ workspace: Workspace) -> Set<String> {
+        Set([
+            metadataStore.worktreePath(forWorkspaceId: workspace.id),
+            workspace.termLoopPresentationCwd(),
+            workspace.currentDirectory
+        ].compactMap { TaskPathNormalization.resolveDisplayAndKey($0)?.keyPath })
     }
 }
 
@@ -2835,9 +2949,9 @@ extension TermLoopHooks {
     /// Cross-window safe: uses `AppDelegate.tabManagerFor(tabId:)` to find
     /// the correct `TabManager` instead of assuming the current window's
     /// one owns the workspace.
-    static func focusWorkspace(workspaceId: UUID) {
-        guard let appDelegate = AppDelegate.shared else { return }
-        guard let targetTM = appDelegate.tabManagerFor(tabId: workspaceId) else { return }
+    static func focusWorkspace(workspaceId: UUID) -> Bool {
+        guard let appDelegate = AppDelegate.shared else { return false }
+        guard let targetTM = appDelegate.tabManagerFor(tabId: workspaceId) else { return false }
         // Always run through the helper — even when this workspace is
         // already selected, an open overlay (AbilityDetail / Markdown
         // document / GitChanges) would otherwise outlive the focus
@@ -2846,6 +2960,37 @@ extension TermLoopHooks {
         if let wid = appDelegate.windowId(for: targetTM) {
             _ = appDelegate.focusMainWindow(windowId: wid)
         }
+        return true
+    }
+
+
+    static func selectWorkspaceForTaskBoard(workspaceId: UUID) -> Bool {
+        guard let appDelegate = AppDelegate.shared else { return false }
+        guard let targetTM = appDelegate.tabManagerFor(tabId: workspaceId) else { return false }
+        if targetTM.selectedTabId != workspaceId {
+            targetTM.selectedTabId = workspaceId
+        }
+        if let wid = appDelegate.windowId(for: targetTM) {
+            _ = appDelegate.focusMainWindow(windowId: wid)
+        }
+        TermLoopHooks.applyMainAreaPresentation(
+            tabManager: targetTM,
+            reason: "taskBoardInlineWorkspaceActivation"
+        )
+        return true
+    }
+
+    static func presentTaskAgentQuickAction(workspaceId: UUID) {
+        _ = focusWorkspace(workspaceId: workspaceId)
+        QuickActionController.shared.present(
+            prefill: QuickActionPresentationRequest(
+                initialSurface: .run,
+                targetWorkspaceId: workspaceId,
+                promptText: nil,
+                launchSource: .quickAction,
+                reasonTag: "quickAction.freePrompt"
+            )
+        )
     }
 
     static func focusAbilityWorkspace(workspaceId: UUID, abilityId: String) {

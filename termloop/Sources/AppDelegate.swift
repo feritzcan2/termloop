@@ -13129,6 +13129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // is removed when the last window closes.
         persistWindowGeometry(from: window)
         guard let removed = unregisterMainWindowContext(for: window) else { return }
+        TaskSelectionStoreProvider.shared.remove(windowId: removed.windowId)
         commandPaletteVisibilityByWindowId.removeValue(forKey: removed.windowId)
         commandPalettePendingOpenByWindowId.removeValue(forKey: removed.windowId)
         commandPaletteRecentRequestAtByWindowId.removeValue(forKey: removed.windowId)

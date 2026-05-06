@@ -1,4 +1,4 @@
-// Copyright (c) 2026-present Ferit özcan. All rights reserved.
+// Copyright (c) 2026-present Ferit Özcan. All rights reserved.
 // Part of TermLoop — GPL-3.0-or-later
 
 import AppKit
@@ -28,6 +28,7 @@ struct MainAreaPresentationInput: Equatable {
     let gitChangesWorkspaceId: UUID?
     let abilityDetailId: String?
     let abilityDetailIsSplit: Bool
+    let taskBoardInlineWorkspaceId: UUID?
     let hasCommandPaletteOrFileDropOverlay: Bool
     let handoffGeneration: UInt64
 
@@ -47,6 +48,7 @@ struct MainAreaPresentationInput: Equatable {
             gitChangesWorkspaceId: gitChangesWorkspaceId,
             abilityDetailId: abilityDetailId,
             abilityDetailIsSplit: abilityDetailIsSplit,
+            taskBoardInlineWorkspaceId: taskBoardInlineWorkspaceId,
             hasCommandPaletteOrFileDropOverlay: hasCommandPaletteOrFileDropOverlay,
             handoffGeneration: handoffGeneration
         )
@@ -62,6 +64,24 @@ enum MainAreaMainPageKind: Equatable {
     case contextBank
     case settings
     case projectEmpty
+    case taskBoard(projectId: UUID)
+
+    var isTaskBoard: Bool {
+        if case .taskBoard = self { return true }
+        return false
+    }
+
+    /// Routes that can keep the Tasks inline agent terminal mounted as a
+    /// local bottom split. Git Changes can replace the board canvas while the
+    /// already-open agent terminal remains underneath.
+    var supportsTaskInlineTerminal: Bool {
+        switch self {
+        case .taskBoard, .gitChanges:
+            return true
+        case .content, .agents, .ability, .markdownDocument, .contextBank, .settings, .projectEmpty:
+            return false
+        }
+    }
 
     var identity: String {
         switch self {
@@ -81,6 +101,8 @@ enum MainAreaMainPageKind: Equatable {
             return "settings"
         case .projectEmpty:
             return "projectEmpty"
+        case let .taskBoard(projectId):
+            return "taskBoard:\(projectId.uuidString)"
         }
     }
 
@@ -93,6 +115,8 @@ enum MainAreaMainPageKind: Equatable {
             return true
         case .ability(_, let split):
             return split
+        case .taskBoard:
+            return false
         case .agents, .markdownDocument, .gitChanges, .contextBank, .settings, .projectEmpty:
             return false
         }
@@ -169,8 +193,10 @@ enum MainAreaPresentationPolicy {
 
             let shouldShowSelected = isSelected && page.allowsSelectedWorkspaceContent
             let shouldShowRetiring = isRetiring && canShowRetiring
+            let shouldShowTaskInlineTerminal = page.supportsTaskInlineTerminal
+                && input.taskBoardInlineWorkspaceId == workspaceId
             let isVisible = shouldShowSelected || shouldShowRetiring
-            let portalPriority = shouldShowSelected ? 2 : (shouldShowRetiring ? 1 : 0)
+            let portalPriority = shouldShowTaskInlineTerminal ? 3 : (shouldShowSelected ? 2 : (shouldShowRetiring ? 1 : 0))
 
             workspacePresentations[workspaceId] = MainAreaWorkspacePresentation(
                 workspaceId: workspaceId,
@@ -179,7 +205,7 @@ enum MainAreaPresentationPolicy {
                 renderOpacity: isVisible ? 1 : (shouldPrime ? 0.001 : 0),
                 isInputActive: shouldShowSelected,
                 portalPriority: portalPriority,
-                terminalPortalsVisible: isVisible,
+                terminalPortalsVisible: isVisible || shouldShowTaskInlineTerminal,
                 browserPortalsVisible: isVisible
             )
         }
@@ -217,6 +243,11 @@ enum MainAreaPresentationPolicy {
         }
         if let gitWorkspaceId = input.gitChangesWorkspaceId {
             return .gitChanges(gitWorkspaceId)
+        }
+        if input.sidebarTab == .work,
+           input.workSubTab == .tasks,
+           let projectId = input.activeProjectId {
+            return .taskBoard(projectId: projectId)
         }
         if shouldShowProjectEmptyState(input) {
             return .projectEmpty
@@ -311,6 +342,8 @@ extension MainAreaMainPageKind {
             return .settings
         case .projectEmpty:
             return .projectEmpty
+        case let .taskBoard(projectId):
+            return .taskBoard(projectId)
         }
     }
 }
@@ -392,9 +425,19 @@ final class MainAreaPresentationCoordinator {
             gitChangesWorkspaceId: GitChangesMainAreaStore.shared.presentation?.workspaceId,
             abilityDetailId: selectedAbilityId,
             abilityDetailIsSplit: abilitySplit,
+            taskBoardInlineWorkspaceId: taskBoardInlineWorkspaceId(windowId: windowId, sidebarTab: sidebarTab, workSubTab: workSubTab),
             hasCommandPaletteOrFileDropOverlay: hasCommandPaletteOrFileDropOverlay,
             handoffGeneration: handoffGeneration
         )
+    }
+
+    private func taskBoardInlineWorkspaceId(
+        windowId: UUID,
+        sidebarTab: TermLoopSidebarTab,
+        workSubTab: WorkSubTab
+    ) -> UUID? {
+        guard sidebarTab == .work, workSubTab == .tasks else { return nil }
+        return TaskSelectionStoreProvider.shared.store(for: windowId).inlineTerminalWorkspaceId
     }
 
     func snapshot(
@@ -676,7 +719,9 @@ final class MainAreaPresentationCoordinator {
         let visibleWorkspaceIds = snapshot.workspacePresentations.values
             .filter { $0.terminalPortalsVisible || $0.browserPortalsVisible }
             .map(\.workspaceId)
-        if !snapshot.mainPage.allowsSelectedWorkspaceContent && !visibleWorkspaceIds.isEmpty {
+        if !snapshot.mainPage.allowsSelectedWorkspaceContent &&
+            !snapshot.mainPage.supportsTaskInlineTerminal &&
+            !visibleWorkspaceIds.isEmpty {
             dlog(
                 "mainArea.policy.violation route=\(snapshot.mainPage.identity) visible=\(visibleWorkspaceIds.map { $0.uuidString.prefix(5) }.joined(separator: ","))"
             )
