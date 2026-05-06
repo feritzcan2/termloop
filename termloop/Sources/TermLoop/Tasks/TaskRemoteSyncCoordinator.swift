@@ -338,7 +338,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 guard result.exitStatus == 0, !result.timedOut else {
                     throw RemoteWorkItemError.commandFailed(
                         result.stderr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            ? "Could not list Jira projects."
+                            ? "Jira project list is unavailable. Enter the project key manually; sync can still work."
                             : result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
                     )
                 }
@@ -348,9 +348,45 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                     self?.isLoadingProjects = false
                 }
             } catch {
-                await MainActor.run {
-                    self?.isLoadingProjects = false
-                    self?.lastMessage = String(describing: error)
+                let projectListError = Self.humanError(error)
+                do {
+                    let fallback = try await Self.runAcliJira(
+                        settings: syncSettings,
+                        arguments: [
+                            "jira", "workitem", "search",
+                            "--jql", "assignee = currentUser() ORDER BY updated DESC",
+                            "--limit", "100",
+                            "--fields", "key,project,summary",
+                            "--json"
+                        ],
+                        timeout: 20
+                    )
+                    guard fallback.exitStatus == 0, !fallback.timedOut else {
+                        throw RemoteWorkItemError.commandFailed(fallback.stderr)
+                    }
+                    let options = try Self.parseProjectOptionsFromWorkItems(fallback.stdout)
+                    await MainActor.run {
+                        self?.projectOptions = options
+                        self?.isLoadingProjects = false
+                        self?.lastMessage = options.isEmpty
+                            ? String(
+                                localized: "tasks.settings.jiraProject.listUnavailableWithReason",
+                                defaultValue: "Jira project list is unavailable: \(projectListError)",
+                                table: "TermLoop"
+                            )
+                            : nil
+                    }
+                } catch {
+                    let fallbackError = Self.humanError(error)
+                    await MainActor.run {
+                        self?.projectOptions = []
+                        self?.isLoadingProjects = false
+                        self?.lastMessage = String(
+                            localized: "tasks.settings.jiraProject.listUnavailableWithReason",
+                            defaultValue: "Jira project list is unavailable: \(projectListError). Fallback also failed: \(fallbackError)",
+                            table: "TermLoop"
+                        )
+                    }
                 }
             }
         }
@@ -976,6 +1012,11 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
+    private static func humanError(_ error: Error) -> String {
+        let text = String(describing: error).trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? String(localized: "common.unknownError", defaultValue: "Unknown error", table: "TermLoop") : text
+    }
+
     private static func parseProjectOptions(_ text: String) throws -> [TaskRemoteProjectOption] {
         guard let data = text.data(using: .utf8) else {
             throw RemoteWorkItemError.parseFailed("Provider CLI returned non-UTF8 JSON")
@@ -1005,6 +1046,44 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
             return TaskRemoteProjectOption(key: key, name: name)
         }
         .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
+    }
+
+    private static func parseProjectOptionsFromWorkItems(_ text: String) throws -> [TaskRemoteProjectOption] {
+        guard let data = text.data(using: .utf8) else {
+            throw RemoteWorkItemError.parseFailed("Provider CLI returned non-UTF8 JSON")
+        }
+        let json = try JSONSerialization.jsonObject(with: data)
+        let items: [[String: Any]]
+        if let array = json as? [[String: Any]] {
+            items = array
+        } else if let object = json as? [String: Any] {
+            items = (object["issues"] as? [[String: Any]])
+                ?? (object["workItems"] as? [[String: Any]])
+                ?? (object["values"] as? [[String: Any]])
+                ?? []
+        } else {
+            items = []
+        }
+
+        var projects: [String: String] = [:]
+        for item in items {
+            let fields = item["fields"] as? [String: Any]
+            let project = (fields?["project"] as? [String: Any]) ?? (item["project"] as? [String: Any])
+            let explicitKey = (project?["key"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let issueKey = ((item["key"] as? String) ?? (fields?["key"] as? String))?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let derivedKey = issueKey.flatMap { key -> String? in
+                guard let dash = key.firstIndex(of: "-") else { return nil }
+                return String(key[..<dash])
+            }
+            guard let key = (explicitKey?.nilIfEmpty ?? derivedKey?.nilIfEmpty) else { continue }
+            let name = ((project?["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty) ?? key
+            projects[key] = projects[key] ?? name
+        }
+
+        return projects
+            .map { TaskRemoteProjectOption(key: $0.key, name: $0.value) }
+            .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
     }
 
     private static let defaultJiraStatuses = ["To Do", "In Progress", "Done"]
