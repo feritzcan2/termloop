@@ -97,7 +97,8 @@ struct TaskCardView: View {
             return branch
         }
         if let path = normalizedWorktreePath {
-            return URL(fileURLWithPath: path).lastPathComponent
+            return TaskPathNormalization.resolveDisplayAndKey(path)?.leafName
+                ?? URL(fileURLWithPath: path).lastPathComponent
         }
         return String(localized: "tasks.card.identity.manual",
                       defaultValue: "Manual task", table: "TermLoop")
@@ -114,7 +115,7 @@ struct TaskCardView: View {
         guard let path = card.worktreePath?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty else {
             return nil
         }
-        return URL(fileURLWithPath: path).standardizedFileURL.path
+        return TaskPathNormalization.resolveDisplayAndKey(path)?.displayPath
     }
 
     private var cardBackground: Color {

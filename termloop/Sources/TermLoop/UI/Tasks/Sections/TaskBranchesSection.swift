@@ -10,6 +10,7 @@ import SwiftUI
 struct TaskBranchesSection: View {
     let branch: String?
     let worktreePath: String?
+    let taskWorkspaceId: UUID?
     var selectedAgentWorkspaceId: UUID? = nil
     var onOpenAgentTerminal: ((UUID) -> Void)? = nil
 
@@ -149,42 +150,14 @@ struct TaskBranchesSection: View {
         .help(path)
     }
 
-    fileprivate struct BranchAgentState: Equatable, Identifiable {
-        let workspaceId: UUID
-        let agentLabel: String
-        let displayState: TerminalAgentDisplayState
-        let preview: String?
-
-        var id: UUID { workspaceId }
-    }
-
-    private var currentAgents: [BranchAgentState] {
-        guard let path = normalizedWorktreePath else { return [] }
-        return metadataStore.workspaceIds(withWorktreePath: path).compactMap { workspaceId in
-            let metadata = metadataStore.metadata(forWorkspaceId: workspaceId)
-            if let presentation = activityStore.presentation(forWorkspaceId: workspaceId) {
-                return BranchAgentState(
-                    workspaceId: workspaceId,
-                    agentLabel: presentation.agentId ?? metadata.terminalAgentId ?? fallbackAgentLabel,
-                    displayState: presentation.displayState,
-                    preview: presentation.preview
-                )
-            }
-            let agentLabel = metadata.terminalAgentId ?? metadata.persistedAgentSession?.agentId
-            guard let agentLabel else { return nil }
-            return BranchAgentState(
-                workspaceId: workspaceId,
-                agentLabel: agentLabel,
-                displayState: .ready,
-                preview: metadata.lastMessagePreview
-            )
-        }
-        .sorted { lhs, rhs in
-            if lhs.displayState.activeAgentsSortPriority != rhs.displayState.activeAgentsSortPriority {
-                return lhs.displayState.activeAgentsSortPriority < rhs.displayState.activeAgentsSortPriority
-            }
-            return lhs.agentLabel.localizedCaseInsensitiveCompare(rhs.agentLabel) == .orderedAscending
-        }
+    private var currentAgents: [TaskWorktreeAgentSnapshot] {
+        _ = metadataStore
+        _ = activityStore
+        return TaskAgentProjectionBuilder.agents(
+            worktreePath: worktreePath,
+            taskWorkspaceId: taskWorkspaceId,
+            fallbackAgentLabel: fallbackAgentLabel
+        )
     }
 
     private var currentBranchName: String? {
@@ -193,16 +166,10 @@ struct TaskBranchesSection: View {
 
     private var secondaryBranches: [String] {
         var values: [String] = []
-        if let path = normalizedWorktreePath {
-            values.append(contentsOf: metadataStore.workspaceIds(withWorktreePath: path).compactMap { id in
-                metadataStore.metadata(forWorkspaceId: id).branch?
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                    .nilIfEmpty
-            })
-        }
-        if let normalizedBranch {
-            values.append(normalizedBranch)
-        }
+        values.append(contentsOf: TaskAgentProjectionBuilder.recordedBranches(
+            worktreePath: worktreePath,
+            expectedBranch: normalizedBranch
+        ))
         let current = currentBranchName
         return Array(Set(values))
             .filter { $0 != current }
@@ -233,9 +200,7 @@ struct TaskBranchesSection: View {
 
     private var normalizedWorktreePath: String? {
         guard let worktreePath else { return nil }
-        let trimmed = worktreePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        return WorktreeResolver.normalizePath(trimmed) ?? URL(fileURLWithPath: trimmed).standardizedFileURL.path
+        return TaskPathNormalization.resolveDisplayAndKey(worktreePath)?.displayPath
     }
 
     private var fallbackAgentLabel: String {
@@ -274,7 +239,7 @@ struct TaskBranchesSection: View {
 }
 
 private struct WorktreeAgentCard: View {
-    let agent: TaskBranchesSection.BranchAgentState
+    let agent: TaskWorktreeAgentSnapshot
     let isSelected: Bool
     let onOpenAgentTerminal: ((UUID) -> Void)?
     let stateColor: Color

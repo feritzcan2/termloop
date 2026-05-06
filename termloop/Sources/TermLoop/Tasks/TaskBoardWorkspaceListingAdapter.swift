@@ -14,7 +14,7 @@ public final class TaskBoardWorkspaceListingAdapter: TaskBoardWorkspaceListing {
     public static let shared = TaskBoardWorkspaceListingAdapter()
     private init() {}
 
-    public func workspaces(in projectId: UUID) -> [TaskWorkspaceDescriptor] {
+    public func workspaces(in projectId: UUID) async -> [TaskWorkspaceDescriptor] {
         let store = WorkspaceMetadataStore.shared
         let projectRoot = projectRoot(for: projectId)
         let workspaceIds = store.workspaceIds(inProject: projectId)
@@ -35,18 +35,10 @@ public final class TaskBoardWorkspaceListingAdapter: TaskBoardWorkspaceListing {
         // workspace metadata row points at it. Include `git worktree list`
         // entries so Tasks can recover by path instead of painting every
         // existing branch red as "Worktree missing".
-        var seenPaths = Set(descriptors.map {
-            TaskPathNormalization.normalize($0.worktreePath, relativeTo: projectRoot)
+        var seenPaths = Set(descriptors.compactMap {
+            TaskPathNormalization.resolveDisplayAndKey($0.worktreePath, relativeTo: projectRoot)?.keyPath
         })
-        let gitEntries: [GitWorktreeService.ListEntry]
-        if let cached = WorktreeRegistry.shared.cachedSnapshot(projectFolder: projectRoot.path, maximumAge: 30) {
-            gitEntries = cached.entries
-        } else {
-            gitEntries = (try? GitWorktreeService().list(in: projectRoot.path)) ?? []
-            if !gitEntries.isEmpty {
-                _ = WorktreeRegistry.shared.record(projectFolder: projectRoot.path, entries: gitEntries)
-            }
-        }
+        let gitEntries = await gitWorktreeEntries(projectRoot: projectRoot)
         for entry in gitEntries where !entry.isMain {
             guard WorktreeResolver.worktreeRoot(
                 containing: entry.path,
@@ -54,8 +46,10 @@ public final class TaskBoardWorkspaceListingAdapter: TaskBoardWorkspaceListing {
             ) != nil else {
                 continue
             }
-            let normalized = TaskPathNormalization.normalize(entry.path, relativeTo: projectRoot)
-            guard seenPaths.insert(normalized).inserted else { continue }
+            guard let resolved = TaskPathNormalization.resolveDisplayAndKey(entry.path, relativeTo: projectRoot),
+                  seenPaths.insert(resolved.keyPath).inserted else {
+                continue
+            }
             descriptors.append(TaskWorkspaceDescriptor(
                 workspaceId: nil,
                 projectId: projectId,
@@ -65,6 +59,23 @@ public final class TaskBoardWorkspaceListingAdapter: TaskBoardWorkspaceListing {
         }
 
         return descriptors
+    }
+
+    private func gitWorktreeEntries(projectRoot: URL) async -> [GitWorktreeService.ListEntry] {
+        if let cached = WorktreeRegistry.shared.cachedSnapshot(projectFolder: projectRoot.path, maximumAge: 30) {
+            return cached.entries
+        }
+
+        return await withCheckedContinuation { continuation in
+            WorktreeRegistry.shared.refresh(projectFolder: projectRoot.path, reason: "tasks.reconcile") { result in
+                switch result {
+                case .success(let snapshot):
+                    continuation.resume(returning: snapshot.entries)
+                case .failure:
+                    continuation.resume(returning: [])
+                }
+            }
+        }
     }
 
     public func projectRoot(for projectId: UUID) -> URL {

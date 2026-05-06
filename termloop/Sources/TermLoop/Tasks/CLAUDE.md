@@ -18,7 +18,7 @@ All mutations to `TaskRecord` records and to the `TaskRecord` ↔ workspace bind
 - `bindingGeneration` is monotonic; bumped on every bind/unbind. Stale async-bind completions whose generation no longer matches MUST be ignored — the cancel path (`cancelBinding(taskId:)`) bumps generation immediately so any in-flight `bindWorktree` can no-op on completion.
 - Bind-failure auto-revert is the **only** auto column move. All other moves are user-driven. On failure, the card returns to its previous column with `provisionState = .failed(reason)`.
 - Reconcile is idempotent: running multiple times on the same startup leaves state unchanged.
-- Import idempotency key is `(projectId, normalize(worktreePath))`. Branches can be renamed; do not key on branch.
+- Import idempotency key is `(projectId, TaskPathNormalization.resolveDisplayAndKey(...).keyPath)`. Branches can be renamed; do not key on branch. Display paths come from the same helper via `.displayPath`.
 
 ## Cancel semantics
 
@@ -26,4 +26,4 @@ All mutations to `TaskRecord` records and to the `TaskRecord` ↔ workspace bind
 
 ## Reconcile wiring
 
-`TaskBoardReconcileHook.projectDidActivate(_:)` is called from `TermLoopHooks.swift`'s `.onChange(of: projectStore.activeProjectId)` handler. It looks up the per-project store via `TaskBoardStoreProvider.shared` (which lazily resolves the project root via `ProjectStore`) and runs the reconciler if a workspace lister is registered. Failure is silent (DEBUG-logged).
+`TaskBoardReconcileHook.projectDidActivate(_:)` is called from `TermLoopHooks.swift`'s `.onChange(of: projectStore.activeProjectId)` handler. It looks up the per-project store via `TaskBoardStoreProvider.shared` (which lazily resolves the project root via `ProjectStore`) and starts the reconciler asynchronously if a workspace lister is registered. Git worktree listing must happen off the main actor; only store mutation/save returns to the main actor. Failure is silent (DEBUG-logged).

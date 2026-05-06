@@ -19,7 +19,7 @@ public struct TaskWorkspaceDescriptor: Equatable, Sendable {
 
 @MainActor
 public protocol TaskBoardWorkspaceListing: AnyObject {
-    func workspaces(in projectId: UUID) -> [TaskWorkspaceDescriptor]
+    func workspaces(in projectId: UUID) async -> [TaskWorkspaceDescriptor]
     func projectRoot(for projectId: UUID) -> URL
 }
 
@@ -33,16 +33,18 @@ public final class TaskBoardImportReconciler {
         self.workspaces = workspaces
     }
 
-    public func run() throws {
+    public func run() async throws {
         let projectRoot = workspaces.projectRoot(for: store.projectId)
-        let descriptors = workspaces.workspaces(in: store.projectId)
+        let descriptors = await workspaces.workspaces(in: store.projectId)
         // Use bucketed dictionary, NOT `Dictionary(uniqueKeysWithValues:)` — duplicates would crash.
         // Two metadata records pointing at the same normalized path is corruption; keep first, surface repair banner via reconcile.
         var descriptorByKey: [Key: TaskWorkspaceDescriptor] = [:]
         var descriptorByWorkspaceId: [UUID: TaskWorkspaceDescriptor] = [:]
         for d in descriptors {
-            let normalized = TaskPathNormalization.normalize(d.worktreePath, relativeTo: projectRoot)
-            let key = Key(projectId: store.projectId, normalizedPath: normalized)
+            guard let resolved = TaskPathNormalization.resolveDisplayAndKey(d.worktreePath, relativeTo: projectRoot) else {
+                continue
+            }
+            let key = Key(projectId: store.projectId, normalizedPath: resolved.keyPath)
             if descriptorByKey[key] == nil {
                 descriptorByKey[key] = d
             }
@@ -57,6 +59,7 @@ public final class TaskBoardImportReconciler {
         // <project>/.termloop-worktrees/. Live metadata-backed worktrees are
         // never removed here; user-renamed tasks are left for repair.
         var changed = store.mutate { file in
+            let before = file.tasks.count
             file.tasks.removeAll { task in
                 isExternalPathOnlyAutoImport(
                     task,
@@ -64,6 +67,7 @@ public final class TaskBoardImportReconciler {
                     descriptorByKey: descriptorByKey
                 )
             }
+            return file.tasks.count != before
         }
 
         // Validate existing tasks.
@@ -79,15 +83,16 @@ public final class TaskBoardImportReconciler {
         // Self-recovering: a task previously stuck on .failed("worktree
         // missing"/"interrupted") that now resolves cleanly is reset to .ready.
         let validated = store.mutate { file in
+            var changed = false
             for i in file.tasks.indices {
                 var t = file.tasks[i]
 
                 let pathKey: Key? = t.worktreePath.map {
-                    Key(
-                        projectId: store.projectId,
-                        normalizedPath: TaskPathNormalization.normalize($0, relativeTo: projectRoot)
-                    )
+                    TaskPathNormalization.resolveDisplayAndKey($0, relativeTo: projectRoot).map {
+                        Key(projectId: store.projectId, normalizedPath: $0.keyPath)
+                    }
                 }
+                .flatMap { $0 }
                 let workspaceDescriptor = t.workspaceId.flatMap { descriptorByWorkspaceId[$0] }
                 let pathDescriptor = pathKey.flatMap { descriptorByKey[$0] }
                 let descriptor = workspaceDescriptor ?? pathDescriptor
@@ -107,6 +112,7 @@ public final class TaskBoardImportReconciler {
                     if t != original {
                         t.updatedAt = Date()
                         file.tasks[i] = t
+                        changed = true
                     }
                     continue
                 }
@@ -116,6 +122,7 @@ public final class TaskBoardImportReconciler {
                         t.provisionState = .failed(reason: TaskProvisionFailureReason.interrupted)
                         t.updatedAt = Date()
                         file.tasks[i] = t
+                        changed = true
                     }
                     continue
                 }
@@ -126,8 +133,10 @@ public final class TaskBoardImportReconciler {
                     t.provisionState = .failed(reason: TaskProvisionFailureReason.worktreeMissing)
                     t.updatedAt = Date()
                     file.tasks[i] = t
+                    changed = true
                 }
             }
+            return changed
         }
         changed = changed || validated
 
@@ -135,15 +144,14 @@ public final class TaskBoardImportReconciler {
         var existingKeys: Set<Key> = []
         for task in store.fileSnapshot().tasks {
             guard let path = task.worktreePath else { continue }
-            let key = Key(
-                projectId: store.projectId,
-                normalizedPath: TaskPathNormalization.normalize(path, relativeTo: projectRoot)
-            )
+            guard let resolved = TaskPathNormalization.resolveDisplayAndKey(path, relativeTo: projectRoot) else { continue }
+            let key = Key(projectId: store.projectId, normalizedPath: resolved.keyPath)
             existingKeys.insert(key)
         }
 
         // Import any orphan workspaces.
         let imported = store.mutate { file in
+            var changed = false
             for (key, d) in descriptorByKey where !existingKeys.contains(key) {
                 let title = d.branch ?? (URL(fileURLWithPath: d.worktreePath).lastPathComponent)
                 let inProgressRanks = file.tasks
@@ -163,7 +171,12 @@ public final class TaskBoardImportReconciler {
                     provisionState: .ready
                 )
                 file.tasks.append(task)
+                changed = true
             }
+            if changed {
+                _ = TaskBoardStore.rebalanceColumnIfNeeded(.inProgress, in: &file)
+            }
+            return changed
         }
         changed = changed || imported
         if changed {
@@ -192,10 +205,10 @@ public final class TaskBoardImportReconciler {
               ) == nil else {
             return false
         }
-        let key = Key(
-            projectId: store.projectId,
-            normalizedPath: TaskPathNormalization.normalize(worktreePath, relativeTo: projectRoot)
-        )
+        guard let resolved = TaskPathNormalization.resolveDisplayAndKey(worktreePath, relativeTo: projectRoot) else {
+            return false
+        }
+        let key = Key(projectId: store.projectId, normalizedPath: resolved.keyPath)
         guard descriptorByKey[key] == nil else { return false }
         let importedTitle = task.branch ?? URL(fileURLWithPath: worktreePath).lastPathComponent
         return task.title == importedTitle

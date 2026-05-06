@@ -17,14 +17,12 @@ public final class TaskBoardStore: ObservableObject {
 
     /// Normalized board view — exactly five columns in declared order.
     @Published public private(set) var columnSnapshots: [TaskColumnSnapshot] = []
-    /// Currently-selected task's detail snapshot, or nil.
-    @Published public private(set) var selectedTaskDetailSnapshot: TaskDetailSnapshot?
 
     private var file: TaskBoardFile = TaskBoardFile()
     private var saveDebounce: DispatchWorkItem?
-    private var selectedTaskId: UUID?
     /// Per-task agent count (injected by the agent projection). Not persisted.
     private var agentCounts: [UUID: Int] = [:]
+    private static let rankRebalanceLengthThreshold = 12
 
     public init(projectRoot: URL, projectId: UUID) {
         self.projectRoot = projectRoot
@@ -62,12 +60,6 @@ public final class TaskBoardStore: ObservableObject {
 
     public func fileSnapshot() -> TaskBoardFile { file }
 
-    public func selectTask(_ id: UUID?) {
-        guard selectedTaskId != id else { return }
-        selectedTaskId = id
-        rebuildDetailSnapshot()
-    }
-
     public func updateAgentCount(_ count: Int, for taskId: UUID) {
         guard agentCounts[taskId] != count else { return }
         agentCounts[taskId] = count
@@ -96,24 +88,43 @@ public final class TaskBoardStore: ObservableObject {
 
     /// Apply a mutation. Caller is responsible for invoking saveNow()
     /// or scheduleSave() depending on whether the mutation is lifecycle-critical.
-    /// Returns whether the in-memory file actually changed. No-op mutations keep
-    /// the same snapshots and `updatedAt`, which keeps idempotent reconcile passes
-    /// from publishing/writing work they did not need to do.
+    /// The mutation closure returns whether it changed the file. This avoids
+    /// copying and comparing the entire board on every small per-task update.
     @discardableResult
-    internal func mutate(_ block: (inout TaskBoardFile) throws -> Void) rethrows -> Bool {
-        let old = file
-        try block(&file)
-        guard file != old else { return false }
+    internal func mutate(_ block: (inout TaskBoardFile) throws -> Bool) rethrows -> Bool {
+        let changed = try block(&file)
+        guard changed else { return false }
         file.updatedAt = Date()
         rebuildSnapshots()
         return true
+    }
+
+    @discardableResult
+    internal static func rebalanceColumnIfNeeded(
+        _ columnId: TaskColumnId,
+        in file: inout TaskBoardFile
+    ) -> Bool {
+        let indexes = file.tasks.indices
+            .filter { file.tasks[$0].columnId == columnId && file.tasks[$0].archivedAt == nil }
+            .sorted { file.tasks[$0].rank < file.tasks[$1].rank }
+        guard indexes.contains(where: { file.tasks[$0].rank.count > rankRebalanceLengthThreshold }) else {
+            return false
+        }
+        let ranks = TaskRanking.rebalanced(count: indexes.count)
+        var changed = false
+        for (idx, rank) in zip(indexes, ranks) where file.tasks[idx].rank != rank {
+            file.tasks[idx].rank = rank
+            file.tasks[idx].updatedAt = Date()
+            changed = true
+        }
+        return changed
     }
 
     // MARK: - Test seam
 
     /// Test-only helper. Production code uses TaskLifecycleCoordinator.
     internal func appendForTesting(_ task: TaskRecord) throws {
-        mutate { $0.tasks.append(task) }
+        mutate { $0.tasks.append(task); return true }
     }
 
     // MARK: - Persistence helpers
@@ -147,7 +158,6 @@ public final class TaskBoardStore: ObservableObject {
 
     private func rebuildSnapshots() {
         rebuildColumnSnapshots()
-        rebuildDetailSnapshot()
     }
 
     private func rebuildColumnSnapshots() {
@@ -170,15 +180,6 @@ public final class TaskBoardStore: ObservableObject {
             return TaskColumnSnapshot(id: columnId, cards: cards)
         }
         columnSnapshots = snapshots
-    }
-
-    private func rebuildDetailSnapshot() {
-        guard let id = selectedTaskId,
-              let task = file.tasks.first(where: { $0.id == id }) else {
-            selectedTaskDetailSnapshot = nil
-            return
-        }
-        selectedTaskDetailSnapshot = TaskDetailSnapshot(task: task)
     }
 }
 

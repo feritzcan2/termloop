@@ -34,10 +34,17 @@ public enum TaskRanking {
     public static func rebalanced(count: Int) -> [String] {
         precondition(count > 0)
         guard count > 1 else { return [String(mid)] }
-        let span = alphabet.count
+
+        var width = 1
+        var capacity = alphabet.count
+        while capacity <= count + 1 {
+            width += 1
+            capacity *= alphabet.count
+        }
+
         return (0..<count).map { i in
-            let idx = (i + 1) * span / (count + 1)
-            return String(alphabet[min(max(idx, 0), span - 1)])
+            let value = (i + 1) * capacity / (count + 1)
+            return fixedWidthRank(value, width: width)
         }
     }
 
@@ -115,5 +122,15 @@ public enum TaskRanking {
     private static func char(less than: Character) -> Character? {
         guard let idx = alphabet.firstIndex(of: than), idx > 0 else { return nil }
         return alphabet[idx / 2]
+    }
+
+    private static func fixedWidthRank(_ value: Int, width: Int) -> String {
+        var remaining = value
+        var chars = Array(repeating: alphabet[0], count: width)
+        for idx in stride(from: width - 1, through: 0, by: -1) {
+            chars[idx] = alphabet[remaining % alphabet.count]
+            remaining /= alphabet.count
+        }
+        return String(chars)
     }
 }

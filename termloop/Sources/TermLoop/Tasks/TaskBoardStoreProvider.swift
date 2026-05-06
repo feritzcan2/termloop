@@ -20,6 +20,16 @@ public final class TaskBoardStoreProvider {
         projectRoots[projectId] = root
     }
 
+    public func remove(projectId: UUID) {
+        stores.removeValue(forKey: projectId)
+        projectRoots.removeValue(forKey: projectId)
+    }
+
+    public func removeAll() {
+        stores.removeAll()
+        projectRoots.removeAll()
+    }
+
     public func store(for projectId: UUID) -> TaskBoardStore? {
         if let existing = stores[projectId] { return existing }
         let root: URL

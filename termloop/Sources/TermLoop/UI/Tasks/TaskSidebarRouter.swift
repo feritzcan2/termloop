@@ -13,27 +13,18 @@ struct TaskSidebarRouter: View {
 
     var body: some View {
         routedBody
-            .onAppear { syncStoreSelection() }
-            .onChange(of: selection.selectedTaskId) { _, _ in syncStoreSelection() }
+            .onAppear { syncSelectionValidity() }
+            .onChange(of: selection.selectedTaskId) { _, _ in syncSelectionValidity() }
     }
 
     @ViewBuilder
     private var routedBody: some View {
-        if selection.selectedTaskId == nil {
-            TaskSidebarTaskListView(
-                store: store,
-                selection: selection,
-                onCreateTask: coordinator.map { c in
-                    { columnId in
-                        let title = String(localized: "tasks.sidebar.newTaskDefaultTitle",
-                                           defaultValue: "Untitled task", table: "TermLoop")
-                        return try? c.createTask(title: title, columnId: columnId)
-                    }
-                }
-            )
-        } else {
+        if let detailSnapshot = TaskAgentProjectionBuilder.detailSnapshot(
+            in: store,
+            selectedTaskId: selection.selectedTaskId
+        ) {
             TaskSidebarDrillInView(
-                store: store,
+                detailSnapshot: detailSnapshot,
                 selection: selection,
                 onRebind: coordinator.map { c in
                     { id in
@@ -49,12 +40,24 @@ struct TaskSidebarRouter: View {
                     { id in try? c.archiveTask(id) }
                 }
             )
+        } else {
+            TaskSidebarTaskListView(
+                store: store,
+                selection: selection,
+                onCreateTask: coordinator.map { c in
+                    { columnId in
+                        let title = String(localized: "tasks.sidebar.newTaskDefaultTitle",
+                                           defaultValue: "Untitled task", table: "TermLoop")
+                        return try? c.createTask(title: title, columnId: columnId)
+                    }
+                }
+            )
         }
     }
 
-    private func syncStoreSelection() {
-        store.selectTask(selection.selectedTaskId)
-        if selection.selectedTaskId != nil, store.selectedTaskDetailSnapshot == nil {
+    private func syncSelectionValidity() {
+        if selection.selectedTaskId != nil,
+           TaskAgentProjectionBuilder.detailSnapshot(in: store, selectedTaskId: selection.selectedTaskId) == nil {
             selection.select(nil)
         }
     }

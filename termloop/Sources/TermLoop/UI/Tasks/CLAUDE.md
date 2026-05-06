@@ -4,10 +4,10 @@ UI for the project-scoped Tasks page. Stays a pure projection layer over `TaskBo
 
 ## Rules
 
-- Card and list views consume `TaskBoardStore.columnSnapshots` and `TaskBoardStore.selectedTaskDetailSnapshot`. They do NOT subscribe to a giant `@Published var tasks: [TaskRecord]`.
+- Card and list views consume `TaskBoardStore.columnSnapshots`; selected detail is derived per-window from `TaskSelectionStore.selectedTaskId` via `TaskAgentProjectionBuilder`. They do NOT subscribe to a giant `@Published var tasks: [TaskRecord]`.
 - Per-card `ObservableObject` is forbidden; per-row `ObservableObject` is allowed only for genuinely hot fields like provision-progress (none today).
-- View bodies must NOT read raw `workspace.statusEntries` or other low-level telemetry. Use parent-level snapshot builders / projections.
-- Agent / git / PR / branches sections are **read-only projections** of existing stores, scoped by `task.workspaceId`. They never mutate.
+- View bodies must NOT read raw `workspace.statusEntries` or other low-level telemetry. Use `TaskAgentProjectionBuilder` / parent-level snapshot projections.
+- Agent / git / PR / branches sections are **read-only projections** of existing stores, scoped by the task worktree/workspace identity. Agent/worktree ranking logic belongs in `TaskAgentProjectionBuilder`, not duplicated in views. They never mutate.
 - Quick actions reuse existing Work-tab create-agent and Open-worktree entry points via `TaskQuickActionsBridge`. Inline prompt strings are forbidden — prompt selection lives in the AgentInputs plane (CLAUDE.md rule).
 - `TaskSelectionStore` is **per-window** (no `static let shared`). Reviewers reject any singleton shortcut.
 - All user-facing strings are localized via `String(localized: "key", defaultValue: "...", table: "TermLoop")`.
