@@ -139,13 +139,13 @@ struct ActiveAgentsHiddenRow: View {
                         Circle()
                             .fill(TermLoopSidebarTheme.dim)
                             .frame(width: 6, height: 6)
-                        Text(TermLoopSidebarTheme.caps(String(
+                        Text(TermLoopSidebarTheme.adaptiveSectionTitle(String(
                             localized: "agents.panel.title",
                             defaultValue: "Active Agents",
                             table: "TermLoop"
                         )))
-                        .font(TermLoopSidebarTheme.sectionCaps)
-                        .foregroundStyle(Color.primary.opacity(0.82))
+                        .font(TermLoopSidebarTheme.adaptiveSectionFont(size: 11))
+                        .foregroundStyle(TermLoopSidebarTheme.adaptiveSectionColor)
                         Spacer()
                         Text(String(
                             localized: "agents.panel.hidden.restore",
@@ -224,13 +224,13 @@ struct ActiveAgentsHeaderView: View {
                     Circle()
                         .fill(indicatorColor)
                         .frame(width: 6, height: 6)
-                    Text(TermLoopSidebarTheme.caps(String(
+                    Text(TermLoopSidebarTheme.adaptiveSectionTitle(String(
                         localized: "agents.panel.title",
                         defaultValue: "Active Agents",
                         table: "TermLoop"
                     )))
-                    .font(ActiveAgentsPanelTypography.headerLabel)
-                    .foregroundStyle(Color.primary)
+                    .font(TermLoopSidebarTheme.adaptiveSectionFont(size: 11))
+                    .foregroundStyle(TermLoopSidebarTheme.adaptiveSectionColor)
                     if let currentBranch,
                        !currentBranch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text(verbatim: currentBranch)

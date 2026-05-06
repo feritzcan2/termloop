@@ -2,16 +2,21 @@
 // Part of TermLoop — GPL-3.0-or-later
 
 import SwiftUI
+import AppKit
 
 /// Sidebar drill-in section for the work item already attached to this task's
 /// worktree. The binding remains worktree-scoped; Tasks only projects it.
 struct TaskWorkItemSection: View {
+    let taskId: UUID
+    let taskWorkItem: TaskWorkItemSnapshot?
     let workspaceId: UUID?
     let worktreePath: String?
+    @ObservedObject var remoteSync: TaskRemoteSyncCoordinator
 
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
 
     private var snapshot: TaskWorkItemSnapshot? {
+        if let taskWorkItem { return taskWorkItem }
         // Intentional subscription read: work item binding is external
         // workspace metadata, not task-board state.
         _ = metadataStore
@@ -25,7 +30,7 @@ struct TaskWorkItemSection: View {
         VStack(alignment: .leading, spacing: 6) {
             TaskSidebarSectionTitle(
                 String(localized: "tasks.sidebar.section.workItem",
-                       defaultValue: "WORK ITEM",
+                       defaultValue: "Work Item",
                        table: "TermLoop")
             )
 
@@ -49,6 +54,12 @@ struct TaskWorkItemSection: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.primary)
                         .lineLimit(1)
+                    if let title = snapshot.title, title != snapshot.key {
+                        Text(title)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color.primary.opacity(0.86))
+                            .lineLimit(2)
+                    }
                     if let status = snapshot.statusLabel {
                         Text(status)
                             .font(.system(size: 10, weight: .medium))
@@ -72,14 +83,26 @@ struct TaskWorkItemSection: View {
                         open(snapshot)
                     }
                 }
+                if snapshot.taskFilePath != nil {
+                    Button(String(localized: "tasks.sidebar.section.workItem.openTaskFile",
+                                  defaultValue: "task.md",
+                                  table: "TermLoop")) {
+                        openTaskFile(snapshot)
+                    }
+                }
                 Button(String(localized: "tasks.sidebar.section.workItem.refresh",
                               defaultValue: "Refresh",
                               table: "TermLoop")) {
                     refresh(snapshot)
                 }
+                Button(String(localized: "tasks.sidebar.section.workItem.link",
+                              defaultValue: "Link",
+                              table: "TermLoop")) {
+                    presentTaskLinkPrompt(prior: snapshot.url?.absoluteString ?? snapshot.key)
+                }
                 if let workspaceId = attachWorkspaceId {
                     Button(String(localized: "tasks.sidebar.section.workItem.change",
-                                  defaultValue: "Change",
+                                  defaultValue: "Attach to worktree",
                                   table: "TermLoop")) {
                         JiraTicketBindingPrompt.present(forWorkspaceId: workspaceId)
                     }
@@ -105,13 +128,20 @@ struct TaskWorkItemSection: View {
             )
             if let workspaceId = attachWorkspaceId {
                 Button(String(localized: "tasks.sidebar.section.workItem.attach",
-                              defaultValue: "Attach work item",
+                              defaultValue: "Attach to worktree",
                               table: "TermLoop")) {
                     JiraTicketBindingPrompt.present(forWorkspaceId: workspaceId)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
             }
+            Button(String(localized: "tasks.sidebar.section.workItem.link",
+                          defaultValue: "Link work item",
+                          table: "TermLoop")) {
+                presentTaskLinkPrompt(prior: "")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.mini)
         }
     }
 
@@ -132,16 +162,50 @@ struct TaskWorkItemSection: View {
     }
 
     private func refresh(_ snapshot: TaskWorkItemSnapshot) {
+        if snapshot.binding == nil {
+            remoteSync.refresh(taskId: taskId)
+            return
+        }
         guard let workspaceId = snapshot.workspaceId,
+              let reportedStatePath = snapshot.reportedStatePath,
+              let binding = snapshot.binding,
               let input = RemoteWorkItemBindingRefreshCoordinator.input(
                 workspaceId: workspaceId,
-                reportedStatePath: snapshot.reportedStatePath,
-                binding: snapshot.binding
+                reportedStatePath: reportedStatePath,
+                binding: binding
               ) else { return }
         RemoteWorkItemBindingRefreshCoordinator.shared.refresh(
             inputs: [input],
             reason: "tasks.workItemSection"
         )
+    }
+
+    private func openTaskFile(_ snapshot: TaskWorkItemSnapshot) {
+        guard let path = snapshot.taskFilePath else { return }
+        NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: false))
+    }
+
+    private func presentTaskLinkPrompt(prior: String) {
+        let alert = NSAlert()
+        alert.messageText = String(localized: "tasks.remoteSync.link.prompt.title",
+                                   defaultValue: "Link Work Item",
+                                   table: "TermLoop")
+        alert.informativeText = String(localized: "tasks.remoteSync.link.prompt.body",
+                                       defaultValue: "Paste a Jira key/URL, GitHub issue URL, or owner/repo#number. TermLoop will fetch it and write task.md.",
+                                       table: "TermLoop")
+        alert.alertStyle = .informational
+        let field = NSTextField(string: prior)
+        field.frame = NSRect(x: 0, y: 0, width: 360, height: 24)
+        alert.accessoryView = field
+        alert.addButton(withTitle: String(localized: "tasks.remoteSync.link.prompt.link",
+                                          defaultValue: "Link",
+                                          table: "TermLoop"))
+        alert.addButton(withTitle: String(localized: "common.cancel",
+                                          defaultValue: "Cancel",
+                                          table: "TermLoop"))
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+        remoteSync.link(taskId: taskId, rawInput: field.stringValue)
     }
 
     private func iconName(for provider: RemoteWorkItemProviderId) -> String {

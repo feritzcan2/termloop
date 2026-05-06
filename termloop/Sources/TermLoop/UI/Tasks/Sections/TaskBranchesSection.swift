@@ -19,10 +19,10 @@ struct TaskBranchesSection: View {
     @EnvironmentObject private var tabManager: TabManager
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             TaskSidebarSectionTitle(
                 String(localized: "tasks.sidebar.section.branches",
-                       defaultValue: "WORKTREE AGENTS", table: "TermLoop")
+                       defaultValue: "Worktree Agents", table: "TermLoop")
             )
 
             if normalizedWorktreePath == nil && currentBranchName == nil {
@@ -31,119 +31,78 @@ struct TaskBranchesSection: View {
                            defaultValue: "No worktree info.", table: "TermLoop")
                 )
             } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    liveCheckoutStrip
-                    agentsPanel
-
-                    let others = secondaryBranches
-                    if !others.isEmpty {
-                        recordedBranchesStrip(others)
-                    }
-
-                    if let path = normalizedWorktreePath {
-                        pathLine(path)
-                    }
+                metaLine
+                agentList
+                if !secondaryBranches.isEmpty {
+                    otherBranchesLine(secondaryBranches)
                 }
             }
         }
     }
 
-    private var liveCheckoutStrip: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "largecircle.fill.circle")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(.accentColor)
-                .frame(width: 14)
-            Text(String(localized: "tasks.sidebar.section.branches.currentCheckout",
-                        defaultValue: "current", table: "TermLoop"))
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(.accentColor)
-            Text(currentBranchName ?? detachedLabel)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.primary)
+    /// Single quiet line that gives the worktree context the agent rows
+    /// run in: live branch (or `detached@<sha>`) followed by a compact path
+    /// (`…/parent/leaf`). Replaces the previous tinted "current" strip + the
+    /// dedicated path row — the user does not need a billboard for this
+    /// information, just a one-line caption.
+    @ViewBuilder
+    private var metaLine: some View {
+        let parts: [String] = {
+            var out: [String] = []
+            out.append(currentBranchName ?? detachedLabel)
+            if let path = normalizedWorktreePath {
+                out.append(compactPath(path))
+            }
+            return out
+        }()
+        if !parts.isEmpty {
+            Text(parts.joined(separator: " · "))
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Spacer(minLength: 0)
-            let agents = currentAgentRows
-            if !agents.isEmpty {
-                Text(agentCountText(agents.count))
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-                    .padding(.vertical, 2)
-                    .padding(.horizontal, 6)
-                    .background(Color.white.opacity(0.055))
-                    .clipShape(Capsule())
-            }
+                .help(normalizedWorktreePath ?? (currentBranchName ?? ""))
         }
-        .padding(.vertical, 7)
-        .padding(.horizontal, 9)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.accentColor.opacity(0.075))
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 
-    private var agentsPanel: some View {
+    @ViewBuilder
+    private var agentList: some View {
         let agents = currentAgentRows
-        return VStack(alignment: .leading, spacing: 7) {
-            if agents.isEmpty {
-                TaskSidebarEmptyText(
-                    String(localized: "tasks.sidebar.section.branches.noAgents",
-                           defaultValue: "No agents are attached to this worktree.", table: "TermLoop")
-                )
-                .padding(.vertical, 4)
-            } else {
+        if agents.isEmpty {
+            TaskSidebarEmptyText(
+                String(localized: "tasks.sidebar.section.branches.noAgents",
+                       defaultValue: "No agents attached.", table: "TermLoop")
+            )
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
                 ForEach(agents, id: \.workspaceId) { agent in
                     agentRow(agent)
                 }
             }
         }
-        .padding(7)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.black.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    private func recordedBranchesStrip(_ branches: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(String(localized: "tasks.sidebar.section.branches.otherBindings",
-                        defaultValue: "RECORDED BRANCHES", table: "TermLoop"))
-                .font(.system(size: 9, weight: .bold))
-                .foregroundColor(.secondary.opacity(0.75))
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(branches, id: \.self) { branch in
-                    HStack(spacing: 5) {
-                        Image(systemName: "arrow.triangle.branch")
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundColor(.secondary.opacity(0.75))
-                        Text(branch)
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                }
-            }
-        }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.2))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-
-    private func pathLine(_ path: String) -> some View {
-        HStack(spacing: 4) {
-            Text(String(localized: "tasks.sidebar.section.branches.pathLabel",
-                        defaultValue: "path", table: "TermLoop"))
-            Text("·")
-            Text(compactPath(path))
+    /// Recorded branches that are *not* the current checkout. Rare, but when
+    /// present they hint at past drift between expected and live branches.
+    /// One inline line — no header, no card. The chevron icon carries the
+    /// "branch" semantic.
+    private func otherBranchesLine(_ branches: [String]) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.tertiary)
+            Text(String(
+                localized: "tasks.sidebar.section.branches.otherInline",
+                defaultValue: "Other:",
+                table: "TermLoop"
+            ))
+                .foregroundStyle(.tertiary)
+            Text(branches.joined(separator: ", "))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
                 .truncationMode(.middle)
         }
-        .font(.system(size: 10, design: .monospaced))
-        .foregroundColor(.secondary.opacity(0.78))
-        .lineLimit(1)
-        .help(path)
+        .font(.system(size: 12))
     }
 
     private var currentAgentRows: [AgentRowPresentationSnapshot] {
@@ -232,17 +191,6 @@ struct TaskBranchesSection: View {
                defaultValue: "agent", table: "TermLoop")
     }
 
-    private func agentCountText(_ count: Int) -> String {
-        if count == 1 {
-            return String(localized: "tasks.sidebar.section.branches.agentCount.one",
-                          defaultValue: "1 agent",
-                          table: "TermLoop")
-        }
-        return String(localized: "tasks.sidebar.section.branches.agentCount.many",
-                      defaultValue: "\(count) agents",
-                      table: "TermLoop")
-    }
-
     private func compactPath(_ path: String) -> String {
         let url = URL(fileURLWithPath: path)
         let leaf = url.lastPathComponent
@@ -261,9 +209,9 @@ struct TaskSidebarSectionTitle: View {
     }
 
     var body: some View {
-        Text(title)
-            .font(.system(size: 10, weight: .medium))
-            .foregroundColor(.secondary)
+        Text(TermLoopSidebarTheme.adaptiveSectionTitle(title))
+            .font(TermLoopSidebarTheme.adaptiveSectionFont(size: 13))
+            .foregroundStyle(TermLoopSidebarTheme.adaptiveSectionColor)
     }
 }
 
@@ -276,7 +224,7 @@ struct TaskSidebarEmptyText: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11))
+            .font(.system(size: 12))
             .foregroundColor(.secondary)
     }
 }

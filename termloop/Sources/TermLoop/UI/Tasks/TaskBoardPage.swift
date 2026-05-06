@@ -11,10 +11,25 @@ struct TaskBoardPage<TerminalContent: View>: View {
     @ObservedObject var store: TaskBoardStore
     @ObservedObject var selection: TaskSelectionStore
     var coordinator: TaskLifecycleCoordinator?
+    @StateObject private var remoteSync: TaskRemoteSyncCoordinator
     @ViewBuilder let terminalContent: () -> TerminalContent
 
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
+    @EnvironmentObject private var tabManager: TabManager
+
+    init(
+        store: TaskBoardStore,
+        selection: TaskSelectionStore,
+        coordinator: TaskLifecycleCoordinator?,
+        @ViewBuilder terminalContent: @escaping () -> TerminalContent
+    ) {
+        self.store = store
+        self.selection = selection
+        self.coordinator = coordinator
+        self.terminalContent = terminalContent
+        _remoteSync = StateObject(wrappedValue: TaskRemoteSyncCoordinator(store: store))
+    }
 
     var body: some View {
         Group {
@@ -22,12 +37,13 @@ struct TaskBoardPage<TerminalContent: View>: View {
                 HorizontalResizableSplit(
                     topMinHeight: 320,
                     bottomMinHeight: 260,
-                    bottomPreferredHeight: 430,
+                    bottomPreferredFraction: 0.35,
                     top: {
                         TaskBoardCanvas(
                             store: store,
                             selection: selection,
                             coordinator: coordinator,
+                            remoteSync: remoteSync,
                             agentStatusesByTaskId: agentStatusesByTaskId,
                             workItemsByTaskId: workItemsByTaskId,
                             onSelect: selectFromBoard
@@ -40,6 +56,7 @@ struct TaskBoardPage<TerminalContent: View>: View {
                     store: store,
                     selection: selection,
                     coordinator: coordinator,
+                    remoteSync: remoteSync,
                     agentStatusesByTaskId: agentStatusesByTaskId,
                     workItemsByTaskId: workItemsByTaskId,
                     onSelect: selectFromBoard
@@ -61,7 +78,11 @@ struct TaskBoardPage<TerminalContent: View>: View {
         // from shared workspace/agent stores instead of persisting telemetry in Tasks.
         _ = metadataStore
         _ = activityStore
-        return TaskAgentProjectionBuilder.statusSummaries(for: store.fileSnapshot().tasks)
+        let openWorkspaceIds = Set(tabManager.tabs.map(\.id))
+        return TaskAgentProjectionBuilder.statusSummaries(
+            for: store.fileSnapshot().tasks,
+            openWorkspaceIds: openWorkspaceIds
+        )
     }
 
     private var workItemsByTaskId: [UUID: TaskWorkItemSnapshot] {
@@ -95,7 +116,11 @@ struct TaskBoardPage<TerminalContent: View>: View {
             return
         }
 
-        guard let workspaceId = TaskAgentProjectionBuilder.preferredAgentWorkspace(for: task) else {
+        let openWorkspaceIds = Set(tabManager.tabs.map(\.id))
+        guard let workspaceId = TaskAgentProjectionBuilder.preferredAgentWorkspace(
+            for: task,
+            openWorkspaceIds: openWorkspaceIds
+        ) else {
             selection.closeInlineTerminal()
             return
         }
@@ -118,6 +143,7 @@ private struct TaskBoardCanvas: View {
     @ObservedObject var store: TaskBoardStore
     @ObservedObject var selection: TaskSelectionStore
     var coordinator: TaskLifecycleCoordinator?
+    @ObservedObject var remoteSync: TaskRemoteSyncCoordinator
     let agentStatusesByTaskId: [UUID: TaskAgentStatusSummary]
     let workItemsByTaskId: [UUID: TaskWorkItemSnapshot]
     var onSelect: ((TaskCardSummary) -> Void)?
@@ -126,21 +152,30 @@ private struct TaskBoardCanvas: View {
         GeometryReader { proxy in
             let spacing: CGFloat = 10
             let horizontalPadding: CGFloat = 10
-            let available = proxy.size.width - (horizontalPadding * 2) - (spacing * 4)
-            let columnWidth = max(236, floor(available / 5))
+            let columnCount = max(store.columnSnapshots.count, 1)
+            let available = proxy.size.width - (horizontalPadding * 2) - (spacing * CGFloat(max(columnCount - 1, 0)))
+            let columnWidth = max(236, floor(available / CGFloat(columnCount)))
 
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: spacing) {
                     ForEach(store.columnSnapshots) { snapshot in
                         TaskBoardColumnView(
                             snapshot: snapshot,
+                            title: store.columnTitle(for: snapshot.id),
                             selection: selection,
                             agentStatusesByTaskId: agentStatusesByTaskId,
                             workItemsByTaskId: workItemsByTaskId,
                             onMove: coordinator.map { c in
                                 { taskId, target in
                                     _Concurrency.Task { @MainActor in
-                                        try? await c.moveColumn(taskId: taskId, to: target)
+                                        do {
+                                            try await c.moveColumn(taskId: taskId, to: target)
+                                            remoteSync.maybePromptRemoteStatusSync(taskId: taskId, to: target)
+                                        } catch {
+                                            #if DEBUG
+                                            print("TaskBoardCanvas move failed: \(error)")
+                                            #endif
+                                        }
                                     }
                                 }
                             },

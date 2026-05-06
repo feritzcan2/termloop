@@ -1,6 +1,7 @@
 // Copyright (c) 2026-present Ferit Özcan. All rights reserved.
 // Part of TermLoop — GPL-3.0-or-later
 
+import AppKit
 import SwiftUI
 
 /// Single kanban card. Pure projection of `TaskCardSummary`. Selection state
@@ -20,7 +21,7 @@ struct TaskCardView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 7) {
                 statusDot
-                Text(card.title)
+                Text(displayTitle)
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(2)
                     .foregroundColor(.primary)
@@ -77,6 +78,13 @@ struct TaskCardView: View {
                     openWorkItem(workItem)
                 }
             }
+            if let workItem, workItem.taskFilePath != nil {
+                Button(String(localized: "tasks.card.menu.openTaskFile",
+                              defaultValue: "Open task.md",
+                              table: "TermLoop")) {
+                    openTaskFile(workItem)
+                }
+            }
             Button(String(localized: "tasks.card.menu.archive",
                           defaultValue: "Archive", table: "TermLoop")) {
                 onArchive?(card.id)
@@ -101,6 +109,7 @@ struct TaskCardView: View {
 
     private var isSelected: Bool { selection.selectedTaskId == card.id }
     private var canDrag: Bool { card.provisionState != .pending }
+    private var displayTitle: String { workItem?.title ?? card.title }
 
     private var identityText: String {
         if let branch = normalizedBranch {
@@ -239,6 +248,11 @@ struct TaskCardView: View {
             workspaceIds: workItem.workspaceId.map { [$0] } ?? [],
             preferredWorkspaceId: workItem.workspaceId
         )
+    }
+
+    private func openTaskFile(_ workItem: TaskWorkItemSnapshot) {
+        guard let path = workItem.taskFilePath else { return }
+        NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: false))
     }
 }
 

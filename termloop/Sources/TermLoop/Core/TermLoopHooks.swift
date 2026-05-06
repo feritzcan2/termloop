@@ -2488,6 +2488,7 @@ export const CmuxTermLoop = async ({ $, directory }) => {
         BridgeCoordinator.shared.workspaceDidClose(workspaceId: workspaceId)
         WorkspaceMetadataStore.shared.forgetObservedWorkspaceTitle(workspaceId: workspaceId)
         WorkspaceMetadataStore.shared.clearAgentSession(forWorkspaceId: workspaceId)
+        TaskSelectionStoreProvider.shared.closeInlineTerminals(workspaceId: workspaceId)
         MainAreaPresentationCoordinator.shared.handleNavigationEvent(.workspaceDidClose(workspaceId))
     }
 
@@ -2794,7 +2795,7 @@ private struct TaskGitChangesWithInlineTerminal: View {
             HorizontalResizableSplit(
                 topMinHeight: 320,
                 bottomMinHeight: 260,
-                bottomPreferredHeight: 430,
+                bottomPreferredFraction: 0.35,
                 top: { GitChangesMainAreaHost() },
                 bottom: {
                     TaskBoardEmbeddedWorkspaceTerminal(
