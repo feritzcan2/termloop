@@ -42,7 +42,7 @@ struct TaskSettingsSidebarView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     header
                     settingsCard {
-                        TaskJiraSyncSettingsView(remoteSync: remoteSync)
+                        TaskRemoteWorkItemSettingsView(remoteSync: remoteSync)
                     }
                     settingsCard {
                         TaskColumnSettingsView(remoteSync: remoteSync)
@@ -53,10 +53,7 @@ struct TaskSettingsSidebarView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
-            remoteSync.loadJiraAccountOptionsIfNeeded()
-            remoteSync.loadProjectOptionsIfNeeded()
-            remoteSync.loadRemoteStatusOptionsIfNeeded()
-            remoteSync.syncIfEnabledOnAppear()
+            remoteSync.prepareRemoteSettings()
         }
     }
 
@@ -80,7 +77,7 @@ struct TaskSettingsSidebarView: View {
                             table: "TermLoop"))
                     .font(.system(size: 15, weight: .semibold))
                 Text(String(localized: "tasks.settings.subtitle",
-                            defaultValue: "Project-level Jira sync and board columns.",
+                            defaultValue: "Project-level remote work item sync and board columns.",
                             table: "TermLoop"))
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
@@ -98,19 +95,23 @@ struct TaskSettingsSidebarView: View {
     }
 }
 
-private struct TaskJiraSyncSettingsView: View {
+private struct TaskRemoteWorkItemSettingsView: View {
     @ObservedObject var remoteSync: TaskRemoteSyncCoordinator
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 10) {
             sectionHeader(
-                title: String(localized: "tasks.settings.jira.title",
-                              defaultValue: "Jira sync",
+                title: String(localized: "tasks.settings.remote.title",
+                              defaultValue: "Remote work items",
                               table: "TermLoop"),
-                subtitle: String(localized: "tasks.settings.jira.subtitle",
-                                 defaultValue: "Pull assigned Jira work items into the task backlog.",
+                subtitle: String(localized: "tasks.settings.remote.subtitle",
+                                 defaultValue: "Connect Tasks to Jira, GitHub, or GitLab without blocking settings on network calls.",
                                  table: "TermLoop")
             )
+
+            providerTabs
+
+            cliStatusCard
 
             Toggle(isOn: syncBinding) {
                 Text(String(localized: "tasks.settings.syncAssignedToMe",
@@ -121,95 +122,7 @@ private struct TaskJiraSyncSettingsView: View {
             .toggleStyle(.switch)
             .controlSize(.small)
 
-            if !remoteSync.jiraAccountOptions.isEmpty || remoteSync.isLoadingJiraAccounts {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(String(localized: "tasks.settings.jiraAccount",
-                                defaultValue: "Jira account",
-                                table: "TermLoop"))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.secondary)
-                    HStack(spacing: 6) {
-                        Picker("", selection: jiraAccountBinding) {
-                            Text(String(localized: "tasks.settings.jiraAccount.custom",
-                                        defaultValue: "Custom",
-                                        table: "TermLoop"))
-                                .tag("")
-                            ForEach(remoteSync.jiraAccountOptions) { option in
-                                Text(option.displayLabel).tag(option.id)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                        LoadingIconButton(
-                            systemImage: "arrow.clockwise",
-                            isLoading: remoteSync.isLoadingJiraAccounts,
-                            action: { remoteSync.loadJiraAccountOptions() }
-                        )
-                    }
-                }
-            }
-
-            labeledTextField(
-                label: String(localized: "tasks.settings.jiraSite",
-                              defaultValue: "Jira site",
-                              table: "TermLoop"),
-                placeholder: String(localized: "tasks.settings.jiraSite.placeholder",
-                                    defaultValue: "company.atlassian.net",
-                                    table: "TermLoop"),
-                text: jiraSiteBinding
-            )
-
-            labeledTextField(
-                label: String(localized: "tasks.settings.jiraEmail",
-                              defaultValue: "Jira email",
-                              table: "TermLoop"),
-                placeholder: String(localized: "tasks.settings.jiraEmail.placeholder",
-                                    defaultValue: "you@company.com",
-                                    table: "TermLoop"),
-                text: jiraEmailBinding
-            )
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(String(localized: "tasks.settings.jiraProject",
-                            defaultValue: "Jira project",
-                            table: "TermLoop"))
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.secondary)
-                HStack(spacing: 6) {
-                    Picker("", selection: projectBinding) {
-                        Text(String(localized: "tasks.settings.jiraProject.all",
-                                    defaultValue: "All assigned projects",
-                                    table: "TermLoop"))
-                            .tag("")
-                        ForEach(remoteSync.projectOptions) { option in
-                            Text(option.displayLabel).tag(option.key)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    LoadingIconButton(
-                        systemImage: "arrow.clockwise",
-                        isLoading: remoteSync.isLoadingProjects,
-                        action: { remoteSync.loadProjectOptions() }
-                    )
-                }
-
-                TextField(
-                    String(localized: "tasks.settings.jiraProject.key.placeholder",
-                           defaultValue: "Project key (optional, e.g. KAN)",
-                           table: "TermLoop"),
-                    text: projectBinding
-                )
-                .textFieldStyle(.roundedBorder)
-                .font(.system(size: 11))
-                .help(String(localized: "tasks.settings.jiraProject.key.help",
-                             defaultValue: "Use this if your Jira account cannot list projects but JQL works for a known project key.",
-                             table: "TermLoop"))
-            }
+            providerFields
 
             HStack(spacing: 6) {
                 Button(action: { remoteSync.syncAssignedToMe() }) {
@@ -224,7 +137,8 @@ private struct TaskJiraSyncSettingsView: View {
                                 defaultValue: "Sync now",
                                 table: "TermLoop"))
                 }
-                .disabled(remoteSync.isSyncing)
+                .disabled(remoteSync.isSyncing || !canSyncAssigned)
+                .help(syncHelp)
                 Spacer(minLength: 0)
             }
             .buttonStyle(.bordered)
@@ -237,6 +151,187 @@ private struct TaskJiraSyncSettingsView: View {
                     .lineLimit(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+    }
+
+    private var providerTabs: some View {
+        HStack(spacing: 6) {
+            ForEach(RemoteWorkItemProviderId.allCases, id: \.self) { provider in
+                Button(action: { remoteSync.setProvider(provider) }) {
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(cliDotColor(for: provider))
+                            .frame(width: 7, height: 7)
+                        Text(providerDisplayName(provider))
+                            .font(.system(size: 11, weight: remoteSync.settings.provider == provider ? .semibold : .medium))
+                    }
+                    .padding(.vertical, 5)
+                    .padding(.horizontal, 7)
+                    .frame(maxWidth: .infinity)
+                    .background(remoteSync.settings.provider == provider ? Color.accentColor.opacity(0.16) : Color.white.opacity(0.035))
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .help(remoteSync.cliStatus(for: provider).summary)
+            }
+        }
+    }
+
+    private var cliStatusCard: some View {
+        let status = remoteSync.cliStatus(for: remoteSync.settings.provider)
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(status.isChecking ? Color.orange : (status.isAvailable ? Color.green : Color.red))
+                    .frame(width: 8, height: 8)
+                Text(String(localized: "tasks.settings.remote.cli.title",
+                            defaultValue: "CLI status",
+                            table: "TermLoop"))
+                    .font(.system(size: 10, weight: .semibold))
+                Spacer(minLength: 0)
+                LoadingIconButton(
+                    systemImage: "arrow.clockwise",
+                    isLoading: status.isChecking,
+                    action: { remoteSync.loadCLIStatuses() }
+                )
+            }
+            Text(status.summary)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(status.isAvailable ? .secondary : .red)
+            if let detail = status.detail, !detail.isEmpty {
+                Text(detail)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(8)
+        .background(Color.white.opacity(0.035))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var providerFields: some View {
+        switch remoteSync.settings.provider {
+        case .jira:
+            jiraFields
+        case .github:
+            repositoryFields(
+                title: String(localized: "tasks.settings.github.repository",
+                              defaultValue: "GitHub repository",
+                              table: "TermLoop"),
+                placeholder: "owner/repo",
+                emptyLabel: String(localized: "tasks.settings.github.repository.none",
+                                   defaultValue: "Select repository",
+                                   table: "TermLoop"),
+                manualHelp: String(localized: "tasks.settings.github.repository.help",
+                                   defaultValue: "Required for GitHub assigned issue sync. Example: owner/repo.",
+                                   table: "TermLoop")
+            )
+        case .gitlab:
+            repositoryFields(
+                title: String(localized: "tasks.settings.gitlab.project",
+                              defaultValue: "GitLab project",
+                              table: "TermLoop"),
+                placeholder: "group/project",
+                emptyLabel: String(localized: "tasks.settings.gitlab.project.none",
+                                   defaultValue: "Select project",
+                                   table: "TermLoop"),
+                manualHelp: String(localized: "tasks.settings.gitlab.project.help",
+                                   defaultValue: "Required for GitLab assigned issue sync. Example: group/project.",
+                                   table: "TermLoop")
+            )
+        }
+    }
+
+    private var jiraFields: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(String(localized: "tasks.settings.jiraAccount",
+                            defaultValue: "Jira account",
+                            table: "TermLoop"))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.secondary)
+                HStack(spacing: 6) {
+                    Picker("", selection: jiraAccountBinding) {
+                        Text(String(localized: "tasks.settings.jiraAccount.custom",
+                                    defaultValue: "Custom",
+                                    table: "TermLoop"))
+                            .tag("")
+                        ForEach(remoteSync.jiraAccountOptions) { option in
+                            Text(option.displayLabel).tag(option.id)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    LoadingIconButton(
+                        systemImage: "arrow.clockwise",
+                        isLoading: remoteSync.isLoadingJiraAccounts,
+                        action: { remoteSync.loadJiraAccountOptions() }
+                    )
+                }
+            }
+
+            labeledTextField(
+                label: String(localized: "tasks.settings.jiraSite",
+                              defaultValue: "Jira site",
+                              table: "TermLoop"),
+                placeholder: "company.atlassian.net",
+                text: jiraSiteBinding
+            )
+
+            labeledTextField(
+                label: String(localized: "tasks.settings.jiraEmail",
+                              defaultValue: "Jira email",
+                              table: "TermLoop"),
+                placeholder: "you@company.com",
+                text: jiraEmailBinding
+            )
+
+            repositoryFields(
+                title: String(localized: "tasks.settings.jiraProject",
+                              defaultValue: "Jira project",
+                              table: "TermLoop"),
+                placeholder: "KAN",
+                emptyLabel: String(localized: "tasks.settings.jiraProject.all",
+                                   defaultValue: "All assigned projects",
+                                   table: "TermLoop"),
+                manualHelp: String(localized: "tasks.settings.jiraProject.key.help",
+                                   defaultValue: "Optional. Use a project key if project listing is restricted.",
+                                   table: "TermLoop")
+            )
+        }
+    }
+
+    private func repositoryFields(title: String, placeholder: String, emptyLabel: String, manualHelp: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+            HStack(spacing: 6) {
+                Picker("", selection: containerBinding) {
+                    Text(emptyLabel).tag("")
+                    ForEach(remoteSync.containerOptions) { option in
+                        Text(option.displayLabel).tag(option.key)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                LoadingIconButton(
+                    systemImage: "arrow.clockwise",
+                    isLoading: remoteSync.isLoadingContainers,
+                    action: { remoteSync.loadContainerOptions() }
+                )
+            }
+
+            TextField(placeholder, text: containerBinding)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11))
+                .help(manualHelp)
         }
     }
 
@@ -260,7 +355,7 @@ private struct TaskJiraSyncSettingsView: View {
         )
     }
 
-    private var projectBinding: Binding<String> {
+    private var containerBinding: Binding<String> {
         Binding(
             get: { remoteSync.settings.container ?? "" },
             set: { remoteSync.setContainer($0) }
@@ -279,6 +374,32 @@ private struct TaskJiraSyncSettingsView: View {
             get: { remoteSync.settings.jiraEmail ?? "" },
             set: { remoteSync.setJiraEmail($0) }
         )
+    }
+
+    private var canSyncAssigned: Bool {
+        switch remoteSync.settings.provider {
+        case .jira:
+            return remoteSync.cliStatus(for: .jira).isAvailable
+        case .github, .gitlab:
+            return remoteSync.cliStatus(for: remoteSync.settings.provider).isAvailable && !(remoteSync.settings.container ?? "").isEmpty
+        }
+    }
+
+    private var syncHelp: String {
+        switch remoteSync.settings.provider {
+        case .jira:
+            return String(localized: "tasks.settings.remote.sync.help.jira",
+                          defaultValue: "Sync assigned Jira work items. Project is optional.",
+                          table: "TermLoop")
+        case .github:
+            return String(localized: "tasks.settings.remote.sync.help.github",
+                          defaultValue: "GitHub sync requires a repository like owner/repo.",
+                          table: "TermLoop")
+        case .gitlab:
+            return String(localized: "tasks.settings.remote.sync.help.gitlab",
+                          defaultValue: "GitLab sync requires a project like group/project.",
+                          table: "TermLoop")
+        }
     }
 
     private var statusText: String? {
@@ -302,6 +423,20 @@ private struct TaskJiraSyncSettingsView: View {
 
     private var statusColor: Color {
         remoteSync.settings.lastError == nil ? .secondary : .red
+    }
+
+    private func cliDotColor(for provider: RemoteWorkItemProviderId) -> Color {
+        let status = remoteSync.cliStatus(for: provider)
+        if status.isChecking { return .orange }
+        return status.isAvailable ? .green : .red
+    }
+
+    private func providerDisplayName(_ provider: RemoteWorkItemProviderId) -> String {
+        switch provider {
+        case .jira: return "Jira"
+        case .github: return "GitHub"
+        case .gitlab: return "GitLab"
+        }
     }
 
     private func labeledTextField(label: String, placeholder: String, text: Binding<String>) -> some View {
