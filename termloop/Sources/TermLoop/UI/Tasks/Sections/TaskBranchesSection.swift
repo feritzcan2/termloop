@@ -57,7 +57,7 @@ struct TaskBranchesSection: View {
         }()
         if !parts.isEmpty {
             Text(parts.joined(separator: " · "))
-                .font(.system(size: 10))
+                .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -89,7 +89,7 @@ struct TaskBranchesSection: View {
     private func otherBranchesLine(_ branches: [String]) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {
             Image(systemName: "arrow.triangle.branch")
-                .font(.system(size: 9, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.tertiary)
             Text(String(
                 localized: "tasks.sidebar.section.branches.otherInline",
@@ -102,7 +102,7 @@ struct TaskBranchesSection: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
-        .font(.system(size: 10))
+        .font(.system(size: 12))
     }
 
     private var currentAgentRows: [AgentRowPresentationSnapshot] {
@@ -210,7 +210,7 @@ struct TaskSidebarSectionTitle: View {
 
     var body: some View {
         Text(TermLoopSidebarTheme.adaptiveSectionTitle(title))
-            .font(TermLoopSidebarTheme.adaptiveSectionFont(size: 11))
+            .font(TermLoopSidebarTheme.adaptiveSectionFont(size: 13))
             .foregroundStyle(TermLoopSidebarTheme.adaptiveSectionColor)
     }
 }
@@ -224,7 +224,7 @@ struct TaskSidebarEmptyText: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11))
+            .font(.system(size: 12))
             .foregroundColor(.secondary)
     }
 }

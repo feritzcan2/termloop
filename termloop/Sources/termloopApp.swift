@@ -3757,7 +3757,7 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 
 enum AppearanceSettings {
     static let appearanceModeKey = "appearanceMode"
-    static let defaultMode: AppearanceMode = .dark
+    static let defaultMode: AppearanceMode = .system
 
     static func mode(for rawValue: String?) -> AppearanceMode {
         guard let rawValue, let mode = AppearanceMode(rawValue: rawValue) else {

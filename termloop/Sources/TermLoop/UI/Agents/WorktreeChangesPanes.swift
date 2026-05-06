@@ -156,7 +156,11 @@ extension WorktreeChangesSheet {
         if isSpecial {
             return sourceAccentColor(source).opacity(0.08)
         }
-        return Color.white.opacity(0.03)
+        // `Color.primary` resolves to black in light mode and white in dark
+        // mode, so a tiny opacity gives a faint resting tint that works in
+        // both. The previous `Color.white.opacity(0.03)` was invisible on
+        // a light surface.
+        return Color.primary.opacity(0.04)
     }
 
     func commitIndex(_ commit: WorktreeRecentCommit) -> Int {
@@ -230,7 +234,7 @@ extension WorktreeChangesSheet {
             line.hasPrefix("index ") || line.hasPrefix("new file mode") ||
             line.hasPrefix("deleted file mode") || line.hasPrefix("rename from ") ||
             line.hasPrefix("rename to ") {
-            return (TermLoopSidebarTheme.dim, Color.white.opacity(0.04))
+            return (TermLoopSidebarTheme.dim, Color.primary.opacity(0.05))
         }
         if line.hasPrefix("+") { return (.green.opacity(0.98), Color.green.opacity(0.14)) }
         if line.hasPrefix("-") { return (.red.opacity(0.95), Color.red.opacity(0.12)) }
