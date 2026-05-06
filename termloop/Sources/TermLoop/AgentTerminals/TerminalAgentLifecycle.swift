@@ -750,6 +750,24 @@ final class TerminalAgentLifecycle {
         return TermLoopSettings.shared.defaultTerminalAgentId
     }
 
+    /// Pre-workspace variant: caller has a project id but no workspace yet.
+    /// Used by socket-launched flows (e.g. `watch.launch_agent`) that
+    /// create a fresh workspace from outside the UI. Matches the workspace
+    /// variant's tail (registered explicit -> settings default), with a
+    /// project-pinned override as the leading branch.
+    static func resolveAgentId(explicit: String?, projectId: UUID?) -> String {
+        if let explicit,
+           TerminalAgentRegistry.shared.agent(id: explicit) != nil {
+            return explicit
+        }
+        if let projectId,
+           let pinned = ProjectStore.shared.project(id: projectId)?.defaultTerminalAgentId,
+           TerminalAgentRegistry.shared.agent(id: pinned) != nil {
+            return pinned
+        }
+        return TermLoopSettings.shared.defaultTerminalAgentId
+    }
+
     // Single source of truth for Claude vs generic restore backend.
     // Both batch restore and worktree relaunch route through this helper so the
     // branching never drifts across methods.
