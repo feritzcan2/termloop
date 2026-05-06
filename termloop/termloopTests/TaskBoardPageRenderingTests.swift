@@ -30,18 +30,36 @@ final class TaskBoardPageRenderingTests: XCTestCase {
         XCTAssertEqual(store.columnSnapshots.map(\.id), TaskColumnId.allCases)
     }
 
-    func testEmptyStoreHasNoSelectedDetail() throws {
+    func testEmptyStoreHasNoDerivedDetail() throws {
         let store = TaskBoardStore(projectRoot: tempRoot, projectId: UUID())
         try store.loadOrCreate()
-        XCTAssertNil(store.selectedTaskDetailSnapshot)
+        XCTAssertNil(TaskAgentProjectionBuilder.detailSnapshot(in: store, selectedTaskId: UUID()))
     }
 
-    func testSelectingMissingTaskClearsDetail() throws {
+    func testMissingSelectionDoesNotSynthesizeDetail() throws {
         let store = TaskBoardStore(projectRoot: tempRoot, projectId: UUID())
         try store.loadOrCreate()
-        store.selectTask(UUID())
-        XCTAssertNil(store.selectedTaskDetailSnapshot,
-                     "selecting a non-existent task must not synthesize a snapshot")
+        XCTAssertNil(
+            TaskAgentProjectionBuilder.detailSnapshot(in: store, selectedTaskId: UUID()),
+            "selecting a non-existent task must not synthesize a snapshot"
+        )
+    }
+
+    func testDerivedDetailIsPerSelection() throws {
+        let projectId = UUID()
+        let store = TaskBoardStore(projectRoot: tempRoot, projectId: projectId)
+        try store.loadOrCreate()
+        let task = TaskRecord(
+            projectId: projectId,
+            title: "selected",
+            columnId: .todo,
+            rank: TaskRanking.initial()
+        )
+        try store.appendForTesting(task)
+
+        let detail = TaskAgentProjectionBuilder.detailSnapshot(in: store, selectedTaskId: task.id)
+        XCTAssertEqual(detail?.id, task.id)
+        XCTAssertEqual(detail?.title, "selected")
     }
 
     func testArchivedTasksDoNotAppearInColumnSnapshots() throws {

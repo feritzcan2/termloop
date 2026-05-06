@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C0DEFACE0000000000000101 /* TaskAgentProjectionBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DEFACE0000000000000102 /* TaskAgentProjectionBuilder.swift */; };
 		ABCD10000000000000000001 /* TaskSelectionStoreProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCD10000000000000000002 /* TaskSelectionStoreProvider.swift */; };
 		002FFEC16193AC6231CEB731 /* VariableSubstitution.swift in Sources */ = {isa = PBXBuildFile; fileRef = 474487A66D69F0FB8B7F9E44 /* VariableSubstitution.swift */; };
 		006086BADBD0F620E49685B3 /* GitWorktreeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA1393F617B7D50F8BBA3D94 /* GitWorktreeService.swift */; };
@@ -476,6 +477,7 @@
 		D1320AA0D1320AA0D1320AA2 /* TermLoopDockTilePlugin.plugin in Copy Dock Tile Plugin */ = {isa = PBXBuildFile; fileRef = D1320AA0D1320AA0D1320AA5 /* TermLoopDockTilePlugin.plugin */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		D1BEF00002A1B2C3D4E5F719 /* open in Copy CLI */ = {isa = PBXBuildFile; fileRef = D1BEF00001A1B2C3D4E5F719 /* open */; };
 		D27748943B71F2008103F954 /* TaskBoardPageRenderingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE39141B233E3C75658ED9FE /* TaskBoardPageRenderingTests.swift */; };
+		C0DEFACE0000000000000103 /* TaskBoardStoreProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DEFACE0000000000000104 /* TaskBoardStoreProviderTests.swift */; };
 		D383B93B27E0DE17A52B57D1 /* QuickActionPreviewBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DDB9A196E62734D60CF8C81 /* QuickActionPreviewBar.swift */; };
 		D95C2927E9A52EC6BC63CDD1 /* QuickActionAbilityChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52ADC271E06D103B0F01D03A /* QuickActionAbilityChip.swift */; };
 		D9B10001A6EAC0DE00000001 /* WorktreeContextBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9B10001A6EAC0DE00000002 /* WorktreeContextBlock.swift */; };
@@ -613,6 +615,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C0DEFACE0000000000000102 /* TaskAgentProjectionBuilder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskAgentProjectionBuilder.swift; sourceTree = "<group>"; };
 		ABCD10000000000000000002 /* TaskSelectionStoreProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskSelectionStoreProvider.swift; sourceTree = "<group>"; };
 		00D7D639B2C644A283D77366 /* BridgeCableView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BridgeCableView.swift; sourceTree = "<group>"; };
 		00E1E4550C54F96C9409FC64 /* FrontmatterParserTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FrontmatterParserTests.swift; sourceTree = "<group>"; };
@@ -1070,6 +1073,7 @@
 		CCF2EFA4A693DFB011E49A41 /* APNsConfig.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = APNsConfig.swift; sourceTree = "<group>"; };
 		CDD43A7966611CFB48533E86 /* JiraMCPPreset.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = JiraMCPPreset.swift; sourceTree = "<group>"; };
 		CE39141B233E3C75658ED9FE /* TaskBoardPageRenderingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskBoardPageRenderingTests.swift; sourceTree = "<group>"; };
+		C0DEFACE0000000000000104 /* TaskBoardStoreProviderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskBoardStoreProviderTests.swift; sourceTree = "<group>"; };
 		CEC82B7E6651D0AC127F2EA4 /* PushTokenStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PushTokenStore.swift; sourceTree = "<group>"; };
 		CF47B56E1F4AD8F58680B060 /* TaskSidebarTaskListView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskSidebarTaskListView.swift; sourceTree = "<group>"; };
 		CF965E071F199593E39F3E0D /* ContextBankMirrorSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextBankMirrorSheet.swift; sourceTree = "<group>"; };
@@ -1504,6 +1508,7 @@
 			children = (
 				9BB066C04DF19B8F2D3E0E6A /* TaskSelectionStore.swift */,
 				ABCD10000000000000000002 /* TaskSelectionStoreProvider.swift */,
+				C0DEFACE0000000000000102 /* TaskAgentProjectionBuilder.swift */,
 				B9A7A9BAE5100920772EE049 /* HorizontalResizableSplit.swift */,
 				A6559824C5AB13864BA844C9 /* TaskBoardPage.swift */,
 				034F15CB5CF63B04FA5094FB /* TaskBoardRouteHost.swift */,
@@ -2099,6 +2104,7 @@
 				9F9875760AC9F9D43AC7820C /* TaskBoardImportReconcilerTests.swift */,
 				334F04CDF93586294C380D55 /* TaskSelectionStoreTests.swift */,
 				CE39141B233E3C75658ED9FE /* TaskBoardPageRenderingTests.swift */,
+				C0DEFACE0000000000000104 /* TaskBoardStoreProviderTests.swift */,
 			);
 			path = termloopTests;
 			sourceTree = "<group>";
@@ -2747,6 +2753,7 @@
 				465F0DBE1F6C74FEAB2EF3AE /* TaskBoardStoreProvider.swift in Sources */,
 				AE784569A22BBEB146204E79 /* TaskSelectionStore.swift in Sources */,
 				ABCD10000000000000000001 /* TaskSelectionStoreProvider.swift in Sources */,
+				C0DEFACE0000000000000101 /* TaskAgentProjectionBuilder.swift in Sources */,
 				1FD668FDBF4FBE6FBCD36A1C /* HorizontalResizableSplit.swift in Sources */,
 				12B312203F52231348444BE8 /* TaskBoardPage.swift in Sources */,
 				3C6A8CA43DDF21EF2B7A4DB0 /* TaskBoardRouteHost.swift in Sources */,
@@ -2903,6 +2910,7 @@
 				FEA93B31B4915D2225D2B238 /* TaskBoardImportReconcilerTests.swift in Sources */,
 				1D58E5DC719760980EA2984B /* TaskSelectionStoreTests.swift in Sources */,
 				D27748943B71F2008103F954 /* TaskBoardPageRenderingTests.swift in Sources */,
+				C0DEFACE0000000000000103 /* TaskBoardStoreProviderTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

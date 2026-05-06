@@ -65,7 +65,11 @@ public final class TaskLifecycleCoordinator {
             columnId: columnId,
             rank: rank
         )
-        store.mutate { $0.tasks.append(task) }
+        store.mutate { file in
+            file.tasks.append(task)
+            _ = TaskBoardStore.rebalanceColumnIfNeeded(columnId, in: &file)
+            return true
+        }
         try store.saveNow()
         return task.id
     }
@@ -113,6 +117,7 @@ public final class TaskLifecycleCoordinator {
             t.updatedAt = Date()
             if needsBind { t.provisionState = .pending }
         }
+        rebalanceColumnIfNeeded(columnId)
         try store.saveNow()
         if needsBind {
             try await bindWorktree(taskId: taskId)
@@ -190,11 +195,20 @@ public final class TaskLifecycleCoordinator {
         var found = false
         store.mutate { file in
             if let idx = file.tasks.firstIndex(where: { $0.id == id }) {
+                let old = file.tasks[idx]
                 block(&file.tasks[idx])
                 found = true
+                return file.tasks[idx] != old
             }
+            return false
         }
         if !found { throw TaskLifecycleError.taskNotFound(id) }
+    }
+
+    private func rebalanceColumnIfNeeded(_ columnId: TaskColumnId) {
+        _ = store.mutate { file in
+            TaskBoardStore.rebalanceColumnIfNeeded(columnId, in: &file)
+        }
     }
 
     private func failBindingIfCurrent(
@@ -216,6 +230,7 @@ public final class TaskLifecycleCoordinator {
             t.provisionState = .failed(reason: persistedReason)
             t.updatedAt = Date()
         }
+        rebalanceColumnIfNeeded(revertedColumn)
         try store.saveNow()
         return true
     }
@@ -272,6 +287,7 @@ extension TaskLifecycleCoordinator {
             t.rank = newRank
             t.updatedAt = Date()
         }
+        rebalanceColumnIfNeeded(.todo)
         try store.saveNow()
 
         if let workspaceId = task.workspaceId, let path = task.worktreePath {

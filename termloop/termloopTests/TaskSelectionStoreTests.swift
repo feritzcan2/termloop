@@ -65,7 +65,8 @@ final class TaskSelectionStoreTests: XCTestCase {
         XCTAssertFalse(store.closeInlineTerminal())
     }
 
-    func testSelectingDifferentTaskKeepsInlineTerminalOpen() {        let store = TaskSelectionStore()
+    func testSelectingDifferentTaskKeepsInlineTerminalOpen() {
+        let store = TaskSelectionStore()
         let workspaceId = UUID()
         store.openInlineTerminal(workspaceId: workspaceId)
 
@@ -75,6 +76,8 @@ final class TaskSelectionStoreTests: XCTestCase {
     }
 
     func testProviderSharesSelectionOnlyWithinWindow() {
+        TaskSelectionStoreProvider.shared.removeAll()
+        defer { TaskSelectionStoreProvider.shared.removeAll() }
         let windowId = UUID()
         let otherWindowId = UUID()
         let first = TaskSelectionStoreProvider.shared.store(for: windowId)
@@ -87,5 +90,19 @@ final class TaskSelectionStoreTests: XCTestCase {
         XCTAssertTrue(first === second)
         XCTAssertEqual(second.selectedTaskId, selected)
         XCTAssertNil(other.selectedTaskId, "selection must stay scoped to one window")
+    }
+
+    func testProviderRemoveDropsWindowSelection() {
+        TaskSelectionStoreProvider.shared.removeAll()
+        defer { TaskSelectionStoreProvider.shared.removeAll() }
+        let windowId = UUID()
+        let first = TaskSelectionStoreProvider.shared.store(for: windowId)
+        first.select(UUID())
+
+        TaskSelectionStoreProvider.shared.remove(windowId: windowId)
+        let second = TaskSelectionStoreProvider.shared.store(for: windowId)
+
+        XCTAssertFalse(first === second)
+        XCTAssertNil(second.selectedTaskId)
     }
 }

@@ -42,4 +42,12 @@ final class TaskRankingTests: XCTestCase {
             XCTAssertLessThan(a, b)
         }
     }
+
+    func testRebalanceSupportsMoreThanAlphabetCount() {
+        let ranks = TaskRanking.rebalanced(count: 64)
+        XCTAssertEqual(ranks.count, 64)
+        XCTAssertEqual(Set(ranks).count, 64)
+        XCTAssertEqual(ranks, ranks.sorted())
+        XCTAssertTrue(ranks.allSatisfy { !$0.isEmpty })
+    }
 }

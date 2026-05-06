@@ -7,7 +7,7 @@ import SwiftUI
 /// from the store and shows a compact task command center: breadcrumb, status,
 /// repair actions, and projection sections.
 struct TaskSidebarDrillInView: View {
-    @ObservedObject var store: TaskBoardStore
+    let detailSnapshot: TaskDetailSnapshot
     @ObservedObject var selection: TaskSelectionStore
     var onRebind: ((UUID) -> Void)?
     var onUnbind: ((UUID) -> Void)?
@@ -17,36 +17,35 @@ struct TaskSidebarDrillInView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 breadcrumb
-                if let snap = store.selectedTaskDetailSnapshot {
-                    header(snap)
-                    quickActions(snap)
-                    if case .failed = snap.provisionState {
-                        TaskRepairBanner(
-                            reason: snap.provisionState.failureDisplayText ?? "",
-                            onRebind: { onRebind?(snap.id) },
-                            onUnbind: { onUnbind?(snap.id) },
-                            onArchive: { onArchive?(snap.id); selection.select(nil) }
-                        )
-                    }
-                    sidebarSection { TaskGitChangesSection(worktreePath: snap.worktreePath) }
-                    sidebarSection {
-                        TaskOpenPRsSection(
-                            workspaceId: snap.workspaceId,
-                            worktreePath: snap.worktreePath,
-                            branch: snap.branch
-                        )
-                    }
-                    sidebarSection {
-                        TaskBranchesSection(
-                            branch: snap.branch,
-                            worktreePath: snap.worktreePath,
-                            selectedAgentWorkspaceId: selection.inlineTerminalWorkspaceId,
-                            onOpenAgentTerminal: { workspaceId in
-                                selection.openInlineTerminal(workspaceId: workspaceId)
-                                TaskQuickActions.showWorkspaceInline(workspaceId: workspaceId)
-                            }
-                        )
-                    }
+                header(detailSnapshot)
+                quickActions(detailSnapshot)
+                if case .failed = detailSnapshot.provisionState {
+                    TaskRepairBanner(
+                        reason: detailSnapshot.provisionState.failureDisplayText ?? "",
+                        onRebind: { onRebind?(detailSnapshot.id) },
+                        onUnbind: { onUnbind?(detailSnapshot.id) },
+                        onArchive: { onArchive?(detailSnapshot.id); selection.select(nil) }
+                    )
+                }
+                sidebarSection { TaskGitChangesSection(worktreePath: detailSnapshot.worktreePath) }
+                sidebarSection {
+                    TaskOpenPRsSection(
+                        workspaceId: detailSnapshot.workspaceId,
+                        worktreePath: detailSnapshot.worktreePath,
+                        branch: detailSnapshot.branch
+                    )
+                }
+                sidebarSection {
+                    TaskBranchesSection(
+                        branch: detailSnapshot.branch,
+                        worktreePath: detailSnapshot.worktreePath,
+                        taskWorkspaceId: detailSnapshot.workspaceId,
+                        selectedAgentWorkspaceId: selection.inlineTerminalWorkspaceId,
+                        onOpenAgentTerminal: { workspaceId in
+                            selection.openInlineTerminal(workspaceId: workspaceId)
+                            TaskQuickActions.showWorkspaceInline(workspaceId: workspaceId)
+                        }
+                    )
                 }
             }
             .padding(10)
@@ -112,8 +111,8 @@ struct TaskSidebarDrillInView: View {
         if let branch = snap.branch?.trimmingCharacters(in: .whitespacesAndNewlines), !branch.isEmpty {
             return branch
         }
-        if let path = snap.worktreePath?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty {
-            return URL(fileURLWithPath: path).lastPathComponent
+        if let leaf = TaskAgentProjectionBuilder.pathLeaf(snap.worktreePath) {
+            return leaf
         }
         return String(localized: "tasks.sidebar.header.manualTask",
                       defaultValue: "Manual task", table: "TermLoop")

@@ -20,37 +20,37 @@ final class TaskBoardImportReconcilerTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempRoot)
     }
 
-    func testOrphanWorktreesBecomeInProgressTasks() throws {
+    func testOrphanWorktreesBecomeInProgressTasks() async throws {
         let workspaces = StubWorkspaceLister(items: [
             .init(workspaceId: UUID(), branch: "feat/a", path: "/tmp/a"),
             .init(workspaceId: UUID(), branch: "feat/b", path: "/tmp/b"),
         ])
         let reconciler = TaskBoardImportReconciler(store: store, workspaces: workspaces)
-        try reconciler.run()
+        try await reconciler.run()
         let inProg = store.columnSnapshots.first { $0.id == .inProgress }
         XCTAssertEqual(inProg?.cards.count, 2)
         XCTAssertEqual(Set(inProg?.cards.map(\.title) ?? []), ["feat/a", "feat/b"])
     }
 
-    func testReRunIsIdempotent() throws {
+    func testReRunIsIdempotent() async throws {
         let ws = StubWorkspaceLister(items: [
             .init(workspaceId: UUID(), branch: "feat/a", path: "/tmp/a"),
         ])
         let reconciler = TaskBoardImportReconciler(store: store, workspaces: ws)
-        try reconciler.run()
-        try reconciler.run()
+        try await reconciler.run()
+        try await reconciler.run()
         let inProg = store.columnSnapshots.first { $0.id == .inProgress }
         XCTAssertEqual(inProg?.cards.count, 1)
     }
 
-    func testKeyIncludesProjectId() throws {
+    func testKeyIncludesProjectId() async throws {
         // Same path string in two projects must yield two tasks (one per project).
         let path = "/tmp/shared"
         let workspaces = StubWorkspaceLister(items: [
             .init(workspaceId: UUID(), branch: "feat/x", path: path),
         ])
         let r1 = TaskBoardImportReconciler(store: store, workspaces: workspaces)
-        try r1.run()
+        try await r1.run()
 
         let otherProject = UUID()
         let store2 = TaskBoardStore(
@@ -63,11 +63,11 @@ final class TaskBoardImportReconcilerTests: XCTestCase {
         )
         try store2.loadOrCreate()
         let r2 = TaskBoardImportReconciler(store: store2, workspaces: workspaces)
-        try r2.run()
+        try await r2.run()
         XCTAssertEqual(store2.fileSnapshot().tasks.count, 1)
     }
 
-    func testInterruptedPendingRecoversAsFailed() throws {
+    func testInterruptedPendingRecoversAsFailed() async throws {
         // Task left in .pending without a live workspace becomes .failed("interrupted").
         var task = TaskRecord(
             projectId: projectId,
@@ -83,7 +83,7 @@ final class TaskBoardImportReconcilerTests: XCTestCase {
             store: store,
             workspaces: StubWorkspaceLister(items: [])
         )
-        try reconciler.run()
+        try await reconciler.run()
         let updated = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == task.id })
         if case .failed(let reason) = updated.provisionState {
             XCTAssertTrue(reason.lowercased().contains("interrupt"))
@@ -92,7 +92,7 @@ final class TaskBoardImportReconcilerTests: XCTestCase {
         }
     }
 
-    func testExistingWorktreePathRecoversFromMissingEvenWithoutWorkspaceMetadata() throws {
+    func testExistingWorktreePathRecoversFromMissingEvenWithoutWorkspaceMetadata() async throws {
         let worktreePath = "/tmp/existing-worktree"
         var task = TaskRecord(
             projectId: projectId,
@@ -115,7 +115,7 @@ final class TaskBoardImportReconcilerTests: XCTestCase {
                 .init(workspaceId: nil, branch: "feat/existing", path: worktreePath),
             ])
         )
-        try reconciler.run()
+        try await reconciler.run()
 
         let updated = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == task.id })
         XCTAssertEqual(updated.provisionState, .ready)
@@ -124,7 +124,7 @@ final class TaskBoardImportReconcilerTests: XCTestCase {
         XCTAssertEqual(updated.branch, "feat/existing")
     }
 
-    func testExternalPathOnlyAutoImportsArePruned() throws {
+    func testExternalPathOnlyAutoImportsArePruned() async throws {
         let externalPath = "/private/tmp/termloop-mobile-phone-only"
         let task = TaskRecord(
             projectId: projectId,
@@ -144,12 +144,12 @@ final class TaskBoardImportReconcilerTests: XCTestCase {
             store: store,
             workspaces: StubWorkspaceLister(items: [])
         )
-        try reconciler.run()
+        try await reconciler.run()
 
         XCTAssertNil(store.fileSnapshot().tasks.first { $0.id == task.id })
     }
 
-    func testManagedPathOnlyAutoImportsAreKept() throws {
+    func testManagedPathOnlyAutoImportsAreKept() async throws {
         let projectRoot = StubWorkspaceLister.projectRoot(for: projectId)
         let managedPath = projectRoot
             .appendingPathComponent(".termloop-worktrees/tasks")
@@ -174,7 +174,7 @@ final class TaskBoardImportReconcilerTests: XCTestCase {
                 .init(workspaceId: nil, branch: "tasks", path: managedPath),
             ])
         )
-        try reconciler.run()
+        try await reconciler.run()
 
         XCTAssertNotNil(store.fileSnapshot().tasks.first { $0.id == task.id })
     }
@@ -188,7 +188,7 @@ final class StubWorkspaceLister: TaskBoardWorkspaceListing {
     let items: [Item]
     init(items: [Item]) { self.items = items }
 
-    func workspaces(in projectId: UUID) -> [TaskWorkspaceDescriptor] {
+    func workspaces(in projectId: UUID) async -> [TaskWorkspaceDescriptor] {
         items.map { .init(
             workspaceId: $0.workspaceId,
             projectId: projectId,

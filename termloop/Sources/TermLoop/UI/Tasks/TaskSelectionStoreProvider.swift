@@ -20,4 +20,12 @@ public final class TaskSelectionStoreProvider {
         stores[windowId] = store
         return store
     }
+
+    public func remove(windowId: UUID) {
+        stores.removeValue(forKey: windowId)
+    }
+
+    public func removeAll() {
+        stores.removeAll()
+    }
 }

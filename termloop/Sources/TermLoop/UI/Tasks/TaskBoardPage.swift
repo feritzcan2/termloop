@@ -40,25 +40,25 @@ struct TaskBoardPage<TerminalContent: View>: View {
             }
         }
         .onAppear {
-            syncStoreSelection()
+            syncSelectionValidity()
             syncInlineTerminalForSelectedTask(focusWorkspace: false)
         }
         .onChange(of: selection.selectedTaskId) { _, _ in
-            syncStoreSelection()
+            syncSelectionValidity()
             syncInlineTerminalForSelectedTask(focusWorkspace: true)
         }
     }
 
-    private func syncStoreSelection() {
-        store.selectTask(selection.selectedTaskId)
-        if selection.selectedTaskId != nil, store.selectedTaskDetailSnapshot == nil {
+    private func syncSelectionValidity() {
+        if selection.selectedTaskId != nil,
+           TaskAgentProjectionBuilder.detailSnapshot(in: store, selectedTaskId: selection.selectedTaskId) == nil {
             selection.select(nil)
         }
     }
 
     private func selectFromBoard(_ card: TaskCardSummary) {
         selection.select(card.id)
-        syncStoreSelection()
+        syncSelectionValidity()
         syncInlineTerminalForSelectedTask(taskId: card.id, focusWorkspace: true)
     }
 
@@ -73,7 +73,7 @@ struct TaskBoardPage<TerminalContent: View>: View {
             return
         }
 
-        guard let workspaceId = preferredAgentWorkspace(for: task) else {
+        guard let workspaceId = TaskAgentProjectionBuilder.preferredAgentWorkspace(for: task) else {
             selection.closeInlineTerminal()
             return
         }
@@ -82,98 +82,6 @@ struct TaskBoardPage<TerminalContent: View>: View {
         if focusWorkspace || changed {
             TaskQuickActions.showWorkspaceInline(workspaceId: workspaceId)
         }
-    }
-
-    private func preferredAgentWorkspace(for task: TaskRecord) -> UUID? {
-        let ids = agentWorkspaceIds(for: task)
-        guard !ids.isEmpty else { return nil }
-        return ids
-            .map { agentCandidate(workspaceId: $0, taskWorkspaceId: task.workspaceId) }
-            .filter(\.hasAgentBinding)
-            .sorted(by: isPreferredAgentCandidate(_:_:))
-            .first?
-            .workspaceId
-    }
-
-    private func agentWorkspaceIds(for task: TaskRecord) -> [UUID] {
-        var ordered: [UUID] = []
-        func append(_ id: UUID?) {
-            guard let id, !ordered.contains(id) else { return }
-            ordered.append(id)
-        }
-
-        if let path = normalizedWorktreePath(task.worktreePath) {
-            WorkspaceMetadataStore.shared.workspaceIds(withWorktreePath: path).forEach { append($0) }
-        }
-        append(task.workspaceId)
-        return ordered
-    }
-
-    private struct AgentCandidate {
-        let workspaceId: UUID
-        let displayState: TerminalAgentDisplayState
-        let latestActivityAt: Date?
-        let hasAgentBinding: Bool
-        let isTaskWorkspace: Bool
-    }
-
-    private func agentCandidate(workspaceId: UUID, taskWorkspaceId: UUID?) -> AgentCandidate {
-        let presentation = TerminalAgentActivityStore.shared.presentation(forWorkspaceId: workspaceId)
-        let metadata = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: workspaceId)
-        let latestActivityAt = presentation?.latestActivityAt
-            ?? metadata.lastUserPromptAt
-            ?? metadata.persistedAgentSession?.updatedAt
-            ?? metadata.agentSpawnedAt
-        let hasAgentBinding = isVisibleAgentWorkspace(
-            presentation: presentation,
-            metadata: metadata
-        )
-        return AgentCandidate(
-            workspaceId: workspaceId,
-            displayState: presentation?.displayState ?? (hasAgentBinding ? .ready : .idle),
-            latestActivityAt: latestActivityAt,
-            hasAgentBinding: hasAgentBinding,
-            isTaskWorkspace: taskWorkspaceId == workspaceId
-        )
-    }
-
-    private func isVisibleAgentWorkspace(
-        presentation: TerminalAgentPresentationState?,
-        metadata: WorkspaceMetadataStore.Metadata
-    ) -> Bool {
-        guard let presentation, presentation.displayState.isVisibleActivity else {
-            return false
-        }
-
-        // A plain terminal workspace can carry a terminalAgentId binding as
-        // catalog/default metadata. Do not treat that alone as a task-board
-        // agent terminal. Real agent rows either have live/pending/sticky
-        // activity, a persisted resumable session, a user prompt timestamp, or
-        // an explicit TermLoop-spawned agent session marker.
-        if presentation.source != .bound {
-            return true
-        }
-        return metadata.persistedAgentSession != nil
-            || metadata.lastUserPromptAt != nil
-            || metadata.agentKind != nil
-            || metadata.agentSpawnedAt != nil
-    }
-
-    private func isPreferredAgentCandidate(_ lhs: AgentCandidate, _ rhs: AgentCandidate) -> Bool {
-        let lhsDate = lhs.latestActivityAt ?? .distantPast
-        let rhsDate = rhs.latestActivityAt ?? .distantPast
-        if lhsDate != rhsDate { return lhsDate > rhsDate }
-        if lhs.displayState.activeAgentsSortPriority != rhs.displayState.activeAgentsSortPriority {
-            return lhs.displayState.activeAgentsSortPriority < rhs.displayState.activeAgentsSortPriority
-        }
-        if lhs.isTaskWorkspace != rhs.isTaskWorkspace { return lhs.isTaskWorkspace }
-        return lhs.workspaceId.uuidString < rhs.workspaceId.uuidString
-    }
-
-    private func normalizedWorktreePath(_ path: String?) -> String? {
-        guard let path else { return nil }
-        return WorktreeResolver.normalizePath(path)
-            ?? URL(fileURLWithPath: path).standardizedFileURL.path
     }
 
     private var embeddedTerminal: some View {

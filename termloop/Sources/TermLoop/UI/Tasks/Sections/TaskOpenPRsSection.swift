@@ -146,10 +146,7 @@ struct TaskOpenPRsSection: View {
 
     private var normalizedWorktreePath: String? {
         guard let worktreePath else { return nil }
-        let trimmed = worktreePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        return WorktreeResolver.normalizePath(trimmed)
-            ?? URL(fileURLWithPath: trimmed).standardizedFileURL.path
+        return TaskPathNormalization.resolveDisplayAndKey(worktreePath)?.displayPath
     }
 
     private var normalizedBranch: String? {
