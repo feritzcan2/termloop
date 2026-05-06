@@ -11,12 +11,16 @@ struct TaskSidebarTaskListView: View {
     @ObservedObject var selection: TaskSelectionStore
     var onCreateTask: ((TaskColumnId) -> UUID?)?
 
+    @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
+    @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
+
     var body: some View {
-        ScrollView {
+        let statuses = agentStatusesByTaskId
+        return ScrollView {
             LazyVStack(alignment: .leading, spacing: 10) {
                 ForEach(store.columnSnapshots) { col in
                     if !col.cards.isEmpty {
-                        section(title: title(for: col.id), cards: col.cards)
+                        section(title: title(for: col.id), cards: col.cards, statuses: statuses)
                     }
                 }
                 createButton
@@ -25,7 +29,17 @@ struct TaskSidebarTaskListView: View {
         }
     }
 
-    private func section(title: String, cards: [TaskCardSummary]) -> some View {
+    private var agentStatusesByTaskId: [UUID: TaskAgentStatusSummary] {
+        _ = metadataStore
+        _ = activityStore
+        return TaskAgentProjectionBuilder.statusSummaries(for: store.fileSnapshot().tasks)
+    }
+
+    private func section(
+        title: String,
+        cards: [TaskCardSummary],
+        statuses: [UUID: TaskAgentStatusSummary]
+    ) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text(title)
@@ -37,15 +51,19 @@ struct TaskSidebarTaskListView: View {
                     .foregroundColor(.secondary)
             }
             ForEach(cards) { card in
-                row(card)
+                row(card, status: statuses[card.id])
             }
         }
     }
 
-    private func row(_ card: TaskCardSummary) -> some View {
-        HStack(alignment: .center, spacing: 7) {
+    private func row(_ card: TaskCardSummary, status: TaskAgentStatusSummary?) -> some View {
+        let statusPresentation = TaskStatusPresentation(
+            provisionState: card.provisionState,
+            agentStatus: status
+        )
+        return HStack(alignment: .center, spacing: 7) {
             Circle()
-                .fill(card.provisionState.taskStatusColor)
+                .fill(statusPresentation.color)
                 .frame(width: 6, height: 6)
             VStack(alignment: .leading, spacing: 2) {
                 Text(card.title)
@@ -59,13 +77,13 @@ struct TaskSidebarTaskListView: View {
                     .truncationMode(.middle)
             }
             Spacer(minLength: 0)
-            Text(card.provisionState.taskCompactStatusText)
+            Text(statusPresentation.text)
                 .font(.system(size: 9, weight: .semibold))
-                .foregroundColor(card.provisionState.taskStatusColor)
+                .foregroundColor(statusPresentation.color)
                 .lineLimit(1)
                 .padding(.vertical, 2)
                 .padding(.horizontal, 6)
-                .background(card.provisionState.taskStatusColor.opacity(0.12))
+                .background(statusPresentation.color.opacity(0.12))
                 .clipShape(Capsule())
         }
         .padding(.vertical, 7)

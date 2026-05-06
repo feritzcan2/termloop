@@ -120,18 +120,18 @@ struct TaskGitChangesSection: View {
 
     private var liveWorkspaceIdMatchingPath: UUID? {
         guard let path = normalizedWorktreePath else { return nil }
-        let pathKey = TaskPathNormalization.resolveDisplayAndKey(path)?.keyPath
+        guard let pathKey = TaskPathNormalization.resolveDisplayAndKey(path)?.keyPath else { return nil }
         return tabManager.tabs.first { workspace in
             workspacePathKeys(workspace).contains(pathKey)
         }?.id
     }
 
-    private func workspacePathKeys(_ workspace: Workspace) -> Set<String?> {
+    private func workspacePathKeys(_ workspace: Workspace) -> Set<String> {
         Set([
             metadataStore.worktreePath(forWorkspaceId: workspace.id),
             workspace.termLoopPresentationCwd(),
             workspace.currentDirectory
-        ].map { TaskPathNormalization.resolveDisplayAndKey($0)?.keyPath })
+        ].compactMap { TaskPathNormalization.resolveDisplayAndKey($0)?.keyPath })
     }
 
     private var canOpenDiffPage: Bool {

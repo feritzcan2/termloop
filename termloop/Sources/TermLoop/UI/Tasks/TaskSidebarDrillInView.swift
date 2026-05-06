@@ -10,6 +10,9 @@ struct TaskSidebarDrillInView: View {
     let detailSnapshot: TaskDetailSnapshot
     @ObservedObject var selection: TaskSelectionStore
     var onRebind: ((UUID) -> Void)?
+
+    @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
+    @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
     var onUnbind: ((UUID) -> Void)?
     var onArchive: ((UUID) -> Void)?
 
@@ -72,10 +75,14 @@ struct TaskSidebarDrillInView: View {
     }
 
     private func header(_ snap: TaskDetailSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let statusPresentation = TaskStatusPresentation(
+            provisionState: snap.provisionState,
+            agentStatus: agentStatus(for: snap)
+        )
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
                 Circle()
-                    .fill(snap.provisionState.taskStatusColor)
+                    .fill(statusPresentation.color)
                     .frame(width: 8, height: 8)
                     .padding(.top, 5)
                 VStack(alignment: .leading, spacing: 3) {
@@ -94,12 +101,12 @@ struct TaskSidebarDrillInView: View {
                 Spacer(minLength: 0)
             }
             HStack(spacing: 6) {
-                Text(snap.provisionState.taskCompactStatusText)
+                Text(statusPresentation.text)
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(snap.provisionState.taskStatusColor)
+                    .foregroundColor(statusPresentation.color)
                     .padding(.vertical, 3)
                     .padding(.horizontal, 8)
-                    .background(snap.provisionState.taskStatusColor.opacity(0.12))
+                    .background(statusPresentation.color.opacity(0.12))
                     .clipShape(Capsule())
                 Text(statusHint(for: snap))
                     .font(.system(size: 10))
@@ -111,6 +118,15 @@ struct TaskSidebarDrillInView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.72))
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+    }
+
+    private func agentStatus(for snap: TaskDetailSnapshot) -> TaskAgentStatusSummary? {
+        _ = metadataStore
+        _ = activityStore
+        return TaskAgentProjectionBuilder.statusSummary(
+            worktreePath: snap.worktreePath,
+            taskWorkspaceId: snap.workspaceId
+        )
     }
 
     private func worktreeSummary(for snap: TaskDetailSnapshot) -> String {

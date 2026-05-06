@@ -2670,6 +2670,25 @@ private struct AgentMainAreaOverlaySwap<Content: View>: View {
         }
     }
 
+    private var taskSelectionStore: TaskSelectionStore? {
+        guard TermLoopSidebarTab(rawValue: tabRawValue) == .work,
+              WorkSubTab(rawValue: workSubTabRaw) == .tasks,
+              let windowId = AppDelegate.shared?.windowId(for: tabManager) else {
+            return nil
+        }
+        return TaskSelectionStoreProvider.shared.store(for: windowId)
+    }
+
+    @ViewBuilder
+    private func gitChangesSurface() -> some View {
+        if let selection = taskSelectionStore,
+           selection.inlineTerminalWorkspaceId != nil {
+            TaskGitChangesWithInlineTerminal(selection: selection, tabManager: tabManager)
+        } else {
+            GitChangesMainAreaHost()
+        }
+    }
+
     var body: some View {
         Group {
             switch overlayMode {
@@ -2695,7 +2714,7 @@ private struct AgentMainAreaOverlaySwap<Content: View>: View {
                 }
             case .gitChanges:
                 overlayContainer {
-                    GitChangesMainAreaHost()
+                    gitChangesSurface()
                 }
             case .contextBank:
                 overlayContainer {
@@ -2762,6 +2781,46 @@ private struct AgentMainAreaOverlaySwap<Content: View>: View {
     }
 }
 
+/// Tasks can open Git Changes as the top pane while preserving an already
+/// opened task-agent terminal underneath. The route is still `.gitChanges`;
+/// only the Tasks-tab local split is reused.
+@MainActor
+private struct TaskGitChangesWithInlineTerminal: View {
+    @ObservedObject var selection: TaskSelectionStore
+    @ObservedObject var tabManager: TabManager
+
+    var body: some View {
+        if selection.inlineTerminalWorkspaceId != nil {
+            HorizontalResizableSplit(
+                topMinHeight: 320,
+                bottomMinHeight: 260,
+                bottomPreferredHeight: 430,
+                top: { GitChangesMainAreaHost() },
+                bottom: {
+                    TaskBoardEmbeddedWorkspaceTerminal(
+                        tabManager: tabManager,
+                        workspaceId: selection.inlineTerminalWorkspaceId
+                    )
+                }
+            )
+            .onChange(of: selection.inlineTerminalWorkspaceId) { _, _ in
+                TermLoopHooks.applyMainAreaPresentation(
+                    tabManager: tabManager,
+                    reason: "gitChanges.taskInlineTerminalWorkspace"
+                )
+            }
+        } else {
+            GitChangesMainAreaHost()
+                .onAppear {
+                    TermLoopHooks.applyMainAreaPresentation(
+                        tabManager: tabManager,
+                        reason: "gitChanges.taskInlineTerminalClosed"
+                    )
+                }
+        }
+    }
+}
+
 /// The store holds workspace ids (not `Workspace` values) because the
 /// workspace can close while the overlay is presented. The enclosing
 /// `.id(overlayMode.identity)` forces a fresh view when the user jumps
@@ -2817,12 +2876,12 @@ private struct GitChangesMainAreaHost: View {
         }
     }
 
-    private func workspacePathKeys(_ workspace: Workspace) -> Set<String?> {
+    private func workspacePathKeys(_ workspace: Workspace) -> Set<String> {
         Set([
             metadataStore.worktreePath(forWorkspaceId: workspace.id),
             workspace.termLoopPresentationCwd(),
             workspace.currentDirectory
-        ].map { TaskPathNormalization.resolveDisplayAndKey($0)?.keyPath })
+        ].compactMap { TaskPathNormalization.resolveDisplayAndKey($0)?.keyPath })
     }
 }
 

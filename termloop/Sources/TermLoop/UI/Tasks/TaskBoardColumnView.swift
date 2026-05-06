@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
 struct TaskBoardColumnView: View {
     let snapshot: TaskColumnSnapshot
     @ObservedObject var selection: TaskSelectionStore
+    let agentStatusesByTaskId: [UUID: TaskAgentStatusSummary]
     var onMove: ((_ taskId: UUID, _ to: TaskColumnId) -> Void)?
     var onSelect: ((TaskCardSummary) -> Void)?
     var onCommandClick: ((TaskCardSummary) -> Void)?
@@ -27,6 +28,7 @@ struct TaskBoardColumnView: View {
                         ForEach(snapshot.cards) { card in
                             TaskCardView(
                                 card: card,
+                                agentStatus: agentStatusesByTaskId[card.id],
                                 selection: selection,
                                 onSelect: onSelect,
                                 onCommandClick: onCommandClick,

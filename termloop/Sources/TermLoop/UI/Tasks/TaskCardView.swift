@@ -9,6 +9,7 @@ import SwiftUI
 /// not be raced.
 struct TaskCardView: View {
     let card: TaskCardSummary
+    let agentStatus: TaskAgentStatusSummary?
     @ObservedObject var selection: TaskSelectionStore
     var onSelect: ((TaskCardSummary) -> Void)?
     var onCommandClick: ((TaskCardSummary) -> Void)?
@@ -31,8 +32,8 @@ struct TaskCardView: View {
                 statusChip
                 sourceChip
                 Spacer(minLength: 0)
-                if card.agentCount > 0 {
-                    Label("\(card.agentCount)", systemImage: "person.crop.circle")
+                if displayedAgentCount > 0 {
+                    Label("\(displayedAgentCount)", systemImage: "person.crop.circle")
                         .labelStyle(.titleAndIcon)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.secondary)
@@ -122,7 +123,11 @@ struct TaskCardView: View {
         switch card.provisionState {
         case .failed: return Color(nsColor: .controlBackgroundColor).opacity(0.95)
         case .pending: return Color.orange.opacity(0.10)
-        case .ready, .none: return Color(nsColor: .controlBackgroundColor)
+        case .ready, .none:
+            if let agentStatus, agentStatus.dominantState.isWaitingLike {
+                return effectiveStatus.color.opacity(0.07)
+            }
+            return Color(nsColor: .controlBackgroundColor)
         }
     }
 
@@ -130,7 +135,8 @@ struct TaskCardView: View {
         if isSelected { return .accentColor }
         switch card.provisionState {
         case .failed, .pending: return card.provisionState.taskStatusColor.opacity(0.40)
-        case .ready: return card.provisionState.taskStatusColor.opacity(0.22)
+        case .ready:
+            return effectiveStatus.color.opacity(effectiveStatus.usesAgentStatus ? 0.38 : 0.22)
         case .none: return Color.white.opacity(0.07)
         }
     }
@@ -143,13 +149,13 @@ struct TaskCardView: View {
     }
 
     private var statusChip: some View {
-        Text(card.provisionState.taskCompactStatusText)
+        Text(effectiveStatus.text)
             .font(.system(size: 10, weight: .semibold))
-            .foregroundColor(card.provisionState.taskStatusColor)
+            .foregroundColor(effectiveStatus.color)
             .lineLimit(1)
             .padding(.vertical, 2)
             .padding(.horizontal, 7)
-            .background(card.provisionState.taskStatusColor.opacity(0.13))
+            .background(effectiveStatus.color.opacity(0.13))
             .clipShape(Capsule())
     }
 
@@ -185,8 +191,17 @@ struct TaskCardView: View {
                       table: "TermLoop")
     }
 
-    private var statusColor: Color {
-        card.provisionState.taskStatusColor
+    private var statusColor: Color { effectiveStatus.color }
+
+    private var displayedAgentCount: Int {
+        agentStatus?.agentCount ?? card.agentCount
+    }
+
+    private var effectiveStatus: TaskStatusPresentation {
+        TaskStatusPresentation(
+            provisionState: card.provisionState,
+            agentStatus: agentStatus
+        )
     }
 }
 
@@ -202,6 +217,34 @@ private struct TaskCardDragModifier: ViewModifier {
             }
         } else {
             content
+        }
+    }
+}
+
+@MainActor
+struct TaskStatusPresentation {
+    let text: String
+    let color: Color
+    let usesAgentStatus: Bool
+
+    init(provisionState: TaskProvisionState, agentStatus: TaskAgentStatusSummary?) {
+        if let agentStatus, Self.canShowAgentStatus(over: provisionState) {
+            self.text = TerminalAgentDisplayFormatter.stateText(for: agentStatus.dominantState)
+            self.color = TermLoopSidebarTheme.color(for: agentStatus.dominantState)
+            self.usesAgentStatus = true
+        } else {
+            self.text = provisionState.taskCompactStatusText
+            self.color = provisionState.taskStatusColor
+            self.usesAgentStatus = false
+        }
+    }
+
+    private static func canShowAgentStatus(over provisionState: TaskProvisionState) -> Bool {
+        switch provisionState {
+        case .failed, .pending:
+            return false
+        case .ready, .none:
+            return true
         }
     }
 }

@@ -157,6 +157,7 @@ public struct TaskCardSummary: Equatable, Identifiable, Hashable, Sendable {
     public let id: UUID
     public let title: String
     public let provisionState: TaskProvisionState
+    public let workspaceId: UUID?
     public let branch: String?
     public let agentCount: Int
     public let hasTicket: Bool
@@ -166,6 +167,7 @@ public struct TaskCardSummary: Equatable, Identifiable, Hashable, Sendable {
         id: UUID,
         title: String,
         provisionState: TaskProvisionState,
+        workspaceId: UUID? = nil,
         branch: String?,
         agentCount: Int,
         hasTicket: Bool,
@@ -174,6 +176,7 @@ public struct TaskCardSummary: Equatable, Identifiable, Hashable, Sendable {
         self.id = id
         self.title = title
         self.provisionState = provisionState
+        self.workspaceId = workspaceId
         self.branch = branch
         self.agentCount = agentCount
         self.hasTicket = hasTicket

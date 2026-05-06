@@ -9,10 +9,17 @@ struct TaskWorktreeAgentSnapshot: Equatable, Identifiable {
     let displayState: TerminalAgentDisplayState
     let preview: String?
     let latestActivityAt: Date?
+    let since: Date?
     let isTaskWorkspace: Bool
     let isPreferredCandidate: Bool
 
     var id: UUID { workspaceId }
+}
+
+struct TaskAgentStatusSummary: Equatable {
+    let agentCount: Int
+    let dominantState: TerminalAgentDisplayState
+    let latestActivityAt: Date?
 }
 
 @MainActor
@@ -36,6 +43,42 @@ enum TaskAgentProjectionBuilder {
         .sorted(by: isPreferredAgent(_:_:))
         .first?
         .workspaceId
+    }
+
+
+    static func statusSummaries(for tasks: [TaskRecord]) -> [UUID: TaskAgentStatusSummary] {
+        Dictionary(uniqueKeysWithValues: tasks.compactMap { task in
+            guard task.archivedAt == nil,
+                  let summary = statusSummary(
+                    worktreePath: task.worktreePath,
+                    taskWorkspaceId: task.workspaceId
+                  ) else {
+                return nil
+            }
+            return (task.id, summary)
+        })
+    }
+
+    static func statusSummary(
+        worktreePath: String?,
+        taskWorkspaceId: UUID?
+    ) -> TaskAgentStatusSummary? {
+        let agents = agents(
+            worktreePath: worktreePath,
+            taskWorkspaceId: taskWorkspaceId,
+            includeTaskWorkspaceId: true
+        )
+        guard !agents.isEmpty else { return nil }
+        let dominant = agents
+            .map(\.displayState)
+            .sorted { $0.aggregatePriority < $1.aggregatePriority }
+            .first ?? .idle
+        let latest = agents.compactMap(\.latestActivityAt).max()
+        return TaskAgentStatusSummary(
+            agentCount: agents.count,
+            dominantState: dominant,
+            latestActivityAt: latest
+        )
     }
 
     static func agents(
@@ -66,6 +109,37 @@ enum TaskAgentProjectionBuilder {
             )
         }
         .sorted(by: isDisplayOrdered(_:_:))
+    }
+
+    static func agentRowSnapshots(
+        worktreePath: String?,
+        taskWorkspaceId: UUID?,
+        workspaces: [Workspace],
+        branchLabel: String?,
+        fallbackAgentLabel: String? = nil
+    ) -> [AgentRowPresentationSnapshot] {
+        var workspaceById: [UUID: Workspace] = [:]
+        for workspace in workspaces {
+            workspaceById[workspace.id] = workspace
+        }
+
+        return agents(
+            worktreePath: worktreePath,
+            taskWorkspaceId: taskWorkspaceId,
+            includeTaskWorkspaceId: true,
+            fallbackAgentLabel: fallbackAgentLabel
+        )
+        .map { agent in
+            if let workspace = workspaceById[agent.workspaceId] {
+                return AgentRowSnapshotBuilder.build(
+                    workspace: workspace,
+                    presentation: TerminalAgentActivityStore.shared.presentation(forWorkspaceId: agent.workspaceId),
+                    branchLabel: branchLabel,
+                    policy: .presentation
+                )
+            }
+            return fallbackAgentRowSnapshot(agent, branchLabel: branchLabel)
+        }
     }
 
     static func recordedBranches(worktreePath: String?, expectedBranch: String?) -> [String] {
@@ -105,10 +179,13 @@ enum TaskAgentProjectionBuilder {
     ) -> TaskWorktreeAgentSnapshot? {
         let metadata = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: workspaceId)
         let presentation = TerminalAgentActivityStore.shared.presentation(forWorkspaceId: workspaceId)
-        let label = presentation?.agentId
+        let agentId = presentation?.agentId
             ?? metadata.terminalAgentId
             ?? metadata.persistedAgentSession?.agentId
-            ?? fallbackAgentLabel
+        let label = TerminalAgentDisplayFormatter.agentDisplayLabel(
+            agentId: agentId,
+            fallback: fallbackAgentLabel
+        )
         let hasAgentIdentity = presentation != nil
             || metadata.terminalAgentId != nil
             || metadata.persistedAgentSession != nil
@@ -125,11 +202,33 @@ enum TaskAgentProjectionBuilder {
         return TaskWorktreeAgentSnapshot(
             workspaceId: workspaceId,
             agentLabel: label,
-            displayState: presentation?.displayState ?? (preferred ? .ready : .idle),
+            displayState: presentation?.displayState ?? .idle,
             preview: presentation?.preview ?? metadata.lastMessagePreview,
             latestActivityAt: latestActivityAt,
+            since: presentation?.since,
             isTaskWorkspace: taskWorkspaceId == workspaceId,
             isPreferredCandidate: preferred
+        )
+    }
+
+    private static func fallbackAgentRowSnapshot(
+        _ agent: TaskWorktreeAgentSnapshot,
+        branchLabel: String?
+    ) -> AgentRowPresentationSnapshot {
+        AgentRowPresentationSnapshot(
+            workspaceId: agent.workspaceId,
+            title: agent.agentLabel,
+            agentId: nil,
+            agentLabel: agent.agentLabel,
+            stateText: TerminalAgentDisplayFormatter.stateText(
+                for: agent.displayState,
+                preview: agent.preview
+            ),
+            displayState: agent.displayState,
+            branchLabel: branchLabel,
+            preview: agent.preview,
+            since: agent.since,
+            lastUserPromptAt: agent.latestActivityAt
         )
     }
 
