@@ -53,6 +53,7 @@ struct TaskSettingsSidebarView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
+            remoteSync.loadJiraAccountOptionsIfNeeded()
             remoteSync.loadProjectOptionsIfNeeded()
             remoteSync.loadRemoteStatusOptionsIfNeeded()
             remoteSync.syncIfEnabledOnAppear()
@@ -120,6 +121,56 @@ private struct TaskJiraSyncSettingsView: View {
             .toggleStyle(.switch)
             .controlSize(.small)
 
+            if !remoteSync.jiraAccountOptions.isEmpty || remoteSync.isLoadingJiraAccounts {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(String(localized: "tasks.settings.jiraAccount",
+                                defaultValue: "Jira account",
+                                table: "TermLoop"))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                    HStack(spacing: 6) {
+                        Picker("", selection: jiraAccountBinding) {
+                            Text(String(localized: "tasks.settings.jiraAccount.custom",
+                                        defaultValue: "Custom",
+                                        table: "TermLoop"))
+                                .tag("")
+                            ForEach(remoteSync.jiraAccountOptions) { option in
+                                Text(option.displayLabel).tag(option.id)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        LoadingIconButton(
+                            systemImage: "arrow.clockwise",
+                            isLoading: remoteSync.isLoadingJiraAccounts,
+                            action: { remoteSync.loadJiraAccountOptions() }
+                        )
+                    }
+                }
+            }
+
+            labeledTextField(
+                label: String(localized: "tasks.settings.jiraSite",
+                              defaultValue: "Jira site",
+                              table: "TermLoop"),
+                placeholder: String(localized: "tasks.settings.jiraSite.placeholder",
+                                    defaultValue: "company.atlassian.net",
+                                    table: "TermLoop"),
+                text: jiraSiteBinding
+            )
+
+            labeledTextField(
+                label: String(localized: "tasks.settings.jiraEmail",
+                              defaultValue: "Jira email",
+                              table: "TermLoop"),
+                placeholder: String(localized: "tasks.settings.jiraEmail.placeholder",
+                                    defaultValue: "you@company.com",
+                                    table: "TermLoop"),
+                text: jiraEmailBinding
+            )
+
             VStack(alignment: .leading, spacing: 5) {
                 Text(String(localized: "tasks.settings.jiraProject",
                             defaultValue: "Jira project",
@@ -146,6 +197,18 @@ private struct TaskJiraSyncSettingsView: View {
                         action: { remoteSync.loadProjectOptions() }
                     )
                 }
+
+                TextField(
+                    String(localized: "tasks.settings.jiraProject.key.placeholder",
+                           defaultValue: "Project key (optional, e.g. KAN)",
+                           table: "TermLoop"),
+                    text: projectBinding
+                )
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11))
+                .help(String(localized: "tasks.settings.jiraProject.key.help",
+                             defaultValue: "Use this if your Jira account cannot list projects but JQL works for a known project key.",
+                             table: "TermLoop"))
             }
 
             HStack(spacing: 6) {
@@ -184,10 +247,37 @@ private struct TaskJiraSyncSettingsView: View {
         )
     }
 
+    private var jiraAccountBinding: Binding<String> {
+        Binding(
+            get: {
+                let site = remoteSync.settings.jiraSite ?? ""
+                let email = remoteSync.settings.jiraEmail ?? ""
+                return remoteSync.jiraAccountOptions.first { option in
+                    option.site == site && (option.email ?? "") == email
+                }?.id ?? ""
+            },
+            set: { remoteSync.selectJiraAccount($0) }
+        )
+    }
+
     private var projectBinding: Binding<String> {
         Binding(
             get: { remoteSync.settings.container ?? "" },
             set: { remoteSync.setContainer($0) }
+        )
+    }
+
+    private var jiraSiteBinding: Binding<String> {
+        Binding(
+            get: { remoteSync.settings.jiraSite ?? "" },
+            set: { remoteSync.setJiraSite($0) }
+        )
+    }
+
+    private var jiraEmailBinding: Binding<String> {
+        Binding(
+            get: { remoteSync.settings.jiraEmail ?? "" },
+            set: { remoteSync.setJiraEmail($0) }
         )
     }
 
@@ -212,6 +302,17 @@ private struct TaskJiraSyncSettingsView: View {
 
     private var statusColor: Color {
         remoteSync.settings.lastError == nil ? .secondary : .red
+    }
+
+    private func labeledTextField(label: String, placeholder: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+            TextField(placeholder, text: text)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11))
+        }
     }
 }
 
