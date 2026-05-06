@@ -336,11 +336,10 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                     timeout: 20
                 )
                 guard result.exitStatus == 0, !result.timedOut else {
-                    throw RemoteWorkItemError.commandFailed(
-                        result.stderr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            ? "Jira project list is unavailable. Enter the project key manually; sync can still work."
-                            : result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-                    )
+                    throw RemoteWorkItemError.commandFailed(Self.commandFailureMessage(
+                        result,
+                        fallback: "Jira project list is unavailable. Enter the project key manually; sync can still work."
+                    ))
                 }
                 let options = try Self.parseProjectOptions(result.stdout)
                 await MainActor.run {
@@ -356,13 +355,16 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                             "jira", "workitem", "search",
                             "--jql", "assignee = currentUser() ORDER BY updated DESC",
                             "--limit", "100",
-                            "--fields", "key,project,summary",
+                            "--fields", "key,summary",
                             "--json"
                         ],
                         timeout: 20
                     )
                     guard fallback.exitStatus == 0, !fallback.timedOut else {
-                        throw RemoteWorkItemError.commandFailed(fallback.stderr)
+                        throw RemoteWorkItemError.commandFailed(Self.commandFailureMessage(
+                            fallback,
+                            fallback: "Could not list assigned Jira work items."
+                        ))
                     }
                     let options = try Self.parseProjectOptionsFromWorkItems(fallback.stdout)
                     await MainActor.run {
@@ -1013,8 +1015,29 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
     }
 
     private static func humanError(_ error: Error) -> String {
+        if let remoteError = error as? RemoteWorkItemError {
+            switch remoteError {
+            case .commandFailed(let message), .parseFailed(let message), .unsupportedReference(let message):
+                return message.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                    ?? String(localized: "common.unknownError", defaultValue: "Unknown error", table: "TermLoop")
+            case .unsupportedProvider(let provider):
+                return "Unsupported provider: \(provider.rawValue)"
+            }
+        }
         let text = String(describing: error).trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? String(localized: "common.unknownError", defaultValue: "Unknown error", table: "TermLoop") : text
+    }
+
+    private static func commandFailureMessage(
+        _ result: RemoteWorkItemCommandResult,
+        fallback: String
+    ) -> String {
+        let stderr = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stdout = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !stderr.isEmpty { return stderr }
+        if !stdout.isEmpty { return stdout }
+        if result.timedOut { return "Command timed out." }
+        return fallback
     }
 
     private static func parseProjectOptions(_ text: String) throws -> [TaskRemoteProjectOption] {
