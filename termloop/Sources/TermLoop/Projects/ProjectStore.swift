@@ -254,6 +254,7 @@ final class ProjectStore: ObservableObject {
             throw ProjectStoreError.notFound(id)
         }
         projects.remove(at: index)
+        TaskBoardStoreProvider.shared.remove(projectId: id)
         openProjectIds.removeAll { $0 == id }
         if activeProjectId == id {
             activeProjectId = projects.first?.id
