@@ -25,6 +25,15 @@ public final class TaskSelectionStoreProvider {
         stores.removeValue(forKey: windowId)
     }
 
+    @discardableResult
+    public func closeInlineTerminals(workspaceId: UUID) -> Bool {
+        var didClose = false
+        for store in stores.values where store.inlineTerminalWorkspaceId == workspaceId {
+            didClose = store.closeInlineTerminal() || didClose
+        }
+        return didClose
+    }
+
     public func removeAll() {
         stores.removeAll()
     }

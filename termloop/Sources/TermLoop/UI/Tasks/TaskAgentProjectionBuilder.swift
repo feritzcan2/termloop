@@ -33,11 +33,15 @@ enum TaskAgentProjectionBuilder {
         task(in: store, selectedTaskId: selectedTaskId).map(TaskDetailSnapshot.init(task:))
     }
 
-    static func preferredAgentWorkspace(for task: TaskRecord) -> UUID? {
+    static func preferredAgentWorkspace(
+        for task: TaskRecord,
+        openWorkspaceIds: Set<UUID>? = nil
+    ) -> UUID? {
         agents(
             worktreePath: task.worktreePath,
             taskWorkspaceId: task.workspaceId,
-            includeTaskWorkspaceId: true
+            includeTaskWorkspaceId: true,
+            openWorkspaceIds: openWorkspaceIds
         )
         .filter(\.isPreferredCandidate)
         .sorted(by: isPreferredAgent(_:_:))
@@ -46,12 +50,16 @@ enum TaskAgentProjectionBuilder {
     }
 
 
-    static func statusSummaries(for tasks: [TaskRecord]) -> [UUID: TaskAgentStatusSummary] {
+    static func statusSummaries(
+        for tasks: [TaskRecord],
+        openWorkspaceIds: Set<UUID>? = nil
+    ) -> [UUID: TaskAgentStatusSummary] {
         Dictionary(uniqueKeysWithValues: tasks.compactMap { task in
             guard task.archivedAt == nil,
                   let summary = statusSummary(
                     worktreePath: task.worktreePath,
-                    taskWorkspaceId: task.workspaceId
+                    taskWorkspaceId: task.workspaceId,
+                    openWorkspaceIds: openWorkspaceIds
                   ) else {
                 return nil
             }
@@ -61,12 +69,14 @@ enum TaskAgentProjectionBuilder {
 
     static func statusSummary(
         worktreePath: String?,
-        taskWorkspaceId: UUID?
+        taskWorkspaceId: UUID?,
+        openWorkspaceIds: Set<UUID>? = nil
     ) -> TaskAgentStatusSummary? {
         let agents = agents(
             worktreePath: worktreePath,
             taskWorkspaceId: taskWorkspaceId,
-            includeTaskWorkspaceId: true
+            includeTaskWorkspaceId: true,
+            openWorkspaceIds: openWorkspaceIds
         )
         guard !agents.isEmpty else { return nil }
         let dominant = agents
@@ -85,6 +95,7 @@ enum TaskAgentProjectionBuilder {
         worktreePath: String?,
         taskWorkspaceId: UUID? = nil,
         includeTaskWorkspaceId: Bool = false,
+        openWorkspaceIds: Set<UUID>? = nil,
         fallbackAgentLabel: String? = nil
     ) -> [TaskWorktreeAgentSnapshot] {
         let resolvedFallbackAgentLabel = fallbackAgentLabel ?? Self.fallbackAgentLabel
@@ -105,6 +116,7 @@ enum TaskAgentProjectionBuilder {
             agentSnapshot(
                 workspaceId: workspaceId,
                 taskWorkspaceId: taskWorkspaceId,
+                openWorkspaceIds: openWorkspaceIds,
                 fallbackAgentLabel: resolvedFallbackAgentLabel
             )
         }
@@ -127,6 +139,7 @@ enum TaskAgentProjectionBuilder {
             worktreePath: worktreePath,
             taskWorkspaceId: taskWorkspaceId,
             includeTaskWorkspaceId: true,
+            openWorkspaceIds: Set(workspaces.map(\.id)),
             fallbackAgentLabel: fallbackAgentLabel
         )
         .map { agent in
@@ -175,8 +188,15 @@ enum TaskAgentProjectionBuilder {
     private static func agentSnapshot(
         workspaceId: UUID,
         taskWorkspaceId: UUID?,
+        openWorkspaceIds: Set<UUID>?,
         fallbackAgentLabel: String
     ) -> TaskWorktreeAgentSnapshot? {
+        if let openWorkspaceIds {
+            guard openWorkspaceIds.contains(workspaceId) else { return nil }
+        } else {
+            guard isOpenWorkspace(workspaceId) else { return nil }
+        }
+
         let metadata = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: workspaceId)
         let presentation = TerminalAgentActivityStore.shared.presentation(forWorkspaceId: workspaceId)
         let agentId = presentation?.agentId
@@ -209,6 +229,10 @@ enum TaskAgentProjectionBuilder {
             isTaskWorkspace: taskWorkspaceId == workspaceId,
             isPreferredCandidate: preferred
         )
+    }
+
+    private static func isOpenWorkspace(_ workspaceId: UUID) -> Bool {
+        AppDelegate.shared?.tabManagerFor(tabId: workspaceId) != nil
     }
 
     private static func fallbackAgentRowSnapshot(
