@@ -15,7 +15,7 @@ public final class TaskBoardStore: ObservableObject {
     public let projectRoot: URL
     public let projectId: UUID
 
-    /// Normalized board view — exactly five columns in declared order.
+    /// Normalized board view in user-configured order.
     @Published public private(set) var columnSnapshots: [TaskColumnSnapshot] = []
 
     private var file: TaskBoardFile = TaskBoardFile()
@@ -58,6 +58,21 @@ public final class TaskBoardStore: ObservableObject {
     }
 
     public func fileSnapshot() -> TaskBoardFile { file }
+
+    public var settingsSnapshot: TaskBoardSettings { file.settings }
+
+    public func columnSettings(for columnId: TaskColumnId) -> TaskColumnSettings {
+        file.settings.columns.first(where: { $0.columnId == columnId })
+            ?? TaskColumnSettings(columnId: columnId)
+    }
+
+    public func columnTitle(for columnId: TaskColumnId) -> String {
+        columnSettings(for: columnId).title
+    }
+
+    public func columnHasActiveTasks(_ columnId: TaskColumnId) -> Bool {
+        file.tasks.contains { $0.archivedAt == nil && $0.columnId == columnId }
+    }
 
     /// Synchronous, lifecycle-critical save. Skips debounce.
     public func saveNow() throws {
@@ -102,6 +117,19 @@ public final class TaskBoardStore: ObservableObject {
         file.updatedAt = Date()
         rebuildSnapshots()
         return true
+    }
+
+    @discardableResult
+    public func updateSettings(_ block: (inout TaskBoardSettings) -> Void) throws -> Bool {
+        let changed = mutate { file in
+            let old = file.settings
+            block(&file.settings)
+            return file.settings != old
+        }
+        if changed {
+            try saveNow()
+        }
+        return changed
     }
 
     @discardableResult
@@ -171,7 +199,21 @@ public final class TaskBoardStore: ObservableObject {
     private func rebuildColumnSnapshots() {
         let active = file.tasks.filter { $0.archivedAt == nil }
         let grouped = Dictionary(grouping: active, by: { $0.columnId })
-        let snapshots: [TaskColumnSnapshot] = TaskColumnId.allCases.map { columnId in
+        let configured = TaskBoardSettings.normalizedColumns(file.settings.columns)
+        var seen = Set<TaskColumnId>()
+        var columnIds: [TaskColumnId] = []
+        func append(_ id: TaskColumnId) {
+            guard !seen.contains(id) else { return }
+            seen.insert(id)
+            columnIds.append(id)
+        }
+        for column in configured where column.isEnabled || grouped[column.columnId]?.isEmpty == false {
+            append(column.columnId)
+        }
+        for id in grouped.keys.sorted(by: { $0.rawValue < $1.rawValue }) {
+            append(id)
+        }
+        let snapshots: [TaskColumnSnapshot] = columnIds.map { columnId in
             let cards = (grouped[columnId] ?? [])
                 .sorted { $0.rank < $1.rank }
                 .map { task in
@@ -182,6 +224,9 @@ public final class TaskBoardStore: ObservableObject {
                         workspaceId: task.workspaceId,
                         branch: task.branch,
                         hasTicket: false, // v2 — Jira projection
+                        remoteWorkItem: task.remoteWorkItem,
+                        remoteStatusLabel: task.remoteStatusLabel,
+                        taskFilePath: task.taskFilePath,
                         worktreePath: task.worktreePath
                     )
                 }

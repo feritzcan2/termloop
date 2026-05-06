@@ -8,20 +8,18 @@ import Foundation
 /// attached to the task's worktree through `AgentReportedStateStore`.
 struct TaskWorkItemSnapshot: Equatable, Identifiable {
     let reference: RemoteWorkItemReference
-    let binding: AgentReportedStateStore.AgentReportedBinding
-    let reportedStatePath: String
+    let statusLabel: String?
+    let taskFilePath: String?
+    let binding: AgentReportedStateStore.AgentReportedBinding?
+    let reportedStatePath: String?
     let workspaceId: UUID?
 
     var id: String { reference.storageKey }
 
     var key: String { reference.key }
 
-    var statusLabel: String? {
-        binding.status?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-    }
-
     var url: URL? {
-        reference.url.flatMap(URL.init(string:)) ?? binding.destinationURL
+        reference.url.flatMap(URL.init(string:)) ?? binding?.destinationURL
     }
 
     var compactLabel: String {
@@ -35,14 +33,44 @@ enum TaskWorkItemProjectionBuilder {
     static func snapshots(for tasks: [TaskRecord]) -> [UUID: TaskWorkItemSnapshot] {
         Dictionary(uniqueKeysWithValues: tasks.compactMap { task in
             guard task.archivedAt == nil,
-                  let snapshot = snapshot(
-                    workspaceId: task.workspaceId,
-                    worktreePath: task.worktreePath
-                  ) else {
+                  let snapshot = snapshot(for: task) else {
                 return nil
             }
             return (task.id, snapshot)
         })
+    }
+
+    static func snapshot(for task: TaskRecord) -> TaskWorkItemSnapshot? {
+        if let reference = task.remoteWorkItem {
+            return remoteSnapshot(
+                reference: reference,
+                statusLabel: task.remoteStatusLabel,
+                taskFilePath: task.taskFilePath,
+                workspaceId: task.workspaceId,
+                worktreePath: task.worktreePath
+            )
+        }
+        return snapshot(workspaceId: task.workspaceId, worktreePath: task.worktreePath)
+    }
+
+    static func remoteSnapshot(
+        reference: RemoteWorkItemReference,
+        statusLabel: String?,
+        taskFilePath: String?,
+        workspaceId: UUID?,
+        worktreePath: String?
+    ) -> TaskWorkItemSnapshot {
+        TaskWorkItemSnapshot(
+            reference: reference,
+            statusLabel: statusLabel?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+            taskFilePath: taskFilePath?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+            binding: nil,
+            reportedStatePath: nil,
+            workspaceId: workspaceId ?? preferredWorkspaceId(
+                workspaceId: workspaceId,
+                worktreePath: worktreePath
+            )
+        )
     }
 
     static func snapshot(
@@ -64,6 +92,8 @@ enum TaskWorkItemProjectionBuilder {
             }
             return TaskWorkItemSnapshot(
                 reference: reference,
+                statusLabel: binding.status?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+                taskFilePath: nil,
                 binding: binding,
                 reportedStatePath: candidate.path,
                 workspaceId: candidate.workspaceId ?? preferredWorkspaceId(
