@@ -27,6 +27,7 @@ final class MainAreaPresentationPolicyTests: XCTestCase {
         gitChangesWorkspaceId: UUID? = nil,
         abilityId: String? = nil,
         abilitySplit: Bool = false,
+        taskBoardInlineWorkspaceId: UUID? = nil,
         hasOverlay: Bool = false,
         generation: UInt64 = 0
     ) -> MainAreaPresentationInput {
@@ -45,6 +46,7 @@ final class MainAreaPresentationPolicyTests: XCTestCase {
             gitChangesWorkspaceId: gitChangesWorkspaceId,
             abilityDetailId: abilityId,
             abilityDetailIsSplit: abilitySplit,
+            taskBoardInlineWorkspaceId: taskBoardInlineWorkspaceId,
             hasCommandPaletteOrFileDropOverlay: hasOverlay,
             handoffGeneration: generation
         )
@@ -212,6 +214,19 @@ final class MainAreaPresentationPolicyTests: XCTestCase {
         ))
 
         XCTAssertEqual(snapshot.mainPage, .contextBank)
+        XCTAssertFalse(snapshot.presentation(for: workspaceA)?.terminalPortalsVisible ?? true)
+    }
+
+
+    func testGitChangesRouteCanOverlayTasksBoard() {
+        let snapshot = MainAreaPresentationPolicy.resolve(input(
+            workSubTab: .tasks,
+            selected: workspaceA,
+            activeProject: projectA,
+            gitChangesWorkspaceId: workspaceA
+        ))
+
+        XCTAssertEqual(snapshot.mainPage, .gitChanges(workspaceA))
         XCTAssertFalse(snapshot.presentation(for: workspaceA)?.terminalPortalsVisible ?? true)
     }
 
