@@ -9,7 +9,10 @@ import SwiftUI
 struct TaskSidebarDrillInView: View {
     let detailSnapshot: TaskDetailSnapshot
     @ObservedObject var selection: TaskSelectionStore
+    @ObservedObject var remoteSync: TaskRemoteSyncCoordinator
+    var columnTitle: (TaskColumnId) -> String = { $0.defaultTitle }
     var onRebind: ((UUID) -> Void)?
+    var onOpenSettings: () -> Void = {}
 
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
@@ -17,53 +20,64 @@ struct TaskSidebarDrillInView: View {
     var onArchive: ((UUID) -> Void)?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                breadcrumb
-                header(detailSnapshot)
-                quickActions(detailSnapshot)
-                if case .failed = detailSnapshot.provisionState {
-                    TaskRepairBanner(
-                        reason: detailSnapshot.provisionState.failureDisplayText ?? "",
-                        onRebind: { onRebind?(detailSnapshot.id) },
-                        onUnbind: { onUnbind?(detailSnapshot.id) },
-                        onArchive: { onArchive?(detailSnapshot.id); selection.select(nil) }
-                    )
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    breadcrumb
+                    header(detailSnapshot)
+                    quickActions(detailSnapshot)
+                    if case .failed = detailSnapshot.provisionState {
+                        TaskRepairBanner(
+                            reason: detailSnapshot.provisionState.failureDisplayText ?? "",
+                            onRebind: { onRebind?(detailSnapshot.id) },
+                            onUnbind: { onUnbind?(detailSnapshot.id) },
+                            onArchive: { onArchive?(detailSnapshot.id); selection.select(nil) }
+                        )
+                    }
+                    sidebarSection {
+                        TaskWorkItemSection(
+                            taskId: detailSnapshot.id,
+                            taskWorkItem: workItemSnapshot(for: detailSnapshot),
+                            workspaceId: detailSnapshot.workspaceId,
+                            worktreePath: detailSnapshot.worktreePath,
+                            remoteSync: remoteSync
+                        )
+                    }
+                    sidebarSection {
+                        TaskGitChangesSection(
+                            workspaceId: detailSnapshot.workspaceId,
+                            worktreePath: detailSnapshot.worktreePath,
+                            branch: detailSnapshot.branch
+                        )
+                    }
+                    sidebarSection {
+                        TaskOpenPRsSection(
+                            workspaceId: detailSnapshot.workspaceId,
+                            worktreePath: detailSnapshot.worktreePath,
+                            branch: detailSnapshot.branch
+                        )
+                    }
+                    sidebarSection {
+                        TaskBranchesSection(
+                            branch: detailSnapshot.branch,
+                            worktreePath: detailSnapshot.worktreePath,
+                            taskWorkspaceId: detailSnapshot.workspaceId,
+                            selectedAgentWorkspaceId: selection.inlineTerminalWorkspaceId,
+                            onOpenAgentTerminal: { workspaceId in
+                                selection.openInlineTerminal(workspaceId: workspaceId)
+                                TaskQuickActions.showWorkspaceInline(workspaceId: workspaceId)
+                            }
+                        )
+                    }
                 }
-                sidebarSection {
-                    TaskWorkItemSection(
-                        workspaceId: detailSnapshot.workspaceId,
-                        worktreePath: detailSnapshot.worktreePath
-                    )
-                }
-                sidebarSection {
-                    TaskGitChangesSection(
-                        workspaceId: detailSnapshot.workspaceId,
-                        worktreePath: detailSnapshot.worktreePath,
-                        branch: detailSnapshot.branch
-                    )
-                }
-                sidebarSection {
-                    TaskOpenPRsSection(
-                        workspaceId: detailSnapshot.workspaceId,
-                        worktreePath: detailSnapshot.worktreePath,
-                        branch: detailSnapshot.branch
-                    )
-                }
-                sidebarSection {
-                    TaskBranchesSection(
-                        branch: detailSnapshot.branch,
-                        worktreePath: detailSnapshot.worktreePath,
-                        taskWorkspaceId: detailSnapshot.workspaceId,
-                        selectedAgentWorkspaceId: selection.inlineTerminalWorkspaceId,
-                        onOpenAgentTerminal: { workspaceId in
-                            selection.openInlineTerminal(workspaceId: workspaceId)
-                            TaskQuickActions.showWorkspaceInline(workspaceId: workspaceId)
-                        }
-                    )
-                }
+                .padding(10)
             }
-            .padding(10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            TaskSidebarSettingsButton(action: onOpenSettings)
+                .padding(10)
+                .padding(.top, 1)
+                .background(Color(nsColor: .windowBackgroundColor))
         }
     }
 
@@ -137,6 +151,22 @@ struct TaskSidebarDrillInView: View {
         )
     }
 
+    private func workItemSnapshot(for snap: TaskDetailSnapshot) -> TaskWorkItemSnapshot? {
+        if let reference = snap.remoteWorkItem {
+            return TaskWorkItemProjectionBuilder.remoteSnapshot(
+                reference: reference,
+                statusLabel: snap.remoteStatusLabel,
+                taskFilePath: snap.taskFilePath,
+                workspaceId: snap.workspaceId,
+                worktreePath: snap.worktreePath
+            )
+        }
+        return TaskWorkItemProjectionBuilder.snapshot(
+            workspaceId: snap.workspaceId,
+            worktreePath: snap.worktreePath
+        )
+    }
+
     private func worktreeSummary(for snap: TaskDetailSnapshot) -> String {
         if let branch = snap.branch?.trimmingCharacters(in: .whitespacesAndNewlines), !branch.isEmpty {
             return branch
@@ -189,13 +219,4 @@ struct TaskSidebarDrillInView: View {
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
-    private func columnTitle(_ id: TaskColumnId) -> String {
-        switch id {
-        case .backlog: return String(localized: "tasks.column.backlog", defaultValue: "Backlog", table: "TermLoop")
-        case .todo: return String(localized: "tasks.column.todo", defaultValue: "Todo", table: "TermLoop")
-        case .inProgress: return String(localized: "tasks.column.in_progress", defaultValue: "In Progress", table: "TermLoop")
-        case .inReview: return String(localized: "tasks.column.in_review", defaultValue: "In Review", table: "TermLoop")
-        case .done: return String(localized: "tasks.column.done", defaultValue: "Done", table: "TermLoop")
-        }
-    }
 }
