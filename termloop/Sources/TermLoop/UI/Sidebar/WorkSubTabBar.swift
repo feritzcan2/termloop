@@ -5,6 +5,7 @@ import SwiftUI
 
 enum WorkSubTab: String, CaseIterable, Identifiable {
     case loop
+    case tasks
     case contextBank
     case agents
 
@@ -17,6 +18,10 @@ enum WorkSubTab: String, CaseIterable, Identifiable {
         case .loop:
             return String(localized: "sidebar.workSubTab.loop",
                           defaultValue: "Loop",
+                          table: "TermLoop")
+        case .tasks:
+            return String(localized: "sidebar.workSubTab.tasks",
+                          defaultValue: "Tasks",
                           table: "TermLoop")
         case .contextBank:
             return String(localized: "sidebar.workSubTab.contextBank",
@@ -35,6 +40,10 @@ enum WorkSubTab: String, CaseIterable, Identifiable {
             return String(localized: "sidebar.workSubTab.loop.help",
                           defaultValue: "The Loop",
                           table: "TermLoop")
+        case .tasks:
+            return String(localized: "sidebar.workSubTab.tasks.help",
+                          defaultValue: "Tasks — kanban board for this project",
+                          table: "TermLoop")
         case .contextBank:
             return String(localized: "sidebar.workSubTab.contextBank.help",
                           defaultValue: "Context Bank — curated CLAUDE.md / AGENTS.md",
@@ -47,6 +56,7 @@ enum WorkSubTab: String, CaseIterable, Identifiable {
     var iconSystemName: String {
         switch self {
         case .loop: return "arrow.trianglehead.2.clockwise.rotate.90"
+        case .tasks: return "checklist"
         case .contextBank: return "books.vertical"
         case .agents: return "person.2"
         }
