@@ -34,7 +34,7 @@ struct TaskOpenPRsSection: View {
         VStack(alignment: .leading, spacing: 6) {
             TaskSidebarSectionTitle(
                 String(localized: "tasks.sidebar.section.pullRequests",
-                       defaultValue: "PULL REQUESTS", table: "TermLoop")
+                       defaultValue: "Pull Requests", table: "TermLoop")
             )
             if normalizedBranch == nil {
                 TaskSidebarEmptyText(

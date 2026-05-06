@@ -24,28 +24,29 @@ enum TermLoopSidebarTheme {
     // All resolved against `.primary` / `.accentColor` so they automatically
     // adapt to light/dark appearance and user accent-color preferences.
 
-    // Light mode needs explicitly designed surfaces: `Color.primary.opacity`
-    // looked fine on dark but produced washed-out, low-contrast separators on
-    // the white sidebar. These keep the dark appearance close to the previous
-    // values while giving light mode real structure.
+    // Light-mode surfaces are tuned to sit on top of the translucent `.sidebar`
+    // NSVisualEffectView material so the chrome reads like a native macOS
+    // sidebar (Finder/Mail/Clarc) — soft hairlines and almost-imperceptible
+    // tinted backgrounds, not painted opaque rectangles. Dark-mode values are
+    // intentionally left as-is.
     static let rule: Color = dynamicSurface(
-        light: NSColor(red: 0.74, green: 0.76, blue: 0.79, alpha: 0.48),
+        light: NSColor.black.withAlphaComponent(0.07),
         dark:  NSColor.white.withAlphaComponent(0.08)
     )
     static let ruleStrong: Color = dynamicSurface(
-        light: NSColor(red: 0.62, green: 0.65, blue: 0.70, alpha: 0.58),
+        light: NSColor.black.withAlphaComponent(0.11),
         dark:  NSColor.white.withAlphaComponent(0.14)
     )
     static let hoverBg: Color = dynamicSurface(
-        light: NSColor(red: 0.92, green: 0.94, blue: 0.97, alpha: 1.0),
+        light: NSColor.black.withAlphaComponent(0.045),
         dark:  NSColor.white.withAlphaComponent(0.05)
     )
     static let groupHeaderBg: Color = dynamicSurface(
-        light: NSColor(red: 0.965, green: 0.972, blue: 0.985, alpha: 1.0),
+        light: NSColor.black.withAlphaComponent(0.022),
         dark:  NSColor.white.withAlphaComponent(0.00)
     )
     static let groupHeaderBorder: Color = dynamicSurface(
-        light: NSColor(red: 0.80, green: 0.83, blue: 0.88, alpha: 0.70),
+        light: NSColor.black.withAlphaComponent(0.06),
         dark:  NSColor.white.withAlphaComponent(0.00)
     )
     static let activeBg: Color = Color.accentColor.opacity(0.12)
@@ -101,25 +102,27 @@ enum TermLoopSidebarTheme {
         dark:  NSColor(red: 0.97, green: 0.78, blue: 0.00, alpha: 0.55)
     )
 
-    // Agent-brand accents for the agent-name suffix in row metadata. Kept
-    // intentionally muted — these are tints, not chips. Each token resolves
-    // to a lighter hue in dark mode and a deeper, more saturated hue in
-    // light mode so the label keeps the same perceived weight against
-    // either background. See `agentAccent(for:)`.
+    // Agent-brand accents for the agent-name suffix in row metadata. In dark
+    // mode each agent keeps its hue (Claude purple, Codex blue, Gemini green,
+    // Aider amber) so the row metadata stays scannable. In light mode the
+    // brand tints are dropped entirely — color in the sidebar carries *state*
+    // (running / needsInput / completed / error), and the agent label collapses
+    // to plain `secondaryLabelColor`. The brand identity lives in the agent's
+    // main-area chrome where it isn't competing with status signals.
     static let claudeAccent: Color = dynamicAccent(
-        light: NSColor(red: 0.55, green: 0.28, blue: 0.78, alpha: 1.0),
+        light: NSColor.secondaryLabelColor,
         dark:  NSColor(red: 0.78, green: 0.55, blue: 0.95, alpha: 1.0)
     )
     static let codexAccent: Color = dynamicAccent(
-        light: NSColor(red: 0.12, green: 0.42, blue: 0.85, alpha: 1.0),
+        light: NSColor.secondaryLabelColor,
         dark:  NSColor(red: 0.40, green: 0.70, blue: 1.00, alpha: 1.0)
     )
     static let geminiAccent: Color = dynamicAccent(
-        light: NSColor(red: 0.16, green: 0.52, blue: 0.38, alpha: 1.0),
+        light: NSColor.secondaryLabelColor,
         dark:  NSColor(red: 0.42, green: 0.78, blue: 0.62, alpha: 1.0)
     )
     static let aiderAccent: Color = dynamicAccent(
-        light: NSColor(red: 0.78, green: 0.42, blue: 0.20, alpha: 1.0),
+        light: NSColor.secondaryLabelColor,
         dark:  NSColor(red: 0.95, green: 0.62, blue: 0.40, alpha: 1.0)
     )
 
@@ -163,6 +166,29 @@ enum TermLoopSidebarTheme {
         var attr = AttributedString(text.uppercased())
         attr.kern = 1.2
         return attr
+    }
+
+    /// Plain Title Case section title — same layout in light and dark.
+    /// Replaces the previous brutalist UPPER + tracked kern look so headers
+    /// read like native macOS sidebar section labels (Finder/Mail). Color
+    /// is the only thing that differs between modes (see
+    /// `adaptiveSectionColor`).
+    static func adaptiveSectionTitle(_ text: String) -> AttributedString {
+        AttributedString(text)
+    }
+
+    /// Section header font, paired with `adaptiveSectionTitle`. System
+    /// semibold in both modes — no SF Mono. Size remains caller-controlled
+    /// so each section can keep its own metric.
+    static func adaptiveSectionFont(size: CGFloat = 11) -> Font {
+        .system(size: size, weight: .semibold)
+    }
+
+    /// `secondaryLabelColor` auto-adapts to appearance, so this single call
+    /// gives the soft-gray section header in light mode and the lighter
+    /// gray in dark mode without any branching.
+    static var adaptiveSectionColor: Color {
+        Color(nsColor: .secondaryLabelColor)
     }
 
     static func color(for state: TerminalAgentDisplayState) -> Color {
@@ -235,24 +261,13 @@ struct TermLoopSidebarToken: View {
                 .truncationMode(.middle)
                 .monospacedDigit()
         }
-        // Tokens are short status pills ("4 changes", "2 commits") — never
-        // truncate them. When the parent HStack runs out of room we want
-        // pills to push the branch row's flexible content (the title) to
-        // shrink, not get clipped to "4 c…ges". The flexible side of the
-        // row can absorb the squeeze; the count cannot.
+        // Tokens render as plain colored text in both modes — capsule
+        // background + border were dropped so the sidebar stops looking
+        // like a wall of pills. Color carries tone (accent / warning /
+        // dim); the row's leading accent strip carries state.
         .fixedSize(horizontal: true, vertical: false)
         .font(emphasized ? TermLoopSidebarTheme.microCaps : TermLoopSidebarTheme.tinyMono)
         .foregroundStyle(foregroundColor)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(
-            Capsule()
-                .fill(backgroundColor)
-        )
-        .overlay(
-            Capsule()
-                .strokeBorder(borderColor, lineWidth: 1)
-        )
     }
 
     private var foregroundColor: Color {
@@ -265,32 +280,6 @@ struct TermLoopSidebarToken: View {
             return TermLoopSidebarTheme.dim
         case .warning:
             return Color.orange.opacity(0.96)
-        }
-    }
-
-    private var backgroundColor: Color {
-        switch tone {
-        case .neutral:
-            return Color.primary.opacity(0.05)
-        case .accent:
-            return TermLoopSidebarTheme.accent.opacity(0.12)
-        case .muted:
-            return Color.primary.opacity(0.035)
-        case .warning:
-            return Color.orange.opacity(0.12)
-        }
-    }
-
-    private var borderColor: Color {
-        switch tone {
-        case .neutral:
-            return TermLoopSidebarTheme.ruleStrong
-        case .accent:
-            return TermLoopSidebarTheme.accent.opacity(0.24)
-        case .muted:
-            return TermLoopSidebarTheme.rule
-        case .warning:
-            return Color.orange.opacity(0.24)
         }
     }
 }

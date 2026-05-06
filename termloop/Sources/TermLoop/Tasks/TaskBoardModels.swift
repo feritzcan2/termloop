@@ -3,15 +3,67 @@
 
 import Foundation
 
-/// Fixed v1 column set. Configurable columns are deferred to v2.
-public enum TaskColumnId: String, Codable, CaseIterable, Hashable, Sendable {
-    case backlog
-    case todo
-    case inProgress = "in_progress"
-    case inReview = "in_review"
-    case done
-}
+public struct TaskColumnId: RawRepresentable, Codable, Hashable, Sendable, ExpressibleByStringLiteral {
+    public var rawValue: String
 
+    public init(rawValue: String) {
+        self.rawValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? Self.backlog.rawValue
+            : rawValue
+    }
+
+    public init(stringLiteral value: String) {
+        self.init(rawValue: value)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        self.init(rawValue: try container.decode(String.self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
+    public static let backlog = TaskColumnId(rawValue: "backlog")
+    public static let todo = TaskColumnId(rawValue: "todo")
+    public static let inProgress = TaskColumnId(rawValue: "in_progress")
+    public static let inReview = TaskColumnId(rawValue: "in_review")
+    public static let done = TaskColumnId(rawValue: "done")
+    public static let defaults: [TaskColumnId] = [.backlog, .todo, .inProgress, .inReview, .done]
+
+    public var defaultTitle: String {
+        if self == .backlog { return String(localized: "tasks.column.backlog", defaultValue: "Backlog", table: "TermLoop") }
+        if self == .todo { return String(localized: "tasks.column.todo", defaultValue: "Todo", table: "TermLoop") }
+        if self == .inProgress { return String(localized: "tasks.column.in_progress", defaultValue: "In Progress", table: "TermLoop") }
+        if self == .inReview { return String(localized: "tasks.column.in_review", defaultValue: "In Review", table: "TermLoop") }
+        if self == .done { return String(localized: "tasks.column.done", defaultValue: "Done", table: "TermLoop") }
+        return rawValue
+            .replacingOccurrences(of: "_", with: " ")
+            .split(separator: " ")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
+    }
+
+    public static func fromRemoteStatus(_ status: String) -> TaskColumnId {
+        let slug = status
+            .lowercased()
+            .unicodeScalars
+            .map { CharacterSet.alphanumerics.contains($0) ? Character($0) : "_" }
+        let collapsed = String(slug)
+            .split(separator: "_", omittingEmptySubsequences: true)
+            .joined(separator: "_")
+        switch collapsed {
+        case "to_do", "todo": return .todo
+        case "in_progress", "doing": return .inProgress
+        case "in_review", "review": return .inReview
+        case "done", "closed", "resolved": return .done
+        case "backlog": return .backlog
+        default: return TaskColumnId(rawValue: collapsed.isEmpty ? "remote_status" : "remote_\(collapsed)")
+        }
+    }
+}
 
 public enum TaskProvisionFailureReason {
     public static let interrupted = "interrupted"
@@ -79,6 +131,10 @@ public struct TaskRecord: Codable, Identifiable, Equatable, Hashable, Sendable {
     public let projectId: UUID
     public var title: String
     public var brief: String?
+    public var remoteWorkItem: RemoteWorkItemReference?
+    public var remoteStatusLabel: String?
+    public var taskFilePath: String?
+    public var lastRemoteSyncAt: Date?
     public var columnId: TaskColumnId
     public var rank: String
     public var workspaceId: UUID?
@@ -95,6 +151,10 @@ public struct TaskRecord: Codable, Identifiable, Equatable, Hashable, Sendable {
         projectId: UUID,
         title: String,
         brief: String? = nil,
+        remoteWorkItem: RemoteWorkItemReference? = nil,
+        remoteStatusLabel: String? = nil,
+        taskFilePath: String? = nil,
+        lastRemoteSyncAt: Date? = nil,
         columnId: TaskColumnId,
         rank: String,
         workspaceId: UUID? = nil,
@@ -110,6 +170,10 @@ public struct TaskRecord: Codable, Identifiable, Equatable, Hashable, Sendable {
         self.projectId = projectId
         self.title = title
         self.brief = brief
+        self.remoteWorkItem = remoteWorkItem
+        self.remoteStatusLabel = remoteStatusLabel
+        self.taskFilePath = taskFilePath
+        self.lastRemoteSyncAt = lastRemoteSyncAt
         self.columnId = columnId
         self.rank = rank
         self.workspaceId = workspaceId
@@ -123,21 +187,212 @@ public struct TaskRecord: Codable, Identifiable, Equatable, Hashable, Sendable {
     }
 }
 
+public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
+    public var syncAssignedToMe: Bool
+    public var syncColumnMovesToRemote: Bool
+    public var provider: RemoteWorkItemProviderId
+    /// Jira: optional Atlassian site host, e.g. "company.atlassian.net".
+    public var jiraSite: String?
+    /// Jira: optional account email used when switching between multiple ACLI accounts.
+    public var jiraEmail: String?
+    /// Jira: optional project key. GitHub/GitLab: owner/repo or group/project.
+    public var container: String?
+    public var limit: Int
+    public var lastSyncedAt: Date?
+    public var lastError: String?
+
+    public init(
+        syncAssignedToMe: Bool = false,
+        syncColumnMovesToRemote: Bool = false,
+        provider: RemoteWorkItemProviderId = .jira,
+        jiraSite: String? = nil,
+        jiraEmail: String? = nil,
+        container: String? = nil,
+        limit: Int = 30,
+        lastSyncedAt: Date? = nil,
+        lastError: String? = nil
+    ) {
+        self.syncAssignedToMe = syncAssignedToMe
+        self.syncColumnMovesToRemote = syncColumnMovesToRemote
+        self.provider = provider
+        self.jiraSite = jiraSite?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.jiraEmail = jiraEmail?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.container = container
+        self.limit = max(1, min(limit, 100))
+        self.lastSyncedAt = lastSyncedAt
+        self.lastError = lastError
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case syncAssignedToMe
+        case syncColumnMovesToRemote
+        case provider
+        case jiraSite
+        case jiraEmail
+        case container
+        case limit
+        case lastSyncedAt
+        case lastError
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.syncAssignedToMe = try container.decodeIfPresent(Bool.self, forKey: .syncAssignedToMe) ?? false
+        self.syncColumnMovesToRemote = try container.decodeIfPresent(Bool.self, forKey: .syncColumnMovesToRemote) ?? false
+        self.provider = try container.decodeIfPresent(RemoteWorkItemProviderId.self, forKey: .provider) ?? .jira
+        self.jiraSite = try container.decodeIfPresent(String.self, forKey: .jiraSite)?
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.jiraEmail = try container.decodeIfPresent(String.self, forKey: .jiraEmail)?
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.container = try container.decodeIfPresent(String.self, forKey: .container)
+        let decodedLimit = try container.decodeIfPresent(Int.self, forKey: .limit) ?? 30
+        self.limit = max(1, min(decodedLimit, 100))
+        self.lastSyncedAt = try container.decodeIfPresent(Date.self, forKey: .lastSyncedAt)
+        self.lastError = try container.decodeIfPresent(String.self, forKey: .lastError)
+    }
+}
+
+public struct TaskColumnSettings: Codable, Equatable, Sendable, Identifiable {
+    public var id: TaskColumnId { columnId }
+    public var columnId: TaskColumnId
+    public var title: String
+    public var isEnabled: Bool
+    /// Optional provider status label used when syncColumnMovesToRemote is enabled.
+    public var remoteStatusLabel: String?
+
+    public init(
+        columnId: TaskColumnId,
+        title: String? = nil,
+        isEnabled: Bool = true,
+        remoteStatusLabel: String? = nil
+    ) {
+        self.columnId = columnId
+        self.title = title ?? columnId.defaultTitle
+        self.isEnabled = isEnabled
+        self.remoteStatusLabel = remoteStatusLabel
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case columnId
+        case title
+        case isEnabled
+        case remoteStatusLabel
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.columnId = try container.decode(TaskColumnId.self, forKey: .columnId)
+        self.title = try container.decodeIfPresent(String.self, forKey: .title) ?? columnId.defaultTitle
+        self.isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+        self.remoteStatusLabel = try container.decodeIfPresent(String.self, forKey: .remoteStatusLabel)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(columnId, forKey: .columnId)
+        try container.encode(title, forKey: .title)
+        try container.encode(isEnabled, forKey: .isEnabled)
+        try container.encodeIfPresent(remoteStatusLabel, forKey: .remoteStatusLabel)
+    }
+}
+
+public struct TaskBoardSettings: Codable, Equatable, Sendable {
+    public var remoteSync: TaskRemoteSyncSettings
+    public var columns: [TaskColumnSettings]
+
+    public init(
+        remoteSync: TaskRemoteSyncSettings = TaskRemoteSyncSettings(),
+        columns: [TaskColumnSettings] = TaskColumnId.defaults.map { TaskColumnSettings(columnId: $0) }
+    ) {
+        self.remoteSync = remoteSync
+        self.columns = Self.normalizedColumns(columns)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case remoteSync
+        case columns
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.remoteSync = try container.decodeIfPresent(TaskRemoteSyncSettings.self, forKey: .remoteSync)
+            ?? TaskRemoteSyncSettings()
+        self.columns = Self.normalizedColumns(
+            try container.decodeIfPresent([TaskColumnSettings].self, forKey: .columns) ?? []
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(remoteSync, forKey: .remoteSync)
+        try container.encode(Self.normalizedColumns(columns), forKey: .columns)
+    }
+
+    public static func normalizedColumns(_ input: [TaskColumnSettings]) -> [TaskColumnSettings] {
+        var result = input
+        if result.isEmpty {
+            result = TaskColumnId.defaults.map { TaskColumnSettings(columnId: $0) }
+        }
+        var seen = Set<TaskColumnId>()
+        result = result.compactMap { column in
+            guard !seen.contains(column.columnId) else { return nil }
+            seen.insert(column.columnId)
+            var value = column
+            let trimmed = value.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            value.title = trimmed.isEmpty ? value.columnId.defaultTitle : trimmed
+            let remote = value.remoteStatusLabel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            value.remoteStatusLabel = remote.isEmpty ? nil : remote
+            return value
+        }
+        if !result.contains(where: { $0.columnId == .backlog }) {
+            result.insert(TaskColumnSettings(columnId: .backlog), at: 0)
+        }
+        return result
+    }
+}
+
 public struct TaskBoardFile: Codable, Equatable, Sendable {
-    public static let currentSchemaVersion: Int = 1
+    public static let currentSchemaVersion: Int = 2
 
     public var schemaVersion: Int
+    public var settings: TaskBoardSettings
     public var tasks: [TaskRecord]
     public var updatedAt: Date
 
     public init(
         schemaVersion: Int = TaskBoardFile.currentSchemaVersion,
+        settings: TaskBoardSettings = TaskBoardSettings(),
         tasks: [TaskRecord] = [],
         updatedAt: Date = Date()
     ) {
         self.schemaVersion = schemaVersion
+        self.settings = settings
         self.tasks = tasks
         self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case settings
+        case tasks
+        case updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        self.settings = try container.decodeIfPresent(TaskBoardSettings.self, forKey: .settings)
+            ?? TaskBoardSettings()
+        self.tasks = try container.decode([TaskRecord].self, forKey: .tasks)
+        self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(TaskBoardFile.currentSchemaVersion, forKey: .schemaVersion)
+        try container.encode(settings, forKey: .settings)
+        try container.encode(tasks, forKey: .tasks)
+        try container.encode(updatedAt, forKey: .updatedAt)
     }
 }
 
@@ -160,6 +415,9 @@ public struct TaskCardSummary: Equatable, Identifiable, Hashable, Sendable {
     public let workspaceId: UUID?
     public let branch: String?
     public let hasTicket: Bool
+    public let remoteWorkItem: RemoteWorkItemReference?
+    public let remoteStatusLabel: String?
+    public let taskFilePath: String?
     public let worktreePath: String?
 
     public init(
@@ -169,6 +427,9 @@ public struct TaskCardSummary: Equatable, Identifiable, Hashable, Sendable {
         workspaceId: UUID? = nil,
         branch: String?,
         hasTicket: Bool,
+        remoteWorkItem: RemoteWorkItemReference? = nil,
+        remoteStatusLabel: String? = nil,
+        taskFilePath: String? = nil,
         worktreePath: String? = nil
     ) {
         self.id = id
@@ -177,6 +438,9 @@ public struct TaskCardSummary: Equatable, Identifiable, Hashable, Sendable {
         self.workspaceId = workspaceId
         self.branch = branch
         self.hasTicket = hasTicket
+        self.remoteWorkItem = remoteWorkItem
+        self.remoteStatusLabel = remoteStatusLabel
+        self.taskFilePath = taskFilePath
         self.worktreePath = worktreePath
     }
 }
@@ -190,6 +454,10 @@ public struct TaskDetailSnapshot: Equatable, Sendable {
     public let workspaceId: UUID?
     public let worktreePath: String?
     public let branch: String?
+    public let remoteWorkItem: RemoteWorkItemReference?
+    public let remoteStatusLabel: String?
+    public let taskFilePath: String?
+    public let lastRemoteSyncAt: Date?
     public let provisionState: TaskProvisionState
     public let bindingGeneration: Int
 
@@ -201,7 +469,15 @@ public struct TaskDetailSnapshot: Equatable, Sendable {
         self.workspaceId = task.workspaceId
         self.worktreePath = task.worktreePath
         self.branch = task.branch
+        self.remoteWorkItem = task.remoteWorkItem
+        self.remoteStatusLabel = task.remoteStatusLabel
+        self.taskFilePath = task.taskFilePath
+        self.lastRemoteSyncAt = task.lastRemoteSyncAt
         self.provisionState = task.provisionState
         self.bindingGeneration = task.bindingGeneration
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

@@ -27,7 +27,7 @@ struct TaskGitChangesSection: View {
         VStack(alignment: .leading, spacing: 6) {
             TaskSidebarSectionTitle(
                 String(localized: "tasks.sidebar.section.gitChanges",
-                       defaultValue: "GIT CHANGES", table: "TermLoop")
+                       defaultValue: "Git Changes", table: "TermLoop")
             )
             if normalizedWorktreePath == nil {
                 TaskSidebarEmptyText(
@@ -45,18 +45,18 @@ struct TaskGitChangesSection: View {
 
     private var summaryButton: some View {
         Button(action: openDiffPage) {
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
                     Image(systemName: files.isEmpty ? "checkmark.circle" : "square.and.pencil")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(files.isEmpty ? Color.secondary : Color.orange)
                     Text(changeCountText(files.count))
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Color.primary)
                     Spacer(minLength: 0)
                     if canOpenDiffPage {
                         Image(systemName: "arrow.up.right")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(Color.secondary)
                     }
                 }
@@ -65,12 +65,8 @@ struct TaskGitChangesSection: View {
                     statusCountStrip
                 }
             }
-            .padding(.vertical, 8)
-            .padding(.horizontal, 9)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .controlBackgroundColor).opacity(0.42))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!canOpenDiffPage)
@@ -83,18 +79,14 @@ struct TaskGitChangesSection: View {
     }
 
     private var statusCountStrip: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 10) {
             ForEach(statusCounts, id: \.status.rawValue) { item in
                 HStack(spacing: 3) {
                     Text(item.status.sidebarSymbol)
                     Text("\(item.count)")
                 }
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .foregroundStyle(item.status.sidebarTint)
-                .padding(.vertical, 2)
-                .padding(.horizontal, 5)
-                .background(item.status.sidebarTint.opacity(0.13))
-                .clipShape(Capsule())
             }
         }
     }

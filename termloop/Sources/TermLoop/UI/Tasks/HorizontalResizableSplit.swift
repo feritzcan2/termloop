@@ -12,23 +12,31 @@ import SwiftUI
 struct HorizontalResizableSplit<Top: View, Bottom: View>: View {
     let topMinHeight: CGFloat
     let bottomMinHeight: CGFloat
-    let bottomPreferredHeight: CGFloat
+    let bottomPreferredFraction: CGFloat
     @ViewBuilder let top: () -> Top
     @ViewBuilder let bottom: () -> Bottom
 
-    @State private var committedBottomHeight: CGFloat?
+    /// Persisted across leaves of the tab and app restarts. `0` is the
+    /// sentinel for "never resized" so we can fall back to
+    /// `bottomPreferredFraction * availableHeight`. Stored as `Double`
+    /// because `@AppStorage` does not bridge `CGFloat` directly.
+    @AppStorage("termloop.taskBoard.bottomHeight") private var savedBottomHeightDouble: Double = 0
     @State private var dragStartBottomHeight: CGFloat?
+
+    private var savedBottomHeight: CGFloat? {
+        savedBottomHeightDouble > 0 ? CGFloat(savedBottomHeightDouble) : nil
+    }
 
     init(
         topMinHeight: CGFloat = 260,
         bottomMinHeight: CGFloat = 190,
-        bottomPreferredHeight: CGFloat = 280,
+        bottomPreferredFraction: CGFloat = 0.35,
         @ViewBuilder top: @escaping () -> Top,
         @ViewBuilder bottom: @escaping () -> Bottom
     ) {
         self.topMinHeight = topMinHeight
         self.bottomMinHeight = bottomMinHeight
-        self.bottomPreferredHeight = bottomPreferredHeight
+        self.bottomPreferredFraction = bottomPreferredFraction
         self.top = top
         self.bottom = bottom
     }
@@ -38,8 +46,12 @@ struct HorizontalResizableSplit<Top: View, Bottom: View>: View {
             let availableHeight = max(0, proxy.size.height)
             let dividerHeight: CGFloat = 8
             let maxBottom = max(bottomMinHeight, availableHeight - topMinHeight - dividerHeight)
+            // Default split (when never resized): bottom takes
+            // `bottomPreferredFraction` of the available height, scaling with
+            // the window. 0.35 = ~65% board / 35% terminal.
+            let preferredBottom = max(bottomMinHeight, availableHeight * bottomPreferredFraction)
             let resolvedBottom = clamped(
-                committedBottomHeight ?? bottomPreferredHeight,
+                savedBottomHeight ?? preferredBottom,
                 min: bottomMinHeight,
                 max: maxBottom
             )
@@ -64,11 +76,15 @@ struct HorizontalResizableSplit<Top: View, Bottom: View>: View {
     }
 
     private func divider(currentBottomHeight: CGFloat, maxBottom: CGFloat) -> some View {
+        // Track + grip both use `Color.primary` so they have real contrast in
+        // both modes. The previous `separatorColor.opacity(0.65)` + `secondary`
+        // grip were near-invisible in light mode, hiding the resize affordance
+        // entirely.
         Rectangle()
-            .fill(Color(nsColor: .separatorColor).opacity(0.65))
+            .fill(Color.primary.opacity(0.08))
             .overlay(
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(Color.secondary.opacity(0.22))
+                    .fill(Color.primary.opacity(0.32))
                     .frame(width: 46, height: 3)
             )
             .contentShape(Rectangle())
@@ -79,11 +95,12 @@ struct HorizontalResizableSplit<Top: View, Bottom: View>: View {
                         if dragStartBottomHeight == nil {
                             dragStartBottomHeight = currentBottomHeight
                         }
-                        committedBottomHeight = clamped(
+                        let next = clamped(
                             start - value.translation.height,
                             min: bottomMinHeight,
                             max: maxBottom
                         )
+                        savedBottomHeightDouble = Double(next)
                     }
                     .onEnded { _ in
                         dragStartBottomHeight = nil

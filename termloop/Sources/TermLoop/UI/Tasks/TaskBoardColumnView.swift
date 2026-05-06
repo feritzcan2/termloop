@@ -10,6 +10,7 @@ import UniformTypeIdentifiers
 /// provided. Column views without an `onMove` closure render but do not move.
 struct TaskBoardColumnView: View {
     let snapshot: TaskColumnSnapshot
+    let title: String
     @ObservedObject var selection: TaskSelectionStore
     let agentStatusesByTaskId: [UUID: TaskAgentStatusSummary]
     let workItemsByTaskId: [UUID: TaskWorkItemSnapshot]
@@ -56,7 +57,7 @@ struct TaskBoardColumnView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text(displayTitle)
+            Text(title.uppercased())
                 .font(.system(size: 11, weight: .bold))
                 .foregroundColor(.secondary)
                 .kerning(0.45)
@@ -93,26 +94,6 @@ struct TaskBoardColumnView: View {
 
     private var columnBackground: Color {
         Color(nsColor: .underPageBackgroundColor).opacity(0.70)
-    }
-
-    private var displayTitle: String {
-        switch snapshot.id {
-        case .backlog:
-            return String(localized: "tasks.column.backlog",
-                          defaultValue: "BACKLOG", table: "TermLoop")
-        case .todo:
-            return String(localized: "tasks.column.todo",
-                          defaultValue: "TODO", table: "TermLoop")
-        case .inProgress:
-            return String(localized: "tasks.column.in_progress",
-                          defaultValue: "IN PROGRESS", table: "TermLoop")
-        case .inReview:
-            return String(localized: "tasks.column.in_review",
-                          defaultValue: "IN REVIEW", table: "TermLoop")
-        case .done:
-            return String(localized: "tasks.column.done",
-                          defaultValue: "DONE", table: "TermLoop")
-        }
     }
 
     private func handleDrop(providers: [NSItemProvider]) -> Bool {

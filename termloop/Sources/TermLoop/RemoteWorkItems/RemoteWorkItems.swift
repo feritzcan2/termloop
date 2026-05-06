@@ -5,20 +5,38 @@ import Foundation
 
 // MARK: - Remote Work Item domain
 
-enum RemoteWorkItemProviderId: String, Codable, CaseIterable, Hashable, Sendable {
+public enum RemoteWorkItemProviderId: String, Codable, CaseIterable, Hashable, Sendable {
     case jira
     case github
     case gitlab
 }
 
-struct RemoteWorkItemReference: Codable, Hashable, Sendable {
-    var provider: RemoteWorkItemProviderId
-    var key: String
-    var url: String?
-    var host: String?
-    var namespace: String?
-    var repository: String?
-    var number: Int?
+public struct RemoteWorkItemReference: Codable, Hashable, Sendable {
+    public var provider: RemoteWorkItemProviderId
+    public var key: String
+    public var url: String?
+    public var host: String?
+    public var namespace: String?
+    public var repository: String?
+    public var number: Int?
+
+    public init(
+        provider: RemoteWorkItemProviderId,
+        key: String,
+        url: String?,
+        host: String?,
+        namespace: String?,
+        repository: String?,
+        number: Int?
+    ) {
+        self.provider = provider
+        self.key = key
+        self.url = url
+        self.host = host
+        self.namespace = namespace
+        self.repository = repository
+        self.number = number
+    }
 
     var stableId: String {
         switch provider {

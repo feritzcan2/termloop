@@ -392,17 +392,7 @@ struct AgentRowCoreView: View, Equatable {
                 .font(TermLoopSidebarTheme.tinyMono)
                 .foregroundStyle(count > 0 ? TermLoopSidebarTheme.gitDirty : TermLoopSidebarTheme.dim)
                 .monospacedDigit()
-                .padding(.horizontal, 5)
-                .padding(.vertical, 1)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(count > 0 ? TermLoopSidebarTheme.gitDirty.opacity(0.18) : Color.white.opacity(0.03))
-                )
-                .overlay(
-                    Capsule(style: .continuous)
-                        .stroke(count > 0 ? TermLoopSidebarTheme.gitDirty.opacity(0.62) : TermLoopSidebarTheme.rule, lineWidth: 1)
-                )
-                .contentShape(Capsule(style: .continuous))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(count == 1 ? "1 git change" : "\(count) git changes")
@@ -435,8 +425,13 @@ struct AgentRowCoreView: View, Equatable {
     /// Status pill is omitted for `.ready` and `.idle` — those states cover
     /// the vast majority of rows, so rendering the pill makes it the visual
     /// wallpaper rather than a signal. The leading accent strip + per-row
-    /// agent label still carry enough context for resting rows; the pill
-    /// returns only when the row needs attention or is actively doing work.
+    /// agent label still carry enough context for resting rows; the state
+    /// word returns only when the row needs attention or is actively doing
+    /// work.
+    ///
+    /// Capsule chrome was dropped in both modes — state renders as plain
+    /// colored text so the row reads as one quiet metadata line. Color is
+    /// the only signal that differs (statusColor adapts per appearance).
     @ViewBuilder
     private var statusBadge: some View {
         switch core.displayState {
@@ -444,18 +439,8 @@ struct AgentRowCoreView: View, Equatable {
             EmptyView()
         case .running, .needsInput, .completed, .error:
             Text(core.stateText)
-                .font(TermLoopSidebarTheme.microCaps)
+                .font(TermLoopSidebarTheme.tinyMono)
                 .foregroundStyle(statusColor)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(statusColor.opacity(0.14))
-                )
-                .overlay(
-                    Capsule(style: .continuous)
-                        .stroke(statusColor.opacity(0.28), lineWidth: 1)
-                )
         }
     }
 
