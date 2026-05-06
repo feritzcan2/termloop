@@ -16,6 +16,7 @@ struct TaskSidebarDrillInView: View {
 
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
+    @EnvironmentObject private var tabManager: TabManager
     var onUnbind: ((UUID) -> Void)?
     var onArchive: ((UUID) -> Void)?
 
@@ -151,7 +152,8 @@ struct TaskSidebarDrillInView: View {
         _ = activityStore
         return TaskAgentProjectionBuilder.statusSummary(
             worktreePath: snap.worktreePath,
-            taskWorkspaceId: snap.workspaceId
+            taskWorkspaceId: snap.workspaceId,
+            openWorkspaceIds: Set(tabManager.tabs.map(\.id))
         )
     }
 

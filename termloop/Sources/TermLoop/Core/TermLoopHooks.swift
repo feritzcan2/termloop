@@ -2488,6 +2488,7 @@ export const CmuxTermLoop = async ({ $, directory }) => {
         BridgeCoordinator.shared.workspaceDidClose(workspaceId: workspaceId)
         WorkspaceMetadataStore.shared.forgetObservedWorkspaceTitle(workspaceId: workspaceId)
         WorkspaceMetadataStore.shared.clearAgentSession(forWorkspaceId: workspaceId)
+        TaskSelectionStoreProvider.shared.closeInlineTerminals(workspaceId: workspaceId)
         MainAreaPresentationCoordinator.shared.handleNavigationEvent(.workspaceDidClose(workspaceId))
     }
 

@@ -336,11 +336,10 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                     timeout: 20
                 )
                 guard result.exitStatus == 0, !result.timedOut else {
-                    throw RemoteWorkItemError.commandFailed(
-                        result.stderr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            ? "Jira project list is unavailable. Enter the project key manually; sync can still work."
-                            : result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-                    )
+                    throw RemoteWorkItemError.commandFailed(Self.commandFailureMessage(
+                        result,
+                        fallback: "Jira project list is unavailable. Enter the project key manually; sync can still work."
+                    ))
                 }
                 let options = try Self.parseProjectOptions(result.stdout)
                 await MainActor.run {
@@ -356,13 +355,16 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                             "jira", "workitem", "search",
                             "--jql", "assignee = currentUser() ORDER BY updated DESC",
                             "--limit", "100",
-                            "--fields", "key,project,summary",
+                            "--fields", "key,summary",
                             "--json"
                         ],
                         timeout: 20
                     )
                     guard fallback.exitStatus == 0, !fallback.timedOut else {
-                        throw RemoteWorkItemError.commandFailed(fallback.stderr)
+                        throw RemoteWorkItemError.commandFailed(Self.commandFailureMessage(
+                            fallback,
+                            fallback: "Could not list assigned Jira work items."
+                        ))
                     }
                     let options = try Self.parseProjectOptionsFromWorkItems(fallback.stdout)
                     await MainActor.run {
@@ -785,9 +787,150 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                                  defaultValue: "Remote statuses synced to columns.",
                                  table: "TermLoop")
             objectWillChange.send()
+            syncLinkedTaskColumnsToRemoteStatuses()
         } catch {
             lastMessage = String(describing: error)
         }
+    }
+
+    private func syncLinkedTaskColumnsToRemoteStatuses() {
+        guard !isSyncing else { return }
+        let linkedTasks = store.fileSnapshot().tasks.compactMap { task -> (taskId: UUID, reference: RemoteWorkItemReference)? in
+            guard task.archivedAt == nil, let reference = task.remoteWorkItem else { return nil }
+            return (task.id, reference)
+        }
+        guard !linkedTasks.isEmpty else { return }
+
+        let syncSettings = settings
+        isSyncing = true
+        syncTask?.cancel()
+        syncTask = Task(priority: .utility) { [weak self] in
+            let service = Self.makeRemoteWorkItemService(settings: syncSettings)
+            var snapshots: [(taskId: UUID, snapshot: RemoteWorkItemSnapshot)] = []
+            var failureCount = 0
+            for linkedTask in linkedTasks {
+                do {
+                    let snapshot = try await service.fetch(linkedTask.reference)
+                    try Task.checkCancellation()
+                    snapshots.append((linkedTask.taskId, snapshot))
+                } catch is CancellationError {
+                    return
+                } catch {
+                    failureCount += 1
+                }
+            }
+            await MainActor.run {
+                self?.applyLinkedStatusSnapshots(snapshots, failureCount: failureCount)
+            }
+        }
+    }
+
+    private func applyLinkedStatusSnapshots(
+        _ snapshots: [(taskId: UUID, snapshot: RemoteWorkItemSnapshot)],
+        failureCount: Int
+    ) {
+        let now = Date()
+        var updatedCount = 0
+        var movedCount = 0
+        var unmappedCount = 0
+
+        do {
+            let changed = store.mutate { file in
+                let columnByRemoteStatus = Self.remoteStatusColumnLookup(file.settings.columns)
+                var rankCursorByColumn = Self.lastRankByColumn(file.tasks)
+                var touchedColumns = Set<TaskColumnId>()
+                var didChange = false
+
+                for item in snapshots {
+                    guard let idx = file.tasks.firstIndex(where: {
+                        $0.id == item.taskId && $0.archivedAt == nil
+                    }) else {
+                        continue
+                    }
+
+                    let old = file.tasks[idx]
+                    let statusLabel = item.snapshot.statusLabel?
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .nilIfEmpty
+                    file.tasks[idx].remoteWorkItem = item.snapshot.reference
+                    file.tasks[idx].remoteStatusLabel = statusLabel
+                    file.tasks[idx].lastRemoteSyncAt = now
+
+                    if let statusKey = Self.remoteStatusLookupKey(statusLabel),
+                       let targetColumn = columnByRemoteStatus[statusKey] {
+                        if file.tasks[idx].columnId != targetColumn {
+                            file.tasks[idx].columnId = targetColumn
+                            let nextRank = rankCursorByColumn[targetColumn]
+                                .map(TaskRanking.after)
+                                ?? TaskRanking.initial()
+                            file.tasks[idx].rank = nextRank
+                            rankCursorByColumn[targetColumn] = nextRank
+                            touchedColumns.insert(targetColumn)
+                            movedCount += 1
+                        }
+                    } else if statusLabel != nil {
+                        unmappedCount += 1
+                    }
+
+                    if file.tasks[idx] != old {
+                        file.tasks[idx].updatedAt = now
+                        updatedCount += 1
+                        didChange = true
+                    }
+                }
+
+                for columnId in touchedColumns {
+                    didChange = TaskBoardStore.rebalanceColumnIfNeeded(columnId, in: &file) || didChange
+                }
+
+                file.settings.remoteSync.lastError = nil
+                return didChange
+            }
+
+            if changed {
+                try store.saveNow()
+            }
+            let failureSuffix = failureCount > 0 ? " \(failureCount) failed." : ""
+            let unmappedSuffix = unmappedCount > 0 ? " \(unmappedCount) had no mapped local column." : ""
+            finishSync(message: String(
+                localized: "tasks.settings.columns.syncedRemoteStatusesWithTasks",
+                defaultValue: "Remote statuses synced. Updated \(updatedCount) linked tasks, moved \(movedCount).\(unmappedSuffix)\(failureSuffix)",
+                table: "TermLoop"
+            ))
+        } catch {
+            finishSync(error: error)
+        }
+    }
+
+    private static func remoteStatusColumnLookup(_ columns: [TaskColumnSettings]) -> [String: TaskColumnId] {
+        var lookup: [String: TaskColumnId] = [:]
+        for column in TaskBoardSettings.normalizedColumns(columns) {
+            guard let key = remoteStatusLookupKey(column.remoteStatusLabel) else { continue }
+            lookup[key] = column.columnId
+        }
+        return lookup
+    }
+
+    private static func remoteStatusLookupKey(_ value: String?) -> String? {
+        value?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty?
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .lowercased()
+    }
+
+    private static func lastRankByColumn(_ tasks: [TaskRecord]) -> [TaskColumnId: String] {
+        var result: [TaskColumnId: String] = [:]
+        for task in tasks where task.archivedAt == nil {
+            if let existing = result[task.columnId] {
+                if existing < task.rank {
+                    result[task.columnId] = task.rank
+                }
+            } else {
+                result[task.columnId] = task.rank
+            }
+        }
+        return result
     }
 
     private func updateColumn(
@@ -1013,8 +1156,29 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
     }
 
     private static func humanError(_ error: Error) -> String {
+        if let remoteError = error as? RemoteWorkItemError {
+            switch remoteError {
+            case .commandFailed(let message), .parseFailed(let message), .unsupportedReference(let message):
+                return message.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                    ?? String(localized: "common.unknownError", defaultValue: "Unknown error", table: "TermLoop")
+            case .unsupportedProvider(let provider):
+                return "Unsupported provider: \(provider.rawValue)"
+            }
+        }
         let text = String(describing: error).trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? String(localized: "common.unknownError", defaultValue: "Unknown error", table: "TermLoop") : text
+    }
+
+    private static func commandFailureMessage(
+        _ result: RemoteWorkItemCommandResult,
+        fallback: String
+    ) -> String {
+        let stderr = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stdout = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !stderr.isEmpty { return stderr }
+        if !stdout.isEmpty { return stdout }
+        if result.timedOut { return "Command timed out." }
+        return fallback
     }
 
     private static func parseProjectOptions(_ text: String) throws -> [TaskRemoteProjectOption] {
