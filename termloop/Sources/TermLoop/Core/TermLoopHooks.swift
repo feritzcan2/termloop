@@ -2769,11 +2769,12 @@ private struct AgentMainAreaOverlaySwap<Content: View>: View {
 @MainActor
 private struct GitChangesMainAreaHost: View {
     @ObservedObject private var store = GitChangesMainAreaStore.shared
+    @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
 
     var body: some View {
         if let presentation = store.presentation,
            let tabManager = AppDelegate.shared?.tabManager,
-           let workspace = tabManager.tabs.first(where: { $0.id == presentation.workspaceId }) {
+           let workspace = resolvedWorkspace(for: presentation, in: tabManager) {
             WorktreeChangesSheet(
                 workspace: workspace,
                 branch: presentation.branch,
@@ -2799,6 +2800,29 @@ private struct GitChangesMainAreaHost: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear { store.close() }
         }
+    }
+
+    private func resolvedWorkspace(
+        for presentation: WorktreeChangesPresentation,
+        in tabManager: TabManager
+    ) -> Workspace? {
+        if let exact = tabManager.tabs.first(where: { $0.id == presentation.workspaceId }) {
+            return exact
+        }
+        guard let pathKey = TaskPathNormalization.resolveDisplayAndKey(presentation.worktreePath)?.keyPath else {
+            return nil
+        }
+        return tabManager.tabs.first { workspace in
+            workspacePathKeys(workspace).contains(pathKey)
+        }
+    }
+
+    private func workspacePathKeys(_ workspace: Workspace) -> Set<String?> {
+        Set([
+            metadataStore.worktreePath(forWorkspaceId: workspace.id),
+            workspace.termLoopPresentationCwd(),
+            workspace.currentDirectory
+        ].map { TaskPathNormalization.resolveDisplayAndKey($0)?.keyPath })
     }
 }
 

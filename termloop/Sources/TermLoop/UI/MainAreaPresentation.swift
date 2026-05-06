@@ -215,11 +215,6 @@ enum MainAreaPresentationPolicy {
         if input.settingsIsOpen {
             return .settings
         }
-        if input.sidebarTab == .work,
-           input.workSubTab == .tasks,
-           let projectId = input.activeProjectId {
-            return .taskBoard(projectId: projectId)
-        }
         if input.sidebarTab == .agents {
             return .agents
         }
@@ -236,6 +231,11 @@ enum MainAreaPresentationPolicy {
         }
         if let gitWorkspaceId = input.gitChangesWorkspaceId {
             return .gitChanges(gitWorkspaceId)
+        }
+        if input.sidebarTab == .work,
+           input.workSubTab == .tasks,
+           let projectId = input.activeProjectId {
+            return .taskBoard(projectId: projectId)
         }
         if shouldShowProjectEmptyState(input) {
             return .projectEmpty

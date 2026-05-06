@@ -12,6 +12,7 @@ struct TaskGitChangesSection: View {
     let worktreePath: String?
     let branch: String?
 
+    @EnvironmentObject private var tabManager: TabManager
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @State private var files: [SidebarGitChangeItem] = []
 
@@ -72,7 +73,7 @@ struct TaskGitChangesSection: View {
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
-        .disabled(!canOpenDiffPage || files.isEmpty)
+        .disabled(!canOpenDiffPage)
         .help(canOpenDiffPage ? String(localized: "tasks.sidebar.section.gitChanges.openDiffHelp",
                                       defaultValue: "Open the Git Changes diff page",
                                       table: "TermLoop")
@@ -107,9 +108,30 @@ struct TaskGitChangesSection: View {
     }
 
     private var resolvedWorkspaceId: UUID? {
-        if let workspaceId { return workspaceId }
+        if let liveWorkspaceId = liveWorkspaceIdMatchingPath {
+            return liveWorkspaceId
+        }
+        if let workspaceId, tabManager.tabs.contains(where: { $0.id == workspaceId }) {
+            return workspaceId
+        }
+        guard let path = normalizedWorktreePath else { return workspaceId }
+        return metadataStore.workspaceIds(withWorktreePath: path).first ?? workspaceId
+    }
+
+    private var liveWorkspaceIdMatchingPath: UUID? {
         guard let path = normalizedWorktreePath else { return nil }
-        return metadataStore.workspaceIds(withWorktreePath: path).first
+        let pathKey = TaskPathNormalization.resolveDisplayAndKey(path)?.keyPath
+        return tabManager.tabs.first { workspace in
+            workspacePathKeys(workspace).contains(pathKey)
+        }?.id
+    }
+
+    private func workspacePathKeys(_ workspace: Workspace) -> Set<String?> {
+        Set([
+            metadataStore.worktreePath(forWorkspaceId: workspace.id),
+            workspace.termLoopPresentationCwd(),
+            workspace.currentDirectory
+        ].map { TaskPathNormalization.resolveDisplayAndKey($0)?.keyPath })
     }
 
     private var canOpenDiffPage: Bool {
