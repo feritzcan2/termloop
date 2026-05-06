@@ -1,5 +1,10 @@
 import XCTest
-@testable import termloop
+
+#if canImport(TermLoop_DEV)
+@testable import TermLoop_DEV
+#elseif canImport(TermLoop)
+@testable import TermLoop
+#endif
 
 @MainActor
 final class TaskLifecycleCoordinatorTests: XCTestCase {
@@ -37,20 +42,30 @@ final class TaskLifecycleCoordinatorTests: XCTestCase {
         XCTAssertEqual(snap?.cards.first?.title, "first")
     }
 
-    func testBindWorktreeHappyPath() async throws {
+    func testMoveManualTaskToInProgressDoesNotProvision() async throws {
         let id = try coordinator.createTask(title: "feat", columnId: .todo)
         try await coordinator.moveColumn(taskId: id, to: .inProgress)
+        let task = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == id })
+        XCTAssertEqual(task.columnId, .inProgress)
+        XCTAssertEqual(task.provisionState, .none)
+        XCTAssertNil(task.workspaceId)
+        XCTAssertNil(task.worktreePath)
+        XCTAssertTrue(fakeWorktrees.provisionCalls.isEmpty)
+    }
+
+    func testExplicitBindWorktreeHappyPath() async throws {
+        let id = try coordinator.createTask(title: "feat", columnId: .todo)
+        try await coordinator.bindWorktree(taskId: id)
         let task = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == id })
         XCTAssertEqual(task.provisionState, .ready)
         XCTAssertNotNil(task.workspaceId)
         XCTAssertNotNil(task.worktreePath)
         XCTAssertEqual(task.bindingGeneration, 1)
-        XCTAssertEqual(task.columnId, .inProgress)
     }
 
-    func testBindWritesMetadataBeforeTaskStore() async throws {
+    func testExplicitBindWritesMetadataBeforeTaskStore() async throws {
         let id = try coordinator.createTask(title: "feat", columnId: .todo)
-        try await coordinator.moveColumn(taskId: id, to: .inProgress)
+        try await coordinator.bindWorktree(taskId: id)
         XCTAssertTrue(fakeWorkspaces.metadataWrittenBeforeTaskStoreSave)
     }
 
@@ -148,7 +163,7 @@ final class FakeWorktreeCoordinator: TaskBoundWorktreeProvisioning {
                 suspendedContinuation = continuation
             }
         }
-        try nextResult.get()
+        return try nextResult.get()
     }
 
     func resumeProvision(_ result: Result<TaskWorktreeProvisionResult, Error>) {
@@ -174,7 +189,7 @@ extension TaskLifecycleCoordinatorTests {
         fakeWorktrees.nextResult = .failure(E())
         let id = try coordinator.createTask(title: "feat", columnId: .todo)
         do {
-            try await coordinator.moveColumn(taskId: id, to: .inProgress)
+            try await coordinator.bindWorktree(taskId: id)
             XCTFail("expected throw")
         } catch {}
         let task = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == id })
@@ -186,7 +201,7 @@ extension TaskLifecycleCoordinatorTests {
 
     func testCancelIgnoresStaleCompletion() async throws {
         let id = try coordinator.createTask(title: "feat", columnId: .todo)
-        try await coordinator.moveColumn(taskId: id, to: .inProgress)
+        try await coordinator.bindWorktree(taskId: id)
         let beforeGen = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == id }).bindingGeneration
 
         try coordinator.cancelBinding(taskId: id) // bumps generation, marks pending teardown
@@ -201,7 +216,7 @@ extension TaskLifecycleCoordinatorTests {
         let id = try coordinator.createTask(title: "feat", columnId: .todo)
 
         let moveTask = _Concurrency.Task { @MainActor in
-            try await self.coordinator.moveColumn(taskId: id, to: .inProgress)
+            try await self.coordinator.bindWorktree(taskId: id)
         }
         while fakeWorktrees.suspendedContinuation == nil {
             await _Concurrency.Task.yield()
@@ -228,7 +243,7 @@ extension TaskLifecycleCoordinatorTests {
 
     func testRebindAfterUnbindSucceeds() async throws {
         let id = try coordinator.createTask(title: "feat", columnId: .todo)
-        try await coordinator.moveColumn(taskId: id, to: .inProgress)
+        try await coordinator.bindWorktree(taskId: id)
         try coordinator.cancelBinding(taskId: id)
 
         // Reset fake to a fresh result and re-trigger bind.

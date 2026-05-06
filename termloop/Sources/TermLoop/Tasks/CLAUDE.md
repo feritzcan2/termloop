@@ -16,7 +16,8 @@ All mutations to `TaskRecord` records and to the `TaskRecord` ↔ workspace bind
 ## Invariants
 
 - `bindingGeneration` is monotonic; bumped on every bind/unbind. Stale async-bind completions whose generation no longer matches MUST be ignored — the cancel path (`cancelBinding(taskId:)`) bumps generation immediately so any in-flight `bindWorktree` can no-op on completion.
-- Bind-failure auto-revert is the **only** auto column move. All other moves are user-driven. On failure, the card returns to its previous column with `provisionState = .failed(reason)`.
+- Board column moves are pure user-driven moves. They must not implicitly provision worktrees; manual tasks can live in any column with `provisionState = .none`.
+- Bind-failure auto-revert is the **only** auto column move. Explicit bind attempts (`bindWorktree`) return the card to its previous column on failure with `provisionState = .failed(reason)`.
 - Reconcile is idempotent: running multiple times on the same startup leaves state unchanged.
 - Import idempotency key is `(projectId, TaskPathNormalization.resolveDisplayAndKey(...).keyPath)`. Branches can be renamed; do not key on branch. Display paths come from the same helper via `.displayPath`.
 

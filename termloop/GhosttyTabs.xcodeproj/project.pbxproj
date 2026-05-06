@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		C0DEFACE0000000000000101 /* TaskAgentProjectionBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DEFACE0000000000000102 /* TaskAgentProjectionBuilder.swift */; };
+		A91F2C4D7E8B4301C5D6E711 /* TaskWorkItemProjectionBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A91F2C4D7E8B4301C5D6E712 /* TaskWorkItemProjectionBuilder.swift */; };
+		B72E4A9C1D5F6308E2A4C931 /* TaskWorkItemSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72E4A9C1D5F6308E2A4C932 /* TaskWorkItemSection.swift */; };
 		ABCD10000000000000000001 /* TaskSelectionStoreProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCD10000000000000000002 /* TaskSelectionStoreProvider.swift */; };
 		002FFEC16193AC6231CEB731 /* VariableSubstitution.swift in Sources */ = {isa = PBXBuildFile; fileRef = 474487A66D69F0FB8B7F9E44 /* VariableSubstitution.swift */; };
 		006086BADBD0F620E49685B3 /* GitWorktreeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA1393F617B7D50F8BBA3D94 /* GitWorktreeService.swift */; };
@@ -618,6 +620,8 @@
 
 /* Begin PBXFileReference section */
 		C0DEFACE0000000000000102 /* TaskAgentProjectionBuilder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskAgentProjectionBuilder.swift; sourceTree = "<group>"; };
+		A91F2C4D7E8B4301C5D6E712 /* TaskWorkItemProjectionBuilder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskWorkItemProjectionBuilder.swift; sourceTree = "<group>"; };
+		B72E4A9C1D5F6308E2A4C932 /* TaskWorkItemSection.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskWorkItemSection.swift; sourceTree = "<group>"; };
 		ABCD10000000000000000002 /* TaskSelectionStoreProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskSelectionStoreProvider.swift; sourceTree = "<group>"; };
 		00D7D639B2C644A283D77366 /* BridgeCableView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BridgeCableView.swift; sourceTree = "<group>"; };
 		00E1E4550C54F96C9409FC64 /* FrontmatterParserTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FrontmatterParserTests.swift; sourceTree = "<group>"; };
@@ -1513,6 +1517,7 @@
 				9BB066C04DF19B8F2D3E0E6A /* TaskSelectionStore.swift */,
 				ABCD10000000000000000002 /* TaskSelectionStoreProvider.swift */,
 				C0DEFACE0000000000000102 /* TaskAgentProjectionBuilder.swift */,
+				A91F2C4D7E8B4301C5D6E712 /* TaskWorkItemProjectionBuilder.swift */,
 				B9A7A9BAE5100920772EE049 /* HorizontalResizableSplit.swift */,
 				A6559824C5AB13864BA844C9 /* TaskBoardPage.swift */,
 				034F15CB5CF63B04FA5094FB /* TaskBoardRouteHost.swift */,
@@ -1564,6 +1569,7 @@
 			isa = PBXGroup;
 			children = (
 				03D88D6AD4CE56AC958FFEA0 /* TaskGitChangesSection.swift */,
+				B72E4A9C1D5F6308E2A4C932 /* TaskWorkItemSection.swift */,
 				D862BDCFA1866A02277EE921 /* TaskOpenPRsSection.swift */,
 				292D544ADC5AF6850D50E275 /* TaskBranchesSection.swift */,
 			);
@@ -2760,6 +2766,7 @@
 				AE784569A22BBEB146204E79 /* TaskSelectionStore.swift in Sources */,
 				ABCD10000000000000000001 /* TaskSelectionStoreProvider.swift in Sources */,
 				C0DEFACE0000000000000101 /* TaskAgentProjectionBuilder.swift in Sources */,
+				A91F2C4D7E8B4301C5D6E711 /* TaskWorkItemProjectionBuilder.swift in Sources */,
 				1FD668FDBF4FBE6FBCD36A1C /* HorizontalResizableSplit.swift in Sources */,
 				12B312203F52231348444BE8 /* TaskBoardPage.swift in Sources */,
 				3C6A8CA43DDF21EF2B7A4DB0 /* TaskBoardRouteHost.swift in Sources */,
@@ -2771,6 +2778,7 @@
 				ED4AEAE63A90C67B72F777AD /* TaskSidebarDrillInView.swift in Sources */,
 				8CF6AAFA0A0F21503237D88C /* TaskRepairBanner.swift in Sources */,
 				CBEA29BEE7A5A36E7101BB8D /* TaskGitChangesSection.swift in Sources */,
+				B72E4A9C1D5F6308E2A4C931 /* TaskWorkItemSection.swift in Sources */,
 				B40450799023AD8DB069E1E9 /* TaskOpenPRsSection.swift in Sources */,
 				F29C2D92A051E4E7527C94C5 /* TaskBranchesSection.swift in Sources */,
 				79B1D68879FE30FAEE214114 /* TaskBoardWorkspaceListingAdapter.swift in Sources */,

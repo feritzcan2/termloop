@@ -79,7 +79,7 @@ public final class TaskLifecycleCoordinator {
         try store.saveNow()
     }
 
-    // MARK: - Column move (with bind side-effect on Todo→InProgress)
+    // MARK: - Column move
 
     public func moveColumn(taskId: UUID, to columnId: TaskColumnId) async throws {
         #if DEBUG
@@ -98,15 +98,6 @@ public final class TaskLifecycleCoordinator {
             #endif
             throw TaskLifecycleError.provisionInFlight(taskId)
         }
-        // Only create/provision when the task has no worktree identity at all.
-        // Reconciled tasks can be "path-only": the git worktree exists on disk
-        // but there is no live WorkspaceMetadata row/workspaceId yet. Moving
-        // those cards between board columns must stay a pure status/rank move;
-        // otherwise we incorrectly hit the v1 provisioner stub and overwrite a
-        // ready task with "provisioning unavailable".
-        let needsBind = task.workspaceId == nil
-            && task.worktreePath == nil
-            && columnId == .inProgress
         // Compute new rank OUTSIDE the mutate closure — `nextRank` reads
         // store.fileSnapshot(), and Swift's exclusive-access checker traps
         // when a read happens during an in-flight inout modification.
@@ -115,13 +106,9 @@ public final class TaskLifecycleCoordinator {
             t.columnId = columnId
             t.rank = newRank
             t.updatedAt = Date()
-            if needsBind { t.provisionState = .pending }
         }
         rebalanceColumnIfNeeded(columnId)
         try store.saveNow()
-        if needsBind {
-            try await bindWorktree(taskId: taskId)
-        }
     }
 
     // MARK: - Bind (Todo → In Progress)
@@ -294,8 +281,20 @@ extension TaskLifecycleCoordinator {
             // Fire-and-forget teardown. Failure leaves a repair banner on next reconcile.
             _Concurrency.Task { [weak self] in
                 guard let self else { return }
-                try? self.workspaces.clearBinding(workspaceId: workspaceId)
-                try? await self.worktrees.teardown(workspaceId: workspaceId, worktreePath: path)
+                do {
+                    try self.workspaces.clearBinding(workspaceId: workspaceId)
+                } catch {
+                    #if DEBUG
+                    print("TaskLifecycleCoordinator.cancelBinding clearBinding failed: \(error)")
+                    #endif
+                }
+                do {
+                    try await self.worktrees.teardown(workspaceId: workspaceId, worktreePath: path)
+                } catch {
+                    #if DEBUG
+                    print("TaskLifecycleCoordinator.cancelBinding teardown failed: \(error)")
+                    #endif
+                }
             }
         }
     }
