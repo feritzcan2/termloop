@@ -45,18 +45,18 @@ struct TaskGitChangesSection: View {
 
     private var summaryButton: some View {
         Button(action: openDiffPage) {
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
                     Image(systemName: files.isEmpty ? "checkmark.circle" : "square.and.pencil")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(files.isEmpty ? Color.secondary : Color.orange)
                     Text(changeCountText(files.count))
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Color.primary)
                     Spacer(minLength: 0)
                     if canOpenDiffPage {
                         Image(systemName: "arrow.up.right")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(Color.secondary)
                     }
                 }
@@ -79,13 +79,13 @@ struct TaskGitChangesSection: View {
     }
 
     private var statusCountStrip: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             ForEach(statusCounts, id: \.status.rawValue) { item in
                 HStack(spacing: 3) {
                     Text(item.status.sidebarSymbol)
                     Text("\(item.count)")
                 }
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .foregroundStyle(item.status.sidebarTint)
             }
         }

@@ -2794,7 +2794,7 @@ private struct TaskGitChangesWithInlineTerminal: View {
             HorizontalResizableSplit(
                 topMinHeight: 320,
                 bottomMinHeight: 260,
-                bottomPreferredHeight: 430,
+                bottomPreferredFraction: 0.35,
                 top: { GitChangesMainAreaHost() },
                 bottom: {
                     TaskBoardEmbeddedWorkspaceTerminal(
