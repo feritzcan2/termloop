@@ -22,7 +22,7 @@ struct TaskSidebarDrillInView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 12) {
                     breadcrumb
                     header(detailSnapshot)
                     quickActions(detailSnapshot)
@@ -34,7 +34,7 @@ struct TaskSidebarDrillInView: View {
                             onArchive: { onArchive?(detailSnapshot.id); selection.select(nil) }
                         )
                     }
-                    sidebarSection {
+                    flatSection {
                         TaskWorkItemSection(
                             taskId: detailSnapshot.id,
                             taskWorkItem: workItemSnapshot(for: detailSnapshot),
@@ -43,31 +43,36 @@ struct TaskSidebarDrillInView: View {
                             remoteSync: remoteSync
                         )
                     }
-                    sidebarSection {
-                        TaskGitChangesSection(
-                            workspaceId: detailSnapshot.workspaceId,
-                            worktreePath: detailSnapshot.worktreePath,
-                            branch: detailSnapshot.branch
-                        )
-                    }
-                    sidebarSection {
-                        TaskOpenPRsSection(
-                            workspaceId: detailSnapshot.workspaceId,
-                            worktreePath: detailSnapshot.worktreePath,
-                            branch: detailSnapshot.branch
-                        )
-                    }
-                    sidebarSection {
-                        TaskBranchesSection(
-                            branch: detailSnapshot.branch,
-                            worktreePath: detailSnapshot.worktreePath,
-                            taskWorkspaceId: detailSnapshot.workspaceId,
-                            selectedAgentWorkspaceId: selection.inlineTerminalWorkspaceId,
-                            onOpenAgentTerminal: { workspaceId in
-                                selection.openInlineTerminal(workspaceId: workspaceId)
-                                TaskQuickActions.showWorkspaceInline(workspaceId: workspaceId)
-                            }
-                        )
+                    if hasWorktreeProjections(detailSnapshot) {
+                        Divider().opacity(0.6)
+                        flatSection {
+                            TaskGitChangesSection(
+                                workspaceId: detailSnapshot.workspaceId,
+                                worktreePath: detailSnapshot.worktreePath,
+                                branch: detailSnapshot.branch
+                            )
+                        }
+                        Divider().opacity(0.6)
+                        flatSection {
+                            TaskOpenPRsSection(
+                                workspaceId: detailSnapshot.workspaceId,
+                                worktreePath: detailSnapshot.worktreePath,
+                                branch: detailSnapshot.branch
+                            )
+                        }
+                        Divider().opacity(0.6)
+                        flatSection {
+                            TaskBranchesSection(
+                                branch: detailSnapshot.branch,
+                                worktreePath: detailSnapshot.worktreePath,
+                                taskWorkspaceId: detailSnapshot.workspaceId,
+                                selectedAgentWorkspaceId: selection.inlineTerminalWorkspaceId,
+                                onOpenAgentTerminal: { workspaceId in
+                                    selection.openInlineTerminal(workspaceId: workspaceId)
+                                    TaskQuickActions.showWorkspaceInline(workspaceId: workspaceId)
+                                }
+                            )
+                        }
                     }
                 }
                 .padding(10)
@@ -79,6 +84,16 @@ struct TaskSidebarDrillInView: View {
                 .padding(.top, 1)
                 .background(Color(nsColor: .windowBackgroundColor))
         }
+    }
+
+    /// Worktree-derived projections (git changes, open PRs, branches) need a
+    /// resolved worktree path to fetch anything. With nothing attached, all
+    /// three sections collapse to "no worktree path" stubs — useless noise.
+    /// Hide the whole block instead and let the user know via the header's
+    /// "Needs worktree" status hint.
+    private func hasWorktreeProjections(_ snap: TaskDetailSnapshot) -> Bool {
+        let trimmedPath = snap.worktreePath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !trimmedPath.isEmpty
     }
 
     private var breadcrumb: some View {
@@ -99,45 +114,34 @@ struct TaskSidebarDrillInView: View {
             provisionState: snap.provisionState,
             agentStatus: agentStatus(for: snap)
         )
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 8) {
-                Circle()
-                    .fill(statusPresentation.color)
-                    .frame(width: 8, height: 8)
-                    .padding(.top, 5)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(snap.title)
-                        .font(.system(size: 14, weight: .semibold))
-                        .lineLimit(2)
-                    HStack(spacing: 4) {
-                        Text(columnTitle(snap.columnId))
-                        Text("·")
-                        Text(worktreeSummary(for: snap))
-                    }
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
+        return HStack(alignment: .top, spacing: 8) {
+            Circle()
+                .fill(statusPresentation.color)
+                .frame(width: 8, height: 8)
+                .padding(.top, 6)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(snap.title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    Text(columnTitle(snap.columnId))
+                        .foregroundStyle(.secondary)
+                    Text("·")
+                        .foregroundStyle(.tertiary)
+                    Text(worktreeSummary(for: snap))
+                        .foregroundStyle(.secondary)
+                    Text("·")
+                        .foregroundStyle(.tertiary)
+                    Text(statusPresentation.text)
+                        .foregroundStyle(statusPresentation.color)
                 }
-                Spacer(minLength: 0)
+                .font(.system(size: 11))
+                .lineLimit(1)
+                .truncationMode(.middle)
             }
-            HStack(spacing: 6) {
-                Text(statusPresentation.text)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(statusPresentation.color)
-                    .padding(.vertical, 3)
-                    .padding(.horizontal, 8)
-                    .background(statusPresentation.color.opacity(0.12))
-                    .clipShape(Capsule())
-                Text(statusHint(for: snap))
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-            }
+            Spacer(minLength: 0)
         }
-        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 
     private func agentStatus(for snap: TaskDetailSnapshot) -> TaskAgentStatusSummary? {
@@ -179,21 +183,8 @@ struct TaskSidebarDrillInView: View {
                       defaultValue: "Manual task", table: "TermLoop")
     }
 
-    private func statusHint(for snap: TaskDetailSnapshot) -> String {
-        if snap.workspaceId != nil {
-            return String(localized: "tasks.sidebar.status.live",
-                          defaultValue: "Live workspace", table: "TermLoop")
-        }
-        if snap.worktreePath != nil {
-            return String(localized: "tasks.sidebar.status.pathOnly",
-                          defaultValue: "On disk", table: "TermLoop")
-        }
-        return String(localized: "tasks.sidebar.status.manual",
-                      defaultValue: "Needs worktree", table: "TermLoop")
-    }
-
     private func quickActions(_ snap: TaskDetailSnapshot) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 14) {
             Button(String(localized: "tasks.sidebar.action.open",
                           defaultValue: "Open", table: "TermLoop")) {
                 TaskQuickActions.openWorktree(workspaceId: snap.workspaceId, worktreePath: snap.worktreePath)
@@ -207,17 +198,15 @@ struct TaskSidebarDrillInView: View {
                 }
             }
             .disabled(snap.workspaceId == nil)
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+        .buttonStyle(.link)
+        .font(.system(size: 11, weight: .medium))
     }
 
-    private func sidebarSection<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    private func flatSection<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
-            .padding(9)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .controlBackgroundColor).opacity(0.48))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
 }

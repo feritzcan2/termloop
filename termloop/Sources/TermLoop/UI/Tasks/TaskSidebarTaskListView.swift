@@ -24,7 +24,7 @@ struct TaskSidebarTaskListView: View {
                     ForEach(store.columnSnapshots) { col in
                         if !col.cards.isEmpty {
                             section(
-                                title: store.columnTitle(for: col.id).uppercased(),
+                                title: store.columnTitle(for: col.id),
                                 cards: col.cards,
                                 statuses: statuses,
                                 workItems: workItems
@@ -67,13 +67,14 @@ struct TaskSidebarTaskListView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
-                Text(title)
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(.secondary)
+                Text(TermLoopSidebarTheme.adaptiveSectionTitle(title))
+                    .font(TermLoopSidebarTheme.adaptiveSectionFont(size: 11))
+                    .foregroundStyle(TermLoopSidebarTheme.adaptiveSectionColor)
                 Spacer()
                 Text("\(cards.count)")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(TermLoopSidebarTheme.dim)
+                    .monospacedDigit()
             }
             ForEach(cards) { card in
                 row(card, status: statuses[card.id], workItem: workItems[card.id])
@@ -108,27 +109,19 @@ struct TaskSidebarTaskListView: View {
             Spacer(minLength: 0)
             if let workItem {
                 Text(workItem.key)
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(.blue)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
                     .lineLimit(1)
-                    .padding(.vertical, 2)
-                    .padding(.horizontal, 6)
-                    .background(Color.blue.opacity(0.11))
-                    .clipShape(Capsule())
             }
             Text(statusPresentation.text)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundColor(statusPresentation.color)
+                .font(.system(size: 10, weight: .regular))
+                .foregroundStyle(statusPresentation.color)
                 .lineLimit(1)
-                .padding(.vertical, 2)
-                .padding(.horizontal, 6)
-                .background(statusPresentation.color.opacity(0.12))
-                .clipShape(Capsule())
         }
-        .padding(.vertical, 7)
+        .padding(.vertical, 6)
         .padding(.horizontal, 8)
         .background(rowBackground(card))
-        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture { selection.select(card.id) }
     }
@@ -173,7 +166,10 @@ struct TaskSidebarTaskListView: View {
         if case .failed = card.provisionState {
             return Color.red.opacity(0.07)
         }
-        return Color(nsColor: .controlBackgroundColor).opacity(0.22)
+        // Resting rows now sit on the sidebar material — drop the per-row
+        // `controlBackgroundColor` wash so the list reads like the Work tab
+        // (one surface, signal carried by the leading dot + state text).
+        return Color.clear
     }
 
     private func createTask() {

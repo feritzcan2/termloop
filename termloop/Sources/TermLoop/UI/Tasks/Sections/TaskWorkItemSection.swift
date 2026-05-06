@@ -30,7 +30,7 @@ struct TaskWorkItemSection: View {
         VStack(alignment: .leading, spacing: 6) {
             TaskSidebarSectionTitle(
                 String(localized: "tasks.sidebar.section.workItem",
-                       defaultValue: "WORK ITEM",
+                       defaultValue: "Work Item",
                        table: "TermLoop")
             )
 
