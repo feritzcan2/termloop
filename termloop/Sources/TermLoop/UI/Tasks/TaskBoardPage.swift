@@ -16,6 +16,7 @@ struct TaskBoardPage<TerminalContent: View>: View {
 
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
+    @EnvironmentObject private var tabManager: TabManager
 
     init(
         store: TaskBoardStore,
@@ -77,7 +78,11 @@ struct TaskBoardPage<TerminalContent: View>: View {
         // from shared workspace/agent stores instead of persisting telemetry in Tasks.
         _ = metadataStore
         _ = activityStore
-        return TaskAgentProjectionBuilder.statusSummaries(for: store.fileSnapshot().tasks)
+        let openWorkspaceIds = Set(tabManager.tabs.map(\.id))
+        return TaskAgentProjectionBuilder.statusSummaries(
+            for: store.fileSnapshot().tasks,
+            openWorkspaceIds: openWorkspaceIds
+        )
     }
 
     private var workItemsByTaskId: [UUID: TaskWorkItemSnapshot] {
@@ -111,7 +116,11 @@ struct TaskBoardPage<TerminalContent: View>: View {
             return
         }
 
-        guard let workspaceId = TaskAgentProjectionBuilder.preferredAgentWorkspace(for: task) else {
+        let openWorkspaceIds = Set(tabManager.tabs.map(\.id))
+        guard let workspaceId = TaskAgentProjectionBuilder.preferredAgentWorkspace(
+            for: task,
+            openWorkspaceIds: openWorkspaceIds
+        ) else {
             selection.closeInlineTerminal()
             return
         }
