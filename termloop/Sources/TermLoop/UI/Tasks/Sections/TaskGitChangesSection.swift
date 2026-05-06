@@ -4,10 +4,15 @@
 import Combine
 import SwiftUI
 
-/// Sidebar drill-in section: uncommitted changes in the selected task's worktree.
+/// Sidebar drill-in section: count-only uncommitted changes for the selected task's worktree.
+/// File rows stay in the full Git Changes page; the sidebar only acts as a
+/// compact launcher so task drill-in does not become a cramped diff preview.
 struct TaskGitChangesSection: View {
+    let workspaceId: UUID?
     let worktreePath: String?
+    let branch: String?
 
+    @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @State private var files: [SidebarGitChangeItem] = []
 
     private var filesPublisher: AnyPublisher<[SidebarGitChangeItem], Never> {
@@ -28,13 +33,8 @@ struct TaskGitChangesSection: View {
                     String(localized: "tasks.sidebar.section.gitChanges.unbound",
                            defaultValue: "No worktree path attached.", table: "TermLoop")
                 )
-            } else if files.isEmpty {
-                TaskSidebarEmptyText(
-                    String(localized: "tasks.sidebar.section.gitChanges.empty",
-                           defaultValue: "No changes.", table: "TermLoop")
-                )
             } else {
-                gitRows
+                summaryButton
             }
         }
         .onReceive(filesPublisher) { files = $0 }
@@ -42,35 +42,112 @@ struct TaskGitChangesSection: View {
         .onChange(of: normalizedWorktreePath) { _, _ in refreshFiles() }
     }
 
-    private var gitRows: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            ForEach(Array(files.prefix(5)), id: \.path) { file in
-                HStack(spacing: 6) {
-                    Text(file.status.sidebarSymbol)
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundColor(file.status.sidebarTint)
-                        .frame(width: 18, alignment: .leading)
-                    Text(file.path)
-                        .font(.system(size: 11, design: .monospaced))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+    private var summaryButton: some View {
+        Button(action: openDiffPage) {
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 8) {
+                    Image(systemName: files.isEmpty ? "checkmark.circle" : "square.and.pencil")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(files.isEmpty ? Color.secondary : Color.orange)
+                    Text(changeCountText(files.count))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.primary)
                     Spacer(minLength: 0)
+                    if canOpenDiffPage {
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.secondary)
+                    }
                 }
-                .help(file.path)
+
+                if !files.isEmpty {
+                    statusCountStrip
+                }
             }
-            let overflow = max(0, files.count - 5)
-            if overflow > 0 {
-                TaskSidebarEmptyText(
-                    String(localized: "tasks.sidebar.section.gitChanges.more",
-                           defaultValue: "+ \(overflow) more changes", table: "TermLoop")
-                )
+            .padding(.vertical, 8)
+            .padding(.horizontal, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.42))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!canOpenDiffPage || files.isEmpty)
+        .help(canOpenDiffPage ? String(localized: "tasks.sidebar.section.gitChanges.openDiffHelp",
+                                      defaultValue: "Open the Git Changes diff page",
+                                      table: "TermLoop")
+                              : String(localized: "tasks.sidebar.section.gitChanges.noWorkspaceHelp",
+                                       defaultValue: "A live workspace is required to open the diff page.",
+                                       table: "TermLoop"))
+    }
+
+    private var statusCountStrip: some View {
+        HStack(spacing: 5) {
+            ForEach(statusCounts, id: \.status.rawValue) { item in
+                HStack(spacing: 3) {
+                    Text(item.status.sidebarSymbol)
+                    Text("\(item.count)")
+                }
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(item.status.sidebarTint)
+                .padding(.vertical, 2)
+                .padding(.horizontal, 5)
+                .background(item.status.sidebarTint.opacity(0.13))
+                .clipShape(Capsule())
             }
         }
+    }
+
+    private var statusCounts: [(status: GitFileStatus, count: Int)] {
+        GitFileStatus.taskSidebarDisplayOrder.compactMap { status in
+            let count = files.filter { $0.status == status }.count
+            guard count > 0 else { return nil }
+            return (status, count)
+        }
+    }
+
+    private var resolvedWorkspaceId: UUID? {
+        if let workspaceId { return workspaceId }
+        guard let path = normalizedWorktreePath else { return nil }
+        return metadataStore.workspaceIds(withWorktreePath: path).first
+    }
+
+    private var canOpenDiffPage: Bool {
+        resolvedWorkspaceId != nil && normalizedWorktreePath != nil
+    }
+
+    private func openDiffPage() {
+        guard let workspaceId = resolvedWorkspaceId,
+              let path = normalizedWorktreePath else { return }
+        GitChangesMainAreaStore.shared.show(
+            WorktreeChangesPresentation(
+                workspaceId: workspaceId,
+                branch: normalizedBranch,
+                worktreePath: path,
+                baselineHead: metadataStore.metadata(forWorkspaceId: workspaceId).worktreeBaselineHead
+            )
+        )
+    }
+
+    private func changeCountText(_ count: Int) -> String {
+        if count == 1 {
+            return String(localized: "tasks.sidebar.section.gitChanges.count.one",
+                          defaultValue: "1 change",
+                          table: "TermLoop")
+        }
+        return String(localized: "tasks.sidebar.section.gitChanges.count.many",
+                      defaultValue: "\(count) changes",
+                      table: "TermLoop")
     }
 
     private var normalizedWorktreePath: String? {
         guard let worktreePath else { return nil }
         return TaskPathNormalization.resolveDisplayAndKey(worktreePath)?.displayPath
+    }
+
+    private var normalizedBranch: String? {
+        let trimmed = branch?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func refreshFiles() {
@@ -79,5 +156,12 @@ struct TaskGitChangesSection: View {
             return
         }
         files = GitWorktreePresentationStore.shared.files(for: path)
+    }
+}
+
+
+private extension GitFileStatus {
+    static var taskSidebarDisplayOrder: [GitFileStatus] {
+        [.modified, .added, .deleted, .renamed, .untracked]
     }
 }

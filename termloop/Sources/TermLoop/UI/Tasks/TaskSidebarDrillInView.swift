@@ -27,7 +27,13 @@ struct TaskSidebarDrillInView: View {
                         onArchive: { onArchive?(detailSnapshot.id); selection.select(nil) }
                     )
                 }
-                sidebarSection { TaskGitChangesSection(worktreePath: detailSnapshot.worktreePath) }
+                sidebarSection {
+                    TaskGitChangesSection(
+                        workspaceId: detailSnapshot.workspaceId,
+                        worktreePath: detailSnapshot.worktreePath,
+                        branch: detailSnapshot.branch
+                    )
+                }
                 sidebarSection {
                     TaskOpenPRsSection(
                         workspaceId: detailSnapshot.workspaceId,
