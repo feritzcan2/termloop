@@ -14,6 +14,7 @@ struct TaskSidebarTaskListView: View {
 
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
+    @EnvironmentObject private var tabManager: TabManager
 
     var body: some View {
         let statuses = agentStatusesByTaskId
@@ -49,7 +50,10 @@ struct TaskSidebarTaskListView: View {
         // without storing agent telemetry in TaskBoardStore.
         _ = metadataStore
         _ = activityStore
-        return TaskAgentProjectionBuilder.statusSummaries(for: store.fileSnapshot().tasks)
+        return TaskAgentProjectionBuilder.statusSummaries(
+            for: store.fileSnapshot().tasks,
+            openWorkspaceIds: Set(tabManager.tabs.map(\.id))
+        )
     }
 
     private var workItemsByTaskId: [UUID: TaskWorkItemSnapshot] {

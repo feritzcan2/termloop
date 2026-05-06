@@ -787,9 +787,150 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                                  defaultValue: "Remote statuses synced to columns.",
                                  table: "TermLoop")
             objectWillChange.send()
+            syncLinkedTaskColumnsToRemoteStatuses()
         } catch {
             lastMessage = String(describing: error)
         }
+    }
+
+    private func syncLinkedTaskColumnsToRemoteStatuses() {
+        guard !isSyncing else { return }
+        let linkedTasks = store.fileSnapshot().tasks.compactMap { task -> (taskId: UUID, reference: RemoteWorkItemReference)? in
+            guard task.archivedAt == nil, let reference = task.remoteWorkItem else { return nil }
+            return (task.id, reference)
+        }
+        guard !linkedTasks.isEmpty else { return }
+
+        let syncSettings = settings
+        isSyncing = true
+        syncTask?.cancel()
+        syncTask = Task(priority: .utility) { [weak self] in
+            let service = Self.makeRemoteWorkItemService(settings: syncSettings)
+            var snapshots: [(taskId: UUID, snapshot: RemoteWorkItemSnapshot)] = []
+            var failureCount = 0
+            for linkedTask in linkedTasks {
+                do {
+                    let snapshot = try await service.fetch(linkedTask.reference)
+                    try Task.checkCancellation()
+                    snapshots.append((linkedTask.taskId, snapshot))
+                } catch is CancellationError {
+                    return
+                } catch {
+                    failureCount += 1
+                }
+            }
+            await MainActor.run {
+                self?.applyLinkedStatusSnapshots(snapshots, failureCount: failureCount)
+            }
+        }
+    }
+
+    private func applyLinkedStatusSnapshots(
+        _ snapshots: [(taskId: UUID, snapshot: RemoteWorkItemSnapshot)],
+        failureCount: Int
+    ) {
+        let now = Date()
+        var updatedCount = 0
+        var movedCount = 0
+        var unmappedCount = 0
+
+        do {
+            let changed = store.mutate { file in
+                let columnByRemoteStatus = Self.remoteStatusColumnLookup(file.settings.columns)
+                var rankCursorByColumn = Self.lastRankByColumn(file.tasks)
+                var touchedColumns = Set<TaskColumnId>()
+                var didChange = false
+
+                for item in snapshots {
+                    guard let idx = file.tasks.firstIndex(where: {
+                        $0.id == item.taskId && $0.archivedAt == nil
+                    }) else {
+                        continue
+                    }
+
+                    let old = file.tasks[idx]
+                    let statusLabel = item.snapshot.statusLabel?
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .nilIfEmpty
+                    file.tasks[idx].remoteWorkItem = item.snapshot.reference
+                    file.tasks[idx].remoteStatusLabel = statusLabel
+                    file.tasks[idx].lastRemoteSyncAt = now
+
+                    if let statusKey = Self.remoteStatusLookupKey(statusLabel),
+                       let targetColumn = columnByRemoteStatus[statusKey] {
+                        if file.tasks[idx].columnId != targetColumn {
+                            file.tasks[idx].columnId = targetColumn
+                            let nextRank = rankCursorByColumn[targetColumn]
+                                .map(TaskRanking.after)
+                                ?? TaskRanking.initial()
+                            file.tasks[idx].rank = nextRank
+                            rankCursorByColumn[targetColumn] = nextRank
+                            touchedColumns.insert(targetColumn)
+                            movedCount += 1
+                        }
+                    } else if statusLabel != nil {
+                        unmappedCount += 1
+                    }
+
+                    if file.tasks[idx] != old {
+                        file.tasks[idx].updatedAt = now
+                        updatedCount += 1
+                        didChange = true
+                    }
+                }
+
+                for columnId in touchedColumns {
+                    didChange = TaskBoardStore.rebalanceColumnIfNeeded(columnId, in: &file) || didChange
+                }
+
+                file.settings.remoteSync.lastError = nil
+                return didChange
+            }
+
+            if changed {
+                try store.saveNow()
+            }
+            let failureSuffix = failureCount > 0 ? " \(failureCount) failed." : ""
+            let unmappedSuffix = unmappedCount > 0 ? " \(unmappedCount) had no mapped local column." : ""
+            finishSync(message: String(
+                localized: "tasks.settings.columns.syncedRemoteStatusesWithTasks",
+                defaultValue: "Remote statuses synced. Updated \(updatedCount) linked tasks, moved \(movedCount).\(unmappedSuffix)\(failureSuffix)",
+                table: "TermLoop"
+            ))
+        } catch {
+            finishSync(error: error)
+        }
+    }
+
+    private static func remoteStatusColumnLookup(_ columns: [TaskColumnSettings]) -> [String: TaskColumnId] {
+        var lookup: [String: TaskColumnId] = [:]
+        for column in TaskBoardSettings.normalizedColumns(columns) {
+            guard let key = remoteStatusLookupKey(column.remoteStatusLabel) else { continue }
+            lookup[key] = column.columnId
+        }
+        return lookup
+    }
+
+    private static func remoteStatusLookupKey(_ value: String?) -> String? {
+        value?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty?
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .lowercased()
+    }
+
+    private static func lastRankByColumn(_ tasks: [TaskRecord]) -> [TaskColumnId: String] {
+        var result: [TaskColumnId: String] = [:]
+        for task in tasks where task.archivedAt == nil {
+            if let existing = result[task.columnId] {
+                if existing < task.rank {
+                    result[task.columnId] = task.rank
+                }
+            } else {
+                result[task.columnId] = task.rank
+            }
+        }
+        return result
     }
 
     private func updateColumn(
