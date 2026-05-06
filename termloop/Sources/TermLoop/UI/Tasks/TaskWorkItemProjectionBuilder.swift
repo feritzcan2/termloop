@@ -8,6 +8,7 @@ import Foundation
 /// attached to the task's worktree through `AgentReportedStateStore`.
 struct TaskWorkItemSnapshot: Equatable, Identifiable {
     let reference: RemoteWorkItemReference
+    let title: String?
     let statusLabel: String?
     let taskFilePath: String?
     let binding: AgentReportedStateStore.AgentReportedBinding?
@@ -44,6 +45,7 @@ enum TaskWorkItemProjectionBuilder {
         if let reference = task.remoteWorkItem {
             return remoteSnapshot(
                 reference: reference,
+                title: task.title,
                 statusLabel: task.remoteStatusLabel,
                 taskFilePath: task.taskFilePath,
                 workspaceId: task.workspaceId,
@@ -55,6 +57,7 @@ enum TaskWorkItemProjectionBuilder {
 
     static func remoteSnapshot(
         reference: RemoteWorkItemReference,
+        title: String?,
         statusLabel: String?,
         taskFilePath: String?,
         workspaceId: UUID?,
@@ -62,6 +65,7 @@ enum TaskWorkItemProjectionBuilder {
     ) -> TaskWorkItemSnapshot {
         TaskWorkItemSnapshot(
             reference: reference,
+            title: title?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
             statusLabel: statusLabel?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
             taskFilePath: taskFilePath?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
             binding: nil,
@@ -92,6 +96,7 @@ enum TaskWorkItemProjectionBuilder {
             }
             return TaskWorkItemSnapshot(
                 reference: reference,
+                title: nil,
                 statusLabel: binding.status?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
                 taskFilePath: nil,
                 binding: binding,

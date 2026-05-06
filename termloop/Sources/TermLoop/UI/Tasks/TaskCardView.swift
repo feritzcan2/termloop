@@ -21,7 +21,7 @@ struct TaskCardView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 7) {
                 statusDot
-                Text(card.title)
+                Text(displayTitle)
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(2)
                     .foregroundColor(.primary)
@@ -109,6 +109,7 @@ struct TaskCardView: View {
 
     private var isSelected: Bool { selection.selectedTaskId == card.id }
     private var canDrag: Bool { card.provisionState != .pending }
+    private var displayTitle: String { workItem?.title ?? card.title }
 
     private var identityText: String {
         if let branch = normalizedBranch {

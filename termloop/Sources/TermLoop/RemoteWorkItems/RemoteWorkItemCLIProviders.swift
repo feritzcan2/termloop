@@ -332,10 +332,18 @@ struct GitLabRemoteWorkItemProvider: RemoteWorkItemProvider {
 
 struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
     let runner: any RemoteWorkItemCommandRunning
+    let site: String?
+    let email: String?
     var providerId: RemoteWorkItemProviderId { .jira }
 
-    init(runner: any RemoteWorkItemCommandRunning = RemoteWorkItemCommandRunner.shared) {
+    init(
+        runner: any RemoteWorkItemCommandRunning = RemoteWorkItemCommandRunner.shared,
+        site: String? = nil,
+        email: String? = nil
+    ) {
         self.runner = runner
+        self.site = Self.normalizedSite(site)
+        self.email = email?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
     }
 
     func fetch(_ reference: RemoteWorkItemReference) async throws -> RemoteWorkItemSnapshot {
@@ -348,7 +356,7 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
         if let body = request.bodyMarkdown, !body.isEmpty { args += ["--description", body] }
         if let issueType = request.issueType, !issueType.isEmpty { args += ["--type", issueType] }
         if !request.labels.isEmpty { args += ["--label", request.labels.joined(separator: ",")] }
-        let result = try await runner.run(executable: "acli", arguments: args, cwd: nil, timeout: 20)
+        let result = try await runAcli(args, timeout: 20)
         try remoteValidate(result)
         let output = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         let object = try? remoteParseJSONObject(output)
@@ -366,16 +374,14 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
             jql += " AND project = \(project)"
         }
         jql += " ORDER BY updated DESC"
-        let result = try await runner.run(
-            executable: "acli",
-            arguments: [
+        let result = try await runAcli(
+            [
                 "jira", "workitem", "search",
                 "--jql", jql,
                 "--limit", "\(request.limit)",
                 "--fields", "key,summary,status,assignee,labels,description",
                 "--json"
             ],
-            cwd: nil,
             timeout: 20
         )
         try remoteValidate(result)
@@ -398,15 +404,41 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
 
     func updateStatus(_ reference: RemoteWorkItemReference, to status: RemoteWorkItemStatusOption) async throws -> RemoteWorkItemSnapshot {
         let target = status.providerPayload["targetStatusLabel"] ?? status.targetState ?? status.label
-        let result = try await runner.run(executable: "acli", arguments: ["jira", "workitem", "transition", "--key", reference.key, "--status", target, "--yes", "--json"], cwd: nil, timeout: 20)
+        let result = try await runAcli(["jira", "workitem", "transition", "--key", reference.key, "--status", target, "--yes", "--json"], timeout: 20)
         try remoteValidate(result)
         return try await fetch(reference)
     }
 
     private func workitemView(_ key: String) async throws -> [String: Any] {
-        let result = try await runner.run(executable: "acli", arguments: ["jira", "workitem", "view", key, "--json"], cwd: nil, timeout: 20)
+        let result = try await runAcli(["jira", "workitem", "view", key, "--json"], timeout: 20)
         try remoteValidate(result)
         return try remoteParseJSONObject(result.stdout)
+    }
+
+    private func runAcli(_ arguments: [String], timeout: TimeInterval) async throws -> RemoteWorkItemCommandResult {
+        try await switchSiteIfConfigured()
+        return try await runner.run(executable: "acli", arguments: arguments, cwd: nil, timeout: timeout)
+    }
+
+    private func switchSiteIfConfigured() async throws {
+        guard let site else { return }
+        var args = ["jira", "auth", "switch", "--site", site]
+        if let email { args += ["--email", email] }
+        let result = try await runner.run(executable: "acli", arguments: args, cwd: nil, timeout: 12)
+        try remoteValidate(result)
+    }
+
+    private static func normalizedSite(_ value: String?) -> String? {
+        var site = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if site.isEmpty { return nil }
+        if let url = URL(string: site), let host = url.host {
+            site = host
+        }
+        site = site
+            .replacingOccurrences(of: "https://", with: "")
+            .replacingOccurrences(of: "http://", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return site.nilIfEmpty
     }
 
     private func jiraSnapshot(reference: RemoteWorkItemReference, json: [String: Any]) -> RemoteWorkItemSnapshot {
@@ -545,4 +577,8 @@ private func collectJiraText(from raw: Any, into parts: inout [String]) {
     if let content = object["content"] {
         collectJiraText(from: content, into: &parts)
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
