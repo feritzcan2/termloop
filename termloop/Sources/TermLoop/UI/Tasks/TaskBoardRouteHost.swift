@@ -60,7 +60,7 @@ struct TaskBoardRouteHost: View {
 /// cropped away with a fixed offset, which made the split fragile during
 /// resize/click transitions. This view owns only the workspace surface that the
 /// agent belongs to.
-private struct TaskBoardEmbeddedWorkspaceTerminal: View {
+struct TaskBoardEmbeddedWorkspaceTerminal: View {
     @ObservedObject var tabManager: TabManager
     let workspaceId: UUID?
 

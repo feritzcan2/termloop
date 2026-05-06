@@ -71,6 +71,18 @@ enum MainAreaMainPageKind: Equatable {
         return false
     }
 
+    /// Routes that can keep the Tasks inline agent terminal mounted as a
+    /// local bottom split. Git Changes can replace the board canvas while the
+    /// already-open agent terminal remains underneath.
+    var supportsTaskInlineTerminal: Bool {
+        switch self {
+        case .taskBoard, .gitChanges:
+            return true
+        case .content, .agents, .ability, .markdownDocument, .contextBank, .settings, .projectEmpty:
+            return false
+        }
+    }
+
     var identity: String {
         switch self {
         case .content:
@@ -181,10 +193,10 @@ enum MainAreaPresentationPolicy {
 
             let shouldShowSelected = isSelected && page.allowsSelectedWorkspaceContent
             let shouldShowRetiring = isRetiring && canShowRetiring
-            let shouldShowTaskBoardInlineTerminal = page.isTaskBoard
+            let shouldShowTaskInlineTerminal = page.supportsTaskInlineTerminal
                 && input.taskBoardInlineWorkspaceId == workspaceId
             let isVisible = shouldShowSelected || shouldShowRetiring
-            let portalPriority = shouldShowTaskBoardInlineTerminal ? 3 : (shouldShowSelected ? 2 : (shouldShowRetiring ? 1 : 0))
+            let portalPriority = shouldShowTaskInlineTerminal ? 3 : (shouldShowSelected ? 2 : (shouldShowRetiring ? 1 : 0))
 
             workspacePresentations[workspaceId] = MainAreaWorkspacePresentation(
                 workspaceId: workspaceId,
@@ -193,7 +205,7 @@ enum MainAreaPresentationPolicy {
                 renderOpacity: isVisible ? 1 : (shouldPrime ? 0.001 : 0),
                 isInputActive: shouldShowSelected,
                 portalPriority: portalPriority,
-                terminalPortalsVisible: isVisible || shouldShowTaskBoardInlineTerminal,
+                terminalPortalsVisible: isVisible || shouldShowTaskInlineTerminal,
                 browserPortalsVisible: isVisible
             )
         }
@@ -708,7 +720,7 @@ final class MainAreaPresentationCoordinator {
             .filter { $0.terminalPortalsVisible || $0.browserPortalsVisible }
             .map(\.workspaceId)
         if !snapshot.mainPage.allowsSelectedWorkspaceContent &&
-            !snapshot.mainPage.isTaskBoard &&
+            !snapshot.mainPage.supportsTaskInlineTerminal &&
             !visibleWorkspaceIds.isEmpty {
             dlog(
                 "mainArea.policy.violation route=\(snapshot.mainPage.identity) visible=\(visibleWorkspaceIds.map { $0.uuidString.prefix(5) }.joined(separator: ","))"

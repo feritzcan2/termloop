@@ -171,6 +171,7 @@ public final class TaskBoardStore: ObservableObject {
                         id: task.id,
                         title: task.title,
                         provisionState: task.provisionState,
+                        workspaceId: task.workspaceId,
                         branch: task.branch,
                         agentCount: agentCounts[task.id] ?? 0,
                         hasTicket: false, // v2 — Jira projection

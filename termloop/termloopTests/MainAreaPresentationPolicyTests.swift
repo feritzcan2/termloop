@@ -230,6 +230,21 @@ final class MainAreaPresentationPolicyTests: XCTestCase {
         XCTAssertFalse(snapshot.presentation(for: workspaceA)?.terminalPortalsVisible ?? true)
     }
 
+    func testGitChangesFromTasksKeepsExistingInlineTerminalVisible() {
+        let snapshot = MainAreaPresentationPolicy.resolve(input(
+            workSubTab: .tasks,
+            selected: workspaceA,
+            activeProject: projectA,
+            gitChangesWorkspaceId: workspaceA,
+            taskBoardInlineWorkspaceId: workspaceA
+        ))
+
+        XCTAssertEqual(snapshot.mainPage, .gitChanges(workspaceA))
+        XCTAssertTrue(snapshot.presentation(for: workspaceA)?.terminalPortalsVisible ?? false)
+        XCTAssertFalse(snapshot.presentation(for: workspaceA)?.browserPortalsVisible ?? true)
+        XCTAssertEqual(snapshot.presentation(for: workspaceA)?.portalPriority, 3)
+    }
+
     func testRoutePrecedenceKeepsMarkdownDocumentAboveGitChanges() {
         let url = URL(fileURLWithPath: "/tmp/notes.md")
         let snapshot = MainAreaPresentationPolicy.resolve(input(

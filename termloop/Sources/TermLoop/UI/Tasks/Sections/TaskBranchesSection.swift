@@ -16,6 +16,7 @@ struct TaskBranchesSection: View {
 
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
+    @EnvironmentObject private var tabManager: TabManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -63,7 +64,7 @@ struct TaskBranchesSection: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 0)
-            let agents = currentAgents
+            let agents = currentAgentRows
             if !agents.isEmpty {
                 Text(agentCountText(agents.count))
                     .font(.system(size: 10, weight: .semibold))
@@ -83,7 +84,7 @@ struct TaskBranchesSection: View {
     }
 
     private var agentsPanel: some View {
-        let agents = currentAgents
+        let agents = currentAgentRows
         return VStack(alignment: .leading, spacing: 7) {
             if agents.isEmpty {
                 TaskSidebarEmptyText(
@@ -92,13 +93,8 @@ struct TaskBranchesSection: View {
                 )
                 .padding(.vertical, 4)
             } else {
-                ForEach(agents) { agent in
-                    WorktreeAgentCard(
-                        agent: agent,
-                        isSelected: selectedAgentWorkspaceId == agent.workspaceId,
-                        onOpenAgentTerminal: onOpenAgentTerminal,
-                        stateColor: color(for: agent.displayState)
-                    )
+                ForEach(agents, id: \.workspaceId) { agent in
+                    agentRow(agent)
                 }
             }
         }
@@ -150,14 +146,40 @@ struct TaskBranchesSection: View {
         .help(path)
     }
 
-    private var currentAgents: [TaskWorktreeAgentSnapshot] {
+    private var currentAgentRows: [AgentRowPresentationSnapshot] {
         _ = metadataStore
         _ = activityStore
-        return TaskAgentProjectionBuilder.agents(
+        return TaskAgentProjectionBuilder.agentRowSnapshots(
             worktreePath: worktreePath,
             taskWorkspaceId: taskWorkspaceId,
+            workspaces: tabManager.tabs,
+            branchLabel: currentBranchName,
             fallbackAgentLabel: fallbackAgentLabel
         )
+    }
+
+    @ViewBuilder
+    private func agentRow(_ core: AgentRowPresentationSnapshot) -> some View {
+        let workspaceId = core.workspaceId
+        AgentRowCoreView(
+            core: core,
+            isSelected: selectedAgentWorkspaceId == workspaceId,
+            trailingSlot: .none,
+            dismissBehavior: .none,
+            onActivate: {
+                onOpenAgentTerminal?(workspaceId)
+            },
+            onAcknowledgeAttention: {
+                TerminalAgentActivityStore.shared.acknowledgeViewedAttention(forWorkspaceId: workspaceId)
+            },
+            onTrailingSlotTap: nil
+        )
+        .equatable()
+        .disabled(onOpenAgentTerminal == nil)
+        .opacity(onOpenAgentTerminal == nil ? 0.70 : 1.0)
+        .help(onOpenAgentTerminal == nil ? "" : String(localized: "tasks.sidebar.section.branches.openTerminal",
+                                                        defaultValue: "Open this agent terminal below the board",
+                                                        table: "TermLoop"))
     }
 
     private var currentBranchName: String? {
@@ -227,140 +249,6 @@ struct TaskBranchesSection: View {
         return "…/\(parent)/\(leaf)"
     }
 
-    private func color(for displayState: TerminalAgentDisplayState) -> Color {
-        switch displayState {
-        case .idle, .ready: return .secondary
-        case .running: return .accentColor
-        case .needsInput: return .orange
-        case .completed: return .green
-        case .error: return .red
-        }
-    }
-}
-
-private struct WorktreeAgentCard: View {
-    let agent: TaskWorktreeAgentSnapshot
-    let isSelected: Bool
-    let onOpenAgentTerminal: ((UUID) -> Void)?
-    let stateColor: Color
-
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: { onOpenAgentTerminal?(agent.workspaceId) }) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .center, spacing: 10) {
-                    statusDot
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
-                            Text(agent.agentLabel)
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(.primary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            statePill
-                        }
-                        Text(isSelected ? selectedSubtitle : idleSubtitle)
-                            .font(.system(size: 10.5, weight: .medium))
-                            .foregroundColor(isSelected ? .accentColor : .secondary)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 8)
-                    actionPill
-                }
-
-                if let preview = agent.preview?.trimmingCharacters(in: .whitespacesAndNewlines), !preview.isEmpty {
-                    Text(preview)
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                        .lineLimit(3)
-                        .truncationMode(.tail)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.leading, 22)
-                }
-            }
-            .padding(.vertical, 11)
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(borderColor, lineWidth: isSelected ? 1.25 : 1)
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .disabled(onOpenAgentTerminal == nil)
-        .onHover { isHovering = $0 }
-        .help(onOpenAgentTerminal == nil ? "" : String(localized: "tasks.sidebar.section.branches.openTerminal",
-                                                        defaultValue: "Open this agent terminal below the board",
-                                                        table: "TermLoop"))
-    }
-
-    private var statusDot: some View {
-        Circle()
-            .fill(stateColor)
-            .frame(width: 9, height: 9)
-            .overlay {
-                Circle()
-                    .strokeBorder(Color.white.opacity(0.22), lineWidth: 1)
-            }
-    }
-
-    private var statePill: some View {
-        Text(agent.displayState.sidebarLabel ?? agent.displayState.rawValue)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundColor(stateColor)
-            .lineLimit(1)
-            .padding(.vertical, 2)
-            .padding(.horizontal, 6)
-            .background(stateColor.opacity(0.14))
-            .clipShape(Capsule())
-    }
-
-    private var actionPill: some View {
-        HStack(spacing: 5) {
-            Image(systemName: isSelected ? "rectangle.split.2x1.fill" : "rectangle.split.2x1")
-                .font(.system(size: 10, weight: .semibold))
-            Text(isSelected ? String(localized: "tasks.sidebar.agent.opened",
-                                      defaultValue: "Shown",
-                                      table: "TermLoop")
-                : String(localized: "tasks.sidebar.agent.openTerminalShort",
-                         defaultValue: "Terminal",
-                         table: "TermLoop"))
-                .font(.system(size: 10, weight: .semibold))
-        }
-        .foregroundColor(isSelected ? .white : .secondary)
-        .padding(.vertical, 4)
-        .padding(.horizontal, 8)
-        .background(isSelected ? Color.accentColor : Color.white.opacity(isHovering ? 0.10 : 0.055))
-        .clipShape(Capsule())
-    }
-
-    private var cardBackground: Color {
-        if isSelected { return Color.accentColor.opacity(0.14) }
-        if isHovering { return Color(nsColor: .controlBackgroundColor).opacity(0.72) }
-        return Color(nsColor: .controlBackgroundColor).opacity(0.42)
-    }
-
-    private var borderColor: Color {
-        if isSelected { return .accentColor.opacity(0.75) }
-        if isHovering { return .accentColor.opacity(0.30) }
-        return Color.white.opacity(0.055)
-    }
-
-    private var selectedSubtitle: String {
-        String(localized: "tasks.sidebar.agent.selectedSubtitle",
-               defaultValue: "Shown below the board",
-               table: "TermLoop")
-    }
-
-    private var idleSubtitle: String {
-        String(localized: "tasks.sidebar.agent.idleSubtitle",
-               defaultValue: "Click to open terminal",
-               table: "TermLoop")
-    }
 }
 
 struct TaskSidebarSectionTitle: View {

@@ -13,6 +13,9 @@ struct TaskBoardPage<TerminalContent: View>: View {
     var coordinator: TaskLifecycleCoordinator?
     @ViewBuilder let terminalContent: () -> TerminalContent
 
+    @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
+    @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
+
     var body: some View {
         Group {
             if selection.inlineTerminalWorkspaceId != nil {
@@ -25,6 +28,7 @@ struct TaskBoardPage<TerminalContent: View>: View {
                             store: store,
                             selection: selection,
                             coordinator: coordinator,
+                            agentStatusesByTaskId: agentStatusesByTaskId,
                             onSelect: selectFromBoard
                         )
                     },
@@ -35,6 +39,7 @@ struct TaskBoardPage<TerminalContent: View>: View {
                     store: store,
                     selection: selection,
                     coordinator: coordinator,
+                    agentStatusesByTaskId: agentStatusesByTaskId,
                     onSelect: selectFromBoard
                 )
             }
@@ -47,6 +52,12 @@ struct TaskBoardPage<TerminalContent: View>: View {
             syncSelectionValidity()
             syncInlineTerminalForSelectedTask(focusWorkspace: true)
         }
+    }
+
+    private var agentStatusesByTaskId: [UUID: TaskAgentStatusSummary] {
+        _ = metadataStore
+        _ = activityStore
+        return TaskAgentProjectionBuilder.statusSummaries(for: store.fileSnapshot().tasks)
     }
 
     private func syncSelectionValidity() {
@@ -96,6 +107,7 @@ private struct TaskBoardCanvas: View {
     @ObservedObject var store: TaskBoardStore
     @ObservedObject var selection: TaskSelectionStore
     var coordinator: TaskLifecycleCoordinator?
+    let agentStatusesByTaskId: [UUID: TaskAgentStatusSummary]
     var onSelect: ((TaskCardSummary) -> Void)?
 
     var body: some View {
@@ -111,6 +123,7 @@ private struct TaskBoardCanvas: View {
                         TaskBoardColumnView(
                             snapshot: snapshot,
                             selection: selection,
+                            agentStatusesByTaskId: agentStatusesByTaskId,
                             onMove: coordinator.map { c in
                                 { taskId, target in
                                     _Concurrency.Task { @MainActor in
