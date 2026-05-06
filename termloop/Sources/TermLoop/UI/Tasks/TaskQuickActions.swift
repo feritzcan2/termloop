@@ -3,8 +3,8 @@
 
 import Foundation
 
-/// Quick actions available from the Tasks page (detail pane buttons,
-/// sidebar drill-in actions, card context menu).
+/// Quick actions available from the Tasks page (sidebar drill-in actions and
+/// card context menus).
 ///
 /// Per CLAUDE.md: agent-spawn must use the existing AgentInputs prompt
 /// templates. We never inline a prompt string here; instead we route through
@@ -14,7 +14,7 @@ import Foundation
 enum TaskQuickActions {
     /// Switch the active sidebar tab to `.work` and select the bound workspace.
     /// Wired to actual focus plumbing in Task 18.
-    static func openWorktree(workspaceId: UUID) {
+    static func openWorktree(workspaceId: UUID?, worktreePath: String? = nil) {
         // Switch sidebar to work and store the selected workspace via existing
         // AppDelegate / AppStorage path. The existing ⌘Click affordance already
         // owns this — we just emit the same intent here.
@@ -22,14 +22,29 @@ enum TaskQuickActions {
             TermLoopSidebarTab.work.rawValue,
             forKey: TermLoopSidebarTab.storageKey
         )
-        TaskQuickActionsBridge.requestFocusWorkspace(workspaceId)
+        UserDefaults.standard.set(
+            WorkSubTab.loop.rawValue,
+            forKey: WorkSubTab.storageKey
+        )
+        if let workspaceId, TaskQuickActionsBridge.requestFocusWorkspace(workspaceId) {
+            return
+        }
+        if let worktreePath {
+            TaskQuickActionsBridge.requestOpenWorktreePath(worktreePath)
+        }
+    }
+
+    /// Select a workspace terminal for the Tasks board's inline split without
+    /// leaving the Tasks route.
+    static func showWorkspaceInline(workspaceId: UUID) {
+        _ = TaskQuickActionsBridge.requestSelectWorkspaceInline(workspaceId)
     }
 
     /// Switch to Work tab on the bound workspace and ask the existing
     /// "+ Agent" affordance to open. No prompt is supplied — the user picks a
     /// template in the existing UI.
     static func addAgentRun(workspaceId: UUID) {
-        openWorktree(workspaceId: workspaceId)
+        openWorktree(workspaceId: workspaceId, worktreePath: nil)
         TaskQuickActionsBridge.requestNewAgentPanel(workspaceId)
     }
 }
@@ -38,6 +53,8 @@ enum TaskQuickActions {
 /// TabManager APIs. The real bridge is set at app startup; tests can stub.
 @MainActor
 public enum TaskQuickActionsBridge {
-    public static var requestFocusWorkspace: (UUID) -> Void = { _ in }
+    public static var requestFocusWorkspace: (UUID) -> Bool = { _ in false }
+    public static var requestSelectWorkspaceInline: (UUID) -> Bool = { _ in false }
+    public static var requestOpenWorktreePath: (String) -> Void = { _ in }
     public static var requestNewAgentPanel: (UUID) -> Void = { _ in }
 }

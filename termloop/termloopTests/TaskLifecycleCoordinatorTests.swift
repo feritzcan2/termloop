@@ -53,6 +53,59 @@ final class TaskLifecycleCoordinatorTests: XCTestCase {
         try await coordinator.moveColumn(taskId: id, to: .inProgress)
         XCTAssertTrue(fakeWorkspaces.metadataWrittenBeforeTaskStoreSave)
     }
+
+    func testMovePathOnlyReadyTaskDoesNotReProvision() async throws {
+        struct ShouldNotProvision: Error {}
+        fakeWorktrees.nextResult = .failure(ShouldNotProvision())
+        let id = UUID()
+        try store.appendForTesting(TaskRecord(
+            id: id,
+            projectId: projectId,
+            title: "path-only",
+            columnId: .todo,
+            rank: TaskRanking.initial(),
+            workspaceId: nil,
+            worktreePath: "/tmp/existing-worktree",
+            branch: "feat/existing",
+            bindingGeneration: 1,
+            provisionState: .ready
+        ))
+        try store.saveNow()
+
+        try await coordinator.moveColumn(taskId: id, to: .inProgress)
+
+        let task = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == id })
+        XCTAssertEqual(task.columnId, .inProgress)
+        XCTAssertEqual(task.provisionState, .ready)
+        XCTAssertNil(task.workspaceId)
+        XCTAssertEqual(task.worktreePath, "/tmp/existing-worktree")
+        XCTAssertTrue(fakeWorkspaces.setCalls.isEmpty)
+    }
+
+    func testPendingTaskCannotMoveColumnsWhileProvisioning() async throws {
+        let id = UUID()
+        try store.appendForTesting(TaskRecord(
+            id: id,
+            projectId: projectId,
+            title: "pending",
+            columnId: .inProgress,
+            rank: TaskRanking.initial(),
+            provisionState: .pending
+        ))
+        try store.saveNow()
+
+        do {
+            try await coordinator.moveColumn(taskId: id, to: .done)
+            XCTFail("expected provisionInFlight")
+        } catch {
+            XCTAssertEqual(error as? TaskLifecycleError, .provisionInFlight(id))
+        }
+
+        let task = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == id })
+        XCTAssertEqual(task.columnId, .inProgress)
+        XCTAssertEqual(task.provisionState, .pending)
+        XCTAssertEqual(fakeWorktrees.provisionCalls.count, 0)
+    }
 }
 
 // MARK: - Test doubles
@@ -81,14 +134,38 @@ final class FakeWorktreeCoordinator: TaskBoundWorktreeProvisioning {
             worktreePath: "/tmp/wt"
         )
     )
+    var suspendProvision = false
+    var suspendedContinuation: CheckedContinuation<TaskWorktreeProvisionResult, Error>?
+    private(set) var provisionCalls: [(projectRoot: URL, branchHint: String?)] = []
+    private(set) var teardownCalls: [(workspaceId: UUID, worktreePath: String)] = []
 
     func provision(projectRoot: URL, branchHint: String?) async throws
         -> TaskWorktreeProvisionResult
     {
+        provisionCalls.append((projectRoot: projectRoot, branchHint: branchHint))
+        if suspendProvision {
+            return try await withCheckedThrowingContinuation { continuation in
+                suspendedContinuation = continuation
+            }
+        }
         try nextResult.get()
     }
 
-    func teardown(workspaceId: UUID, worktreePath: String) async throws {}
+    func resumeProvision(_ result: Result<TaskWorktreeProvisionResult, Error>) {
+        let continuation = suspendedContinuation
+        suspendedContinuation = nil
+        suspendProvision = false
+        switch result {
+        case .success(let provisionResult):
+            continuation?.resume(returning: provisionResult)
+        case .failure(let error):
+            continuation?.resume(throwing: error)
+        }
+    }
+
+    func teardown(workspaceId: UUID, worktreePath: String) async throws {
+        teardownCalls.append((workspaceId, worktreePath))
+    }
 }
 
 extension TaskLifecycleCoordinatorTests {
@@ -115,6 +192,38 @@ extension TaskLifecycleCoordinatorTests {
         try coordinator.cancelBinding(taskId: id) // bumps generation, marks pending teardown
         let afterGen = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == id }).bindingGeneration
         XCTAssertGreaterThan(afterGen, beforeGen)
+    }
+
+    func testCancelDuringProvisionIgnoresAndTearsDownStaleCompletion() async throws {
+        fakeWorktrees.suspendProvision = true
+        let staleWorkspaceId = UUID()
+        let stalePath = "/tmp/stale-wt"
+        let id = try coordinator.createTask(title: "feat", columnId: .todo)
+
+        let moveTask = _Concurrency.Task { @MainActor in
+            try await self.coordinator.moveColumn(taskId: id, to: .inProgress)
+        }
+        while fakeWorktrees.suspendedContinuation == nil {
+            await _Concurrency.Task.yield()
+        }
+
+        try coordinator.cancelBinding(taskId: id)
+        fakeWorktrees.resumeProvision(
+            .success(TaskWorktreeProvisionResult(
+                workspaceId: staleWorkspaceId,
+                branch: "feat/stale",
+                worktreePath: stalePath
+            ))
+        )
+        try await moveTask.value
+
+        let task = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == id })
+        XCTAssertEqual(task.columnId, .todo)
+        XCTAssertEqual(task.provisionState, .none)
+        XCTAssertNil(task.workspaceId)
+        XCTAssertTrue(fakeWorkspaces.setCalls.isEmpty)
+        XCTAssertEqual(fakeWorktrees.teardownCalls.first?.workspaceId, staleWorkspaceId)
+        XCTAssertEqual(fakeWorktrees.teardownCalls.first?.worktreePath, stalePath)
     }
 
     func testRebindAfterUnbindSucceeds() async throws {

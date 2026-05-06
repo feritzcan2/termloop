@@ -91,13 +91,100 @@ final class TaskBoardImportReconcilerTests: XCTestCase {
             XCTFail("expected .failed, got \(updated.provisionState)")
         }
     }
+
+    func testExistingWorktreePathRecoversFromMissingEvenWithoutWorkspaceMetadata() throws {
+        let worktreePath = "/tmp/existing-worktree"
+        var task = TaskRecord(
+            projectId: projectId,
+            title: "existing",
+            columnId: .inProgress,
+            rank: TaskRanking.initial(),
+            workspaceId: UUID(),
+            worktreePath: worktreePath,
+            branch: "feat/existing",
+            bindingGeneration: 1,
+            provisionState: .failed(reason: TaskProvisionFailureReason.worktreeMissing)
+        )
+        task.updatedAt = Date(timeIntervalSince1970: 1)
+        try store.appendForTesting(task)
+        try store.saveNow()
+
+        let reconciler = TaskBoardImportReconciler(
+            store: store,
+            workspaces: StubWorkspaceLister(items: [
+                .init(workspaceId: nil, branch: "feat/existing", path: worktreePath),
+            ])
+        )
+        try reconciler.run()
+
+        let updated = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == task.id })
+        XCTAssertEqual(updated.provisionState, .ready)
+        XCTAssertNil(updated.workspaceId)
+        XCTAssertEqual(updated.worktreePath, worktreePath)
+        XCTAssertEqual(updated.branch, "feat/existing")
+    }
+
+    func testExternalPathOnlyAutoImportsArePruned() throws {
+        let externalPath = "/private/tmp/termloop-mobile-phone-only"
+        let task = TaskRecord(
+            projectId: projectId,
+            title: "termloop-mobile-phone-only",
+            columnId: .inProgress,
+            rank: TaskRanking.initial(),
+            workspaceId: nil,
+            worktreePath: externalPath,
+            branch: "termloop-mobile-phone-only",
+            bindingGeneration: 1,
+            provisionState: .ready
+        )
+        try store.appendForTesting(task)
+        try store.saveNow()
+
+        let reconciler = TaskBoardImportReconciler(
+            store: store,
+            workspaces: StubWorkspaceLister(items: [])
+        )
+        try reconciler.run()
+
+        XCTAssertNil(store.fileSnapshot().tasks.first { $0.id == task.id })
+    }
+
+    func testManagedPathOnlyAutoImportsAreKept() throws {
+        let projectRoot = StubWorkspaceLister.projectRoot(for: projectId)
+        let managedPath = projectRoot
+            .appendingPathComponent(".termloop-worktrees/tasks")
+            .path
+        let task = TaskRecord(
+            projectId: projectId,
+            title: "tasks",
+            columnId: .inProgress,
+            rank: TaskRanking.initial(),
+            workspaceId: nil,
+            worktreePath: managedPath,
+            branch: "tasks",
+            bindingGeneration: 1,
+            provisionState: .ready
+        )
+        try store.appendForTesting(task)
+        try store.saveNow()
+
+        let reconciler = TaskBoardImportReconciler(
+            store: store,
+            workspaces: StubWorkspaceLister(items: [
+                .init(workspaceId: nil, branch: "tasks", path: managedPath),
+            ])
+        )
+        try reconciler.run()
+
+        XCTAssertNotNil(store.fileSnapshot().tasks.first { $0.id == task.id })
+    }
 }
 
 // MARK: - Test stub
 
 @MainActor
 final class StubWorkspaceLister: TaskBoardWorkspaceListing {
-    struct Item { let workspaceId: UUID; let branch: String; let path: String }
+    struct Item { let workspaceId: UUID?; let branch: String; let path: String }
     let items: [Item]
     init(items: [Item]) { self.items = items }
 
@@ -111,6 +198,10 @@ final class StubWorkspaceLister: TaskBoardWorkspaceListing {
     }
 
     func projectRoot(for projectId: UUID) -> URL {
+        Self.projectRoot(for: projectId)
+    }
+
+    static func projectRoot(for projectId: UUID) -> URL {
         URL(fileURLWithPath: "/tmp/projects").appendingPathComponent(projectId.uuidString)
     }
 }

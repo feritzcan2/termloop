@@ -2135,6 +2135,18 @@ enum TermLoopHooks {
     @MainActor
     static func bootstrapSidebar(tabManager: TabManager) {
         BridgeCoordinator.shared.start(tabManager: tabManager)
+        TaskQuickActionsBridge.requestFocusWorkspace = { workspaceId in
+            TermLoopHooks.focusWorkspace(workspaceId: workspaceId)
+        }
+        TaskQuickActionsBridge.requestSelectWorkspaceInline = { workspaceId in
+            TermLoopHooks.selectWorkspaceForTaskBoard(workspaceId: workspaceId)
+        }
+        TaskQuickActionsBridge.requestOpenWorktreePath = { path in
+            WorktreeRepairCoordinator.shared.openFolder(path: path)
+        }
+        TaskQuickActionsBridge.requestNewAgentPanel = { workspaceId in
+            TermLoopHooks.presentTaskAgentQuickAction(workspaceId: workspaceId)
+        }
     }
 
     /// Silently writes the six teleport hooks into `~/.claude/settings.json`
@@ -2571,6 +2583,7 @@ enum AgentMainAreaOverlayMode: Equatable {
                 gitChangesWorkspaceId: GitChangesMainAreaStore.shared.presentation?.workspaceId,
                 abilityDetailId: AbilityDetailUIState.shared.selectedAbilityId,
                 abilityDetailIsSplit: false,
+                taskBoardInlineWorkspaceId: nil,
                 hasCommandPaletteOrFileDropOverlay: false,
                 handoffGeneration: 0
             )
@@ -2697,7 +2710,12 @@ private struct AgentMainAreaOverlaySwap<Content: View>: View {
             case .projectEmpty:
                 overlayContainer { MainAreaProjectEmptyState() }
             case let .taskBoard(projectId):
-                overlayContainer { TaskBoardRouteHost(projectId: projectId) }
+                overlayContainer {
+                    TaskBoardRouteHost(
+                        projectId: projectId,
+                        windowId: AppDelegate.shared?.windowId(for: tabManager)
+                    )
+                }
             }
         }
         .id(overlayMode.identity)
@@ -2848,9 +2866,9 @@ extension TermLoopHooks {
     /// Cross-window safe: uses `AppDelegate.tabManagerFor(tabId:)` to find
     /// the correct `TabManager` instead of assuming the current window's
     /// one owns the workspace.
-    static func focusWorkspace(workspaceId: UUID) {
-        guard let appDelegate = AppDelegate.shared else { return }
-        guard let targetTM = appDelegate.tabManagerFor(tabId: workspaceId) else { return }
+    static func focusWorkspace(workspaceId: UUID) -> Bool {
+        guard let appDelegate = AppDelegate.shared else { return false }
+        guard let targetTM = appDelegate.tabManagerFor(tabId: workspaceId) else { return false }
         // Always run through the helper — even when this workspace is
         // already selected, an open overlay (AbilityDetail / Markdown
         // document / GitChanges) would otherwise outlive the focus
@@ -2859,6 +2877,37 @@ extension TermLoopHooks {
         if let wid = appDelegate.windowId(for: targetTM) {
             _ = appDelegate.focusMainWindow(windowId: wid)
         }
+        return true
+    }
+
+
+    static func selectWorkspaceForTaskBoard(workspaceId: UUID) -> Bool {
+        guard let appDelegate = AppDelegate.shared else { return false }
+        guard let targetTM = appDelegate.tabManagerFor(tabId: workspaceId) else { return false }
+        if targetTM.selectedTabId != workspaceId {
+            targetTM.selectedTabId = workspaceId
+        }
+        if let wid = appDelegate.windowId(for: targetTM) {
+            _ = appDelegate.focusMainWindow(windowId: wid)
+        }
+        TermLoopHooks.applyMainAreaPresentation(
+            tabManager: targetTM,
+            reason: "taskBoardInlineWorkspaceActivation"
+        )
+        return true
+    }
+
+    static func presentTaskAgentQuickAction(workspaceId: UUID) {
+        _ = focusWorkspace(workspaceId: workspaceId)
+        QuickActionController.shared.present(
+            prefill: QuickActionPresentationRequest(
+                initialSurface: .run,
+                targetWorkspaceId: workspaceId,
+                promptText: nil,
+                launchSource: .quickAction,
+                reasonTag: "quickAction.freePrompt"
+            )
+        )
     }
 
     static func focusAbilityWorkspace(workspaceId: UUID, abilityId: String) {

@@ -253,7 +253,10 @@ extension TermLoopSidebar {
                             .modifier(ClearScrollBackground())
                             .modifier(SidebarSubtleScrollIndicators())
                         case .tasks:
-                            TaskSidebarRoot(projectId: projectStore.activeProjectId)
+                            TaskSidebarRoot(
+                                projectId: projectStore.activeProjectId,
+                                windowId: AppDelegate.shared?.windowId(for: tabManager)
+                            )
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -35,17 +35,23 @@ public final class TaskBoardStore: ObservableObject {
         let url = boardFileURL()
         if FileManager.default.fileExists(atPath: url.path) {
             let data = try Data(contentsOf: url)
+            let schemaVersion: Int
+            do {
+                schemaVersion = try JSONDecoder.tasks.decode(TaskBoardSchemaHeader.self, from: data).schemaVersion
+            } catch {
+                throw TaskBoardStoreError.decodingFailed(String(describing: error))
+            }
+            guard schemaVersion <= TaskBoardFile.currentSchemaVersion else {
+                throw TaskBoardStoreError.unsupportedSchema(
+                    found: schemaVersion,
+                    supported: TaskBoardFile.currentSchemaVersion
+                )
+            }
             let decoded: TaskBoardFile
             do {
                 decoded = try JSONDecoder.tasks.decode(TaskBoardFile.self, from: data)
             } catch {
                 throw TaskBoardStoreError.decodingFailed(String(describing: error))
-            }
-            guard decoded.schemaVersion <= TaskBoardFile.currentSchemaVersion else {
-                throw TaskBoardStoreError.unsupportedSchema(
-                    found: decoded.schemaVersion,
-                    supported: TaskBoardFile.currentSchemaVersion
-                )
             }
             file = decoded
         } else {
@@ -90,10 +96,17 @@ public final class TaskBoardStore: ObservableObject {
 
     /// Apply a mutation. Caller is responsible for invoking saveNow()
     /// or scheduleSave() depending on whether the mutation is lifecycle-critical.
-    internal func mutate(_ block: (inout TaskBoardFile) throws -> Void) rethrows {
+    /// Returns whether the in-memory file actually changed. No-op mutations keep
+    /// the same snapshots and `updatedAt`, which keeps idempotent reconcile passes
+    /// from publishing/writing work they did not need to do.
+    @discardableResult
+    internal func mutate(_ block: (inout TaskBoardFile) throws -> Void) rethrows -> Bool {
+        let old = file
         try block(&file)
+        guard file != old else { return false }
         file.updatedAt = Date()
         rebuildSnapshots()
+        return true
     }
 
     // MARK: - Test seam
@@ -150,7 +163,8 @@ public final class TaskBoardStore: ObservableObject {
                         provisionState: task.provisionState,
                         branch: task.branch,
                         agentCount: agentCounts[task.id] ?? 0,
-                        hasTicket: false // v2 — Jira projection
+                        hasTicket: false, // v2 — Jira projection
+                        worktreePath: task.worktreePath
                     )
                 }
             return TaskColumnSnapshot(id: columnId, cards: cards)
@@ -166,6 +180,10 @@ public final class TaskBoardStore: ObservableObject {
         }
         selectedTaskDetailSnapshot = TaskDetailSnapshot(task: task)
     }
+}
+
+private struct TaskBoardSchemaHeader: Decodable {
+    let schemaVersion: Int
 }
 
 // MARK: - JSON coders

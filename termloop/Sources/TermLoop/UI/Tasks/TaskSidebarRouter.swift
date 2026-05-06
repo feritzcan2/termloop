@@ -12,6 +12,13 @@ struct TaskSidebarRouter: View {
     var coordinator: TaskLifecycleCoordinator?
 
     var body: some View {
+        routedBody
+            .onAppear { syncStoreSelection() }
+            .onChange(of: selection.selectedTaskId) { _, _ in syncStoreSelection() }
+    }
+
+    @ViewBuilder
+    private var routedBody: some View {
         if selection.selectedTaskId == nil {
             TaskSidebarTaskListView(
                 store: store,
@@ -44,15 +51,28 @@ struct TaskSidebarRouter: View {
             )
         }
     }
+
+    private func syncStoreSelection() {
+        store.selectTask(selection.selectedTaskId)
+        if selection.selectedTaskId != nil, store.selectedTaskDetailSnapshot == nil {
+            selection.select(nil)
+        }
+    }
 }
 
 /// Per-window root for the sidebar's .tasks tab. Resolves the per-project
-/// store and instantiates a per-window selection store as a @StateObject so
-/// the existing sidebar body can dispatch into it cleanly.
+/// store and resolves the same window-scoped selection store as the main Tasks
+/// route so sidebar drill-in and bottom detail stay in sync.
 @MainActor
 struct TaskSidebarRoot: View {
     let projectId: UUID?
-    @StateObject private var selection = TaskSelectionStore()
+    let windowId: UUID?
+    @StateObject private var fallbackSelection = TaskSelectionStore()
+
+    private var selection: TaskSelectionStore {
+        guard let windowId else { return fallbackSelection }
+        return TaskSelectionStoreProvider.shared.store(for: windowId)
+    }
 
     var body: some View {
         if let projectId, let store = TaskBoardStoreProvider.shared.store(for: projectId) {
