@@ -155,6 +155,7 @@ struct TaskSidebarDrillInView: View {
         if let reference = snap.remoteWorkItem {
             return TaskWorkItemProjectionBuilder.remoteSnapshot(
                 reference: reference,
+                title: snap.title,
                 statusLabel: snap.remoteStatusLabel,
                 taskFilePath: snap.taskFilePath,
                 workspaceId: snap.workspaceId,

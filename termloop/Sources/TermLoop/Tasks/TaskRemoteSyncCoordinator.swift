@@ -4,6 +4,42 @@
 import AppKit
 import Foundation
 
+public struct TaskRemoteJiraAccountOption: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let site: String
+    public let email: String?
+    public let displayName: String?
+    public let isCurrent: Bool
+
+    public init(site: String, email: String?, displayName: String?, isCurrent: Bool) {
+        let normalizedSite = Self.normalizedSite(site) ?? site.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedEmail = email?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.site = normalizedSite
+        self.email = normalizedEmail
+        self.displayName = displayName?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.isCurrent = isCurrent
+        self.id = [normalizedSite, normalizedEmail ?? ""].joined(separator: "|")
+    }
+
+    public var displayLabel: String {
+        let emailPart = email.map { " · \($0)" } ?? ""
+        let currentPart = isCurrent ? " ✓" : ""
+        return "\(site)\(emailPart)\(currentPart)"
+    }
+
+    private static func normalizedSite(_ value: String) -> String? {
+        var site = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: site), let host = url.host {
+            site = host
+        }
+        site = site
+            .replacingOccurrences(of: "https://", with: "")
+            .replacingOccurrences(of: "http://", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return site.nilIfEmpty
+    }
+}
+
 public struct TaskRemoteProjectOption: Identifiable, Equatable, Sendable {
     public let id: String
     public let key: String
@@ -20,6 +56,10 @@ public struct TaskRemoteProjectOption: Identifiable, Equatable, Sendable {
     }
 }
 
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
 public struct TaskRemoteStatusOption: Identifiable, Equatable, Sendable {
     public let id: String
     public let label: String
@@ -34,8 +74,10 @@ public struct TaskRemoteStatusOption: Identifiable, Equatable, Sendable {
 @MainActor
 public final class TaskRemoteSyncCoordinator: ObservableObject {
     @Published public private(set) var isSyncing: Bool = false
+    @Published public private(set) var isLoadingJiraAccounts: Bool = false
     @Published public private(set) var isLoadingProjects: Bool = false
     @Published public private(set) var isLoadingStatuses: Bool = false
+    @Published public private(set) var jiraAccountOptions: [TaskRemoteJiraAccountOption] = []
     @Published public private(set) var projectOptions: [TaskRemoteProjectOption] = []
     @Published public private(set) var remoteStatusOptions: [TaskRemoteStatusOption] = []
     @Published public private(set) var lastMessage: String?
@@ -103,7 +145,53 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 settings.remoteSync.lastError = nil
             }
             objectWillChange.send()
-            loadRemoteStatusOptions()
+            remoteStatusOptions = []
+        } catch {
+            lastMessage = String(describing: error)
+        }
+    }
+
+    public func setJiraSite(_ value: String) {
+        do {
+            try store.updateSettings { settings in
+                settings.remoteSync.jiraSite = Self.normalizedJiraSite(value)
+                settings.remoteSync.lastError = nil
+            }
+            objectWillChange.send()
+            projectOptions = []
+            remoteStatusOptions = []
+        } catch {
+            lastMessage = String(describing: error)
+        }
+    }
+
+    public func setJiraEmail(_ value: String) {
+        do {
+            try store.updateSettings { settings in
+                settings.remoteSync.jiraEmail = value
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .nilIfEmpty
+                settings.remoteSync.lastError = nil
+            }
+            objectWillChange.send()
+            projectOptions = []
+            remoteStatusOptions = []
+        } catch {
+            lastMessage = String(describing: error)
+        }
+    }
+
+    public func selectJiraAccount(_ optionId: String) {
+        guard let option = jiraAccountOptions.first(where: { $0.id == optionId }) else { return }
+        do {
+            try store.updateSettings { settings in
+                settings.remoteSync.jiraSite = option.site
+                settings.remoteSync.jiraEmail = option.email
+                settings.remoteSync.lastError = nil
+            }
+            objectWillChange.send()
+            projectOptions = []
+            remoteStatusOptions = []
         } catch {
             lastMessage = String(describing: error)
         }
@@ -208,6 +296,24 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         syncAssignedToMe(reason: "tasks.settings.appear")
     }
 
+    public func loadJiraAccountOptionsIfNeeded() {
+        guard jiraAccountOptions.isEmpty else { return }
+        loadJiraAccountOptions()
+    }
+
+    public func loadJiraAccountOptions() {
+        guard !isLoadingJiraAccounts else { return }
+        isLoadingJiraAccounts = true
+        Task(priority: .utility) { [weak self] in
+            let options = await Self.discoverJiraAccounts()
+            await MainActor.run {
+                self?.jiraAccountOptions = options
+                self?.isLoadingJiraAccounts = false
+                self?.applyDefaultJiraAccountIfNeeded(options)
+            }
+        }
+    }
+
     public func loadProjectOptionsIfNeeded() {
         guard projectOptions.isEmpty else { return }
         loadProjectOptions()
@@ -221,12 +327,12 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
     public func loadProjectOptions() {
         guard !isLoadingProjects else { return }
         isLoadingProjects = true
+        let syncSettings = settings
         Task(priority: .utility) { [weak self] in
             do {
-                let result = try await RemoteWorkItemCommandRunner.shared.run(
-                    executable: "acli",
+                let result = try await Self.runAcliJira(
+                    settings: syncSettings,
                     arguments: ["jira", "project", "list", "--limit", "100", "--json"],
-                    cwd: nil,
                     timeout: 20
                 )
                 guard result.exitStatus == 0, !result.timedOut else {
@@ -253,7 +359,8 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
     public func loadRemoteStatusOptions() {
         guard !isLoadingStatuses else { return }
         isLoadingStatuses = true
-        let selectedProject = settings.container?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let syncSettings = settings
+        let selectedProject = syncSettings.container?.trimmingCharacters(in: .whitespacesAndNewlines)
         let jql: String
         if let selectedProject, !selectedProject.isEmpty {
             jql = "project = \(selectedProject) ORDER BY updated DESC"
@@ -262,8 +369,8 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
         Task(priority: .utility) { [weak self] in
             do {
-                let result = try await RemoteWorkItemCommandRunner.shared.run(
-                    executable: "acli",
+                let result = try await Self.runAcliJira(
+                    settings: syncSettings,
                     arguments: [
                         "jira", "workitem", "search",
                         "--jql", jql,
@@ -271,7 +378,6 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                         "--fields", "status",
                         "--json"
                     ],
-                    cwd: nil,
                     timeout: 20
                 )
                 guard result.exitStatus == 0, !result.timedOut else {
@@ -313,7 +419,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         syncTask?.cancel()
         syncTask = Task(priority: .utility) { [weak self] in
             do {
-                let service = Self.makeRemoteWorkItemService()
+                let service = Self.makeRemoteWorkItemService(settings: syncSettings)
                 let snapshots = try await service.listAssignedToMe(request)
                 try Task.checkCancellation()
                 await MainActor.run {
@@ -339,10 +445,11 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
 
         isSyncing = true
         lastMessage = nil
+        let syncSettings = settings
         syncTask?.cancel()
         syncTask = Task(priority: .utility) { [weak self] in
             do {
-                let service = Self.makeRemoteWorkItemService()
+                let service = Self.makeRemoteWorkItemService(settings: syncSettings)
                 let snapshot = try await service.fetch(reference)
                 try Task.checkCancellation()
                 await MainActor.run {
@@ -363,10 +470,11 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
         isSyncing = true
         lastMessage = nil
+        let syncSettings = settings
         syncTask?.cancel()
         syncTask = Task(priority: .utility) { [weak self] in
             do {
-                let service = Self.makeRemoteWorkItemService()
+                let service = Self.makeRemoteWorkItemService(settings: syncSettings)
                 let snapshot = try await service.fetch(reference)
                 try Task.checkCancellation()
                 await MainActor.run {
@@ -397,9 +505,10 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
 
         isSyncing = true
         lastMessage = nil
+        let remoteSettings = syncSettings.remoteSync
         Task(priority: .utility) { [weak self] in
             do {
-                let service = Self.makeRemoteWorkItemService()
+                let service = Self.makeRemoteWorkItemService(settings: remoteSettings)
                 let options = try await service.availableStatuses(reference)
                 guard let option = Self.matchingStatusOption(
                     in: options,
@@ -436,6 +545,25 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                     self?.finishSync(error: error)
                 }
             }
+        }
+    }
+
+    private func applyDefaultJiraAccountIfNeeded(_ options: [TaskRemoteJiraAccountOption]) {
+        guard let option = options.first(where: \.isCurrent) ?? options.first else { return }
+        let current = settings
+        guard current.jiraSite?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty == nil,
+              current.jiraEmail?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty == nil else {
+            return
+        }
+        do {
+            try store.updateSettings { settings in
+                settings.remoteSync.jiraSite = option.site
+                settings.remoteSync.jiraEmail = option.email
+                settings.remoteSync.lastError = nil
+            }
+            objectWillChange.send()
+        } catch {
+            lastMessage = String(describing: error)
         }
     }
 
@@ -652,14 +780,171 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
     }
 
-    private static func makeRemoteWorkItemService() -> RemoteWorkItemService {
+    private static func makeRemoteWorkItemService(settings: TaskRemoteSyncSettings) -> RemoteWorkItemService {
         RemoteWorkItemService(
             providers: [
-                JiraRemoteWorkItemProvider(),
+                JiraRemoteWorkItemProvider(
+                    site: settings.jiraSite,
+                    email: settings.jiraEmail
+                ),
                 GitHubRemoteWorkItemProvider(),
                 GitLabRemoteWorkItemProvider()
             ]
         )
+    }
+
+    private static func runAcliJira(
+        settings: TaskRemoteSyncSettings,
+        arguments: [String],
+        timeout: TimeInterval
+    ) async throws -> RemoteWorkItemCommandResult {
+        try await switchJiraSiteIfConfigured(settings)
+        return try await RemoteWorkItemCommandRunner.shared.run(
+            executable: "acli",
+            arguments: arguments,
+            cwd: nil,
+            timeout: timeout
+        )
+    }
+
+    private static func switchJiraSiteIfConfigured(_ settings: TaskRemoteSyncSettings) async throws {
+        guard let site = settings.jiraSite?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
+            return
+        }
+        var args = ["jira", "auth", "switch", "--site", site]
+        if let email = settings.jiraEmail?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            args += ["--email", email]
+        }
+        let result = try await RemoteWorkItemCommandRunner.shared.run(
+            executable: "acli",
+            arguments: args,
+            cwd: nil,
+            timeout: 12
+        )
+        guard result.exitStatus == 0, !result.timedOut else {
+            throw RemoteWorkItemError.commandFailed(
+                result.stderr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? "Could not switch Jira site to \(site). Run `acli jira auth login --web` or `acli jira auth login --site \(site) --email <email> --token`."
+                    : result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        }
+    }
+
+    private static func discoverJiraAccounts() async -> [TaskRemoteJiraAccountOption] {
+        var options = parseJiraAccountsConfig()
+        if options.isEmpty,
+           let status = try? await RemoteWorkItemCommandRunner.shared.run(
+               executable: "acli",
+               arguments: ["jira", "auth", "status"],
+               cwd: nil,
+               timeout: 8
+           ),
+           status.exitStatus == 0,
+           let option = parseJiraAuthStatus(status.stdout + "\n" + status.stderr) {
+            options = [option]
+        }
+        return uniqueJiraAccounts(options)
+    }
+
+    private static func parseJiraAccountsConfig() -> [TaskRemoteJiraAccountOption] {
+        let environment = ProcessInfo.processInfo.environment
+        let configRoot = environment["XDG_CONFIG_HOME"].flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
+            .map(URL.init(fileURLWithPath:))
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config")
+        let url = configRoot.appendingPathComponent("acli/jira_config.yaml")
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+
+        let currentProfile = yamlScalar(named: "current_profile", in: text)
+        var options: [TaskRemoteJiraAccountOption] = []
+        var profile: [String: String] = [:]
+
+        func flush() {
+            guard let site = profile["site"]?.nilIfEmpty else { return }
+            let cloudId = profile["cloud_id"] ?? ""
+            let accountId = profile["account_id"] ?? ""
+            let profileId = "\(cloudId):\(accountId)"
+            options.append(TaskRemoteJiraAccountOption(
+                site: site,
+                email: profile["email"],
+                displayName: profile["display_name"],
+                isCurrent: currentProfile == profileId
+            ))
+        }
+
+        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.hasPrefix("- ") {
+                flush()
+                profile = [:]
+                let rest = String(line.dropFirst(2))
+                if let (key, value) = yamlPair(rest) { profile[key] = value }
+                continue
+            }
+            guard !profile.isEmpty, let (key, value) = yamlPair(line) else { continue }
+            profile[key] = value
+        }
+        flush()
+        return uniqueJiraAccounts(options)
+    }
+
+    private static func parseJiraAuthStatus(_ text: String) -> TaskRemoteJiraAccountOption? {
+        var site: String?
+        var email: String?
+        for rawLine in text.split(separator: "\n").map(String.init) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.hasPrefix("Site:") {
+                site = String(line.dropFirst("Site:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            } else if line.hasPrefix("Email:") {
+                email = String(line.dropFirst("Email:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        guard let site = site?.nilIfEmpty else { return nil }
+        return TaskRemoteJiraAccountOption(site: site, email: email, displayName: nil, isCurrent: true)
+    }
+
+    private static func uniqueJiraAccounts(_ options: [TaskRemoteJiraAccountOption]) -> [TaskRemoteJiraAccountOption] {
+        var seen = Set<String>()
+        return options.filter { option in
+            guard !seen.contains(option.id) else { return false }
+            seen.insert(option.id)
+            return true
+        }
+        .sorted { lhs, rhs in
+            if lhs.isCurrent != rhs.isCurrent { return lhs.isCurrent }
+            return lhs.displayLabel.localizedStandardCompare(rhs.displayLabel) == .orderedAscending
+        }
+    }
+
+    private static func yamlScalar(named key: String, in text: String) -> String? {
+        for line in text.split(separator: "\n").map(String.init) {
+            guard let (lineKey, value) = yamlPair(line.trimmingCharacters(in: .whitespacesAndNewlines)), lineKey == key else {
+                continue
+            }
+            return value
+        }
+        return nil
+    }
+
+    private static func yamlPair(_ line: String) -> (String, String)? {
+        guard !line.isEmpty, !line.hasPrefix("#"), let separator = line.firstIndex(of: ":") else { return nil }
+        let key = String(line[..<separator]).trimmingCharacters(in: .whitespacesAndNewlines)
+        var value = String(line[line.index(after: separator)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("\"") && value.hasSuffix("\"") && value.count >= 2 {
+            value = String(value.dropFirst().dropLast())
+        }
+        return key.isEmpty ? nil : (key, value)
+    }
+
+    private static func normalizedJiraSite(_ value: String) -> String? {
+        var site = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: site), let host = url.host {
+            site = host
+        }
+        site = site
+            .replacingOccurrences(of: "https://", with: "")
+            .replacingOccurrences(of: "http://", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return site.nilIfEmpty
     }
 
     private static func confirmRemoteStatusSync(

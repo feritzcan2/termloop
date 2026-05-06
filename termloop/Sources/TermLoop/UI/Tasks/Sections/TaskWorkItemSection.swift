@@ -54,6 +54,12 @@ struct TaskWorkItemSection: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.primary)
                         .lineLimit(1)
+                    if let title = snapshot.title, title != snapshot.key {
+                        Text(title)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color.primary.opacity(0.86))
+                            .lineLimit(2)
+                    }
                     if let status = snapshot.statusLabel {
                         Text(status)
                             .font(.system(size: 10, weight: .medium))
