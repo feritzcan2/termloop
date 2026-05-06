@@ -1399,9 +1399,9 @@ struct WorktreeAgentsPanel: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(TermLoopSidebarTheme.dim)
                         .frame(width: 12, height: 12)
-                    Text(TermLoopSidebarTheme.caps(title))
-                        .font(WorktreeAgentsPanelTypography.headerLabel)
-                        .foregroundStyle(Color.primary)
+                    Text(TermLoopSidebarTheme.adaptiveSectionTitle(title))
+                        .font(TermLoopSidebarTheme.adaptiveSectionFont(size: 11))
+                        .foregroundStyle(TermLoopSidebarTheme.adaptiveSectionColor)
                 }
                 .contentShape(Rectangle())
             }
@@ -1422,7 +1422,11 @@ struct WorktreeAgentsPanel: View {
                     table: "TermLoop"
                 ))
             }
-            Text(verbatim: sectionCountLabel(groupCount: groupCount, workspaceCount: workspaceCount))
+            Text(verbatim: sectionCountLabel(
+                groupCount: groupCount,
+                workspaceCount: workspaceCount,
+                short: true
+            ))
                 .font(TermLoopSidebarTheme.tinyMono)
                 .foregroundStyle(TermLoopSidebarTheme.dim)
                 .monospacedDigit()
@@ -1449,7 +1453,12 @@ struct WorktreeAgentsPanel: View {
         ))
     }
 
-    private func sectionCountLabel(groupCount: Int, workspaceCount: Int) -> String {
+    private func sectionCountLabel(groupCount: Int, workspaceCount: Int, short: Bool = false) -> String {
+        if short {
+            // Light mode: keep just the agent count — the group/agent split
+            // duplicates info already implied by the expanded sub-tree below.
+            return "\(workspaceCount)"
+        }
         let groupUnit = groupCount == 1 ? "group" : "groups"
         let agentUnit = workspaceCount == 1 ? "agent" : "agents"
         return "\(groupCount) \(groupUnit) · \(workspaceCount) \(agentUnit)"

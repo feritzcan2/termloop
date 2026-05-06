@@ -15448,6 +15448,7 @@ struct SidebarBackdrop: View {
         let materialOption = SidebarMaterialOption(rawValue: sidebarMaterial)
         let blendingMode = SidebarBlendModeOption(rawValue: sidebarBlendMode)?.mode ?? .behindWindow
         let state = SidebarStateOption(rawValue: sidebarState)?.state ?? .active
+        let lightModeUsesNativeTint = colorScheme == .light && sidebarTintHexLight == nil
         let resolvedHex: String = {
             if colorScheme == .dark, let dark = sidebarTintHexDark {
                 return dark
@@ -15456,7 +15457,12 @@ struct SidebarBackdrop: View {
             }
             return sidebarTintHex
         }()
-        let tintColor = (NSColor(hex: resolvedHex) ?? NSColor(hex: sidebarTintHex) ?? .black).withAlphaComponent(sidebarTintOpacity)
+        // In light mode without an explicit per-mode tint hex, default to a
+        // near-zero tint so the `.sidebar` material reads as native macOS
+        // chrome (Finder/Mail/Clarc style) instead of the previous gray haze.
+        // Dark mode and any user-specified light tint are unaffected.
+        let resolvedOpacity = lightModeUsesNativeTint ? 0.0 : sidebarTintOpacity
+        let tintColor = (NSColor(hex: resolvedHex) ?? NSColor(hex: sidebarTintHex) ?? .black).withAlphaComponent(resolvedOpacity)
         let useLiquidGlass = materialOption?.usesLiquidGlass ?? false
         let useWindowLevelGlass = useLiquidGlass && blendingMode == .behindWindow
 
