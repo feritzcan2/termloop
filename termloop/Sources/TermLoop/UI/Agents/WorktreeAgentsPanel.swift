@@ -2914,6 +2914,11 @@ struct WorktreeChangesSheet: View {
         .padding(18)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .frame(minWidth: onClose == nil ? 1080 : nil, minHeight: onClose == nil ? 620 : nil)
+        // Without an explicit window background the overlay let the host
+        // chrome (terminal portal / dark default) bleed through, so the
+        // sheet rendered dark even in light mode. `.windowBackgroundColor`
+        // adapts to system appearance — matches `AgentsCatalogMainAreaView`.
+        .background(Color(nsColor: .windowBackgroundColor))
         .task(id: refreshKey) {
             await refreshComparisonState()
         }
@@ -3165,7 +3170,13 @@ struct WorktreeChangesSheet: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    // Adapts: light mode → very faint gray wash, dark mode →
+                    // the previous near-black plate. `controlBackgroundColor`
+                    // is the closest semantic NSColor for an inset surface.
+                    .background(
+                        Color(nsColor: .controlBackgroundColor).opacity(0.6),
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    )
                 }
             }
         }

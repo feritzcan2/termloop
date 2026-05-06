@@ -22,7 +22,7 @@ struct TaskSidebarDrillInView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 18) {
                     breadcrumb
                     header(detailSnapshot)
                     quickActions(detailSnapshot)
@@ -103,7 +103,7 @@ struct TaskSidebarDrillInView: View {
                 Text(String(localized: "tasks.sidebar.allTasks",
                             defaultValue: "All tasks", table: "TermLoop"))
             }
-            .font(.system(size: 11, weight: .medium))
+            .font(.system(size: 12, weight: .medium))
             .foregroundColor(.accentColor)
         }
         .buttonStyle(.plain)
@@ -114,14 +114,14 @@ struct TaskSidebarDrillInView: View {
             provisionState: snap.provisionState,
             agentStatus: agentStatus(for: snap)
         )
-        return HStack(alignment: .top, spacing: 8) {
+        return HStack(alignment: .top, spacing: 10) {
             Circle()
                 .fill(statusPresentation.color)
-                .frame(width: 8, height: 8)
-                .padding(.top, 6)
-            VStack(alignment: .leading, spacing: 3) {
+                .frame(width: 9, height: 9)
+                .padding(.top, 7)
+            VStack(alignment: .leading, spacing: 5) {
                 Text(snap.title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .lineLimit(2)
                 HStack(spacing: 6) {
                     Text(columnTitle(snap.columnId))
@@ -135,7 +135,7 @@ struct TaskSidebarDrillInView: View {
                     Text(statusPresentation.text)
                         .foregroundStyle(statusPresentation.color)
                 }
-                .font(.system(size: 11))
+                .font(.system(size: 12))
                 .lineLimit(1)
                 .truncationMode(.middle)
             }
@@ -201,7 +201,7 @@ struct TaskSidebarDrillInView: View {
             Spacer(minLength: 0)
         }
         .buttonStyle(.link)
-        .font(.system(size: 11, weight: .medium))
+        .font(.system(size: 12, weight: .medium))
     }
 
     private func flatSection<Content: View>(@ViewBuilder content: () -> Content) -> some View {
