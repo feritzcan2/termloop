@@ -13,6 +13,7 @@ struct TaskBoardRouteHost: View {
 
     @EnvironmentObject private var tabManager: TabManager
     @StateObject private var fallbackSelection = TaskSelectionStore()
+    @ObservedObject private var storeProvider = TaskBoardStoreProvider.shared
 
     private var selection: TaskSelectionStore {
         guard let windowId else { return fallbackSelection }
@@ -24,7 +25,7 @@ struct TaskBoardRouteHost: View {
     }
 
     var body: some View {
-        if let store = TaskBoardStoreProvider.shared.store(for: projectId) {
+        if let store = storeProvider.store(for: projectId) {
             TaskBoardPage(
                 store: store,
                 selection: selection,
@@ -42,7 +43,7 @@ struct TaskBoardRouteHost: View {
             }
         } else {
             // Project not yet registered (rare race during startup) — placeholder
-            // until reconcile registers it. The host re-renders on store mutation.
+            // until the provider publishes root registration.
             Text(String(localized: "tasks.empty.noProject",
                         defaultValue: "Loading tasks…", table: "TermLoop"))
                 .font(.system(size: 12))

@@ -54,12 +54,14 @@ public final class TaskBoardImportReconciler {
             // Else: duplicate path — first wins; reconcile pass on existing tasks will flag mismatched workspaceIds via repair banner.
         }
 
-        // Drop path-only Tasks that were auto-imported from external git
-        // worktrees before Tasks learned to restrict discovery to
-        // <project>/.termloop-worktrees/. Live metadata-backed worktrees are
-        // never removed here; user-renamed tasks are left for repair.
-        var changed = store.mutate { file in
-            let before = file.tasks.count
+        let changed = store.mutate { file in
+            var changed = false
+
+            // Drop path-only Tasks that were auto-imported from external git
+            // worktrees before Tasks learned to restrict discovery to
+            // <project>/.termloop-worktrees/. Live metadata-backed worktrees are
+            // never removed here; user-renamed tasks are left for repair.
+            let beforePrune = file.tasks.count
             file.tasks.removeAll { task in
                 isExternalPathOnlyAutoImport(
                     task,
@@ -67,23 +69,21 @@ public final class TaskBoardImportReconciler {
                     descriptorByKey: descriptorByKey
                 )
             }
-            return file.tasks.count != before
-        }
+            changed = changed || file.tasks.count != beforePrune
 
-        // Validate existing tasks.
-        // Prefer workspace-id matches when available, but also recover by
-        // normalized worktree path. Metadata rows can be absent while the
-        // physical git worktree is still present (for example after restore or
-        // a metadata reset); in that case the task is still bound to an on-disk
-        // worktree and must not stay red as "missing".
-        //
-        // If descriptors are empty, only workspace-less pending tasks are
-        // marked interrupted. Bound task validation is skipped because we
-        // cannot trust the listing yet.
-        // Self-recovering: a task previously stuck on .failed("worktree
-        // missing"/"interrupted") that now resolves cleanly is reset to .ready.
-        let validated = store.mutate { file in
-            var changed = false
+            // Validate existing tasks.
+            // Prefer workspace-id matches when available, but also recover by
+            // normalized worktree path. Metadata rows can be absent while the
+            // physical git worktree is still present (for example after restore or
+            // a metadata reset); in that case the task is still bound to an on-disk
+            // worktree and must not stay red as "missing".
+            //
+            // If descriptors are empty, only workspace-less pending tasks are
+            // marked interrupted. Bound task validation is skipped because we
+            // cannot trust the listing yet.
+            // Self-recovering is intentionally narrow: only system-generated
+            // missing/interrupted failures are reset to `.ready` when the
+            // descriptor comes back. Unknown failure reasons preserve user intent.
             for i in file.tasks.indices {
                 var t = file.tasks[i]
 
@@ -106,7 +106,7 @@ public final class TaskBoardImportReconciler {
                     }
                     t.branch = descriptor.branch ?? t.branch
                     t.worktreePath = descriptor.worktreePath
-                    if t.provisionState != .ready {
+                    if shouldMarkReadyAfterDescriptorMatch(t.provisionState) {
                         t.provisionState = .ready
                     }
                     if t != original {
@@ -136,22 +136,17 @@ public final class TaskBoardImportReconciler {
                     changed = true
                 }
             }
-            return changed
-        }
-        changed = changed || validated
 
-        // Build set of keys already present in tasks.
-        var existingKeys: Set<Key> = []
-        for task in store.fileSnapshot().tasks {
-            guard let path = task.worktreePath else { continue }
-            guard let resolved = TaskPathNormalization.resolveDisplayAndKey(path, relativeTo: projectRoot) else { continue }
-            let key = Key(projectId: store.projectId, normalizedPath: resolved.keyPath)
-            existingKeys.insert(key)
-        }
+            // Build set of keys already present in tasks after pruning/validation.
+            var existingKeys: Set<Key> = []
+            for task in file.tasks {
+                guard let path = task.worktreePath else { continue }
+                guard let resolved = TaskPathNormalization.resolveDisplayAndKey(path, relativeTo: projectRoot) else { continue }
+                let key = Key(projectId: store.projectId, normalizedPath: resolved.keyPath)
+                existingKeys.insert(key)
+            }
 
-        // Import any orphan workspaces.
-        let imported = store.mutate { file in
-            var changed = false
+            // Import any orphan workspaces.
             for (key, d) in descriptorByKey where !existingKeys.contains(key) {
                 let title = d.branch ?? (URL(fileURLWithPath: d.worktreePath).lastPathComponent)
                 let inProgressRanks = file.tasks
@@ -171,6 +166,7 @@ public final class TaskBoardImportReconciler {
                     provisionState: .ready
                 )
                 file.tasks.append(task)
+                existingKeys.insert(key)
                 changed = true
             }
             if changed {
@@ -178,7 +174,6 @@ public final class TaskBoardImportReconciler {
             }
             return changed
         }
-        changed = changed || imported
         if changed {
             try store.saveNow()
         }
@@ -187,6 +182,19 @@ public final class TaskBoardImportReconciler {
     private struct Key: Hashable {
         let projectId: UUID
         let normalizedPath: String
+    }
+
+    private func shouldMarkReadyAfterDescriptorMatch(_ state: TaskProvisionState) -> Bool {
+        switch state {
+        case .ready:
+            return false
+        case .none, .pending:
+            return true
+        case .failed(let reason):
+            return reason == TaskProvisionFailureReason.worktreeMissing
+                || reason == TaskProvisionFailureReason.interrupted
+                || reason == TaskProvisionFailureReason.provisioningUnavailable
+        }
     }
 
     private func isExternalPathOnlyAutoImport(

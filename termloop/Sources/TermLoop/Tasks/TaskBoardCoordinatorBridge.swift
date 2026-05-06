@@ -24,11 +24,11 @@ public final class TaskBoardWorkspaceMetadataBridge: TaskBoundWorkspaceMetadataS
     }
 }
 
-/// v1 stub — `bindWorktree` (the only consumer of provision) throws if called.
-/// createTask, moveColumn (Todo→Backlog), brief edits, archive, and Backlog
-/// management all work without provisioning. Real provisioning bridge is a
-/// follow-up: needs to call `WorktreeCoordinator.attach` with the project
-/// root + a fresh slug, returning the resulting workspaceId.
+/// v1 stub — explicit `bindWorktree` is not wired to the real WorktreeCoordinator yet.
+/// Board column moves are pure moves, so the normal "+ New task → In Progress"
+/// path no longer trips this stub. Real provisioning bridge is a follow-up:
+/// needs to call `WorktreeCoordinator.attach` with the project root + a fresh
+/// slug, returning the resulting workspaceId.
 @MainActor
 public final class TaskBoardWorktreeProvisioningStub: TaskBoundWorktreeProvisioning {
     public static let shared = TaskBoardWorktreeProvisioningStub()

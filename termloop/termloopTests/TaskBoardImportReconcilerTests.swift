@@ -1,5 +1,10 @@
 import XCTest
-@testable import termloop
+
+#if canImport(TermLoop_DEV)
+@testable import TermLoop_DEV
+#elseif canImport(TermLoop)
+@testable import TermLoop
+#endif
 
 @MainActor
 final class TaskBoardImportReconcilerTests: XCTestCase {
@@ -122,6 +127,34 @@ final class TaskBoardImportReconcilerTests: XCTestCase {
         XCTAssertNil(updated.workspaceId)
         XCTAssertEqual(updated.worktreePath, worktreePath)
         XCTAssertEqual(updated.branch, "feat/existing")
+    }
+
+    func testUnknownFailedTaskIsNotSilentlyRecoveredByDescriptor() async throws {
+        let worktreePath = "/tmp/existing-worktree"
+        let task = TaskRecord(
+            projectId: projectId,
+            title: "existing",
+            columnId: .inProgress,
+            rank: TaskRanking.initial(),
+            workspaceId: UUID(),
+            worktreePath: worktreePath,
+            branch: "feat/existing",
+            bindingGeneration: 1,
+            provisionState: .failed(reason: "manual review needed")
+        )
+        try store.appendForTesting(task)
+        try store.saveNow()
+
+        let reconciler = TaskBoardImportReconciler(
+            store: store,
+            workspaces: StubWorkspaceLister(items: [
+                .init(workspaceId: task.workspaceId, branch: "feat/existing", path: worktreePath),
+            ])
+        )
+        try await reconciler.run()
+
+        let updated = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == task.id })
+        XCTAssertEqual(updated.provisionState, .failed(reason: "manual review needed"))
     }
 
     func testExternalPathOnlyAutoImportsArePruned() async throws {

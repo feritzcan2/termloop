@@ -10,6 +10,7 @@ import SwiftUI
 struct TaskCardView: View {
     let card: TaskCardSummary
     let agentStatus: TaskAgentStatusSummary?
+    let workItem: TaskWorkItemSnapshot?
     @ObservedObject var selection: TaskSelectionStore
     var onSelect: ((TaskCardSummary) -> Void)?
     var onCommandClick: ((TaskCardSummary) -> Void)?
@@ -30,6 +31,7 @@ struct TaskCardView: View {
 
             HStack(spacing: 6) {
                 statusChip
+                workItemChip
                 sourceChip
                 Spacer(minLength: 0)
                 if displayedAgentCount > 0 {
@@ -68,6 +70,13 @@ struct TaskCardView: View {
                 onCommandClick?(card)
             }
             .disabled(card.worktreePath == nil)
+            if let workItem, workItem.url != nil {
+                Button(String(localized: "tasks.card.menu.openWorkItem",
+                              defaultValue: "Open work item",
+                              table: "TermLoop")) {
+                    openWorkItem(workItem)
+                }
+            }
             Button(String(localized: "tasks.card.menu.archive",
                           defaultValue: "Archive", table: "TermLoop")) {
                 onArchive?(card.id)
@@ -159,6 +168,25 @@ struct TaskCardView: View {
             .clipShape(Capsule())
     }
 
+    @ViewBuilder
+    private var workItemChip: some View {
+        if let workItem {
+            HStack(spacing: 3) {
+                Image(systemName: "checklist")
+                    .font(.system(size: 8.5, weight: .semibold))
+                Text(workItem.compactLabel)
+                    .lineLimit(1)
+            }
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundColor(.blue)
+            .padding(.vertical, 2)
+            .padding(.horizontal, 7)
+            .background(Color.blue.opacity(0.12))
+            .clipShape(Capsule())
+            .help(workItem.url?.absoluteString ?? workItem.compactLabel)
+        }
+    }
+
     private var sourceChip: some View {
         Text(sourceText)
             .font(.system(size: 10, weight: .medium))
@@ -194,13 +222,22 @@ struct TaskCardView: View {
     private var statusColor: Color { effectiveStatus.color }
 
     private var displayedAgentCount: Int {
-        agentStatus?.agentCount ?? card.agentCount
+        agentStatus?.agentCount ?? 0
     }
 
     private var effectiveStatus: TaskStatusPresentation {
         TaskStatusPresentation(
             provisionState: card.provisionState,
             agentStatus: agentStatus
+        )
+    }
+
+    private func openWorkItem(_ workItem: TaskWorkItemSnapshot) {
+        guard let url = workItem.url else { return }
+        WorktreeURLRouter.open(
+            url,
+            workspaceIds: workItem.workspaceId.map { [$0] } ?? [],
+            preferredWorkspaceId: workItem.workspaceId
         )
     }
 }

@@ -2,7 +2,12 @@
 // Part of TermLoop — GPL-3.0-or-later
 
 import XCTest
-@testable import termloop
+
+#if canImport(TermLoop_DEV)
+@testable import TermLoop_DEV
+#elseif canImport(TermLoop)
+@testable import TermLoop
+#endif
 
 @MainActor
 final class TaskBoardStoreProviderTests: XCTestCase {

@@ -2,7 +2,12 @@
 // Part of TermLoop — GPL-3.0-or-later
 
 import XCTest
-@testable import termloop
+
+#if canImport(TermLoop_DEV)
+@testable import TermLoop_DEV
+#elseif canImport(TermLoop)
+@testable import TermLoop
+#endif
 
 /// Sanity tests for the Tasks page route plumbing. Detail rendering is mostly
 /// pure SwiftUI and verified manually; the contracts that DO matter are the

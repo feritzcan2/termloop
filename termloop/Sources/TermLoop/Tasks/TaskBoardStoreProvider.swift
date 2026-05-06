@@ -1,11 +1,14 @@
 // Copyright (c) 2026-present Ferit Özcan. All rights reserved.
 // Part of TermLoop — GPL-3.0-or-later
 
+import Combine
 import Foundation
 
 @MainActor
-public final class TaskBoardStoreProvider {
-    public static let shared = TaskBoardStoreProvider()
+public final class TaskBoardStoreProvider: ObservableObject {
+    public static let shared = TaskBoardStoreProvider {
+        TaskBoardStoreProvider.defaultResolveRoot(projectId: $0)
+    }
 
     /// Injected lister — assigned at app startup from the existing
     /// WorkspaceMetadataStore-backed lister. Tests inject their own.
@@ -13,21 +16,27 @@ public final class TaskBoardStoreProvider {
 
     private var stores: [UUID: TaskBoardStore] = [:]
     private var projectRoots: [UUID: URL] = [:]
+    private let resolveRoot: (UUID) -> URL?
 
-    private init() {}
+    private init(resolveRoot: @escaping (UUID) -> URL?) {
+        self.resolveRoot = resolveRoot
+    }
 
     public func registerProjectRoot(_ root: URL, for projectId: UUID) {
         projectRoots[projectId] = root
+        objectWillChange.send()
     }
 
     public func remove(projectId: UUID) {
         stores.removeValue(forKey: projectId)
         projectRoots.removeValue(forKey: projectId)
+        objectWillChange.send()
     }
 
     public func removeAll() {
         stores.removeAll()
         projectRoots.removeAll()
+        objectWillChange.send()
     }
 
     public func store(for projectId: UUID) -> TaskBoardStore? {
@@ -35,7 +44,7 @@ public final class TaskBoardStoreProvider {
         let root: URL
         if let registered = projectRoots[projectId] {
             root = registered
-        } else if let resolved = Self.resolveRoot(projectId) {
+        } else if let resolved = resolveRoot(projectId) {
             // Lazy fallback: resolve via ProjectStore when no explicit registration
             // happened. Idempotent — caches the answer for next call.
             projectRoots[projectId] = resolved
@@ -56,9 +65,7 @@ public final class TaskBoardStoreProvider {
         return store
     }
 
-    /// Looks up the project's folder via the existing `ProjectStore`. Static so
-    /// tests can replace the closure with their own resolver.
-    static var resolveRoot: (UUID) -> URL? = { projectId in
+    private static func defaultResolveRoot(projectId: UUID) -> URL? {
         guard let project = ProjectStore.shared.project(id: projectId) else { return nil }
         return URL(fileURLWithPath: project.folderPath)
     }

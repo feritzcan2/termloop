@@ -12,6 +12,7 @@ struct TaskBoardColumnView: View {
     let snapshot: TaskColumnSnapshot
     @ObservedObject var selection: TaskSelectionStore
     let agentStatusesByTaskId: [UUID: TaskAgentStatusSummary]
+    let workItemsByTaskId: [UUID: TaskWorkItemSnapshot]
     var onMove: ((_ taskId: UUID, _ to: TaskColumnId) -> Void)?
     var onSelect: ((TaskCardSummary) -> Void)?
     var onCommandClick: ((TaskCardSummary) -> Void)?
@@ -29,6 +30,7 @@ struct TaskBoardColumnView: View {
                             TaskCardView(
                                 card: card,
                                 agentStatus: agentStatusesByTaskId[card.id],
+                                workItem: workItemsByTaskId[card.id],
                                 selection: selection,
                                 onSelect: onSelect,
                                 onCommandClick: onCommandClick,

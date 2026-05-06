@@ -16,11 +16,17 @@ struct TaskSidebarTaskListView: View {
 
     var body: some View {
         let statuses = agentStatusesByTaskId
+        let workItems = workItemsByTaskId
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 10) {
                 ForEach(store.columnSnapshots) { col in
                     if !col.cards.isEmpty {
-                        section(title: title(for: col.id), cards: col.cards, statuses: statuses)
+                        section(
+                            title: title(for: col.id),
+                            cards: col.cards,
+                            statuses: statuses,
+                            workItems: workItems
+                        )
                     }
                 }
                 createButton
@@ -30,15 +36,25 @@ struct TaskSidebarTaskListView: View {
     }
 
     private var agentStatusesByTaskId: [UUID: TaskAgentStatusSummary] {
+        // Intentional subscription reads: task rows project live agent state
+        // without storing agent telemetry in TaskBoardStore.
         _ = metadataStore
         _ = activityStore
         return TaskAgentProjectionBuilder.statusSummaries(for: store.fileSnapshot().tasks)
     }
 
+    private var workItemsByTaskId: [UUID: TaskWorkItemSnapshot] {
+        // Work item bindings are shared workspace metadata; keep Tasks as a
+        // read-only projection so sidebar rows update with that store.
+        _ = metadataStore
+        return TaskWorkItemProjectionBuilder.snapshots(for: store.fileSnapshot().tasks)
+    }
+
     private func section(
         title: String,
         cards: [TaskCardSummary],
-        statuses: [UUID: TaskAgentStatusSummary]
+        statuses: [UUID: TaskAgentStatusSummary],
+        workItems: [UUID: TaskWorkItemSnapshot]
     ) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
@@ -51,12 +67,16 @@ struct TaskSidebarTaskListView: View {
                     .foregroundColor(.secondary)
             }
             ForEach(cards) { card in
-                row(card, status: statuses[card.id])
+                row(card, status: statuses[card.id], workItem: workItems[card.id])
             }
         }
     }
 
-    private func row(_ card: TaskCardSummary, status: TaskAgentStatusSummary?) -> some View {
+    private func row(
+        _ card: TaskCardSummary,
+        status: TaskAgentStatusSummary?,
+        workItem: TaskWorkItemSnapshot?
+    ) -> some View {
         let statusPresentation = TaskStatusPresentation(
             provisionState: card.provisionState,
             agentStatus: status
@@ -77,6 +97,16 @@ struct TaskSidebarTaskListView: View {
                     .truncationMode(.middle)
             }
             Spacer(minLength: 0)
+            if let workItem {
+                Text(workItem.key)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(.blue)
+                    .lineLimit(1)
+                    .padding(.vertical, 2)
+                    .padding(.horizontal, 6)
+                    .background(Color.blue.opacity(0.11))
+                    .clipShape(Capsule())
+            }
             Text(statusPresentation.text)
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundColor(statusPresentation.color)

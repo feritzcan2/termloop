@@ -20,8 +20,7 @@ public final class TaskBoardStore: ObservableObject {
 
     private var file: TaskBoardFile = TaskBoardFile()
     private var saveDebounce: DispatchWorkItem?
-    /// Per-task agent count (injected by the agent projection). Not persisted.
-    private var agentCounts: [UUID: Int] = [:]
+    private let saveQueue = DispatchQueue(label: "com.termloop.tasks.board-store.save", qos: .utility)
     private static let rankRebalanceLengthThreshold = 12
 
     public init(projectRoot: URL, projectId: UUID) {
@@ -60,12 +59,6 @@ public final class TaskBoardStore: ObservableObject {
 
     public func fileSnapshot() -> TaskBoardFile { file }
 
-    public func updateAgentCount(_ count: Int, for taskId: UUID) {
-        guard agentCounts[taskId] != count else { return }
-        agentCounts[taskId] = count
-        rebuildSnapshots()
-    }
-
     /// Synchronous, lifecycle-critical save. Skips debounce.
     public func saveNow() throws {
         saveDebounce?.cancel()
@@ -76,12 +69,24 @@ public final class TaskBoardStore: ObservableObject {
     /// Used by text-only mutations (brief). Coalesces rapid edits.
     public func scheduleSave(after seconds: TimeInterval = 0.5) {
         saveDebounce?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            try? self.writeAtomically()
+        let snapshot = file
+        let url = boardFileURL()
+        var work: DispatchWorkItem!
+        work = DispatchWorkItem {
+            guard !work.isCancelled else { return }
+            do {
+                try Self.write(snapshot, to: url)
+            } catch {
+                #if DEBUG
+                print("TaskBoardStore.scheduleSave write failed: \(error)")
+                #endif
+            }
         }
         saveDebounce = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self, weak work] in
+            guard let self, let work, !work.isCancelled else { return }
+            self.saveQueue.async(execute: work)
+        }
     }
 
     // MARK: - Internal mutators (TaskLifecycleCoordinator only)
@@ -130,7 +135,10 @@ public final class TaskBoardStore: ObservableObject {
     // MARK: - Persistence helpers
 
     private func writeAtomically() throws {
-        let url = boardFileURL()
+        try Self.write(file, to: boardFileURL())
+    }
+
+    private static func write(_ file: TaskBoardFile, to url: URL) throws {
         let dir = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
@@ -173,7 +181,6 @@ public final class TaskBoardStore: ObservableObject {
                         provisionState: task.provisionState,
                         workspaceId: task.workspaceId,
                         branch: task.branch,
-                        agentCount: agentCounts[task.id] ?? 0,
                         hasTicket: false, // v2 — Jira projection
                         worktreePath: task.worktreePath
                     )

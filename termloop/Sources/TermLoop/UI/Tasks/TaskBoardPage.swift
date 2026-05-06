@@ -29,6 +29,7 @@ struct TaskBoardPage<TerminalContent: View>: View {
                             selection: selection,
                             coordinator: coordinator,
                             agentStatusesByTaskId: agentStatusesByTaskId,
+                            workItemsByTaskId: workItemsByTaskId,
                             onSelect: selectFromBoard
                         )
                     },
@@ -40,6 +41,7 @@ struct TaskBoardPage<TerminalContent: View>: View {
                     selection: selection,
                     coordinator: coordinator,
                     agentStatusesByTaskId: agentStatusesByTaskId,
+                    workItemsByTaskId: workItemsByTaskId,
                     onSelect: selectFromBoard
                 )
             }
@@ -55,9 +57,18 @@ struct TaskBoardPage<TerminalContent: View>: View {
     }
 
     private var agentStatusesByTaskId: [UUID: TaskAgentStatusSummary] {
+        // Intentional subscription reads: the projection is derived on-demand
+        // from shared workspace/agent stores instead of persisting telemetry in Tasks.
         _ = metadataStore
         _ = activityStore
         return TaskAgentProjectionBuilder.statusSummaries(for: store.fileSnapshot().tasks)
+    }
+
+    private var workItemsByTaskId: [UUID: TaskWorkItemSnapshot] {
+        // Same projection-only pattern as agent status: work item bindings
+        // stay owned by the reported-state store, Tasks just renders them.
+        _ = metadataStore
+        return TaskWorkItemProjectionBuilder.snapshots(for: store.fileSnapshot().tasks)
     }
 
     private func syncSelectionValidity() {
@@ -108,6 +119,7 @@ private struct TaskBoardCanvas: View {
     @ObservedObject var selection: TaskSelectionStore
     var coordinator: TaskLifecycleCoordinator?
     let agentStatusesByTaskId: [UUID: TaskAgentStatusSummary]
+    let workItemsByTaskId: [UUID: TaskWorkItemSnapshot]
     var onSelect: ((TaskCardSummary) -> Void)?
 
     var body: some View {
@@ -124,6 +136,7 @@ private struct TaskBoardCanvas: View {
                             snapshot: snapshot,
                             selection: selection,
                             agentStatusesByTaskId: agentStatusesByTaskId,
+                            workItemsByTaskId: workItemsByTaskId,
                             onMove: coordinator.map { c in
                                 { taskId, target in
                                     _Concurrency.Task { @MainActor in

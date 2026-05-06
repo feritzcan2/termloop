@@ -147,6 +147,8 @@ struct TaskBranchesSection: View {
     }
 
     private var currentAgentRows: [AgentRowPresentationSnapshot] {
+        // Intentional subscription reads: rows reuse Loop's live agent
+        // presentation while this section stays projection-only.
         _ = metadataStore
         _ = activityStore
         return TaskAgentProjectionBuilder.agentRowSnapshots(

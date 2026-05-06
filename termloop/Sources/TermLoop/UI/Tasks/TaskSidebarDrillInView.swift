@@ -31,6 +31,12 @@ struct TaskSidebarDrillInView: View {
                     )
                 }
                 sidebarSection {
+                    TaskWorkItemSection(
+                        workspaceId: detailSnapshot.workspaceId,
+                        worktreePath: detailSnapshot.worktreePath
+                    )
+                }
+                sidebarSection {
                     TaskGitChangesSection(
                         workspaceId: detailSnapshot.workspaceId,
                         worktreePath: detailSnapshot.worktreePath,
@@ -121,6 +127,8 @@ struct TaskSidebarDrillInView: View {
     }
 
     private func agentStatus(for snap: TaskDetailSnapshot) -> TaskAgentStatusSummary? {
+        // Intentional subscription reads: the header mirrors live Loop agent
+        // status while Tasks remains a projection-only consumer.
         _ = metadataStore
         _ = activityStore
         return TaskAgentProjectionBuilder.statusSummary(
