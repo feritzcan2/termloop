@@ -26,4 +26,13 @@ enum TermLoopSidebarTab: String, CaseIterable, Identifiable {
                           defaultValue: "PLAN", table: "TermLoop")
         }
     }
+
+    /// Restore from UserDefaults with fallback to `.work` for unknown raw values.
+    static func restore(from defaults: UserDefaults = .standard) -> TermLoopSidebarTab {
+        guard let raw = defaults.string(forKey: storageKey),
+              let value = TermLoopSidebarTab(rawValue: raw) else {
+            return .work
+        }
+        return value
+    }
 }
