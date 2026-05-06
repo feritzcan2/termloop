@@ -10,6 +10,19 @@ struct TaskSidebarRouter: View {
     @ObservedObject var store: TaskBoardStore
     @ObservedObject var selection: TaskSelectionStore
     var coordinator: TaskLifecycleCoordinator?
+    @StateObject private var remoteSync: TaskRemoteSyncCoordinator
+    @State private var isShowingSettings = false
+
+    init(
+        store: TaskBoardStore,
+        selection: TaskSelectionStore,
+        coordinator: TaskLifecycleCoordinator?
+    ) {
+        self.store = store
+        self.selection = selection
+        self.coordinator = coordinator
+        _remoteSync = StateObject(wrappedValue: TaskRemoteSyncCoordinator(store: store))
+    }
 
     var body: some View {
         routedBody
@@ -19,13 +32,20 @@ struct TaskSidebarRouter: View {
 
     @ViewBuilder
     private var routedBody: some View {
-        if let detailSnapshot = TaskAgentProjectionBuilder.detailSnapshot(
+        if isShowingSettings {
+            TaskSettingsSidebarView(
+                remoteSync: remoteSync,
+                onBack: { isShowingSettings = false }
+            )
+        } else if let detailSnapshot = TaskAgentProjectionBuilder.detailSnapshot(
             in: store,
             selectedTaskId: selection.selectedTaskId
         ) {
             TaskSidebarDrillInView(
                 detailSnapshot: detailSnapshot,
                 selection: selection,
+                remoteSync: remoteSync,
+                columnTitle: { store.columnTitle(for: $0) },
                 onRebind: coordinator.map { c in
                     { id in
                         _Concurrency.Task { @MainActor in
@@ -33,6 +53,7 @@ struct TaskSidebarRouter: View {
                         }
                     }
                 },
+                onOpenSettings: { isShowingSettings = true },
                 onUnbind: coordinator.map { c in
                     { id in try? c.unbindWorktree(taskId: id) }
                 },
@@ -50,7 +71,8 @@ struct TaskSidebarRouter: View {
                                            defaultValue: "Untitled task", table: "TermLoop")
                         return try? c.createTask(title: title, columnId: columnId)
                     }
-                }
+                },
+                onOpenSettings: { isShowingSettings = true }
             )
         }
     }
