@@ -4,7 +4,7 @@
 import AppKit
 import Foundation
 
-public struct TaskRemoteJiraAccountOption: Identifiable, Equatable, Sendable {
+public struct TaskRemoteJiraAccountOption: Identifiable, Codable, Equatable, Sendable {
     public let id: String
     public let site: String
     public let email: String?
@@ -40,7 +40,7 @@ public struct TaskRemoteJiraAccountOption: Identifiable, Equatable, Sendable {
     }
 }
 
-public struct TaskRemoteProjectOption: Identifiable, Equatable, Sendable {
+public struct TaskRemoteContainerOption: Identifiable, Codable, Equatable, Sendable {
     public let id: String
     public let key: String
     public let name: String
@@ -60,7 +60,7 @@ private extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
-public struct TaskRemoteStatusOption: Identifiable, Equatable, Sendable {
+public struct TaskRemoteStatusOption: Identifiable, Codable, Equatable, Sendable {
     public let id: String
     public let label: String
 
@@ -71,19 +71,63 @@ public struct TaskRemoteStatusOption: Identifiable, Equatable, Sendable {
     }
 }
 
+public struct TaskRemoteCLIStatus: Equatable, Sendable {
+    public let provider: RemoteWorkItemProviderId
+    public let executable: String
+    public let isChecking: Bool
+    public let isAvailable: Bool
+    public let summary: String
+    public let detail: String?
+    public let checkedAt: Date?
+
+    public init(
+        provider: RemoteWorkItemProviderId,
+        executable: String,
+        isChecking: Bool = false,
+        isAvailable: Bool = false,
+        summary: String,
+        detail: String? = nil,
+        checkedAt: Date? = nil
+    ) {
+        self.provider = provider
+        self.executable = executable
+        self.isChecking = isChecking
+        self.isAvailable = isAvailable
+        self.summary = summary
+        self.detail = detail
+        self.checkedAt = checkedAt
+    }
+}
+
+private struct TaskRemoteMetadataCacheEntry<Value: Codable>: Codable {
+    var value: Value
+    var updatedAt: Date
+}
+
+private struct TaskRemoteMetadataCacheFile: Codable {
+    var jiraAccounts: TaskRemoteMetadataCacheEntry<[TaskRemoteJiraAccountOption]>?
+    var containers: [String: TaskRemoteMetadataCacheEntry<[TaskRemoteContainerOption]>] = [:]
+    var statuses: [String: TaskRemoteMetadataCacheEntry<[String]>] = [:]
+}
+
 @MainActor
 public final class TaskRemoteSyncCoordinator: ObservableObject {
     @Published public private(set) var isSyncing: Bool = false
     @Published public private(set) var isLoadingJiraAccounts: Bool = false
-    @Published public private(set) var isLoadingProjects: Bool = false
+    @Published public private(set) var isLoadingContainers: Bool = false
     @Published public private(set) var isLoadingStatuses: Bool = false
     @Published public private(set) var jiraAccountOptions: [TaskRemoteJiraAccountOption] = []
-    @Published public private(set) var projectOptions: [TaskRemoteProjectOption] = []
+    @Published public private(set) var containerOptions: [TaskRemoteContainerOption] = []
     @Published public private(set) var remoteStatusOptions: [TaskRemoteStatusOption] = []
+    @Published public private(set) var cliStatuses: [RemoteWorkItemProviderId: TaskRemoteCLIStatus] = [:]
+    @Published public private(set) var jiraAccountsCachedAt: Date?
+    @Published public private(set) var containerOptionsCachedAt: Date?
+    @Published public private(set) var remoteStatusOptionsCachedAt: Date?
     @Published public private(set) var lastMessage: String?
 
     private let store: TaskBoardStore
     private var syncTask: Task<Void, Never>?
+    private var cliStatusTask: Task<Void, Never>?
     private var syncColumnsAfterLoadingStatuses = false
 
     public init(store: TaskBoardStore) {
@@ -92,6 +136,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
 
     deinit {
         syncTask?.cancel()
+        cliStatusTask?.cancel()
     }
 
     public var settings: TaskRemoteSyncSettings {
@@ -120,6 +165,68 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         store.columnHasActiveTasks(columnId)
     }
 
+    public func prepareRemoteSettings() {
+        hydrateRemoteMetadataFromCache()
+        loadCLIStatusesIfNeeded()
+        if jiraAccountOptions.isEmpty {
+            let localOptions = Self.parseJiraAccountsConfig()
+            if !localOptions.isEmpty {
+                jiraAccountOptions = localOptions
+                applyDefaultJiraAccountIfNeeded(localOptions)
+                persistJiraAccountsToCache(localOptions)
+            }
+        }
+        syncIfEnabledOnAppear()
+    }
+
+    public func cliStatus(for provider: RemoteWorkItemProviderId) -> TaskRemoteCLIStatus {
+        cliStatuses[provider] ?? TaskRemoteCLIStatus(
+            provider: provider,
+            executable: Self.cliExecutable(for: provider),
+            summary: String(localized: "tasks.settings.remote.cli.notChecked",
+                            defaultValue: "Not checked",
+                            table: "TermLoop")
+        )
+    }
+
+    public func cliSetupHint(for provider: RemoteWorkItemProviderId) -> String {
+        switch provider {
+        case .jira:
+            return String(localized: "tasks.settings.remote.cli.hint.jira",
+                          defaultValue: "Install/log in with Atlassian CLI, then run `acli jira auth status` to verify.",
+                          table: "TermLoop")
+        case .github:
+            return String(localized: "tasks.settings.remote.cli.hint.github",
+                          defaultValue: "Install GitHub CLI and run `gh auth login`; repo sync uses `gh issue` commands.",
+                          table: "TermLoop")
+        case .gitlab:
+            return String(localized: "tasks.settings.remote.cli.hint.gitlab",
+                          defaultValue: "Install GitLab CLI and run `glab auth login`; project sync uses `glab issue` commands.",
+                          table: "TermLoop")
+        }
+    }
+
+    public func setProvider(_ provider: RemoteWorkItemProviderId) {
+        let oldProvider = settings.provider
+        guard oldProvider != provider else { return }
+        do {
+            try store.updateSettings { settings in
+                if let currentContainer = settings.remoteSync.container?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .nilIfEmpty {
+                    settings.remoteSync.providerContainers[oldProvider] = currentContainer
+                }
+                settings.remoteSync.provider = provider
+                settings.remoteSync.container = settings.remoteSync.providerContainers[provider]
+                settings.remoteSync.lastError = nil
+            }
+            objectWillChange.send()
+            hydrateRemoteMetadataFromCache()
+        } catch {
+            lastMessage = String(describing: error)
+        }
+    }
+
     public func setSyncAssignedToMe(_ enabled: Bool) {
         do {
             try store.updateSettings { settings in
@@ -141,11 +248,17 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         do {
             try store.updateSettings { settings in
                 let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                settings.remoteSync.container = trimmed.isEmpty ? nil : trimmed
+                let container = trimmed.isEmpty ? nil : trimmed
+                settings.remoteSync.container = container
+                if let container {
+                    settings.remoteSync.providerContainers[settings.remoteSync.provider] = container
+                } else {
+                    settings.remoteSync.providerContainers.removeValue(forKey: settings.remoteSync.provider)
+                }
                 settings.remoteSync.lastError = nil
             }
             objectWillChange.send()
-            remoteStatusOptions = []
+            hydrateRemoteMetadataFromCache()
         } catch {
             lastMessage = String(describing: error)
         }
@@ -158,8 +271,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 settings.remoteSync.lastError = nil
             }
             objectWillChange.send()
-            projectOptions = []
-            remoteStatusOptions = []
+            hydrateRemoteMetadataFromCache()
         } catch {
             lastMessage = String(describing: error)
         }
@@ -174,8 +286,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 settings.remoteSync.lastError = nil
             }
             objectWillChange.send()
-            projectOptions = []
-            remoteStatusOptions = []
+            hydrateRemoteMetadataFromCache()
         } catch {
             lastMessage = String(describing: error)
         }
@@ -190,8 +301,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 settings.remoteSync.lastError = nil
             }
             objectWillChange.send()
-            projectOptions = []
-            remoteStatusOptions = []
+            hydrateRemoteMetadataFromCache()
         } catch {
             lastMessage = String(describing: error)
         }
@@ -298,7 +408,15 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
 
     public func loadJiraAccountOptionsIfNeeded() {
         guard jiraAccountOptions.isEmpty else { return }
-        loadJiraAccountOptions()
+        if let cached = readMetadataCache().jiraAccounts?.value, !cached.isEmpty {
+            jiraAccountOptions = cached
+            return
+        }
+        let localOptions = Self.parseJiraAccountsConfig()
+        if !localOptions.isEmpty {
+            jiraAccountOptions = localOptions
+            persistJiraAccountsToCache(localOptions)
+        }
     }
 
     public func loadJiraAccountOptions() {
@@ -310,85 +428,38 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 self?.jiraAccountOptions = options
                 self?.isLoadingJiraAccounts = false
                 self?.applyDefaultJiraAccountIfNeeded(options)
+                self?.persistJiraAccountsToCache(options)
             }
         }
     }
 
-    public func loadProjectOptionsIfNeeded() {
-        guard projectOptions.isEmpty else { return }
-        loadProjectOptions()
+    public func loadContainerOptionsIfNeeded() {
+        guard containerOptions.isEmpty else { return }
+        hydrateRemoteMetadataFromCache()
     }
 
     public func loadRemoteStatusOptionsIfNeeded() {
         guard remoteStatusOptions.isEmpty else { return }
-        loadRemoteStatusOptions()
+        hydrateRemoteMetadataFromCache()
     }
 
-    public func loadProjectOptions() {
-        guard !isLoadingProjects else { return }
-        isLoadingProjects = true
+    public func loadContainerOptions() {
+        guard !isLoadingContainers else { return }
+        isLoadingContainers = true
         let syncSettings = settings
         Task(priority: .utility) { [weak self] in
             do {
-                let result = try await Self.runAcliJira(
-                    settings: syncSettings,
-                    arguments: ["jira", "project", "list", "--limit", "100", "--json"],
-                    timeout: 20
-                )
-                guard result.exitStatus == 0, !result.timedOut else {
-                    throw RemoteWorkItemError.commandFailed(Self.commandFailureMessage(
-                        result,
-                        fallback: "Jira project list is unavailable. Enter the project key manually; sync can still work."
-                    ))
-                }
-                let options = try Self.parseProjectOptions(result.stdout)
+                let options = try await Self.fetchContainerOptions(settings: syncSettings)
                 await MainActor.run {
-                    self?.projectOptions = options
-                    self?.isLoadingProjects = false
+                    self?.containerOptions = options
+                    self?.isLoadingContainers = false
+                    self?.persistContainerOptionsToCache(options, settings: syncSettings)
                 }
             } catch {
-                let projectListError = Self.humanError(error)
-                do {
-                    let fallback = try await Self.runAcliJira(
-                        settings: syncSettings,
-                        arguments: [
-                            "jira", "workitem", "search",
-                            "--jql", "assignee = currentUser() ORDER BY updated DESC",
-                            "--limit", "100",
-                            "--fields", "key,summary",
-                            "--json"
-                        ],
-                        timeout: 20
-                    )
-                    guard fallback.exitStatus == 0, !fallback.timedOut else {
-                        throw RemoteWorkItemError.commandFailed(Self.commandFailureMessage(
-                            fallback,
-                            fallback: "Could not list assigned Jira work items."
-                        ))
-                    }
-                    let options = try Self.parseProjectOptionsFromWorkItems(fallback.stdout)
-                    await MainActor.run {
-                        self?.projectOptions = options
-                        self?.isLoadingProjects = false
-                        self?.lastMessage = options.isEmpty
-                            ? String(
-                                localized: "tasks.settings.jiraProject.listUnavailableWithReason",
-                                defaultValue: "Jira project list is unavailable: \(projectListError)",
-                                table: "TermLoop"
-                            )
-                            : nil
-                    }
-                } catch {
-                    let fallbackError = Self.humanError(error)
-                    await MainActor.run {
-                        self?.projectOptions = []
-                        self?.isLoadingProjects = false
-                        self?.lastMessage = String(
-                            localized: "tasks.settings.jiraProject.listUnavailableWithReason",
-                            defaultValue: "Jira project list is unavailable: \(projectListError). Fallback also failed: \(fallbackError)",
-                            table: "TermLoop"
-                        )
-                    }
+                await MainActor.run {
+                    self?.containerOptions = []
+                    self?.isLoadingContainers = false
+                    self?.lastMessage = Self.humanError(error)
                 }
             }
         }
@@ -398,45 +469,21 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         guard !isLoadingStatuses else { return }
         isLoadingStatuses = true
         let syncSettings = settings
-        let selectedProject = syncSettings.container?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let jql: String
-        if let selectedProject, !selectedProject.isEmpty {
-            jql = "project = \(selectedProject) ORDER BY updated DESC"
-        } else {
-            jql = "assignee = currentUser() ORDER BY updated DESC"
-        }
         Task(priority: .utility) { [weak self] in
             do {
-                let result = try await Self.runAcliJira(
-                    settings: syncSettings,
-                    arguments: [
-                        "jira", "workitem", "search",
-                        "--jql", jql,
-                        "--limit", "100",
-                        "--fields", "status",
-                        "--json"
-                    ],
-                    timeout: 20
-                )
-                guard result.exitStatus == 0, !result.timedOut else {
-                    throw RemoteWorkItemError.commandFailed(
-                        result.stderr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            ? "Could not list Jira statuses."
-                            : result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-                    )
-                }
-                let labels = try Self.parseStatusLabels(result.stdout)
+                let labels = try await Self.fetchRemoteStatusLabels(settings: syncSettings)
                 await MainActor.run {
                     self?.remoteStatusOptions = labels.map(TaskRemoteStatusOption.init)
                     self?.isLoadingStatuses = false
+                    self?.persistStatusLabelsToCache(labels, settings: syncSettings)
                     self?.syncPendingColumnsIfNeeded(labels)
                 }
             } catch {
                 await MainActor.run {
-                    let labels = Self.defaultJiraStatuses
+                    let labels = Self.defaultStatusLabels(for: syncSettings.provider)
                     self?.remoteStatusOptions = labels.map(TaskRemoteStatusOption.init)
                     self?.isLoadingStatuses = false
-                    self?.lastMessage = String(describing: error)
+                    self?.lastMessage = Self.humanError(error)
                     self?.syncPendingColumnsIfNeeded(labels)
                 }
             }
@@ -959,6 +1006,174 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
     }
 
+    private func hydrateRemoteMetadataFromCache() {
+        let cache = readMetadataCache()
+        if let accountEntry = cache.jiraAccounts, !accountEntry.value.isEmpty {
+            jiraAccountOptions = accountEntry.value
+            jiraAccountsCachedAt = accountEntry.updatedAt
+        }
+        let containerEntry = cache.containers[Self.containerCacheKey(settings)]
+        containerOptions = containerEntry?.value ?? []
+        containerOptionsCachedAt = containerEntry?.updatedAt
+        if let statusEntry = cache.statuses[Self.statusCacheKey(settings)] {
+            remoteStatusOptions = statusEntry.value.map(TaskRemoteStatusOption.init)
+            remoteStatusOptionsCachedAt = statusEntry.updatedAt
+        } else if settings.provider != .jira {
+            remoteStatusOptions = Self.defaultStatusLabels(for: settings.provider).map(TaskRemoteStatusOption.init)
+            remoteStatusOptionsCachedAt = nil
+        } else {
+            remoteStatusOptions = []
+            remoteStatusOptionsCachedAt = nil
+        }
+    }
+
+    private func persistJiraAccountsToCache(_ options: [TaskRemoteJiraAccountOption]) {
+        var cache = readMetadataCache()
+        let now = Date()
+        cache.jiraAccounts = TaskRemoteMetadataCacheEntry(value: options, updatedAt: now)
+        writeMetadataCache(cache)
+        jiraAccountsCachedAt = now
+    }
+
+    private func persistContainerOptionsToCache(_ options: [TaskRemoteContainerOption], settings: TaskRemoteSyncSettings) {
+        var cache = readMetadataCache()
+        let now = Date()
+        cache.containers[Self.containerCacheKey(settings)] = TaskRemoteMetadataCacheEntry(value: options, updatedAt: now)
+        writeMetadataCache(cache)
+        if Self.containerCacheKey(settings) == Self.containerCacheKey(self.settings) {
+            containerOptionsCachedAt = now
+        }
+    }
+
+    private func persistStatusLabelsToCache(_ labels: [String], settings: TaskRemoteSyncSettings) {
+        var cache = readMetadataCache()
+        let now = Date()
+        cache.statuses[Self.statusCacheKey(settings)] = TaskRemoteMetadataCacheEntry(value: labels, updatedAt: now)
+        writeMetadataCache(cache)
+        if Self.statusCacheKey(settings) == Self.statusCacheKey(self.settings) {
+            remoteStatusOptionsCachedAt = now
+        }
+    }
+
+    private func readMetadataCache() -> TaskRemoteMetadataCacheFile {
+        guard let data = try? Data(contentsOf: metadataCacheURL()),
+              let cache = try? JSONDecoder.tasks.decode(TaskRemoteMetadataCacheFile.self, from: data) else {
+            return TaskRemoteMetadataCacheFile()
+        }
+        return cache
+    }
+
+    private func writeMetadataCache(_ cache: TaskRemoteMetadataCacheFile) {
+        let url = metadataCacheURL()
+        do {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let data = try JSONEncoder.tasks.encode(cache)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            #if DEBUG
+            print("Task remote metadata cache write failed: \(error)")
+            #endif
+        }
+    }
+
+    private func metadataCacheURL() -> URL {
+        store.projectRoot.appendingPathComponent(".termloop/remote-work-items-cache.json")
+    }
+
+    private static func containerCacheKey(_ settings: TaskRemoteSyncSettings) -> String {
+        [settings.provider.rawValue, settings.jiraSite ?? "", settings.jiraEmail ?? ""]
+            .joined(separator: "|")
+    }
+
+    private static func statusCacheKey(_ settings: TaskRemoteSyncSettings) -> String {
+        [containerCacheKey(settings), settings.container ?? ""].joined(separator: "|")
+    }
+
+    public func loadCLIStatusesIfNeeded() {
+        guard cliStatuses.count < RemoteWorkItemProviderId.allCases.count else { return }
+        loadCLIStatuses()
+    }
+
+    public func loadCLIStatuses() {
+        cliStatusTask?.cancel()
+        for provider in RemoteWorkItemProviderId.allCases {
+            cliStatuses[provider] = TaskRemoteCLIStatus(
+                provider: provider,
+                executable: Self.cliExecutable(for: provider),
+                isChecking: true,
+                isAvailable: cliStatuses[provider]?.isAvailable ?? false,
+                summary: String(localized: "tasks.settings.remote.cli.checking",
+                                defaultValue: "Checking…",
+                                table: "TermLoop"),
+                detail: cliStatuses[provider]?.detail,
+                checkedAt: cliStatuses[provider]?.checkedAt
+            )
+        }
+        cliStatusTask = Task(priority: .utility) { [weak self] in
+            for provider in RemoteWorkItemProviderId.allCases {
+                let status = await Self.probeCLIStatus(provider)
+                await MainActor.run {
+                    self?.cliStatuses[provider] = status
+                }
+            }
+        }
+    }
+
+    private static func probeCLIStatus(_ provider: RemoteWorkItemProviderId) async -> TaskRemoteCLIStatus {
+        let executable = cliExecutable(for: provider)
+        do {
+            let result = try await RemoteWorkItemCommandRunner.shared.run(
+                executable: executable,
+                arguments: ["--version"],
+                cwd: nil,
+                timeout: 4
+            )
+            let output = (result.stdout + "\n" + result.stderr)
+                .split(separator: "\n")
+                .map(String.init)
+                .first?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard result.exitStatus == 0, !result.timedOut else {
+                return TaskRemoteCLIStatus(
+                    provider: provider,
+                    executable: executable,
+                    isAvailable: false,
+                    summary: "\(executable) unavailable",
+                    detail: commandFailureMessage(result, fallback: "Version check failed."),
+                    checkedAt: Date()
+                )
+            }
+            return TaskRemoteCLIStatus(
+                provider: provider,
+                executable: executable,
+                isAvailable: true,
+                summary: "\(executable) ready",
+                detail: output,
+                checkedAt: Date()
+            )
+        } catch {
+            return TaskRemoteCLIStatus(
+                provider: provider,
+                executable: executable,
+                isAvailable: false,
+                summary: "\(executable) not found",
+                detail: humanError(error),
+                checkedAt: Date()
+            )
+        }
+    }
+
+    private static func cliExecutable(for provider: RemoteWorkItemProviderId) -> String {
+        switch provider {
+        case .jira: return "acli"
+        case .github: return "gh"
+        case .gitlab: return "glab"
+        }
+    }
+
     private static func makeRemoteWorkItemService(settings: TaskRemoteSyncSettings) -> RemoteWorkItemService {
         RemoteWorkItemService(
             providers: [
@@ -970,6 +1185,150 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 GitLabRemoteWorkItemProvider()
             ]
         )
+    }
+
+    private static func fetchContainerOptions(settings: TaskRemoteSyncSettings) async throws -> [TaskRemoteContainerOption] {
+        switch settings.provider {
+        case .jira:
+            do {
+                let result = try await runAcliJira(
+                    settings: settings,
+                    arguments: ["jira", "project", "list", "--limit", "100", "--json"],
+                    timeout: 20
+                )
+                guard result.exitStatus == 0, !result.timedOut else {
+                    throw RemoteWorkItemError.commandFailed(commandFailureMessage(
+                        result,
+                        fallback: "Jira project list is unavailable. Enter the project key manually; sync can still work."
+                    ))
+                }
+                return try parseProjectOptions(result.stdout)
+            } catch {
+                let projectListError = humanError(error)
+                let fallback = try await runAcliJira(
+                    settings: settings,
+                    arguments: [
+                        "jira", "workitem", "search",
+                        "--jql", "assignee = currentUser() ORDER BY updated DESC",
+                        "--limit", "100",
+                        "--fields", "key,summary",
+                        "--json"
+                    ],
+                    timeout: 20
+                )
+                guard fallback.exitStatus == 0, !fallback.timedOut else {
+                    let fallbackError = commandFailureMessage(fallback, fallback: "Could not list assigned Jira work items.")
+                    throw RemoteWorkItemError.commandFailed("Jira project list is unavailable: \(projectListError). Fallback also failed: \(fallbackError)")
+                }
+                let options = try parseProjectOptionsFromWorkItems(fallback.stdout)
+                if options.isEmpty {
+                    throw RemoteWorkItemError.commandFailed("Jira project list is unavailable: \(projectListError)")
+                }
+                return options
+            }
+        case .github:
+            let result = try await RemoteWorkItemCommandRunner.shared.run(
+                executable: "gh",
+                arguments: ["repo", "list", "--limit", "100", "--json", "nameWithOwner,name"],
+                cwd: nil,
+                timeout: 20
+            )
+            guard result.exitStatus == 0, !result.timedOut else {
+                throw RemoteWorkItemError.commandFailed(commandFailureMessage(result, fallback: "Could not list GitHub repositories."))
+            }
+            return try parseRepositoryOptions(result.stdout)
+        case .gitlab:
+            let result = try await RemoteWorkItemCommandRunner.shared.run(
+                executable: "glab",
+                arguments: ["repo", "list", "--per-page", "100", "--output", "json"],
+                cwd: nil,
+                timeout: 20
+            )
+            guard result.exitStatus == 0, !result.timedOut else {
+                throw RemoteWorkItemError.commandFailed(commandFailureMessage(result, fallback: "Could not list GitLab projects. Enter group/project manually."))
+            }
+            return try parseRepositoryOptions(result.stdout)
+        }
+    }
+
+    private static func fetchRemoteStatusLabels(settings: TaskRemoteSyncSettings) async throws -> [String] {
+        switch settings.provider {
+        case .jira:
+            let selectedProject = settings.container?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let jql: String
+            if let selectedProject, !selectedProject.isEmpty {
+                jql = "project = \(selectedProject) ORDER BY updated DESC"
+            } else {
+                jql = "assignee = currentUser() ORDER BY updated DESC"
+            }
+            let result = try await runAcliJira(
+                settings: settings,
+                arguments: [
+                    "jira", "workitem", "search",
+                    "--jql", jql,
+                    "--limit", "100",
+                    "--fields", "status",
+                    "--json"
+                ],
+                timeout: 20
+            )
+            guard result.exitStatus == 0, !result.timedOut else {
+                throw RemoteWorkItemError.commandFailed(commandFailureMessage(result, fallback: "Could not list Jira statuses."))
+            }
+            return try parseStatusLabels(result.stdout)
+        case .github, .gitlab:
+            let container = settings.container?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            guard let container else { return defaultStatusLabels(for: settings.provider) }
+            switch settings.provider {
+            case .github:
+                let result = try await RemoteWorkItemCommandRunner.shared.run(
+                    executable: "gh",
+                    arguments: [
+                        "issue", "list",
+                        "--repo", container,
+                        "--state", "all",
+                        "--limit", "100",
+                        "--json", "state"
+                    ],
+                    cwd: nil,
+                    timeout: 20
+                )
+                guard result.exitStatus == 0, !result.timedOut else {
+                    throw RemoteWorkItemError.commandFailed(commandFailureMessage(result, fallback: "Could not list GitHub issue states."))
+                }
+                return try parseStatusLabels(result.stdout, defaultLabels: defaultStatusLabels(for: .github))
+            case .gitlab:
+                let result = try await RemoteWorkItemCommandRunner.shared.run(
+                    executable: "glab",
+                    arguments: [
+                        "issue", "list",
+                        "--repo", container,
+                        "--state", "all",
+                        "--per-page", "100",
+                        "--output", "json"
+                    ],
+                    cwd: nil,
+                    timeout: 20
+                )
+                guard result.exitStatus == 0, !result.timedOut else {
+                    throw RemoteWorkItemError.commandFailed(commandFailureMessage(result, fallback: "Could not list GitLab issue states."))
+                }
+                return try parseStatusLabels(result.stdout, defaultLabels: defaultStatusLabels(for: .gitlab))
+            case .jira:
+                return defaultJiraStatuses
+            }
+        }
+    }
+
+    private static func defaultStatusLabels(for provider: RemoteWorkItemProviderId) -> [String] {
+        switch provider {
+        case .jira:
+            return defaultJiraStatuses
+        case .github:
+            return ["open", "closed"]
+        case .gitlab:
+            return ["opened", "closed"]
+        }
     }
 
     private static func runAcliJira(
@@ -1181,7 +1540,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         return fallback
     }
 
-    private static func parseProjectOptions(_ text: String) throws -> [TaskRemoteProjectOption] {
+    private static func parseProjectOptions(_ text: String) throws -> [TaskRemoteContainerOption] {
         guard let data = text.data(using: .utf8) else {
             throw RemoteWorkItemError.parseFailed("Provider CLI returned non-UTF8 JSON")
         }
@@ -1207,12 +1566,12 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 ?? (project["title"] as? String)
                 ?? key)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            return TaskRemoteProjectOption(key: key, name: name)
+            return TaskRemoteContainerOption(key: key, name: name)
         }
         .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
     }
 
-    private static func parseProjectOptionsFromWorkItems(_ text: String) throws -> [TaskRemoteProjectOption] {
+    private static func parseProjectOptionsFromWorkItems(_ text: String) throws -> [TaskRemoteContainerOption] {
         guard let data = text.data(using: .utf8) else {
             throw RemoteWorkItemError.parseFailed("Provider CLI returned non-UTF8 JSON")
         }
@@ -1246,13 +1605,57 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
 
         return projects
-            .map { TaskRemoteProjectOption(key: $0.key, name: $0.value) }
+            .map { TaskRemoteContainerOption(key: $0.key, name: $0.value) }
             .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
+    }
+
+    private static func parseRepositoryOptions(_ text: String) throws -> [TaskRemoteContainerOption] {
+        guard let data = text.data(using: .utf8) else {
+            throw RemoteWorkItemError.parseFailed("Provider CLI returned non-UTF8 JSON")
+        }
+        let json = try JSONSerialization.jsonObject(with: data)
+        let items: [[String: Any]]
+        if let array = json as? [[String: Any]] {
+            items = array
+        } else if let object = json as? [String: Any] {
+            items = (object["repositories"] as? [[String: Any]])
+                ?? (object["projects"] as? [[String: Any]])
+                ?? (object["values"] as? [[String: Any]])
+                ?? []
+        } else {
+            items = []
+        }
+
+        var seen = Set<String>()
+        return items.compactMap { item in
+            let key = [
+                item["nameWithOwner"] as? String,
+                item["path_with_namespace"] as? String,
+                item["pathWithNamespace"] as? String,
+                item["full_name"] as? String,
+                item["fullName"] as? String,
+                item["name_with_namespace"] as? String
+            ]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
+            .first
+            guard let key, seen.insert(key).inserted else { return nil }
+            let name = [
+                item["name"] as? String,
+                item["description"] as? String
+            ]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
+            .first ?? key
+            return TaskRemoteContainerOption(key: key, name: name)
+        }
+        .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
     }
 
     private static let defaultJiraStatuses = ["To Do", "In Progress", "Done"]
 
-    private static func parseStatusLabels(_ text: String) throws -> [String] {
+    private static func parseStatusLabels(
+        _ text: String,
+        defaultLabels: [String] = defaultJiraStatuses
+    ) throws -> [String] {
         guard let data = text.data(using: .utf8) else {
             throw RemoteWorkItemError.parseFailed("Provider CLI returned non-UTF8 JSON")
         }
@@ -1273,16 +1676,21 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         for item in items {
             let fields = item["fields"] as? [String: Any]
             let status = (fields?["status"] as? [String: Any]) ?? (item["status"] as? [String: Any])
-            let label = ((status?["name"] as? String) ?? (item["status"] as? String))?
+            let label = ((status?["name"] as? String)
+                ?? (item["status"] as? String)
+                ?? (item["state"] as? String))?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let label, !label.isEmpty else { continue }
-            let key = label.lowercased()
+            guard var label, !label.isEmpty else { continue }
+            if label == label.uppercased(), !label.contains(" ") {
+                label = label.lowercased()
+            }
+            let key = label.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).lowercased()
             guard !seen.contains(key) else { continue }
             seen.insert(key)
             labels.append(label)
         }
         if labels.isEmpty {
-            labels = defaultJiraStatuses
+            labels = defaultLabels
         }
         return labels.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
