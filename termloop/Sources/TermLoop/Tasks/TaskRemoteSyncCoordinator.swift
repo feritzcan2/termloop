@@ -120,6 +120,9 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
     @Published public private(set) var containerOptions: [TaskRemoteContainerOption] = []
     @Published public private(set) var remoteStatusOptions: [TaskRemoteStatusOption] = []
     @Published public private(set) var cliStatuses: [RemoteWorkItemProviderId: TaskRemoteCLIStatus] = [:]
+    @Published public private(set) var jiraAccountsCachedAt: Date?
+    @Published public private(set) var containerOptionsCachedAt: Date?
+    @Published public private(set) var remoteStatusOptionsCachedAt: Date?
     @Published public private(set) var lastMessage: String?
 
     private let store: TaskBoardStore
@@ -184,6 +187,23 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                             defaultValue: "Not checked",
                             table: "TermLoop")
         )
+    }
+
+    public func cliSetupHint(for provider: RemoteWorkItemProviderId) -> String {
+        switch provider {
+        case .jira:
+            return String(localized: "tasks.settings.remote.cli.hint.jira",
+                          defaultValue: "Install/log in with Atlassian CLI, then run `acli jira auth status` to verify.",
+                          table: "TermLoop")
+        case .github:
+            return String(localized: "tasks.settings.remote.cli.hint.github",
+                          defaultValue: "Install GitHub CLI and run `gh auth login`; repo sync uses `gh issue` commands.",
+                          table: "TermLoop")
+        case .gitlab:
+            return String(localized: "tasks.settings.remote.cli.hint.gitlab",
+                          defaultValue: "Install GitLab CLI and run `glab auth login`; project sync uses `glab issue` commands.",
+                          table: "TermLoop")
+        }
     }
 
     public func setProvider(_ provider: RemoteWorkItemProviderId) {
@@ -988,35 +1008,51 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
 
     private func hydrateRemoteMetadataFromCache() {
         let cache = readMetadataCache()
-        if let accounts = cache.jiraAccounts?.value, !accounts.isEmpty {
-            jiraAccountOptions = accounts
+        if let accountEntry = cache.jiraAccounts, !accountEntry.value.isEmpty {
+            jiraAccountOptions = accountEntry.value
+            jiraAccountsCachedAt = accountEntry.updatedAt
         }
-        containerOptions = cache.containers[Self.containerCacheKey(settings)]?.value ?? []
-        if let labels = cache.statuses[Self.statusCacheKey(settings)]?.value {
-            remoteStatusOptions = labels.map(TaskRemoteStatusOption.init)
+        let containerEntry = cache.containers[Self.containerCacheKey(settings)]
+        containerOptions = containerEntry?.value ?? []
+        containerOptionsCachedAt = containerEntry?.updatedAt
+        if let statusEntry = cache.statuses[Self.statusCacheKey(settings)] {
+            remoteStatusOptions = statusEntry.value.map(TaskRemoteStatusOption.init)
+            remoteStatusOptionsCachedAt = statusEntry.updatedAt
         } else if settings.provider != .jira {
             remoteStatusOptions = Self.defaultStatusLabels(for: settings.provider).map(TaskRemoteStatusOption.init)
+            remoteStatusOptionsCachedAt = nil
         } else {
             remoteStatusOptions = []
+            remoteStatusOptionsCachedAt = nil
         }
     }
 
     private func persistJiraAccountsToCache(_ options: [TaskRemoteJiraAccountOption]) {
         var cache = readMetadataCache()
-        cache.jiraAccounts = TaskRemoteMetadataCacheEntry(value: options, updatedAt: Date())
+        let now = Date()
+        cache.jiraAccounts = TaskRemoteMetadataCacheEntry(value: options, updatedAt: now)
         writeMetadataCache(cache)
+        jiraAccountsCachedAt = now
     }
 
     private func persistContainerOptionsToCache(_ options: [TaskRemoteContainerOption], settings: TaskRemoteSyncSettings) {
         var cache = readMetadataCache()
-        cache.containers[Self.containerCacheKey(settings)] = TaskRemoteMetadataCacheEntry(value: options, updatedAt: Date())
+        let now = Date()
+        cache.containers[Self.containerCacheKey(settings)] = TaskRemoteMetadataCacheEntry(value: options, updatedAt: now)
         writeMetadataCache(cache)
+        if Self.containerCacheKey(settings) == Self.containerCacheKey(self.settings) {
+            containerOptionsCachedAt = now
+        }
     }
 
     private func persistStatusLabelsToCache(_ labels: [String], settings: TaskRemoteSyncSettings) {
         var cache = readMetadataCache()
-        cache.statuses[Self.statusCacheKey(settings)] = TaskRemoteMetadataCacheEntry(value: labels, updatedAt: Date())
+        let now = Date()
+        cache.statuses[Self.statusCacheKey(settings)] = TaskRemoteMetadataCacheEntry(value: labels, updatedAt: now)
         writeMetadataCache(cache)
+        if Self.statusCacheKey(settings) == Self.statusCacheKey(self.settings) {
+            remoteStatusOptionsCachedAt = now
+        }
     }
 
     private func readMetadataCache() -> TaskRemoteMetadataCacheFile {
@@ -1241,7 +1277,46 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
             }
             return try parseStatusLabels(result.stdout)
         case .github, .gitlab:
-            return defaultStatusLabels(for: settings.provider)
+            let container = settings.container?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            guard let container else { return defaultStatusLabels(for: settings.provider) }
+            switch settings.provider {
+            case .github:
+                let result = try await RemoteWorkItemCommandRunner.shared.run(
+                    executable: "gh",
+                    arguments: [
+                        "issue", "list",
+                        "--repo", container,
+                        "--state", "all",
+                        "--limit", "100",
+                        "--json", "state"
+                    ],
+                    cwd: nil,
+                    timeout: 20
+                )
+                guard result.exitStatus == 0, !result.timedOut else {
+                    throw RemoteWorkItemError.commandFailed(commandFailureMessage(result, fallback: "Could not list GitHub issue states."))
+                }
+                return try parseStatusLabels(result.stdout, defaultLabels: defaultStatusLabels(for: .github))
+            case .gitlab:
+                let result = try await RemoteWorkItemCommandRunner.shared.run(
+                    executable: "glab",
+                    arguments: [
+                        "issue", "list",
+                        "--repo", container,
+                        "--state", "all",
+                        "--per-page", "100",
+                        "--output", "json"
+                    ],
+                    cwd: nil,
+                    timeout: 20
+                )
+                guard result.exitStatus == 0, !result.timedOut else {
+                    throw RemoteWorkItemError.commandFailed(commandFailureMessage(result, fallback: "Could not list GitLab issue states."))
+                }
+                return try parseStatusLabels(result.stdout, defaultLabels: defaultStatusLabels(for: .gitlab))
+            case .jira:
+                return defaultJiraStatuses
+            }
         }
     }
 
@@ -1577,7 +1652,10 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
 
     private static let defaultJiraStatuses = ["To Do", "In Progress", "Done"]
 
-    private static func parseStatusLabels(_ text: String) throws -> [String] {
+    private static func parseStatusLabels(
+        _ text: String,
+        defaultLabels: [String] = defaultJiraStatuses
+    ) throws -> [String] {
         guard let data = text.data(using: .utf8) else {
             throw RemoteWorkItemError.parseFailed("Provider CLI returned non-UTF8 JSON")
         }
@@ -1598,16 +1676,21 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         for item in items {
             let fields = item["fields"] as? [String: Any]
             let status = (fields?["status"] as? [String: Any]) ?? (item["status"] as? [String: Any])
-            let label = ((status?["name"] as? String) ?? (item["status"] as? String))?
+            let label = ((status?["name"] as? String)
+                ?? (item["status"] as? String)
+                ?? (item["state"] as? String))?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let label, !label.isEmpty else { continue }
-            let key = label.lowercased()
+            guard var label, !label.isEmpty else { continue }
+            if label == label.uppercased(), !label.contains(" ") {
+                label = label.lowercased()
+            }
+            let key = label.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).lowercased()
             guard !seen.contains(key) else { continue }
             seen.insert(key)
             labels.append(label)
         }
         if labels.isEmpty {
-            labels = defaultJiraStatuses
+            labels = defaultLabels
         }
         return labels.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
