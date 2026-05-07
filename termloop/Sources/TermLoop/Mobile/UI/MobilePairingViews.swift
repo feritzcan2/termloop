@@ -24,6 +24,7 @@ struct MobilePairingButton: View {
     @State private var status: TermLoopTCPBridge.StatusSnapshot =
         TermLoopTCPBridge.shared.currentStatus()
     @State private var showingSheet = false
+    @State private var bridgeErrorMessage: String?
     private let timer = Timer.publish(
         every: refreshInterval,
         on: .main,
@@ -36,8 +37,9 @@ struct MobilePairingButton: View {
 
     var body: some View {
         Button {
-            enableMobileBridge()
-            showingSheet = true
+            if enableMobileBridge() {
+                showingSheet = true
+            }
         } label: {
             pill
         }
@@ -47,6 +49,14 @@ struct MobilePairingButton: View {
               : "Enable the mobile bridge and show a pairing QR code.")
         .sheet(isPresented: $showingSheet) {
             MobilePairingSheet()
+        }
+        .alert("Mobile bridge unavailable", isPresented: Binding(
+            get: { bridgeErrorMessage != nil },
+            set: { if !$0 { bridgeErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { bridgeErrorMessage = nil }
+        } message: {
+            Text(bridgeErrorMessage ?? "")
         }
         .onReceive(timer) { _ in
             let nextStatus = TermLoopTCPBridge.shared.currentStatus()
@@ -72,12 +82,30 @@ struct MobilePairingButton: View {
         )
     }
 
-    private func enableMobileBridge() {
-        UserDefaults.standard.set(Int(SocketControlSettings.tcpPortDefault),
-                                  forKey: SocketControlSettings.tcpPortDefaultsKey)
-        UserDefaults.standard.set(true, forKey: SocketControlSettings.tcpBindAllDefaultsKey)
+    @discardableResult
+    private func enableMobileBridge() -> Bool {
+        if UserDefaults.standard.object(forKey: SocketControlSettings.tcpPortDefaultsKey) == nil {
+            UserDefaults.standard.set(Int(SocketControlSettings.tcpPortDefault),
+                                      forKey: SocketControlSettings.tcpPortDefaultsKey)
+        }
+        if UserDefaults.standard.object(forKey: SocketControlSettings.tcpBindAllDefaultsKey) == nil {
+            UserDefaults.standard.set(true, forKey: SocketControlSettings.tcpBindAllDefaultsKey)
+        }
         UserDefaults.standard.set(SocketControlMode.password.rawValue,
                                   forKey: SocketControlSettings.appStorageKey)
+
+        let desiredPort = SocketControlSettings.resolvedTcpPort()
+            ?? SocketControlSettings.tcpPortDefault
+        let desiredBindHost = SocketControlSettings.resolvedTcpBindHost()
+        let current = TermLoopTCPBridge.shared.currentStatus()
+        if current.isRunning,
+           current.port == desiredPort,
+           current.bindHost == desiredBindHost {
+            status = current
+            bridgeErrorMessage = nil
+            return true
+        }
+
         TerminalController.shared.stop()
         TerminalController.shared.start(
             tabManager: tabManager,
@@ -86,6 +114,17 @@ struct MobilePairingButton: View {
         )
         TermLoopTCPBridge.shared.reload()
         status = TermLoopTCPBridge.shared.currentStatus()
+        guard status.isRunning else {
+            let configuredPort = SocketControlSettings.resolvedTcpPort()
+                ?? SocketControlSettings.tcpPortDefault
+            bridgeErrorMessage = """
+            Could not bind the mobile bridge to \(SocketControlSettings.resolvedTcpBindHost()):\(configuredPort).
+            Another tagged TermLoop build may already be using that port. I did not force-take it; close the other build or choose a different TCP port before pairing.
+            """
+            return false
+        }
+        bridgeErrorMessage = nil
+        return true
     }
 }
 
