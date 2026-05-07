@@ -12,6 +12,7 @@
 		B72E4A9C1D5F6308E2A4C931 /* TaskWorkItemSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72E4A9C1D5F6308E2A4C932 /* TaskWorkItemSection.swift */; };
 		D0TASK000000000000000101 /* TaskMarkdownFileWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0TASK000000000000000102 /* TaskMarkdownFileWriter.swift */; };
 		D0TASK000000000000000111 /* TaskRemoteSyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0TASK000000000000000112 /* TaskRemoteSyncCoordinator.swift */; };
+		D0TASK000000000000000131 /* TaskBoardReconcileScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0TASK000000000000000132 /* TaskBoardReconcileScheduler.swift */; };
 		D0TASK000000000000000121 /* TaskSyncSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0TASK000000000000000122 /* TaskSyncSettingsSection.swift */; };
 		ABCD10000000000000000001 /* TaskSelectionStoreProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCD10000000000000000002 /* TaskSelectionStoreProvider.swift */; };
 		002FFEC16193AC6231CEB731 /* VariableSubstitution.swift in Sources */ = {isa = PBXBuildFile; fileRef = 474487A66D69F0FB8B7F9E44 /* VariableSubstitution.swift */; };
@@ -92,6 +93,7 @@
 		5B19B08DA4074410763E3EC6 /* WorktreeChangesSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C5E8498088B19D4A2D70906 /* WorktreeChangesSupport.swift */; };
 		5D7E7D2449A1EDC3B7B96DC1 /* ContextBankMirrorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF965E071F199593E39F3E0D /* ContextBankMirrorSheet.swift */; };
 		600DF23B0DDEA67A3966426C /* TaskBoardStorePersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B41E61446BD98A21D99D5E9A /* TaskBoardStorePersistenceTests.swift */; };
+		ACB10001A6EAC0DE00000001 /* RemoteWorkItemJiraParsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACB10002A6EAC0DE00000001 /* RemoteWorkItemJiraParsingTests.swift */; };
 		613FB6911DAC2075A81A9C04 /* ClaudeProjectFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACF7EA12F6E9F582091F6482 /* ClaudeProjectFiles.swift */; };
 		61A16AA27AC0B26ED58363D9 /* GhCliPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBE74E9A4EED7B866FDFF23E /* GhCliPreset.swift */; };
 		6395D249A400E0F2DE8ABC52 /* TaskBoardImportReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AA4BD925DC6659703695A1C /* TaskBoardImportReconciler.swift */; };
@@ -627,6 +629,7 @@
 		B72E4A9C1D5F6308E2A4C932 /* TaskWorkItemSection.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskWorkItemSection.swift; sourceTree = "<group>"; };
 		D0TASK000000000000000102 /* TaskMarkdownFileWriter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskMarkdownFileWriter.swift; sourceTree = "<group>"; };
 		D0TASK000000000000000112 /* TaskRemoteSyncCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskRemoteSyncCoordinator.swift; sourceTree = "<group>"; };
+		D0TASK000000000000000132 /* TaskBoardReconcileScheduler.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskBoardReconcileScheduler.swift; sourceTree = "<group>"; };
 		D0TASK000000000000000122 /* TaskSyncSettingsSection.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskSyncSettingsSection.swift; sourceTree = "<group>"; };
 		ABCD10000000000000000002 /* TaskSelectionStoreProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskSelectionStoreProvider.swift; sourceTree = "<group>"; };
 		00D7D639B2C644A283D77366 /* BridgeCableView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BridgeCableView.swift; sourceTree = "<group>"; };
@@ -992,6 +995,7 @@
 		B38DC6D2C48FBDF01DBA9AF7 /* TaskBoardReconcileHook.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskBoardReconcileHook.swift; sourceTree = "<group>"; };
 		B4030CF2D97FDF3EE7A60509 /* IntegrationsConfigSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = IntegrationsConfigSheet.swift; sourceTree = "<group>"; };
 		B41E61446BD98A21D99D5E9A /* TaskBoardStorePersistenceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskBoardStorePersistenceTests.swift; sourceTree = "<group>"; };
+		ACB10002A6EAC0DE00000001 /* RemoteWorkItemJiraParsingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteWorkItemJiraParsingTests.swift; sourceTree = "<group>"; };
 		B65E167AA26F7128A1E8285D /* MCPDiscovery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPDiscovery.swift; sourceTree = "<group>"; };
 		B6B1C320E05249A8A320E38A /* ClaudeRunningShimmer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClaudeRunningShimmer.swift; sourceTree = "<group>"; };
 		B8F266256A1A3D9A45BD840F /* SidebarHelpMenuUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarHelpMenuUITests.swift; sourceTree = "<group>"; };
@@ -1332,6 +1336,7 @@
 				77BEE669220AF1E4B211C0B0 /* TaskLifecycleCoordinator.swift */,
 				3AA4BD925DC6659703695A1C /* TaskBoardImportReconciler.swift */,
 				B38DC6D2C48FBDF01DBA9AF7 /* TaskBoardReconcileHook.swift */,
+				D0TASK000000000000000132 /* TaskBoardReconcileScheduler.swift */,
 				D29DB2B552E6AA5B979D0D3D /* TaskBoardStoreProvider.swift */,
 				0B4DEC96D9CA979AD3A41600 /* TaskBoardWorkspaceListingAdapter.swift */,
 				4F7B3D10ABD86A479BF509A3 /* TaskBoardCoordinatorBridge.swift */,
@@ -2117,6 +2122,7 @@
 				1D83D5E7B89DD02D942633A2 /* ProcessGitStateProviderTests.swift */,
 				6FCF8B056DF7E603E553F545 /* AbilityInjectorOverrideTests.swift */,
 				2D686D0016E06B161DBD503D /* QuickActionPreviewViewModelTests.swift */,
+				ACB10002A6EAC0DE00000001 /* RemoteWorkItemJiraParsingTests.swift */,
 				1B55419776DD61B3A22F2E30 /* TaskRankingTests.swift */,
 				B41E61446BD98A21D99D5E9A /* TaskBoardStorePersistenceTests.swift */,
 				D55E14A95F044F0DB8456A01 /* TaskLifecycleCoordinatorTests.swift */,
@@ -2771,6 +2777,7 @@
 				99E4AC98B63D66BCC8B163C2 /* TaskLifecycleCoordinator.swift in Sources */,
 				6395D249A400E0F2DE8ABC52 /* TaskBoardImportReconciler.swift in Sources */,
 				13F57177D03310BBFE9F732A /* TaskBoardReconcileHook.swift in Sources */,
+				D0TASK000000000000000131 /* TaskBoardReconcileScheduler.swift in Sources */,
 				465F0DBE1F6C74FEAB2EF3AE /* TaskBoardStoreProvider.swift in Sources */,
 				AE784569A22BBEB146204E79 /* TaskSelectionStore.swift in Sources */,
 				ABCD10000000000000000001 /* TaskSelectionStoreProvider.swift in Sources */,
@@ -2930,6 +2937,7 @@
 				BF4B1B927F89CB14F0104F99 /* ProcessGitStateProviderTests.swift in Sources */,
 				402793233AA01DC131D05EEC /* AbilityInjectorOverrideTests.swift in Sources */,
 				3E70B7BCA4CAB2A50DA19AB8 /* QuickActionPreviewViewModelTests.swift in Sources */,
+				ACB10001A6EAC0DE00000001 /* RemoteWorkItemJiraParsingTests.swift in Sources */,
 				3F08C42B28C2B37C7B413E44 /* TaskRankingTests.swift in Sources */,
 				600DF23B0DDEA67A3966426C /* TaskBoardStorePersistenceTests.swift in Sources */,
 				EC474E83E4FEA40D26F7D136 /* TaskLifecycleCoordinatorTests.swift in Sources */,

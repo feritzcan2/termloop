@@ -107,6 +107,10 @@ struct TaskSidebarRoot: View {
                 coordinator: TaskLifecycleCoordinator.makeForProject(store: store)
             )
             .id(projectId)
+            .onAppear {
+                TaskBoardReconcileHook.bootstrap()
+                TaskBoardReconcileScheduler.shared.request(projectId: projectId, reason: "taskSidebar.appear")
+            }
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 Text(String(localized: "tasks.sidebar.noProject",

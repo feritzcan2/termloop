@@ -482,6 +482,69 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
         return try await jiraStatusLabels(jql: jql)
     }
 
+    func projectOptions() async throws -> [TaskRemoteContainerOption] {
+        do {
+            let result = try await runAcli(
+                ["jira", "project", "list", "--limit", "100", "--json"],
+                timeout: 20
+            )
+            try remoteValidate(result)
+            return try Self.parseProjectOptions(result.stdout)
+        } catch {
+            let projectListError = remoteHumanError(error)
+            let fallback = try await runAcli(
+                [
+                    "jira", "workitem", "search",
+                    "--jql", "assignee = currentUser() ORDER BY updated DESC",
+                    "--limit", "100",
+                    "--fields", "key,summary",
+                    "--json"
+                ],
+                timeout: 20
+            )
+            do {
+                try remoteValidate(fallback)
+                let options = try Self.parseProjectOptionsFromWorkItems(fallback.stdout)
+                if options.isEmpty {
+                    throw RemoteWorkItemError.commandFailed("Jira project list is unavailable: \(projectListError)")
+                }
+                return options
+            } catch {
+                throw RemoteWorkItemError.commandFailed(
+                    "Jira project list is unavailable: \(projectListError). Fallback also failed: \(remoteHumanError(error))"
+                )
+            }
+        }
+    }
+
+    static func configuredAccounts() -> [TaskRemoteJiraAccountOption] {
+        let environment = ProcessInfo.processInfo.environment
+        let configRoot = environment["XDG_CONFIG_HOME"].flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
+            .map(URL.init(fileURLWithPath:))
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config")
+        let url = configRoot.appendingPathComponent("acli/jira_config.yaml")
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        return parseAccountsConfig(text)
+    }
+
+    static func discoverAccounts(
+        runner: any RemoteWorkItemCommandRunning = RemoteWorkItemCommandRunner.shared
+    ) async -> [TaskRemoteJiraAccountOption] {
+        var options = configuredAccounts()
+        if options.isEmpty,
+           let status = try? await runner.run(
+               executable: "acli",
+               arguments: ["jira", "auth", "status"],
+               cwd: nil,
+               timeout: 8
+           ),
+           status.exitStatus == 0,
+           let option = parseAuthStatus(status.stdout + "\n" + status.stderr) {
+            options = [option]
+        }
+        return uniqueAccounts(options)
+    }
+
     func updateStatus(_ reference: RemoteWorkItemReference, to status: RemoteWorkItemStatusOption) async throws -> RemoteWorkItemSnapshot {
         let target = status.providerPayload["targetStatusLabel"] ?? status.targetState ?? status.label
         let result = try await runAcli(["jira", "workitem", "transition", "--key", reference.key, "--status", target, "--yes", "--json"], timeout: 20)
@@ -512,6 +575,136 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
         )
         try remoteValidate(result)
         return remoteParseStatusLabelsCSV(result.stdout, defaultLabels: [])
+    }
+
+    static func parseAccountsConfig(_ text: String) -> [TaskRemoteJiraAccountOption] {
+        let currentProfile = remoteYAMLScalar(named: "current_profile", in: text)
+        var options: [TaskRemoteJiraAccountOption] = []
+        var profile: [String: String] = [:]
+
+        func flush() {
+            guard let site = profile["site"]?.nilIfEmpty else { return }
+            let cloudId = profile["cloud_id"] ?? ""
+            let accountId = profile["account_id"] ?? ""
+            let profileId = "\(cloudId):\(accountId)"
+            options.append(TaskRemoteJiraAccountOption(
+                site: site,
+                email: profile["email"],
+                displayName: profile["display_name"],
+                isCurrent: currentProfile == profileId
+            ))
+        }
+
+        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.hasPrefix("- ") {
+                flush()
+                profile = [:]
+                let rest = String(line.dropFirst(2))
+                if let (key, value) = remoteYAMLPair(rest) { profile[key] = value }
+                continue
+            }
+            guard !profile.isEmpty, let (key, value) = remoteYAMLPair(line) else { continue }
+            profile[key] = value
+        }
+        flush()
+        return uniqueAccounts(options)
+    }
+
+    static func parseAuthStatus(_ text: String) -> TaskRemoteJiraAccountOption? {
+        var site: String?
+        var email: String?
+        for rawLine in text.split(separator: "\n").map(String.init) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.hasPrefix("Site:") {
+                site = String(line.dropFirst("Site:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            } else if line.hasPrefix("Email:") {
+                email = String(line.dropFirst("Email:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        guard let site = site?.nilIfEmpty else { return nil }
+        return TaskRemoteJiraAccountOption(site: site, email: email, displayName: nil, isCurrent: true)
+    }
+
+    static func parseProjectOptions(_ text: String) throws -> [TaskRemoteContainerOption] {
+        guard let data = text.data(using: .utf8) else {
+            throw RemoteWorkItemError.parseFailed("Provider CLI returned non-UTF8 JSON")
+        }
+        let json = try JSONSerialization.jsonObject(with: data)
+        let rawProjects: [[String: Any]]
+        if let array = json as? [[String: Any]] {
+            rawProjects = array
+        } else if let object = json as? [String: Any] {
+            rawProjects = (object["values"] as? [[String: Any]])
+                ?? (object["projects"] as? [[String: Any]])
+                ?? (object["results"] as? [[String: Any]])
+                ?? []
+        } else {
+            rawProjects = []
+        }
+        var seen = Set<String>()
+        return rawProjects.compactMap { project in
+            let key = (project["key"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let key, !key.isEmpty, !seen.contains(key) else { return nil }
+            seen.insert(key)
+            let name = ((project["name"] as? String)
+                ?? (project["title"] as? String)
+                ?? key)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return TaskRemoteContainerOption(key: key, name: name)
+        }
+        .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
+    }
+
+    static func parseProjectOptionsFromWorkItems(_ text: String) throws -> [TaskRemoteContainerOption] {
+        guard let data = text.data(using: .utf8) else {
+            throw RemoteWorkItemError.parseFailed("Provider CLI returned non-UTF8 JSON")
+        }
+        let json = try JSONSerialization.jsonObject(with: data)
+        let items: [[String: Any]]
+        if let array = json as? [[String: Any]] {
+            items = array
+        } else if let object = json as? [String: Any] {
+            items = (object["issues"] as? [[String: Any]])
+                ?? (object["workItems"] as? [[String: Any]])
+                ?? (object["values"] as? [[String: Any]])
+                ?? []
+        } else {
+            items = []
+        }
+
+        var projects: [String: String] = [:]
+        for item in items {
+            let fields = item["fields"] as? [String: Any]
+            let project = (fields?["project"] as? [String: Any]) ?? (item["project"] as? [String: Any])
+            let explicitKey = (project?["key"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let issueKey = ((item["key"] as? String) ?? (fields?["key"] as? String))?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let derivedKey = issueKey.flatMap { key -> String? in
+                guard let dash = key.firstIndex(of: "-") else { return nil }
+                return String(key[..<dash])
+            }
+            guard let key = (explicitKey?.nilIfEmpty ?? derivedKey?.nilIfEmpty) else { continue }
+            let name = ((project?["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty) ?? key
+            projects[key] = projects[key] ?? name
+        }
+        return projects
+            .map { TaskRemoteContainerOption(key: $0.key, name: $0.value) }
+            .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
+    }
+
+    private static func uniqueAccounts(_ options: [TaskRemoteJiraAccountOption]) -> [TaskRemoteJiraAccountOption] {
+        var seen = Set<String>()
+        return options.filter { option in
+            guard !seen.contains(option.id) else { return false }
+            seen.insert(option.id)
+            return true
+        }
+        .sorted { lhs, rhs in
+            if lhs.isCurrent != rhs.isCurrent { return lhs.isCurrent }
+            return lhs.displayLabel.localizedStandardCompare(rhs.displayLabel) == .orderedAscending
+        }
     }
 
     private func runAcli(_ arguments: [String], timeout: TimeInterval) async throws -> RemoteWorkItemCommandResult {
@@ -608,6 +801,39 @@ private func remoteValidate(_ result: RemoteWorkItemCommandResult) throws {
     }
 }
 
+private func remoteHumanError(_ error: Error) -> String {
+    if let remoteError = error as? RemoteWorkItemError {
+        switch remoteError {
+        case .commandFailed(let message), .parseFailed(let message), .unsupportedReference(let message):
+            return message.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "Unknown error"
+        case .unsupportedProvider(let provider):
+            return "Unsupported provider: \(provider.rawValue)"
+        }
+    }
+    let text = String(describing: error).trimmingCharacters(in: .whitespacesAndNewlines)
+    return text.isEmpty ? "Unknown error" : text
+}
+
+private func remoteYAMLScalar(named key: String, in text: String) -> String? {
+    for line in text.split(separator: "\n").map(String.init) {
+        guard let (lineKey, value) = remoteYAMLPair(line.trimmingCharacters(in: .whitespacesAndNewlines)), lineKey == key else {
+            continue
+        }
+        return value
+    }
+    return nil
+}
+
+private func remoteYAMLPair(_ line: String) -> (String, String)? {
+    guard !line.isEmpty, !line.hasPrefix("#"), let separator = line.firstIndex(of: ":") else { return nil }
+    let key = String(line[..<separator]).trimmingCharacters(in: .whitespacesAndNewlines)
+    var value = String(line[line.index(after: separator)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+    if value.hasPrefix("\"") && value.hasSuffix("\"") && value.count >= 2 {
+        value = String(value.dropFirst().dropLast())
+    }
+    return key.isEmpty ? nil : (key, value)
+}
+
 private func remoteParseJSONObject(_ text: String) throws -> [String: Any] {
     guard let data = text.data(using: .utf8),
           let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -622,23 +848,6 @@ private func remoteParseJSONArray(_ text: String) throws -> [[String: Any]] {
         throw RemoteWorkItemError.parseFailed("Provider CLI returned non-array JSON")
     }
     return object
-}
-
-func remoteParseStatusLabels(
-    _ text: String,
-    defaultLabels: [String]
-) throws -> [String] {
-    guard let data = text.data(using: .utf8) else {
-        throw RemoteWorkItemError.parseFailed("Provider CLI returned non-UTF8 JSON")
-    }
-    let json = try JSONSerialization.jsonObject(with: data)
-    var labels: [String] = []
-    var seen = Set<String>()
-    remoteCollectStatusLabels(from: json, into: &labels, seen: &seen)
-    if labels.isEmpty {
-        labels = defaultLabels
-    }
-    return labels.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
 }
 
 func remoteParseStatusLabelsCSV(_ text: String, defaultLabels: [String]) -> [String] {
@@ -695,50 +904,6 @@ private func remoteCSVFields(_ line: String) -> [String] {
     }
     fields.append(current)
     return fields
-}
-
-private func remoteCollectStatusLabels(from raw: Any, into labels: inout [String], seen: inout Set<String>) {
-    if let array = raw as? [Any] {
-        for item in array {
-            remoteCollectStatusLabels(from: item, into: &labels, seen: &seen)
-        }
-        return
-    }
-
-    guard let object = raw as? [String: Any] else { return }
-    if let label = remoteStatusLabel(from: object) {
-        let key = label.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).lowercased()
-        if seen.insert(key).inserted {
-            labels.append(label)
-        }
-    }
-
-    for key in ["fields", "status", "statuses", "issues", "workItems", "values", "results", "columns"] {
-        if let value = object[key] {
-            remoteCollectStatusLabels(from: value, into: &labels, seen: &seen)
-        }
-    }
-}
-
-private func remoteStatusLabel(from object: [String: Any]) -> String? {
-    let status = (object["status"] as? [String: Any])
-    let statusName = status?["name"] as? String
-    let directStatus = object["status"] as? String
-    let directState = object["state"] as? String
-    let selfURL = object["self"] as? String
-    let isStatusObject = object["statusCategory"] != nil
-        || object["iconUrl"] != nil
-        || selfURL?.contains("/status/") == true
-    let candidate = (statusName
-        ?? directStatus
-        ?? directState
-        ?? (isStatusObject ? object["name"] as? String : nil))?
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-    guard var label = candidate, !label.isEmpty else { return nil }
-    if label == label.uppercased(), !label.contains(" ") {
-        label = label.lowercased()
-    }
-    return label
 }
 
 private func remoteNames(from raw: Any?) -> [String] {

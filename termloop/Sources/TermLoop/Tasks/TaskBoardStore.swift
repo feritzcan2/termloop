@@ -17,6 +17,7 @@ public final class TaskBoardStore: ObservableObject {
 
     /// Normalized board view in user-configured order.
     @Published public private(set) var columnSnapshots: [TaskColumnSnapshot] = []
+    @Published public private(set) var archivedSnapshots: [TaskCardSummary] = []
 
     private var file: TaskBoardFile = TaskBoardFile()
     private var saveDebounce: DispatchWorkItem?
@@ -194,6 +195,7 @@ public final class TaskBoardStore: ObservableObject {
 
     private func rebuildSnapshots() {
         rebuildColumnSnapshots()
+        rebuildArchivedSnapshots()
     }
 
     private func rebuildColumnSnapshots() {
@@ -216,23 +218,34 @@ public final class TaskBoardStore: ObservableObject {
         let snapshots: [TaskColumnSnapshot] = columnIds.map { columnId in
             let cards = (grouped[columnId] ?? [])
                 .sorted { $0.rank < $1.rank }
-                .map { task in
-                    TaskCardSummary(
-                        id: task.id,
-                        title: task.title,
-                        provisionState: task.provisionState,
-                        workspaceId: task.workspaceId,
-                        branch: task.branch,
-                        hasTicket: false, // v2 — Jira projection
-                        remoteWorkItem: task.remoteWorkItem,
-                        remoteStatusLabel: task.remoteStatusLabel,
-                        taskFilePath: task.taskFilePath,
-                        worktreePath: task.worktreePath
-                    )
-                }
+                .map(Self.cardSummary)
             return TaskColumnSnapshot(id: columnId, cards: cards)
         }
         columnSnapshots = snapshots
+    }
+
+    private func rebuildArchivedSnapshots() {
+        archivedSnapshots = file.tasks
+            .filter { $0.archivedAt != nil }
+            .sorted {
+                ($0.archivedAt ?? $0.updatedAt) > ($1.archivedAt ?? $1.updatedAt)
+            }
+            .map(Self.cardSummary)
+    }
+
+    private static func cardSummary(for task: TaskRecord) -> TaskCardSummary {
+        TaskCardSummary(
+            id: task.id,
+            title: task.title,
+            provisionState: task.provisionState,
+            workspaceId: task.workspaceId,
+            branch: task.branch,
+            hasTicket: false, // v2 — Jira projection
+            remoteWorkItem: task.remoteWorkItem,
+            remoteStatusLabel: task.remoteStatusLabel,
+            taskFilePath: task.taskFilePath,
+            worktreePath: task.worktreePath
+        )
     }
 }
 
