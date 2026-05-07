@@ -105,11 +105,67 @@ struct RemoteWorkItemListRequest: Codable, Equatable, Sendable {
     }
 }
 
+public struct TaskRemoteJiraAccountOption: Identifiable, Codable, Equatable, Sendable {
+    public let id: String
+    public let site: String
+    public let email: String?
+    public let displayName: String?
+    public let isCurrent: Bool
+
+    public init(site: String, email: String?, displayName: String?, isCurrent: Bool) {
+        let normalizedSite = Self.normalizedSite(site) ?? site.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedEmail = email?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.site = normalizedSite
+        self.email = normalizedEmail
+        self.displayName = displayName?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.isCurrent = isCurrent
+        self.id = [normalizedSite, normalizedEmail ?? ""].joined(separator: "|")
+    }
+
+    public var displayLabel: String {
+        let emailPart = email.map { " · \($0)" } ?? ""
+        let currentPart = isCurrent ? " ✓" : ""
+        return "\(site)\(emailPart)\(currentPart)"
+    }
+
+    private static func normalizedSite(_ value: String) -> String? {
+        var site = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: site), let host = url.host {
+            site = host
+        }
+        site = site
+            .replacingOccurrences(of: "https://", with: "")
+            .replacingOccurrences(of: "http://", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return site.nilIfEmpty
+    }
+}
+
+public struct TaskRemoteContainerOption: Identifiable, Codable, Equatable, Sendable {
+    public let id: String
+    public let key: String
+    public let name: String
+
+    public init(key: String, name: String) {
+        self.id = key
+        self.key = key
+        self.name = name
+    }
+
+    public var displayLabel: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? key : "\(key) — \(name)"
+    }
+}
+
 struct RemoteWorkItemStatusOption: Codable, Identifiable, Equatable, Sendable {
     var id: String
     var label: String
     var targetState: String?
     var providerPayload: [String: String]
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 protocol RemoteWorkItemProvider: Sendable {

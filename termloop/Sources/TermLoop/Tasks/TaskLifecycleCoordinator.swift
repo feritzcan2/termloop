@@ -326,3 +326,237 @@ extension TaskLifecycleCoordinator {
         try store.saveNow()
     }
 }
+
+extension TaskLifecycleCoordinator {
+    @discardableResult
+    public func reconcileWorkspaceBindings(
+        projectRoot: URL,
+        snapshot: TaskWorkspaceListingSnapshot
+    ) throws -> TaskBoardReconcileSummary {
+        let descriptors = snapshot.descriptors
+        // Use bucketed dictionaries. Duplicate metadata rows are corruption;
+        // first wins so reconcile keeps running and leaves repair to the UI.
+        var descriptorByKey: [TaskWorkspaceReconcileKey: TaskWorkspaceDescriptor] = [:]
+        var descriptorByWorkspaceId: [UUID: TaskWorkspaceDescriptor] = [:]
+        for d in descriptors {
+            guard let resolved = TaskPathNormalization.resolveDisplayAndKey(d.worktreePath, relativeTo: projectRoot) else {
+                continue
+            }
+            let key = TaskWorkspaceReconcileKey(projectId: store.projectId, normalizedPath: resolved.keyPath)
+            if descriptorByKey[key] == nil {
+                descriptorByKey[key] = d
+            }
+            if let workspaceId = d.workspaceId, descriptorByWorkspaceId[workspaceId] == nil {
+                descriptorByWorkspaceId[workspaceId] = d
+            }
+        }
+
+        var prunedCount = 0
+        var updatedCount = 0
+        var interruptedCount = 0
+        var archivedCount = 0
+        var detachedCount = 0
+        var missingCount = 0
+        var importedCount = 0
+
+        let changed = store.mutate { file in
+            var changed = false
+
+            let beforePrune = file.tasks.count
+            file.tasks.removeAll { task in
+                isExternalPathOnlyAutoImport(
+                    task,
+                    projectRoot: projectRoot,
+                    descriptorByKey: descriptorByKey
+                )
+            }
+            prunedCount = beforePrune - file.tasks.count
+            changed = changed || prunedCount > 0
+
+            // Prefer workspace-id matches, then recover by normalized worktree
+            // path. Non-authoritative listings never mark bound tasks missing.
+            for i in file.tasks.indices {
+                var t = file.tasks[i]
+                guard t.archivedAt == nil else { continue }
+
+                let pathKey: TaskWorkspaceReconcileKey? = t.worktreePath.map {
+                    TaskPathNormalization.resolveDisplayAndKey($0, relativeTo: projectRoot).map {
+                        TaskWorkspaceReconcileKey(projectId: store.projectId, normalizedPath: $0.keyPath)
+                    }
+                }
+                .flatMap { $0 }
+                let workspaceDescriptor = t.workspaceId.flatMap { descriptorByWorkspaceId[$0] }
+                let pathDescriptor = pathKey.flatMap { descriptorByKey[$0] }
+                let descriptor = workspaceDescriptor ?? pathDescriptor
+
+                if let descriptor {
+                    let original = t
+                    if let workspaceId = descriptor.workspaceId {
+                        t.workspaceId = workspaceId
+                    } else if workspaceDescriptor == nil {
+                        t.workspaceId = nil
+                    }
+                    t.branch = descriptor.branch ?? t.branch
+                    t.worktreePath = descriptor.worktreePath
+                    if shouldMarkReadyAfterDescriptorMatch(t.provisionState) {
+                        t.provisionState = .ready
+                    }
+                    if t != original {
+                        t.updatedAt = Date()
+                        file.tasks[i] = t
+                        updatedCount += 1
+                        changed = true
+                    }
+                    continue
+                }
+
+                guard t.workspaceId != nil || t.worktreePath != nil else {
+                    if case .pending = t.provisionState {
+                        t.provisionState = .failed(reason: TaskProvisionFailureReason.interrupted)
+                        t.updatedAt = Date()
+                        file.tasks[i] = t
+                        interruptedCount += 1
+                        changed = true
+                    }
+                    continue
+                }
+
+                guard snapshot.isAuthoritative else { continue }
+
+                if shouldArchiveMissingWorktreeTask(t) {
+                    t.archivedAt = Date()
+                    t.updatedAt = Date()
+                    file.tasks[i] = t
+                    archivedCount += 1
+                    changed = true
+                } else if shouldDetachMissingWorktreeTask(t) {
+                    let original = t
+                    t.workspaceId = nil
+                    t.worktreePath = nil
+                    t.branch = nil
+                    t.bindingGeneration += 1
+                    t.provisionState = .none
+                    t.updatedAt = Date()
+                    if t != original {
+                        file.tasks[i] = t
+                        detachedCount += 1
+                        changed = true
+                    }
+                } else if !t.provisionState.isFailed {
+                    t.provisionState = .failed(reason: TaskProvisionFailureReason.worktreeMissing)
+                    t.updatedAt = Date()
+                    file.tasks[i] = t
+                    missingCount += 1
+                    changed = true
+                }
+            }
+
+            var existingKeys: Set<TaskWorkspaceReconcileKey> = []
+            for task in file.tasks where task.archivedAt == nil {
+                guard let path = task.worktreePath else { continue }
+                guard let resolved = TaskPathNormalization.resolveDisplayAndKey(path, relativeTo: projectRoot) else {
+                    continue
+                }
+                let key = TaskWorkspaceReconcileKey(projectId: store.projectId, normalizedPath: resolved.keyPath)
+                existingKeys.insert(key)
+            }
+
+            for (key, d) in descriptorByKey where !existingKeys.contains(key) {
+                let title = d.branch ?? URL(fileURLWithPath: d.worktreePath).lastPathComponent
+                let inProgressRanks = file.tasks
+                    .filter { $0.columnId == .inProgress && $0.archivedAt == nil }
+                    .map(\.rank)
+                    .sorted()
+                let rank = inProgressRanks.last.map(TaskRanking.after) ?? TaskRanking.initial()
+                let task = TaskRecord(
+                    projectId: store.projectId,
+                    title: title,
+                    origin: .worktree,
+                    columnId: .inProgress,
+                    rank: rank,
+                    workspaceId: d.workspaceId,
+                    worktreePath: d.worktreePath,
+                    branch: d.branch,
+                    bindingGeneration: 1,
+                    provisionState: .ready
+                )
+                file.tasks.append(task)
+                existingKeys.insert(key)
+                importedCount += 1
+                changed = true
+            }
+            if changed {
+                _ = TaskBoardStore.rebalanceColumnIfNeeded(.inProgress, in: &file)
+            }
+            return changed
+        }
+
+        if changed {
+            try store.saveNow()
+        }
+        return TaskBoardReconcileSummary(
+            projectId: store.projectId,
+            descriptorCount: descriptors.count,
+            isAuthoritative: snapshot.isAuthoritative,
+            changed: changed,
+            prunedCount: prunedCount,
+            updatedCount: updatedCount,
+            interruptedCount: interruptedCount,
+            archivedCount: archivedCount,
+            detachedCount: detachedCount,
+            missingCount: missingCount,
+            importedCount: importedCount
+        )
+    }
+
+    private func shouldMarkReadyAfterDescriptorMatch(_ state: TaskProvisionState) -> Bool {
+        switch state {
+        case .ready:
+            return false
+        case .none, .pending:
+            return true
+        case .failed(let reason):
+            return reason == TaskProvisionFailureReason.worktreeMissing
+                || reason == TaskProvisionFailureReason.interrupted
+                || reason == TaskProvisionFailureReason.provisioningUnavailable
+        }
+    }
+
+    private func shouldArchiveMissingWorktreeTask(_ task: TaskRecord) -> Bool {
+        task.origin == .worktree && task.remoteWorkItem == nil
+    }
+
+    private func shouldDetachMissingWorktreeTask(_ task: TaskRecord) -> Bool {
+        task.remoteWorkItem != nil || task.origin == .manual
+    }
+
+    private func isExternalPathOnlyAutoImport(
+        _ task: TaskRecord,
+        projectRoot: URL,
+        descriptorByKey: [TaskWorkspaceReconcileKey: TaskWorkspaceDescriptor]
+    ) -> Bool {
+        guard task.archivedAt == nil,
+              task.workspaceId == nil,
+              task.bindingGeneration == 1,
+              case .ready = task.provisionState,
+              let worktreePath = task.worktreePath,
+              WorktreeResolver.worktreeRoot(
+                  containing: worktreePath,
+                  projectFolder: projectRoot.path
+              ) == nil else {
+            return false
+        }
+        guard let resolved = TaskPathNormalization.resolveDisplayAndKey(worktreePath, relativeTo: projectRoot) else {
+            return false
+        }
+        let key = TaskWorkspaceReconcileKey(projectId: store.projectId, normalizedPath: resolved.keyPath)
+        guard descriptorByKey[key] == nil else { return false }
+        let importedTitle = task.branch ?? URL(fileURLWithPath: worktreePath).lastPathComponent
+        return task.title == importedTitle
+    }
+}
+
+private struct TaskWorkspaceReconcileKey: Hashable {
+    let projectId: UUID
+    let normalizedPath: String
+}

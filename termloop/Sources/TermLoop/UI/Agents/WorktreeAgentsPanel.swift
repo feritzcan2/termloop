@@ -553,6 +553,7 @@ final class WorktreeDeletionCoordinator {
         }
 
         AppDelegate.shared?.saveSessionSnapshot(includeScrollback: false, forceSync: true)
+        TaskBoardReconcileScheduler.shared.request(projectId: target.project.id, reason: "worktreeDeleted")
         #if DEBUG
         dlog("worktree.delete.perform.result branch=\(target.branchToDelete ?? "nil") mode=\(mode) project=\(target.project.name)[\(target.project.id.uuidString.prefix(8))]")
         #endif

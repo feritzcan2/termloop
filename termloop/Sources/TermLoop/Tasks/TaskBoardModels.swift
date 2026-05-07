@@ -126,11 +126,18 @@ public enum TaskProvisionState: Codable, Equatable, Hashable, Sendable {
     }
 }
 
+public enum TaskOrigin: String, Codable, Equatable, Hashable, Sendable {
+    case manual
+    case worktree
+    case remote
+}
+
 public struct TaskRecord: Codable, Identifiable, Equatable, Hashable, Sendable {
     public let id: UUID
     public let projectId: UUID
     public var title: String
     public var brief: String?
+    public var origin: TaskOrigin
     public var remoteWorkItem: RemoteWorkItemReference?
     public var remoteStatusLabel: String?
     public var taskFilePath: String?
@@ -151,6 +158,7 @@ public struct TaskRecord: Codable, Identifiable, Equatable, Hashable, Sendable {
         projectId: UUID,
         title: String,
         brief: String? = nil,
+        origin: TaskOrigin = .manual,
         remoteWorkItem: RemoteWorkItemReference? = nil,
         remoteStatusLabel: String? = nil,
         taskFilePath: String? = nil,
@@ -170,6 +178,7 @@ public struct TaskRecord: Codable, Identifiable, Equatable, Hashable, Sendable {
         self.projectId = projectId
         self.title = title
         self.brief = brief
+        self.origin = origin
         self.remoteWorkItem = remoteWorkItem
         self.remoteStatusLabel = remoteStatusLabel
         self.taskFilePath = taskFilePath
