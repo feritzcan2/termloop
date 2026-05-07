@@ -182,6 +182,10 @@ struct SmokeMain {
                 try await runLiveJiraAssigned()
                 return
             }
+            if CommandLine.arguments.dropFirst().first == "--live-jira-statuses" {
+                try await runLiveJiraStatuses()
+                return
+            }
 
             try await runDryRun()
         } catch {
@@ -266,6 +270,44 @@ struct SmokeMain {
         try require(jiraAssigned.first?.reference.key == "KAN-456", "jira assigned list failed")
         print("jiraCreated=\(jiraCreated.reference.key)")
         print("jiraUpdatedStatus=\(jiraUpdated.statusLabel ?? "nil")")
+
+        let csvStatuses = remoteParseStatusLabelsCSV(
+            """
+            Key,Status
+            UKIE-1,In Progress
+            UKIE-2,"Ready for Deployment"
+            Key,Status
+            UKIE-3,In Testing
+            """,
+            defaultLabels: []
+        )
+        try require(csvStatuses == ["In Progress", "In Testing", "Ready for Deployment"], "jira CSV status parser failed: \(csvStatuses)")
+
+        let accounts = JiraRemoteWorkItemProvider.parseAccountsConfig(
+            """
+            current_profile: cloud-1:acct-1
+            profiles:
+              - site: https://example.atlassian.net
+                email: one@example.com
+                display_name: One
+                cloud_id: cloud-1
+                account_id: acct-1
+              - site: other.atlassian.net
+                email: two@example.com
+                display_name: Two
+                cloud_id: cloud-2
+                account_id: acct-2
+            """
+        )
+        try require(accounts.count == 2, "jira account config parser missed accounts")
+        try require(accounts.first?.site == "example.atlassian.net" && accounts.first?.isCurrent == true, "jira account config parser missed current profile")
+
+        let projects = try JiraRemoteWorkItemProvider.parseProjectOptions(
+            """
+            [{"key":"UKIE","name":"UKIE"},{"key":"KAN","name":"Kanban"}]
+            """
+        )
+        try require(projects.map(\.key) == ["KAN", "UKIE"], "jira project parser failed")
     }
 
     private static func runLiveGitHub() async throws {
@@ -394,6 +436,19 @@ struct SmokeMain {
             print("\(item.reference.key)\t\(item.statusLabel ?? "-")\t\(item.title)")
         }
         print("remote-work-items live jira assigned list passed")
+    }
+
+    private static func runLiveJiraStatuses() async throws {
+        let project = ProcessInfo.processInfo.environment["REMOTE_WORK_ITEM_JIRA_PROJECT"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let projectKey = project?.isEmpty == false ? project! : "KAN"
+        let provider = JiraRemoteWorkItemProvider()
+        let labels = try await provider.statusLabels(projectKey: projectKey)
+        try require(!labels.isEmpty, "jira status list returned no statuses")
+        print("statusCount=\(labels.count)")
+        for label in labels {
+            print(label)
+        }
+        print("remote-work-items live jira statuses passed")
     }
 
     private static func friendlyDescription(_ error: Error) -> String {

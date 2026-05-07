@@ -45,11 +45,22 @@ if [[ "$MODE" == "--live-jira-assigned" ]]; then
   exit 0
 fi
 
+if [[ "$MODE" == "--live-jira-statuses" ]]; then
+  swiftc \
+    "$ROOT/Sources/TermLoop/RemoteWorkItems/RemoteWorkItems.swift" \
+    "$ROOT/Sources/TermLoop/RemoteWorkItems/RemoteWorkItemCLIProviders.swift" \
+    "$ROOT/scripts/remote-work-items/smoke.swift" \
+    -o /tmp/remote-work-items-smoke
+  /tmp/remote-work-items-smoke --live-jira-statuses
+  exit 0
+fi
+
 cat >&2 <<USAGE
 Usage:
   $0 --dry-run
   REMOTE_WORK_ITEM_GITHUB_REPO=owner/repo $0 --live-github
   REMOTE_WORK_ITEM_JIRA_PROJECT=KAN REMOTE_WORK_ITEM_JIRA_DONE_STATUS=Done $0 --live-jira
   REMOTE_WORK_ITEM_JIRA_PROJECT=KAN $0 --live-jira-assigned
+  REMOTE_WORK_ITEM_JIRA_PROJECT=KAN $0 --live-jira-statuses
 USAGE
 exit 2

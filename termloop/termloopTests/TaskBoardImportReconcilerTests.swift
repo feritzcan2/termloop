@@ -86,7 +86,7 @@ final class TaskBoardImportReconcilerTests: XCTestCase {
 
         let reconciler = TaskBoardImportReconciler(
             store: store,
-            workspaces: StubWorkspaceLister(items: [])
+            workspaces: StubWorkspaceLister(items: [], isAuthoritative: false)
         )
         try await reconciler.run()
         let updated = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == task.id })
@@ -175,7 +175,7 @@ final class TaskBoardImportReconcilerTests: XCTestCase {
 
         let reconciler = TaskBoardImportReconciler(
             store: store,
-            workspaces: StubWorkspaceLister(items: [])
+            workspaces: StubWorkspaceLister(items: [], isAuthoritative: true)
         )
         try await reconciler.run()
 
@@ -211,6 +211,148 @@ final class TaskBoardImportReconcilerTests: XCTestCase {
 
         XCTAssertNotNil(store.fileSnapshot().tasks.first { $0.id == task.id })
     }
+
+    func testAuthoritativeMissingWorktreeArchivesWorktreeOriginTaskWithoutRemoteItem() async throws {
+        let task = TaskRecord(
+            projectId: projectId,
+            title: "ephemeral worktree",
+            origin: .worktree,
+            columnId: .inProgress,
+            rank: TaskRanking.initial(),
+            workspaceId: UUID(),
+            worktreePath: "/tmp/missing-worktree",
+            branch: "feat/missing",
+            bindingGeneration: 1,
+            provisionState: .ready
+        )
+        try store.appendForTesting(task)
+        try store.saveNow()
+
+        let reconciler = TaskBoardImportReconciler(
+            store: store,
+            workspaces: StubWorkspaceLister(items: [], isAuthoritative: true)
+        )
+        let summary = try await reconciler.run()
+
+        let updated = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == task.id })
+        XCTAssertNotNil(updated.archivedAt)
+        XCTAssertEqual(summary.archivedCount, 1)
+        XCTAssertEqual(summary.detachedCount, 0)
+        XCTAssertEqual(summary.importedCount, 0)
+        XCTAssertTrue(store.columnSnapshots.allSatisfy { column in
+            !column.cards.contains { $0.id == task.id }
+        })
+    }
+
+    func testAuthoritativeMissingWorktreeDetachesRemoteTaskAndKeepsItVisible() async throws {
+        let reference = RemoteWorkItemReference(
+            provider: .jira,
+            key: "UKIE-1",
+            url: nil,
+            host: nil,
+            namespace: nil,
+            repository: nil,
+            number: nil
+        )
+        let task = TaskRecord(
+            projectId: projectId,
+            title: "remote work",
+            origin: .remote,
+            remoteWorkItem: reference,
+            columnId: .inProgress,
+            rank: TaskRanking.initial(),
+            workspaceId: UUID(),
+            worktreePath: "/tmp/missing-worktree",
+            branch: "feat/missing",
+            bindingGeneration: 1,
+            provisionState: .ready
+        )
+        try store.appendForTesting(task)
+        try store.saveNow()
+
+        let reconciler = TaskBoardImportReconciler(
+            store: store,
+            workspaces: StubWorkspaceLister(items: [], isAuthoritative: true)
+        )
+        let summary = try await reconciler.run()
+
+        let updated = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == task.id })
+        XCTAssertNil(updated.archivedAt)
+        XCTAssertNil(updated.workspaceId)
+        XCTAssertNil(updated.worktreePath)
+        XCTAssertNil(updated.branch)
+        XCTAssertEqual(updated.provisionState, .none)
+        XCTAssertEqual(updated.remoteWorkItem, reference)
+        XCTAssertEqual(updated.origin, .remote)
+        XCTAssertEqual(summary.archivedCount, 0)
+        XCTAssertEqual(summary.detachedCount, 1)
+        XCTAssertEqual(summary.importedCount, 0)
+        XCTAssertEqual(store.columnSnapshots.flatMap(\.cards).filter { $0.id == task.id }.count, 1)
+    }
+
+    func testNonAuthoritativeEmptyListingDoesNotArchiveWorktreeOriginTask() async throws {
+        let task = TaskRecord(
+            projectId: projectId,
+            title: "do not delete on listing failure",
+            origin: .worktree,
+            columnId: .inProgress,
+            rank: TaskRanking.initial(),
+            workspaceId: UUID(),
+            worktreePath: "/tmp/unknown",
+            branch: "feat/unknown",
+            bindingGeneration: 1,
+            provisionState: .ready
+        )
+        try store.appendForTesting(task)
+        try store.saveNow()
+
+        let reconciler = TaskBoardImportReconciler(
+            store: store,
+            workspaces: StubWorkspaceLister(items: [], isAuthoritative: false)
+        )
+        let summary = try await reconciler.run()
+
+        let updated = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == task.id })
+        XCTAssertNil(updated.archivedAt)
+        XCTAssertEqual(updated.workspaceId, task.workspaceId)
+        XCTAssertEqual(updated.worktreePath, task.worktreePath)
+        XCTAssertFalse(summary.isAuthoritative)
+        XCTAssertEqual(summary.archivedCount, 0)
+        XCTAssertEqual(summary.detachedCount, 0)
+    }
+
+    func testArchivedWorktreeTaskDoesNotBlockReimportWhenWorktreeReturns() async throws {
+        let path = "/tmp/recreated-worktree"
+        var archived = TaskRecord(
+            projectId: projectId,
+            title: "old worktree",
+            origin: .worktree,
+            columnId: .inProgress,
+            rank: TaskRanking.initial(),
+            workspaceId: UUID(),
+            worktreePath: path,
+            branch: "feat/recreated",
+            bindingGeneration: 1,
+            provisionState: .ready
+        )
+        archived.archivedAt = Date()
+        try store.appendForTesting(archived)
+        try store.saveNow()
+
+        let reconciler = TaskBoardImportReconciler(
+            store: store,
+            workspaces: StubWorkspaceLister(items: [
+                .init(workspaceId: UUID(), branch: "feat/recreated", path: path)
+            ])
+        )
+        let summary = try await reconciler.run()
+
+        let activeTasks = store.fileSnapshot().tasks.filter { $0.archivedAt == nil }
+        XCTAssertEqual(activeTasks.count, 1)
+        XCTAssertEqual(activeTasks.first?.worktreePath, path)
+        XCTAssertEqual(activeTasks.first?.origin, .worktree)
+        XCTAssertEqual(summary.importedCount, 1)
+    }
 }
 
 // MARK: - Test stub
@@ -219,15 +361,23 @@ final class TaskBoardImportReconcilerTests: XCTestCase {
 final class StubWorkspaceLister: TaskBoardWorkspaceListing {
     struct Item { let workspaceId: UUID?; let branch: String; let path: String }
     let items: [Item]
-    init(items: [Item]) { self.items = items }
+    let isAuthoritative: Bool
 
-    func workspaces(in projectId: UUID) async -> [TaskWorkspaceDescriptor] {
-        items.map { .init(
-            workspaceId: $0.workspaceId,
-            projectId: projectId,
-            branch: $0.branch,
-            worktreePath: $0.path
-        ) }
+    init(items: [Item], isAuthoritative: Bool = true) {
+        self.items = items
+        self.isAuthoritative = isAuthoritative
+    }
+
+    func workspaceSnapshot(in projectId: UUID) async -> TaskWorkspaceListingSnapshot {
+        TaskWorkspaceListingSnapshot(
+            descriptors: items.map { .init(
+                workspaceId: $0.workspaceId,
+                projectId: projectId,
+                branch: $0.branch,
+                worktreePath: $0.path
+            ) },
+            isAuthoritative: isAuthoritative
+        )
     }
 
     func projectRoot(for projectId: UUID) -> URL {

@@ -11,7 +11,7 @@ struct TaskBoardPage<TerminalContent: View>: View {
     @ObservedObject var store: TaskBoardStore
     @ObservedObject var selection: TaskSelectionStore
     var coordinator: TaskLifecycleCoordinator?
-    @StateObject private var remoteSync: TaskRemoteSyncCoordinator
+    @ObservedObject private var remoteSync: TaskRemoteSyncCoordinator
     @ViewBuilder let terminalContent: () -> TerminalContent
 
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
@@ -28,7 +28,7 @@ struct TaskBoardPage<TerminalContent: View>: View {
         self.selection = selection
         self.coordinator = coordinator
         self.terminalContent = terminalContent
-        _remoteSync = StateObject(wrappedValue: TaskRemoteSyncCoordinator(store: store))
+        self.remoteSync = TaskRemoteSyncCoordinatorProvider.shared.coordinator(for: store)
     }
 
     var body: some View {
