@@ -126,11 +126,18 @@ public enum TaskProvisionState: Codable, Equatable, Hashable, Sendable {
     }
 }
 
+public enum TaskOrigin: String, Codable, Equatable, Hashable, Sendable {
+    case manual
+    case worktree
+    case remote
+}
+
 public struct TaskRecord: Codable, Identifiable, Equatable, Hashable, Sendable {
     public let id: UUID
     public let projectId: UUID
     public var title: String
     public var brief: String?
+    public var origin: TaskOrigin
     public var remoteWorkItem: RemoteWorkItemReference?
     public var remoteStatusLabel: String?
     public var taskFilePath: String?
@@ -151,6 +158,7 @@ public struct TaskRecord: Codable, Identifiable, Equatable, Hashable, Sendable {
         projectId: UUID,
         title: String,
         brief: String? = nil,
+        origin: TaskOrigin = .manual,
         remoteWorkItem: RemoteWorkItemReference? = nil,
         remoteStatusLabel: String? = nil,
         taskFilePath: String? = nil,
@@ -170,6 +178,7 @@ public struct TaskRecord: Codable, Identifiable, Equatable, Hashable, Sendable {
         self.projectId = projectId
         self.title = title
         self.brief = brief
+        self.origin = origin
         self.remoteWorkItem = remoteWorkItem
         self.remoteStatusLabel = remoteStatusLabel
         self.taskFilePath = taskFilePath
@@ -191,6 +200,8 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
     public var syncAssignedToMe: Bool
     public var syncColumnMovesToRemote: Bool
     public var provider: RemoteWorkItemProviderId
+    /// Per-provider selected container so switching tabs preserves each provider's project/repo.
+    public var providerContainers: [RemoteWorkItemProviderId: String]
     /// Jira: optional Atlassian site host, e.g. "company.atlassian.net".
     public var jiraSite: String?
     /// Jira: optional account email used when switching between multiple ACLI accounts.
@@ -205,6 +216,7 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
         syncAssignedToMe: Bool = false,
         syncColumnMovesToRemote: Bool = false,
         provider: RemoteWorkItemProviderId = .jira,
+        providerContainers: [RemoteWorkItemProviderId: String] = [:],
         jiraSite: String? = nil,
         jiraEmail: String? = nil,
         container: String? = nil,
@@ -215,10 +227,17 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
         self.syncAssignedToMe = syncAssignedToMe
         self.syncColumnMovesToRemote = syncColumnMovesToRemote
         self.provider = provider
+        var containers = providerContainers.compactMapValues {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        }
+        if let container = container?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            containers[provider] = container
+        }
+        self.providerContainers = containers
         self.jiraSite = jiraSite?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         self.jiraEmail = jiraEmail?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-        self.container = container
-        self.limit = max(1, min(limit, 100))
+        self.container = container?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.limit = max(1, min(limit, 500))
         self.lastSyncedAt = lastSyncedAt
         self.lastError = lastError
     }
@@ -227,6 +246,7 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
         case syncAssignedToMe
         case syncColumnMovesToRemote
         case provider
+        case providerContainers
         case jiraSite
         case jiraEmail
         case container
@@ -240,15 +260,47 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
         self.syncAssignedToMe = try container.decodeIfPresent(Bool.self, forKey: .syncAssignedToMe) ?? false
         self.syncColumnMovesToRemote = try container.decodeIfPresent(Bool.self, forKey: .syncColumnMovesToRemote) ?? false
         self.provider = try container.decodeIfPresent(RemoteWorkItemProviderId.self, forKey: .provider) ?? .jira
+        var providerContainers = try container.decodeIfPresent([RemoteWorkItemProviderId: String].self, forKey: .providerContainers) ?? [:]
+        providerContainers = providerContainers.compactMapValues {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        }
         self.jiraSite = try container.decodeIfPresent(String.self, forKey: .jiraSite)?
             .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         self.jiraEmail = try container.decodeIfPresent(String.self, forKey: .jiraEmail)?
             .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-        self.container = try container.decodeIfPresent(String.self, forKey: .container)
+        let activeContainer = try container.decodeIfPresent(String.self, forKey: .container)?
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        if let activeContainer {
+            providerContainers[provider] = activeContainer
+        }
+        self.providerContainers = providerContainers
+        self.container = activeContainer ?? providerContainers[provider]
         let decodedLimit = try container.decodeIfPresent(Int.self, forKey: .limit) ?? 30
-        self.limit = max(1, min(decodedLimit, 100))
+        self.limit = max(1, min(decodedLimit, 500))
         self.lastSyncedAt = try container.decodeIfPresent(Date.self, forKey: .lastSyncedAt)
         self.lastError = try container.decodeIfPresent(String.self, forKey: .lastError)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        let activeContainer = self.container?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        var containers = providerContainers.compactMapValues {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        }
+        if let activeContainer {
+            containers[provider] = activeContainer
+        }
+
+        try container.encode(syncAssignedToMe, forKey: .syncAssignedToMe)
+        try container.encode(syncColumnMovesToRemote, forKey: .syncColumnMovesToRemote)
+        try container.encode(provider, forKey: .provider)
+        try container.encode(containers, forKey: .providerContainers)
+        try container.encodeIfPresent(jiraSite?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty, forKey: .jiraSite)
+        try container.encodeIfPresent(jiraEmail?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty, forKey: .jiraEmail)
+        try container.encodeIfPresent(activeContainer, forKey: .container)
+        try container.encode(limit, forKey: .limit)
+        try container.encodeIfPresent(lastSyncedAt, forKey: .lastSyncedAt)
+        try container.encodeIfPresent(lastError, forKey: .lastError)
     }
 }
 

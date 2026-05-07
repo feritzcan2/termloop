@@ -12,8 +12,6 @@ import Foundation
 /// state ends up in the per-project `TaskBoardStore` for the UI to display.
 @MainActor
 public enum TaskBoardReconcileHook {
-    private static var inFlightProjectIds: Set<UUID> = []
-
     /// Idempotent setup: registers the workspace lister so subsequent
     /// `projectDidActivate` calls have something to project from. Safe to call
     /// multiple times. Invoked from app start (TermLoopHooks).
@@ -21,24 +19,11 @@ public enum TaskBoardReconcileHook {
         if TaskBoardStoreProvider.shared.workspaceLister == nil {
             TaskBoardStoreProvider.shared.workspaceLister = TaskBoardWorkspaceListingAdapter.shared
         }
+        TaskBoardReconcileScheduler.shared.start()
     }
 
     public static func projectDidActivate(_ projectId: UUID?) {
         bootstrap()
-        guard let projectId else { return }
-        guard let store = TaskBoardStoreProvider.shared.store(for: projectId) else { return }
-        guard let workspaces = TaskBoardStoreProvider.shared.workspaceLister else { return }
-        guard inFlightProjectIds.insert(projectId).inserted else { return }
-        let reconciler = TaskBoardImportReconciler(store: store, workspaces: workspaces)
-        _Concurrency.Task { @MainActor in
-            defer { inFlightProjectIds.remove(projectId) }
-            do {
-                try await reconciler.run()
-            } catch {
-                #if DEBUG
-                print("TaskBoardReconcileHook: reconcile failed for \(projectId): \(error)")
-                #endif
-            }
-        }
+        TaskBoardReconcileScheduler.shared.request(projectId: projectId, reason: "projectDidActivate")
     }
 }

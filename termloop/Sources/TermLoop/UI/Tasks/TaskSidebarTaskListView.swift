@@ -12,6 +12,7 @@ struct TaskSidebarTaskListView: View {
     var onCreateTask: ((TaskColumnId) -> UUID?)?
     var onOpenSettings: () -> Void = {}
 
+    @State private var isArchivedExpanded = false
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
     @EnvironmentObject private var tabManager: TabManager
@@ -33,6 +34,10 @@ struct TaskSidebarTaskListView: View {
                         }
                     }
                     createButton
+                    archivedSection(
+                        cards: store.archivedSnapshots,
+                        workItems: workItems
+                    )
                 }
                 .padding(10)
             }
@@ -45,13 +50,60 @@ struct TaskSidebarTaskListView: View {
         }
     }
 
+    @ViewBuilder
+    private func archivedSection(
+        cards: [TaskCardSummary],
+        workItems: [UUID: TaskWorkItemSnapshot]
+    ) -> some View {
+        if !cards.isEmpty {
+            VStack(alignment: .leading, spacing: 5) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.12)) {
+                        isArchivedExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: isArchivedExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(TermLoopSidebarTheme.dim)
+                            .frame(width: 10)
+                        Text(String(localized: "tasks.sidebar.archived",
+                                    defaultValue: "Archived", table: "TermLoop"))
+                            .font(TermLoopSidebarTheme.adaptiveSectionFont(size: 11))
+                            .foregroundStyle(TermLoopSidebarTheme.adaptiveSectionColor)
+                        Spacer()
+                        Text("\(cards.count)")
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(TermLoopSidebarTheme.dim)
+                            .monospacedDigit()
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+
+                if isArchivedExpanded {
+                    ForEach(cards) { card in
+                        row(
+                            card,
+                            status: nil,
+                            workItem: workItems[card.id],
+                            isSelectable: false,
+                            isArchived: true
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     private var agentStatusesByTaskId: [UUID: TaskAgentStatusSummary] {
         // Intentional subscription reads: task rows project live agent state
         // without storing agent telemetry in TaskBoardStore.
         _ = metadataStore
         _ = activityStore
         return TaskAgentProjectionBuilder.statusSummaries(
-            for: store.fileSnapshot().tasks,
+            for: store.fileSnapshot().tasks.filter { $0.archivedAt == nil },
             openWorkspaceIds: Set(tabManager.tabs.map(\.id))
         )
     }
@@ -89,15 +141,22 @@ struct TaskSidebarTaskListView: View {
     private func row(
         _ card: TaskCardSummary,
         status: TaskAgentStatusSummary?,
-        workItem: TaskWorkItemSnapshot?
+        workItem: TaskWorkItemSnapshot?,
+        isSelectable: Bool = true,
+        isArchived: Bool = false
     ) -> some View {
         let statusPresentation = TaskStatusPresentation(
             provisionState: card.provisionState,
             agentStatus: status
         )
+        let trailingStatus = isArchived
+            ? String(localized: "tasks.sidebar.archivedStatus",
+                     defaultValue: "Archived", table: "TermLoop")
+            : statusPresentation.text
+        let statusColor = isArchived ? Color.secondary : statusPresentation.color
         return HStack(alignment: .center, spacing: 7) {
             Circle()
-                .fill(statusPresentation.color)
+                .fill(statusColor)
                 .frame(width: 6, height: 6)
             VStack(alignment: .leading, spacing: 2) {
                 Text(rowTitle(card, workItem: workItem))
@@ -117,9 +176,9 @@ struct TaskSidebarTaskListView: View {
                     .foregroundStyle(Color.accentColor)
                     .lineLimit(1)
             }
-            Text(statusPresentation.text)
+            Text(trailingStatus)
                 .font(.system(size: 10, weight: .regular))
-                .foregroundStyle(statusPresentation.color)
+                .foregroundStyle(statusColor)
                 .lineLimit(1)
         }
         .padding(.vertical, 6)
@@ -127,7 +186,11 @@ struct TaskSidebarTaskListView: View {
         .background(rowBackground(card))
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .contentShape(Rectangle())
-        .onTapGesture { selection.select(card.id) }
+        .opacity(isArchived ? 0.72 : 1)
+        .onTapGesture {
+            guard isSelectable else { return }
+            selection.select(card.id)
+        }
     }
 
     private func rowSubtitle(_ card: TaskCardSummary) -> String {

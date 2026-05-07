@@ -37,7 +37,18 @@ struct TaskBoardRouteHost: View {
                     )
                 }
             )
-            .onAppear { applyInlineTerminalPresentation(reason: "taskBoard.appear") }
+            .id(projectId)
+            .onAppear {
+                applyInlineTerminalPresentation(reason: "taskBoard.appear")
+                TaskBoardReconcileHook.bootstrap()
+                TaskBoardReconcileScheduler.shared.request(projectId: projectId, reason: "taskBoard.appear")
+            }
+            .onReceive(WorkspaceMetadataStore.shared.$branchVersion) { _ in
+                TaskBoardReconcileScheduler.shared.request(projectId: projectId, reason: "metadata.branch")
+            }
+            .onReceive(WorkspaceMetadataStore.shared.$projectScopeVersion) { _ in
+                TaskBoardReconcileScheduler.shared.request(projectId: projectId, reason: "metadata.projectScope")
+            }
             .onChange(of: selection.inlineTerminalWorkspaceId) { _, _ in
                 applyInlineTerminalPresentation(reason: "taskBoard.inlineTerminalWorkspace")
             }

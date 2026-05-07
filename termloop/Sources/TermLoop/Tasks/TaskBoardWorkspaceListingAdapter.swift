@@ -14,7 +14,7 @@ public final class TaskBoardWorkspaceListingAdapter: TaskBoardWorkspaceListing {
     public static let shared = TaskBoardWorkspaceListingAdapter()
     private init() {}
 
-    public func workspaces(in projectId: UUID) async -> [TaskWorkspaceDescriptor] {
+    public func workspaceSnapshot(in projectId: UUID) async -> TaskWorkspaceListingSnapshot {
         let store = WorkspaceMetadataStore.shared
         let projectRoot = projectRoot(for: projectId)
         let workspaceIds = store.workspaceIds(inProject: projectId)
@@ -38,7 +38,8 @@ public final class TaskBoardWorkspaceListingAdapter: TaskBoardWorkspaceListing {
         var seenPaths = Set(descriptors.compactMap {
             TaskPathNormalization.resolveDisplayAndKey($0.worktreePath, relativeTo: projectRoot)?.keyPath
         })
-        let gitEntries = await gitWorktreeEntries(projectRoot: projectRoot)
+        let gitResult = await gitWorktreeEntries(projectRoot: projectRoot)
+        let gitEntries = gitResult.entries
         for entry in gitEntries where !entry.isMain {
             guard WorktreeResolver.worktreeRoot(
                 containing: entry.path,
@@ -58,21 +59,24 @@ public final class TaskBoardWorkspaceListingAdapter: TaskBoardWorkspaceListing {
             ))
         }
 
-        return descriptors
+        return TaskWorkspaceListingSnapshot(
+            descriptors: descriptors,
+            isAuthoritative: gitResult.isAuthoritative
+        )
     }
 
-    private func gitWorktreeEntries(projectRoot: URL) async -> [GitWorktreeService.ListEntry] {
+    private func gitWorktreeEntries(projectRoot: URL) async -> (entries: [GitWorktreeService.ListEntry], isAuthoritative: Bool) {
         if let cached = WorktreeRegistry.shared.cachedSnapshot(projectFolder: projectRoot.path, maximumAge: 30) {
-            return cached.entries
+            return (cached.entries, true)
         }
 
         return await withCheckedContinuation { continuation in
             WorktreeRegistry.shared.refresh(projectFolder: projectRoot.path, reason: "tasks.reconcile") { result in
                 switch result {
                 case .success(let snapshot):
-                    continuation.resume(returning: snapshot.entries)
+                    continuation.resume(returning: (snapshot.entries, true))
                 case .failure:
-                    continuation.resume(returning: [])
+                    continuation.resume(returning: ([], false))
                 }
             }
         }
