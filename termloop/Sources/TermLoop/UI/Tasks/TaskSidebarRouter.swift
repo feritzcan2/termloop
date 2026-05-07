@@ -10,7 +10,7 @@ struct TaskSidebarRouter: View {
     @ObservedObject var store: TaskBoardStore
     @ObservedObject var selection: TaskSelectionStore
     var coordinator: TaskLifecycleCoordinator?
-    @StateObject private var remoteSync: TaskRemoteSyncCoordinator
+    @ObservedObject private var remoteSync: TaskRemoteSyncCoordinator
     @State private var isShowingSettings = false
 
     init(
@@ -21,7 +21,7 @@ struct TaskSidebarRouter: View {
         self.store = store
         self.selection = selection
         self.coordinator = coordinator
-        _remoteSync = StateObject(wrappedValue: TaskRemoteSyncCoordinator(store: store))
+        self.remoteSync = TaskRemoteSyncCoordinatorProvider.shared.coordinator(for: store)
     }
 
     var body: some View {
@@ -106,6 +106,7 @@ struct TaskSidebarRoot: View {
                 selection: selection,
                 coordinator: TaskLifecycleCoordinator.makeForProject(store: store)
             )
+            .id(projectId)
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 Text(String(localized: "tasks.sidebar.noProject",

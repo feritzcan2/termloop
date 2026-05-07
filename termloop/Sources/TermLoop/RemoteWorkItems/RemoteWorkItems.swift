@@ -101,7 +101,7 @@ struct RemoteWorkItemListRequest: Codable, Equatable, Sendable {
     init(provider: RemoteWorkItemProviderId, container: String? = nil, limit: Int = 30) {
         self.provider = provider
         self.container = container
-        self.limit = max(1, min(limit, 100))
+        self.limit = max(1, min(limit, 500))
     }
 }
 

@@ -93,7 +93,7 @@ actor RemoteWorkItemCommandRunner: RemoteWorkItemCommandRunning {
 
     private func sanitizedEnvironment(_ env: [String: String]) -> [String: String] {
         var result: [String: String] = [:]
-        for key in ["PATH", "HOME", "LANG", "LC_ALL", "SHELL", "TERM"] {
+        for key in ["PATH", "HOME", "LANG", "LC_ALL", "SHELL", "TERM", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"] {
             if let value = env[key] { result[key] = value }
         }
         result["PATH"] = Self.cliSearchPath(from: result["PATH"])
@@ -138,6 +138,44 @@ private final class RemoteWorkItemCommandCompletion: @unchecked Sendable {
         guard !didResume else { return false }
         didResume = true
         return true
+    }
+}
+
+actor JiraAuthSwitcher {
+    static let shared = JiraAuthSwitcher()
+
+    private var currentSite: String?
+    private var currentEmail: String?
+
+    func switchIfNeeded(
+        site rawSite: String?,
+        email rawEmail: String?,
+        runner: any RemoteWorkItemCommandRunning
+    ) async throws {
+        guard let site = JiraAuthSwitcher.normalizedSite(rawSite) else { return }
+        let email = rawEmail?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        if currentSite == site, currentEmail == email {
+            return
+        }
+        var args = ["jira", "auth", "switch", "--site", site]
+        if let email { args += ["--email", email] }
+        let result = try await runner.run(executable: "acli", arguments: args, cwd: nil, timeout: 12)
+        try remoteValidate(result)
+        currentSite = site
+        currentEmail = email
+    }
+
+    private static func normalizedSite(_ value: String?) -> String? {
+        var site = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if site.isEmpty { return nil }
+        if let url = URL(string: site), let host = url.host {
+            site = host
+        }
+        site = site
+            .replacingOccurrences(of: "https://", with: "")
+            .replacingOccurrences(of: "http://", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return site.nilIfEmpty
     }
 }
 
@@ -419,7 +457,14 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
 
     func availableStatuses(_ reference: RemoteWorkItemReference) async throws -> [RemoteWorkItemStatusOption] {
         let current = try? await fetch(reference).statusLabel?.lowercased()
-        return ["To Do", "In Progress", "In Review", "Done"].compactMap { label in
+        var labels: [String] = []
+        if let projectKey = reference.key.split(separator: "-", maxSplits: 1).first.map(String.init) {
+            labels = (try? await jiraStatusLabelsForProject(projectKey)) ?? []
+        }
+        if labels.isEmpty {
+            labels = ["To Do", "In Progress", "In Review", "Done"]
+        }
+        return labels.compactMap { label in
             guard label.lowercased() != current else { return nil }
             return RemoteWorkItemStatusOption(
                 id: "jira.status.\(label.lowercased().replacingOccurrences(of: " ", with: "-"))",
@@ -428,6 +473,13 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
                 providerPayload: ["targetStatusLabel": label]
             )
         }
+    }
+
+    func statusLabels(projectKey: String?) async throws -> [String] {
+        let project = projectKey?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        let jql = project.map { "project = \($0) ORDER BY updated DESC" }
+            ?? "assignee = currentUser() ORDER BY updated DESC"
+        return try await jiraStatusLabels(jql: jql)
     }
 
     func updateStatus(_ reference: RemoteWorkItemReference, to status: RemoteWorkItemStatusOption) async throws -> RemoteWorkItemSnapshot {
@@ -443,17 +495,32 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
         return try remoteParseJSONObject(result.stdout)
     }
 
+    private func jiraStatusLabelsForProject(_ projectKey: String) async throws -> [String] {
+        try await jiraStatusLabels(jql: "project = \(projectKey) ORDER BY updated DESC")
+    }
+
+    private func jiraStatusLabels(jql: String) async throws -> [String] {
+        let result = try await runAcli(
+            [
+                "jira", "workitem", "search",
+                "--jql", jql,
+                "--limit", "500",
+                "--fields", "key,status",
+                "--csv"
+            ],
+            timeout: 35
+        )
+        try remoteValidate(result)
+        return remoteParseStatusLabelsCSV(result.stdout, defaultLabels: [])
+    }
+
     private func runAcli(_ arguments: [String], timeout: TimeInterval) async throws -> RemoteWorkItemCommandResult {
         try await switchSiteIfConfigured()
         return try await runner.run(executable: "acli", arguments: arguments, cwd: nil, timeout: timeout)
     }
 
     private func switchSiteIfConfigured() async throws {
-        guard let site else { return }
-        var args = ["jira", "auth", "switch", "--site", site]
-        if let email { args += ["--email", email] }
-        let result = try await runner.run(executable: "acli", arguments: args, cwd: nil, timeout: 12)
-        try remoteValidate(result)
+        try await JiraAuthSwitcher.shared.switchIfNeeded(site: site, email: email, runner: runner)
     }
 
     private static func normalizedSite(_ value: String?) -> String? {
@@ -555,6 +622,123 @@ private func remoteParseJSONArray(_ text: String) throws -> [[String: Any]] {
         throw RemoteWorkItemError.parseFailed("Provider CLI returned non-array JSON")
     }
     return object
+}
+
+func remoteParseStatusLabels(
+    _ text: String,
+    defaultLabels: [String]
+) throws -> [String] {
+    guard let data = text.data(using: .utf8) else {
+        throw RemoteWorkItemError.parseFailed("Provider CLI returned non-UTF8 JSON")
+    }
+    let json = try JSONSerialization.jsonObject(with: data)
+    var labels: [String] = []
+    var seen = Set<String>()
+    remoteCollectStatusLabels(from: json, into: &labels, seen: &seen)
+    if labels.isEmpty {
+        labels = defaultLabels
+    }
+    return labels.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+}
+
+func remoteParseStatusLabelsCSV(_ text: String, defaultLabels: [String]) -> [String] {
+    var labels: [String] = []
+    var seen = Set<String>()
+    var statusColumnIndex: Int?
+    for rawLine in text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init) {
+        let fields = remoteCSVFields(rawLine)
+        guard !fields.isEmpty else { continue }
+        if let headerIndex = fields.firstIndex(where: { field in
+            field.trimmingCharacters(in: .whitespacesAndNewlines)
+                .compare("Status", options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }) {
+            statusColumnIndex = headerIndex
+            continue
+        }
+        let index = min(statusColumnIndex ?? max(fields.count - 1, 0), fields.count - 1)
+        let label = fields[index]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !label.isEmpty else { continue }
+        let key = label.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).lowercased()
+        if seen.insert(key).inserted {
+            labels.append(label)
+        }
+    }
+    if labels.isEmpty {
+        labels = defaultLabels
+    }
+    return labels.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+}
+
+private func remoteCSVFields(_ line: String) -> [String] {
+    var fields: [String] = []
+    var current = ""
+    var inQuotes = false
+    var index = line.startIndex
+    while index < line.endIndex {
+        let character = line[index]
+        if character == "\"" {
+            let next = line.index(after: index)
+            if inQuotes, next < line.endIndex, line[next] == "\"" {
+                current.append(character)
+                index = line.index(after: next)
+                continue
+            }
+            inQuotes.toggle()
+        } else if character == ",", !inQuotes {
+            fields.append(current)
+            current = ""
+        } else {
+            current.append(character)
+        }
+        index = line.index(after: index)
+    }
+    fields.append(current)
+    return fields
+}
+
+private func remoteCollectStatusLabels(from raw: Any, into labels: inout [String], seen: inout Set<String>) {
+    if let array = raw as? [Any] {
+        for item in array {
+            remoteCollectStatusLabels(from: item, into: &labels, seen: &seen)
+        }
+        return
+    }
+
+    guard let object = raw as? [String: Any] else { return }
+    if let label = remoteStatusLabel(from: object) {
+        let key = label.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).lowercased()
+        if seen.insert(key).inserted {
+            labels.append(label)
+        }
+    }
+
+    for key in ["fields", "status", "statuses", "issues", "workItems", "values", "results", "columns"] {
+        if let value = object[key] {
+            remoteCollectStatusLabels(from: value, into: &labels, seen: &seen)
+        }
+    }
+}
+
+private func remoteStatusLabel(from object: [String: Any]) -> String? {
+    let status = (object["status"] as? [String: Any])
+    let statusName = status?["name"] as? String
+    let directStatus = object["status"] as? String
+    let directState = object["state"] as? String
+    let selfURL = object["self"] as? String
+    let isStatusObject = object["statusCategory"] != nil
+        || object["iconUrl"] != nil
+        || selfURL?.contains("/status/") == true
+    let candidate = (statusName
+        ?? directStatus
+        ?? directState
+        ?? (isStatusObject ? object["name"] as? String : nil))?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard var label = candidate, !label.isEmpty else { return nil }
+    if label == label.uppercased(), !label.contains(" ") {
+        label = label.lowercased()
+    }
+    return label
 }
 
 private func remoteNames(from raw: Any?) -> [String] {

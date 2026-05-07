@@ -535,8 +535,14 @@ private struct TaskColumnSettingsView: View {
                     .foregroundColor(.secondary)
             }
 
-            ForEach(remoteSync.settingsVisibleColumns) { column in
-                TaskColumnSettingsRow(column: column, remoteSync: remoteSync)
+            let visibleColumns = remoteSync.settingsVisibleColumns
+            ForEach(Array(visibleColumns.enumerated()), id: \.element.columnId) { index, column in
+                TaskColumnSettingsRow(
+                    column: column,
+                    remoteSync: remoteSync,
+                    canMoveUp: index > 0,
+                    canMoveDown: index < visibleColumns.count - 1
+                )
             }
         }
     }
@@ -577,6 +583,8 @@ private struct TaskColumnSettingsView: View {
 private struct TaskColumnSettingsRow: View {
     let column: TaskColumnSettings
     @ObservedObject var remoteSync: TaskRemoteSyncCoordinator
+    let canMoveUp: Bool
+    let canMoveDown: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -593,6 +601,28 @@ private struct TaskColumnSettingsRow: View {
                         .foregroundColor(.orange)
                 }
                 Spacer(minLength: 0)
+                Button(action: { remoteSync.moveColumn(column.columnId, direction: .up) }) {
+                    Image(systemName: "chevron.up")
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.mini)
+                .foregroundColor(.secondary)
+                .disabled(!canMoveUp)
+                .help(String(localized: "tasks.settings.column.moveUp",
+                             defaultValue: "Move column up",
+                             table: "TermLoop"))
+
+                Button(action: { remoteSync.moveColumn(column.columnId, direction: .down) }) {
+                    Image(systemName: "chevron.down")
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.mini)
+                .foregroundColor(.secondary)
+                .disabled(!canMoveDown)
+                .help(String(localized: "tasks.settings.column.moveDown",
+                             defaultValue: "Move column down",
+                             table: "TermLoop"))
+
                 Button(action: { remoteSync.deleteColumn(column.columnId) }) {
                     Image(systemName: "trash")
                 }
