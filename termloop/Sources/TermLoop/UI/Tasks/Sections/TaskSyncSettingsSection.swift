@@ -204,6 +204,12 @@ private struct TaskRemoteWorkItemSettingsView: View {
                     .foregroundColor(.secondary)
                     .lineLimit(2)
             }
+            if !status.isAvailable {
+                Text(remoteSync.cliSetupHint(for: status.provider))
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(8)
         .background(Color.white.opacity(0.035))
@@ -272,6 +278,9 @@ private struct TaskRemoteWorkItemSettingsView: View {
                         action: { remoteSync.loadJiraAccountOptions() }
                     )
                 }
+                if let date = remoteSync.jiraAccountsCachedAt {
+                    cacheText(date)
+                }
             }
 
             labeledTextField(
@@ -332,6 +341,9 @@ private struct TaskRemoteWorkItemSettingsView: View {
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 11))
                 .help(manualHelp)
+            if let date = remoteSync.containerOptionsCachedAt {
+                cacheText(date)
+            }
         }
     }
 
@@ -449,6 +461,14 @@ private struct TaskRemoteWorkItemSettingsView: View {
                 .font(.system(size: 11))
         }
     }
+
+    private func cacheText(_ date: Date) -> some View {
+        Text(String(localized: "tasks.settings.remote.cache.timestamp",
+                    defaultValue: "Cached \(date.formatted(date: .abbreviated, time: .shortened))",
+                    table: "TermLoop"))
+            .font(.system(size: 9))
+            .foregroundColor(.secondary)
+    }
 }
 
 private struct TaskColumnSettingsView: View {
@@ -506,6 +526,14 @@ private struct TaskColumnSettingsView: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.mini)
+
+            if let date = remoteSync.remoteStatusOptionsCachedAt {
+                Text(String(localized: "tasks.settings.columns.remoteStatusesCached",
+                            defaultValue: "Remote statuses cached \(date.formatted(date: .abbreviated, time: .shortened))",
+                            table: "TermLoop"))
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+            }
 
             ForEach(remoteSync.settingsVisibleColumns) { column in
                 TaskColumnSettingsRow(column: column, remoteSync: remoteSync)
