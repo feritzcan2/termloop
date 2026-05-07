@@ -37,6 +37,7 @@ struct TaskBoardRouteHost: View {
                     )
                 }
             )
+            .id(projectId)
             .onAppear { applyInlineTerminalPresentation(reason: "taskBoard.appear") }
             .onChange(of: selection.inlineTerminalWorkspaceId) { _, _ in
                 applyInlineTerminalPresentation(reason: "taskBoard.inlineTerminalWorkspace")

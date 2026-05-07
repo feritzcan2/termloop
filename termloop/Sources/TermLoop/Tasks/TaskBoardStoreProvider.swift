@@ -29,12 +29,14 @@ public final class TaskBoardStoreProvider: ObservableObject {
 
     public func remove(projectId: UUID) {
         stores.removeValue(forKey: projectId)
+        TaskRemoteSyncCoordinatorProvider.shared.remove(projectId: projectId)
         projectRoots.removeValue(forKey: projectId)
         objectWillChange.send()
     }
 
     public func removeAll() {
         stores.removeAll()
+        TaskRemoteSyncCoordinatorProvider.shared.removeAll()
         projectRoots.removeAll()
         objectWillChange.send()
     }
@@ -68,5 +70,31 @@ public final class TaskBoardStoreProvider: ObservableObject {
     private static func defaultResolveRoot(projectId: UUID) -> URL? {
         guard let project = ProjectStore.shared.project(id: projectId) else { return nil }
         return URL(fileURLWithPath: project.folderPath)
+    }
+}
+
+@MainActor
+public final class TaskRemoteSyncCoordinatorProvider {
+    public static let shared = TaskRemoteSyncCoordinatorProvider()
+
+    private var coordinators: [UUID: TaskRemoteSyncCoordinator] = [:]
+
+    private init() {}
+
+    public func coordinator(for store: TaskBoardStore) -> TaskRemoteSyncCoordinator {
+        if let existing = coordinators[store.projectId] {
+            return existing
+        }
+        let coordinator = TaskRemoteSyncCoordinator(store: store)
+        coordinators[store.projectId] = coordinator
+        return coordinator
+    }
+
+    public func remove(projectId: UUID) {
+        coordinators.removeValue(forKey: projectId)
+    }
+
+    public func removeAll() {
+        coordinators.removeAll()
     }
 }

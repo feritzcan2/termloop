@@ -228,7 +228,7 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
         self.jiraSite = jiraSite?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         self.jiraEmail = jiraEmail?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         self.container = container?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-        self.limit = max(1, min(limit, 100))
+        self.limit = max(1, min(limit, 500))
         self.lastSyncedAt = lastSyncedAt
         self.lastError = lastError
     }
@@ -267,7 +267,7 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
         self.providerContainers = providerContainers
         self.container = activeContainer ?? providerContainers[provider]
         let decodedLimit = try container.decodeIfPresent(Int.self, forKey: .limit) ?? 30
-        self.limit = max(1, min(decodedLimit, 100))
+        self.limit = max(1, min(decodedLimit, 500))
         self.lastSyncedAt = try container.decodeIfPresent(Date.self, forKey: .lastSyncedAt)
         self.lastError = try container.decodeIfPresent(String.self, forKey: .lastError)
     }
