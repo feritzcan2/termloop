@@ -144,25 +144,17 @@ private final class RemoteWorkItemCommandCompletion: @unchecked Sendable {
 actor JiraAuthSwitcher {
     static let shared = JiraAuthSwitcher()
 
-    private var currentSite: String?
-    private var currentEmail: String?
-
-    func switchIfNeeded(
+    func switchToConfiguredSite(
         site rawSite: String?,
         email rawEmail: String?,
         runner: any RemoteWorkItemCommandRunning
     ) async throws {
         guard let site = JiraAuthSwitcher.normalizedSite(rawSite) else { return }
         let email = rawEmail?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-        if currentSite == site, currentEmail == email {
-            return
-        }
         var args = ["jira", "auth", "switch", "--site", site]
         if let email { args += ["--email", email] }
         let result = try await runner.run(executable: "acli", arguments: args, cwd: nil, timeout: 12)
         try remoteValidate(result)
-        currentSite = site
-        currentEmail = email
     }
 
     private static func normalizedSite(_ value: String?) -> String? {
@@ -567,11 +559,11 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
             [
                 "jira", "workitem", "search",
                 "--jql", jql,
-                "--limit", "500",
+                "--paginate",
                 "--fields", "key,status",
                 "--csv"
             ],
-            timeout: 35
+            timeout: 60
         )
         try remoteValidate(result)
         return remoteParseStatusLabelsCSV(result.stdout, defaultLabels: [])
@@ -713,7 +705,7 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
     }
 
     private func switchSiteIfConfigured() async throws {
-        try await JiraAuthSwitcher.shared.switchIfNeeded(site: site, email: email, runner: runner)
+        try await JiraAuthSwitcher.shared.switchToConfiguredSite(site: site, email: email, runner: runner)
     }
 
     private static func normalizedSite(_ value: String?) -> String? {

@@ -194,6 +194,70 @@ public struct TaskRecord: Codable, Identifiable, Equatable, Hashable, Sendable {
         self.updatedAt = updatedAt
         self.archivedAt = archivedAt
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case projectId
+        case title
+        case brief
+        case origin
+        case remoteWorkItem
+        case remoteStatusLabel
+        case taskFilePath
+        case lastRemoteSyncAt
+        case columnId
+        case rank
+        case workspaceId
+        case worktreePath
+        case branch
+        case bindingGeneration
+        case provisionState
+        case createdAt
+        case updatedAt
+        case archivedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.projectId = try container.decode(UUID.self, forKey: .projectId)
+        self.title = try container.decode(String.self, forKey: .title)
+        self.brief = try container.decodeIfPresent(String.self, forKey: .brief)
+        self.remoteWorkItem = try container.decodeIfPresent(RemoteWorkItemReference.self, forKey: .remoteWorkItem)
+        self.remoteStatusLabel = try container.decodeIfPresent(String.self, forKey: .remoteStatusLabel)
+        self.taskFilePath = try container.decodeIfPresent(String.self, forKey: .taskFilePath)
+        self.lastRemoteSyncAt = try container.decodeIfPresent(Date.self, forKey: .lastRemoteSyncAt)
+        self.columnId = try container.decode(TaskColumnId.self, forKey: .columnId)
+        self.rank = try container.decode(String.self, forKey: .rank)
+        self.workspaceId = try container.decodeIfPresent(UUID.self, forKey: .workspaceId)
+        self.worktreePath = try container.decodeIfPresent(String.self, forKey: .worktreePath)
+        self.branch = try container.decodeIfPresent(String.self, forKey: .branch)
+        self.bindingGeneration = try container.decodeIfPresent(Int.self, forKey: .bindingGeneration) ?? 0
+        self.provisionState = try container.decodeIfPresent(TaskProvisionState.self, forKey: .provisionState) ?? .none
+        self.createdAt = try container.decode(Date.self, forKey: .createdAt)
+        self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        self.archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
+        self.origin = try container.decodeIfPresent(TaskOrigin.self, forKey: .origin)
+            ?? TaskRecord.inferredOrigin(
+                remoteWorkItem: remoteWorkItem,
+                workspaceId: workspaceId,
+                worktreePath: worktreePath,
+                branch: branch
+            )
+    }
+
+    private static func inferredOrigin(
+        remoteWorkItem: RemoteWorkItemReference?,
+        workspaceId: UUID?,
+        worktreePath: String?,
+        branch: String?
+    ) -> TaskOrigin {
+        if remoteWorkItem != nil { return .remote }
+        if workspaceId != nil || worktreePath?.nilIfEmpty != nil || branch?.nilIfEmpty != nil {
+            return .worktree
+        }
+        return .manual
+    }
 }
 
 public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {

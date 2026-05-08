@@ -523,11 +523,11 @@ extension TaskLifecycleCoordinator {
     }
 
     private func shouldArchiveMissingWorktreeTask(_ task: TaskRecord) -> Bool {
-        task.origin == .worktree && task.remoteWorkItem == nil
+        task.remoteWorkItem == nil
     }
 
     private func shouldDetachMissingWorktreeTask(_ task: TaskRecord) -> Bool {
-        task.remoteWorkItem != nil || task.origin == .manual
+        task.remoteWorkItem != nil
     }
 
     private func isExternalPathOnlyAutoImport(
