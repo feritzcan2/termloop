@@ -244,6 +244,37 @@ final class TaskBoardImportReconcilerTests: XCTestCase {
         })
     }
 
+    func testAuthoritativeMissingWorktreeArchivesManualTaskWithoutRemoteItem() async throws {
+        let task = TaskRecord(
+            projectId: projectId,
+            title: "manual local work",
+            origin: .manual,
+            columnId: .inProgress,
+            rank: TaskRanking.initial(),
+            workspaceId: UUID(),
+            worktreePath: "/tmp/missing-manual-worktree",
+            branch: "feat/manual",
+            bindingGeneration: 1,
+            provisionState: .ready
+        )
+        try store.appendForTesting(task)
+        try store.saveNow()
+
+        let reconciler = TaskBoardImportReconciler(
+            store: store,
+            workspaces: StubWorkspaceLister(items: [], isAuthoritative: true)
+        )
+        let summary = try await reconciler.run()
+
+        let updated = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == task.id })
+        XCTAssertNotNil(updated.archivedAt)
+        XCTAssertEqual(summary.archivedCount, 1)
+        XCTAssertEqual(summary.detachedCount, 0)
+        XCTAssertTrue(store.columnSnapshots.allSatisfy { column in
+            !column.cards.contains { $0.id == task.id }
+        })
+    }
+
     func testAuthoritativeMissingWorktreeDetachesRemoteTaskAndKeepsItVisible() async throws {
         let reference = RemoteWorkItemReference(
             provider: .jira,
