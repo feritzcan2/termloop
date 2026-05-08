@@ -37,6 +37,11 @@ enum TermLoopSocketCommands {
         ) {
             return response
         }
+        if method.hasPrefix("tasks.") {
+            if let response = TermLoopTaskSocketCommands.handle(method: method, params: params) {
+                return response
+            }
+        }
         switch method {
         case "project.list":           return projectList(params)
         case "project.current":        return projectCurrent(params)

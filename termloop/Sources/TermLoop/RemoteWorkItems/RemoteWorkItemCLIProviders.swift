@@ -6,10 +6,14 @@ import Foundation
 // MARK: - Command runner
 
 struct RemoteWorkItemCommandResult: Sendable {
+    var executable: String? = nil
+    var arguments: [String] = []
+    var cwd: String? = nil
     var exitStatus: Int32
     var stdout: String
     var stderr: String
     var timedOut: Bool
+    var terminatedBySignal: Bool = false
 }
 
 protocol RemoteWorkItemCommandRunning: Sendable {
@@ -43,12 +47,17 @@ actor RemoteWorkItemCommandRunner: RemoteWorkItemCommandRunning {
         let stderrPipe = Pipe()
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
+        let stdoutBuffer = RemoteWorkItemPipeBuffer()
+        let stderrBuffer = RemoteWorkItemPipeBuffer()
+
+        let completion = RemoteWorkItemCommandCompletion()
 
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                let completion = RemoteWorkItemCommandCompletion()
                 let finish: @Sendable (Result<RemoteWorkItemCommandResult, Error>) -> Void = { result in
                     guard completion.claim() else { return }
+                    stdoutPipe.fileHandleForReading.readabilityHandler = nil
+                    stderrPipe.fileHandleForReading.readabilityHandler = nil
                     continuation.resume(with: result)
                 }
 
@@ -59,36 +68,58 @@ actor RemoteWorkItemCommandRunner: RemoteWorkItemCommandRunning {
                     return
                 }
 
+                stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+                    stdoutBuffer.drain(handle)
+                }
+                stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+                    stderrBuffer.drain(handle)
+                }
+
                 let timeoutTask = DispatchWorkItem {
+                    if completion.isCancelled {
+                        finish(.failure(CancellationError()))
+                        return
+                    }
+                    completion.markTimedOut()
                     if process.isRunning { process.terminate() }
                     finish(.success(RemoteWorkItemCommandResult(
+                        executable: executable,
+                        arguments: arguments,
+                        cwd: cwd,
                         exitStatus: 124,
-                        stdout: Self.readCapped(stdoutPipe.fileHandleForReading),
-                        stderr: Self.readCapped(stderrPipe.fileHandleForReading),
-                        timedOut: true
+                        stdout: stdoutBuffer.string(),
+                        stderr: stderrBuffer.string(),
+                        timedOut: true,
+                        terminatedBySignal: false
                     )))
                 }
                 DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout, execute: timeoutTask)
 
                 process.terminationHandler = { proc in
                     timeoutTask.cancel()
+                    if completion.isCancelled {
+                        finish(.failure(CancellationError()))
+                        return
+                    }
+                    stdoutBuffer.drain(stdoutPipe.fileHandleForReading)
+                    stderrBuffer.drain(stderrPipe.fileHandleForReading)
+                    let timedOut = completion.isTimedOut
                     finish(.success(RemoteWorkItemCommandResult(
+                        executable: executable,
+                        arguments: arguments,
+                        cwd: cwd,
                         exitStatus: proc.terminationStatus,
-                        stdout: Self.readCapped(stdoutPipe.fileHandleForReading),
-                        stderr: Self.readCapped(stderrPipe.fileHandleForReading),
-                        timedOut: false
+                        stdout: stdoutBuffer.string(),
+                        stderr: stderrBuffer.string(),
+                        timedOut: timedOut,
+                        terminatedBySignal: proc.terminationReason == .uncaughtSignal
                     )))
                 }
             }
         } onCancel: {
+            completion.cancel()
             if process.isRunning { process.terminate() }
         }
-    }
-
-    private static func readCapped(_ handle: FileHandle, cap: Int = 512_000) -> String {
-        let data = (try? handle.readToEnd()) ?? Data()
-        let capped = data.count > cap ? data.prefix(cap) : data[...]
-        return String(data: Data(capped), encoding: .utf8) ?? ""
     }
 
     private func sanitizedEnvironment(_ env: [String: String]) -> [String: String] {
@@ -131,6 +162,8 @@ actor RemoteWorkItemCommandRunner: RemoteWorkItemCommandRunning {
 private final class RemoteWorkItemCommandCompletion: @unchecked Sendable {
     private let lock = NSLock()
     private var didResume = false
+    private var cancelled = false
+    private var timedOut = false
 
     func claim() -> Bool {
         lock.lock()
@@ -139,17 +172,119 @@ private final class RemoteWorkItemCommandCompletion: @unchecked Sendable {
         didResume = true
         return true
     }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+    }
+
+    func markTimedOut() {
+        lock.lock()
+        timedOut = true
+        lock.unlock()
+    }
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+
+    var isTimedOut: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return timedOut
+    }
 }
 
-actor JiraAuthSwitcher {
-    static let shared = JiraAuthSwitcher()
+private final class RemoteWorkItemPipeBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private let cap: Int
+    private var data = Data()
+    private var truncatedByteCount = 0
 
-    func switchToConfiguredSite(
+    init(cap: Int = 512_000) {
+        self.cap = cap
+    }
+
+    func drain(_ handle: FileHandle) {
+        let chunk = handle.availableData
+        guard !chunk.isEmpty else { return }
+        append(chunk)
+    }
+
+    func append(_ chunk: Data) {
+        lock.lock()
+        defer { lock.unlock() }
+        let remaining = max(0, cap - data.count)
+        if remaining > 0 {
+            data.append(chunk.prefix(remaining))
+        }
+        if chunk.count > remaining {
+            truncatedByteCount += chunk.count - remaining
+        }
+    }
+
+    func string() -> String {
+        lock.lock()
+        let snapshot = data
+        let truncated = truncatedByteCount
+        lock.unlock()
+
+        var text = String(data: snapshot, encoding: .utf8) ?? ""
+        if truncated > 0 {
+            text += "\n... truncated \(truncated) bytes"
+        }
+        return text
+    }
+}
+
+actor JiraCommandGate {
+    static let shared = JiraCommandGate()
+
+    private var isRunning = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func run(
+        site rawSite: String?,
+        email rawEmail: String?,
+        arguments: [String],
+        timeout: TimeInterval,
+        runner: any RemoteWorkItemCommandRunning
+    ) async throws -> RemoteWorkItemCommandResult {
+        await acquire()
+        defer { release() }
+        try Task.checkCancellation()
+        try await switchToConfiguredSite(site: rawSite, email: rawEmail, runner: runner)
+        try Task.checkCancellation()
+        return try await runner.run(executable: "acli", arguments: arguments, cwd: nil, timeout: timeout)
+    }
+
+    private func acquire() async {
+        if !isRunning {
+            isRunning = true
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    private func release() {
+        guard !waiters.isEmpty else {
+            isRunning = false
+            return
+        }
+        waiters.removeFirst().resume()
+    }
+
+    private func switchToConfiguredSite(
         site rawSite: String?,
         email rawEmail: String?,
         runner: any RemoteWorkItemCommandRunning
     ) async throws {
-        guard let site = JiraAuthSwitcher.normalizedSite(rawSite) else { return }
+        guard let site = JiraCommandGate.normalizedSite(rawSite) else { return }
         let email = rawEmail?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         var args = ["jira", "auth", "switch", "--site", site]
         if let email { args += ["--email", email] }
@@ -218,6 +353,7 @@ struct GitHubRemoteWorkItemProvider: RemoteWorkItemProvider {
                 "--repo", container,
                 "--assignee", "@me",
                 "--state", "all",
+                "--search", "sort:updated-desc",
                 "--limit", "\(request.limit)",
                 "--json", fields.joined(separator: ",")
             ],
@@ -325,6 +461,8 @@ struct GitLabRemoteWorkItemProvider: RemoteWorkItemProvider {
                 "--repo", container,
                 "--assignee", "@me",
                 "--state", "all",
+                "--order", "updated_at",
+                "--sort", "desc",
                 "--per-page", "\(request.limit)",
                 "--output", "json"
             ],
@@ -700,12 +838,13 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
     }
 
     private func runAcli(_ arguments: [String], timeout: TimeInterval) async throws -> RemoteWorkItemCommandResult {
-        try await switchSiteIfConfigured()
-        return try await runner.run(executable: "acli", arguments: arguments, cwd: nil, timeout: timeout)
-    }
-
-    private func switchSiteIfConfigured() async throws {
-        try await JiraAuthSwitcher.shared.switchToConfiguredSite(site: site, email: email, runner: runner)
+        try await JiraCommandGate.shared.run(
+            site: site,
+            email: email,
+            arguments: arguments,
+            timeout: timeout,
+            runner: runner
+        )
     }
 
     private static func normalizedSite(_ value: String?) -> String? {
@@ -784,13 +923,68 @@ private func fallbackCreatedReference(provider: RemoteWorkItemProviderId, contai
 }
 
 private func remoteValidate(_ result: RemoteWorkItemCommandResult) throws {
-    if result.timedOut { throw RemoteWorkItemError.commandFailed("Provider CLI timed out") }
-    guard result.exitStatus == 0 else {
-        let message = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? "Provider CLI exited \(result.exitStatus)"
-            : result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-        throw RemoteWorkItemError.commandFailed(message)
+    if result.timedOut {
+        throw RemoteWorkItemError.commandFailed(remoteCommandFailureMessage(result, fallback: "Provider CLI timed out."))
     }
+    guard result.exitStatus == 0 else {
+        throw RemoteWorkItemError.commandFailed(remoteCommandFailureMessage(result, fallback: "Provider CLI exited \(result.exitStatus)."))
+    }
+}
+
+func remoteCommandFailureMessage(_ result: RemoteWorkItemCommandResult, fallback: String) -> String {
+    var lines: [String] = ["Provider CLI failed."]
+    if let command = result.commandLine.nilIfEmpty {
+        lines.append("Command: \(command)")
+    }
+    if let cwd = result.cwd?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+        lines.append("CWD: \(cwd)")
+    }
+    if result.timedOut {
+        lines.append("Timeout: yes")
+    }
+    if result.terminatedBySignal {
+        lines.append("Exit: signal \(result.exitStatus)")
+    } else {
+        lines.append("Exit: \(result.exitStatus)")
+    }
+
+    let stderr = remoteSnippet(result.stderr)
+    let stdout = remoteSnippet(result.stdout)
+    if !stderr.isEmpty {
+        lines.append("Stderr:\n\(stderr)")
+    }
+    if !stdout.isEmpty {
+        lines.append("Stdout:\n\(stdout)")
+    }
+    if stderr.isEmpty && stdout.isEmpty {
+        lines.append(fallback)
+    }
+    return lines.joined(separator: "\n")
+}
+
+private func remoteSnippet(_ text: String, limit: Int = 4_000) -> String {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return "" }
+    if trimmed.count <= limit { return trimmed }
+    return "\(trimmed.prefix(limit))\n... truncated \(trimmed.count - limit) chars"
+}
+
+private extension RemoteWorkItemCommandResult {
+    var commandLine: String {
+        guard let executable = executable?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
+            return ""
+        }
+        return ([executable] + arguments).map(remoteShellQuote).joined(separator: " ")
+    }
+}
+
+private func remoteShellQuote(_ value: String) -> String {
+    guard !value.isEmpty else { return "''" }
+    let safe = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_/:.,=+-@%")
+    if value.unicodeScalars.allSatisfy({ safe.contains($0) }) {
+        return value
+    }
+    return "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
 }
 
 private func remoteHumanError(_ error: Error) -> String {

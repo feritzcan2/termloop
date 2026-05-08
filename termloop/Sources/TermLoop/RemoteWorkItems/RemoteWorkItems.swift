@@ -9,6 +9,14 @@ public enum RemoteWorkItemProviderId: String, Codable, CaseIterable, Hashable, S
     case jira
     case github
     case gitlab
+
+    var displayLabel: String {
+        switch self {
+        case .jira: return "Jira"
+        case .github: return "GitHub"
+        case .gitlab: return "GitLab"
+        }
+    }
 }
 
 public struct RemoteWorkItemReference: Codable, Hashable, Sendable {
@@ -98,7 +106,7 @@ struct RemoteWorkItemListRequest: Codable, Equatable, Sendable {
     var container: String?
     var limit: Int
 
-    init(provider: RemoteWorkItemProviderId, container: String? = nil, limit: Int = 30) {
+    init(provider: RemoteWorkItemProviderId, container: String? = nil, limit: Int = 50) {
         self.provider = provider
         self.container = container
         self.limit = max(1, min(limit, 500))

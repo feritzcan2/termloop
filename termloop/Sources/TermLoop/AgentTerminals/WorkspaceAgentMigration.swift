@@ -3,10 +3,9 @@
 
 import Foundation
 
-/// One-pass migration that backfills `WorkspaceMetadataStore.terminalAgentId`
-/// for every workspace that predates the single-agent-per-workspace model
-/// (i.e. sidecar v3 installs upgrading to v4). Idempotent — workspaces that
-/// already carry an id are left alone.
+/// Backfills `WorkspaceMetadataStore.terminalAgentId` only for restored
+/// workspaces that already have agent evidence. A normal task/worktree checkout
+/// with no agent history must stay agentless across restart.
 @MainActor
 enum WorkspaceAgentMigration {
     /// Returns the workspace ids that were just migrated (so the focus path
@@ -19,10 +18,23 @@ enum WorkspaceAgentMigration {
 
         var affected: [UUID] = []
         let ids = Array(WorkspaceMetadataStore.shared.byWorkspaceId.keys)
-        for wsId in ids where WorkspaceMetadataStore.shared.terminalAgentId(for: wsId) == nil {
+        for wsId in ids {
+            let metadata = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: wsId)
+            guard metadata.terminalAgentId == nil,
+                  hasAgentEvidence(metadata) else { continue }
             WorkspaceMetadataStore.shared.setTerminalAgentId(fallback, for: wsId)
             affected.append(wsId)
         }
         return affected
+    }
+
+    private static func hasAgentEvidence(_ metadata: WorkspaceMetadataStore.Metadata) -> Bool {
+        metadata.persistedAgentSession != nil
+            || metadata.agentKind != nil
+            || metadata.agentSpawnedAt != nil
+            || metadata.lastUserPromptAt != nil
+            || metadata.awaitingInputSince != nil
+            || metadata.lastMessagePreview != nil
+            || metadata.lastAttentionKindRaw != nil
     }
 }

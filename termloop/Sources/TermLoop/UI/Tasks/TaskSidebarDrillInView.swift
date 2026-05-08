@@ -13,7 +13,7 @@ struct TaskSidebarDrillInView: View {
     var columnTitle: (TaskColumnId) -> String = { $0.defaultTitle }
     var onRebind: ((UUID) -> Void)?
     var onOpenTaskSpec: ((UUID) -> Void)?
-    var onImplementWithAgent: ((UUID) -> Void)?
+    var onCreateWorktree: ((UUID) -> Void)?
     var onOpenSettings: () -> Void = {}
 
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
@@ -28,28 +28,61 @@ struct TaskSidebarDrillInView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     breadcrumb
                     header(detailSnapshot)
-                    quickActions(detailSnapshot)
-                    if case .failed = detailSnapshot.provisionState {
-                        TaskRepairBanner(
-                            reason: detailSnapshot.provisionState.failureDisplayText ?? "",
-                            onRebind: { onRebind?(detailSnapshot.id) },
-                            onUnbind: { onUnbind?(detailSnapshot.id) },
-                            onArchive: { onArchive?(detailSnapshot.id); selection.select(nil) }
-                        )
-                    }
                     flatSection {
                         TaskSpecSection(
                             snapshot: detailSnapshot,
                             onOpen: { onOpenTaskSpec?(detailSnapshot.id) }
                         )
                     }
+                    if shouldShowWorkItemSection(detailSnapshot) {
+                        flatSection {
+                            TaskWorkItemSection(
+                                taskId: detailSnapshot.id,
+                                taskWorkItem: workItemSnapshot(for: detailSnapshot),
+                                workspaceId: detailSnapshot.workspaceId,
+                                worktreePath: detailSnapshot.worktreePath,
+                                remoteSync: remoteSync
+                            )
+                        }
+                    }
+                    Divider().opacity(0.6)
                     flatSection {
-                        TaskWorkItemSection(
-                            taskId: detailSnapshot.id,
-                            taskWorkItem: workItemSnapshot(for: detailSnapshot),
-                            workspaceId: detailSnapshot.workspaceId,
+                        TaskBranchesSection(
+                            branch: detailSnapshot.branch,
                             worktreePath: detailSnapshot.worktreePath,
-                            remoteSync: remoteSync
+                            taskWorkspaceId: detailSnapshot.workspaceId,
+                            provisionState: detailSnapshot.provisionState,
+                            selectedAgentWorkspaceId: selection.inlineTerminalWorkspaceId,
+                            onOpenWorktree: {
+                                TaskQuickActions.openWorktree(
+                                    workspaceId: detailSnapshot.workspaceId,
+                                    worktreePath: detailSnapshot.worktreePath
+                                )
+                            },
+                            onStartAgent: {
+                                guard let workspaceId = detailSnapshot.workspaceId else { return }
+                                TaskQuickActions.startAgentFromTasks(workspaceId: workspaceId)
+                            },
+                            onCreateWorktree: {
+                                onCreateWorktree?(detailSnapshot.id)
+                            },
+                            onClearWorktreeError: {
+                                onUnbind?(detailSnapshot.id)
+                            },
+                            onRebind: {
+                                onRebind?(detailSnapshot.id)
+                            },
+                            onUnbind: {
+                                onUnbind?(detailSnapshot.id)
+                            },
+                            onArchive: {
+                                onArchive?(detailSnapshot.id)
+                                selection.select(nil)
+                            },
+                            onOpenAgentTerminal: { workspaceId in
+                                selection.openInlineTerminal(workspaceId: workspaceId)
+                                TaskQuickActions.showWorkspaceInline(workspaceId: workspaceId)
+                            }
                         )
                     }
                     if hasWorktreeProjections(detailSnapshot) {
@@ -69,19 +102,6 @@ struct TaskSidebarDrillInView: View {
                                 branch: detailSnapshot.branch
                             )
                         }
-                        Divider().opacity(0.6)
-                        flatSection {
-                            TaskBranchesSection(
-                                branch: detailSnapshot.branch,
-                                worktreePath: detailSnapshot.worktreePath,
-                                taskWorkspaceId: detailSnapshot.workspaceId,
-                                selectedAgentWorkspaceId: selection.inlineTerminalWorkspaceId,
-                                onOpenAgentTerminal: { workspaceId in
-                                    selection.openInlineTerminal(workspaceId: workspaceId)
-                                    TaskQuickActions.showWorkspaceInline(workspaceId: workspaceId)
-                                }
-                            )
-                        }
                     }
                 }
                 .padding(10)
@@ -98,6 +118,11 @@ struct TaskSidebarDrillInView: View {
     private func hasWorktreeProjections(_ snap: TaskDetailSnapshot) -> Bool {
         let trimmedPath = snap.worktreePath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return !trimmedPath.isEmpty
+    }
+
+    private func shouldShowWorkItemSection(_ snap: TaskDetailSnapshot) -> Bool {
+        guard remoteSync.settings.isEnabled else { return false }
+        return snap.remoteWorkItem != nil || snap.workspaceId != nil || hasWorktreeProjections(snap)
     }
 
     private var breadcrumb: some View {
@@ -147,17 +172,6 @@ struct TaskSidebarDrillInView: View {
             }
 
             statusPills(snap, statusPresentation: statusPresentation)
-
-            HStack(spacing: 5) {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-                Text(worktreeSummary(for: snap))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -174,7 +188,8 @@ struct TaskSidebarDrillInView: View {
                              table: "TermLoop"),
                 tint: .secondary
             )
-            if let remoteStatus = snap.remoteStatusLabel?
+            if remoteSync.settings.isEnabled,
+               let remoteStatus = snap.remoteStatusLabel?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .nonEmptyTaskSidebarString {
                 TaskSidebarPill(
@@ -231,17 +246,6 @@ struct TaskSidebarDrillInView: View {
         )
     }
 
-    private func worktreeSummary(for snap: TaskDetailSnapshot) -> String {
-        if let branch = snap.branch?.trimmingCharacters(in: .whitespacesAndNewlines), !branch.isEmpty {
-            return branch
-        }
-        if let leaf = TaskAgentProjectionBuilder.pathLeaf(snap.worktreePath) {
-            return leaf
-        }
-        return String(localized: "tasks.sidebar.header.manualTask",
-                      defaultValue: "Manual task", table: "TermLoop")
-    }
-
     private func isStatusMismatch(boardStatus: String, remoteStatus: String) -> Bool {
         normalizedStatus(boardStatus) != normalizedStatus(remoteStatus)
     }
@@ -270,38 +274,6 @@ struct TaskSidebarDrillInView: View {
             .replacingOccurrences(of: "-", with: " ")
             .split(separator: " ")
             .joined(separator: " ")
-    }
-
-    private func quickActions(_ snap: TaskDetailSnapshot) -> some View {
-        HStack(spacing: 6) {
-            Button {
-                TaskQuickActions.openWorktree(workspaceId: snap.workspaceId, worktreePath: snap.worktreePath)
-            } label: {
-                Label(String(localized: "tasks.sidebar.action.openWorktree",
-                             defaultValue: "Open Worktree",
-                             table: "TermLoop"),
-                      systemImage: "terminal")
-            }
-            .disabled(snap.workspaceId == nil && snap.worktreePath == nil)
-
-            Button {
-                if let workspaceId = snap.workspaceId {
-                    TaskQuickActions.addAgentRun(workspaceId: workspaceId)
-                } else {
-                    onImplementWithAgent?(snap.id)
-                }
-            } label: {
-                Label(String(localized: "tasks.sidebar.action.agent",
-                             defaultValue: snap.workspaceId == nil ? "Implement with Agent" : "Start Agent",
-                             table: "TermLoop"),
-                      systemImage: "plus")
-            }
-            .disabled(snap.provisionState == .pending || (snap.workspaceId == nil && onImplementWithAgent == nil))
-            Spacer(minLength: 0)
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.mini)
-        .font(.system(size: 12, weight: .medium))
     }
 
     private func flatSection<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -351,20 +323,5 @@ private struct FlowPillRow<Content: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .lineLimit(1)
-    }
-}
-
-private extension TaskStatusPresentation {
-    var iconName: String {
-        switch self.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-        case let value where value.contains("failed"):
-            return "exclamationmark.triangle"
-        case let value where value.contains("ready"):
-            return "checkmark.circle"
-        case let value where value.contains("pending"):
-            return "clock"
-        default:
-            return "circle.fill"
-        }
     }
 }

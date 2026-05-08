@@ -2982,7 +2982,6 @@ extension TermLoopHooks {
     }
 
     static func presentTaskAgentQuickAction(workspaceId: UUID) {
-        _ = focusWorkspace(workspaceId: workspaceId)
         QuickActionController.shared.present(
             prefill: QuickActionPresentationRequest(
                 initialSurface: .run,

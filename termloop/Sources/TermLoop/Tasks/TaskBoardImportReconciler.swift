@@ -8,12 +8,23 @@ public struct TaskWorkspaceDescriptor: Equatable, Sendable {
     public let projectId: UUID
     public let branch: String?
     public let worktreePath: String
+    /// True only for an explicit import surface. Normal workspace metadata and
+    /// physical `git worktree list` entries validate existing task bindings;
+    /// they must not materialize board cards by themselves.
+    public let canImportTask: Bool
 
-    public init(workspaceId: UUID?, projectId: UUID, branch: String?, worktreePath: String) {
+    public init(
+        workspaceId: UUID?,
+        projectId: UUID,
+        branch: String?,
+        worktreePath: String,
+        canImportTask: Bool = false
+    ) {
         self.workspaceId = workspaceId
         self.projectId = projectId
         self.branch = branch
         self.worktreePath = worktreePath
+        self.canImportTask = canImportTask
     }
 }
 

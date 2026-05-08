@@ -1,5 +1,5 @@
-import { Stack, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -34,10 +34,11 @@ import {
   type WorkspaceSummary,
 } from "../../lib/termloop-client";
 import { colors, monoFont, radii } from "../../lib/theme";
+import { TasksView } from "../../components/tasks-view";
 
 type ProjectState = ProjectSummary | null | "loading";
 type WorkspaceSectionKind = "worktree" | "workspace";
-type WorkspaceViewMode = "active" | "worktrees";
+type WorkspaceViewMode = "active" | "worktrees" | "tasks";
 
 const TERMINAL_SURFACE_READY_ATTEMPTS = 40;
 const TERMINAL_SURFACE_READY_DELAY_MS = 250;
@@ -115,6 +116,8 @@ async function waitForTerminalSurface(
 
 export default function ConnectedScreen() {
   const router = useRouter();
+  const { notifWorkspaceId } = useLocalSearchParams<{ notifWorkspaceId?: string }>();
+  const handledNotifRef = useRef<string | null>(null);
   const client = getActiveClient();
   const [current, setCurrent] = useState<ProjectState>("loading");
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[] | null>(null);
@@ -214,7 +217,7 @@ export default function ConnectedScreen() {
     }
   };
 
-  const onOpenWorkspace = async (ws: WorkspaceSummary) => {
+  const onOpenWorkspace = useCallback(async (ws: WorkspaceSummary) => {
     if (!client) return;
     setOpeningId(ws.id);
     try {
@@ -260,7 +263,15 @@ export default function ConnectedScreen() {
     } finally {
       setOpeningId(null);
     }
-  };
+  }, [client, current, router]);
+
+  useEffect(() => {
+    if (!notifWorkspaceId || !workspaces || handledNotifRef.current === notifWorkspaceId) return;
+    const ws = workspaces.find((w) => w.id === notifWorkspaceId);
+    if (!ws) return;
+    handledNotifRef.current = notifWorkspaceId;
+    onOpenWorkspace(ws);
+  }, [notifWorkspaceId, workspaces, onOpenWorkspace]);
 
   const projectFilterId =
     current === "loading" || current === null ? null : current.id;
@@ -595,9 +606,38 @@ export default function ConnectedScreen() {
           </Text>
           <Text style={styles.viewTabCount}>{worktreeCount}</Text>
         </Pressable>
+        <Pressable
+          style={[
+            styles.viewTab,
+            selectedView === "tasks" && styles.viewTabActive,
+          ]}
+          onPress={() => setSelectedView("tasks")}
+        >
+          <Text
+            style={[
+              styles.viewTabText,
+              selectedView === "tasks" && styles.viewTabTextActive,
+            ]}
+          >
+            Tasks
+          </Text>
+        </Pressable>
       </View>
 
-      {visibleWorkspaces === null ? (
+      {selectedView === "tasks" ? (
+        <TasksView
+          client={client}
+          projectId={
+            current !== "loading" && current !== null ? current.id : undefined
+          }
+          onOpenTask={(taskId) =>
+            router.push({
+              pathname: "/connected/task/[id]",
+              params: { id: taskId },
+            })
+          }
+        />
+      ) : visibleWorkspaces === null ? (
         <View style={styles.loadingPane}>
           <ActivityIndicator color={colors.primary} />
           <Text style={styles.loadingText}>Loading sessions…</Text>

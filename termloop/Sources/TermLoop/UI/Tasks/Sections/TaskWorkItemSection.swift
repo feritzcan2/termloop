@@ -4,8 +4,9 @@
 import SwiftUI
 import AppKit
 
-/// Sidebar drill-in section for the work item already attached to this task's
-/// worktree. The binding remains worktree-scoped; Tasks only projects it.
+/// Sidebar drill-in section for the task's remote work item. Tasks prefer the
+/// task-owned remote link and only project existing worktree-scoped Jira
+/// bindings as read-only context.
 struct TaskWorkItemSection: View {
     let taskId: UUID
     let taskWorkItem: TaskWorkItemSnapshot?
@@ -106,7 +107,7 @@ struct TaskWorkItemSection: View {
                     open(snapshot)
                 } label: {
                     Label(String(localized: "tasks.sidebar.section.workItem.open",
-                                 defaultValue: "Open \(providerDisplayName(snapshot.reference.provider))",
+                                 defaultValue: "Open \(snapshot.reference.provider.displayLabel)",
                                  table: "TermLoop"),
                           systemImage: "arrow.up.right")
                 }
@@ -137,16 +138,6 @@ struct TaskWorkItemSection: View {
                              table: "TermLoop"),
                       systemImage: "link")
             }
-            if let workspaceId = attachWorkspaceId {
-                Button {
-                    JiraTicketBindingPrompt.present(forWorkspaceId: workspaceId)
-                } label: {
-                    Label(String(localized: "tasks.sidebar.section.workItem.change",
-                                 defaultValue: "Attach",
-                                 table: "TermLoop"),
-                          systemImage: "point.3.connected.trianglepath.dotted")
-                }
-            }
         }
         .buttonStyle(.bordered)
         .controlSize(.mini)
@@ -157,18 +148,9 @@ struct TaskWorkItemSection: View {
         VStack(alignment: .leading, spacing: 7) {
             TaskSidebarEmptyText(
                 String(localized: "tasks.sidebar.section.workItem.empty",
-                       defaultValue: "No work item is attached to this worktree.",
+                       defaultValue: "No work item is linked to this task.",
                        table: "TermLoop")
             )
-            if let workspaceId = attachWorkspaceId {
-                Button(String(localized: "tasks.sidebar.section.workItem.attach",
-                              defaultValue: "Attach to worktree",
-                              table: "TermLoop")) {
-                    JiraTicketBindingPrompt.present(forWorkspaceId: workspaceId)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
-            }
             Button(String(localized: "tasks.sidebar.section.workItem.link",
                           defaultValue: "Link work item",
                           table: "TermLoop")) {
@@ -177,13 +159,6 @@ struct TaskWorkItemSection: View {
             .buttonStyle(.bordered)
             .controlSize(.mini)
         }
-    }
-
-    private var attachWorkspaceId: UUID? {
-        TaskWorkItemProjectionBuilder.preferredWorkspaceId(
-            workspaceId: workspaceId,
-            worktreePath: worktreePath
-        )
     }
 
     private func open(_ snapshot: TaskWorkItemSnapshot) {
@@ -247,14 +222,6 @@ struct TaskWorkItemSection: View {
         case .jira: return "checklist"
         case .github: return "number"
         case .gitlab: return "shippingbox"
-        }
-    }
-
-    private func providerDisplayName(_ provider: RemoteWorkItemProviderId) -> String {
-        switch provider {
-        case .jira: return "Jira"
-        case .github: return "GitHub"
-        case .gitlab: return "GitLab"
         }
     }
 

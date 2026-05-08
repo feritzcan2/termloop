@@ -22,5 +22,13 @@ final class TermLoopBuiltInMCPTests: XCTestCase {
         XCTAssertEqual(env["TERMLOOP_ASK_TO_REQUEST_ID"], "request-id")
         XCTAssertEqual(env["TERMLOOP_ASK_TO_REPLY_TOKEN"], "reply-token")
         XCTAssertNil(env["UNRELATED"])
+
+        let args = try XCTUnwrap(entry["args"] as? [String])
+        let shellCommand = try XCTUnwrap(args.last)
+        XCTAssertTrue(shellCommand.contains("TERMLOOP_WORKSPACE_ID='\(workspaceId)'"))
+        XCTAssertTrue(shellCommand.contains("TERMLOOP_ASK_TO_REQUEST_ID='request-id'"))
+        XCTAssertTrue(shellCommand.contains("TERMLOOP_ASK_TO_REPLY_TOKEN='reply-token'"))
+        XCTAssertTrue(shellCommand.contains("exec "))
+        XCTAssertFalse(shellCommand.contains("command -v termloop"))
     }
 }

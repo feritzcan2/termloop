@@ -20,6 +20,15 @@ struct TaskAgentStatusSummary: Equatable {
     let agentCount: Int
     let dominantState: TerminalAgentDisplayState
     let latestActivityAt: Date?
+    let agents: [TaskAgentBadgeSummary]
+}
+
+struct TaskAgentBadgeSummary: Equatable, Identifiable {
+    let workspaceId: UUID
+    let label: String
+    let displayState: TerminalAgentDisplayState
+
+    var id: UUID { workspaceId }
 }
 
 @MainActor
@@ -87,7 +96,14 @@ enum TaskAgentProjectionBuilder {
         return TaskAgentStatusSummary(
             agentCount: agents.count,
             dominantState: dominant,
-            latestActivityAt: latest
+            latestActivityAt: latest,
+            agents: agents.map {
+                TaskAgentBadgeSummary(
+                    workspaceId: $0.workspaceId,
+                    label: $0.agentLabel,
+                    displayState: $0.displayState
+                )
+            }
         )
     }
 

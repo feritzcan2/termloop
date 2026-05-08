@@ -25,6 +25,57 @@ final class TaskBoardStorePersistenceTests: XCTestCase {
         try store.loadOrCreate()
         XCTAssertEqual(store.fileSnapshot().tasks, [])
         XCTAssertEqual(store.fileSnapshot().schemaVersion, TaskBoardFile.currentSchemaVersion)
+        XCTAssertFalse(store.fileSnapshot().settings.remoteSync.remoteItemsEnabled)
+        XCTAssertFalse(store.fileSnapshot().settings.remoteSync.isEnabled)
+        XCTAssertFalse(store.fileSnapshot().settings.remoteSync.syncAssignedToMe)
+        XCTAssertFalse(store.fileSnapshot().settings.remoteSync.syncColumnMovesToRemote)
+        XCTAssertEqual(store.fileSnapshot().settings.remoteSync.limit, 50)
+    }
+
+    func testRemoteSyncAssignedFlagControlsBoardSyncBehavior() throws {
+        let enabled = TaskRemoteSyncSettings(
+            remoteItemsEnabled: true,
+            syncAssignedToMe: true,
+            syncColumnMovesToRemote: true
+        )
+        XCTAssertTrue(enabled.remoteItemsEnabled)
+        XCTAssertTrue(enabled.syncAssignedToMe)
+        XCTAssertTrue(enabled.syncColumnMovesToRemote)
+        XCTAssertTrue(enabled.isAssignedSyncEnabled)
+
+        let assignedSync = TaskRemoteSyncSettings(
+            remoteItemsEnabled: true,
+            syncAssignedToMe: true,
+            syncColumnMovesToRemote: true
+        )
+        let decoded = try JSONDecoder.tasks.decode(
+            TaskRemoteSyncSettings.self,
+            from: JSONEncoder.tasks.encode(assignedSync)
+        )
+        let encodedText = String(data: try JSONEncoder.tasks.encode(assignedSync), encoding: .utf8) ?? ""
+        XCTAssertFalse(encodedText.contains("\"mode\""))
+        XCTAssertTrue(encodedText.contains("\"remoteItemsEnabled\""))
+        XCTAssertTrue(decoded.remoteItemsEnabled)
+        XCTAssertTrue(decoded.syncAssignedToMe)
+        XCTAssertTrue(decoded.syncColumnMovesToRemote)
+        XCTAssertTrue(decoded.isAssignedSyncEnabled)
+    }
+
+    func testDisabledRemoteWorkItemsStripSyncFlags() throws {
+        let payload = """
+        {
+          "remoteItemsEnabled": false,
+          "syncAssignedToMe": true,
+          "syncColumnMovesToRemote": true,
+          "provider": "jira",
+          "limit": 30
+        }
+        """
+        let decoded = try JSONDecoder.tasks.decode(TaskRemoteSyncSettings.self, from: Data(payload.utf8))
+        XCTAssertFalse(decoded.remoteItemsEnabled)
+        XCTAssertFalse(decoded.isEnabled)
+        XCTAssertFalse(decoded.syncAssignedToMe)
+        XCTAssertFalse(decoded.syncColumnMovesToRemote)
     }
 
     func testRoundTripPreservesTasks() throws {

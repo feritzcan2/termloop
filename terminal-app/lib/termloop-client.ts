@@ -128,6 +128,78 @@ export interface WorkspaceRunTargetSummary {
   reported_at?: string | null;
 }
 
+export type TaskColumnId =
+  | "backlog"
+  | "todo"
+  | "in_progress"
+  | "in_review"
+  | "done"
+  | string;
+
+export type TaskProvisionState = "none" | "pending" | "ready" | "failed";
+
+export interface TaskColumnSummary {
+  id: TaskColumnId;
+  title: string;
+}
+
+export interface TaskRecord {
+  id: string;
+  project_id: string;
+  title: string;
+  brief?: string | null;
+  origin: "manual" | "worktree" | "remote" | string;
+  column_id: TaskColumnId;
+  column_title: string;
+  rank: string;
+  workspace_id?: string | null;
+  worktree_path?: string | null;
+  branch?: string | null;
+  owns_worktree: boolean;
+  provision_state: TaskProvisionState;
+  provision_failure_reason?: string | null;
+  remote_provider?: string | null;
+  remote_key?: string | null;
+  remote_url?: string | null;
+  remote_status_label?: string | null;
+  task_file_path?: string | null;
+  created_at: number;
+  updated_at: number;
+  archived_at?: number | null;
+}
+
+export interface TaskListResult {
+  project_id: string;
+  tasks: TaskRecord[];
+  columns: TaskColumnSummary[];
+  include_archived: boolean;
+}
+
+export interface CreateTaskParams {
+  title: string;
+  brief?: string;
+  columnId?: TaskColumnId;
+  projectId?: string;
+}
+
+export interface UpdateTaskParams {
+  taskId: string;
+  title?: string;
+  /**
+   * Pass `null` to clear, undefined to leave unchanged, string to set.
+   */
+  brief?: string | null;
+  projectId?: string;
+}
+
+export interface StartTaskAgentResult {
+  task_id: string;
+  workspace_id?: string;
+  worktree_path?: string | null;
+  branch?: string | null;
+  status: "ready" | "provisioning" | string;
+}
+
 export interface RegisterPushTokenParams {
   deviceToken: string;
   platform: "ios" | "android";
@@ -289,6 +361,23 @@ export interface TermLoopClient {
   ): Promise<SurfaceSubscription>;
   /** No real backend support yet — TODO once PTY resize lands. */
   resize(_params: { workspaceId: string; cols: number; rows: number }): Promise<void>;
+
+  // ---- Tasks (project task board) ---------------------------------------
+  listTasks(params?: { projectId?: string; includeArchived?: boolean }): Promise<TaskListResult>;
+  createTask(params: CreateTaskParams): Promise<TaskRecord>;
+  updateTask(params: UpdateTaskParams): Promise<TaskRecord>;
+  moveTask(params: {
+    taskId: string;
+    columnId: TaskColumnId;
+    projectId?: string;
+  }): Promise<void>;
+  archiveTask(params: { taskId: string; projectId?: string }): Promise<void>;
+  startTaskAgent(params: {
+    taskId: string;
+    terminalAgentId?: string;
+    projectId?: string;
+  }): Promise<StartTaskAgentResult>;
+
   close(): Promise<void>;
 }
 
@@ -524,6 +613,51 @@ export function createTermLoopClient(opts: {
     },
     async resize(_params) {
       // No-op until backend exposes a PTY resize API.
+    },
+    async listTasks(params) {
+      return call<TaskListResult>("tasks.list", {
+        ...(params?.projectId ? { project_id: params.projectId } : {}),
+        ...(params?.includeArchived ? { include_archived: true } : {}),
+      });
+    },
+    async createTask(params) {
+      const out = await call<{ task: TaskRecord }>("tasks.create", {
+        title: params.title,
+        ...(params.brief !== undefined ? { brief: params.brief } : {}),
+        ...(params.columnId ? { column_id: params.columnId } : {}),
+        ...(params.projectId ? { project_id: params.projectId } : {}),
+      });
+      return out.task;
+    },
+    async updateTask(params) {
+      const wire: Record<string, unknown> = { task_id: params.taskId };
+      if (params.title !== undefined) wire.title = params.title;
+      if (params.brief !== undefined) wire.brief = params.brief ?? "";
+      if (params.projectId) wire.project_id = params.projectId;
+      const out = await call<{ task: TaskRecord }>("tasks.update", wire);
+      return out.task;
+    },
+    async moveTask(params) {
+      await call<{ ok: true }>("tasks.move", {
+        task_id: params.taskId,
+        column_id: params.columnId,
+        ...(params.projectId ? { project_id: params.projectId } : {}),
+      });
+    },
+    async archiveTask(params) {
+      await call<{ ok: true }>("tasks.archive", {
+        task_id: params.taskId,
+        ...(params.projectId ? { project_id: params.projectId } : {}),
+      });
+    },
+    async startTaskAgent(params) {
+      return call<StartTaskAgentResult>("tasks.start_agent", {
+        task_id: params.taskId,
+        ...(params.terminalAgentId
+          ? { terminal_agent_id: params.terminalAgentId }
+          : {}),
+        ...(params.projectId ? { project_id: params.projectId } : {}),
+      });
     },
     async subscribeSurface(workspaceId, surfaceId, listener, format, historyLines) {
       const out = await call<{ subscription_id: string }>(

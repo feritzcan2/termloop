@@ -35,20 +35,13 @@ struct TaskSidebarSettingsButton: View {
 struct TaskSettingsSidebarView: View {
     @ObservedObject var remoteSync: TaskRemoteSyncCoordinator
     let onBack: () -> Void
+    @State private var pane: TaskSettingsPane = .index
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    header
-                    settingsCard {
-                        TaskRemoteWorkItemSettingsView(remoteSync: remoteSync)
-                    }
-                    settingsCard {
-                        TaskColumnSettingsView(remoteSync: remoteSync)
-                    }
-                }
-                .padding(10)
+                content
+                    .padding(10)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -57,14 +50,108 @@ struct TaskSettingsSidebarView: View {
         }
     }
 
-    private var header: some View {
+    @ViewBuilder
+    private var content: some View {
+        switch pane {
+        case .index:
+            settingsIndex
+        case .columns:
+            columnSettingsPane
+        case .remoteItems:
+            remoteItemSettingsPane
+        }
+    }
+
+    private var settingsIndex: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            settingsHeader(
+                title: String(localized: "tasks.settings.title",
+                              defaultValue: "Task Settings",
+                              table: "TermLoop"),
+                subtitle: String(localized: "tasks.settings.subtitle",
+                                 defaultValue: "Keep local board layout and optional remote work item sync configured separately.",
+                                 table: "TermLoop"),
+                backTitle: String(localized: "tasks.settings.back",
+                                  defaultValue: "Back",
+                                  table: "TermLoop"),
+                action: onBack
+            )
+
+            settingsNavigationCard(
+                systemImage: "rectangle.3.group",
+                title: String(localized: "tasks.settings.columns.nav.title",
+                              defaultValue: "Column Settings",
+                              table: "TermLoop"),
+                subtitle: String(localized: "tasks.settings.columns.nav.subtitle",
+                                 defaultValue: "Create, rename, hide, reorder, and map board columns.",
+                                 table: "TermLoop"),
+                detail: columnSettingsDetail,
+                action: { pane = .columns }
+            )
+
+            settingsNavigationCard(
+                systemImage: "point.3.connected.trianglepath.dotted",
+                title: String(localized: "tasks.settings.remote.nav.title",
+                              defaultValue: "Remote Item Settings",
+                              table: "TermLoop"),
+                subtitle: String(localized: "tasks.settings.remote.nav.subtitle",
+                                 defaultValue: "Enable Jira, GitHub, or GitLab links and assigned-work sync.",
+                                 table: "TermLoop"),
+                detail: remoteSettingsDetail,
+                action: { pane = .remoteItems }
+            )
+        }
+    }
+
+    private var columnSettingsPane: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            settingsHeader(
+                title: String(localized: "tasks.settings.columns.nav.title",
+                              defaultValue: "Column Settings",
+                              table: "TermLoop"),
+                subtitle: String(localized: "tasks.settings.columns.pane.subtitle",
+                                 defaultValue: "Manage the local board shape. Remote item setup stays in its own screen.",
+                                 table: "TermLoop"),
+                backTitle: String(localized: "tasks.settings.title",
+                                  defaultValue: "Task Settings",
+                                  table: "TermLoop"),
+                action: { pane = .index }
+            )
+            settingsCard {
+                TaskColumnSettingsView(
+                    remoteSync: remoteSync,
+                    onOpenRemoteSettings: { pane = .remoteItems }
+                )
+            }
+        }
+    }
+
+    private var remoteItemSettingsPane: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            settingsHeader(
+                title: String(localized: "tasks.settings.remote.nav.title",
+                              defaultValue: "Remote Item Settings",
+                              table: "TermLoop"),
+                subtitle: String(localized: "tasks.settings.remote.pane.subtitle",
+                                 defaultValue: "Configure provider auth, project scope, and assigned-work sync.",
+                                 table: "TermLoop"),
+                backTitle: String(localized: "tasks.settings.title",
+                                  defaultValue: "Task Settings",
+                                  table: "TermLoop"),
+                action: { pane = .index }
+            )
+            settingsCard {
+                TaskRemoteWorkItemSettingsView(remoteSync: remoteSync)
+            }
+        }
+    }
+
+    private func settingsHeader(title: String, subtitle: String, backTitle: String, action: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            Button(action: onBack) {
+            Button(action: action) {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.left")
-                    Text(String(localized: "tasks.settings.back",
-                                defaultValue: "Back",
-                                table: "TermLoop"))
+                    Text(backTitle)
                 }
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.accentColor)
@@ -72,18 +159,52 @@ struct TaskSettingsSidebarView: View {
             .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(String(localized: "tasks.settings.title",
-                            defaultValue: "Task Settings",
-                            table: "TermLoop"))
+                Text(title)
                     .font(.system(size: 15, weight: .semibold))
-                Text(String(localized: "tasks.settings.subtitle",
-                            defaultValue: "Project-level remote work item sync and board columns.",
-                            table: "TermLoop"))
+                Text(subtitle)
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func settingsNavigationCard(
+        systemImage: String,
+        title: String,
+        subtitle: String,
+        detail: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.accentColor)
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.primary)
+                    Text(subtitle)
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(detail)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.secondary)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.50))
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private func settingsCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -93,26 +214,101 @@ struct TaskSettingsSidebarView: View {
             .background(Color(nsColor: .controlBackgroundColor).opacity(0.50))
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
+
+    private var columnSettingsDetail: String {
+        String(localized: "tasks.settings.columns.nav.detail",
+               defaultValue: "\(remoteSync.settingsVisibleColumns.count) visible columns",
+               table: "TermLoop")
+    }
+
+    private var remoteSettingsDetail: String {
+        if !remoteSync.settings.isEnabled {
+            return String(localized: "tasks.settings.remote.nav.detail.off",
+                          defaultValue: "Off",
+                          table: "TermLoop")
+        }
+        let provider = remoteSync.settings.provider.displayLabel
+        let syncState = remoteSync.settings.syncAssignedToMe
+            ? String(localized: "tasks.settings.remote.nav.detail.syncOn",
+                     defaultValue: "Assigned sync on",
+                     table: "TermLoop")
+            : String(localized: "tasks.settings.remote.nav.detail.syncOff",
+                     defaultValue: "Assigned sync off",
+                     table: "TermLoop")
+        return "\(provider) · \(syncState)"
+    }
+
+}
+
+private enum TaskSettingsPane {
+    case index
+    case columns
+    case remoteItems
 }
 
 private struct TaskRemoteWorkItemSettingsView: View {
     @ObservedObject var remoteSync: TaskRemoteSyncCoordinator
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            remoteEnableToggle
+            if remoteSync.settings.isEnabled {
+                enabledControls
+            } else {
+                disabledRemoteHint
+            }
+        }
+    }
+
+    private var remoteEnableToggle: some View {
+        Toggle(isOn: remoteEnabledBinding) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(String(localized: "tasks.settings.remote.enable",
+                            defaultValue: "Enable remote work items",
+                            table: "TermLoop"))
+                    .font(.system(size: 12, weight: .semibold))
+                Text(String(localized: "tasks.settings.remote.enable.subtitle",
+                            defaultValue: "Optional Jira, GitHub, and GitLab links for this project.",
+                            table: "TermLoop"))
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .toggleStyle(.switch)
+        .controlSize(.small)
+    }
+
+    private var disabledRemoteHint: some View {
+        Text(String(localized: "tasks.settings.remote.subtitle",
+                    defaultValue: "Tasks stay local until remote work items are enabled.",
+                    table: "TermLoop"))
+            .font(.system(size: 11))
+            .foregroundColor(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var enabledControls: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionHeader(
-                title: String(localized: "tasks.settings.remote.title",
-                              defaultValue: "Remote work items",
-                              table: "TermLoop"),
-                subtitle: String(localized: "tasks.settings.remote.subtitle",
-                                 defaultValue: "Connect Tasks to Jira, GitHub, or GitLab without blocking settings on network calls.",
-                                 table: "TermLoop")
-            )
+            Text(String(localized: "tasks.settings.remote.enabled.subtitle",
+                        defaultValue: "Link tasks manually, or sync assigned work from a selected remote scope.",
+                        table: "TermLoop"))
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             providerTabs
 
             cliStatusCard
 
+            providerFields
+
+            assignedSyncControls
+        }
+    }
+
+    private var assignedSyncControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
             Toggle(isOn: syncBinding) {
                 Text(String(localized: "tasks.settings.syncAssignedToMe",
                             defaultValue: "Sync assigned to me",
@@ -122,34 +318,66 @@ private struct TaskRemoteWorkItemSettingsView: View {
             .toggleStyle(.switch)
             .controlSize(.small)
 
-            providerFields
-
-            HStack(spacing: 6) {
-                Button(action: { remoteSync.syncAssignedToMe() }) {
-                    if remoteSync.isSyncing {
-                        ProgressView()
-                            .controlSize(.small)
-                            .frame(width: 12, height: 12)
-                    } else {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                    }
-                    Text(String(localized: "tasks.settings.syncNow",
-                                defaultValue: "Sync now",
+            if remoteSync.settings.syncAssignedToMe {
+                HStack(spacing: 6) {
+                    Text(String(localized: "tasks.settings.remote.syncLimit",
+                                defaultValue: "Assigned sync limit",
                                 table: "TermLoop"))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                    Spacer(minLength: 0)
+                    Picker("", selection: assignedSyncLimitBinding) {
+                        ForEach(assignedSyncLimitChoices, id: \.self) { limit in
+                            Text("\(limit)").tag(limit)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .controlSize(.mini)
+                    .frame(width: 86)
+                    .help(String(localized: "tasks.settings.remote.syncLimit.help",
+                                 defaultValue: "Maximum assigned items to fetch, newest updated first when the provider supports ordering.",
+                                 table: "TermLoop"))
                 }
-                .disabled(remoteSync.isSyncing || !canSyncAssigned)
-                .help(syncHelp)
-                Spacer(minLength: 0)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.mini)
 
-            if let statusText {
-                Text(statusText)
+                HStack(spacing: 6) {
+                    Button(action: { remoteSync.syncAssignedToMe() }) {
+                        if remoteSync.isSyncing {
+                            ProgressView()
+                                .controlSize(.small)
+                                .frame(width: 12, height: 12)
+                        } else {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                        }
+                        Text(String(localized: "tasks.settings.syncNow",
+                                    defaultValue: "Sync now",
+                                    table: "TermLoop"))
+                    }
+                    .disabled(remoteSync.isSyncing || !canSyncAssigned)
+                    .help(syncHelp)
+                    Spacer(minLength: 0)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+
+                if let statusText {
+                    Text(statusText)
+                        .font(statusText.contains("\n")
+                              ? .system(size: 9, design: .monospaced)
+                              : .system(size: 10))
+                        .foregroundColor(statusColor)
+                        .lineLimit(statusText.contains("\n") ? 16 : 3)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                Text(String(localized: "tasks.settings.remote.syncAssignedHint",
+                            defaultValue: "Remote item links stay manual until this is enabled.",
+                            table: "TermLoop"))
                     .font(.system(size: 10))
-                    .foregroundColor(statusColor)
-                    .lineLimit(3)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -162,7 +390,7 @@ private struct TaskRemoteWorkItemSettingsView: View {
                         Circle()
                             .fill(cliDotColor(for: provider))
                             .frame(width: 7, height: 7)
-                        Text(providerDisplayName(provider))
+                        Text(provider.displayLabel)
                             .font(.system(size: 11, weight: remoteSync.settings.provider == provider ? .semibold : .medium))
                     }
                     .padding(.vertical, 5)
@@ -202,7 +430,9 @@ private struct TaskRemoteWorkItemSettingsView: View {
                 Text(detail)
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundColor(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(8)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if !status.isAvailable {
                 Text(remoteSync.cliSetupHint(for: status.provider))
@@ -354,6 +584,25 @@ private struct TaskRemoteWorkItemSettingsView: View {
         )
     }
 
+    private var remoteEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { remoteSync.settings.isEnabled },
+            set: { remoteSync.setRemoteItemsEnabled($0) }
+        )
+    }
+
+    private var assignedSyncLimitBinding: Binding<Int> {
+        Binding(
+            get: { remoteSync.settings.limit },
+            set: { remoteSync.setAssignedSyncLimit($0) }
+        )
+    }
+
+    private var assignedSyncLimitChoices: [Int] {
+        let configured = max(1, min(remoteSync.settings.limit, 500))
+        return Array(Set([50, 100, 250, 500, configured])).sorted()
+    }
+
     private var jiraAccountBinding: Binding<String> {
         Binding(
             get: {
@@ -443,14 +692,6 @@ private struct TaskRemoteWorkItemSettingsView: View {
         return status.isAvailable ? .green : .red
     }
 
-    private func providerDisplayName(_ provider: RemoteWorkItemProviderId) -> String {
-        switch provider {
-        case .jira: return "Jira"
-        case .github: return "GitHub"
-        case .gitlab: return "GitLab"
-        }
-    }
-
     private func labeledTextField(label: String, placeholder: String, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(label)
@@ -473,8 +714,10 @@ private struct TaskRemoteWorkItemSettingsView: View {
 
 private struct TaskColumnSettingsView: View {
     @ObservedObject var remoteSync: TaskRemoteSyncCoordinator
+    var onOpenRemoteSettings: (() -> Void)?
 
     var body: some View {
+        let showsRemoteControls = remoteSync.settings.isAssignedSyncEnabled
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .top, spacing: 8) {
                 sectionHeader(
@@ -486,21 +729,57 @@ private struct TaskColumnSettingsView: View {
                                      table: "TermLoop")
                 )
                 Spacer(minLength: 0)
-                LoadingIconButton(
-                    systemImage: "arrow.clockwise",
-                    isLoading: remoteSync.isLoadingStatuses,
-                    action: { remoteSync.loadRemoteStatusOptions() }
-                )
+                if showsRemoteControls {
+                    LoadingIconButton(
+                        systemImage: "arrow.clockwise",
+                        isLoading: remoteSync.isLoadingStatuses,
+                        action: { remoteSync.loadRemoteStatusOptions() }
+                    )
+                }
             }
 
-            Toggle(isOn: remoteColumnMoveBinding) {
-                Text(String(localized: "tasks.settings.syncColumnMoves",
-                            defaultValue: "Ask to sync board moves to remote",
-                            table: "TermLoop"))
-                    .font(.system(size: 12, weight: .medium))
+            if let onOpenRemoteSettings {
+                Button(action: onOpenRemoteSettings) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "point.3.connected.trianglepath.dotted")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.accentColor)
+                            .frame(width: 16)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(String(localized: "tasks.settings.columns.remoteLink.title",
+                                        defaultValue: "Remote item settings",
+                                        table: "TermLoop"))
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.primary)
+                            Text(remoteSettingsLinkSubtitle)
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 7)
+                    .padding(.horizontal, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white.opacity(0.035))
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                }
+                .buttonStyle(.plain)
             }
-            .toggleStyle(.switch)
-            .controlSize(.small)
+
+            if showsRemoteControls {
+                Toggle(isOn: remoteColumnMoveBinding) {
+                    Text(String(localized: "tasks.settings.syncColumnMoves",
+                                defaultValue: "Ask to sync board moves to remote",
+                                table: "TermLoop"))
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+            }
 
             HStack(spacing: 6) {
                 Button(action: presentAddColumnPrompt) {
@@ -510,24 +789,26 @@ private struct TaskColumnSettingsView: View {
                                 table: "TermLoop"))
                 }
 
-                Button(action: { remoteSync.syncRemoteStatusesToColumns() }) {
-                    if remoteSync.isLoadingStatuses {
-                        ProgressView()
-                            .controlSize(.small)
-                            .frame(width: 12, height: 12)
-                    } else {
-                        Image(systemName: "rectangle.3.group")
+                if showsRemoteControls {
+                    Button(action: { remoteSync.syncRemoteStatusesToColumns() }) {
+                        if remoteSync.isLoadingStatuses {
+                            ProgressView()
+                                .controlSize(.small)
+                                .frame(width: 12, height: 12)
+                        } else {
+                            Image(systemName: "rectangle.3.group")
+                        }
+                        Text(String(localized: "tasks.settings.columns.syncRemoteStatuses",
+                                    defaultValue: "Sync remote statuses",
+                                    table: "TermLoop"))
                     }
-                    Text(String(localized: "tasks.settings.columns.syncRemoteStatuses",
-                                defaultValue: "Sync remote statuses",
-                                table: "TermLoop"))
+                    .disabled(remoteSync.isLoadingStatuses)
                 }
-                .disabled(remoteSync.isLoadingStatuses)
             }
             .buttonStyle(.bordered)
             .controlSize(.mini)
 
-            if let date = remoteSync.remoteStatusOptionsCachedAt {
+            if showsRemoteControls, let date = remoteSync.remoteStatusOptionsCachedAt {
                 Text(String(localized: "tasks.settings.columns.remoteStatusesCached",
                             defaultValue: "Remote statuses cached \(date.formatted(date: .abbreviated, time: .shortened))",
                             table: "TermLoop"))
@@ -541,7 +822,8 @@ private struct TaskColumnSettingsView: View {
                     column: column,
                     remoteSync: remoteSync,
                     canMoveUp: index > 0,
-                    canMoveDown: index < visibleColumns.count - 1
+                    canMoveDown: index < visibleColumns.count - 1,
+                    showsRemoteControls: showsRemoteControls
                 )
             }
         }
@@ -578,6 +860,17 @@ private struct TaskColumnSettingsView: View {
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         remoteSync.addColumn(title: field.stringValue)
     }
+
+    private var remoteSettingsLinkSubtitle: String {
+        if remoteSync.settings.isEnabled {
+            return String(localized: "tasks.settings.columns.remoteLink.enabledSubtitle",
+                          defaultValue: "Provider, project scope, and assigned sync live on a separate screen.",
+                          table: "TermLoop")
+        }
+        return String(localized: "tasks.settings.columns.remoteLink.disabledSubtitle",
+                      defaultValue: "Enable Jira, GitHub, or GitLab only when this board needs remote work items.",
+                      table: "TermLoop")
+    }
 }
 
 private struct TaskColumnSettingsRow: View {
@@ -585,6 +878,7 @@ private struct TaskColumnSettingsRow: View {
     @ObservedObject var remoteSync: TaskRemoteSyncCoordinator
     let canMoveUp: Bool
     let canMoveDown: Bool
+    let showsRemoteControls: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -642,22 +936,24 @@ private struct TaskColumnSettingsRow: View {
             .textFieldStyle(.roundedBorder)
             .font(.system(size: 11))
 
-            Picker("", selection: remoteStatusBinding) {
-                Text(String(localized: "tasks.settings.remoteStatus.none",
-                            defaultValue: "No remote sync",
-                            table: "TermLoop"))
-                    .tag("")
-                ForEach(statusChoices, id: \.self) { label in
-                    Text(label).tag(label)
+            if showsRemoteControls {
+                Picker("", selection: remoteStatusBinding) {
+                    Text(String(localized: "tasks.settings.remoteStatus.none",
+                                defaultValue: "No remote sync",
+                                table: "TermLoop"))
+                        .tag("")
+                    ForEach(statusChoices, id: \.self) { label in
+                        Text(label).tag(label)
+                    }
                 }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.mini)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help(String(localized: "tasks.settings.remoteStatus.help",
+                             defaultValue: "Optional. If this status exists remotely, TermLoop asks before syncing it on board moves.",
+                             table: "TermLoop"))
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .controlSize(.mini)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .help(String(localized: "tasks.settings.remoteStatus.help",
-                         defaultValue: "Optional. If this status exists remotely, TermLoop asks before syncing it on board moves.",
-                         table: "TermLoop"))
         }
         .padding(.vertical, 7)
         .padding(.horizontal, 8)

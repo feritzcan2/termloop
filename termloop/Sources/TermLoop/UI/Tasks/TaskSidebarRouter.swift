@@ -12,6 +12,7 @@ struct TaskSidebarRouter: View {
     var coordinator: TaskLifecycleCoordinator?
     @ObservedObject private var remoteSync: TaskRemoteSyncCoordinator
     @State private var isShowingSettings = false
+    @State private var createWorktreeTaskId: UUID?
 
     init(
         store: TaskBoardStore,
@@ -28,6 +29,9 @@ struct TaskSidebarRouter: View {
         routedBody
             .onAppear { syncSelectionValidity() }
             .onChange(of: selection.selectedTaskId) { _, _ in syncSelectionValidity() }
+            .sheet(isPresented: createWorktreeSheetBinding) {
+                createWorktreeSheet
+            }
     }
 
     @ViewBuilder
@@ -58,11 +62,7 @@ struct TaskSidebarRouter: View {
                         openTaskSpec(taskId: id, coordinator: c, title: detailSnapshot.title)
                     }
                 },
-                onImplementWithAgent: coordinator.map { c in
-                    { id in
-                        implementTaskWithAgent(taskId: id, coordinator: c)
-                    }
-                },
+                onCreateWorktree: coordinator == nil ? nil : { id in createWorktreeTaskId = id },
                 onOpenSettings: { isShowingSettings = true },
                 onUnbind: coordinator.map { c in
                     { id in try? c.unbindWorktree(taskId: id) }
@@ -105,22 +105,94 @@ struct TaskSidebarRouter: View {
         }
     }
 
-    private func implementTaskWithAgent(taskId: UUID, coordinator: TaskLifecycleCoordinator) {
-        _Concurrency.Task { @MainActor in
-            do {
-                _ = try coordinator.ensureTaskSpecFile(taskId: taskId)
-                try await coordinator.bindWorktree(taskId: taskId)
-                guard let task = store.fileSnapshot().tasks.first(where: { $0.id == taskId }),
-                      let workspaceId = task.workspaceId else { return }
-                selection.openInlineTerminal(workspaceId: workspaceId)
-                TaskQuickActions.showWorkspaceInline(workspaceId: workspaceId)
-                TaskQuickActions.addAgentRun(workspaceId: workspaceId)
-            } catch {
-                #if DEBUG
-                print("TaskSidebarRouter.implementTaskWithAgent failed: \(error)")
-                #endif
+    private var createWorktreeSheetBinding: Binding<Bool> {
+        Binding(
+            get: { coordinator != nil && createWorktreeTask != nil },
+            set: { isPresented in
+                if !isPresented {
+                    createWorktreeTaskId = nil
+                }
             }
+        )
+    }
+
+    private var createWorktreeTask: TaskRecord? {
+        guard let taskId = createWorktreeTaskId else { return nil }
+        return store.fileSnapshot().tasks.first { $0.id == taskId }
+    }
+
+    @ViewBuilder
+    private var createWorktreeSheet: some View {
+        if let coordinator,
+           let task = createWorktreeTask {
+            TaskCreateWorktreeSheet(
+                task: task,
+                onWorkspaceCreated: { creation in
+                    try coordinator.bindExistingWorktree(
+                        taskId: task.id,
+                        workspaceId: creation.workspace.id,
+                        branch: creation.branch,
+                        worktreePath: creation.worktreePath,
+                        ownsWorktree: creation.createdWorktree
+                    )
+                },
+                onCancel: { createWorktreeTaskId = nil },
+                onSuccess: { createWorktreeTaskId = nil }
+            )
+        } else {
+            EmptyView()
         }
+    }
+}
+
+private struct TaskCreateWorktreeSheet: View {
+    let task: TaskRecord
+    let onWorkspaceCreated: (NewWorkspaceWithWorktreeForm.Creation) throws -> Void
+    let onCancel: () -> Void
+    let onSuccess: () -> Void
+
+    var body: some View {
+        NewWorkspaceWithWorktreeForm(
+            request: request,
+            tabManager: AppDelegate.shared?.tabManager,
+            showsPromptEditors: false,
+            showsAgentPickerControl: false,
+            activatesWorkspaceOnSuccess: false,
+            onWorkspaceCreated: onWorkspaceCreated,
+            onCancel: onCancel,
+            onSuccess: onSuccess
+        )
+        .frame(width: 560)
+    }
+
+    private var request: NewWorkspaceWithWorktreeRequest {
+        NewWorkspaceWithWorktreeRequest(
+            projectId: task.projectId,
+            terminalAgentId: nil,
+            suggestedBranchName: suggestedBranchName,
+            assignedTicket: assignedTicket
+        )
+    }
+
+    private var assignedTicket: WorkspaceMetadataStore.AssignedTicket? {
+        guard let reference = task.remoteWorkItem else { return nil }
+        return WorkspaceMetadataStore.AssignedTicket(
+            providerName: reference.provider.displayLabel,
+            key: reference.key,
+            title: task.title
+        )
+    }
+
+    private var suggestedBranchName: String? {
+        let stored = nonEmptyTrimmed(task.branch)
+        if let stored { return stored }
+        let key = nonEmptyTrimmed(task.remoteWorkItem?.key)
+        return key.map { "feature/\($0)" }
+    }
+
+    private func nonEmptyTrimmed(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 

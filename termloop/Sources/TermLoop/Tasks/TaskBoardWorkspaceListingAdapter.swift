@@ -5,7 +5,8 @@ import Foundation
 
 /// Adapter bridging `TaskBoardWorkspaceListing` to the existing
 /// `WorkspaceMetadataStore` + `ProjectStore`. Read-only — reconciler uses this
-/// to discover orphan worktrees and validate task bindings.
+/// to validate task bindings and recover existing paths without creating
+/// board cards from workspace metadata or physical git worktrees.
 ///
 /// Registered into `TaskBoardStoreProvider.shared.workspaceLister` at app
 /// startup (via `TaskBoardReconcileHook.bootstrap()`).
@@ -25,7 +26,8 @@ public final class TaskBoardWorkspaceListingAdapter: TaskBoardWorkspaceListing {
                 workspaceId: workspaceId,
                 projectId: projectId,
                 branch: metadata.branch,
-                worktreePath: path
+                worktreePath: path,
+                canImportTask: false
             )
         }
 
@@ -55,7 +57,8 @@ public final class TaskBoardWorkspaceListingAdapter: TaskBoardWorkspaceListing {
                 workspaceId: nil,
                 projectId: projectId,
                 branch: entry.branch,
-                worktreePath: entry.path
+                worktreePath: entry.path,
+                canImportTask: false
             ))
         }
 

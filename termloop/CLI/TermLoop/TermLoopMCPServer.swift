@@ -13,6 +13,9 @@ enum TermLoopMCPServer {
     /// abilities have opted into. Optional tools (set_jira_ticket, ...) are
     /// only surfaced when listed.
     private static let enabledToolsEnvKey = "TERMLOOP_ENABLED_MCP_TOOLS"
+    private static let socketPathEnvKey = "TERMLOOP_SOCKET_PATH"
+    private static let askToRequestIdEnvKey = "TERMLOOP_ASK_TO_REQUEST_ID"
+    private static let askToReplyTokenEnvKey = "TERMLOOP_ASK_TO_REPLY_TOKEN"
 
     /// CLI-side copy of the Jira ticket reporter tool name. The app side keeps
     /// a matching `TermLoopBuiltInMCP.setJiraTicketToolName`; the two cannot
@@ -43,6 +46,9 @@ enum TermLoopMCPServer {
         /// `true` → always present in tools/list, regardless of ability state.
         /// `false` → only present when ability opts in via env var.
         let alwaysOn: Bool
+        /// Ask-To reply is a callback, not an ambient TermLoop capability. It
+        /// only appears inside helper launches carrying a reply credential.
+        let requiresAskToReplyContext: Bool
         let handler: (
             _ id: Any,
             _ arguments: [String: Any],
@@ -76,6 +82,7 @@ enum TermLoopMCPServer {
                 "required": ["key"]
             ],
             alwaysOn: false,
+            requiresAskToReplyContext: false,
             handler: runSetJiraTicket
         ),
         BuiltInTool(
@@ -87,6 +94,7 @@ enum TermLoopMCPServer {
                 "additionalProperties": false
             ],
             alwaysOn: false,
+            requiresAskToReplyContext: false,
             handler: runGetJiraTicket
         ),
         BuiltInTool(
@@ -125,6 +133,7 @@ enum TermLoopMCPServer {
                 "required": ["targets"]
             ],
             alwaysOn: false,
+            requiresAskToReplyContext: false,
             handler: runSetRunTargets
         ),
         BuiltInTool(
@@ -136,6 +145,7 @@ enum TermLoopMCPServer {
                 "additionalProperties": false
             ],
             alwaysOn: false,
+            requiresAskToReplyContext: false,
             handler: runGetRunTargets
         ),
         BuiltInTool(
@@ -169,6 +179,7 @@ enum TermLoopMCPServer {
                 "required": ["message"]
             ],
             alwaysOn: true,
+            requiresAskToReplyContext: false,
             handler: runAskTo
         ),
         BuiltInTool(
@@ -189,6 +200,7 @@ enum TermLoopMCPServer {
                 "required": ["request_id", "message"]
             ],
             alwaysOn: true,
+            requiresAskToReplyContext: true,
             handler: runReplyToRequest
         ),
         BuiltInTool(
@@ -241,6 +253,7 @@ enum TermLoopMCPServer {
                 "required": ["action", "target_path", "reasoning", "confidence"]
             ],
             alwaysOn: true,
+            requiresAskToReplyContext: false,
             handler: runContextBankPropose
         ),
         BuiltInTool(
@@ -256,6 +269,7 @@ enum TermLoopMCPServer {
                 ]
             ],
             alwaysOn: true,
+            requiresAskToReplyContext: false,
             handler: runContextBankFinalize
         )
     ]
@@ -329,7 +343,7 @@ enum TermLoopMCPServer {
         case "tools/list":
             let enabled = enabledToolNameSet(env: processEnv)
             let visible = builtInTools.filter { tool in
-                tool.alwaysOn || enabled.contains(tool.name)
+                isToolVisible(tool, enabled: enabled, env: processEnv)
             }
             let toolList: [[String: Any]] = visible.map { tool in
                 [
@@ -350,13 +364,18 @@ enum TermLoopMCPServer {
             let requestedTool = (params["name"] as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let enabled = enabledToolNameSet(env: processEnv)
-            guard let tool = builtInTools.first(where: { $0.name == requestedTool }),
-                  tool.alwaysOn || enabled.contains(tool.name) else {
+            guard let tool = builtInTools.first(where: { $0.name == requestedTool }) else {
                 return error(
                     id: id,
                     code: -32601,
                     message: "Unknown tool: \(requestedTool)"
                 )
+            }
+            guard isToolVisible(tool, enabled: enabled, env: processEnv) else {
+                let message = tool.requiresAskToReplyContext
+                    ? "Ask-To reply context missing; reply_to_request is only available inside an Ask-To helper launch."
+                    : "Unknown tool: \(requestedTool)"
+                return error(id: id, code: -32601, message: message)
             }
             let arguments = params["arguments"] as? [String: Any] ?? [:]
             return tool.handler(id, arguments, processEnv, socketPath)
@@ -368,6 +387,34 @@ enum TermLoopMCPServer {
                 message: "Method not found: \(method ?? "unknown")"
             )
         }
+    }
+
+    private static func isToolVisible(
+        _ tool: BuiltInTool,
+        enabled: Set<String>,
+        env: [String: String]
+    ) -> Bool {
+        guard tool.alwaysOn || enabled.contains(tool.name) else {
+            return false
+        }
+        guard !tool.requiresAskToReplyContext else {
+            return hasAskToReplyContext(env)
+        }
+        return true
+    }
+
+    private static func hasAskToReplyContext(_ env: [String: String]) -> Bool {
+        nonEmptyEnv(env, socketPathEnvKey) != nil
+            && nonEmptyEnv(env, askToRequestIdEnvKey) != nil
+            && nonEmptyEnv(env, askToReplyTokenEnvKey) != nil
+    }
+
+    private static func nonEmptyEnv(_ env: [String: String], _ key: String) -> String? {
+        guard let value = env[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else {
+            return nil
+        }
+        return value
     }
 
     /// Resolves the opt-in tool set. Prefers a fresh on-disk read of the
@@ -769,6 +816,13 @@ enum TermLoopMCPServer {
         processEnv: [String: String],
         socketPath: String
     ) -> [String: Any] {
+        guard hasAskToReplyContext(processEnv) else {
+            return toolResult(
+                id: id,
+                text: "Ask-To reply context missing; reply_to_request is only available inside an Ask-To helper launch.",
+                isError: true
+            )
+        }
         let requestId = ((arguments["request_id"] as? String) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard UUID(uuidString: requestId) != nil else {

@@ -54,11 +54,7 @@ public final class TaskBoardWorktreeProvisioner: TaskBoundWorktreeProvisioning {
             createdWorktree = false
         } else {
             guard try service.isClean(worktreePath: projectRoot.path) else {
-                throw TaskLifecycleError.provisionFailed(
-                    String(localized: "tasks.provision.failure.dirtySource",
-                           defaultValue: "Project checkout has uncommitted changes. Commit, stash, or clean it before creating a task worktree.",
-                           table: "TermLoop")
-                )
+                throw TaskLifecycleError.provisionFailed(TaskProvisionFailureReason.dirtySourceCheckout)
             }
             let branchExists = try service.branches(in: projectRoot.path)
                 .contains { $0.name == branch }
@@ -121,6 +117,7 @@ public final class TaskBoardWorktreeProvisioner: TaskBoundWorktreeProvisioning {
             projectId: projectId
         )
         WorkspaceMetadataStore.shared.setProjectId(projectId, forWorkspaceId: workspace.id)
+        WorkspaceMetadataStore.shared.setTerminalAgentId(nil, for: workspace.id)
         WorkspaceMetadataStore.shared.setBranch(branch, worktreePath: path, forWorkspaceId: workspace.id)
         return workspace.id
     }

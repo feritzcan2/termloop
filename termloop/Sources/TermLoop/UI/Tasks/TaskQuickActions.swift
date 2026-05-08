@@ -8,8 +8,8 @@ import Foundation
 ///
 /// Per CLAUDE.md: agent-spawn must use the existing AgentInputs prompt
 /// templates. We never inline a prompt string here; instead we route through
-/// the existing Work-tab create-agent affordance which shows the user the
-/// template picker.
+/// the existing Quick Action affordance which shows the user the template
+/// picker.
 @MainActor
 enum TaskQuickActions {
     /// Switch the active sidebar tab to `.work` and select the bound workspace.
@@ -40,11 +40,11 @@ enum TaskQuickActions {
         _ = TaskQuickActionsBridge.requestSelectWorkspaceInline(workspaceId)
     }
 
-    /// Switch to Work tab on the bound workspace and ask the existing
-    /// "+ Agent" affordance to open. No prompt is supplied — the user picks a
-    /// template in the existing UI.
-    static func addAgentRun(workspaceId: UUID) {
-        openWorktree(workspaceId: workspaceId, worktreePath: nil)
+    /// Ask the existing Quick Action agent picker to open for the bound
+    /// workspace without leaving the Tasks page. No prompt is supplied — the
+    /// user picks a template in the existing UI.
+    static func startAgentFromTasks(workspaceId: UUID) {
+        showWorkspaceInline(workspaceId: workspaceId)
         TaskQuickActionsBridge.requestNewAgentPanel(workspaceId)
     }
 
