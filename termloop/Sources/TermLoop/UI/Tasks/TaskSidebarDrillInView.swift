@@ -13,6 +13,8 @@ struct TaskSidebarDrillInView: View {
     var columnTitle: (TaskColumnId) -> String = { $0.defaultTitle }
     var onRebind: ((UUID) -> Void)?
     var onOpenTaskSpec: ((UUID) -> Void)?
+    var onUpdateTitle: ((UUID, String) -> Void)?
+    var onUpdateBrief: ((UUID, String?) -> Void)?
     var onCreateWorktree: ((UUID) -> Void)?
     var onOpenSettings: () -> Void = {}
 
@@ -165,9 +167,18 @@ struct TaskSidebarDrillInView: View {
                     .fill(statusPresentation.color)
                     .frame(width: 9, height: 9)
                     .padding(.top, 7)
-                Text(snap.title)
-                    .font(.system(size: 16, weight: .semibold))
-                    .lineLimit(2)
+                VStack(alignment: .leading, spacing: 6) {
+                    TaskSidebarTitleField(
+                        taskId: snap.id,
+                        title: snap.title,
+                        onUpdateTitle: onUpdateTitle
+                    )
+                    TaskSidebarBriefField(
+                        taskId: snap.id,
+                        brief: snap.brief,
+                        onUpdateBrief: onUpdateBrief
+                    )
+                }
                 Spacer(minLength: 0)
             }
 
@@ -285,6 +296,151 @@ struct TaskSidebarDrillInView: View {
 
 private extension String {
     var nonEmptyTaskSidebarString: String? { isEmpty ? nil : self }
+}
+
+private struct TaskSidebarTitleField: View {
+    let taskId: UUID
+    let title: String
+    var onUpdateTitle: ((UUID, String) -> Void)?
+
+    @State private var draft: String
+    @FocusState private var isFocused: Bool
+
+    init(
+        taskId: UUID,
+        title: String,
+        onUpdateTitle: ((UUID, String) -> Void)?
+    ) {
+        self.taskId = taskId
+        self.title = title
+        self.onUpdateTitle = onUpdateTitle
+        _draft = State(initialValue: title)
+    }
+
+    var body: some View {
+        TextField(
+            String(localized: "tasks.sidebar.title.placeholder",
+                   defaultValue: "Task title",
+                   table: "TermLoop"),
+            text: $draft,
+            axis: .vertical
+        )
+        .textFieldStyle(.plain)
+        .font(.system(size: 16, weight: .semibold))
+        .foregroundStyle(.primary)
+        .lineLimit(1...3)
+        .padding(.vertical, 3)
+        .padding(.horizontal, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isFocused ? Color.accentColor.opacity(0.10) : Color.primary.opacity(0.035))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(isFocused ? Color.accentColor.opacity(0.45) : Color.primary.opacity(0.08), lineWidth: 1)
+        )
+        .focused($isFocused)
+        .disabled(onUpdateTitle == nil)
+        .onSubmit(commit)
+        .onChange(of: isFocused) { _, focused in
+            if !focused { commit() }
+        }
+        .onChange(of: taskId) { _, _ in
+            draft = title
+        }
+        .onChange(of: title) { _, newValue in
+            if !isFocused { draft = newValue }
+        }
+        .onDisappear(perform: commit)
+        .help(String(localized: "tasks.sidebar.title.help",
+                     defaultValue: "Edit task title",
+                     table: "TermLoop"))
+    }
+
+    private func commit() {
+        let normalized = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else {
+            draft = title
+            return
+        }
+        guard normalized != title else {
+            draft = normalized
+            return
+        }
+        onUpdateTitle?(taskId, normalized)
+        draft = normalized
+    }
+}
+
+private struct TaskSidebarBriefField: View {
+    let taskId: UUID
+    let brief: String?
+    var onUpdateBrief: ((UUID, String?) -> Void)?
+
+    @State private var draft: String
+    @FocusState private var isFocused: Bool
+
+    init(
+        taskId: UUID,
+        brief: String?,
+        onUpdateBrief: ((UUID, String?) -> Void)?
+    ) {
+        self.taskId = taskId
+        self.brief = brief
+        self.onUpdateBrief = onUpdateBrief
+        _draft = State(initialValue: brief ?? "")
+    }
+
+    var body: some View {
+        TextField(
+            String(localized: "tasks.sidebar.brief.placeholder",
+                   defaultValue: "Add brief…",
+                   table: "TermLoop"),
+            text: $draft,
+            axis: .vertical
+        )
+        .textFieldStyle(.plain)
+        .font(.system(size: 12, weight: .medium))
+        .foregroundColor(draft.isEmpty ? Color.secondary : Color.primary.opacity(0.82))
+        .lineLimit(1...4)
+        .padding(.vertical, 3)
+        .padding(.horizontal, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isFocused ? Color.accentColor.opacity(0.08) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(isFocused ? Color.accentColor.opacity(0.35) : Color.primary.opacity(0.06), lineWidth: 1)
+        )
+        .focused($isFocused)
+        .disabled(onUpdateBrief == nil)
+        .onSubmit(commit)
+        .onChange(of: isFocused) { _, focused in
+            if !focused { commit() }
+        }
+        .onChange(of: taskId) { _, _ in
+            draft = brief ?? ""
+        }
+        .onChange(of: brief) { _, newValue in
+            if !isFocused { draft = newValue ?? "" }
+        }
+        .onDisappear(perform: commit)
+        .help(String(localized: "tasks.sidebar.brief.help",
+                     defaultValue: "Edit task brief",
+                     table: "TermLoop"))
+    }
+
+    private func commit() {
+        let normalized = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = normalized.isEmpty ? nil : normalized
+        guard value != brief else {
+            draft = normalized
+            return
+        }
+        onUpdateBrief?(taskId, value)
+        draft = normalized
+    }
 }
 
 private struct TaskSidebarPill: View {

@@ -62,6 +62,12 @@ struct TaskSidebarRouter: View {
                         openTaskSpec(taskId: id, coordinator: c, title: detailSnapshot.title)
                     }
                 },
+                onUpdateTitle: coordinator.map { c in
+                    { id, title in try? c.updateTitle(taskId: id, title: title) }
+                },
+                onUpdateBrief: coordinator.map { c in
+                    { id, brief in try? c.updateBrief(taskId: id, brief: brief) }
+                },
                 onCreateWorktree: coordinator == nil ? nil : { id in createWorktreeTaskId = id },
                 onOpenSettings: { isShowingSettings = true },
                 onUnbind: coordinator.map { c in

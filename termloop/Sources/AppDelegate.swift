@@ -10745,6 +10745,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return true
     }
 
+    private func requestRenameSelectedTaskIfActive(preferredWindow: NSWindow?) -> Bool {
+        let defaults = UserDefaults.standard
+        guard defaults.string(forKey: TermLoopSidebarTab.storageKey) == TermLoopSidebarTab.work.rawValue,
+              defaults.string(forKey: WorkSubTab.storageKey) == WorkSubTab.tasks.rawValue else {
+            return false
+        }
+
+        guard let activeManager = synchronizeActiveMainWindowContext(preferredWindow: preferredWindow),
+              let windowId = windowId(for: activeManager),
+              let projectId = ProjectStore.shared.activeProjectId,
+              let store = TaskBoardStoreProvider.shared.store(for: projectId) else {
+            NSSound.beep()
+            return true
+        }
+
+        let selection = TaskSelectionStoreProvider.shared.store(for: windowId)
+        guard let taskId = selection.selectedTaskId,
+              let task = store.fileSnapshot().tasks.first(where: { $0.id == taskId && $0.archivedAt == nil }) else {
+            NSSound.beep()
+            return true
+        }
+
+        guard let title = TaskRenameDialog.promptTitle(currentTitle: task.title) else {
+            return true
+        }
+
+        do {
+            try TaskLifecycleCoordinator.makeForProject(store: store)
+                .updateTitle(taskId: task.id, title: title)
+        } catch {
+            NSSound.beep()
+        }
+        return true
+    }
+
     private func handleCustomShortcut(event: NSEvent) -> Bool {
         // `charactersIgnoringModifiers` can be nil for some synthetic NSEvents and certain special keys.
         // Treat nil as "" and rely on keyCode/layout-aware fallback logic where needed.
@@ -11342,8 +11377,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         if matchConfiguredShortcut(event: event, action: .renameWorkspace) {
+            let targetWindow = commandPaletteTargetWindow ?? event.window ?? NSApp.keyWindow ?? NSApp.mainWindow
+            if requestRenameSelectedTaskIfActive(preferredWindow: targetWindow) {
+                return true
+            }
             return requestRenameWorkspaceViaCommandPalette(
-                preferredWindow: commandPaletteTargetWindow ?? event.window ?? NSApp.keyWindow ?? NSApp.mainWindow
+                preferredWindow: targetWindow
             )
         }
 

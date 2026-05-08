@@ -145,16 +145,20 @@ struct TaskCardView: View {
                     .lineLimit(5)
                     .foregroundColor(.primary)
                     .fixedSize(horizontal: false, vertical: true)
+                briefLine
             }
         } else {
             HStack(alignment: .top, spacing: 7) {
                 statusDot
                     .padding(.top, 4)
-                Text(displayTitle)
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(4)
-                    .foregroundColor(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(displayTitle)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(4)
+                        .foregroundColor(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    briefLine
+                }
                 Spacer(minLength: 0)
             }
         }
@@ -181,9 +185,21 @@ struct TaskCardView: View {
     private var isSelected: Bool { selection.selectedTaskId == card.id }
     private var canDrag: Bool { card.provisionState != .pending }
     private var displayTitle: String { workItem?.title ?? card.title }
+    private var briefText: String? { trimmedNonEmpty(card.brief) }
     private var remoteHeaderKey: String? {
         let key = workItem?.key ?? card.remoteWorkItem?.key
         return trimmedNonEmpty(key)
+    }
+
+    @ViewBuilder
+    private var briefLine: some View {
+        if let briefText {
+            Text(briefText)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundColor(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var remoteStatusText: String? {
