@@ -211,7 +211,7 @@ struct TaskSidebarSectionTitle: View {
     var body: some View {
         Text(TermLoopSidebarTheme.adaptiveSectionTitle(title))
             .font(TermLoopSidebarTheme.adaptiveSectionFont(size: 13))
-            .foregroundStyle(TermLoopSidebarTheme.adaptiveSectionColor)
+            .foregroundStyle(Color.primary.opacity(0.72))
     }
 }
 
@@ -225,7 +225,7 @@ struct TaskSidebarEmptyText: View {
     var body: some View {
         Text(text)
             .font(.system(size: 12))
-            .foregroundColor(.secondary)
+            .foregroundColor(.secondary.opacity(0.92))
     }
 }
 

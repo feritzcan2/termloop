@@ -43,80 +43,114 @@ struct TaskWorkItemSection: View {
     }
 
     private func workItemRow(_ snapshot: TaskWorkItemSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 9) {
                 Image(systemName: iconName(for: snapshot.reference.provider))
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(tint(for: snapshot.reference.provider))
-                    .frame(width: 14)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(snapshot.key)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.primary)
-                        .lineLimit(1)
+                    .frame(width: 16, height: 18)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        Text(snapshot.key)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.primary)
+                            .lineLimit(1)
+                        if let status = snapshot.statusLabel {
+                            statusPill(status)
+                        }
+                        Spacer(minLength: 0)
+                    }
                     if let title = snapshot.title, title != snapshot.key {
                         Text(title)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Color.primary.opacity(0.86))
                             .lineLimit(2)
-                    }
-                    if let status = snapshot.statusLabel {
-                        Text(status)
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(Color.secondary)
-                            .lineLimit(1)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                Spacer(minLength: 0)
+
                 if snapshot.url != nil {
                     Image(systemName: "arrow.up.right")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Color.secondary)
+                        .padding(.top, 1)
                 }
             }
 
-            HStack(spacing: 6) {
-                if snapshot.url != nil {
-                    Button(String(localized: "tasks.sidebar.section.workItem.open",
-                                  defaultValue: "Open",
-                                  table: "TermLoop")) {
-                        open(snapshot)
-                    }
-                }
-                if snapshot.taskFilePath != nil {
-                    Button(String(localized: "tasks.sidebar.section.workItem.openTaskFile",
-                                  defaultValue: "task.md",
-                                  table: "TermLoop")) {
-                        openTaskFile(snapshot)
-                    }
-                }
-                Button(String(localized: "tasks.sidebar.section.workItem.refresh",
-                              defaultValue: "Refresh",
-                              table: "TermLoop")) {
-                    refresh(snapshot)
-                }
-                Button(String(localized: "tasks.sidebar.section.workItem.link",
-                              defaultValue: "Link",
-                              table: "TermLoop")) {
-                    presentTaskLinkPrompt(prior: snapshot.url?.absoluteString ?? snapshot.key)
-                }
-                if let workspaceId = attachWorkspaceId {
-                    Button(String(localized: "tasks.sidebar.section.workItem.change",
-                                  defaultValue: "Attach to worktree",
-                                  table: "TermLoop")) {
-                        JiraTicketBindingPrompt.present(forWorkspaceId: workspaceId)
-                    }
-                }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.mini)
+            actionBar(snapshot)
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.42))
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.56))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .help(snapshot.url?.absoluteString ?? snapshot.compactLabel)
+    }
+
+    private func statusPill(_ status: String) -> some View {
+        Text(status)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(Color.blue)
+            .lineLimit(1)
+            .padding(.vertical, 2)
+            .padding(.horizontal, 6)
+            .background(Color.blue.opacity(0.10))
+            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+    }
+
+    private func actionBar(_ snapshot: TaskWorkItemSnapshot) -> some View {
+        HStack(spacing: 6) {
+            if snapshot.url != nil {
+                Button {
+                    open(snapshot)
+                } label: {
+                    Label(String(localized: "tasks.sidebar.section.workItem.open",
+                                 defaultValue: "Open \(providerDisplayName(snapshot.reference.provider))",
+                                 table: "TermLoop"),
+                          systemImage: "arrow.up.right")
+                }
+            }
+            if snapshot.taskFilePath != nil {
+                Button {
+                    openTaskFile(snapshot)
+                } label: {
+                    Label(String(localized: "tasks.sidebar.section.workItem.openTaskFile",
+                                 defaultValue: "task.md",
+                                 table: "TermLoop"),
+                          systemImage: "doc.text")
+                }
+            }
+            Button {
+                refresh(snapshot)
+            } label: {
+                Label(String(localized: "tasks.sidebar.section.workItem.refresh",
+                             defaultValue: "Refresh",
+                             table: "TermLoop"),
+                      systemImage: "arrow.clockwise")
+            }
+            Button {
+                presentTaskLinkPrompt(prior: snapshot.url?.absoluteString ?? snapshot.key)
+            } label: {
+                Label(String(localized: "tasks.sidebar.section.workItem.relink",
+                             defaultValue: "Relink",
+                             table: "TermLoop"),
+                      systemImage: "link")
+            }
+            if let workspaceId = attachWorkspaceId {
+                Button {
+                    JiraTicketBindingPrompt.present(forWorkspaceId: workspaceId)
+                } label: {
+                    Label(String(localized: "tasks.sidebar.section.workItem.change",
+                                 defaultValue: "Attach",
+                                 table: "TermLoop"),
+                          systemImage: "point.3.connected.trianglepath.dotted")
+                }
+            }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.mini)
+        .font(.system(size: 11, weight: .medium))
     }
 
     private var emptyState: some View {
@@ -213,6 +247,14 @@ struct TaskWorkItemSection: View {
         case .jira: return "checklist"
         case .github: return "number"
         case .gitlab: return "shippingbox"
+        }
+    }
+
+    private func providerDisplayName(_ provider: RemoteWorkItemProviderId) -> String {
+        switch provider {
+        case .jira: return "Jira"
+        case .github: return "GitHub"
+        case .gitlab: return "GitLab"
         }
     }
 
