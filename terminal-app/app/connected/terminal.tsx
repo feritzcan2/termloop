@@ -16,6 +16,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  type TextInputKeyPressEventData,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -205,6 +206,8 @@ export default function TerminalScreen() {
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [sending, setSending] = useState(false);
   const [surfaceWidth, setSurfaceWidth] = useState(0);
+  const [liveInputEnabled, setLiveInputEnabled] = useState(false);
+  const [liveCapture, setLiveCapture] = useState("");
 
   const aliveRef = useRef(true);
   const liveStateRef = useRef<LiveState>("connecting");
@@ -217,6 +220,9 @@ export default function TerminalScreen() {
   const reconnectRef = useRef<() => void>(() => {});
   const pendingOutputRef = useRef("");
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const liveInputQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const liveCaptureRef = useRef("");
+  const lastLiveDeleteAtRef = useRef(0);
 
   const clearOutputFlushTimer = useCallback(() => {
     if (!flushTimerRef.current) return;
@@ -461,9 +467,63 @@ export default function TerminalScreen() {
     ])
   );
 
+  const enqueueLiveInput = useCallback(
+    (work: () => Promise<void>, label: string) => {
+      const run = liveInputQueueRef.current
+        .catch(() => {})
+        .then(async () => {
+          if (!aliveRef.current) return;
+          try {
+            await work();
+          } catch (err) {
+            if (aliveRef.current) {
+              setInlineError(`${label} failed: ${friendlyTransportError(err)}`);
+            }
+          }
+        });
+      liveInputQueueRef.current = run;
+    },
+    []
+  );
+
+  const sendLiveText = useCallback(
+    (text: string) => {
+      if (!client || !workspaceId || !text) return;
+      enqueueLiveInput(
+        () => client.sendText(workspaceId, text, surfaceId),
+        "Live input"
+      );
+    },
+    [client, workspaceId, surfaceId, enqueueLiveInput]
+  );
+
+  const sendLiveKey = useCallback(
+    (def: KeyDef) => {
+      if (!client || !workspaceId) return;
+      enqueueLiveInput(async () => {
+        if (def.key) {
+          try {
+            await client.sendKey(workspaceId, def.key, surfaceId);
+            return;
+          } catch (err) {
+            if (def.text === undefined) throw err;
+          }
+        }
+        if (def.text !== undefined) {
+          await client.sendText(workspaceId, def.text, surfaceId);
+        }
+      }, def.label);
+    },
+    [client, workspaceId, surfaceId, enqueueLiveInput]
+  );
+
   const sendKey = useCallback(
     async (def: KeyDef) => {
       if (!client || !workspaceId) return;
+      if (liveInputEnabled) {
+        sendLiveKey(def);
+        return;
+      }
       try {
         if (def.key) {
           try {
@@ -482,7 +542,7 @@ export default function TerminalScreen() {
         }
       }
     },
-    [client, workspaceId, surfaceId, refresh]
+    [client, workspaceId, surfaceId, refresh, liveInputEnabled, sendLiveKey]
   );
 
   const onSend = useCallback(async () => {
@@ -521,6 +581,78 @@ export default function TerminalScreen() {
       if (aliveRef.current) setSending(false);
     }
   }, [client, workspaceId, surfaceId, draft, sending, refresh]);
+
+  const focusInputSoon = useCallback(() => {
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }, []);
+
+  const toggleLiveInput = useCallback(() => {
+    setLiveInputEnabled((current) => !current);
+    setHistoryIndex(null);
+    liveCaptureRef.current = "";
+    setLiveCapture("");
+    inputRef.current?.clear();
+    focusInputSoon();
+  }, [focusInputSoon]);
+
+  const disableLiveInput = useCallback(() => {
+    setLiveInputEnabled(false);
+    liveCaptureRef.current = "";
+    setLiveCapture("");
+    inputRef.current?.clear();
+    focusInputSoon();
+  }, [focusInputSoon]);
+
+  const onInputChangeText = useCallback(
+    (text: string) => {
+      if (!liveInputEnabled) {
+        setDraft(text);
+        return;
+      }
+
+      const previous = liveCaptureRef.current;
+      if (text === previous) return;
+
+      let toSend = "";
+      if (text.startsWith(previous)) {
+        toSend = text.slice(previous.length);
+      } else if (previous.startsWith(text)) {
+        toSend = "\x7f".repeat(previous.length - text.length);
+      } else {
+        let commonPrefixLength = 0;
+        const maxPrefix = Math.min(previous.length, text.length);
+        while (
+          commonPrefixLength < maxPrefix &&
+          previous[commonPrefixLength] === text[commonPrefixLength]
+        ) {
+          commonPrefixLength++;
+        }
+        toSend =
+          "\x7f".repeat(previous.length - commonPrefixLength) +
+          text.slice(commonPrefixLength);
+      }
+
+      liveCaptureRef.current = text;
+      setLiveCapture(text);
+      if (toSend.includes("\x7f")) lastLiveDeleteAtRef.current = Date.now();
+      if (toSend) sendLiveText(toSend);
+    },
+    [liveInputEnabled, sendLiveText]
+  );
+
+  const onInputKeyPress = useCallback(
+    (event: NativeSyntheticEvent<TextInputKeyPressEventData>) => {
+      if (!liveInputEnabled) return;
+      if (
+        event.nativeEvent.key === "Backspace" &&
+        liveCaptureRef.current.length === 0 &&
+        Date.now() - lastLiveDeleteAtRef.current > 80
+      ) {
+        sendLiveText("\x7f");
+      }
+    },
+    [liveInputEnabled, sendLiveText]
+  );
 
   const navigateCommandHistory = useCallback(
     (direction: "older" | "newer") => {
@@ -628,12 +760,20 @@ export default function TerminalScreen() {
           label: string;
           onPress: () => void;
           disabled: boolean;
+          active?: boolean;
         };
     const k = (label: string): Item | null => {
       const def = keyByLabel.get(label);
       return def ? { kind: "key", def } : null;
     };
     const order: (Item | null)[] = [
+      {
+        kind: "action",
+        label: liveInputEnabled ? "Live On" : "Live",
+        onPress: toggleLiveInput,
+        disabled: false,
+        active: liveInputEnabled,
+      },
       k("Tab"),
       k("Esc"),
       k("Ctrl-C"),
@@ -671,6 +811,8 @@ export default function TerminalScreen() {
     return order.filter((x): x is Item => x !== null);
   }, [
     keyByLabel,
+    liveInputEnabled,
+    toggleLiveInput,
     navigateCommandHistory,
     commandHistory.length,
     historyIndex,
@@ -718,7 +860,8 @@ export default function TerminalScreen() {
       ? `${projectName} · ${projectPath}`
       : projectName
     : "TermLoop session";
-  const canSend = Boolean(draft) && !sending;
+  const canSend = !liveInputEnabled && Boolean(draft) && !sending;
+  const primaryButtonDisabled = liveInputEnabled ? false : !canSend;
   const terminalIsEmpty = buffer.trim().length === 0;
 
   return (
@@ -893,6 +1036,7 @@ export default function TerminalScreen() {
                   key={`a:${item.label}`}
                   style={[
                     styles.actionBtn,
+                    item.active && styles.actionBtnActive,
                     item.disabled && styles.actionBtnDisabled,
                   ]}
                   onPress={item.onPress}
@@ -906,13 +1050,26 @@ export default function TerminalScreen() {
 
           <View style={styles.inputRow}>
             <View style={styles.inputShell}>
-              <Text style={styles.composerLabel}>Command</Text>
+              <Text
+                style={[
+                  styles.composerLabel,
+                  liveInputEnabled && styles.composerLabelLive,
+                ]}
+              >
+                {liveInputEnabled ? "Live input" : "Command"}
+              </Text>
               <TextInput
+                key={liveInputEnabled ? "live-input" : "composer-input"}
                 ref={inputRef}
-                style={styles.input}
-                value={draft}
-                onChangeText={setDraft}
-                placeholder="Type a command or prompt…"
+                style={[styles.input, liveInputEnabled && styles.inputLive]}
+                value={liveInputEnabled ? liveCapture : draft}
+                onChangeText={onInputChangeText}
+                onKeyPress={onInputKeyPress}
+                placeholder={
+                  liveInputEnabled
+                    ? "Typing goes directly to terminal…"
+                    : "Type a command or prompt…"
+                }
                 placeholderTextColor={colors.placeholder}
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -924,12 +1081,16 @@ export default function TerminalScreen() {
               />
             </View>
             <Pressable
-              style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
-              onPress={onSend}
-              disabled={!canSend}
+              style={[
+                styles.sendBtn,
+                liveInputEnabled && styles.liveDoneBtn,
+                primaryButtonDisabled && styles.sendBtnDisabled,
+              ]}
+              onPress={liveInputEnabled ? disableLiveInput : onSend}
+              disabled={primaryButtonDisabled}
             >
               <Text style={styles.sendBtnText}>
-                {sending ? "Sending" : "Send"}
+                {liveInputEnabled ? "Done" : sending ? "Sending" : "Send"}
               </Text>
             </Pressable>
           </View>
@@ -1166,6 +1327,10 @@ const styles = StyleSheet.create({
     minWidth: 46,
     alignItems: "center",
   },
+  actionBtnActive: {
+    borderColor: colors.successBorder,
+    backgroundColor: colors.successDim,
+  },
   actionBtnDisabled: { opacity: 0.38 },
   actionBtnText: {
     color: colors.primary,
@@ -1213,6 +1378,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0,
   },
+  composerLabelLive: { color: colors.success },
   input: {
     minHeight: 44,
     maxHeight: COMPOSER_MAX_HEIGHT,
@@ -1226,6 +1392,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  inputLive: {
+    borderColor: colors.successBorder,
+    backgroundColor: colors.bgRaised,
+  },
   sendBtn: {
     paddingHorizontal: 14,
     justifyContent: "center",
@@ -1235,6 +1405,7 @@ const styles = StyleSheet.create({
     minHeight: 44,
     minWidth: 72,
   },
+  liveDoneBtn: { backgroundColor: colors.bgRaised },
   sendBtnDisabled: { opacity: 0.45 },
   sendBtnText: { color: colors.onPrimary, fontWeight: "600" },
 });

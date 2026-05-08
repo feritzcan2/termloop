@@ -31,19 +31,22 @@ enum TermLoopTaskSocketCommands {
         }
         let includeArchived = params["include_archived"] as? Bool ?? false
         let file = store.fileSnapshot()
-        let columnTitles = columnTitleMap(file: file)
+
+        // Reuse the desktop's canonical column projection. `columnSnapshots`
+        // is already normalized, isEnabled-or-hasTasks filtered, ordered and
+        // de-duplicated — the same source the macOS Tasks board renders.
+        let columns: [[String: Any]] = store.columnSnapshots.map { snapshot in
+            [
+                "id": snapshot.id.rawValue,
+                "title": store.columnTitle(for: snapshot.id)
+            ]
+        }
 
         let visible = file.tasks.filter { task in
             includeArchived || task.archivedAt == nil
         }
         let payloads: [[String: Any]] = visible.map { task in
-            taskPayload(task, columnTitle: columnTitles[task.columnId.rawValue] ?? task.columnId.defaultTitle)
-        }
-        let columns: [[String: Any]] = orderedColumnIds(file: file).map { columnId in
-            [
-                "id": columnId.rawValue,
-                "title": columnTitles[columnId.rawValue] ?? columnId.defaultTitle
-            ]
+            taskPayload(task, columnTitle: store.columnTitle(for: task.columnId))
         }
         return .ok([
             "project_id": store.projectId.uuidString,
@@ -280,31 +283,6 @@ enum TermLoopTaskSocketCommands {
         case .ready:   return "ready"
         case .failed:  return "failed"
         }
-    }
-
-    private static func columnTitleMap(file: TaskBoardFile) -> [String: String] {
-        var out: [String: String] = [:]
-        for setting in file.settings.columns {
-            out[setting.columnId.rawValue] = setting.title
-        }
-        for column in TaskColumnId.defaults where out[column.rawValue] == nil {
-            out[column.rawValue] = column.defaultTitle
-        }
-        return out
-    }
-
-    private static func orderedColumnIds(file: TaskBoardFile) -> [TaskColumnId] {
-        var seen = Set<String>()
-        var out: [TaskColumnId] = []
-        for setting in file.settings.columns where !seen.contains(setting.columnId.rawValue) {
-            seen.insert(setting.columnId.rawValue)
-            out.append(setting.columnId)
-        }
-        for column in TaskColumnId.defaults where !seen.contains(column.rawValue) {
-            seen.insert(column.rawValue)
-            out.append(column)
-        }
-        return out
     }
 
     // MARK: - Param helpers (local mirrors)

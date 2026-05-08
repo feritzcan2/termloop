@@ -385,12 +385,19 @@ extension TaskLifecycleCoordinator {
     /// Update brief (or other text fields) — debounced save, last-write-wins
     /// across windows.
     public func updateBrief(taskId: UUID, brief: String?) throws {
-        try mutateTask(taskId) { $0.brief = brief; $0.updatedAt = Date() }
+        let normalized = brief?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nonEmptyTaskLifecycleString
+        guard try requireTask(taskId).brief != normalized else { return }
+        try mutateTask(taskId) { $0.brief = normalized; $0.updatedAt = Date() }
         store.scheduleSave()
     }
 
     public func updateTitle(taskId: UUID, title: String) throws {
-        try mutateTask(taskId) { $0.title = title; $0.updatedAt = Date() }
+        let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return }
+        guard try requireTask(taskId).title != normalized else { return }
+        try mutateTask(taskId) { $0.title = normalized; $0.updatedAt = Date() }
         store.scheduleSave()
     }
 
@@ -407,6 +414,10 @@ extension TaskLifecycleCoordinator {
         }
         try store.saveNow()
     }
+}
+
+private extension String {
+    var nonEmptyTaskLifecycleString: String? { isEmpty ? nil : self }
 }
 
 extension TaskLifecycleCoordinator {

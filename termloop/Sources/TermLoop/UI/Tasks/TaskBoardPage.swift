@@ -1,6 +1,7 @@
 // Copyright (c) 2026-present Ferit Özcan. All rights reserved.
 // Part of TermLoop — GPL-3.0-or-later
 
+import AppKit
 import SwiftUI
 
 /// Top-level Tasks page. The board itself is the primary surface. Selecting a
@@ -71,6 +72,7 @@ struct TaskBoardPage<TerminalContent: View>: View {
             syncSelectionValidity()
             syncInlineTerminalForSelectedTask(focusWorkspace: true)
         }
+        .background(renameSelectedTaskCommand)
     }
 
     private var agentStatusesByTaskId: [UUID: TaskAgentStatusSummary] {
@@ -132,11 +134,70 @@ struct TaskBoardPage<TerminalContent: View>: View {
         }
     }
 
+    private var renameSelectedTaskCommand: some View {
+        Button(action: presentRenameSelectedTask) {
+            Color.clear
+                .frame(width: 0, height: 0)
+        }
+        .keyboardShortcut("r", modifiers: [.command])
+        .buttonStyle(.plain)
+        .opacity(0)
+        .accessibilityHidden(true)
+    }
+
+    private func presentRenameSelectedTask() {
+        guard let coordinator,
+              let taskId = selection.selectedTaskId,
+              let task = store.fileSnapshot().tasks.first(where: { $0.id == taskId && $0.archivedAt == nil }),
+              let title = TaskRenameDialog.promptTitle(currentTitle: task.title) else {
+            return
+        }
+        try? coordinator.updateTitle(taskId: task.id, title: title)
+    }
+
     private var embeddedTerminal: some View {
         terminalContent()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.black.opacity(0.2))
             .clipped()
+    }
+}
+
+@MainActor
+enum TaskRenameDialog {
+    static func promptTitle(currentTitle: String) -> String? {
+        let alert = NSAlert()
+        alert.messageText = String(localized: "tasks.rename.title",
+                                   defaultValue: "Rename Task",
+                                   table: "TermLoop")
+        alert.informativeText = String(localized: "tasks.rename.message",
+                                       defaultValue: "Enter a new title for this task.",
+                                       table: "TermLoop")
+
+        let input = NSTextField(string: currentTitle)
+        input.placeholderString = String(localized: "tasks.rename.placeholder",
+                                         defaultValue: "Task title",
+                                         table: "TermLoop")
+        input.frame = NSRect(x: 0, y: 0, width: 360, height: 24)
+        alert.accessoryView = input
+        alert.addButton(withTitle: String(localized: "tasks.rename.confirm",
+                                          defaultValue: "Rename",
+                                          table: "TermLoop"))
+        alert.addButton(withTitle: String(localized: "tasks.rename.cancel",
+                                          defaultValue: "Cancel",
+                                          table: "TermLoop"))
+        let alertWindow = alert.window
+        alertWindow.initialFirstResponder = input
+        DispatchQueue.main.async {
+            alertWindow.makeFirstResponder(input)
+            input.selectText(nil)
+        }
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return nil }
+        let normalized = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty, normalized != currentTitle else { return nil }
+        return normalized
     }
 }
 

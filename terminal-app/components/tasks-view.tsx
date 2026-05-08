@@ -40,7 +40,6 @@ export function TasksView({
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<ColumnFilter>(ALL_FILTER);
   const [search, setSearch] = useState("");
-  const [showDone, setShowDone] = useState(false);
   const [creatorOpen, setCreatorOpen] = useState(false);
 
   const load = useCallback(async () => {
@@ -66,18 +65,16 @@ export function TasksView({
     let total = 0;
     if (!tasks) return { byColumn: result, total: 0 };
     for (const task of tasks) {
-      if (task.column_id === "done" && !showDone) continue;
       total += 1;
       result[task.column_id] = (result[task.column_id] ?? 0) + 1;
     }
     return { byColumn: result, total };
-  }, [tasks, showDone]);
+  }, [tasks]);
 
   const filtered = useMemo<TaskRecord[]>(() => {
     if (!tasks) return [];
     const trimmed = search.trim().toLowerCase();
     let list = tasks;
-    if (!showDone) list = list.filter((t) => t.column_id !== "done");
     if (filter !== ALL_FILTER) list = list.filter((t) => t.column_id === filter);
     if (trimmed) {
       list = list.filter((t) => {
@@ -97,7 +94,7 @@ export function TasksView({
       if (a.rank !== b.rank) return a.rank < b.rank ? -1 : 1;
       return a.created_at - b.created_at;
     });
-  }, [tasks, filter, search, showDone, columns]);
+  }, [tasks, filter, search, columns]);
 
   const renderItem = useCallback<ListRenderItem<TaskRecord>>(
     ({ item }) => (
@@ -129,7 +126,6 @@ export function TasksView({
             onPress={() => setFilter(ALL_FILTER)}
           />
           {columns.map((column) => {
-            if (column.id === "done" && !showDone) return null;
             const count = counts.byColumn[column.id] ?? 0;
             return (
               <Chip
@@ -141,12 +137,6 @@ export function TasksView({
               />
             );
           })}
-          <Chip
-            label={showDone ? "Hide Done" : "Show Done"}
-            mono
-            active={showDone}
-            onPress={() => setShowDone((v) => !v)}
-          />
         </ScrollView>
 
         <View style={styles.searchRow}>
@@ -228,11 +218,7 @@ export function TasksView({
 
       <View style={styles.scaleBanner} pointerEvents="none">
         <Text style={styles.scaleBannerText}>
-          {tasks
-            ? `Showing ${filtered.length} of ${tasks.length}${
-                showDone ? "" : " · Done hidden"
-              }`
-            : ""}
+          {tasks ? `Showing ${filtered.length} of ${tasks.length}` : ""}
         </Text>
       </View>
 

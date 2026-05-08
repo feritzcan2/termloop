@@ -559,6 +559,7 @@ public struct TaskColumnSnapshot: Equatable, Identifiable, Sendable {
 public struct TaskCardSummary: Equatable, Identifiable, Hashable, Sendable {
     public let id: UUID
     public let title: String
+    public let brief: String?
     public let provisionState: TaskProvisionState
     public let workspaceId: UUID?
     public let branch: String?
@@ -571,6 +572,7 @@ public struct TaskCardSummary: Equatable, Identifiable, Hashable, Sendable {
     public init(
         id: UUID,
         title: String,
+        brief: String? = nil,
         provisionState: TaskProvisionState,
         workspaceId: UUID? = nil,
         branch: String?,
@@ -582,6 +584,7 @@ public struct TaskCardSummary: Equatable, Identifiable, Hashable, Sendable {
     ) {
         self.id = id
         self.title = title
+        self.brief = brief
         self.provisionState = provisionState
         self.workspaceId = workspaceId
         self.branch = branch
