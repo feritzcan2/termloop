@@ -52,6 +52,7 @@ struct TaskOpenPRsSection: View {
                            defaultValue: "No PRs found.", table: "TermLoop")
                 )
             } else {
+                summaryLine
                 prGroups
             }
         }
@@ -86,6 +87,53 @@ struct TaskOpenPRsSection: View {
                 )
             }
         }
+    }
+
+    private var summaryLine: some View {
+        HStack(spacing: 6) {
+            summaryChip(
+                count: openPullRequests.count,
+                label: String(localized: "tasks.sidebar.section.pullRequests.summary.open",
+                              defaultValue: "open",
+                              table: "TermLoop"),
+                color: .green
+            )
+            if !mergedPullRequests.isEmpty {
+                summaryChip(
+                    count: mergedPullRequests.count,
+                    label: String(localized: "tasks.sidebar.section.pullRequests.summary.merged",
+                                  defaultValue: "merged",
+                                  table: "TermLoop"),
+                    color: .purple
+                )
+            }
+            if !closedPullRequests.isEmpty {
+                summaryChip(
+                    count: closedPullRequests.count,
+                    label: String(localized: "tasks.sidebar.section.pullRequests.summary.closed",
+                                  defaultValue: "closed",
+                                  table: "TermLoop"),
+                    color: .secondary
+                )
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func summaryChip(count: Int, label: String, color: Color) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+            Text("\(count) \(label)")
+                .lineLimit(1)
+        }
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(color)
+        .padding(.vertical, 2)
+        .padding(.horizontal, 6)
+        .background(color.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
     }
 
     private func prGroup(title: String, pullRequests: [SidebarPullRequestState], emptyText: String) -> some View {
