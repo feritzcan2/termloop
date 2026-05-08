@@ -47,6 +47,15 @@ enum TaskQuickActions {
         openWorktree(workspaceId: workspaceId, worktreePath: nil)
         TaskQuickActionsBridge.requestNewAgentPanel(workspaceId)
     }
+
+    static func openTaskFile(path: String, displayTitle: String) {
+        MarkdownDocumentStore.shared.open(
+            fileURL: URL(fileURLWithPath: path, isDirectory: false).resolvingSymlinksInPath(),
+            folderName: "TASKS",
+            displayTitle: displayTitle,
+            mode: .edit
+        )
+    }
 }
 
 /// Indirection point so the actions don't directly couple to AppDelegate /

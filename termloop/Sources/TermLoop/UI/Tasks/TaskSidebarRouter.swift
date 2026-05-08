@@ -53,6 +53,16 @@ struct TaskSidebarRouter: View {
                         }
                     }
                 },
+                onOpenTaskSpec: coordinator.map { c in
+                    { id in
+                        openTaskSpec(taskId: id, coordinator: c, title: detailSnapshot.title)
+                    }
+                },
+                onImplementWithAgent: coordinator.map { c in
+                    { id in
+                        implementTaskWithAgent(taskId: id, coordinator: c)
+                    }
+                },
                 onOpenSettings: { isShowingSettings = true },
                 onUnbind: coordinator.map { c in
                     { id in try? c.unbindWorktree(taskId: id) }
@@ -81,6 +91,35 @@ struct TaskSidebarRouter: View {
         if selection.selectedTaskId != nil,
            TaskAgentProjectionBuilder.detailSnapshot(in: store, selectedTaskId: selection.selectedTaskId) == nil {
             selection.select(nil)
+        }
+    }
+
+    private func openTaskSpec(taskId: UUID, coordinator: TaskLifecycleCoordinator, title: String) {
+        do {
+            let path = try coordinator.ensureTaskSpecFile(taskId: taskId)
+            TaskQuickActions.openTaskFile(path: path, displayTitle: title)
+        } catch {
+            #if DEBUG
+            print("TaskSidebarRouter.openTaskSpec failed: \(error)")
+            #endif
+        }
+    }
+
+    private func implementTaskWithAgent(taskId: UUID, coordinator: TaskLifecycleCoordinator) {
+        _Concurrency.Task { @MainActor in
+            do {
+                _ = try coordinator.ensureTaskSpecFile(taskId: taskId)
+                try await coordinator.bindWorktree(taskId: taskId)
+                guard let task = store.fileSnapshot().tasks.first(where: { $0.id == taskId }),
+                      let workspaceId = task.workspaceId else { return }
+                selection.openInlineTerminal(workspaceId: workspaceId)
+                TaskQuickActions.showWorkspaceInline(workspaceId: workspaceId)
+                TaskQuickActions.addAgentRun(workspaceId: workspaceId)
+            } catch {
+                #if DEBUG
+                print("TaskSidebarRouter.implementTaskWithAgent failed: \(error)")
+                #endif
+            }
         }
     }
 }

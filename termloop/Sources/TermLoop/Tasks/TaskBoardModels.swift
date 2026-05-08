@@ -82,7 +82,7 @@ public enum TaskProvisionFailureReason {
                           table: "TermLoop")
         case provisioningUnavailable:
             return String(localized: "tasks.provision.failure.provisioningUnavailable",
-                          defaultValue: "Worktree provisioning is not wired yet. Create the worktree from the Work tab for now.",
+                          defaultValue: "Worktree could not be created. Check the project git state and retry.",
                           table: "TermLoop")
         default:
             return reason
@@ -147,6 +147,7 @@ public struct TaskRecord: Codable, Identifiable, Equatable, Hashable, Sendable {
     public var workspaceId: UUID?
     public var worktreePath: String?
     public var branch: String?
+    public var ownsWorktree: Bool
     public var bindingGeneration: Int
     public var provisionState: TaskProvisionState
     public let createdAt: Date
@@ -168,6 +169,7 @@ public struct TaskRecord: Codable, Identifiable, Equatable, Hashable, Sendable {
         workspaceId: UUID? = nil,
         worktreePath: String? = nil,
         branch: String? = nil,
+        ownsWorktree: Bool = false,
         bindingGeneration: Int = 0,
         provisionState: TaskProvisionState = .none,
         createdAt: Date = Date(),
@@ -188,6 +190,7 @@ public struct TaskRecord: Codable, Identifiable, Equatable, Hashable, Sendable {
         self.workspaceId = workspaceId
         self.worktreePath = worktreePath
         self.branch = branch
+        self.ownsWorktree = ownsWorktree
         self.bindingGeneration = bindingGeneration
         self.provisionState = provisionState
         self.createdAt = createdAt
@@ -210,6 +213,7 @@ public struct TaskRecord: Codable, Identifiable, Equatable, Hashable, Sendable {
         case workspaceId
         case worktreePath
         case branch
+        case ownsWorktree
         case bindingGeneration
         case provisionState
         case createdAt
@@ -232,6 +236,7 @@ public struct TaskRecord: Codable, Identifiable, Equatable, Hashable, Sendable {
         self.workspaceId = try container.decodeIfPresent(UUID.self, forKey: .workspaceId)
         self.worktreePath = try container.decodeIfPresent(String.self, forKey: .worktreePath)
         self.branch = try container.decodeIfPresent(String.self, forKey: .branch)
+        self.ownsWorktree = try container.decodeIfPresent(Bool.self, forKey: .ownsWorktree) ?? false
         self.bindingGeneration = try container.decodeIfPresent(Int.self, forKey: .bindingGeneration) ?? 0
         self.provisionState = try container.decodeIfPresent(TaskProvisionState.self, forKey: .provisionState) ?? .none
         self.createdAt = try container.decode(Date.self, forKey: .createdAt)

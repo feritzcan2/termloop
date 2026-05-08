@@ -24,26 +24,110 @@ public final class TaskBoardWorkspaceMetadataBridge: TaskBoundWorkspaceMetadataS
     }
 }
 
-/// v1 stub — explicit `bindWorktree` is not wired to the real WorktreeCoordinator yet.
-/// Board column moves are pure moves, so the normal "+ New task → In Progress"
-/// path no longer trips this stub. Real provisioning bridge is a follow-up:
-/// needs to call `WorktreeCoordinator.attach` with the project root + a fresh
-/// slug, returning the resulting workspaceId.
 @MainActor
-public final class TaskBoardWorktreeProvisioningStub: TaskBoundWorktreeProvisioning {
-    public static let shared = TaskBoardWorktreeProvisioningStub()
+public final class TaskBoardWorktreeProvisioner: TaskBoundWorktreeProvisioning {
+    public static let shared = TaskBoardWorktreeProvisioner()
     private init() {}
 
     public func provision(projectRoot: URL, branchHint: String?) async throws
         -> TaskWorktreeProvisionResult
     {
-        throw TaskLifecycleError.provisionFailed(
-            TaskProvisionFailureReason.provisioningUnavailable
+        let branch = normalizedBranch(branchHint)
+        guard let path = WorktreeResolver.path(projectFolder: projectRoot.path, branch: branch) else {
+            throw TaskLifecycleError.provisionFailed("Could not resolve worktree path.")
+        }
+        guard AppDelegate.shared?.tabManager != nil else {
+            throw TaskLifecycleError.provisionFailed(
+                String(localized: "tasks.provision.failure.noWindow",
+                       defaultValue: "A TermLoop window is required to create the task worktree.",
+                       table: "TermLoop")
+            )
+        }
+
+        let service = GitWorktreeService()
+        let existing = try service.list(in: projectRoot.path)
+            .first { $0.branch == branch }
+        let effectivePath: String
+        let createdWorktree: Bool
+        if let existing {
+            effectivePath = existing.path
+            createdWorktree = false
+        } else {
+            guard try service.isClean(worktreePath: projectRoot.path) else {
+                throw TaskLifecycleError.provisionFailed(
+                    String(localized: "tasks.provision.failure.dirtySource",
+                           defaultValue: "Project checkout has uncommitted changes. Commit, stash, or clean it before creating a task worktree.",
+                           table: "TermLoop")
+                )
+            }
+            let branchExists = try service.branches(in: projectRoot.path)
+                .contains { $0.name == branch }
+            if branchExists {
+                try service.add(folder: projectRoot.path, path: path, branch: branch)
+            } else {
+                try service.addCreatingBranch(
+                    folder: projectRoot.path,
+                    path: path,
+                    branch: branch,
+                    baseRef: "HEAD"
+                )
+            }
+            effectivePath = path
+            createdWorktree = true
+        }
+        let workspaceId = try workspaceIdForWorktree(
+            path: effectivePath,
+            branch: branch,
+            projectRoot: projectRoot
+        )
+        return TaskWorktreeProvisionResult(
+            workspaceId: workspaceId,
+            branch: branch,
+            worktreePath: effectivePath,
+            createdWorktree: createdWorktree
         )
     }
 
-    public func teardown(workspaceId: UUID, worktreePath: String) async throws {
-        // No-op — without provisioning we never created anything to tear down.
+    public func teardown(workspaceId: UUID?, worktreePath: String, projectRoot: URL) async throws {
+        if let workspaceId,
+           let workspace = AppDelegate.shared?.workspaceFor(tabId: workspaceId) {
+            _ = try WorktreeCoordinator.shared.detach(workspace: workspace, prune: .auto)
+        } else {
+            try GitWorktreeService().remove(folder: projectRoot.path, path: worktreePath)
+        }
+    }
+
+    private func workspaceIdForWorktree(path: String, branch: String, projectRoot: URL) throws -> UUID {
+        let projectId = ProjectStore.shared.project(containingPath: projectRoot.path)?.id
+            ?? ProjectStore.shared.activeProjectId
+        if let existingId = WorkspaceMetadataStore.shared
+            .workspaceIds(withWorktreePath: path, projectId: projectId)
+            .first(where: { AppDelegate.shared?.workspaceFor(tabId: $0) != nil }) {
+            return existingId
+        }
+
+        guard let tabManager = AppDelegate.shared?.tabManager else {
+            throw TaskLifecycleError.provisionFailed(
+                String(localized: "tasks.provision.failure.noWindow",
+                       defaultValue: "A TermLoop window is required to create the task worktree.",
+                       table: "TermLoop")
+            )
+        }
+        let workspace = tabManager.addWorkspace(
+            title: branch,
+            workingDirectory: path,
+            select: true,
+            eagerLoadTerminal: true,
+            projectId: projectId
+        )
+        WorkspaceMetadataStore.shared.setProjectId(projectId, forWorkspaceId: workspace.id)
+        WorkspaceMetadataStore.shared.setBranch(branch, worktreePath: path, forWorkspaceId: workspace.id)
+        return workspace.id
+    }
+
+    private func normalizedBranch(_ value: String?) -> String {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "feat/task-\(UUID().uuidString.prefix(4))" : trimmed
     }
 }
 
@@ -54,7 +138,7 @@ public extension TaskLifecycleCoordinator {
         TaskLifecycleCoordinator(
             store: store,
             workspaces: TaskBoardWorkspaceMetadataBridge.shared,
-            worktrees: TaskBoardWorktreeProvisioningStub.shared
+            worktrees: TaskBoardWorktreeProvisioner.shared
         )
     }
 }

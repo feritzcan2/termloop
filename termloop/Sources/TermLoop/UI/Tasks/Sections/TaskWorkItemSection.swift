@@ -216,7 +216,7 @@ struct TaskWorkItemSection: View {
 
     private func openTaskFile(_ snapshot: TaskWorkItemSnapshot) {
         guard let path = snapshot.taskFilePath else { return }
-        NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: false))
+        TaskQuickActions.openTaskFile(path: path, displayTitle: snapshot.key)
     }
 
     private func presentTaskLinkPrompt(prior: String) {
@@ -264,5 +264,92 @@ struct TaskWorkItemSection: View {
         case .github: return .secondary
         case .gitlab: return .orange
         }
+    }
+}
+
+struct TaskSpecSection: View {
+    let snapshot: TaskDetailSnapshot
+    let onOpen: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            TaskSidebarSectionTitle(
+                String(localized: "tasks.sidebar.section.taskSpec",
+                       defaultValue: "Task Spec",
+                       table: "TermLoop")
+            )
+
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: "doc.text")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 16, height: 18)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(fileLabel)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.primary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+
+                    Text(summary)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 0)
+
+                Button {
+                    onOpen()
+                } label: {
+                    Label(buttonTitle, systemImage: "square.and.pencil")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .font(.system(size: 11, weight: .medium))
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.56))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+    }
+
+    private var fileLabel: String {
+        guard let path = taskFilePath else {
+            return "task.md"
+        }
+        let url = URL(fileURLWithPath: path, isDirectory: false)
+        let parent = url.deletingLastPathComponent().lastPathComponent
+        return parent.isEmpty ? url.lastPathComponent : "\(parent)/\(url.lastPathComponent)"
+    }
+
+    private var summary: String {
+        if taskFilePath != nil {
+            return String(localized: "tasks.sidebar.section.taskSpec.ready",
+                          defaultValue: "Editable implementation notes for this task.",
+                          table: "TermLoop")
+        }
+        return String(localized: "tasks.sidebar.section.taskSpec.empty",
+                      defaultValue: "Create an editable task.md for acceptance criteria and implementation notes.",
+                      table: "TermLoop")
+    }
+
+    private var buttonTitle: String {
+        if taskFilePath != nil {
+            return String(localized: "tasks.sidebar.section.taskSpec.open",
+                          defaultValue: "Open",
+                          table: "TermLoop")
+        }
+        return String(localized: "tasks.sidebar.section.taskSpec.create",
+                      defaultValue: "Create",
+                      table: "TermLoop")
+    }
+
+    private var taskFilePath: String? {
+        let trimmed = snapshot.taskFilePath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

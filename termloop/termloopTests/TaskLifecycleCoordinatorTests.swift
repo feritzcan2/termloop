@@ -146,13 +146,14 @@ final class FakeWorktreeCoordinator: TaskBoundWorktreeProvisioning {
         TaskWorktreeProvisionResult(
             workspaceId: UUID(),
             branch: "feat/auto-1",
-            worktreePath: "/tmp/wt"
+            worktreePath: "/tmp/wt",
+            createdWorktree: true
         )
     )
     var suspendProvision = false
     var suspendedContinuation: CheckedContinuation<TaskWorktreeProvisionResult, Error>?
     private(set) var provisionCalls: [(projectRoot: URL, branchHint: String?)] = []
-    private(set) var teardownCalls: [(workspaceId: UUID, worktreePath: String)] = []
+    private(set) var teardownCalls: [(workspaceId: UUID?, worktreePath: String, projectRoot: URL)] = []
 
     func provision(projectRoot: URL, branchHint: String?) async throws
         -> TaskWorktreeProvisionResult
@@ -178,8 +179,8 @@ final class FakeWorktreeCoordinator: TaskBoundWorktreeProvisioning {
         }
     }
 
-    func teardown(workspaceId: UUID, worktreePath: String) async throws {
-        teardownCalls.append((workspaceId, worktreePath))
+    func teardown(workspaceId: UUID?, worktreePath: String, projectRoot: URL) async throws {
+        teardownCalls.append((workspaceId, worktreePath, projectRoot))
     }
 }
 
@@ -227,7 +228,8 @@ extension TaskLifecycleCoordinatorTests {
             .success(TaskWorktreeProvisionResult(
                 workspaceId: staleWorkspaceId,
                 branch: "feat/stale",
-                worktreePath: stalePath
+                worktreePath: stalePath,
+                createdWorktree: true
             ))
         )
         try await moveTask.value
@@ -251,7 +253,8 @@ extension TaskLifecycleCoordinatorTests {
             TaskWorktreeProvisionResult(
                 workspaceId: UUID(),
                 branch: "feat/auto-2",
-                worktreePath: "/tmp/wt2"
+                worktreePath: "/tmp/wt2",
+                createdWorktree: true
             )
         )
         try await coordinator.bindWorktree(taskId: id)

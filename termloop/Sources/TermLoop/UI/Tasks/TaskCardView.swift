@@ -252,7 +252,7 @@ struct TaskCardView: View {
 
     private func openTaskFile(_ workItem: TaskWorkItemSnapshot) {
         guard let path = workItem.taskFilePath else { return }
-        NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: false))
+        TaskQuickActions.openTaskFile(path: path, displayTitle: workItem.key)
     }
 }
 
