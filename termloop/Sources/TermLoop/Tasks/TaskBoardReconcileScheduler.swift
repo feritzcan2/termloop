@@ -1,6 +1,7 @@
 // Copyright (c) 2026-present Ferit Özcan. All rights reserved.
 // Part of TermLoop — GPL-3.0-or-later
 
+import Bonsplit
 import Foundation
 
 @MainActor
@@ -59,7 +60,7 @@ public final class TaskBoardReconcileScheduler {
                 let summary = try await TaskBoardImportReconciler(store: store, workspaces: workspaces).run()
                 let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
                 #if DEBUG
-                print(
+                dlog(
                     "TaskBoardReconcileScheduler: complete " +
                     "project=\(projectId) reasons=\(reasons) durationMs=\(durationMs) " +
                     "authoritative=\(summary.isAuthoritative) descriptors=\(summary.descriptorCount) " +
@@ -70,7 +71,7 @@ public final class TaskBoardReconcileScheduler {
                 #endif
             } catch {
                 #if DEBUG
-                print("TaskBoardReconcileScheduler: reconcile failed for \(projectId): \(error)")
+                dlog("TaskBoardReconcileScheduler: reconcile failed for \(projectId): \(error)")
                 #endif
             }
         }

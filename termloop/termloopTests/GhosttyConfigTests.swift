@@ -2990,6 +2990,74 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         XCTAssertEqual(output.stderr, "")
     }
 
+    func testBundledCodexWrapperInjectsTermLoopMCPConfigOverrides() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("cmux-codex-mcp-config-\(UUID().uuidString)")
+        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: root) }
+
+        let fakeCodex = root.appendingPathComponent("real-codex")
+        try writeExecutableScript(
+            at: fakeCodex,
+            contents: """
+            #!/bin/sh
+            for arg in "$@"; do
+                printf 'arg:%s\\n' "$arg"
+            done
+            """
+        )
+
+        let mcpConfig = root.appendingPathComponent("mcp-config.json")
+        try """
+        {
+          "mcpServers": {
+            "termloop": {
+              "command": "/bin/sh",
+              "args": [
+                "-lc",
+                "TERMLOOP_ASK_TO_REQUEST_ID='request-id' TERMLOOP_ASK_TO_REPLY_TOKEN='reply-token' exec '/tmp/TermLoop DEV.app/Contents/Resources/bin/termloop' termloop-mcp"
+              ],
+              "env": {
+                "TERMLOOP_ASK_TO_REQUEST_ID": "request-id",
+                "TERMLOOP_ASK_TO_REPLY_TOKEN": "reply-token",
+                "TERMLOOP_SOCKET_PATH": "/tmp/termloop.sock"
+              }
+            }
+          }
+        }
+        """.write(to: mcpConfig, atomically: true, encoding: .utf8)
+
+        let output = try runBundledShellWrapper(
+            at: bundledResourceURL(path: "Resources/bin/codex"),
+            arguments: ["--dangerously-bypass-approvals-and-sandbox", "hello"],
+            environment: [
+                "HOME": root.path,
+                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                "TERMLOOP_REAL_CODEX_PATH": fakeCodex.path,
+                "CODEX_MCP_CONFIG": mcpConfig.path,
+            ]
+        )
+
+        XCTAssertTrue(
+            output.stdout.contains("arg:mcp_servers.termloop.command=\"/bin/sh\""),
+            output.stdout
+        )
+        XCTAssertTrue(
+            output.stdout.contains("arg:mcp_servers.termloop.args=[\"-lc\", \"TERMLOOP_ASK_TO_REQUEST_ID='request-id' TERMLOOP_ASK_TO_REPLY_TOKEN='reply-token' exec '/tmp/TermLoop DEV.app/Contents/Resources/bin/termloop' termloop-mcp\"]"),
+            output.stdout
+        )
+        XCTAssertTrue(
+            output.stdout.contains("TERMLOOP_ASK_TO_REPLY_TOKEN=\"reply-token\""),
+            output.stdout
+        )
+        XCTAssertTrue(
+            output.stdout.hasSuffix("arg:hello"),
+            output.stdout
+        )
+        XCTAssertEqual(output.stderr, "")
+    }
+
     func testBundledClaudeWrapperUsesResolvedPathHintWhenPATHIsIncomplete() throws {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory

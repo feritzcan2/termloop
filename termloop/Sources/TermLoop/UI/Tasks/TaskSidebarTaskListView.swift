@@ -19,7 +19,7 @@ struct TaskSidebarTaskListView: View {
 
     var body: some View {
         let statuses = agentStatusesByTaskId
-        let workItems = workItemsByTaskId
+        let workItems = store.settingsSnapshot.remoteSync.isEnabled ? workItemsByTaskId : [:]
         return VStack(spacing: 0) {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
@@ -34,6 +34,7 @@ struct TaskSidebarTaskListView: View {
                         }
                     }
                     createButton
+                    remoteWorkItemsCTA
                     archivedSection(
                         cards: store.archivedSnapshots,
                         workItems: workItems
@@ -224,6 +225,40 @@ struct TaskSidebarTaskListView: View {
             .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var remoteWorkItemsCTA: some View {
+        if !store.settingsSnapshot.remoteSync.isEnabled {
+            Button(action: onOpenSettings) {
+                HStack(spacing: 7) {
+                    Image(systemName: "point.3.connected.trianglepath.dotted")
+                        .font(.system(size: 11, weight: .semibold))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(String(localized: "tasks.sidebar.remote.enable",
+                                    defaultValue: "Enable remote work items",
+                                    table: "TermLoop"))
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(String(localized: "tasks.sidebar.remote.enable.subtitle",
+                                    defaultValue: "Optional Jira, GitHub, or GitLab sync",
+                                    table: "TermLoop"))
+                            .font(.system(size: 10))
+                            .foregroundStyle(TermLoopSidebarTheme.dim)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(TermLoopSidebarTheme.dim)
+                }
+                .foregroundColor(.secondary)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(nsColor: .controlBackgroundColor).opacity(0.45))
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     private func rowBackground(_ card: TaskCardSummary) -> Color {

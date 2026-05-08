@@ -226,6 +226,22 @@ function createSessionClient(session: ActiveSession): TermLoopClient {
       ),
     resize: (params: { workspaceId: string; cols: number; rows: number }) =>
       withReconnect(session, (client) => client.resize(params)),
+    listTasks: (params) =>
+      withReconnect(session, (client) => client.listTasks(params)),
+    createTask: (params) =>
+      withReconnect(session, (client) => client.createTask(params), "prewrite"),
+    updateTask: (params) =>
+      withReconnect(session, (client) => client.updateTask(params), "prewrite"),
+    moveTask: (params) =>
+      withReconnect(session, (client) => client.moveTask(params), "prewrite"),
+    archiveTask: (params) =>
+      withReconnect(session, (client) => client.archiveTask(params), "prewrite"),
+    startTaskAgent: (params) =>
+      withReconnect(
+        session,
+        (client) => client.startTaskAgent(params),
+        "prewrite"
+      ),
     close: async () => {
       if (active === session) {
         await closeSession();

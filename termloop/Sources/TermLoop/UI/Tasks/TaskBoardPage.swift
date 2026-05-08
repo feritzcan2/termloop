@@ -86,6 +86,7 @@ struct TaskBoardPage<TerminalContent: View>: View {
     }
 
     private var workItemsByTaskId: [UUID: TaskWorkItemSnapshot] {
+        guard store.settingsSnapshot.remoteSync.isEnabled else { return [:] }
         // Same projection-only pattern as agent status: work item bindings
         // stay owned by the reported-state store, Tasks just renders them.
         _ = metadataStore
@@ -187,6 +188,11 @@ private struct TaskBoardCanvas: View {
                                         worktreePath: task.worktreePath
                                     )
                                 }
+                            },
+                            onOpenAgentTerminal: { card, workspaceId in
+                                selection.select(card.id)
+                                selection.openInlineTerminal(workspaceId: workspaceId)
+                                TaskQuickActions.showWorkspaceInline(workspaceId: workspaceId)
                             },
                             onArchive: coordinator.map { c in
                                 { id in try? c.archiveTask(id) }

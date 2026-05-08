@@ -17,6 +17,7 @@ struct TaskBoardColumnView: View {
     var onMove: ((_ taskId: UUID, _ to: TaskColumnId) -> Void)?
     var onSelect: ((TaskCardSummary) -> Void)?
     var onCommandClick: ((TaskCardSummary) -> Void)?
+    var onOpenAgentTerminal: ((TaskCardSummary, UUID) -> Void)?
     var onArchive: ((UUID) -> Void)?
 
     var body: some View {
@@ -35,6 +36,7 @@ struct TaskBoardColumnView: View {
                                 selection: selection,
                                 onSelect: onSelect,
                                 onCommandClick: onCommandClick,
+                                onOpenAgentTerminal: onOpenAgentTerminal,
                                 onArchive: onArchive
                             )
                         }

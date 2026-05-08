@@ -235,6 +235,7 @@
 		A9E70004A6EAC0DE00000001 /* TermLoopSessionSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70004A6EAC0DE00000002 /* TermLoopSessionSnapshot.swift */; };
 		A9E70004A6EAC0DE00000003 /* TermLoopHooks.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70004A6EAC0DE00000004 /* TermLoopHooks.swift */; };
 		A9E70005A6EAC0DE00000001 /* TermLoopSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70005A6EAC0DE00000002 /* TermLoopSocketCommands.swift */; };
+		A9E70005A6EAC0DE00000021 /* TermLoopTaskSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70005A6EAC0DE00000022 /* TermLoopTaskSocketCommands.swift */; };
 		A9E70005A6EAC0DE00000003 /* TerminalController+TermLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70005A6EAC0DE00000004 /* TerminalController+TermLoop.swift */; };
 		A9E70005A6EAC0DE00000011 /* TermLoopCLICommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70005A6EAC0DE00000012 /* TermLoopCLICommands.swift */; };
 		A9E70005A6EAC0DE00000101 /* MobilePairingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70005A6EAC0DE00000102 /* MobilePairingStore.swift */; };
@@ -852,6 +853,7 @@
 		A9E70004A6EAC0DE00000002 /* TermLoopSessionSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Core/TermLoopSessionSnapshot.swift; sourceTree = "<group>"; };
 		A9E70004A6EAC0DE00000004 /* TermLoopHooks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Core/TermLoopHooks.swift; sourceTree = "<group>"; };
 		A9E70005A6EAC0DE00000002 /* TermLoopSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Socket/TermLoopSocketCommands.swift; sourceTree = "<group>"; };
+		A9E70005A6EAC0DE00000022 /* TermLoopTaskSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Socket/TermLoopTaskSocketCommands.swift; sourceTree = "<group>"; };
 		A9E70005A6EAC0DE00000004 /* TerminalController+TermLoop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TermLoop/Hooks/TerminalController+TermLoop.swift"; sourceTree = "<group>"; };
 		A9E70005A6EAC0DE00000012 /* TermLoopCLICommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/TermLoopCLICommands.swift; sourceTree = "<group>"; };
 		A9E70005A6EAC0DE00000102 /* MobilePairingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Mobile/MobilePairingStore.swift; sourceTree = "<group>"; };
@@ -1787,6 +1789,7 @@
 				A9E70005A6EAC0DE00000108 /* MobileSurfaceStreamStore.swift */,
 				A9E70005A6EAC0DE00000106 /* MobilePairingViews.swift */,
 				A9E70005A6EAC0DE00000002 /* TermLoopSocketCommands.swift */,
+				A9E70005A6EAC0DE00000022 /* TermLoopTaskSocketCommands.swift */,
 				AAB2001EA6EAC0DE00000002 /* TermLoopHooks+Events.swift */,
 				A9E70005A6EAC0DE00000004 /* TerminalController+TermLoop.swift */,
 				A9E70020A6EAC0DE00000002 /* TabItemView+TermLoop.swift */,
@@ -2568,6 +2571,7 @@
 				A9E70005A6EAC0DE00000107 /* MobileSurfaceStreamStore.swift in Sources */,
 				A9E70005A6EAC0DE00000105 /* MobilePairingViews.swift in Sources */,
 				A9E70005A6EAC0DE00000001 /* TermLoopSocketCommands.swift in Sources */,
+				A9E70005A6EAC0DE00000021 /* TermLoopTaskSocketCommands.swift in Sources */,
 				AAB2001EA6EAC0DE00000001 /* TermLoopHooks+Events.swift in Sources */,
 				A9E70005A6EAC0DE00000003 /* TerminalController+TermLoop.swift in Sources */,
 				A9E70020A6EAC0DE00000001 /* TabItemView+TermLoop.swift in Sources */,

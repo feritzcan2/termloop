@@ -69,6 +69,7 @@ public enum TaskProvisionFailureReason {
     public static let interrupted = "interrupted"
     public static let worktreeMissing = "worktree missing"
     public static let provisioningUnavailable = "provisioning unavailable"
+    public static let dirtySourceCheckout = "dirty source checkout"
 
     public static func localizedDisplayText(for reason: String) -> String {
         switch reason {
@@ -84,9 +85,24 @@ public enum TaskProvisionFailureReason {
             return String(localized: "tasks.provision.failure.provisioningUnavailable",
                           defaultValue: "Worktree could not be created. Check the project git state and retry.",
                           table: "TermLoop")
+        case dirtySourceCheckout:
+            return String(localized: "tasks.provision.failure.dirtySource",
+                          defaultValue: "Project checkout has uncommitted changes.",
+                          table: "TermLoop")
         default:
             return reason
         }
+    }
+
+    public static func isDirtySourceCheckout(_ reason: String) -> Bool {
+        let normalized = reason
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .lowercased()
+        return normalized == dirtySourceCheckout ||
+            normalized.contains("dirty source") ||
+            normalized.contains("dirty checkout") ||
+            normalized.contains("uncommitted changes")
     }
 }
 
@@ -266,6 +282,7 @@ public struct TaskRecord: Codable, Identifiable, Equatable, Hashable, Sendable {
 }
 
 public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
+    public var remoteItemsEnabled: Bool
     public var syncAssignedToMe: Bool
     public var syncColumnMovesToRemote: Bool
     public var provider: RemoteWorkItemProviderId
@@ -282,6 +299,7 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
     public var lastError: String?
 
     public init(
+        remoteItemsEnabled: Bool = false,
         syncAssignedToMe: Bool = false,
         syncColumnMovesToRemote: Bool = false,
         provider: RemoteWorkItemProviderId = .jira,
@@ -289,12 +307,13 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
         jiraSite: String? = nil,
         jiraEmail: String? = nil,
         container: String? = nil,
-        limit: Int = 30,
+        limit: Int = 50,
         lastSyncedAt: Date? = nil,
         lastError: String? = nil
     ) {
-        self.syncAssignedToMe = syncAssignedToMe
-        self.syncColumnMovesToRemote = syncColumnMovesToRemote
+        self.remoteItemsEnabled = remoteItemsEnabled
+        self.syncAssignedToMe = remoteItemsEnabled && syncAssignedToMe
+        self.syncColumnMovesToRemote = remoteItemsEnabled && syncAssignedToMe && syncColumnMovesToRemote
         self.provider = provider
         var containers = providerContainers.compactMapValues {
             $0.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
@@ -312,6 +331,7 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
+        case remoteItemsEnabled
         case syncAssignedToMe
         case syncColumnMovesToRemote
         case provider
@@ -326,8 +346,11 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.syncAssignedToMe = try container.decodeIfPresent(Bool.self, forKey: .syncAssignedToMe) ?? false
-        self.syncColumnMovesToRemote = try container.decodeIfPresent(Bool.self, forKey: .syncColumnMovesToRemote) ?? false
+        self.remoteItemsEnabled = try container.decodeIfPresent(Bool.self, forKey: .remoteItemsEnabled) ?? false
+        let decodedSyncAssigned = try container.decodeIfPresent(Bool.self, forKey: .syncAssignedToMe) ?? false
+        let decodedSyncColumns = try container.decodeIfPresent(Bool.self, forKey: .syncColumnMovesToRemote) ?? false
+        self.syncAssignedToMe = remoteItemsEnabled && decodedSyncAssigned
+        self.syncColumnMovesToRemote = remoteItemsEnabled && decodedSyncAssigned && decodedSyncColumns
         self.provider = try container.decodeIfPresent(RemoteWorkItemProviderId.self, forKey: .provider) ?? .jira
         var providerContainers = try container.decodeIfPresent([RemoteWorkItemProviderId: String].self, forKey: .providerContainers) ?? [:]
         providerContainers = providerContainers.compactMapValues {
@@ -344,7 +367,7 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
         }
         self.providerContainers = providerContainers
         self.container = activeContainer ?? providerContainers[provider]
-        let decodedLimit = try container.decodeIfPresent(Int.self, forKey: .limit) ?? 30
+        let decodedLimit = try container.decodeIfPresent(Int.self, forKey: .limit) ?? 50
         self.limit = max(1, min(decodedLimit, 500))
         self.lastSyncedAt = try container.decodeIfPresent(Date.self, forKey: .lastSyncedAt)
         self.lastError = try container.decodeIfPresent(String.self, forKey: .lastError)
@@ -360,8 +383,9 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
             containers[provider] = activeContainer
         }
 
-        try container.encode(syncAssignedToMe, forKey: .syncAssignedToMe)
-        try container.encode(syncColumnMovesToRemote, forKey: .syncColumnMovesToRemote)
+        try container.encode(remoteItemsEnabled, forKey: .remoteItemsEnabled)
+        try container.encode(remoteItemsEnabled && syncAssignedToMe, forKey: .syncAssignedToMe)
+        try container.encode(remoteItemsEnabled && syncAssignedToMe && syncColumnMovesToRemote, forKey: .syncColumnMovesToRemote)
         try container.encode(provider, forKey: .provider)
         try container.encode(containers, forKey: .providerContainers)
         try container.encodeIfPresent(jiraSite?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty, forKey: .jiraSite)
@@ -371,6 +395,9 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
         try container.encodeIfPresent(lastSyncedAt, forKey: .lastSyncedAt)
         try container.encodeIfPresent(lastError, forKey: .lastError)
     }
+
+    public var isEnabled: Bool { remoteItemsEnabled }
+    public var isAssignedSyncEnabled: Bool { isEnabled && syncAssignedToMe }
 }
 
 public struct TaskColumnSettings: Codable, Equatable, Sendable, Identifiable {

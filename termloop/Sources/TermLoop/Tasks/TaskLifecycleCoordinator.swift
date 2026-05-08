@@ -187,6 +187,42 @@ public final class TaskLifecycleCoordinator {
         try store.saveNow()
     }
 
+    public func bindExistingWorktree(
+        taskId: UUID,
+        workspaceId: UUID,
+        branch: String,
+        worktreePath: String,
+        ownsWorktree: Bool
+    ) throws {
+        let current = try requireTask(taskId)
+        guard current.provisionState != .pending else {
+            throw TaskLifecycleError.provisionInFlight(taskId)
+        }
+        guard workspaces.workspaceExists(workspaceId: workspaceId) else {
+            throw TaskLifecycleError.provisionFailed(
+                String(localized: "tasks.provision.failure.workspaceMissing",
+                       defaultValue: "Created workspace is no longer available.",
+                       table: "TermLoop")
+            )
+        }
+
+        try workspaces.setBinding(
+            workspaceId: workspaceId,
+            branch: branch,
+            path: worktreePath
+        )
+        try mutateTask(taskId) { t in
+            t.workspaceId = workspaceId
+            t.branch = branch
+            t.worktreePath = worktreePath
+            t.ownsWorktree = ownsWorktree
+            t.bindingGeneration += 1
+            t.provisionState = .ready
+            t.updatedAt = Date()
+        }
+        try store.saveNow()
+    }
+
     @discardableResult
     public func ensureTaskSpecFile(taskId: UUID) throws -> String {
         let task = try requireTask(taskId)
@@ -410,7 +446,7 @@ extension TaskLifecycleCoordinator {
 
             let beforePrune = file.tasks.count
             file.tasks.removeAll { task in
-                isExternalPathOnlyAutoImport(
+                shouldPruneImplicitWorktreeImport(
                     task,
                     projectRoot: projectRoot,
                     descriptorByKey: descriptorByKey
@@ -508,6 +544,7 @@ extension TaskLifecycleCoordinator {
             }
 
             for (key, d) in descriptorByKey where !existingKeys.contains(key) {
+                guard d.canImportTask else { continue }
                 let title = d.branch ?? URL(fileURLWithPath: d.worktreePath).lastPathComponent
                 let inProgressRanks = file.tasks
                     .filter { $0.columnId == .inProgress && $0.archivedAt == nil }
@@ -576,29 +613,33 @@ extension TaskLifecycleCoordinator {
         task.remoteWorkItem != nil
     }
 
-    private func isExternalPathOnlyAutoImport(
+    private func shouldPruneImplicitWorktreeImport(
         _ task: TaskRecord,
         projectRoot: URL,
         descriptorByKey: [TaskWorkspaceReconcileKey: TaskWorkspaceDescriptor]
     ) -> Bool {
         guard task.archivedAt == nil,
-              task.workspaceId == nil,
+              task.origin == .worktree,
+              task.remoteWorkItem == nil,
               task.bindingGeneration == 1,
               case .ready = task.provisionState,
-              let worktreePath = task.worktreePath,
-              WorktreeResolver.worktreeRoot(
-                  containing: worktreePath,
-                  projectFolder: projectRoot.path
-              ) == nil else {
+              let worktreePath = task.worktreePath else {
             return false
         }
         guard let resolved = TaskPathNormalization.resolveDisplayAndKey(worktreePath, relativeTo: projectRoot) else {
             return false
         }
         let key = TaskWorkspaceReconcileKey(projectId: store.projectId, normalizedPath: resolved.keyPath)
-        guard descriptorByKey[key] == nil else { return false }
         let importedTitle = task.branch ?? URL(fileURLWithPath: worktreePath).lastPathComponent
-        return task.title == importedTitle
+        guard task.title == importedTitle else { return false }
+        if descriptorByKey[key]?.canImportTask == false {
+            return true
+        }
+        guard descriptorByKey[key] == nil else { return false }
+        return WorktreeResolver.worktreeRoot(
+            containing: worktreePath,
+            projectFolder: projectRoot.path
+        ) == nil
     }
 }
 

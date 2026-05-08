@@ -77,16 +77,26 @@ enum TermLoopBuiltInMCP {
            !workspaceId.isEmpty {
             env["TERMLOOP_WORKSPACE_ID"] = workspaceId
         }
+        let command = shellCommand(cliPath: bundledCLIPath, env: env)
 
         let entry: [String: Any] = [
             "command": "/bin/sh",
             "args": [
                 "-lc",
-                "exec \"${TERMLOOP_BUNDLED_CLI_PATH:-$(command -v termloop)}\" termloop-mcp"
+                command
             ],
             "env": env
         ]
         return entry
+    }
+
+    private static func shellCommand(cliPath: String, env: [String: String]) -> String {
+        let assignments = env
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\(TermLoopShell.quoteSingle($0.value))" }
+            .joined(separator: " ")
+        let execCommand = "exec \(TermLoopShell.quoteSingle(cliPath)) termloop-mcp"
+        return assignments.isEmpty ? execCommand : "\(assignments) \(execCommand)"
     }
 }
 

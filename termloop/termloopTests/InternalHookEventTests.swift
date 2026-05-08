@@ -863,6 +863,9 @@ final class InternalHookEventTests: XCTestCase {
 
 @MainActor
 final class PushDispatcherTests: XCTestCase {
+    private let awayIdle: TimeInterval = 120  // > 60s threshold = "away"
+    private let activeIdle: TimeInterval = 5  // < 60s threshold = "at Mac"
+
     func testPushSuppressedForFocusedWorkspace() {
         let workspaceId = UUID()
 
@@ -870,21 +873,110 @@ final class PushDispatcherTests: XCTestCase {
             PushDispatcher.shouldSuppressPushDelivery(
                 workspaceId: workspaceId,
                 isAppFocused: true,
-                selectedWorkspaceId: workspaceId
+                selectedWorkspaceId: workspaceId,
+                userIdleSeconds: awayIdle,
+                isScreenLocked: false,
+                attentionKind: .completion
             )
         )
         XCTAssertFalse(
             PushDispatcher.shouldSuppressPushDelivery(
                 workspaceId: workspaceId,
                 isAppFocused: false,
-                selectedWorkspaceId: workspaceId
+                selectedWorkspaceId: workspaceId,
+                userIdleSeconds: awayIdle,
+                isScreenLocked: false,
+                attentionKind: .completion
             )
         )
         XCTAssertFalse(
             PushDispatcher.shouldSuppressPushDelivery(
                 workspaceId: workspaceId,
                 isAppFocused: true,
-                selectedWorkspaceId: UUID()
+                selectedWorkspaceId: UUID(),
+                userIdleSeconds: awayIdle,
+                isScreenLocked: false,
+                attentionKind: .completion
+            )
+        )
+    }
+
+    func testPushSuppressedWhenUserActiveAtMac() {
+        let workspaceId = UUID()
+
+        XCTAssertTrue(
+            PushDispatcher.shouldSuppressPushDelivery(
+                workspaceId: workspaceId,
+                isAppFocused: false,
+                selectedWorkspaceId: nil,
+                userIdleSeconds: activeIdle,
+                isScreenLocked: false,
+                attentionKind: .completion
+            )
+        )
+        XCTAssertTrue(
+            PushDispatcher.shouldSuppressPushDelivery(
+                workspaceId: workspaceId,
+                isAppFocused: false,
+                selectedWorkspaceId: nil,
+                userIdleSeconds: activeIdle,
+                isScreenLocked: false,
+                attentionKind: .notification
+            )
+        )
+    }
+
+    func testPushDeliveredWhenUserActiveButAttentionUrgent() {
+        let workspaceId = UUID()
+
+        XCTAssertFalse(
+            PushDispatcher.shouldSuppressPushDelivery(
+                workspaceId: workspaceId,
+                isAppFocused: false,
+                selectedWorkspaceId: nil,
+                userIdleSeconds: activeIdle,
+                isScreenLocked: false,
+                attentionKind: .permission
+            )
+        )
+        XCTAssertFalse(
+            PushDispatcher.shouldSuppressPushDelivery(
+                workspaceId: workspaceId,
+                isAppFocused: false,
+                selectedWorkspaceId: nil,
+                userIdleSeconds: activeIdle,
+                isScreenLocked: false,
+                attentionKind: .error
+            )
+        )
+    }
+
+    func testPushDeliveredWhenScreenLockedRegardlessOfIdle() {
+        let workspaceId = UUID()
+
+        XCTAssertFalse(
+            PushDispatcher.shouldSuppressPushDelivery(
+                workspaceId: workspaceId,
+                isAppFocused: true,
+                selectedWorkspaceId: workspaceId,
+                userIdleSeconds: activeIdle,
+                isScreenLocked: true,
+                attentionKind: .completion
+            )
+        )
+    }
+
+    func testPushDeliveredWhenUserIdleBeyondThreshold() {
+        let workspaceId = UUID()
+
+        XCTAssertFalse(
+            PushDispatcher.shouldSuppressPushDelivery(
+                workspaceId: workspaceId,
+                isAppFocused: false,
+                selectedWorkspaceId: nil,
+                userIdleSeconds: awayIdle,
+                isScreenLocked: false,
+                attentionKind: .completion
             )
         )
     }

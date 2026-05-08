@@ -35,8 +35,8 @@ final class WorkspaceMetadataStore: ObservableObject {
         /// `on_workspace_close` agent prompt for this workspace. Toggled
         /// from the close dialog via "Don't ask again".
         var suppressAgentsOnClose: Bool?
-        /// Terminal agent bound to this workspace. Required post-migration;
-        /// nil only transiently during v3→v4 sidecar upgrade.
+        /// Terminal agent bound to this workspace. Nil means this is a normal
+        /// terminal/worktree workspace until an agent is explicitly launched.
         var terminalAgentId: String?
         /// Permission mode the bound terminal agent was launched with.
         /// Stored as the `AgentTemplate.PermissionMode` raw value (e.g.

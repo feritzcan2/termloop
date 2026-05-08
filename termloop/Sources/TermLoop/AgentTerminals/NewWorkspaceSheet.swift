@@ -313,6 +313,13 @@ struct NewWorkspaceWithWorktreeSheet: View {
 
 @MainActor
 struct NewWorkspaceWithWorktreeForm: View {
+    struct Creation {
+        let workspace: Workspace
+        let branch: String
+        let worktreePath: String
+        let createdWorktree: Bool
+    }
+
     let request: NewWorkspaceWithWorktreeRequest
     weak var tabManager: TabManager?
     private let externalBranchName: Binding<String>?
@@ -320,8 +327,10 @@ struct NewWorkspaceWithWorktreeForm: View {
     var showsCancelButton: Bool = true
     var showsPromptEditors: Bool = true
     var showsAgentPickerControl: Bool = true
+    var activatesWorkspaceOnSuccess: Bool = true
     var contentPadding: CGFloat = 20
     var externalSubmitToken: Int = 0
+    var onWorkspaceCreated: (Creation) throws -> Void = { _ in }
     var onCancel: () -> Void = {}
     var onSuccess: () -> Void = {}
 
@@ -346,8 +355,10 @@ struct NewWorkspaceWithWorktreeForm: View {
         showsCancelButton: Bool = true,
         showsPromptEditors: Bool = true,
         showsAgentPickerControl: Bool = true,
+        activatesWorkspaceOnSuccess: Bool = true,
         contentPadding: CGFloat = 20,
         externalSubmitToken: Int = 0,
+        onWorkspaceCreated: @escaping (Creation) throws -> Void = { _ in },
         onCancel: @escaping () -> Void = {},
         onSuccess: @escaping () -> Void = {}
     ) {
@@ -358,8 +369,10 @@ struct NewWorkspaceWithWorktreeForm: View {
         self.showsCancelButton = showsCancelButton
         self.showsPromptEditors = showsPromptEditors
         self.showsAgentPickerControl = showsAgentPickerControl
+        self.activatesWorkspaceOnSuccess = activatesWorkspaceOnSuccess
         self.contentPadding = contentPadding
         self.externalSubmitToken = externalSubmitToken
+        self.onWorkspaceCreated = onWorkspaceCreated
         self.onCancel = onCancel
         self.onSuccess = onSuccess
         _branchName = State(initialValue: branchName?.wrappedValue ?? request.suggestedBranchName ?? "")
@@ -741,10 +754,14 @@ struct NewWorkspaceWithWorktreeForm: View {
                                 workspace = tabManager.addWorkspace(
                                     title: branch,
                                     workingDirectory: prepared.path,
-                                    select: true,
+                                    select: activatesWorkspaceOnSuccess,
+                                    autoWelcomeIfNeeded: activatesWorkspaceOnSuccess,
                                     projectId: request.projectId,
                                     terminalAgentId: selectedAgentId
                                 )
+                                if selectedAgentId == nil {
+                                    WorkspaceMetadataStore.shared.setTerminalAgentId(nil, for: workspace.id)
+                                }
                             }
                             // The agent path writes branch + baselineHead inside
                             // Lifecycle.createFreshWorkspace; the non-agent addWorkspace
@@ -767,13 +784,38 @@ struct NewWorkspaceWithWorktreeForm: View {
                                 request.assignedTicket,
                                 for: workspace
                             )
-                            if let assignedTicket = request.assignedTicket {
-                                TicketWorktreesPanelState.reveal(
-                                    ticketID: "\(assignedTicket.providerName)::\(assignedTicket.key)"
-                                )
+                            do {
+                                try self.onWorkspaceCreated(Creation(
+                                    workspace: workspace,
+                                    branch: branch,
+                                    worktreePath: prepared.path,
+                                    createdWorktree: prepared.createdWorktree
+                                ))
+                            } catch {
+                                tabManager.closeWorkspace(workspace)
+                                _ = WorkspaceMetadataStore.shared.removeMetadataForId(workspace.id)
+                                if prepared.createdWorktree {
+                                    DispatchQueue.global(qos: .utility).async {
+                                        try? GitWorktreeService().remove(
+                                            folder: projectFolder,
+                                            path: prepared.path
+                                        )
+                                    }
+                                }
+                                self.errorMessage = (error as? LocalizedError)?.errorDescription
+                                    ?? error.localizedDescription
+                                self.isCreating = false
+                                return
                             }
-                            WorktreeAgentsPanelState.reveal(branch: branch)
-                            MainAreaActivation.activateWorkspaceTerminal(workspace.id, on: tabManager)
+                            if activatesWorkspaceOnSuccess {
+                                if let assignedTicket = request.assignedTicket {
+                                    TicketWorktreesPanelState.reveal(
+                                        ticketID: "\(assignedTicket.providerName)::\(assignedTicket.key)"
+                                    )
+                                }
+                                WorktreeAgentsPanelState.reveal(branch: branch)
+                                MainAreaActivation.activateWorkspaceTerminal(workspace.id, on: tabManager)
+                            }
                             AppDelegate.shared?.saveSessionSnapshot(
                                 includeScrollback: false,
                                 forceSync: true
