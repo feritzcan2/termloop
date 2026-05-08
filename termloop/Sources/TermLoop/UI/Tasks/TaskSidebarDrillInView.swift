@@ -12,6 +12,8 @@ struct TaskSidebarDrillInView: View {
     @ObservedObject var remoteSync: TaskRemoteSyncCoordinator
     var columnTitle: (TaskColumnId) -> String = { $0.defaultTitle }
     var onRebind: ((UUID) -> Void)?
+    var onOpenTaskSpec: ((UUID) -> Void)?
+    var onImplementWithAgent: ((UUID) -> Void)?
     var onOpenSettings: () -> Void = {}
 
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
@@ -33,6 +35,12 @@ struct TaskSidebarDrillInView: View {
                             onRebind: { onRebind?(detailSnapshot.id) },
                             onUnbind: { onUnbind?(detailSnapshot.id) },
                             onArchive: { onArchive?(detailSnapshot.id); selection.select(nil) }
+                        )
+                    }
+                    flatSection {
+                        TaskSpecSection(
+                            snapshot: detailSnapshot,
+                            onOpen: { onOpenTaskSpec?(detailSnapshot.id) }
                         )
                     }
                     flatSection {
@@ -279,14 +287,16 @@ struct TaskSidebarDrillInView: View {
             Button {
                 if let workspaceId = snap.workspaceId {
                     TaskQuickActions.addAgentRun(workspaceId: workspaceId)
+                } else {
+                    onImplementWithAgent?(snap.id)
                 }
             } label: {
                 Label(String(localized: "tasks.sidebar.action.agent",
-                             defaultValue: "Start Agent",
+                             defaultValue: snap.workspaceId == nil ? "Implement with Agent" : "Start Agent",
                              table: "TermLoop"),
                       systemImage: "plus")
             }
-            .disabled(snap.workspaceId == nil)
+            .disabled(snap.provisionState == .pending || (snap.workspaceId == nil && onImplementWithAgent == nil))
             Spacer(minLength: 0)
         }
         .buttonStyle(.bordered)

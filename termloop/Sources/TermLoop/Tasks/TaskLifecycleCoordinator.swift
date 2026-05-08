@@ -7,11 +7,18 @@ public struct TaskWorktreeProvisionResult: Equatable, Sendable {
     public let workspaceId: UUID
     public let branch: String
     public let worktreePath: String
+    public let createdWorktree: Bool
 
-    public init(workspaceId: UUID, branch: String, worktreePath: String) {
+    public init(
+        workspaceId: UUID,
+        branch: String,
+        worktreePath: String,
+        createdWorktree: Bool = false
+    ) {
         self.workspaceId = workspaceId
         self.branch = branch
         self.worktreePath = worktreePath
+        self.createdWorktree = createdWorktree
     }
 }
 
@@ -26,7 +33,7 @@ public protocol TaskBoundWorkspaceMetadataStoring: AnyObject {
 public protocol TaskBoundWorktreeProvisioning: AnyObject {
     func provision(projectRoot: URL, branchHint: String?) async throws
         -> TaskWorktreeProvisionResult
-    func teardown(workspaceId: UUID, worktreePath: String) async throws
+    func teardown(workspaceId: UUID?, worktreePath: String, projectRoot: URL) async throws
 }
 
 public enum TaskLifecycleError: Error, Equatable {
@@ -115,8 +122,16 @@ public final class TaskLifecycleCoordinator {
 
     public func bindWorktree(taskId: UUID) async throws {
         let task = try requireTask(taskId)
+        guard task.provisionState != .pending else {
+            throw TaskLifecycleError.provisionInFlight(taskId)
+        }
         let priorColumn = task.columnId
         let expectedGeneration = task.bindingGeneration
+        try mutateTask(taskId) { t in
+            t.provisionState = .pending
+            t.updatedAt = Date()
+        }
+        try store.saveNow()
 
         let result: TaskWorktreeProvisionResult
         do {
@@ -135,9 +150,11 @@ public final class TaskLifecycleCoordinator {
         }
 
         guard isCurrentBindingAttempt(taskId: taskId, generation: expectedGeneration) else {
+            guard result.createdWorktree else { return }
             try? await worktrees.teardown(
                 workspaceId: result.workspaceId,
-                worktreePath: result.worktreePath
+                worktreePath: result.worktreePath,
+                projectRoot: store.projectRoot
             )
             return
         }
@@ -162,11 +179,30 @@ public final class TaskLifecycleCoordinator {
             t.workspaceId = result.workspaceId
             t.branch = result.branch
             t.worktreePath = result.worktreePath
+            t.ownsWorktree = result.createdWorktree
             t.bindingGeneration += 1
             t.provisionState = .ready
             t.updatedAt = Date()
         }
         try store.saveNow()
+    }
+
+    @discardableResult
+    public func ensureTaskSpecFile(taskId: UUID) throws -> String {
+        let task = try requireTask(taskId)
+        let path = try TaskMarkdownFileWriter.ensureTaskSpec(
+            task: task,
+            columnTitle: store.columnTitle(for: task.columnId),
+            projectRoot: store.projectRoot
+        )
+        try mutateTask(taskId) { t in
+            if t.taskFilePath != path {
+                t.taskFilePath = path
+                t.updatedAt = Date()
+            }
+        }
+        try store.saveNow()
+        return path
     }
 
     // MARK: - Internals
@@ -277,23 +313,32 @@ extension TaskLifecycleCoordinator {
         rebalanceColumnIfNeeded(.todo)
         try store.saveNow()
 
-        if let workspaceId = task.workspaceId, let path = task.worktreePath {
-            // Fire-and-forget teardown. Failure leaves a repair banner on next reconcile.
+        if task.workspaceId != nil || (task.ownsWorktree && task.worktreePath != nil) {
+            // Fire-and-forget cleanup. Failure leaves a repair banner on next reconcile.
             _Concurrency.Task { [weak self] in
                 guard let self else { return }
-                do {
-                    try self.workspaces.clearBinding(workspaceId: workspaceId)
-                } catch {
-                    #if DEBUG
-                    print("TaskLifecycleCoordinator.cancelBinding clearBinding failed: \(error)")
-                    #endif
+                if let workspaceId = task.workspaceId {
+                    do {
+                        try self.workspaces.clearBinding(workspaceId: workspaceId)
+                    } catch {
+                        #if DEBUG
+                        print("TaskLifecycleCoordinator.cancelBinding clearBinding failed: \(error)")
+                        #endif
+                    }
                 }
-                do {
-                    try await self.worktrees.teardown(workspaceId: workspaceId, worktreePath: path)
-                } catch {
-                    #if DEBUG
-                    print("TaskLifecycleCoordinator.cancelBinding teardown failed: \(error)")
-                    #endif
+                if task.ownsWorktree,
+                   let path = task.worktreePath {
+                    do {
+                        try await self.worktrees.teardown(
+                            workspaceId: task.workspaceId,
+                            worktreePath: path,
+                            projectRoot: self.store.projectRoot
+                        )
+                    } catch {
+                        #if DEBUG
+                        print("TaskLifecycleCoordinator.cancelBinding teardown failed: \(error)")
+                        #endif
+                    }
                 }
             }
         }
@@ -319,6 +364,7 @@ extension TaskLifecycleCoordinator {
             t.workspaceId = nil
             t.worktreePath = nil
             t.branch = nil
+            t.ownsWorktree = false
             t.bindingGeneration += 1
             t.provisionState = .none
             t.updatedAt = Date()
