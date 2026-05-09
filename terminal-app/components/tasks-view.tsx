@@ -24,7 +24,7 @@ import { colors, monoFont, radii } from "../lib/theme";
 interface TasksViewProps {
   client: TermLoopClient;
   projectId?: string;
-  onOpenTask: (taskId: string) => void;
+  onOpenTask: (taskId: string, projectId: string) => void;
 }
 
 const ROW_HEIGHT = 92;
@@ -60,6 +60,7 @@ export function TasksView({
   }, [client, projectId]);
 
   useEffect(() => {
+    setTasks(null);
     load();
   }, [load]);
 
@@ -101,7 +102,10 @@ export function TasksView({
 
   const renderItem = useCallback<ListRenderItem<TaskRecord>>(
     ({ item }) => (
-      <TaskRow item={item} onPress={() => onOpenTask(item.id)} />
+      <TaskRow
+        item={item}
+        onPress={() => onOpenTask(item.id, item.project_id)}
+      />
     ),
     [onOpenTask]
   );

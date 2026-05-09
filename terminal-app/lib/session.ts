@@ -163,8 +163,6 @@ function createSessionClient(session: ActiveSession): TermLoopClient {
       withReconnect(session, (client) => client.listProjects()),
     currentProject: (): Promise<ProjectSummary | null> =>
       withReconnect(session, (client) => client.currentProject()),
-    switchProject: (projectId: string) =>
-      withReconnect(session, (client) => client.switchProject(projectId)),
     listWorkspaces: (): Promise<WorkspaceSummary[]> =>
       withReconnect(session, (client) => client.listWorkspaces()),
     createWorkspace: (
