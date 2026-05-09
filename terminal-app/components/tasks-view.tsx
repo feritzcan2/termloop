@@ -16,6 +16,7 @@ import {
   type TaskRecord,
   type TermLoopClient,
 } from "../lib/termloop-client";
+import { relativeTime } from "../lib/format";
 import { colors, monoFont, radii } from "../lib/theme";
 
 interface TasksViewProps {
@@ -513,23 +514,6 @@ function inferAgentLabel(task: TaskRecord): string | null {
     if (lower.includes("gemini")) return "Gemini";
   }
   return "Agent";
-}
-
-function relativeTime(seconds: number | null | undefined): string | null {
-  if (typeof seconds !== "number" || !Number.isFinite(seconds)) return null;
-  const ms = seconds < 10_000_000_000 ? seconds * 1000 : seconds;
-  const diff = Date.now() - ms;
-  if (diff < 60_000) return "just now";
-  const m = Math.floor(diff / 60_000);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d ago`;
-  return new Date(ms).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
 }
 
 function railStyleFor(columnId: string) {

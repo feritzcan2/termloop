@@ -228,6 +228,8 @@ function createSessionClient(session: ActiveSession): TermLoopClient {
       withReconnect(session, (client) => client.resize(params)),
     listTasks: (params) =>
       withReconnect(session, (client) => client.listTasks(params)),
+    getTask: (params) =>
+      withReconnect(session, (client) => client.getTask(params)),
     createTask: (params) =>
       withReconnect(session, (client) => client.createTask(params), "prewrite"),
     updateTask: (params) =>
