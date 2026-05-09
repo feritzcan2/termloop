@@ -38,8 +38,12 @@ const COLUMN_FALLBACK: TaskColumnSummary[] = [
 
 export default function TaskDetailScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ id: string }>();
+  const params = useLocalSearchParams<{ id: string; projectId?: string }>();
   const taskId = typeof params.id === "string" ? params.id : null;
+  const projectId =
+    typeof params.projectId === "string" && params.projectId.length > 0
+      ? params.projectId
+      : undefined;
   const client = getActiveClient();
 
   const [task, setTask] = useState<TaskRecord | null>(null);
@@ -55,10 +59,14 @@ export default function TaskDetailScreen() {
   const [agents, setAgents] = useState<TerminalAgentSummary[] | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
 
+  const loadedProjectId = task?.project_id;
   const refresh = useCallback(async () => {
     if (!client || !taskId) return;
     try {
-      const result = await client.getTask({ taskId });
+      const result = await client.getTask({
+        taskId,
+        projectId: loadedProjectId ?? projectId,
+      });
       setTask(result.task);
       setColumns(result.columns.length > 0 ? result.columns : COLUMN_FALLBACK);
       setError(null);
@@ -72,7 +80,7 @@ export default function TaskDetailScreen() {
     } finally {
       setLoading(false);
     }
-  }, [client, taskId]);
+  }, [client, taskId, projectId, loadedProjectId]);
 
   useEffect(() => {
     if (!client) {
@@ -113,11 +121,17 @@ export default function TaskDetailScreen() {
     );
   }
 
+  const taskProjectId = task.project_id;
+
   const onMove = async (columnId: string) => {
     if (moving || task.column_id === columnId) return;
     setMoving(true);
     try {
-      await client.moveTask({ taskId: task.id, columnId });
+      await client.moveTask({
+        taskId: task.id,
+        columnId,
+        projectId: taskProjectId,
+      });
       setTask({ ...task, column_id: columnId });
     } catch (err) {
       Alert.alert("Move failed", String((err as Error).message ?? err));
@@ -130,7 +144,10 @@ export default function TaskDetailScreen() {
     if (archiving) return;
     setArchiving(true);
     try {
-      await client.archiveTask({ taskId: task.id });
+      await client.archiveTask({
+        taskId: task.id,
+        projectId: taskProjectId,
+      });
       router.back();
     } catch (err) {
       Alert.alert("Archive failed", String((err as Error).message ?? err));
@@ -209,6 +226,7 @@ export default function TaskDetailScreen() {
       const result = await client.startTaskAgent({
         taskId: task.id,
         terminalAgentId: agentId ?? undefined,
+        projectId: taskProjectId,
       });
       if (result.workspace_id && result.status === "ready") {
         // Already bound — open immediately.
@@ -235,6 +253,7 @@ export default function TaskDetailScreen() {
         taskId: task.id,
         title: nextTitle,
         brief: nextBrief,
+        projectId: taskProjectId,
       });
       setTask(updated);
     } catch (err) {

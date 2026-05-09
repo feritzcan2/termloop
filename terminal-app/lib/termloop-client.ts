@@ -363,7 +363,6 @@ export interface TermLoopClient {
   authWithPassword(password: string): Promise<AuthResult>;
   listProjects(): Promise<ProjectSummary[]>;
   currentProject(): Promise<ProjectSummary | null>;
-  switchProject(projectId: string): Promise<void>;
   listWorkspaces(): Promise<WorkspaceSummary[]>;
   createWorkspace(params: CreateWorkspaceParams): Promise<CreateWorkspaceResult>;
   listTerminalAgents(): Promise<TerminalAgentSummary[]>;
@@ -546,9 +545,6 @@ export function createTermLoopClient(opts: {
         if (err instanceof RpcCallError && err.code === "not_found") return null;
         throw err;
       }
-    },
-    async switchProject(projectId) {
-      await call<{ ok: true }>("project.switch", { project_id: projectId });
     },
     async listWorkspaces() {
       const out = await call<{ workspaces?: WorkspaceSummary[] }>(

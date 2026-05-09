@@ -89,11 +89,11 @@ export default function ConnectedScreen() {
   const handledNotifRef = useRef<string | null>(null);
   const client = getActiveClient();
   const [current, setCurrent] = useState<ProjectState>("loading");
+  const seededProjectRef = useRef(false);
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[] | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
-  const [switchingId, setSwitchingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
@@ -112,12 +112,18 @@ export default function ConnectedScreen() {
     setRefreshing(true);
     setLoadError(null);
     try {
-      const [cur, ws] = await Promise.all([
-        client.currentProject(),
-        client.listWorkspaces(),
-      ]);
-      setCurrent(cur);
-      setWorkspaces(ws);
+      if (!seededProjectRef.current) {
+        const [cur, ws] = await Promise.all([
+          client.currentProject(),
+          client.listWorkspaces(),
+        ]);
+        setCurrent(cur);
+        setWorkspaces(ws);
+        seededProjectRef.current = true;
+      } else {
+        const ws = await client.listWorkspaces();
+        setWorkspaces(ws);
+      }
       setContextRefreshKey((value) => value + 1);
     } catch (err) {
       const message = String((err as Error).message ?? err);
@@ -158,32 +164,14 @@ export default function ConnectedScreen() {
     }
   };
 
-  const onPickProject = async (p: ProjectSummary) => {
-    if (!client) return;
+  const onPickProject = (p: ProjectSummary) => {
     if (current !== "loading" && current?.id === p.id) {
       setPickerOpen(false);
       return;
     }
-    setSwitchingId(p.id);
-    try {
-      await client.switchProject(p.id);
-      const [cur, ws] = await Promise.all([
-        client.currentProject(),
-        client.listWorkspaces(),
-      ]);
-      setCurrent(cur);
-      setWorkspaces(ws);
-      setContextRefreshKey((value) => value + 1);
-      setProjects(null);
-      setPickerOpen(false);
-    } catch (err) {
-      Alert.alert(
-        "Failed to switch project",
-        String((err as Error).message ?? err)
-      );
-    } finally {
-      setSwitchingId(null);
-    }
+    setCurrent(p);
+    setPickerOpen(false);
+    setContextRefreshKey((value) => value + 1);
   };
 
   const onOpenWorkspace = useCallback(async (ws: WorkspaceSummary) => {
@@ -599,10 +587,10 @@ export default function ConnectedScreen() {
           projectId={
             current !== "loading" && current !== null ? current.id : undefined
           }
-          onOpenTask={(taskId) =>
+          onOpenTask={(taskId, taskProjectId) =>
             router.push({
               pathname: "/connected/task/[id]",
-              params: { id: taskId },
+              params: { id: taskId, projectId: taskProjectId },
             })
           }
         />
@@ -815,13 +803,11 @@ export default function ConnectedScreen() {
                 renderItem={({ item }) => {
                   const isCurrent =
                     current !== "loading" && current?.id === item.id;
-                  const isSwitching = switchingId === item.id;
                   const itemPath = projectSummaryPath(item);
                   return (
                     <Pressable
                       style={styles.projectItem}
                       onPress={() => onPickProject(item)}
-                      disabled={switchingId !== null}
                     >
                       <View style={styles.projectItemText}>
                         <Text style={styles.projectItemName} numberOfLines={1}>
@@ -833,9 +819,7 @@ export default function ConnectedScreen() {
                           </Text>
                         ) : null}
                       </View>
-                      {isSwitching ? (
-                        <ActivityIndicator color={colors.primary} />
-                      ) : isCurrent ? (
+                      {isCurrent ? (
                         <Text style={styles.projectCurrent}>Current</Text>
                       ) : null}
                     </Pressable>
