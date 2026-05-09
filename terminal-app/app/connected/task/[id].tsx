@@ -19,18 +19,14 @@ import {
   getActiveConnectionId,
 } from "../../../lib/session";
 import {
-  pickTerminalSurface,
+  surfaceLabel,
   type TaskColumnSummary,
   type TaskRecord,
   type TerminalAgentSummary,
-  type TermLoopClient,
-  surfaceLabel,
+  waitForTerminalSurface,
 } from "../../../lib/termloop-client";
-import { isTerminalSurfaceStartingError } from "../../../lib/errors";
+import { relativeTime } from "../../../lib/format";
 import { colors, monoFont, radii } from "../../../lib/theme";
-
-const SURFACE_READY_ATTEMPTS = 40;
-const SURFACE_READY_DELAY_MS = 250;
 
 const COLUMN_FALLBACK: TaskColumnSummary[] = [
   { id: "backlog", title: "Backlog" },
@@ -62,13 +58,17 @@ export default function TaskDetailScreen() {
   const refresh = useCallback(async () => {
     if (!client || !taskId) return;
     try {
-      const result = await client.listTasks({ includeArchived: true });
-      const found = result.tasks.find((t) => t.id === taskId) ?? null;
-      setTask(found);
+      const result = await client.getTask({ taskId });
+      setTask(result.task);
       setColumns(result.columns.length > 0 ? result.columns : COLUMN_FALLBACK);
       setError(null);
     } catch (err) {
-      setError(String((err as Error).message ?? err));
+      const code = (err as { code?: string }).code;
+      if (code === "not_found") {
+        setTask(null);
+      } else {
+        setError(String((err as Error).message ?? err));
+      }
     } finally {
       setLoading(false);
     }
@@ -119,8 +119,6 @@ export default function TaskDetailScreen() {
     try {
       await client.moveTask({ taskId: task.id, columnId });
       setTask({ ...task, column_id: columnId });
-      // Backend processes async; refresh shortly to pick up new rank.
-      setTimeout(refresh, 350);
     } catch (err) {
       Alert.alert("Move failed", String((err as Error).message ?? err));
     } finally {
@@ -144,7 +142,7 @@ export default function TaskDetailScreen() {
     if (!client) return;
     setOpening(true);
     try {
-      const surface = await waitForSurface(client, workspaceId);
+      const surface = await waitForTerminalSurface(client, workspaceId);
       if (!surface) {
         Alert.alert(
           "Agent terminal not ready",
@@ -584,47 +582,9 @@ function AgentPickerSheet({
   );
 }
 
-async function waitForSurface(client: TermLoopClient, workspaceId: string) {
-  for (let attempt = 0; attempt < SURFACE_READY_ATTEMPTS; attempt++) {
-    const surfaces = await client.listSurfaces(workspaceId);
-    const surface = pickTerminalSurface(surfaces);
-    if (surface) {
-      try {
-        await client.readSurface(workspaceId, surface.id, "vt", 20);
-        return surface;
-      } catch (err) {
-        if (!isTerminalSurfaceStartingError(err)) throw err;
-      }
-    }
-    if (attempt < SURFACE_READY_ATTEMPTS - 1) {
-      await new Promise((resolve) =>
-        setTimeout(resolve, SURFACE_READY_DELAY_MS)
-      );
-    }
-  }
-  return null;
-}
-
 function shortId(id: string | null | undefined): string {
   if (!id) return "—";
   return `${id.slice(0, 8)}…${id.slice(-4)}`;
-}
-
-function relativeTime(seconds: number | null | undefined): string | null {
-  if (typeof seconds !== "number" || !Number.isFinite(seconds)) return null;
-  const ms = seconds < 10_000_000_000 ? seconds * 1000 : seconds;
-  const diff = Date.now() - ms;
-  if (diff < 60_000) return "just now";
-  const m = Math.floor(diff / 60_000);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d ago`;
-  return new Date(ms).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
 }
 
 function statusActiveStyleFor(columnId: string) {

@@ -19,12 +19,12 @@ import {
   getActiveClient,
   getActiveConnectionId,
 } from "../../lib/session";
-import { isTerminalSurfaceStartingError } from "../../lib/errors";
+import { relativeTime } from "../../lib/format";
 import {
   pickTerminalSurface,
   projectSummaryPath,
-  type TermLoopClient,
   surfaceLabel,
+  waitForTerminalSurface,
   workspaceLabel,
   workspaceProjectId,
   type JiraTicketSummary,
@@ -40,8 +40,6 @@ type ProjectState = ProjectSummary | null | "loading";
 type WorkspaceSectionKind = "worktree" | "workspace";
 type WorkspaceViewMode = "active" | "worktrees" | "tasks";
 
-const TERMINAL_SURFACE_READY_ATTEMPTS = 40;
-const TERMINAL_SURFACE_READY_DELAY_MS = 250;
 
 interface WorkspaceRow {
   ws: WorkspaceSummary;
@@ -83,35 +81,6 @@ interface WorkspaceContextSummary {
   loading: boolean;
   jira: JiraTicketSummary | null;
   runTargets: WorkspaceRunTargetSummary[];
-}
-
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function waitForTerminalSurface(
-  client: TermLoopClient,
-  workspaceId: string
-) {
-  for (let attempt = 0; attempt < TERMINAL_SURFACE_READY_ATTEMPTS; attempt++) {
-    const surfaces = await client.listSurfaces(workspaceId);
-    const surface = pickTerminalSurface(surfaces);
-    if (surface) {
-      try {
-        await client.readSurface(
-          workspaceId,
-          surface.id,
-          "vt",
-          20
-        );
-        return surface;
-      } catch (err) {
-        if (!isTerminalSurfaceStartingError(err)) throw err;
-      }
-    }
-    if (attempt < TERMINAL_SURFACE_READY_ATTEMPTS - 1) {
-      await delay(TERMINAL_SURFACE_READY_DELAY_MS);
-    }
-  }
-  return null;
 }
 
 export default function ConnectedScreen() {
@@ -1173,9 +1142,7 @@ function workspaceActivityLabel(ws: WorkspaceSummary): string | null {
       "updatedAt",
     ]);
   if (value === null) return null;
-  const date = typeof value === "number" ? dateFromNumber(value) : new Date(value);
-  if (!Number.isFinite(date.getTime())) return null;
-  return relativeTime(date);
+  return relativeTime(typeof value === "number" ? value : new Date(value), "active now");
 }
 
 function workspaceChangeLabel(ws: WorkspaceSummary): string | null {
@@ -1209,22 +1176,6 @@ function firstWorkspaceNumber(
     if (typeof value === "number" && Number.isFinite(value)) return value;
   }
   return null;
-}
-
-function relativeTime(date: Date): string {
-  const diffMs = Date.now() - date.getTime();
-  if (diffMs < 60_000) return "active now";
-  const mins = Math.floor(diffMs / 60_000);
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function dateFromNumber(value: number): Date {
-  return new Date(value < 10_000_000_000 ? value * 1000 : value);
 }
 
 function basename(path: string | null): string | null {

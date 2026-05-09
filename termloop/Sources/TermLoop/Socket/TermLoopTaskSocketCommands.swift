@@ -12,6 +12,7 @@ enum TermLoopTaskSocketCommands {
     static func handle(method: String, params: [String: Any]) -> TerminalController.V2CallResult? {
         switch method {
         case "tasks.list":        return tasksList(params)
+        case "tasks.get":         return tasksGet(params)
         case "tasks.create":      return tasksCreate(params)
         case "tasks.update":      return tasksUpdate(params)
         case "tasks.move":        return tasksMove(params)
@@ -30,29 +31,56 @@ enum TermLoopTaskSocketCommands {
             return .err(code: "internal_error", message: "Could not resolve store", data: nil)
         }
         let includeArchived = params["include_archived"] as? Bool ?? false
-        let file = store.fileSnapshot()
 
-        // Reuse the desktop's canonical column projection. `columnSnapshots`
-        // is already normalized, isEnabled-or-hasTasks filtered, ordered and
-        // de-duplicated — the same source the macOS Tasks board renders.
-        let columns: [[String: Any]] = store.columnSnapshots.map { snapshot in
+        // Same source the macOS Tasks board renders.
+        let snapshots = store.columnSnapshots
+        let titlesByColumn = columnTitlesMap(store: store, snapshots: snapshots)
+        let columns: [[String: Any]] = snapshots.map { snapshot in
             [
                 "id": snapshot.id.rawValue,
-                "title": store.columnTitle(for: snapshot.id)
+                "title": titlesByColumn[snapshot.id] ?? snapshot.id.defaultTitle
             ]
         }
 
-        let visible = file.tasks.filter { task in
+        let visible = store.fileSnapshot().tasks.filter { task in
             includeArchived || task.archivedAt == nil
         }
         let payloads: [[String: Any]] = visible.map { task in
-            taskPayload(task, columnTitle: store.columnTitle(for: task.columnId))
+            taskPayload(task, columnTitle: titlesByColumn[task.columnId] ?? store.columnTitle(for: task.columnId))
         }
         return .ok([
             "project_id": store.projectId.uuidString,
             "tasks": payloads,
             "columns": columns,
             "include_archived": includeArchived
+        ])
+    }
+
+    private static func tasksGet(_ params: [String: Any]) -> TerminalController.V2CallResult {
+        let storeResult = resolveStore(params)
+        guard case .success(let store) = storeResult else {
+            if case .failure(let err) = storeResult { return err }
+            return .err(code: "internal_error", message: "Could not resolve store", data: nil)
+        }
+        guard let taskId = uuidParam(params, "task_id") else {
+            return .err(code: "invalid_params", message: "Missing or invalid task_id", data: nil)
+        }
+        guard let task = store.fileSnapshot().tasks.first(where: { $0.id == taskId }) else {
+            return .err(code: "not_found", message: "Task not found", data: nil)
+        }
+        let snapshots = store.columnSnapshots
+        let titlesByColumn = columnTitlesMap(store: store, snapshots: snapshots)
+        let columns: [[String: Any]] = snapshots.map { snapshot in
+            [
+                "id": snapshot.id.rawValue,
+                "title": titlesByColumn[snapshot.id] ?? snapshot.id.defaultTitle
+            ]
+        }
+        let columnTitle = titlesByColumn[task.columnId] ?? store.columnTitle(for: task.columnId)
+        return .ok([
+            "task": taskPayload(task, columnTitle: columnTitle),
+            "columns": columns,
+            "project_id": store.projectId.uuidString
         ])
     }
 
@@ -130,9 +158,13 @@ enum TermLoopTaskSocketCommands {
             return .err(code: "invalid_params", message: "Missing column_id", data: nil)
         }
         let column = TaskColumnId(rawValue: columnRaw)
+        if let task = store.fileSnapshot().tasks.first(where: { $0.id == taskId }),
+           task.columnId == column {
+            return .ok(["ok": true, "task_id": taskId.uuidString, "column_id": column.rawValue])
+        }
         let coordinator = TaskLifecycleCoordinator.makeForProject(store: store)
-        // Fire-and-forget: moveColumn is async because it persists & rebalances.
-        // Mobile clients refresh tasks.list to see the new column.
+        // moveColumn persists + rebalances asynchronously; clients refresh
+        // tasks.list (or tasks.get) to observe the new rank.
         Task {
             do {
                 try await coordinator.moveColumn(taskId: taskId, to: column)
@@ -193,6 +225,13 @@ enum TermLoopTaskSocketCommands {
                 "worktree_path": orNull(task.worktreePath),
                 "branch": orNull(task.branch),
                 "status": "ready"
+            ])
+        }
+
+        if task.provisionState == .pending {
+            return .ok([
+                "task_id": taskId.uuidString,
+                "status": "provisioning"
             ])
         }
 
@@ -283,6 +322,18 @@ enum TermLoopTaskSocketCommands {
         case .ready:   return "ready"
         case .failed:  return "failed"
         }
+    }
+
+    private static func columnTitlesMap(
+        store: TaskBoardStore,
+        snapshots: [TaskColumnSnapshot]
+    ) -> [TaskColumnId: String] {
+        var out: [TaskColumnId: String] = [:]
+        out.reserveCapacity(snapshots.count)
+        for snapshot in snapshots {
+            out[snapshot.id] = store.columnTitle(for: snapshot.id)
+        }
+        return out
     }
 
     // MARK: - Param helpers (local mirrors)

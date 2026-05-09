@@ -8,6 +8,7 @@
  */
 
 import { connectionHostCandidates } from "./connections";
+import { isTerminalSurfaceStartingError } from "./errors";
 
 export type RequestId = string;
 
@@ -223,6 +224,41 @@ export function surfaceLabel(s: SurfaceSummary): string {
   return s.title || s.name || s.kind || "Terminal";
 }
 
+const TERMINAL_SURFACE_READY_ATTEMPTS = 40;
+const TERMINAL_SURFACE_READY_DELAY_MS = 250;
+
+/**
+ * Poll until the workspace exposes a terminal surface that's ready to read.
+ * Returns the surface, or null after the attempt budget is exhausted.
+ *
+ * Used after `workspace.create` / `tasks.start_agent` — the backend creates
+ * the workspace synchronously but the terminal surface only appears once
+ * Ghostty has spawned and produced its first frame.
+ */
+export async function waitForTerminalSurface(
+  client: Pick<TermLoopClient, "listSurfaces" | "readSurface">,
+  workspaceId: string
+): Promise<SurfaceSummary | null> {
+  for (let attempt = 0; attempt < TERMINAL_SURFACE_READY_ATTEMPTS; attempt++) {
+    const surfaces = await client.listSurfaces(workspaceId);
+    const surface = pickTerminalSurface(surfaces);
+    if (surface) {
+      try {
+        await client.readSurface(workspaceId, surface.id, "vt", 20);
+        return surface;
+      } catch (err) {
+        if (!isTerminalSurfaceStartingError(err)) throw err;
+      }
+    }
+    if (attempt < TERMINAL_SURFACE_READY_ATTEMPTS - 1) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, TERMINAL_SURFACE_READY_DELAY_MS)
+      );
+    }
+  }
+  return null;
+}
+
 export type SurfaceFormat = "plain" | "vt";
 
 export interface SurfaceText {
@@ -364,6 +400,10 @@ export interface TermLoopClient {
 
   // ---- Tasks (project task board) ---------------------------------------
   listTasks(params?: { projectId?: string; includeArchived?: boolean }): Promise<TaskListResult>;
+  getTask(params: {
+    taskId: string;
+    projectId?: string;
+  }): Promise<{ task: TaskRecord; columns: TaskColumnSummary[] }>;
   createTask(params: CreateTaskParams): Promise<TaskRecord>;
   updateTask(params: UpdateTaskParams): Promise<TaskRecord>;
   moveTask(params: {
@@ -619,6 +659,15 @@ export function createTermLoopClient(opts: {
         ...(params?.projectId ? { project_id: params.projectId } : {}),
         ...(params?.includeArchived ? { include_archived: true } : {}),
       });
+    },
+    async getTask(params) {
+      return call<{ task: TaskRecord; columns: TaskColumnSummary[] }>(
+        "tasks.get",
+        {
+          task_id: params.taskId,
+          ...(params.projectId ? { project_id: params.projectId } : {}),
+        }
+      );
     },
     async createTask(params) {
       const out = await call<{ task: TaskRecord }>("tasks.create", {
