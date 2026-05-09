@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  KeyboardAvoidingView,
   type ListRenderItem,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -413,79 +415,90 @@ function NewTaskSheet({
       animationType="slide"
       onRequestClose={onClose}
     >
-      <Pressable style={styles.sheetBackdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={() => {}}>
-          <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>New task</Text>
+      <KeyboardAvoidingView
+        style={styles.sheetKav}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <Pressable style={styles.sheetBackdrop} onPress={onClose}>
+          <Pressable style={styles.sheet} onPress={() => {}}>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.sheetScrollContent}
+            >
+              <View style={styles.sheetHandle} />
+              <Text style={styles.sheetTitle}>New task</Text>
 
-          <Text style={styles.fieldLabel}>Title</Text>
-          <TextInput
-            style={styles.field}
-            placeholder="What needs to happen?"
-            placeholderTextColor={colors.placeholder}
-            value={title}
-            onChangeText={setTitle}
-            autoFocus
-          />
+              <Text style={styles.fieldLabel}>Title</Text>
+              <TextInput
+                style={styles.field}
+                placeholder="What needs to happen?"
+                placeholderTextColor={colors.placeholder}
+                value={title}
+                onChangeText={setTitle}
+                autoFocus
+              />
 
-          <Text style={styles.fieldLabel}>Brief (optional)</Text>
-          <TextInput
-            style={[styles.field, styles.textarea]}
-            placeholder="Additional context the agent will read…"
-            placeholderTextColor={colors.placeholder}
-            value={brief}
-            onChangeText={setBrief}
-            multiline
-          />
+              <Text style={styles.fieldLabel}>Brief (optional)</Text>
+              <TextInput
+                style={[styles.field, styles.textarea]}
+                placeholder="Additional context the agent will read…"
+                placeholderTextColor={colors.placeholder}
+                value={brief}
+                onChangeText={setBrief}
+                multiline
+              />
 
-          <Text style={styles.fieldLabel}>Column</Text>
-          <View style={styles.colPicker}>
-            {pickerColumns.slice(0, 5).map((column) => {
-              const active = columnId === column.id;
-              return (
-                <Pressable
-                  key={column.id}
-                  style={[styles.colOpt, active && styles.colOptActive]}
-                  onPress={() => setColumnId(column.id)}
-                >
-                  <View style={[styles.colDot, dotBgStyleFor(column.id)]} />
-                  <Text
-                    style={[
-                      styles.colOptText,
-                      active && styles.colOptTextActive,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {column.title}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+              <Text style={styles.fieldLabel}>Column</Text>
+              <View style={styles.colPicker}>
+                {pickerColumns.slice(0, 5).map((column) => {
+                  const active = columnId === column.id;
+                  return (
+                    <Pressable
+                      key={column.id}
+                      style={[styles.colOpt, active && styles.colOptActive]}
+                      onPress={() => setColumnId(column.id)}
+                    >
+                      <View style={[styles.colDot, dotBgStyleFor(column.id)]} />
+                      <Text
+                        style={[
+                          styles.colOptText,
+                          active && styles.colOptTextActive,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {column.title}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
 
-          {error ? (
-            <Text style={styles.sheetError} numberOfLines={3}>
-              {error}
-            </Text>
-          ) : null}
+              {error ? (
+                <Text style={styles.sheetError} numberOfLines={3}>
+                  {error}
+                </Text>
+              ) : null}
 
-          <Pressable
-            style={[styles.submit, !canSubmit && styles.submitDisabled]}
-            disabled={!canSubmit}
-            onPress={submit}
-          >
-            {submitting ? (
-              <ActivityIndicator color={colors.onPrimary} size="small" />
-            ) : null}
-            <Text style={styles.submitText}>
-              {submitting ? "Creating…" : "Create task"}
-            </Text>
-          </Pressable>
-          <Pressable style={styles.cancel} onPress={onClose}>
-            <Text style={styles.cancelText}>Cancel</Text>
+              <Pressable
+                style={[styles.submit, !canSubmit && styles.submitDisabled]}
+                disabled={!canSubmit}
+                onPress={submit}
+              >
+                {submitting ? (
+                  <ActivityIndicator color={colors.onPrimary} size="small" />
+                ) : null}
+                <Text style={styles.submitText}>
+                  {submitting ? "Creating…" : "Create task"}
+                </Text>
+              </Pressable>
+              <Pressable style={styles.cancel} onPress={onClose}>
+                <Text style={styles.cancelText}>Cancel</Text>
+              </Pressable>
+            </ScrollView>
           </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -839,6 +852,7 @@ const styles = StyleSheet.create({
   },
 
   // Sheet
+  sheetKav: { flex: 1 },
   sheetBackdrop: {
     flex: 1,
     backgroundColor: colors.overlay,
@@ -848,11 +862,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgElevated,
     borderTopLeftRadius: radii.xl,
     borderTopRightRadius: radii.xl,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    maxHeight: "90%",
+  },
+  sheetScrollContent: {
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 28,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
   },
   sheetHandle: {
     alignSelf: "center",

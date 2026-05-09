@@ -279,7 +279,12 @@ export default function TaskDetailScreen() {
           {task.title}
         </Text>
 
-        <View style={styles.chipLine}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.chipLine}
+          contentContainerStyle={styles.chipLineContent}
+        >
           {agentLabel ? (
             <Text style={[styles.chip, styles.chipAgent]}>⚡ {agentLabel}</Text>
           ) : null}
@@ -303,7 +308,7 @@ export default function TaskDetailScreen() {
             </Text>
           ) : null}
           {ago ? <Text style={styles.chipAgo}>{ago}</Text> : null}
-        </View>
+        </ScrollView>
 
         <View style={styles.statusBar}>
           {columns.map((column) => {
@@ -662,11 +667,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   chipLine: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
     marginBottom: 14,
+    flexGrow: 0,
+  },
+  chipLineContent: {
+    flexDirection: "row",
+    gap: 6,
     alignItems: "center",
+    paddingRight: 14,
   },
   chip: {
     paddingHorizontal: 8,
@@ -676,6 +684,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     borderWidth: 1,
     overflow: "hidden",
+    flexShrink: 0,
   },
   chipAgent: {
     backgroundColor: colors.primaryDim,
