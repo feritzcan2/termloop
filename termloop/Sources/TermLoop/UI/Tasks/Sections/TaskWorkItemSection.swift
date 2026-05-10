@@ -12,18 +12,22 @@ struct TaskWorkItemSection: View {
     let taskWorkItem: TaskWorkItemSnapshot?
     let workspaceId: UUID?
     let worktreePath: String?
+    let projectId: UUID?
     @ObservedObject var remoteSync: TaskRemoteSyncCoordinator
 
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
+    @ObservedObject private var worktreeProjectionStore = WorktreeProjectionStore.shared
 
     private var snapshot: TaskWorkItemSnapshot? {
         if let taskWorkItem { return taskWorkItem }
         // Intentional subscription read: work item binding is external
         // workspace metadata, not task-board state.
         _ = metadataStore
+        _ = worktreeProjectionStore.version
         return TaskWorkItemProjectionBuilder.snapshot(
             workspaceId: workspaceId,
-            worktreePath: worktreePath
+            worktreePath: worktreePath,
+            projectId: projectId
         )
     }
 

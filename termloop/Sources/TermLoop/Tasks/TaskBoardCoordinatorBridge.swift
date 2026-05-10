@@ -78,6 +78,7 @@ public final class TaskBoardWorktreeProvisioner: TaskBoundWorktreeProvisioning {
             branch: branch,
             projectRoot: projectRoot
         )
+        WorktreeProjectionStore.shared.refresh(projectFolder: projectRoot.path, reason: "tasks.provision")
         return TaskWorktreeProvisionResult(
             workspaceId: workspaceId,
             branch: branch,
@@ -93,6 +94,7 @@ public final class TaskBoardWorktreeProvisioner: TaskBoundWorktreeProvisioning {
         } else {
             try GitWorktreeService().remove(folder: projectRoot.path, path: worktreePath)
         }
+        WorktreeProjectionStore.shared.refresh(projectFolder: projectRoot.path, reason: "tasks.teardown")
     }
 
     private func workspaceIdForWorktree(path: String, branch: String, projectRoot: URL) throws -> UUID {

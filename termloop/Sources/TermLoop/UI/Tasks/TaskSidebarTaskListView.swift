@@ -19,6 +19,7 @@ struct TaskSidebarTaskListView: View {
     @State private var isRemoteItemsTipDismissed = false
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
+    @ObservedObject private var worktreeProjectionStore = WorktreeProjectionStore.shared
     @EnvironmentObject private var tabManager: TabManager
 
     var body: some View {
@@ -176,8 +177,10 @@ struct TaskSidebarTaskListView: View {
         // without storing agent telemetry in TaskBoardStore.
         _ = metadataStore
         _ = activityStore
+        _ = worktreeProjectionStore.version
         return TaskAgentProjectionBuilder.statusSummaries(
             for: store.fileSnapshot().tasks.filter { $0.archivedAt == nil },
+            projectId: store.projectId,
             openWorkspaceIds: Set(tabManager.tabs.map(\.id))
         )
     }
@@ -186,7 +189,11 @@ struct TaskSidebarTaskListView: View {
         // Work item bindings are shared workspace metadata; keep Tasks as a
         // read-only projection so sidebar rows update with that store.
         _ = metadataStore
-        return TaskWorkItemProjectionBuilder.snapshots(for: store.fileSnapshot().tasks)
+        _ = worktreeProjectionStore.version
+        return TaskWorkItemProjectionBuilder.snapshots(
+            for: store.fileSnapshot().tasks,
+            projectId: store.projectId
+        )
     }
 
     private func section(

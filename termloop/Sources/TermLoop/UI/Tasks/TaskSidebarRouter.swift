@@ -53,6 +53,7 @@ struct TaskSidebarRouter: View {
         ) {
             TaskSidebarDrillInView(
                 detailSnapshot: detailSnapshot,
+                projectId: store.projectId,
                 selection: selection,
                 remoteSync: remoteSync,
                 columnTitle: { store.columnTitle(for: $0) },

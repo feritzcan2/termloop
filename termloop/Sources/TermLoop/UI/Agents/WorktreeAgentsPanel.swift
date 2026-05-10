@@ -257,7 +257,8 @@ final class WorktreeDeletionCoordinator {
         branch: String?,
         worktreePath: String?,
         projectId: UUID?,
-        fallbackWorkspaceIds: [UUID]
+        fallbackWorkspaceIds: [UUID],
+        onDeleted: (() -> Void)? = nil
     ) {
         #if DEBUG
         dlog("worktree.delete.confirm.begin branch=\(branch ?? "nil") worktreePath=\(worktreePath ?? "nil") projectId=\(projectId?.uuidString.prefix(8) ?? "nil") fallbackIds=\(fallbackWorkspaceIds.map { $0.uuidString.prefix(8) }.joined(separator: ","))")
@@ -288,6 +289,7 @@ final class WorktreeDeletionCoordinator {
             }
 
             try performDelete(target: target, mode: mode)
+            onDeleted?()
         } catch {
             presentError((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
         }
@@ -556,10 +558,27 @@ final class WorktreeDeletionCoordinator {
         }
 
         AppDelegate.shared?.saveSessionSnapshot(includeScrollback: false, forceSync: true)
+        refreshWorktreeRegistryAfterDeletion(projectFolder: target.project.folderPath)
         TaskBoardReconcileScheduler.shared.request(projectId: target.project.id, reason: "worktreeDeleted")
         #if DEBUG
         dlog("worktree.delete.perform.result branch=\(target.branchToDelete ?? "nil") mode=\(mode) project=\(target.project.name)[\(target.project.id.uuidString.prefix(8))]")
         #endif
+    }
+
+    private func refreshWorktreeRegistryAfterDeletion(projectFolder: String) {
+        GitPresentationInvalidationCenter.invalidate(
+            [.project(projectFolder)],
+            reason: "worktreeDeleted",
+            source: "WorktreeDeletionCoordinator"
+        )
+
+        do {
+            let entries = try worktreeService.list(in: projectFolder)
+            WorktreeRegistry.shared.record(projectFolder: projectFolder, entries: entries)
+            WorktreeProjectionStore.shared.markChanged(reason: "worktreeDeleted")
+        } catch {
+            WorktreeProjectionStore.shared.refresh(projectFolder: projectFolder, reason: "worktreeDeleted")
+        }
     }
 
     private func primeClosableWindows(for workspaces: [Workspace]) {
@@ -765,7 +784,7 @@ struct WorktreeAgentsPanel: View {
     private struct RenderSignature: Equatable {
         let workspaceFingerprint: [WorkspaceIdentity]
         let branchTick: Int
-        let worktreeRegistryTick: UInt64
+        let worktreeProjectionVersion: UInt64
         let pullRequestTick: UInt64
         let worktreePullRequestLookupTick: UInt64
         let activeProjectId: UUID?
@@ -818,6 +837,7 @@ struct WorktreeAgentsPanel: View {
     @EnvironmentObject private var tabManager: TabManager
     @ObservedObject private var projectStore = ProjectStore.shared
     @ObservedObject private var worktreePullRequestStore = WorktreeBranchPullRequestStore.shared
+    @ObservedObject private var worktreeProjectionStore = WorktreeProjectionStore.shared
 
     /// Narrow subscription — matches `ActiveAgentsPanel`'s rationale: the
     /// metadata store fires `objectWillChange` on every report_* telemetry
@@ -825,7 +845,6 @@ struct WorktreeAgentsPanel: View {
     @State private var agentSessionTick: Int = 0
     @State private var projectScopeTick: Int = 0
     @State private var branchTick: Int = 0
-    @State private var worktreeRegistryTick: UInt64 = 0
     @State private var pullRequestTick: UInt64 = 0
     @State private var activityTick: Int = 0
     @State private var taskBoardTick: UInt64 = 0
@@ -878,7 +897,7 @@ struct WorktreeAgentsPanel: View {
             for: RenderSignature(
                 workspaceFingerprint: fingerprint,
                 branchTick: branchTick,
-                worktreeRegistryTick: worktreeRegistryTick,
+                worktreeProjectionVersion: worktreeProjectionStore.version,
                 pullRequestTick: pullRequestTick,
                 worktreePullRequestLookupTick: worktreePullRequestStore.version,
                 activeProjectId: projectStore.activeProjectId,
@@ -1026,15 +1045,15 @@ struct WorktreeAgentsPanel: View {
                 autoExpandActiveBranches(renderSnapshot.branchesNeedingInitialExpansion)
                 didApplyInitialBranchAutoExpand = true
             }
-            refreshWorktreeRegistry(for: scopedTabs, reason: "appear")
+            refreshWorktreeProjection(for: scopedTabs, reason: "appear")
             subscribeToActiveTaskBoardStore()
             refreshWorktreePullRequests(renderSnapshot.pullRequestLookupInputs, reason: "appear")
         }
         .onChange(of: scopedTabs.map(\.id)) { _ in
-            refreshWorktreeRegistry(for: scopedTabs, reason: "tabsChanged")
+            refreshWorktreeProjection(for: scopedTabs, reason: "tabsChanged")
         }
         .onChange(of: projectStore.activeProjectId) { _ in
-            refreshWorktreeRegistry(for: scopedTabs, reason: "activeProjectChanged")
+            refreshWorktreeProjection(for: scopedTabs, reason: "activeProjectChanged")
             subscribeToActiveTaskBoardStore()
         }
         .onChange(of: renderSnapshot.pullRequestLookupInputs) { inputs in
@@ -1047,7 +1066,7 @@ struct WorktreeAgentsPanel: View {
                 // the disk-only HEAD overlay in `termLoopCachedWorktreeStatus`
                 // can surface drift without waiting for a registry refresh or
                 // app restart.
-                worktreeRegistryTick &+= 1
+                worktreeProjectionStore.markChanged(reason: "panel.timer")
             }
             refreshWorktreePullRequests(renderSnapshot.pullRequestLookupInputs, reason: "timer")
         }
@@ -1197,45 +1216,40 @@ struct WorktreeAgentsPanel: View {
         }
         if let activeProject = projectStore.activeProject {
             let projectRoot = URL(fileURLWithPath: activeProject.folderPath, isDirectory: true)
-            let taskWorktreeKeys = activeTaskWorktreePathKeys(
-                projectId: activeProject.id,
-                projectRoot: projectRoot
+            let projection = worktreeProjectionStore.snapshot(
+                project: activeProject,
+                workspaces: scopedTabs,
+                maximumAge: 60
             )
             var seenPathKeys = Set(groups.compactMap {
                 pathKey($0.worktreePath, relativeTo: projectRoot)
             })
-            if let snapshot = WorktreeRegistry.shared.cachedSnapshot(
-                projectFolder: activeProject.folderPath,
-                maximumAge: 60
-            ) {
-                for entry in snapshot.entries where !entry.isMain {
-                    guard let key = pathKey(entry.path, relativeTo: projectRoot),
-                          !taskWorktreeKeys.contains(key),
-                          seenPathKeys.insert(key).inserted else {
-                        continue
-                    }
-                    let trimmedBranch = entry.branch?
-                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                    let displayBranch = trimmedBranch.isEmpty
-                        ? URL(fileURLWithPath: entry.path).lastPathComponent
-                        : trimmedBranch
-                    let expectedBranches = trimmedBranch.isEmpty ? [] : [trimmedBranch]
-                    let statusKind: WorktreeStatus.Kind? = {
-                        if entry.isLocked { return .locked }
-                        if entry.isPrunable { return .prunable }
-                        return nil
-                    }()
-                    groups.append(WorktreeAgentsGroup(
-                        id: "path:\(WorktreeResolver.normalizePath(entry.path) ?? entry.path)",
-                        branch: displayBranch,
-                        workspaces: [],
-                        worktreePath: entry.path,
-                        projectId: activeProject.id,
-                        statusKind: statusKind,
-                        expectedBranches: expectedBranches,
-                        needsAttention: statusKind != nil
-                    ))
+            for entry in projection.entries where entry.isPhysical && !entry.isMain {
+                guard !entry.hasTaskBinding,
+                      seenPathKeys.insert(entry.pathKey).inserted else {
+                    continue
                 }
+                let trimmedBranch = entry.branch?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let displayBranch = trimmedBranch.isEmpty
+                    ? URL(fileURLWithPath: entry.path).lastPathComponent
+                    : trimmedBranch
+                let expectedBranches = trimmedBranch.isEmpty ? [] : [trimmedBranch]
+                let statusKind: WorktreeStatus.Kind? = {
+                    if entry.isLocked { return .locked }
+                    if entry.isPrunable { return .prunable }
+                    return nil
+                }()
+                groups.append(WorktreeAgentsGroup(
+                    id: "path:\(WorktreeResolver.normalizePath(entry.path) ?? entry.path)",
+                    branch: displayBranch,
+                    workspaces: [],
+                    worktreePath: entry.path,
+                    projectId: activeProject.id,
+                    statusKind: statusKind,
+                    expectedBranches: expectedBranches,
+                    needsAttention: statusKind != nil
+                ))
             }
         }
         let allWorkspaces = groups.flatMap(\.workspaces)
@@ -1665,32 +1679,20 @@ struct WorktreeAgentsPanel: View {
         }
     }
 
-    private func refreshWorktreeRegistry(for workspaces: [Workspace], reason: String) {
+    private func refreshWorktreeProjection(for workspaces: [Workspace], reason: String) {
         guard !isHidden else { return }
-        var projectFolders = Set(workspaces.compactMap { workspace -> String? in
+        var projectIds = Set(workspaces.compactMap { workspace -> UUID? in
             guard let projectId = workspace.projectId,
-                  let project = ProjectStore.shared.project(id: projectId) else { return nil }
-            return project.folderPath
+                  ProjectStore.shared.project(id: projectId) != nil else { return nil }
+            return projectId
         })
         if let activeProject = projectStore.activeProject {
-            projectFolders.insert(activeProject.folderPath)
+            projectIds.insert(activeProject.id)
         }
-        guard !projectFolders.isEmpty else { return }
-        for projectFolder in projectFolders {
-            WorktreeRegistry.shared.refresh(projectFolder: projectFolder, reason: "panel.\(reason)") { _ in
-                worktreeRegistryTick &+= 1
-            }
+        guard !projectIds.isEmpty else { return }
+        for projectId in projectIds {
+            worktreeProjectionStore.refresh(projectId: projectId, reason: "panel.\(reason)")
         }
-    }
-
-    private func activeTaskWorktreePathKeys(projectId: UUID, projectRoot: URL) -> Set<String> {
-        guard let store = TaskBoardStoreProvider.shared.store(for: projectId) else { return [] }
-        return Set(store.fileSnapshot().tasks.compactMap { task in
-            guard task.archivedAt == nil else { return nil }
-            return TaskPathNormalization
-                .resolveDisplayAndKey(task.worktreePath, relativeTo: projectRoot)?
-                .keyPath
-        })
     }
 
     private func subscribeToActiveTaskBoardStore() {
@@ -2130,7 +2132,8 @@ struct WorktreeAgentsPanel: View {
                             branch: singleExpectedBranch,
                             worktreePath: canDeletePhysicalWorktree ? group.worktreePath : nil,
                             projectId: sourceWorkspace(for: group)?.projectId ?? group.projectId,
-                            fallbackWorkspaceIds: group.workspaces.map(\.id)
+                            fallbackWorkspaceIds: group.workspaces.map(\.id),
+                            onDeleted: { worktreeProjectionStore.markChanged(reason: "panel.delete") }
                         )
                     } label: {
                         Image(systemName: "trash")
@@ -2243,7 +2246,7 @@ struct WorktreeAgentsPanel: View {
                         group: group,
                         sourceWorkspace: sourceWorkspace(for: group)
                     ) {
-                        worktreeRegistryTick &+= 1
+                        worktreeProjectionStore.markChanged(reason: "panel.action")
                     }
                 } label: {
                     Label(
@@ -2366,7 +2369,7 @@ struct WorktreeAgentsPanel: View {
                             group: group,
                             sourceWorkspace: sourceWorkspace(for: group)
                         ) {
-                            worktreeRegistryTick &+= 1
+                            worktreeProjectionStore.markChanged(reason: "panel.action")
                         }
                     } label: {
                         Label(
@@ -2387,7 +2390,7 @@ struct WorktreeAgentsPanel: View {
                         WorktreeRepairCoordinator.shared.acceptObservedBranch(
                             group: group
                         ) {
-                            worktreeRegistryTick &+= 1
+                            worktreeProjectionStore.markChanged(reason: "panel.action")
                         }
                     } label: {
                         Label(
@@ -2407,7 +2410,7 @@ struct WorktreeAgentsPanel: View {
                             group: group,
                             sourceWorkspace: sourceWorkspace(for: group)
                         ) {
-                            worktreeRegistryTick &+= 1
+                            worktreeProjectionStore.markChanged(reason: "panel.action")
                         }
                     } label: {
                         Label(
@@ -2427,7 +2430,7 @@ struct WorktreeAgentsPanel: View {
                             group: group,
                             sourceWorkspace: sourceWorkspace(for: group)
                         ) {
-                            worktreeRegistryTick &+= 1
+                            worktreeProjectionStore.markChanged(reason: "panel.action")
                         }
                     } label: {
                         Label(
@@ -2448,7 +2451,7 @@ struct WorktreeAgentsPanel: View {
                         WorktreeRepairCoordinator.shared.detachGroupFromWorktree(
                             group: group
                         ) {
-                            worktreeRegistryTick &+= 1
+                            worktreeProjectionStore.markChanged(reason: "panel.action")
                         }
                     } label: {
                         Label(
@@ -2536,7 +2539,8 @@ struct WorktreeAgentsPanel: View {
                             branch: singleExpectedBranch,
                             worktreePath: canDeletePhysicalWorktree ? group.worktreePath : nil,
                             projectId: sourceWorkspace(for: group)?.projectId ?? group.projectId,
-                            fallbackWorkspaceIds: group.workspaces.map(\.id)
+                            fallbackWorkspaceIds: group.workspaces.map(\.id),
+                            onDeleted: { worktreeProjectionStore.markChanged(reason: "panel.delete") }
                         )
                     } label: {
                         Label(

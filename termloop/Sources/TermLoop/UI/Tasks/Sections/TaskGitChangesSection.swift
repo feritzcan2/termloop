@@ -11,9 +11,11 @@ struct TaskGitChangesSection: View {
     let workspaceId: UUID?
     let worktreePath: String?
     let branch: String?
+    let projectId: UUID?
 
     @EnvironmentObject private var tabManager: TabManager
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
+    @ObservedObject private var worktreeProjectionStore = WorktreeProjectionStore.shared
     @State private var files: [SidebarGitChangeItem] = []
 
     private var filesPublisher: AnyPublisher<[SidebarGitChangeItem], Never> {
@@ -100,6 +102,7 @@ struct TaskGitChangesSection: View {
     }
 
     private var resolvedWorkspaceId: UUID? {
+        _ = worktreeProjectionStore.version
         if let liveWorkspaceId = liveWorkspaceIdMatchingPath {
             return liveWorkspaceId
         }
@@ -107,6 +110,11 @@ struct TaskGitChangesSection: View {
             return workspaceId
         }
         guard let path = normalizedWorktreePath else { return workspaceId }
+        if let projectId,
+           let projection = WorktreeProjectionStore.shared.snapshot(projectId: projectId),
+           let id = projection.workspaceIds(forWorktreePath: path).first {
+            return id
+        }
         return metadataStore.workspaceIds(withWorktreePath: path).first ?? workspaceId
     }
 
