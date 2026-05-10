@@ -171,20 +171,19 @@ struct TaskWorkItemSection: View {
     }
 
     private func refresh(_ snapshot: TaskWorkItemSnapshot) {
-        if snapshot.binding == nil {
+        guard let workspaceId = snapshot.workspaceId,
+              let worktreePath = snapshot.worktreePath else {
             remoteSync.refresh(taskId: taskId)
             return
         }
-        guard let workspaceId = snapshot.workspaceId,
-              let reportedStatePath = snapshot.reportedStatePath,
-              let binding = snapshot.binding,
-              let input = RemoteWorkItemBindingRefreshCoordinator.input(
-                workspaceId: workspaceId,
-                reportedStatePath: reportedStatePath,
-                binding: binding
-              ) else { return }
         RemoteWorkItemBindingRefreshCoordinator.shared.refresh(
-            inputs: [input],
+            inputs: [
+                RemoteWorkItemBindingRefreshCoordinator.Input(
+                    workspaceId: workspaceId,
+                    worktreePath: worktreePath,
+                    reference: snapshot.reference
+                )
+            ],
             reason: "tasks.workItemSection"
         )
     }

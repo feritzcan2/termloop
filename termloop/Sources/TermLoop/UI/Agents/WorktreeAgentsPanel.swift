@@ -724,23 +724,35 @@ struct WorktreeAgentsPanel: View {
         let contextMenuSnapshot: ActiveAgentWorkspaceContextMenuSnapshot?
     }
 
-    fileprivate struct WorktreeGroupBindingBadgeSnapshot: Equatable, Hashable, Identifiable {
+    fileprivate struct WorktreeGroupRemoteItemBadgeSnapshot: Equatable, Hashable, Identifiable {
         let id: String
         let label: String
-        let isJira: Bool
+        let provider: RemoteWorkItemProviderId
         let destinationURL: URL?
         let tooltip: String
 
-        init(binding: AgentReportedStateStore.AgentReportedBinding) {
-            self.id = "\(binding.abilityId).\(binding.bindingId)"
-            self.label = binding.displayLabel
-            self.isJira = binding.abilityId == TermLoopBuiltInMCP.jiraAbilityId
-            self.destinationURL = binding.destinationURL
-            var parts = ["\(binding.abilityId) · \(binding.bindingId)", binding.label]
-            if let status = binding.status, !status.isEmpty {
+        init(
+            binding: WorktreeRemoteItemBindingStore.Binding,
+            snapshot: RemoteWorkItemSnapshot?
+        ) {
+            let status = snapshot?.statusLabel
+            let url = snapshot?.reference.url ?? binding.reference.url
+            self.id = binding.reference.storageKey
+            self.provider = binding.reference.provider
+            if let status, !status.isEmpty {
+                self.label = "\(binding.reference.key) · \(status)"
+            } else {
+                self.label = binding.reference.key
+            }
+            self.destinationURL = url.flatMap(URL.init(string:))
+            var parts = [binding.reference.provider.displayLabel, binding.reference.key]
+            if let title = snapshot?.title, !title.isEmpty {
+                parts.append(title)
+            }
+            if let status, !status.isEmpty {
                 parts.append("status: \(status)")
             }
-            if let url = binding.url, !url.isEmpty {
+            if let url, !url.isEmpty {
                 parts.append(url)
             }
             self.tooltip = parts.joined(separator: "\n")
@@ -756,7 +768,9 @@ struct WorktreeAgentsPanel: View {
         let agentSessionTick: Int
         let projectScopeTick: Int
         let activityTick: Int
-        let bindingsTick: Int
+        let remoteItemTick: Int
+        let remoteSnapshotTick: Int
+        let runTargetTick: Int
     }
 
     private final class RenderMemo {
@@ -792,12 +806,8 @@ struct WorktreeAgentsPanel: View {
         /// carries the section's status bucket (open XOR merged), so the
         /// badge popover would otherwise miss the other-status PRs.
         let allPullRequestsByBranch: [String: [SidebarPullRequestState]]
-        /// Ability-driven bindings published by agents in each worktree
-        /// group. Keyed by branch label, deduped by ability+binding id with
-        /// the latest `reportedAt` winning. Renders as chips in the group
-        /// header.
-        let bindingsByBranch: [String: [AgentReportedStateStore.AgentReportedBinding]]
-        let bindingBadgeSnapshotsByBranch: [String: [WorktreeGroupBindingBadgeSnapshot]]
+        let runTargetsByBranch: [String: [RunTargetStore.RunTarget]]
+        let remoteItemBadgeSnapshotsByBranch: [String: [WorktreeGroupRemoteItemBadgeSnapshot]]
     }
 
     @EnvironmentObject private var tabManager: TabManager
@@ -813,7 +823,9 @@ struct WorktreeAgentsPanel: View {
     @State private var pullRequestTick: UInt64 = 0
     @State private var activityTick: Int = 0
     @State private var hasDeferredActivityTick = false
-    @State private var bindingsTick: Int = 0
+    @State private var remoteItemTick: Int = 0
+    @State private var remoteSnapshotTick: Int = 0
+    @State private var runTargetTick: Int = 0
     @State private var hoveredBranch: String?
     @State private var renderMemo = RenderMemo()
     /// Stable Combine subscription keyed on `subscribedWorkspaceIds`. Without
@@ -846,7 +858,9 @@ struct WorktreeAgentsPanel: View {
         let _ = branchTick
         let _ = pullRequestTick
         let _ = activityTick
-        let _ = bindingsTick
+        let _ = remoteItemTick
+        let _ = remoteSnapshotTick
+        let _ = runTargetTick
         let collapsedBranchSet = branchSet(from: collapsedBranchesRaw)
         let fingerprint = scopedTabs.map {
             WorkspaceIdentity(id: $0.id, title: $0.title, customTitle: $0.customTitle)
@@ -861,7 +875,9 @@ struct WorktreeAgentsPanel: View {
                 agentSessionTick: agentSessionTick,
                 projectScopeTick: projectScopeTick,
                 activityTick: activityTick,
-                bindingsTick: bindingsTick
+                remoteItemTick: remoteItemTick,
+                remoteSnapshotTick: remoteSnapshotTick,
+                runTargetTick: runTargetTick
             )
         ) {
             makeRenderSnapshot()
@@ -960,9 +976,17 @@ struct WorktreeAgentsPanel: View {
             guard newValue != branchTick else { return }
             branchTick = newValue
         }
-        .onReceive(WorkspaceMetadataStore.shared.$reportedBindingsVersion) { newValue in
-            guard newValue != bindingsTick else { return }
-            bindingsTick = newValue
+        .onReceive(WorktreeRemoteItemBindingStore.shared.$version) { newValue in
+            guard newValue != remoteItemTick else { return }
+            remoteItemTick = newValue
+        }
+        .onReceive(RemoteWorkItemSnapshotStore.shared.$version) { newValue in
+            guard newValue != remoteSnapshotTick else { return }
+            remoteSnapshotTick = newValue
+        }
+        .onReceive(RunTargetStore.shared.$version) { newValue in
+            guard newValue != runTargetTick else { return }
+            runTargetTick = newValue
         }
         .onChange(of: renderSnapshot.allWorkspaceIds) { newIds in
             guard newIds != subscribedWorkspaceIds else { return }
@@ -1056,24 +1080,6 @@ struct WorktreeAgentsPanel: View {
             open: WorktreeAgentsPullRequestSummary.summary(for: pullRequests, statuses: [.open]),
             merged: WorktreeAgentsPullRequestSummary.summary(for: pullRequests, statuses: [.merged])
         )
-    }
-
-    private func partitionRunTargetBindings(
-        _ bindings: [AgentReportedStateStore.AgentReportedBinding]
-    ) -> (
-        runTargets: [AgentReportedStateStore.AgentReportedBinding],
-        otherBindings: [AgentReportedStateStore.AgentReportedBinding]
-    ) {
-        var runTargets: [AgentReportedStateStore.AgentReportedBinding] = []
-        var otherBindings: [AgentReportedStateStore.AgentReportedBinding] = []
-        for binding in bindings {
-            if binding.abilityId == TermLoopBuiltInMCP.runningYourApplicationAbilityId {
-                runTargets.append(binding)
-            } else {
-                otherBindings.append(binding)
-            }
-        }
-        return (runTargets, otherBindings)
     }
 
     private func makeRenderSnapshot() -> RenderSnapshot {
@@ -1305,41 +1311,47 @@ struct WorktreeAgentsPanel: View {
         )
         #endif
 
-        // Gather all bindings published under any worktree path in each
-        // group; dedupe by ability+binding id keeping the most recent report
-        // so split-panel sessions don't double-render. One path per group is
-        // enough since every workspace in a group shares the same worktree
-        // root, but enumerate via Set so identical paths only resolve once.
-        var bindingsByBranch: [String: [AgentReportedStateStore.AgentReportedBinding]] = [:]
-        var bindingBadgeSnapshotsByBranch: [String: [WorktreeGroupBindingBadgeSnapshot]] = [:]
+        var runTargetsByBranch: [String: [RunTargetStore.RunTarget]] = [:]
+        var remoteItemBadgeSnapshotsByBranch: [String: [WorktreeGroupRemoteItemBadgeSnapshot]] = [:]
         for group in groups {
             var seenPaths = Set<String>()
-            var byKey: [String: AgentReportedStateStore.AgentReportedBinding] = [:]
+            var runTargetsById: [String: RunTargetStore.RunTarget] = [:]
+            var remoteItemsById: [String: WorktreeRemoteItemBindingStore.Binding] = [:]
             for workspace in group.workspaces {
                 guard let path = WorkspaceMetadataStore.shared.reportedStatePath(
                     forWorkspaceId: workspace.id,
                     fallbackPath: workspace.termLoopPresentationCwd()
                 ),
                       seenPaths.insert(path).inserted else { continue }
-                for binding in AgentReportedStateStore.shared.bindings(forPath: path) {
-                    let key = AgentReportedStateStore.bindingKey(
-                        abilityId: binding.abilityId,
-                        bindingId: binding.bindingId
-                    )
-                    if let existing = byKey[key], existing.reportedAt >= binding.reportedAt { continue }
-                    byKey[key] = binding
+                for target in RunTargetStore.shared.targets(forPath: path) {
+                    if let existing = runTargetsById[target.id],
+                       existing.reportedAt >= target.reportedAt {
+                        continue
+                    }
+                    runTargetsById[target.id] = target
+                }
+                if let binding = WorktreeRemoteItemBindingStore.shared.binding(forPath: path) {
+                    let key = binding.reference.storageKey
+                    if let existing = remoteItemsById[key],
+                       existing.updatedAt >= binding.updatedAt {
+                        continue
+                    }
+                    remoteItemsById[key] = binding
                 }
             }
-            if !byKey.isEmpty {
-                let sortedBindings = Array(byKey.values)
-                    .sorted { ($0.abilityId, $0.bindingId) < ($1.abilityId, $1.bindingId) }
-                bindingsByBranch[group.id] = sortedBindings
-                let badgeSnapshots = sortedBindings
-                    .filter { $0.abilityId != TermLoopBuiltInMCP.runningYourApplicationAbilityId }
-                    .map(WorktreeGroupBindingBadgeSnapshot.init(binding:))
-                if !badgeSnapshots.isEmpty {
-                    bindingBadgeSnapshotsByBranch[group.id] = badgeSnapshots
-                }
+            if !runTargetsById.isEmpty {
+                runTargetsByBranch[group.id] = Array(runTargetsById.values)
+                    .sorted { $0.id < $1.id }
+            }
+            if !remoteItemsById.isEmpty {
+                remoteItemBadgeSnapshotsByBranch[group.id] = Array(remoteItemsById.values)
+                    .sorted { $0.reference.storageKey < $1.reference.storageKey }
+                    .map { binding in
+                        WorktreeGroupRemoteItemBadgeSnapshot(
+                            binding: binding,
+                            snapshot: RemoteWorkItemSnapshotStore.shared.snapshot(for: binding.reference)
+                        )
+                    }
             }
         }
 
@@ -1361,8 +1373,8 @@ struct WorktreeAgentsPanel: View {
             },
             branchesNeedingInitialExpansion: branchesNeedingInitialExpansion,
             allPullRequestsByBranch: allPullRequestsByBranch,
-            bindingsByBranch: bindingsByBranch,
-            bindingBadgeSnapshotsByBranch: bindingBadgeSnapshotsByBranch
+            runTargetsByBranch: runTargetsByBranch,
+            remoteItemBadgeSnapshotsByBranch: remoteItemBadgeSnapshotsByBranch
         )
     }
 
@@ -1888,9 +1900,8 @@ struct WorktreeAgentsPanel: View {
         let showsDeleteAction = hoveredBranch == group.id && canDeleteGroup
         let isArchivedSection = sectionKind.isArchived
         let orderedWorkspaces = renderSnapshot.orderedWorkspacesByBranch[group.id] ?? group.workspaces
-        let groupBindings = renderSnapshot.bindingsByBranch[group.id] ?? []
-        let groupBindingBadges = renderSnapshot.bindingBadgeSnapshotsByBranch[group.id] ?? []
-        let partitionedBindings = partitionRunTargetBindings(groupBindings)
+        let runTargets = renderSnapshot.runTargetsByBranch[group.id] ?? []
+        let remoteItemBadges = renderSnapshot.remoteItemBadgeSnapshotsByBranch[group.id] ?? []
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: expanded ? "chevron.down" : "chevron.right")
@@ -2021,8 +2032,8 @@ struct WorktreeAgentsPanel: View {
                 let allBranchPullRequests = renderSnapshot.allPullRequestsByBranch[group.id] ?? []
                 // Headline pills run on a single horizontal line so MERGED
                 // PRs / OPEN PRs / WORKTREE branch headers are one row tall
-                // instead of stacking PR pill + commit pill + binding badges
-                // vertically. Bindings (when present) flow after the PR pill;
+                // instead of stacking PR pill + commit pill + remote/run chips
+                // vertically. Remote/run chips flow after the PR pill;
                 // git summary (commits/changes) sits at the trailing end.
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .center, spacing: 4) {
@@ -2031,18 +2042,16 @@ struct WorktreeAgentsPanel: View {
                             allPullRequests: allBranchPullRequests,
                             group: group
                         )
-                        if !groupBindings.isEmpty {
-                            if !partitionedBindings.runTargets.isEmpty {
-                                WorktreeGroupRunTargetsBadge(
-                                    bindings: partitionedBindings.runTargets,
-                                    workspaceIds: group.workspaces.map(\.id),
-                                    reportedStatePath: group.worktreePath
-                                )
-                            }
-                            ForEach(groupBindingBadges) { snapshot in
-                                WorktreeGroupBindingBadge(snapshot: snapshot)
-                                    .equatable()
-                            }
+                        if !runTargets.isEmpty {
+                            WorktreeGroupRunTargetsBadge(
+                                targets: runTargets,
+                                workspaceIds: group.workspaces.map(\.id),
+                                worktreePath: group.worktreePath
+                            )
+                        }
+                        ForEach(remoteItemBadges) { snapshot in
+                            WorktreeGroupRemoteItemBadge(snapshot: snapshot)
+                                .equatable()
                         }
                         WorktreeGroupGitSummaryView(
                             group: group,
@@ -2051,24 +2060,24 @@ struct WorktreeAgentsPanel: View {
                             pullRequestLookupTick: pullRequestLookupTick
                         )
                     }
-                    // Compact fallbacks for narrow sidebars: keep every
-                    // agent-reported badge visible, then drop git metadata
-                    // instead of crushing branch titles/count tokens.
+                    // Compact fallbacks for narrow sidebars: keep remote/run
+                    // chips visible, then drop git metadata instead of
+                    // crushing branch titles/count tokens.
                     HStack(alignment: .center, spacing: 4) {
                         pullRequestBadge(
                             summary: pullRequestSummary,
                             allPullRequests: allBranchPullRequests,
                             group: group
                         )
-                        if !partitionedBindings.runTargets.isEmpty {
+                        if !runTargets.isEmpty {
                             WorktreeGroupRunTargetsBadge(
-                                bindings: partitionedBindings.runTargets,
+                                targets: runTargets,
                                 workspaceIds: group.workspaces.map(\.id),
-                                reportedStatePath: group.worktreePath
+                                worktreePath: group.worktreePath
                             )
                         }
-                        ForEach(groupBindingBadges) { snapshot in
-                            WorktreeGroupBindingBadge(snapshot: snapshot)
+                        ForEach(remoteItemBadges) { snapshot in
+                            WorktreeGroupRemoteItemBadge(snapshot: snapshot)
                                 .equatable()
                         }
                     }
@@ -2079,15 +2088,15 @@ struct WorktreeAgentsPanel: View {
                             group: group
                         )
                         HStack(alignment: .center, spacing: 4) {
-                            if !partitionedBindings.runTargets.isEmpty {
+                            if !runTargets.isEmpty {
                                 WorktreeGroupRunTargetsBadge(
-                                    bindings: partitionedBindings.runTargets,
+                                    targets: runTargets,
                                     workspaceIds: group.workspaces.map(\.id),
-                                    reportedStatePath: group.worktreePath
+                                    worktreePath: group.worktreePath
                                 )
                             }
-                            ForEach(groupBindingBadges) { snapshot in
-                                WorktreeGroupBindingBadge(snapshot: snapshot)
+                            ForEach(remoteItemBadges) { snapshot in
+                                WorktreeGroupRemoteItemBadge(snapshot: snapshot)
                                     .equatable()
                             }
                         }
@@ -2363,20 +2372,18 @@ struct WorktreeAgentsPanel: View {
                     }
                 }
 
-                if JiraTicketBindingPrompt.isJiraAbilityActive(forGroupWorkspaces: group.workspaces) {
-                    Divider()
-                    Button {
-                        JiraTicketBindingPrompt.present(forGroupWorkspaces: group.workspaces)
-                    } label: {
-                        Label(
-                            String(
-                                localized: "worktreeAgents.group.setJiraTicket",
-                                defaultValue: "Set Jira Ticket URL…",
-                                table: "TermLoop"
-                            ),
-                            systemImage: "link"
-                        )
-                    }
+                Divider()
+                Button {
+                    RemoteItemBindingPrompt.present(forGroupWorkspaces: group.workspaces)
+                } label: {
+                    Label(
+                        String(
+                            localized: "worktreeAgents.group.setRemoteItem",
+                            defaultValue: "Set Remote Item…",
+                            table: "TermLoop"
+                        ),
+                        systemImage: "link"
+                    )
                 }
 
                 Divider()
@@ -3963,14 +3970,10 @@ private struct WorktreeGroupPullRequestBadge: View, Equatable {
     }
 }
 
-/// Ability-driven binding chip. Schema-flat: agents publish
-/// (label, status, url) under (abilityId, bindingId). Tooltip shows
-/// which ability+binding produced the chip so users can trace it back.
-/// Jira gets a brand-tinted variant so the worktree's bound ticket is
-/// instantly recognizable; other abilities fall back to the generic
-/// accent token.
-private struct WorktreeGroupBindingBadge: View, Equatable {
-    let snapshot: WorktreeAgentsPanel.WorktreeGroupBindingBadgeSnapshot
+/// User/app-owned remote item chip for the worktree. Agents can read this
+/// binding through MCP, but cannot write it.
+private struct WorktreeGroupRemoteItemBadge: View, Equatable {
+    let snapshot: WorktreeAgentsPanel.WorktreeGroupRemoteItemBadgeSnapshot
 
     var body: some View {
         let chip = chipContent.help(snapshot.tooltip)
@@ -3988,7 +3991,7 @@ private struct WorktreeGroupBindingBadge: View, Equatable {
 
     @ViewBuilder
     private var chipContent: some View {
-        if snapshot.isJira {
+        if snapshot.provider == .jira {
             jiraChip
         } else {
             TermLoopSidebarToken(

@@ -10,9 +10,12 @@ struct TaskSidebarTaskListView: View {
     @ObservedObject var store: TaskBoardStore
     @ObservedObject var selection: TaskSelectionStore
     var onCreateTask: ((TaskColumnId) -> UUID?)?
+    var onCreateRemoteItem: (() -> Void)?
+    var isCreateRemoteItemDisabled = false
     var onOpenSettings: () -> Void = {}
 
     @State private var isArchivedExpanded = false
+    @State private var isAllTasksExpanded = false
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
     @EnvironmentObject private var tabManager: TabManager
@@ -23,32 +26,84 @@ struct TaskSidebarTaskListView: View {
         return VStack(spacing: 0) {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
-                    ForEach(store.columnSnapshots) { col in
-                        if !col.cards.isEmpty {
-                            section(
-                                title: store.columnTitle(for: col.id),
-                                cards: col.cards,
-                                statuses: statuses,
-                                workItems: workItems
-                            )
+                    createButton
+                    createRemoteItemButton
+                    allTasksDisclosure
+                    if isAllTasksExpanded {
+                        ForEach(store.columnSnapshots) { col in
+                            if !col.cards.isEmpty {
+                                section(
+                                    title: store.columnTitle(for: col.id),
+                                    cards: col.cards,
+                                    statuses: statuses,
+                                    workItems: workItems
+                                )
+                            }
                         }
                     }
-                    createButton
                     remoteWorkItemsCTA
-                    archivedSection(
-                        cards: store.archivedSnapshots,
-                        workItems: workItems
-                    )
                 }
                 .padding(10)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            TaskSidebarSettingsButton(action: onOpenSettings)
+            VStack(alignment: .leading, spacing: 10) {
+                archivedSection(
+                    cards: store.archivedSnapshots,
+                    workItems: workItems
+                )
+                TaskSidebarSettingsButton(action: onOpenSettings)
+            }
                 .padding(10)
                 .padding(.top, 1)
                 .background(Color(nsColor: .windowBackgroundColor))
         }
+    }
+
+    private var activeTaskCount: Int {
+        store.columnSnapshots.reduce(0) { total, column in
+            total + column.cards.count
+        }
+    }
+
+    @ViewBuilder
+    private var allTasksDisclosure: some View {
+        if activeTaskCount > 0 {
+            Button {
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    isAllTasksExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: isAllTasksExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(TermLoopSidebarTheme.dim)
+                        .frame(width: 10)
+                    Text(allTasksDisclosureTitle)
+                        .font(.system(size: 12, weight: .medium))
+                    Spacer(minLength: 0)
+                }
+                .foregroundColor(.secondary)
+                .padding(.vertical, 7)
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(nsColor: .controlBackgroundColor).opacity(0.45))
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var allTasksDisclosureTitle: String {
+        if isAllTasksExpanded {
+            return String(localized: "tasks.sidebar.hideAllTasks",
+                          defaultValue: "Hide all tasks (\(activeTaskCount))",
+                          table: "TermLoop")
+        }
+        return String(localized: "tasks.sidebar.showAllTasks",
+                      defaultValue: "Show all tasks (\(activeTaskCount))",
+                      table: "TermLoop")
     }
 
     @ViewBuilder
@@ -225,6 +280,35 @@ struct TaskSidebarTaskListView: View {
             .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var createRemoteItemButton: some View {
+        if store.settingsSnapshot.remoteSync.isEnabled, let onCreateRemoteItem {
+            Button(action: onCreateRemoteItem) {
+                HStack(spacing: 7) {
+                    Image(systemName: "point.3.connected.trianglepath.dotted")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(String(localized: "tasks.sidebar.createRemoteItem",
+                                defaultValue: "Create remote item",
+                                table: "TermLoop"))
+                        .font(.system(size: 12, weight: .medium))
+                    Spacer(minLength: 0)
+                    Image(systemName: "plus.circle")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(TermLoopSidebarTheme.dim)
+                }
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 7)
+                .padding(.horizontal, 8)
+                .background(Color.accentColor.opacity(0.10))
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(isCreateRemoteItemDisabled)
+            .opacity(isCreateRemoteItemDisabled ? 0.65 : 1)
+        }
     }
 
     @ViewBuilder

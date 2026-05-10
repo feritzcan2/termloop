@@ -13,10 +13,9 @@ enum TermLoopBuiltInMCP {
     /// auto-include rules, and the in-app tool registration. The CLI's
     /// `TermLoopMCPServer` owns its own copy because the CLI target does
     /// not link app sources.
-    static let setJiraTicketToolName = "set_jira_ticket"
     static let getJiraTicketToolName = "get_jira_ticket"
-    /// Owning ability for the Jira ticket binding. Used by the runner to
-    /// auto-include the Jira ticket tools whenever the jira ability is active.
+    /// Owning ability for the Jira ticket reader. Agents can read a user/app
+    /// owned binding but cannot write one.
     static let jiraAbilityId = "working-with-jira"
 
     static let setRunTargetsToolName = "set_run_targets"
@@ -39,7 +38,6 @@ enum TermLoopBuiltInMCP {
             capabilities: [
                 "ask_to",
                 "reply_to_request",
-                "set_jira_ticket",
                 "get_jira_ticket",
                 "set_run_targets",
                 "get_run_targets",
@@ -172,37 +170,12 @@ struct TermLoopBuiltInToolMeta {
         ),
         TermLoopBuiltInToolMeta(
             name: TermLoopBuiltInMCP.getJiraTicketToolName,
-            description: "Read the Jira ticket previously set for this workspace via set_jira_ticket. Returns `set: false` when no ticket is bound. Use this instead of guessing from the branch name when picking up an in-progress workspace.",
+            description: "Read the Jira ticket user/app binding for this workspace. Returns `set: false` when no ticket is bound. Use this instead of guessing from the branch name when picking up an in-progress workspace.",
             inputSchemaJSON: """
             {
               "type": "object",
               "properties": {},
               "additionalProperties": false
-            }
-            """,
-            alwaysOn: false
-        ),
-        TermLoopBuiltInToolMeta(
-            name: TermLoopBuiltInMCP.setJiraTicketToolName,
-            description: "Tell TermLoop which Jira ticket the current workspace is working on. PURE TELEMETRY — does NOT touch Jira. Updates the sidebar chip and the per-workspace ticket binding. Call when the active ticket changes OR when its status/url changes (e.g. after a transition from In Progress to In Review or Done). Skip duplicate calls when nothing changed.",
-            inputSchemaJSON: """
-            {
-              "type": "object",
-              "properties": {
-                "key": {
-                  "type": "string",
-                  "description": "Jira issue key (e.g. \\"PROJ-123\\"). Required."
-                },
-                "status": {
-                  "type": "string",
-                  "description": "Optional Jira status (e.g. \\"In Progress\\", \\"In Review\\") appended after \\" · \\" in the chip."
-                },
-                "url": {
-                  "type": "string",
-                  "description": "Optional Jira browse URL so the chip becomes a link."
-                }
-              },
-              "required": ["key"]
             }
             """,
             alwaysOn: false

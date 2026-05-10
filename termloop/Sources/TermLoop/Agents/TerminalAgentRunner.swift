@@ -1779,11 +1779,9 @@ enum TerminalAgentRunner {
         let allAbilities = AbilityStore.shared.abilities
         let active = allAbilities.filter { $0.activation != .off }
         var names = Set(active.flatMap { $0.enabledMCPToolNames })
-        // If the Jira ability is active, auto-expose `set_jira_ticket` so the
-        // chip pipeline isn't dead-on-arrival when the user forgets to opt in
-        // via `termLoopMCPTools`.
+        // If the Jira ability is active, auto-expose the read-side ticket tool
+        // so agents can inspect the user/app-owned remote item binding.
         if active.contains(where: { $0.id == TermLoopBuiltInMCP.jiraAbilityId }) {
-            names.insert(TermLoopBuiltInMCP.setJiraTicketToolName)
             names.insert(TermLoopBuiltInMCP.getJiraTicketToolName)
         }
         // Same defense for Running Your Application: if the ability is

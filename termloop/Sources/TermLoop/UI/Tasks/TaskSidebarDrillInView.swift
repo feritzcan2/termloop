@@ -246,6 +246,7 @@ struct TaskSidebarDrillInView: View {
                 reference: reference,
                 title: snap.title,
                 statusLabel: snap.remoteStatusLabel,
+                urlString: reference.url,
                 taskFilePath: snap.taskFilePath,
                 workspaceId: snap.workspaceId,
                 worktreePath: snap.worktreePath

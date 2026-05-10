@@ -10,20 +10,16 @@ enum TermLoopMCPServer {
         "2024-11-05",
     ]
     /// Comma-separated names of optional built-in tools the active project's
-    /// abilities have opted into. Optional tools (set_jira_ticket, ...) are
-    /// only surfaced when listed.
+    /// abilities have opted into. Optional tools are only surfaced when listed.
     private static let enabledToolsEnvKey = "TERMLOOP_ENABLED_MCP_TOOLS"
     private static let socketPathEnvKey = "TERMLOOP_SOCKET_PATH"
     private static let askToRequestIdEnvKey = "TERMLOOP_ASK_TO_REQUEST_ID"
     private static let askToReplyTokenEnvKey = "TERMLOOP_ASK_TO_REPLY_TOKEN"
 
-    /// CLI-side copy of the Jira ticket reporter tool name. The app side keeps
-    /// a matching `TermLoopBuiltInMCP.setJiraTicketToolName`; the two cannot
-    /// share a constant because the CLI target does not link app sources.
-    private static let setJiraTicketToolName = "set_jira_ticket"
+    /// CLI-side copy of the Jira ticket reader tool name. The app side keeps a
+    /// matching constant, but the CLI target does not link app sources.
     private static let getJiraTicketToolName = "get_jira_ticket"
     private static let jiraAbilityId = "working-with-jira"
-    private static let jiraBindingId = "ticket"
     private static let askToToolName = "ask_to"
     private static let replyToRequestToolName = "reply_to_request"
     private static let contextBankProposeToolName = "context_bank_propose_suggestion"
@@ -61,33 +57,8 @@ enum TermLoopMCPServer {
     /// entries here; ability bundles only need to opt-in by listing the name.
     private static let builtInTools: [BuiltInTool] = [
         BuiltInTool(
-            name: setJiraTicketToolName,
-            description: "Tell TermLoop which Jira ticket the current workspace is working on. PURE TELEMETRY — does NOT touch Jira. Updates the sidebar chip and the per-workspace ticket binding. Call when the active ticket changes OR when its status/url changes (e.g. after a transition from In Progress to In Review or Done). Skip duplicate calls when nothing changed.",
-            inputSchema: [
-                "type": "object",
-                "properties": [
-                    "key": [
-                        "type": "string",
-                        "description": "Jira issue key (e.g. \"PROJ-123\"). Required."
-                    ],
-                    "status": [
-                        "type": "string",
-                        "description": "Optional Jira status (e.g. \"In Progress\", \"In Review\") appended after \" · \" in the chip."
-                    ],
-                    "url": [
-                        "type": "string",
-                        "description": "Optional Jira browse URL so the chip becomes a link."
-                    ]
-                ],
-                "required": ["key"]
-            ],
-            alwaysOn: false,
-            requiresAskToReplyContext: false,
-            handler: runSetJiraTicket
-        ),
-        BuiltInTool(
             name: getJiraTicketToolName,
-            description: "Read the Jira ticket previously set for this workspace via set_jira_ticket. Returns `set: false` when no ticket is bound. Use this instead of guessing from the branch name when picking up an in-progress workspace.",
+            description: "Read the Jira ticket user/app binding for this workspace. Returns `set: false` when no ticket is bound. Use this instead of guessing from the branch name when picking up an in-progress workspace.",
             inputSchema: [
                 "type": "object",
                 "properties": [:],
@@ -453,10 +424,10 @@ enum TermLoopMCPServer {
     /// the caller can distinguish "no abilities" from "can't see abilities".
     ///
     /// Mirrors `TerminalAgentRunner.enabledAbilityMCPToolNames`: the
-    /// `working-with-jira` ability auto-opts into `set_jira_ticket` whenever
-    /// it is active, so a bindings-only ability discovered via the disk
+    /// `working-with-jira` ability auto-opts into `get_jira_ticket` whenever
+    /// it is active, so a tool-only ability discovered via the disk
     /// fallback (e.g., MCP server invoked outside the runner-launched env)
-    /// still sees the tool and the chip pipeline keeps working.
+    /// still sees the read-side tool.
     private static func enabledToolNamesFromCWDIfAvailable() -> Set<String>? {
         guard let abilitiesDir = abilitiesDirectoryFromCWD() else {
             return nil
@@ -483,7 +454,6 @@ enum TermLoopMCPServer {
                 }
             }
             if (json["id"] as? String) == jiraAbilityId {
-                names.insert(setJiraTicketToolName)
                 names.insert(getJiraTicketToolName)
             }
             if (json["id"] as? String) == runningYourApplicationAbilityId {
@@ -517,66 +487,8 @@ enum TermLoopMCPServer {
 
     // MARK: Built-in tool handlers
 
-    /// Jira ticket telemetry. Maps `(key, status?, url?)` onto the underlying
-    /// V2 binding wire format with hardcoded ability/binding ids — keeps the
-    /// app-side storage and chip rendering pipeline unchanged.
-    private static func runSetJiraTicket(
-        id: Any,
-        arguments: [String: Any],
-        processEnv: [String: String],
-        socketPath: String
-    ) -> [String: Any] {
-        let key = ((arguments["key"] as? String) ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else {
-            return toolResult(id: id,
-                              text: "Missing required argument: key",
-                              isError: true)
-        }
-        let status = (arguments["status"] as? String)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let url = (arguments["url"] as? String)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let workspaceParams = workspaceTargetParams(env: processEnv)
-        guard !workspaceParams.isEmpty else {
-            return toolResult(id: id,
-                              text: "TermLoop daemon target unknown: TERMLOOP_WORKSPACE_ID env var is unset and current working directory is empty.",
-                              isError: true)
-        }
-
-        var params: [String: Any] = [
-            "ability_id": jiraAbilityId,
-            "binding_id": jiraBindingId,
-            "label": key,
-            "status": status as Any? ?? NSNull(),
-            "url": url as Any? ?? NSNull()
-        ]
-        for (k, v) in workspaceParams { params[k] = v }
-
-        do {
-            let client = try authenticatedDaemonClient(socketPath: socketPath)
-            defer { client.close() }
-            let response = try client.sendV2(
-                method: "workspace.report_agent_binding",
-                params: params
-            )
-            if let errorText = extractErrorMessage(response) {
-                return toolResult(id: id, text: errorText, isError: true)
-            }
-            let suffix = (status?.isEmpty == false) ? " · \(status!)" : ""
-            return toolResult(id: id,
-                              text: "Reported Jira ticket \(key)\(suffix)",
-                              isError: false)
-        } catch {
-            return toolResult(id: id,
-                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(mcpErrorDescription(error))",
-                              isError: true)
-        }
-    }
-
-    /// Read-side counterpart to `runSetJiraTicket`. Returns the previously
-    /// reported Jira ticket for this workspace, or "no ticket set yet".
+    /// Returns the user/app-owned Jira ticket binding for this workspace, or
+    /// "no ticket set yet".
     private static func runGetJiraTicket(
         id: Any,
         arguments: [String: Any],

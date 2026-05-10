@@ -68,7 +68,6 @@ enum TermLoopSocketCommands {
         case "events.subscribe":   return eventsSubscribe(params, socketFd: socketFd)
         case "events.unsubscribe": return eventsUnsubscribe(params, socketFd: socketFd)
         case "workspace.report_agent_activity": return workspaceReportAgentActivity(params)
-        case "workspace.report_agent_binding": return workspaceReportAgentBinding(params)
         case "workspace.get_jira_ticket": return workspaceGetJiraTicket(params)
         case "workspace.set_run_targets": return workspaceSetRunTargets(params)
         case "workspace.get_run_targets": return workspaceGetRunTargets(params)

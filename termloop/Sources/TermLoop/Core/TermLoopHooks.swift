@@ -990,7 +990,7 @@ enum TermLoopHooks {
             case .healthy, .locked:
                 guard let actualPath = status.path else { continue }
                 if normalizedCurrentPath != actualPath {
-                    WorkspaceMetadataStore.shared.copyReportedBindingsIfNeeded(
+                    WorkspaceMetadataStore.shared.copyWorktreeScopedStateIfNeeded(
                         fromPath: normalizedCurrentPath,
                         toPath: actualPath,
                         forWorkspaceId: binding.workspaceId
@@ -3416,7 +3416,6 @@ enum TermLoopV2KnownRefsRefreshGate {
              "events.unsubscribe",
              "internal.hook_event",
              "workspace.report_agent_activity",
-             "workspace.report_agent_binding",
              "workspace.get_jira_ticket",
              "workspace.report_claude_session",
              "workspace.clear_agent_activity",

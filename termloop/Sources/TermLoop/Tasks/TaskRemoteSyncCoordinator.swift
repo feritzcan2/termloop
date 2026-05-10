@@ -646,6 +646,65 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
     }
 
+    public func createRemoteWorkItem(
+        title rawTitle: String,
+        bodyMarkdown rawBodyMarkdown: String? = nil,
+        onCreated: (@MainActor @Sendable (UUID) -> Void)? = nil
+    ) {
+        guard !isSyncing else { return }
+        guard settings.isEnabled else {
+            lastMessage = String(localized: "tasks.remoteSync.create.disabled",
+                                 defaultValue: "Enable remote work items before creating remote work items.",
+                                 table: "TermLoop")
+            return
+        }
+        let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        guard let container = settings.container?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty else {
+            lastMessage = Self.missingContainerMessage(for: settings.provider)
+            return
+        }
+
+        let syncSettings = settings
+        let bodyMarkdown = rawBodyMarkdown?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty
+        let request = RemoteWorkItemCreateRequest(
+            provider: syncSettings.provider,
+            title: title,
+            bodyMarkdown: bodyMarkdown,
+            container: container
+        )
+
+        isSyncing = true
+        lastMessage = nil
+        syncTask?.cancel()
+        syncTask = Task(priority: .utility) { [weak self, onCreated] in
+            do {
+                let service = Self.makeRemoteWorkItemService(settings: syncSettings)
+                let snapshot = try await service.create(request, projectRoot: nil)
+                try Task.checkCancellation()
+                await MainActor.run {
+                    guard let self else { return }
+                    guard self.settings.isEnabled,
+                          Self.remoteWorkItemContextKey(syncSettings) == Self.remoteWorkItemContextKey(self.settings) else {
+                        self.isSyncing = false
+                        return
+                    }
+                    if let taskId = self.applyCreatedRemoteSnapshot(snapshot) {
+                        onCreated?(taskId)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self?.finishSync(error: error)
+                }
+            }
+        }
+    }
+
     public func link(taskId: UUID, rawInput: String) {
         guard settings.isEnabled else {
             lastMessage = String(localized: "tasks.remoteSync.disabled",
@@ -820,6 +879,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         requestLimit: Int,
         showCompletionAlert: Bool
     ) {
+        RemoteWorkItemSnapshotStore.shared.upsert(snapshots)
         let now = Date()
         var materializeInputs: [(taskId: UUID, snapshot: RemoteWorkItemSnapshot)] = []
         var createdCount = 0
@@ -939,7 +999,114 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         NSLog("[Tasks] assigned-to-me sync applied count=\(snapshots.count) reason=\(reason)")
     }
 
+    @discardableResult
+    private func applyCreatedRemoteSnapshot(_ snapshot: RemoteWorkItemSnapshot) -> UUID? {
+        RemoteWorkItemSnapshotStore.shared.upsert(snapshot)
+        let now = Date()
+        var materializeInput: (taskId: UUID, snapshot: RemoteWorkItemSnapshot)?
+        var taskId: UUID?
+        var createdNewTask = false
+
+        do {
+            let changed = store.mutate { file in
+                var didChange = false
+                let hadLastError = file.settings.remoteSync.lastError != nil
+                let shouldSyncColumnsFromRemote = file.settings.remoteSync.isAssignedSyncEnabled
+                var columnByRemoteStatus = Self.remoteStatusColumnLookup(file.settings.columns)
+                var rankCursorByColumn = Self.lastRankByColumn(file.tasks)
+                var touchedColumns = Set<TaskColumnId>()
+
+                func targetColumn(for snapshot: RemoteWorkItemSnapshot) -> TaskColumnId {
+                    guard shouldSyncColumnsFromRemote,
+                          let status = snapshot.statusLabel?
+                              .trimmingCharacters(in: .whitespacesAndNewlines)
+                              .nilIfEmpty,
+                          let statusKey = Self.remoteStatusLookupKey(status) else {
+                        return .backlog
+                    }
+                    if columnByRemoteStatus[statusKey] == nil {
+                        Self.ensureRemoteStatusColumn(status, in: &file.settings.columns)
+                        columnByRemoteStatus = Self.remoteStatusColumnLookup(file.settings.columns)
+                        didChange = true
+                    }
+                    return columnByRemoteStatus[statusKey] ?? .backlog
+                }
+
+                func nextRank(in columnId: TaskColumnId) -> String {
+                    let next = rankCursorByColumn[columnId]
+                        .map(TaskRanking.after)
+                        ?? TaskRanking.initial()
+                    rankCursorByColumn[columnId] = next
+                    return next
+                }
+
+                let storageKey = snapshot.reference.storageKey
+                let targetColumn = targetColumn(for: snapshot)
+                if let idx = file.tasks.firstIndex(where: { task in
+                    task.archivedAt == nil && task.remoteWorkItem?.storageKey == storageKey
+                }) {
+                    let old = file.tasks[idx]
+                    update(&file.tasks[idx], with: snapshot, syncedAt: now)
+                    if shouldSyncColumnsFromRemote, file.tasks[idx].columnId != targetColumn {
+                        touchedColumns.insert(file.tasks[idx].columnId)
+                        file.tasks[idx].columnId = targetColumn
+                        file.tasks[idx].rank = nextRank(in: targetColumn)
+                        touchedColumns.insert(targetColumn)
+                    }
+                    taskId = file.tasks[idx].id
+                    materializeInput = (file.tasks[idx].id, snapshot)
+                    didChange = didChange || file.tasks[idx] != old
+                } else {
+                    let rank = nextRank(in: targetColumn)
+                    let task = TaskRecord(
+                        projectId: store.projectId,
+                        title: snapshot.title,
+                        brief: nil,
+                        origin: .remote,
+                        remoteWorkItem: snapshot.reference,
+                        remoteStatusLabel: snapshot.statusLabel,
+                        lastRemoteSyncAt: now,
+                        columnId: targetColumn,
+                        rank: rank
+                    )
+                    file.tasks.append(task)
+                    touchedColumns.insert(targetColumn)
+                    taskId = task.id
+                    materializeInput = (task.id, snapshot)
+                    createdNewTask = true
+                    didChange = true
+                }
+
+                for columnId in touchedColumns {
+                    didChange = TaskBoardStore.rebalanceColumnIfNeeded(columnId, in: &file) || didChange
+                }
+                file.settings.remoteSync.lastError = nil
+                return didChange || hadLastError
+            }
+
+            if let materializeInput {
+                materialize([materializeInput])
+            }
+            if changed || materializeInput != nil {
+                try store.saveNow()
+            }
+            let message = createdNewTask
+                ? String(localized: "tasks.remoteSync.created",
+                         defaultValue: "Created remote work item \(snapshot.reference.key).",
+                         table: "TermLoop")
+                : String(localized: "tasks.remoteSync.created.existing",
+                         defaultValue: "Remote work item \(snapshot.reference.key) already existed locally. Updated it.",
+                         table: "TermLoop")
+            finishSync(message: message)
+            return taskId
+        } catch {
+            finishSync(error: error)
+            return nil
+        }
+    }
+
     private func applyLinkedSnapshot(_ snapshot: RemoteWorkItemSnapshot, taskId: UUID) {
+        RemoteWorkItemSnapshotStore.shared.upsert(snapshot)
         let now = Date()
         var shouldMaterialize = false
         do {
@@ -1210,6 +1377,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         projectedFallbackCount: Int,
         showCompletionAlert: Bool
     ) {
+        RemoteWorkItemSnapshotStore.shared.upsert(snapshots.map(\.snapshot))
         let now = Date()
         var updatedCount = 0
         var movedCount = 0
@@ -1698,6 +1866,23 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
             return ["open", "closed"]
         case .gitlab:
             return ["opened", "closed"]
+        }
+    }
+
+    private static func missingContainerMessage(for provider: RemoteWorkItemProviderId) -> String {
+        switch provider {
+        case .jira:
+            return String(localized: "tasks.remoteSync.create.missingJiraProject",
+                          defaultValue: "Select a Jira project before creating a remote work item.",
+                          table: "TermLoop")
+        case .github:
+            return String(localized: "tasks.remoteSync.create.missingGitHubRepo",
+                          defaultValue: "Select a GitHub repository before creating a remote work item.",
+                          table: "TermLoop")
+        case .gitlab:
+            return String(localized: "tasks.remoteSync.create.missingGitLabProject",
+                          defaultValue: "Select a GitLab project before creating a remote work item.",
+                          table: "TermLoop")
         }
     }
 

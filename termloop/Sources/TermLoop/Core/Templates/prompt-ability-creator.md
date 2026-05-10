@@ -37,7 +37,7 @@ Activation alone decides delivery — there is no `injectBodyAsSystemInstruction
 
 The markdown body is injected as one section when the ability is active. Use multiple payload files for separate rules such as "Use the skill", "Resume bound ticket", and "Update UI chip". The `mcpTool` field is metadata only: it links a section to a TermLoop MCP tool for per-run toggles and optional skill footer materialization. Do not generate hidden or hardcoded prompt text outside payload files.
 
-`termLoopMCPTools` is an array of `{ "name": "tool_name", "enabled": true }` opt-ins. Listed names surface in the TermLoop built-in MCP server's `tools/list`. Available built-ins: `set_jira_ticket` (opt-in — Jira ability only; pair with a `bindings` declaration so the chip renders).
+`termLoopMCPTools` is an array of `{ "name": "tool_name", "enabled": true }` opt-ins. Listed names surface in the TermLoop built-in MCP server's `tools/list`. Available built-ins are listed in TermLoop's built-in MCP registry; do not invent tool names.
 
 Treat the bundle as one editable unit. A single ability-agent run may need to
 create or change all ability-related surfaces together:
@@ -151,12 +151,10 @@ the SKILL.md body must:
    Atlassian), name that bootstrap call and when to retry.
 
 **Built-in TermLoop MCP tools:** if `ability.json` opts into
-`termLoopMCPTools` (e.g. `set_jira_ticket` for the Jira ability), include a
-"Reporting to TermLoop UI" section in SKILL.md that names the exact tool
+`termLoopMCPTools`, include a section in SKILL.md that names the exact tool
 (`mcp__termloop__<tool>`) and lists each input field with what to pass.
-Today only the Jira ability ships a binding-specific tool; if you author a
-new binding-using ability, you'll likely need to add a matching tool to
-TermLoop's built-in MCP registry.
+Remote work-item bindings are user/app-owned; agents may read them but must
+not report or mutate those chips through a custom tool.
 
 Do not mention MCPs the ability does not declare. Do not invent tool names —
 if you are unsure of the tool prefix, ask the user.
