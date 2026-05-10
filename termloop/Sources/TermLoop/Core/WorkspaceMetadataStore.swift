@@ -13,6 +13,8 @@ final class WorkspaceMetadataStore: ObservableObject {
         var providerName: String
         var key: String
         var title: String?
+        var status: String?
+        var url: String?
     }
 
     struct Metadata: Equatable, Codable {
@@ -76,9 +78,10 @@ final class WorkspaceMetadataStore: ObservableObject {
         /// Unlike `agentKind`, this survives workspace close so a later
         /// "Discuss" action can reopen and resume the prior session.
         var assignedAbilityId: String?
-        /// Ticket binding for worktrees spawned from the Quick Action ticket
-        /// picker. This lets sidebar surfaces group worktrees by ticket
-        /// without re-querying the external provider.
+        /// Remote ticket binding for worktrees spawned from Tasks or a ticket
+        /// picker. UI chips are rendered from `AgentReportedStateStore`; this
+        /// metadata stays as the workspace-local source for task cleanup and
+        /// deletion prompts.
         var assignedTicket: AssignedTicket?
         /// When true, the workspace stays functional/selectable but is omitted
         /// from the normal sidebar tree. Used for transient helper agents

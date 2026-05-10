@@ -780,10 +780,6 @@ struct NewWorkspaceWithWorktreeForm: View {
                                     forWorkspaceId: workspace.id
                                 )
                             }
-                            WorkspaceMetadataStore.shared.setAssignedTicket(
-                                request.assignedTicket,
-                                for: workspace
-                            )
                             do {
                                 try self.onWorkspaceCreated(Creation(
                                     workspace: workspace,
@@ -807,12 +803,8 @@ struct NewWorkspaceWithWorktreeForm: View {
                                 self.isCreating = false
                                 return
                             }
+                            persistAssignedTicket(for: workspace, worktreePath: prepared.path)
                             if activatesWorkspaceOnSuccess {
-                                if let assignedTicket = request.assignedTicket {
-                                    TicketWorktreesPanelState.reveal(
-                                        ticketID: "\(assignedTicket.providerName)::\(assignedTicket.key)"
-                                    )
-                                }
                                 WorktreeAgentsPanelState.reveal(branch: branch)
                                 MainAreaActivation.activateWorkspaceTerminal(workspace.id, on: tabManager)
                             }
@@ -858,6 +850,36 @@ struct NewWorkspaceWithWorktreeForm: View {
                 }
             }
         }
+    }
+
+    private func persistAssignedTicket(for workspace: Workspace, worktreePath: String) {
+        let metadata = WorkspaceMetadataStore.shared
+        metadata.setAssignedTicket(request.assignedTicket, for: workspace)
+
+        guard let ticket = request.assignedTicket,
+              ticket.providerName.caseInsensitiveCompare("Jira") == .orderedSame else {
+            return
+        }
+        let binding = AgentReportedStateStore.AgentReportedBinding(
+            abilityId: TermLoopBuiltInMCP.jiraAbilityId,
+            bindingId: JiraTicketBindingPrompt.bindingId,
+            label: ticket.key,
+            status: nonEmpty(ticket.status),
+            url: nonEmpty(ticket.url),
+            reportedAt: Date()
+        )
+        _ = metadata.setReportedBinding(
+            binding,
+            abilityId: TermLoopBuiltInMCP.jiraAbilityId,
+            bindingId: JiraTicketBindingPrompt.bindingId,
+            forWorkspaceId: workspace.id,
+            fallbackPath: worktreePath
+        )
+    }
+
+    private func nonEmpty(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func resolvePlanForPreparedWorktree(

@@ -185,7 +185,9 @@ private struct TaskCreateWorktreeSheet: View {
         return WorkspaceMetadataStore.AssignedTicket(
             providerName: reference.provider.displayLabel,
             key: reference.key,
-            title: task.title
+            title: task.title,
+            status: task.remoteStatusLabel,
+            url: reference.url
         )
     }
 
