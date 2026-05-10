@@ -471,7 +471,6 @@
 		CAFE000000000000000100F3 /* QuickActionAutocompleteSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAFE000000000000000000F3 /* QuickActionAutocompleteSource.swift */; };
 		CAFE000000000000000100F4 /* QuickActionAutocompletePopup.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAFE000000000000000000F4 /* QuickActionAutocompletePopup.swift */; };
 		CAFE000000000000000100F5 /* QuickActionAutocompleteController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAFE000000000000000000F5 /* QuickActionAutocompleteController.swift */; };
-		CAFE00000000000000010200 /* TicketWorktreesPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAFE00000000000000000100 /* TicketWorktreesPanel.swift */; };
 		CB1A2B3C4D5E6F7A8B9C0D1E /* GeminiHookDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1A2B3C4D5E6F7A8B9C0D1F /* GeminiHookDiscovery.swift */; };
 		CB1E00001111222233334445 /* ContextBankIntegrity.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1E00001111222233334446 /* ContextBankIntegrity.swift */; };
 		CB1E00001111222233334447 /* ContextBankIntegrityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1E00001111222233334448 /* ContextBankIntegrityTests.swift */; };
@@ -552,8 +551,6 @@
 		FF3695CF24E4E01ED81A90C6 /* AgentEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AF5245102CF3F97C0C96E65 /* AgentEngine.swift */; };
 		FF42A8AC34CBEB7EDB469C73 /* FileDropOverlay+TermLoopForwarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6215DC7E34BCEFE396C4914 /* FileDropOverlay+TermLoopForwarding.swift */; };
 		FFCB1EDDB0FDFC3AF727E93B /* PushTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEC82B7E6651D0AC127F2EA4 /* PushTokenStore.swift */; };
-		TW710011A1B2C3D4E5F60719 /* TicketWorktreesPanelData.swift in Sources */ = {isa = PBXBuildFile; fileRef = TW710001A1B2C3D4E5F60719 /* TicketWorktreesPanelData.swift */; };
-		TW710012A1B2C3D4E5F60719 /* TicketWorktreesPanelRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = TW710002A1B2C3D4E5F60719 /* TicketWorktreesPanelRows.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1084,7 +1081,6 @@
 		CAFE000000000000000000F3 /* QuickActionAutocompleteSource.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickActionAutocompleteSource.swift; sourceTree = "<group>"; };
 		CAFE000000000000000000F4 /* QuickActionAutocompletePopup.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickActionAutocompletePopup.swift; sourceTree = "<group>"; };
 		CAFE000000000000000000F5 /* QuickActionAutocompleteController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickActionAutocompleteController.swift; sourceTree = "<group>"; };
-		CAFE00000000000000000100 /* TicketWorktreesPanel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TicketWorktreesPanel.swift; sourceTree = "<group>"; };
 		CB1A2B3C4D5E6F7A8B9C0D1F /* GeminiHookDiscovery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GeminiHookDiscovery.swift; sourceTree = "<group>"; };
 		CB1E00001111222233334446 /* ContextBankIntegrity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextBankIntegrity.swift; sourceTree = "<group>"; };
 		CB1E00001111222233334448 /* ContextBankIntegrityTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContextBankIntegrityTests.swift; sourceTree = "<group>"; };
@@ -1168,8 +1164,6 @@
 		FE100001A1B2C3D4E5F60718 /* IntegrationsStore+RequirementMatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IntegrationsStore+RequirementMatch.swift"; sourceTree = "<group>"; };
 		FFBB2CAFFE28DCCB1B030B1E /* AgentTemplateTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentTemplateTests.swift; sourceTree = "<group>"; };
 		IC000002 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder; path = AppIcon.icon; sourceTree = "<group>"; };
-		TW710001A1B2C3D4E5F60719 /* TicketWorktreesPanelData.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TicketWorktreesPanelData.swift; sourceTree = "<group>"; };
-		TW710002A1B2C3D4E5F60719 /* TicketWorktreesPanelRows.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TicketWorktreesPanelRows.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1502,9 +1496,6 @@
 				AC71009AA1B2C3D4E5F6ABCD /* WorktreeGroupRunTargetsBadge.swift */,
 				8C5E8498088B19D4A2D70906 /* WorktreeChangesSupport.swift */,
 				220445D607819A27670D30D2 /* WorktreeChangesPanes.swift */,
-				CAFE00000000000000000100 /* TicketWorktreesPanel.swift */,
-				TW710001A1B2C3D4E5F60719 /* TicketWorktreesPanelData.swift */,
-				TW710002A1B2C3D4E5F60719 /* TicketWorktreesPanelRows.swift */,
 				AC710007A1B2C3D4E5F60719 /* ActiveAgentsPanelView.swift */,
 				AC710008A1B2C3D4E5F60719 /* ActiveAgentsPanelInteractions.swift */,
 				AC710009A1B2C3D4E5F60719 /* ActiveAgentsPanelFormatting.swift */,
@@ -2651,9 +2642,6 @@
 				AC71009BA1B2C3D4E5F6ABCD /* WorktreeGroupRunTargetsBadge.swift in Sources */,
 				5B19B08DA4074410763E3EC6 /* WorktreeChangesSupport.swift in Sources */,
 				25C18DBE4401C3C71F994BCF /* WorktreeChangesPanes.swift in Sources */,
-				CAFE00000000000000010200 /* TicketWorktreesPanel.swift in Sources */,
-				TW710011A1B2C3D4E5F60719 /* TicketWorktreesPanelData.swift in Sources */,
-				TW710012A1B2C3D4E5F60719 /* TicketWorktreesPanelRows.swift in Sources */,
 				AC710017A1B2C3D4E5F60719 /* ActiveAgentsPanelView.swift in Sources */,
 				AC710018A1B2C3D4E5F60719 /* ActiveAgentsPanelInteractions.swift in Sources */,
 				AC710019A1B2C3D4E5F60719 /* ActiveAgentsPanelFormatting.swift in Sources */,

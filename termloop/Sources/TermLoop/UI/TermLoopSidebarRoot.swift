@@ -260,9 +260,6 @@ extension TermLoopSidebar {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    if workSubTab.wrappedValue != .loop {
-                        TicketWorktreesPanel()
-                    }
                 }
                 TermLoopSidebar.Footer(
                     updateViewModel: updateViewModel,
