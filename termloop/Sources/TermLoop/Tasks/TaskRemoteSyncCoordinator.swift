@@ -1476,7 +1476,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                     source: "task.remoteWorkItem"
                 )
             }
-            guard let snapshot = TaskWorkItemProjectionBuilder.snapshot(for: task) else {
+            guard let snapshot = TaskWorkItemProjectionBuilder.snapshot(for: task, projectId: store.projectId) else {
                 return nil
             }
             return LinkedRemoteTaskForStatusSync(

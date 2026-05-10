@@ -8,6 +8,7 @@ import SwiftUI
 /// repair actions, and projection sections.
 struct TaskSidebarDrillInView: View {
     let detailSnapshot: TaskDetailSnapshot
+    let projectId: UUID
     @ObservedObject var selection: TaskSelectionStore
     @ObservedObject var remoteSync: TaskRemoteSyncCoordinator
     var columnTitle: (TaskColumnId) -> String = { $0.defaultTitle }
@@ -20,6 +21,7 @@ struct TaskSidebarDrillInView: View {
 
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
+    @ObservedObject private var worktreeProjectionStore = WorktreeProjectionStore.shared
     @EnvironmentObject private var tabManager: TabManager
     var onUnbind: ((UUID) -> Void)?
     var onArchive: ((UUID) -> Void)?
@@ -43,6 +45,7 @@ struct TaskSidebarDrillInView: View {
                                 taskWorkItem: workItemSnapshot(for: detailSnapshot),
                                 workspaceId: detailSnapshot.workspaceId,
                                 worktreePath: detailSnapshot.worktreePath,
+                                projectId: projectId,
                                 remoteSync: remoteSync
                             )
                         }
@@ -52,6 +55,7 @@ struct TaskSidebarDrillInView: View {
                         TaskBranchesSection(
                             branch: detailSnapshot.branch,
                             worktreePath: detailSnapshot.worktreePath,
+                            projectId: projectId,
                             taskWorkspaceId: detailSnapshot.workspaceId,
                             provisionState: detailSnapshot.provisionState,
                             selectedAgentWorkspaceId: selection.inlineTerminalWorkspaceId,
@@ -93,7 +97,8 @@ struct TaskSidebarDrillInView: View {
                             TaskGitChangesSection(
                                 workspaceId: detailSnapshot.workspaceId,
                                 worktreePath: detailSnapshot.worktreePath,
-                                branch: detailSnapshot.branch
+                                branch: detailSnapshot.branch,
+                                projectId: projectId
                             )
                         }
                         Divider().opacity(0.6)
@@ -233,14 +238,17 @@ struct TaskSidebarDrillInView: View {
         // status while Tasks remains a projection-only consumer.
         _ = metadataStore
         _ = activityStore
+        _ = worktreeProjectionStore.version
         return TaskAgentProjectionBuilder.statusSummary(
             worktreePath: snap.worktreePath,
             taskWorkspaceId: snap.workspaceId,
+            projectId: projectId,
             openWorkspaceIds: Set(tabManager.tabs.map(\.id))
         )
     }
 
     private func workItemSnapshot(for snap: TaskDetailSnapshot) -> TaskWorkItemSnapshot? {
+        _ = worktreeProjectionStore.version
         if let reference = snap.remoteWorkItem {
             return TaskWorkItemProjectionBuilder.remoteSnapshot(
                 reference: reference,
@@ -249,12 +257,14 @@ struct TaskSidebarDrillInView: View {
                 urlString: reference.url,
                 taskFilePath: snap.taskFilePath,
                 workspaceId: snap.workspaceId,
-                worktreePath: snap.worktreePath
+                worktreePath: snap.worktreePath,
+                projectId: projectId
             )
         }
         return TaskWorkItemProjectionBuilder.snapshot(
             workspaceId: snap.workspaceId,
-            worktreePath: snap.worktreePath
+            worktreePath: snap.worktreePath,
+            projectId: projectId
         )
     }
 

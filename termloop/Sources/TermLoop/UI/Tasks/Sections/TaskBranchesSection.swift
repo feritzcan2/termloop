@@ -10,6 +10,7 @@ import SwiftUI
 struct TaskBranchesSection: View {
     let branch: String?
     let worktreePath: String?
+    let projectId: UUID?
     let taskWorkspaceId: UUID?
     let provisionState: TaskProvisionState
     var selectedAgentWorkspaceId: UUID? = nil
@@ -24,6 +25,7 @@ struct TaskBranchesSection: View {
 
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
+    @ObservedObject private var worktreeProjectionStore = WorktreeProjectionStore.shared
     @EnvironmentObject private var tabManager: TabManager
 
     var body: some View {
@@ -174,11 +176,13 @@ struct TaskBranchesSection: View {
         // presentation while this section stays projection-only.
         _ = metadataStore
         _ = activityStore
+        _ = worktreeProjectionStore.version
         return TaskAgentProjectionBuilder.agentRowSnapshots(
             worktreePath: worktreePath,
             taskWorkspaceId: taskWorkspaceId,
             workspaces: tabManager.tabs,
             branchLabel: currentBranchName,
+            projectId: projectId,
             fallbackAgentLabel: fallbackAgentLabel
         )
     }
@@ -226,9 +230,11 @@ struct TaskBranchesSection: View {
 
     private var secondaryBranches: [String] {
         var values: [String] = []
+        _ = worktreeProjectionStore.version
         values.append(contentsOf: TaskAgentProjectionBuilder.recordedBranches(
             worktreePath: worktreePath,
-            expectedBranch: normalizedBranch
+            expectedBranch: normalizedBranch,
+            projectId: projectId
         ))
         let current = currentBranchName
         return Array(Set(values))

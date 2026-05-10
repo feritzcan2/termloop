@@ -17,6 +17,7 @@ struct TaskBoardPage<TerminalContent: View>: View {
 
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
+    @ObservedObject private var worktreeProjectionStore = WorktreeProjectionStore.shared
     @EnvironmentObject private var tabManager: TabManager
 
     init(
@@ -80,9 +81,11 @@ struct TaskBoardPage<TerminalContent: View>: View {
         // from shared workspace/agent stores instead of persisting telemetry in Tasks.
         _ = metadataStore
         _ = activityStore
+        _ = worktreeProjectionStore.version
         let openWorkspaceIds = Set(tabManager.tabs.map(\.id))
         return TaskAgentProjectionBuilder.statusSummaries(
             for: store.fileSnapshot().tasks,
+            projectId: store.projectId,
             openWorkspaceIds: openWorkspaceIds
         )
     }
@@ -92,7 +95,11 @@ struct TaskBoardPage<TerminalContent: View>: View {
         // Same projection-only pattern as agent status: work item bindings
         // stay owned by the reported-state store, Tasks just renders them.
         _ = metadataStore
-        return TaskWorkItemProjectionBuilder.snapshots(for: store.fileSnapshot().tasks)
+        _ = worktreeProjectionStore.version
+        return TaskWorkItemProjectionBuilder.snapshots(
+            for: store.fileSnapshot().tasks,
+            projectId: store.projectId
+        )
     }
 
     private func syncSelectionValidity() {
@@ -122,6 +129,7 @@ struct TaskBoardPage<TerminalContent: View>: View {
         let openWorkspaceIds = Set(tabManager.tabs.map(\.id))
         guard let workspaceId = TaskAgentProjectionBuilder.preferredAgentWorkspace(
             for: task,
+            projectId: store.projectId,
             openWorkspaceIds: openWorkspaceIds
         ) else {
             selection.closeInlineTerminal()

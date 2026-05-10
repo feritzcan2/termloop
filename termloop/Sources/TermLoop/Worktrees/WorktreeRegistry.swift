@@ -125,6 +125,7 @@ final class WorktreeRegistry {
         lock.lock()
         cache[projectFolder] = snapshot
         lock.unlock()
+        notifyProjectionChanged(reason: "registry.record")
         return snapshot
     }
 
@@ -185,6 +186,12 @@ final class WorktreeRegistry {
 
     private func normalize(path: String) -> String {
         WorktreeResolver.normalizePath(path) ?? path
+    }
+
+    private func notifyProjectionChanged(reason: String) {
+        _Concurrency.Task { @MainActor in
+            WorktreeProjectionStore.shared.markChanged(reason: reason)
+        }
     }
 
     private static func path(_ child: String, isInside parent: String) -> Bool {

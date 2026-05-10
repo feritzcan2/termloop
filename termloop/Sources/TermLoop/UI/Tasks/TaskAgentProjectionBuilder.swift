@@ -44,12 +44,16 @@ enum TaskAgentProjectionBuilder {
 
     static func preferredAgentWorkspace(
         for task: TaskRecord,
+        projectId: UUID? = nil,
         openWorkspaceIds: Set<UUID>? = nil
     ) -> UUID? {
-        agents(
+        let resolvedProjection = worktreeProjection(projectId: projectId, existing: nil)
+        return agents(
             worktreePath: task.worktreePath,
             taskWorkspaceId: task.workspaceId,
             includeTaskWorkspaceId: true,
+            projectId: projectId,
+            projection: resolvedProjection,
             openWorkspaceIds: openWorkspaceIds
         )
         .filter(\.isPreferredCandidate)
@@ -58,16 +62,19 @@ enum TaskAgentProjectionBuilder {
         .workspaceId
     }
 
-
     static func statusSummaries(
         for tasks: [TaskRecord],
+        projectId: UUID? = nil,
         openWorkspaceIds: Set<UUID>? = nil
     ) -> [UUID: TaskAgentStatusSummary] {
-        Dictionary(uniqueKeysWithValues: tasks.compactMap { task in
+        let resolvedProjection = worktreeProjection(projectId: projectId, existing: nil)
+        return Dictionary(uniqueKeysWithValues: tasks.compactMap { task in
             guard task.archivedAt == nil,
                   let summary = statusSummary(
                     worktreePath: task.worktreePath,
                     taskWorkspaceId: task.workspaceId,
+                    projectId: projectId,
+                    projection: resolvedProjection,
                     openWorkspaceIds: openWorkspaceIds
                   ) else {
                 return nil
@@ -79,12 +86,17 @@ enum TaskAgentProjectionBuilder {
     static func statusSummary(
         worktreePath: String?,
         taskWorkspaceId: UUID?,
+        projectId: UUID? = nil,
+        projection: WorktreeProjectionSnapshot? = nil,
         openWorkspaceIds: Set<UUID>? = nil
     ) -> TaskAgentStatusSummary? {
+        let resolvedProjection = worktreeProjection(projectId: projectId, existing: projection)
         let agents = agents(
             worktreePath: worktreePath,
             taskWorkspaceId: taskWorkspaceId,
             includeTaskWorkspaceId: true,
+            projectId: projectId,
+            projection: resolvedProjection,
             openWorkspaceIds: openWorkspaceIds
         )
         guard !agents.isEmpty else { return nil }
@@ -111,10 +123,13 @@ enum TaskAgentProjectionBuilder {
         worktreePath: String?,
         taskWorkspaceId: UUID? = nil,
         includeTaskWorkspaceId: Bool = false,
+        projectId: UUID? = nil,
+        projection: WorktreeProjectionSnapshot? = nil,
         openWorkspaceIds: Set<UUID>? = nil,
         fallbackAgentLabel: String? = nil
     ) -> [TaskWorktreeAgentSnapshot] {
         let resolvedFallbackAgentLabel = fallbackAgentLabel ?? Self.fallbackAgentLabel
+        let resolvedProjection = worktreeProjection(projectId: projectId, existing: projection)
         var orderedWorkspaceIds: [UUID] = []
         func append(_ workspaceId: UUID?) {
             guard let workspaceId, !orderedWorkspaceIds.contains(workspaceId) else { return }
@@ -122,7 +137,15 @@ enum TaskAgentProjectionBuilder {
         }
 
         if let path = metadataPath(worktreePath) {
-            WorkspaceMetadataStore.shared.workspaceIds(withWorktreePath: path).forEach { append($0) }
+            var didAppendProjectionIds = false
+            if let resolvedProjection {
+                let ids = resolvedProjection.workspaceIds(forWorktreePath: path)
+                ids.forEach { append($0) }
+                didAppendProjectionIds = !ids.isEmpty
+            }
+            if !didAppendProjectionIds {
+                WorkspaceMetadataStore.shared.workspaceIds(withWorktreePath: path).forEach { append($0) }
+            }
         }
         if includeTaskWorkspaceId {
             append(taskWorkspaceId)
@@ -144,8 +167,10 @@ enum TaskAgentProjectionBuilder {
         taskWorkspaceId: UUID?,
         workspaces: [Workspace],
         branchLabel: String?,
+        projectId: UUID? = nil,
         fallbackAgentLabel: String? = nil
     ) -> [AgentRowPresentationSnapshot] {
+        let resolvedProjection = worktreeProjection(projectId: projectId, existing: nil)
         var workspaceById: [UUID: Workspace] = [:]
         for workspace in workspaces {
             workspaceById[workspace.id] = workspace
@@ -155,6 +180,8 @@ enum TaskAgentProjectionBuilder {
             worktreePath: worktreePath,
             taskWorkspaceId: taskWorkspaceId,
             includeTaskWorkspaceId: true,
+            projectId: projectId,
+            projection: resolvedProjection,
             openWorkspaceIds: Set(workspaces.map(\.id)),
             fallbackAgentLabel: fallbackAgentLabel
         )
@@ -171,10 +198,22 @@ enum TaskAgentProjectionBuilder {
         }
     }
 
-    static func recordedBranches(worktreePath: String?, expectedBranch: String?) -> [String] {
+    static func recordedBranches(
+        worktreePath: String?,
+        expectedBranch: String?,
+        projectId: UUID? = nil,
+        projection: WorktreeProjectionSnapshot? = nil
+    ) -> [String] {
         var values: [String] = []
+        let resolvedProjection = worktreeProjection(projectId: projectId, existing: projection)
         if let path = metadataPath(worktreePath) {
-            values.append(contentsOf: WorkspaceMetadataStore.shared.workspaceIds(withWorktreePath: path).compactMap { id in
+            let workspaceIds: [UUID]
+            if let resolvedProjection {
+                workspaceIds = resolvedProjection.workspaceIds(forWorktreePath: path)
+            } else {
+                workspaceIds = WorkspaceMetadataStore.shared.workspaceIds(withWorktreePath: path)
+            }
+            values.append(contentsOf: workspaceIds.compactMap { id in
                 WorkspaceMetadataStore.shared.metadata(forWorkspaceId: id).branch?
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                     .nilIfEmpty
@@ -193,6 +232,15 @@ enum TaskAgentProjectionBuilder {
 
     static func pathLeaf(_ path: String?) -> String? {
         TaskPathNormalization.resolveDisplayAndKey(path)?.leafName
+    }
+
+    private static func worktreeProjection(
+        projectId: UUID?,
+        existing: WorktreeProjectionSnapshot?
+    ) -> WorktreeProjectionSnapshot? {
+        if let existing { return existing }
+        guard let projectId else { return nil }
+        return WorktreeProjectionStore.shared.snapshot(projectId: projectId)
     }
 
     private static var fallbackAgentLabel: String {

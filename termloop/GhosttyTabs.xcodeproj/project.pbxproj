@@ -281,6 +281,7 @@
 		A9E70110A6EAC0DE00000001 /* WorktreeStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70100A6EAC0DE00000001 /* WorktreeStatus.swift */; };
 		A9E70111A6EAC0DE00000001 /* WorktreeReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70101A6EAC0DE00000001 /* WorktreeReconciler.swift */; };
 		A9E70112A6EAC0DE00000001 /* WorktreeRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70102A6EAC0DE00000001 /* WorktreeRegistry.swift */; };
+		A9E70115A6EAC0DE00000001 /* WorktreeProjectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70105A6EAC0DE00000001 /* WorktreeProjectionStore.swift */; };
 		A9E70113A6EAC0DE00000001 /* WorktreeReconcilerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70103A6EAC0DE00000001 /* WorktreeReconcilerTests.swift */; };
 		A9E70114A6EAC0DE00000001 /* TerminalAgentRunnerForkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70104A6EAC0DE00000001 /* TerminalAgentRunnerForkTests.swift */; };
 		A9E70300A6EAC0DE00000001 /* RepoSlugCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70300A6EAC0DE00000002 /* RepoSlugCache.swift */; };
@@ -895,6 +896,7 @@
 		A9E70100A6EAC0DE00000001 /* WorktreeStatus.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorktreeStatus.swift; sourceTree = "<group>"; };
 		A9E70101A6EAC0DE00000001 /* WorktreeReconciler.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorktreeReconciler.swift; sourceTree = "<group>"; };
 		A9E70102A6EAC0DE00000001 /* WorktreeRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorktreeRegistry.swift; sourceTree = "<group>"; };
+		A9E70105A6EAC0DE00000001 /* WorktreeProjectionStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorktreeProjectionStore.swift; sourceTree = "<group>"; };
 		A9E70103A6EAC0DE00000001 /* WorktreeReconcilerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorktreeReconcilerTests.swift; sourceTree = "<group>"; };
 		A9E70104A6EAC0DE00000001 /* TerminalAgentRunnerForkTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TerminalAgentRunnerForkTests.swift; sourceTree = "<group>"; };
 		A9E70300A6EAC0DE00000002 /* RepoSlugCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Core/RepoSlugCache.swift; sourceTree = "<group>"; };
@@ -2154,6 +2156,7 @@
 				A9E70100A6EAC0DE00000001 /* WorktreeStatus.swift */,
 				A9E70101A6EAC0DE00000001 /* WorktreeReconciler.swift */,
 				A9E70102A6EAC0DE00000001 /* WorktreeRegistry.swift */,
+				A9E70105A6EAC0DE00000001 /* WorktreeProjectionStore.swift */,
 				FD994C07167BC290DA4FA005 /* WorktreeError.swift */,
 				BA1393F617B7D50F8BBA3D94 /* GitWorktreeService.swift */,
 				97DA21A6EE5D471C47B3F66D /* WorktreeCoordinator.swift */,
@@ -2616,6 +2619,7 @@
 				A9E70110A6EAC0DE00000001 /* WorktreeStatus.swift in Sources */,
 				A9E70111A6EAC0DE00000001 /* WorktreeReconciler.swift in Sources */,
 				A9E70112A6EAC0DE00000001 /* WorktreeRegistry.swift in Sources */,
+				A9E70115A6EAC0DE00000001 /* WorktreeProjectionStore.swift in Sources */,
 				5857C2177302897A99ACE683 /* WorktreeError.swift in Sources */,
 				006086BADBD0F620E49685B3 /* GitWorktreeService.swift in Sources */,
 				A0D488C1D277E928C99F5CFB /* WorktreeCoordinator.swift in Sources */,
