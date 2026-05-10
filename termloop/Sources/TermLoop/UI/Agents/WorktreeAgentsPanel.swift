@@ -189,6 +189,7 @@ struct WorktreeAgentsGroup: Identifiable {
     let branch: String
     let workspaces: [Workspace]
     let worktreePath: String?
+    let projectId: UUID?
 
     let statusKind: WorktreeStatus.Kind?
     let observedRef: WorktreeObservedRef?
@@ -200,6 +201,7 @@ struct WorktreeAgentsGroup: Identifiable {
         branch: String,
         workspaces: [Workspace],
         worktreePath: String?,
+        projectId: UUID? = nil,
         statusKind: WorktreeStatus.Kind? = nil,
         observedRef: WorktreeObservedRef? = nil,
         expectedBranches: [String]? = nil,
@@ -209,6 +211,7 @@ struct WorktreeAgentsGroup: Identifiable {
         self.branch = branch
         self.workspaces = workspaces
         self.worktreePath = worktreePath
+        self.projectId = projectId
         self.statusKind = statusKind
         self.observedRef = observedRef
         self.expectedBranches = expectedBranches ?? [branch]
@@ -765,9 +768,11 @@ struct WorktreeAgentsPanel: View {
         let worktreeRegistryTick: UInt64
         let pullRequestTick: UInt64
         let worktreePullRequestLookupTick: UInt64
+        let activeProjectId: UUID?
         let agentSessionTick: Int
         let projectScopeTick: Int
         let activityTick: Int
+        let taskBoardTick: UInt64
         let remoteItemTick: Int
         let remoteSnapshotTick: Int
         let runTargetTick: Int
@@ -811,6 +816,7 @@ struct WorktreeAgentsPanel: View {
     }
 
     @EnvironmentObject private var tabManager: TabManager
+    @ObservedObject private var projectStore = ProjectStore.shared
     @ObservedObject private var worktreePullRequestStore = WorktreeBranchPullRequestStore.shared
 
     /// Narrow subscription — matches `ActiveAgentsPanel`'s rationale: the
@@ -822,6 +828,7 @@ struct WorktreeAgentsPanel: View {
     @State private var worktreeRegistryTick: UInt64 = 0
     @State private var pullRequestTick: UInt64 = 0
     @State private var activityTick: Int = 0
+    @State private var taskBoardTick: UInt64 = 0
     @State private var hasDeferredActivityTick = false
     @State private var remoteItemTick: Int = 0
     @State private var remoteSnapshotTick: Int = 0
@@ -833,6 +840,8 @@ struct WorktreeAgentsPanel: View {
     /// N per-workspace publishers on every tick.
     @State private var pullRequestSubscription: AnyCancellable?
     @State private var activitySubscription: AnyCancellable?
+    @State private var taskBoardSubscription: AnyCancellable?
+    @State private var subscribedTaskProjectId: UUID?
     @State private var subscribedWorkspaceIds: [UUID] = []
     @State private var didApplyInitialBranchAutoExpand: Bool = false
     @State private var showsAllOpenPullRequests: Bool = false
@@ -872,9 +881,11 @@ struct WorktreeAgentsPanel: View {
                 worktreeRegistryTick: worktreeRegistryTick,
                 pullRequestTick: pullRequestTick,
                 worktreePullRequestLookupTick: worktreePullRequestStore.version,
+                activeProjectId: projectStore.activeProjectId,
                 agentSessionTick: agentSessionTick,
                 projectScopeTick: projectScopeTick,
                 activityTick: activityTick,
+                taskBoardTick: taskBoardTick,
                 remoteItemTick: remoteItemTick,
                 remoteSnapshotTick: remoteSnapshotTick,
                 runTargetTick: runTargetTick
@@ -1016,10 +1027,15 @@ struct WorktreeAgentsPanel: View {
                 didApplyInitialBranchAutoExpand = true
             }
             refreshWorktreeRegistry(for: scopedTabs, reason: "appear")
+            subscribeToActiveTaskBoardStore()
             refreshWorktreePullRequests(renderSnapshot.pullRequestLookupInputs, reason: "appear")
         }
         .onChange(of: scopedTabs.map(\.id)) { _ in
             refreshWorktreeRegistry(for: scopedTabs, reason: "tabsChanged")
+        }
+        .onChange(of: projectStore.activeProjectId) { _ in
+            refreshWorktreeRegistry(for: scopedTabs, reason: "activeProjectChanged")
+            subscribeToActiveTaskBoardStore()
         }
         .onChange(of: renderSnapshot.pullRequestLookupInputs) { inputs in
             refreshWorktreePullRequests(inputs, reason: "inputsChanged")
@@ -1127,6 +1143,15 @@ struct WorktreeAgentsPanel: View {
             let projectKey = workspace.projectId?.uuidString ?? "unknown-project"
             return "branch:\(projectKey):\(branch)"
         }
+        func pathKey(_ rawPath: String?, relativeTo projectRoot: URL?) -> String? {
+            TaskPathNormalization
+                .resolveDisplayAndKey(rawPath, relativeTo: projectRoot)?
+                .keyPath
+        }
+        func groupProjectId(workspaces: [Workspace], worktreePath: String?) -> UUID? {
+            workspaces.compactMap(\.projectId).first
+                ?? worktreePath.flatMap { projectStore.project(containingPath: $0)?.id }
+        }
 
         var buckets: [String: [Workspace]] = [:]
         var order: [String] = []
@@ -1139,7 +1164,7 @@ struct WorktreeAgentsPanel: View {
             }
             buckets[key, default: []].append(workspace)
         }
-        let groups = order.map { key in
+        var groups = order.map { key in
             let workspaces = buckets[key] ?? []
             let expectedBranches = Array(Set(workspaces.compactMap { workspaceBranchById[$0.id] })).sorted()
             let displayBranch: String
@@ -1163,11 +1188,55 @@ struct WorktreeAgentsPanel: View {
                 branch: displayBranch,
                 workspaces: workspaces,
                 worktreePath: worktreePath,
+                projectId: groupProjectId(workspaces: workspaces, worktreePath: worktreePath),
                 statusKind: representativeStatus?.kind,
                 observedRef: representativeStatus?.observedRef,
                 expectedBranches: expectedBranches,
                 needsAttention: statuses.contains(where: { $0.needsUserAttention })
             )
+        }
+        if let activeProject = projectStore.activeProject {
+            let projectRoot = URL(fileURLWithPath: activeProject.folderPath, isDirectory: true)
+            let taskWorktreeKeys = activeTaskWorktreePathKeys(
+                projectId: activeProject.id,
+                projectRoot: projectRoot
+            )
+            var seenPathKeys = Set(groups.compactMap {
+                pathKey($0.worktreePath, relativeTo: projectRoot)
+            })
+            if let snapshot = WorktreeRegistry.shared.cachedSnapshot(
+                projectFolder: activeProject.folderPath,
+                maximumAge: 60
+            ) {
+                for entry in snapshot.entries where !entry.isMain {
+                    guard let key = pathKey(entry.path, relativeTo: projectRoot),
+                          !taskWorktreeKeys.contains(key),
+                          seenPathKeys.insert(key).inserted else {
+                        continue
+                    }
+                    let trimmedBranch = entry.branch?
+                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    let displayBranch = trimmedBranch.isEmpty
+                        ? URL(fileURLWithPath: entry.path).lastPathComponent
+                        : trimmedBranch
+                    let expectedBranches = trimmedBranch.isEmpty ? [] : [trimmedBranch]
+                    let statusKind: WorktreeStatus.Kind? = {
+                        if entry.isLocked { return .locked }
+                        if entry.isPrunable { return .prunable }
+                        return nil
+                    }()
+                    groups.append(WorktreeAgentsGroup(
+                        id: "path:\(WorktreeResolver.normalizePath(entry.path) ?? entry.path)",
+                        branch: displayBranch,
+                        workspaces: [],
+                        worktreePath: entry.path,
+                        projectId: activeProject.id,
+                        statusKind: statusKind,
+                        expectedBranches: expectedBranches,
+                        needsAttention: statusKind != nil
+                    ))
+                }
+            }
         }
         let allWorkspaces = groups.flatMap(\.workspaces)
         let directPullRequestsByBranch: [String: [SidebarPullRequestState]] = Dictionary(
@@ -1317,12 +1386,18 @@ struct WorktreeAgentsPanel: View {
             var seenPaths = Set<String>()
             var runTargetsById: [String: RunTargetStore.RunTarget] = [:]
             var remoteItemsById: [String: WorktreeRemoteItemBindingStore.Binding] = [:]
-            for workspace in group.workspaces {
-                guard let path = WorkspaceMetadataStore.shared.reportedStatePath(
+            var paths: [String] = []
+            if let path = group.worktreePath {
+                paths.append(path)
+            }
+            paths.append(contentsOf: group.workspaces.compactMap { workspace in
+                WorkspaceMetadataStore.shared.reportedStatePath(
                     forWorkspaceId: workspace.id,
                     fallbackPath: workspace.termLoopPresentationCwd()
-                ),
-                      seenPaths.insert(path).inserted else { continue }
+                )
+            })
+            for path in paths {
+                guard seenPaths.insert(path).inserted else { continue }
                 for target in RunTargetStore.shared.targets(forPath: path) {
                     if let existing = runTargetsById[target.id],
                        existing.reportedAt >= target.reportedAt {
@@ -1365,7 +1440,8 @@ struct WorktreeAgentsPanel: View {
             branchAttributedStringByBranch: branchAttributedStringByBranch,
             allWorkspaceIds: allWorkspaces.map(\.id),
             pullRequestLookupInputs: groups.compactMap { group in
-                guard let directory = group.worktreePath else { return nil }
+                guard let directory = group.worktreePath,
+                      group.expectedBranches.count == 1 else { return nil }
                 return WorktreeBranchPullRequestStore.LookupInput(
                     directory: directory,
                     branch: group.branch
@@ -1591,17 +1667,42 @@ struct WorktreeAgentsPanel: View {
 
     private func refreshWorktreeRegistry(for workspaces: [Workspace], reason: String) {
         guard !isHidden else { return }
-        let projectFolders = Set(workspaces.compactMap { workspace -> String? in
+        var projectFolders = Set(workspaces.compactMap { workspace -> String? in
             guard let projectId = workspace.projectId,
                   let project = ProjectStore.shared.project(id: projectId) else { return nil }
             return project.folderPath
         })
+        if let activeProject = projectStore.activeProject {
+            projectFolders.insert(activeProject.folderPath)
+        }
         guard !projectFolders.isEmpty else { return }
         for projectFolder in projectFolders {
             WorktreeRegistry.shared.refresh(projectFolder: projectFolder, reason: "panel.\(reason)") { _ in
                 worktreeRegistryTick &+= 1
             }
         }
+    }
+
+    private func activeTaskWorktreePathKeys(projectId: UUID, projectRoot: URL) -> Set<String> {
+        guard let store = TaskBoardStoreProvider.shared.store(for: projectId) else { return [] }
+        return Set(store.fileSnapshot().tasks.compactMap { task in
+            guard task.archivedAt == nil else { return nil }
+            return TaskPathNormalization
+                .resolveDisplayAndKey(task.worktreePath, relativeTo: projectRoot)?
+                .keyPath
+        })
+    }
+
+    private func subscribeToActiveTaskBoardStore() {
+        let projectId = projectStore.activeProjectId
+        guard projectId != subscribedTaskProjectId else { return }
+        subscribedTaskProjectId = projectId
+        taskBoardSubscription = nil
+        guard let projectId,
+              let store = TaskBoardStoreProvider.shared.store(for: projectId) else { return }
+        taskBoardSubscription = store.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { _ in taskBoardTick &+= 1 }
     }
 
     private func branchSet(from raw: String) -> Set<String> {
@@ -1668,7 +1769,24 @@ struct WorktreeAgentsPanel: View {
     }
 
     private func addAgent(to group: WorktreeAgentsGroup, agent: TerminalAgent) {
-        guard let source = sourceWorkspace(for: group) else { return }
+        guard let source = sourceWorkspace(for: group) else {
+            guard let projectId = group.projectId,
+                  let branch = group.expectedBranches.first,
+                  !branch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return
+            }
+            QuickActionController.shared.present(
+                prefill: QuickActionPresentationRequest(
+                    initialSurface: .worktree,
+                    worktreeIntent: .createWorkspace,
+                    advancedTerminalAgentId: agent.id,
+                    reasonTag: "quickAction.worktreePanelAddAgent",
+                    projectId: projectId,
+                    suggestedBranchName: branch
+                )
+            )
+            return
+        }
         // "+" on a worktree row creates a NEW fresh sibling workspace in the
         // same worktree — never a fork/resume. `preferredForkLaunchSource`
         // would route to claude --resume when an existing Claude session
@@ -1895,7 +2013,10 @@ struct WorktreeAgentsPanel: View {
             }
         }()
         let canDeleteGroup = canDeletePhysicalWorktree || canPerformBranchActions
-        let showsAddAction = hoveredBranch == group.id && !availableAgents.isEmpty
+        let showsAddAction = hoveredBranch == group.id
+            && !availableAgents.isEmpty
+            && (sourceWorkspace(for: group) != nil || group.projectId != nil)
+            && group.expectedBranches.count == 1
         let showsCollapseAction = !group.workspaces.isEmpty
         let showsDeleteAction = hoveredBranch == group.id && canDeleteGroup
         let isArchivedSection = sectionKind.isArchived
@@ -2008,7 +2129,7 @@ struct WorktreeAgentsPanel: View {
                         WorktreeDeletionCoordinator.shared.confirmAndDelete(
                             branch: singleExpectedBranch,
                             worktreePath: canDeletePhysicalWorktree ? group.worktreePath : nil,
-                            projectId: sourceWorkspace(for: group)?.projectId,
+                            projectId: sourceWorkspace(for: group)?.projectId ?? group.projectId,
                             fallbackWorkspaceIds: group.workspaces.map(\.id)
                         )
                     } label: {
@@ -2137,6 +2258,7 @@ struct WorktreeAgentsPanel: View {
 
                 if let worktreePath = group.worktreePath {
                     let projectId = sourceWorkspace(for: group)?.projectId
+                        ?? group.projectId
                         ?? group.workspaces.first?.projectId
                     let openTarget = projectId
                         .flatMap { ProjectStore.shared.project(id: $0)?.worktreeOpenTarget }
@@ -2340,24 +2462,26 @@ struct WorktreeAgentsPanel: View {
                     }
                 }
 
-                Button {
-                    _ = WorkspaceHideCoordinator.confirmAndCollapse(
-                        workspaces: group.workspaces,
-                        tabManager: tabManager,
-                        targetName: group.branch
-                    )
-                } label: {
-                    Label(
-                        String(
-                            localized: "worktreeAgents.group.collapse",
-                            defaultValue: "Collapse Worktree…",
-                            table: "TermLoop"
-                        ),
-                        systemImage: "archivebox"
-                    )
+                if !group.workspaces.isEmpty {
+                    Button {
+                        _ = WorkspaceHideCoordinator.confirmAndCollapse(
+                            workspaces: group.workspaces,
+                            tabManager: tabManager,
+                            targetName: group.branch
+                        )
+                    } label: {
+                        Label(
+                            String(
+                                localized: "worktreeAgents.group.collapse",
+                                defaultValue: "Collapse Worktree…",
+                                table: "TermLoop"
+                            ),
+                            systemImage: "archivebox"
+                        )
+                    }
                 }
 
-                if canPerformBranchActions {
+                if canPerformBranchActions, !group.workspaces.isEmpty {
                     Button {
                         moveGroupToCurrentLocalBranch(group)
                     } label: {
@@ -2374,7 +2498,14 @@ struct WorktreeAgentsPanel: View {
 
                 Divider()
                 Button {
-                    RemoteItemBindingPrompt.present(forGroupWorkspaces: group.workspaces)
+                    if let worktreePath = group.worktreePath {
+                        RemoteItemBindingPrompt.present(
+                            forWorktreePath: worktreePath,
+                            workspaceIds: group.workspaces.map(\.id)
+                        )
+                    } else {
+                        RemoteItemBindingPrompt.present(forGroupWorkspaces: group.workspaces)
+                    }
                 } label: {
                     Label(
                         String(
@@ -2404,7 +2535,7 @@ struct WorktreeAgentsPanel: View {
                         WorktreeDeletionCoordinator.shared.confirmAndDelete(
                             branch: singleExpectedBranch,
                             worktreePath: canDeletePhysicalWorktree ? group.worktreePath : nil,
-                            projectId: sourceWorkspace(for: group)?.projectId,
+                            projectId: sourceWorkspace(for: group)?.projectId ?? group.projectId,
                             fallbackWorkspaceIds: group.workspaces.map(\.id)
                         )
                     } label: {
@@ -2422,6 +2553,19 @@ struct WorktreeAgentsPanel: View {
 
             if expanded {
                 LazyVStack(alignment: .leading, spacing: 1) {
+                    if orderedWorkspaces.isEmpty {
+                        Text(
+                            String(
+                                localized: "worktreeAgents.group.noAgents",
+                                defaultValue: "No agents attached.",
+                                table: "TermLoop"
+                            )
+                        )
+                        .font(TermLoopSidebarTheme.tinyMono)
+                        .foregroundStyle(TermLoopSidebarTheme.dimmer)
+                        .lineLimit(1)
+                        .padding(.vertical, 3)
+                    }
                     ForEach(orderedWorkspaces, id: \.id) { ws in
                         VStack(alignment: .leading, spacing: 0) {
                             if let rowSnapshot = renderSnapshot.rowSnapshotsByWorkspaceId[ws.id] {

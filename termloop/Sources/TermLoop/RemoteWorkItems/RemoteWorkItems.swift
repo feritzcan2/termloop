@@ -165,6 +165,20 @@ public struct TaskRemoteContainerOption: Identifiable, Codable, Equatable, Senda
     }
 }
 
+public struct TaskRemoteIssueTypeOption: Identifiable, Codable, Equatable, Sendable {
+    public let id: String
+    public let name: String
+    public let description: String?
+    public let isSubtask: Bool
+
+    public init(id: String, name: String, description: String?, isSubtask: Bool) {
+        self.id = id
+        self.name = name
+        self.description = description?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.isSubtask = isSubtask
+    }
+}
+
 struct RemoteWorkItemStatusOption: Codable, Identifiable, Equatable, Sendable {
     var id: String
     var label: String

@@ -548,9 +548,17 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
     }
 
     func create(_ request: RemoteWorkItemCreateRequest) async throws -> RemoteWorkItemSnapshot {
-        var args = ["jira", "workitem", "create", "--project", request.container, "--summary", request.title, "--json"]
+        let issueType = request.issueType?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty ?? "Task"
+        var args = [
+            "jira", "workitem", "create",
+            "--project", request.container,
+            "--summary", request.title,
+            "--type", issueType,
+            "--json"
+        ]
         if let body = request.bodyMarkdown, !body.isEmpty { args += ["--description", body] }
-        if let issueType = request.issueType, !issueType.isEmpty { args += ["--type", issueType] }
         if !request.labels.isEmpty { args += ["--label", request.labels.joined(separator: ",")] }
         let result = try await runAcli(args, timeout: 20)
         try remoteValidate(result)
@@ -610,6 +618,19 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
         let jql = project.map { "project = \($0) ORDER BY updated DESC" }
             ?? "assignee = currentUser() ORDER BY updated DESC"
         return try await jiraStatusLabels(jql: jql)
+    }
+
+    func issueTypeOptions(projectKey: String) async throws -> [TaskRemoteIssueTypeOption] {
+        let project = projectKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !project.isEmpty else {
+            throw RemoteWorkItemError.unsupportedReference("Jira issue type lookup requires a project key")
+        }
+        let result = try await runAcli(
+            ["jira", "project", "view", "--key", project, "--json"],
+            timeout: 20
+        )
+        try remoteValidate(result)
+        return try Self.parseIssueTypeOptions(result.stdout)
     }
 
     func projectOptions() async throws -> [TaskRemoteContainerOption] {
@@ -822,6 +843,43 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
         return projects
             .map { TaskRemoteContainerOption(key: $0.key, name: $0.value) }
             .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
+    }
+
+    static func parseIssueTypeOptions(_ text: String) throws -> [TaskRemoteIssueTypeOption] {
+        guard let data = text.data(using: .utf8) else {
+            throw RemoteWorkItemError.parseFailed("Provider CLI returned non-UTF8 JSON")
+        }
+        let json = try JSONSerialization.jsonObject(with: data)
+        let rawTypes: [[String: Any]]
+        if let object = json as? [String: Any] {
+            rawTypes = (object["issueTypes"] as? [[String: Any]])
+                ?? (object["workItemTypes"] as? [[String: Any]])
+                ?? (object["types"] as? [[String: Any]])
+                ?? []
+        } else if let array = json as? [[String: Any]] {
+            rawTypes = array
+        } else {
+            rawTypes = []
+        }
+
+        var seen = Set<String>()
+        return rawTypes.compactMap { type in
+            let name = (type["name"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let name, !name.isEmpty else { return nil }
+            let normalized = name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).lowercased()
+            guard seen.insert(normalized).inserted else { return nil }
+            let id = ((type["id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty)
+                ?? normalized
+            let hierarchyLevel = type["hierarchyLevel"] as? Int
+            let isSubtask = (type["subtask"] as? Bool) ?? (hierarchyLevel.map { $0 < 0 } ?? false)
+            return TaskRemoteIssueTypeOption(
+                id: id,
+                name: name,
+                description: type["description"] as? String,
+                isSubtask: isSubtask
+            )
+        }
     }
 
     private static func uniqueAccounts(_ options: [TaskRemoteJiraAccountOption]) -> [TaskRemoteJiraAccountOption] {

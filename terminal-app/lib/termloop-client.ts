@@ -415,6 +415,7 @@ export interface TermLoopClient {
     taskId: string;
     terminalAgentId?: string;
     projectId?: string;
+    allowDirty?: boolean;
   }): Promise<StartTaskAgentResult>;
 
   close(): Promise<void>;
@@ -702,6 +703,7 @@ export function createTermLoopClient(opts: {
           ? { terminal_agent_id: params.terminalAgentId }
           : {}),
         ...(params.projectId ? { project_id: params.projectId } : {}),
+        ...(params.allowDirty ? { allow_dirty: true } : {}),
       });
     },
     async subscribeSurface(workspaceId, surfaceId, listener, format, historyLines) {

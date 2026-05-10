@@ -210,6 +210,7 @@ enum TermLoopTaskSocketCommands {
             return .err(code: "not_found", message: "Task not found", data: nil)
         }
         let agentId = nonEmptyParam(params, "terminal_agent_id")
+        let allowDirty = (params["allow_dirty"] as? Bool) ?? false
         let coordinator = TaskLifecycleCoordinator.makeForProject(store: store)
 
         if let workspaceId = task.workspaceId,
@@ -239,7 +240,7 @@ enum TermLoopTaskSocketCommands {
         // tasks.list to observe provision_state ready + workspace_id.
         Task {
             do {
-                try await coordinator.bindWorktree(taskId: taskId)
+                try await coordinator.bindWorktree(taskId: taskId, allowDirty: allowDirty)
                 if let agentId,
                    let updated = store.fileSnapshot().tasks.first(where: { $0.id == taskId }),
                    let wsId = updated.workspaceId {

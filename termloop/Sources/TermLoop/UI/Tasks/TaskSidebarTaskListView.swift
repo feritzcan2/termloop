@@ -16,6 +16,7 @@ struct TaskSidebarTaskListView: View {
 
     @State private var isArchivedExpanded = false
     @State private var isAllTasksExpanded = false
+    @State private var isRemoteItemsTipDismissed = false
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
     @EnvironmentObject private var tabManager: TabManager
@@ -28,7 +29,6 @@ struct TaskSidebarTaskListView: View {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     createButton
                     createRemoteItemButton
-                    allTasksDisclosure
                     if isAllTasksExpanded {
                         ForEach(store.columnSnapshots) { col in
                             if !col.cards.isEmpty {
@@ -41,13 +41,14 @@ struct TaskSidebarTaskListView: View {
                             }
                         }
                     }
-                    remoteWorkItemsCTA
                 }
                 .padding(10)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             VStack(alignment: .leading, spacing: 10) {
+                remoteItemsTip
+                allTasksDisclosure
                 archivedSection(
                     cards: store.archivedSnapshots,
                     workItems: workItems
@@ -57,6 +58,23 @@ struct TaskSidebarTaskListView: View {
                 .padding(10)
                 .padding(.top, 1)
                 .background(Color(nsColor: .windowBackgroundColor))
+        }
+    }
+
+    @ViewBuilder
+    private var remoteItemsTip: some View {
+        if !store.settingsSnapshot.remoteSync.isEnabled && !isRemoteItemsTipDismissed {
+            TaskSidebarTipBanner(
+                iconSystemName: "point.3.connected.trianglepath.dotted",
+                title: String(localized: "tasks.sidebar.remote.tip.title",
+                              defaultValue: "Sync remote work items",
+                              table: "TermLoop"),
+                subtitle: String(localized: "tasks.sidebar.remote.tip.subtitle",
+                                 defaultValue: "You can sync this board with Jira, GitHub, or GitLab.",
+                                 table: "TermLoop"),
+                action: onOpenSettings,
+                onDismiss: { isRemoteItemsTipDismissed = true }
+            )
         }
     }
 
@@ -311,40 +329,6 @@ struct TaskSidebarTaskListView: View {
         }
     }
 
-    @ViewBuilder
-    private var remoteWorkItemsCTA: some View {
-        if !store.settingsSnapshot.remoteSync.isEnabled {
-            Button(action: onOpenSettings) {
-                HStack(spacing: 7) {
-                    Image(systemName: "point.3.connected.trianglepath.dotted")
-                        .font(.system(size: 11, weight: .semibold))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(String(localized: "tasks.sidebar.remote.enable",
-                                    defaultValue: "Enable remote work items",
-                                    table: "TermLoop"))
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(String(localized: "tasks.sidebar.remote.enable.subtitle",
-                                    defaultValue: "Optional Jira, GitHub, or GitLab sync",
-                                    table: "TermLoop"))
-                            .font(.system(size: 10))
-                            .foregroundStyle(TermLoopSidebarTheme.dim)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(TermLoopSidebarTheme.dim)
-                }
-                .foregroundColor(.secondary)
-                .padding(.vertical, 8)
-                .padding(.horizontal, 8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(nsColor: .controlBackgroundColor).opacity(0.45))
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
     private func rowBackground(_ card: TaskCardSummary) -> Color {
         if selection.selectedTaskId == card.id {
             return Color.accentColor.opacity(0.18)
@@ -365,4 +349,61 @@ struct TaskSidebarTaskListView: View {
         }
     }
 
+}
+
+private struct TaskSidebarTipBanner: View {
+    let iconSystemName: String
+    let title: String
+    let subtitle: String
+    let action: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(action: action) {
+                HStack(spacing: 8) {
+                    Image(systemName: iconSystemName)
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 14)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title)
+                            .font(TermLoopSidebarTheme.bodyMonoStrong)
+                            .lineLimit(1)
+                        Text(subtitle)
+                            .font(TermLoopSidebarTheme.tinyMono)
+                            .foregroundStyle(TermLoopSidebarTheme.dimmer)
+                            .lineLimit(2)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(Color.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(TermLoopSidebarTheme.dim)
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(String(localized: "tasks.sidebar.remote.tip.dismiss",
+                         defaultValue: "Hide remote sync tip",
+                         table: "TermLoop"))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(TermLoopSidebarTheme.activeBg.opacity(0.7))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(TermLoopSidebarTheme.accent.opacity(0.18), lineWidth: 1)
+        )
+    }
 }
