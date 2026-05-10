@@ -78,10 +78,10 @@ final class WorkspaceMetadataStore: ObservableObject {
         /// Unlike `agentKind`, this survives workspace close so a later
         /// "Discuss" action can reopen and resume the prior session.
         var assignedAbilityId: String?
-        /// Remote ticket binding for worktrees spawned from Tasks or a ticket
-        /// picker. UI chips are rendered from `AgentReportedStateStore`; this
-        /// metadata stays as the workspace-local source for task cleanup and
-        /// deletion prompts.
+        /// Remote ticket metadata for worktrees spawned from Tasks or a
+        /// ticket picker. The canonical UI binding lives in
+        /// `WorktreeRemoteItemBindingStore`; this workspace-local copy stays
+        /// for task cleanup and deletion prompts.
         var assignedTicket: AssignedTicket?
         /// When true, the workspace stays functional/selectable but is omitted
         /// from the normal sidebar tree. Used for transient helper agents
@@ -136,11 +136,6 @@ final class WorkspaceMetadataStore: ObservableObject {
     /// churn that fires the full `objectWillChange` many times per second
     /// during active Claude turns.
     @Published private(set) var agentSessionVersion: Int = 0
-
-    /// Incremented whenever an ability-driven binding is written for any
-    /// worktree. Lets the worktree panel subscribe to chip changes the
-    /// same way it subscribes to link chip changes.
-    @Published private(set) var reportedBindingsVersion: Int = 0
 
     /// Incremented only when `isHidden` flips for any workspace. Lets the
     /// WorktreeAgentsPanel's "Hidden" footer subscribe narrowly instead of
@@ -917,76 +912,7 @@ final class WorkspaceMetadataStore: ObservableObject {
         bumpAgentPresentation(for: id)
     }
 
-    /// Ability-driven binding setter. Takes a workspace id, resolves the
-    /// reported-state path internally (binding storage is path-keyed because a
-    /// binding belongs to the checkout/cwd, not the workspace UUID).
-    /// Pass `nil` to clear.
-    ///
-    /// Returns an outcome the socket handler can map to its response: this is
-    /// the only safe place to dedupe, because every caller that bumps the
-    /// version drives a panel rebuild for every workspace in the snapshot.
-    @discardableResult
-    func setReportedBinding(
-        _ value: AgentReportedStateStore.AgentReportedBinding?,
-        abilityId: String,
-        bindingId: String,
-        forWorkspaceId id: UUID,
-        fallbackPath: String? = nil
-    ) -> ReportedBindingOutcome {
-        guard let path = reportedStatePath(forWorkspaceId: id, fallbackPath: fallbackPath) else {
-            return .noWorktree
-        }
-        let prior = AgentReportedStateStore.shared.binding(
-            abilityId: abilityId,
-            bindingId: bindingId,
-            forPath: path
-        )
-        guard !AgentReportedStateStore.AgentReportedBinding
-            .sameMaterial(prior, value) else { return .noChange }
-        AgentReportedStateStore.shared.setBinding(
-            value,
-            abilityId: abilityId,
-            bindingId: bindingId,
-            forPath: path
-        )
-        reportedBindingsVersion &+= 1
-        bumpAgentPresentation(for: id)
-        return .wrote
-    }
-
-    enum ReportedBindingOutcome {
-        case wrote
-        case noChange
-        case noWorktree
-    }
-
-    /// Atomic full-replace of every reported binding under one ability for
-    /// this workspace's worktree. Bindings in `values` are written; existing
-    /// bindings under `abilityId` not in `values` are cleared. Used by the
-    /// `set_run_targets` MCP tool: agent re-publishes its full state each
-    /// call, so anything dropped from the array disappears from the chip.
-    @discardableResult
-    func replaceReportedBindings(
-        underAbilityId abilityId: String,
-        with values: [AgentReportedStateStore.AgentReportedBinding],
-        forWorkspaceId id: UUID,
-        fallbackPath: String? = nil
-    ) -> ReportedBindingOutcome {
-        guard let path = reportedStatePath(forWorkspaceId: id, fallbackPath: fallbackPath) else {
-            return .noWorktree
-        }
-        let didChange = AgentReportedStateStore.shared.replaceBindings(
-            underAbilityId: abilityId,
-            with: values,
-            forPath: path
-        )
-        guard didChange else { return .noChange }
-        reportedBindingsVersion &+= 1
-        bumpAgentPresentation(for: id)
-        return .wrote
-    }
-
-    func copyReportedBindingsIfNeeded(
+    func copyWorktreeScopedStateIfNeeded(
         fromPath sourcePath: String?,
         toPath destinationPath: String,
         forWorkspaceId id: UUID
@@ -994,12 +920,17 @@ final class WorkspaceMetadataStore: ObservableObject {
         guard let sourcePath = canonicalReportedPath(sourcePath),
               let destinationPath = canonicalReportedPath(destinationPath),
               sourcePath != destinationPath else { return }
-        guard AgentReportedStateStore.shared.copyMissingBindings(
+        let copiedRemoteItem = WorktreeRemoteItemBindingStore.shared.copyMissingBinding(
             fromPath: sourcePath,
             toPath: destinationPath
-        ) else { return }
-        reportedBindingsVersion &+= 1
-        bumpAgentPresentation(for: id)
+        )
+        let copiedRunTargets = RunTargetStore.shared.copyMissingTargets(
+            fromPath: sourcePath,
+            toPath: destinationPath
+        )
+        if copiedRemoteItem || copiedRunTargets {
+            bumpAgentPresentation(for: id)
+        }
     }
 
     func setLastUserPromptAt(_ value: Date?, forWorkspaceId id: UUID) {

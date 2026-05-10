@@ -374,7 +374,10 @@
 		AC710099A1B2C3D4E5F6ABCD /* WorktreeAgentsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC710098A1B2C3D4E5F6ABCD /* WorktreeAgentsPanel.swift */; };
 		AC71009BA1B2C3D4E5F6ABCD /* WorktreeGroupRunTargetsBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC71009AA1B2C3D4E5F6ABCD /* WorktreeGroupRunTargetsBadge.swift */; };
 		AC71009CA1B2C3D4E5F6ABCD /* WorktreeRepairCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC71009DA1B2C3D4E5F6ABCD /* WorktreeRepairCoordinator.swift */; };
-		AC711014A1B2C3D4E5F60719 /* JiraTicketBindingPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC711004A1B2C3D4E5F60719 /* JiraTicketBindingPrompt.swift */; };
+		F10A0001A6EAC0DE00000101 /* RemoteItemBindingPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10A0001A6EAC0DE00000102 /* RemoteItemBindingPrompt.swift */; };
+		F10A0002A6EAC0DE00000101 /* RunTargetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10A0002A6EAC0DE00000102 /* RunTargetStore.swift */; };
+		F10A0003A6EAC0DE00000101 /* RunTargetContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10A0003A6EAC0DE00000102 /* RunTargetContext.swift */; };
+		F10A0004A6EAC0DE00000101 /* RemoteWorkItemStores.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10A0004A6EAC0DE00000102 /* RemoteWorkItemStores.swift */; };
 		ADB40F7E462EDC392E0B70A1 /* ContextBankMirror.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96E3FD276CB1CD037C5ABAD /* ContextBankMirror.swift */; };
 		AE784569A22BBEB146204E79 /* TaskSelectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BB066C04DF19B8F2D3E0E6A /* TaskSelectionStore.swift */; };
 		AF34EE6989206364FC849784 /* BridgeCreationValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B4DD757CC19811DD5233F60 /* BridgeCreationValidator.swift */; };
@@ -446,8 +449,6 @@
 		C92C7D709D6A28371DED5C31 /* TinyYAML.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22909AA600DB2FF1CDB1D45B /* TinyYAML.swift */; };
 		C9A10001A6EAC0DE00000001 /* TermLoopMCPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A10001A6EAC0DE00000002 /* TermLoopMCPServer.swift */; };
 		C9A10004A6EAC0DE00000001 /* TermLoopBuiltInMCP.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A10004A6EAC0DE00000002 /* TermLoopBuiltInMCP.swift */; };
-		C9A10007A6EAC0DE00000001 /* AgentReportedContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A10007A6EAC0DE00000002 /* AgentReportedContext.swift */; };
-		C9A10008A6EAC0DE00000001 /* AgentReportedStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A10008A6EAC0DE00000002 /* AgentReportedStateStore.swift */; };
 		RWIT0002A6EAC0DE00000001 /* RemoteWorkItemCLIProviders.swift in Sources */ = {isa = PBXBuildFile; fileRef = RWIT0002A6EAC0DE00000002 /* RemoteWorkItemCLIProviders.swift */; };
 		RWIT0001A6EAC0DE00000001 /* RemoteWorkItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = RWIT0001A6EAC0DE00000002 /* RemoteWorkItems.swift */; };
 		CA39C0304FE351A21C372429 /* SidebarWidthPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0171AF1F49F7547191CEE5 /* SidebarWidthPolicyTests.swift */; };
@@ -984,7 +985,7 @@
 		AC710098A1B2C3D4E5F6ABCD /* WorktreeAgentsPanel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorktreeAgentsPanel.swift; sourceTree = "<group>"; };
 		AC71009AA1B2C3D4E5F6ABCD /* WorktreeGroupRunTargetsBadge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorktreeGroupRunTargetsBadge.swift; sourceTree = "<group>"; };
 		AC71009DA1B2C3D4E5F6ABCD /* WorktreeRepairCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorktreeRepairCoordinator.swift; sourceTree = "<group>"; };
-		AC711004A1B2C3D4E5F60719 /* JiraTicketBindingPrompt.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = JiraTicketBindingPrompt.swift; sourceTree = "<group>"; };
+		F10A0001A6EAC0DE00000102 /* RemoteItemBindingPrompt.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteItemBindingPrompt.swift; sourceTree = "<group>"; };
 		ACF7EA12F6E9F582091F6482 /* ClaudeProjectFiles.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClaudeProjectFiles.swift; sourceTree = "<group>"; };
 		AD9206AEB3F3DE61E89020F1 /* RestoreClaudeSessionMenuItem.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RestoreClaudeSessionMenuItem.swift; sourceTree = "<group>"; };
 		B09C007F42697761B5F1A2AB /* OmnibarAndToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmnibarAndToolsTests.swift; sourceTree = "<group>"; };
@@ -1058,8 +1059,9 @@
 		C776A8EF46831DAA57422170 /* WebhookDiscovery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WebhookDiscovery.swift; sourceTree = "<group>"; };
 		C9A10001A6EAC0DE00000002 /* TermLoopMCPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoopMCPServer.swift; sourceTree = "<group>"; };
 		C9A10004A6EAC0DE00000002 /* TermLoopBuiltInMCP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TermLoop/Integrations/TermLoopBuiltInMCP.swift; sourceTree = "<group>"; };
-		C9A10007A6EAC0DE00000002 /* AgentReportedContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TermLoop/Core/AgentReportedContext.swift; sourceTree = "<group>"; };
-		C9A10008A6EAC0DE00000002 /* AgentReportedStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TermLoop/Core/AgentReportedStateStore.swift; sourceTree = "<group>"; };
+		F10A0002A6EAC0DE00000102 /* RunTargetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Agents/RunTargetStore.swift; sourceTree = "<group>"; };
+		F10A0003A6EAC0DE00000102 /* RunTargetContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Core/RunTargetContext.swift; sourceTree = "<group>"; };
+		F10A0004A6EAC0DE00000102 /* RemoteWorkItemStores.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/RemoteWorkItems/RemoteWorkItemStores.swift; sourceTree = "<group>"; };
 		RWIT0002A6EAC0DE00000002 /* RemoteWorkItemCLIProviders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TermLoop/RemoteWorkItems/RemoteWorkItemCLIProviders.swift; sourceTree = "<group>"; };
 		RWIT0001A6EAC0DE00000002 /* RemoteWorkItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TermLoop/RemoteWorkItems/RemoteWorkItems.swift; sourceTree = "<group>"; };
 		CAFE00000000000000000000 /* QuickActionSettings.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickActionSettings.swift; sourceTree = "<group>"; };
@@ -1488,7 +1490,7 @@
 				AC710002A1B2C3D4E5F60719 /* ActiveAgentsPanelRows.swift */,
 				AC710003A1B2C3D4E5F60719 /* ActiveAgentsSessionRows.swift */,
 				AC710004A1B2C3D4E5F60719 /* ActiveAgentWorkspaceContextMenu.swift */,
-				AC711004A1B2C3D4E5F60719 /* JiraTicketBindingPrompt.swift */,
+				F10A0001A6EAC0DE00000102 /* RemoteItemBindingPrompt.swift */,
 				AC710005A1B2C3D4E5F60719 /* ActiveAgentsPanelModels.swift */,
 				AC710006A1B2C3D4E5F60719 /* ActiveAgentsPanelData.swift */,
 				AC710098A1B2C3D4E5F6ABCD /* WorktreeAgentsPanel.swift */,
@@ -1727,6 +1729,8 @@
 				A5001713 /* SkillCatalog.swift */,
 				A5001715 /* SkillsCommandsPopover.swift */,
 				A9E70003A6EAC0DE00000002 /* WorkspaceMetadataStore.swift */,
+				F10A0003A6EAC0DE00000102 /* RunTargetContext.swift */,
+				F10A0004A6EAC0DE00000102 /* RemoteWorkItemStores.swift */,
 				AA00CDA6EAC0DE12345672 /* EventBus.swift */,
 				AA00CFA6EAC0DE12345672 /* TermLoopSubscriptionTracker.swift */,
 				A9E70003A6EAC0DE00000004 /* Workspace+TermLoop.swift */,
@@ -1796,6 +1800,7 @@
 				A9E70057A6EAC0DE00000002 /* WorktreeCoderBadge.swift */,
 				A9E70051A6EAC0DE00000002 /* WorktreeRulesStore.swift */,
 				A9E70407A6EAC0DE00000002 /* TerminalAgentRunner.swift */,
+				F10A0002A6EAC0DE00000102 /* RunTargetStore.swift */,
 				A9E70460A6EAC0DE00000002 /* AgentSystemPromptInjector.swift */,
 				A9E70053A6EAC0DE00000002 /* PlanTab.swift */,
 				A9E70054A6EAC0DE00000002 /* PlanFileRow.swift */,
@@ -2470,9 +2475,9 @@
 				A5001712 /* SkillCatalog.swift in Sources */,
 				A5001714 /* SkillsCommandsPopover.swift in Sources */,
 				A9E70003A6EAC0DE00000001 /* WorkspaceMetadataStore.swift in Sources */,
-				C9A10007A6EAC0DE00000001 /* AgentReportedContext.swift in Sources */,
+				F10A0003A6EAC0DE00000101 /* RunTargetContext.swift in Sources */,
+				F10A0004A6EAC0DE00000101 /* RemoteWorkItemStores.swift in Sources */,
 				D9B10001A6EAC0DE00000001 /* WorktreeContextBlock.swift in Sources */,
-				C9A10008A6EAC0DE00000001 /* AgentReportedStateStore.swift in Sources */,
 				RWIT0002A6EAC0DE00000001 /* RemoteWorkItemCLIProviders.swift in Sources */,
 				RWIT0001A6EAC0DE00000001 /* RemoteWorkItems.swift in Sources */,
 				AA00CDA6EAC0DE12345671 /* EventBus.swift in Sources */,
@@ -2578,6 +2583,7 @@
 				A9E70057A6EAC0DE00000001 /* WorktreeCoderBadge.swift in Sources */,
 				A9E70051A6EAC0DE00000001 /* WorktreeRulesStore.swift in Sources */,
 				A9E70407A6EAC0DE00000001 /* TerminalAgentRunner.swift in Sources */,
+				F10A0002A6EAC0DE00000101 /* RunTargetStore.swift in Sources */,
 				A9E70053A6EAC0DE00000001 /* PlanTab.swift in Sources */,
 				A9E70054A6EAC0DE00000001 /* PlanFileRow.swift in Sources */,
 				A9E70055A6EAC0DE00000001 /* PlanFileScanner.swift in Sources */,
@@ -2634,7 +2640,7 @@
 				AC710012A1B2C3D4E5F60719 /* ActiveAgentsPanelRows.swift in Sources */,
 				AC710013A1B2C3D4E5F60719 /* ActiveAgentsSessionRows.swift in Sources */,
 				AC710014A1B2C3D4E5F60719 /* ActiveAgentWorkspaceContextMenu.swift in Sources */,
-				AC711014A1B2C3D4E5F60719 /* JiraTicketBindingPrompt.swift in Sources */,
+				F10A0001A6EAC0DE00000101 /* RemoteItemBindingPrompt.swift in Sources */,
 				AC710015A1B2C3D4E5F60719 /* ActiveAgentsPanelModels.swift in Sources */,
 				AC710016A1B2C3D4E5F60719 /* ActiveAgentsPanelData.swift in Sources */,
 				AC710099A1B2C3D4E5F6ABCD /* WorktreeAgentsPanel.swift in Sources */,

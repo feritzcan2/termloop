@@ -4,8 +4,8 @@
 import AppKit
 import SwiftUI
 
-/// Composite chip for the `running-your-application` ability. Each binding
-/// under that ability is one run target the agent reported. With one
+/// Composite chip for the `running-your-application` ability. Each stored
+/// target is one run target the agent reported. With one
 /// target we show a single chip; with two or more we collapse to
 /// `Running (N)` and reveal the full list in a click-popover. Each row in
 /// the popover is clickable (opens the URL/path) and has a × that clears
@@ -13,25 +13,25 @@ import SwiftUI
 /// `set_run_targets`, so dismissals are not sticky on purpose.
 @MainActor
 struct WorktreeGroupRunTargetsBadge: View {
-    let bindings: [AgentReportedStateStore.AgentReportedBinding]
+    let targets: [RunTargetStore.RunTarget]
     let workspaceIds: [UUID]
-    let reportedStatePath: String?
+    let worktreePath: String?
 
     @State private var popoverShown = false
 
     var body: some View {
-        if bindings.count == 1, let only = bindings.first {
+        if targets.count == 1, let only = targets.first {
             singleChip(for: only)
-        } else if bindings.count >= 2 {
+        } else if targets.count >= 2 {
             multiChip
         }
     }
 
     @ViewBuilder
-    private func singleChip(for binding: AgentReportedStateStore.AgentReportedBinding) -> some View {
+    private func singleChip(for target: RunTargetStore.RunTarget) -> some View {
         let chip = HStack(spacing: 4) {
-            statusDot(for: binding.status)
-            Text(verbatim: binding.displayLabel)
+            statusDot(for: target.status)
+            Text(verbatim: target.displayLabel)
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
@@ -41,9 +41,9 @@ struct WorktreeGroupRunTargetsBadge: View {
         .padding(.vertical, 2)
         .background(Capsule().fill(runTargetBackground))
         .overlay(Capsule().strokeBorder(runTargetBorder, lineWidth: 1))
-        .help(tooltip(for: binding))
+        .help(tooltip(for: target))
 
-        if let destination = binding.destinationURL {
+        if let destination = target.destinationURL {
             Button {
                 openTarget(destination)
             } label: {
@@ -61,7 +61,7 @@ struct WorktreeGroupRunTargetsBadge: View {
         } label: {
             HStack(spacing: 4) {
                 aggregateStatusDot
-                Text(verbatim: "Running (\(bindings.count))")
+                Text(verbatim: "Running (\(targets.count))")
                     .lineLimit(1)
             }
             .font(TermLoopSidebarTheme.tinyMono)
@@ -82,36 +82,35 @@ struct WorktreeGroupRunTargetsBadge: View {
 
     private var popoverContent: some View {
         VStack(alignment: .leading, spacing: 6) {
-            // id: \.bindingId — `AgentReportedBinding` Hashable folds in
-            // `reportedAt`, so `\.self` would re-create every row on each
-            // re-publish even when label/url/status are unchanged.
-            ForEach(bindings, id: \AgentReportedStateStore.AgentReportedBinding.bindingId) { binding in
-                runTargetRow(for: binding)
+            // Target id is stable across re-publishes even when reportedAt
+            // changes.
+            ForEach(targets) { target in
+                runTargetRow(for: target)
             }
         }
     }
 
     private func runTargetRow(
-        for binding: AgentReportedStateStore.AgentReportedBinding
+        for target: RunTargetStore.RunTarget
     ) -> some View {
         HStack(spacing: 6) {
-            statusDot(for: binding.status)
+            statusDot(for: target.status)
             VStack(alignment: .leading, spacing: 1) {
-                if let destination = binding.destinationURL {
+                if let destination = target.destinationURL {
                     Button {
                         openTarget(destination)
                     } label: {
-                        Text(verbatim: binding.label)
+                        Text(verbatim: target.label)
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(.primary)
                     }
                     .buttonStyle(.plain)
                 } else {
-                    Text(verbatim: binding.label)
+                    Text(verbatim: target.label)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.primary)
                 }
-                if let detail = secondaryLine(for: binding) {
+                if let detail = secondaryLine(for: target) {
                     Text(verbatim: detail)
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
@@ -121,7 +120,7 @@ struct WorktreeGroupRunTargetsBadge: View {
             }
             Spacer(minLength: 8)
             Button {
-                clear(binding)
+                clear(target)
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .semibold))
@@ -135,20 +134,20 @@ struct WorktreeGroupRunTargetsBadge: View {
     }
 
     private func secondaryLine(
-        for binding: AgentReportedStateStore.AgentReportedBinding
+        for target: RunTargetStore.RunTarget
     ) -> String? {
-        guard let url = binding.url, !url.isEmpty else { return nil }
+        guard let url = target.url, !url.isEmpty else { return nil }
         return url
     }
 
     private func tooltip(
-        for binding: AgentReportedStateStore.AgentReportedBinding
+        for target: RunTargetStore.RunTarget
     ) -> String {
-        var parts = [binding.label]
-        if let status = binding.status, !status.isEmpty {
+        var parts = [target.label]
+        if let status = target.status, !status.isEmpty {
             parts.append("status: \(status)")
         }
-        if let url = binding.url, !url.isEmpty {
+        if let url = target.url, !url.isEmpty {
             parts.append(url)
             if let scheme = URL(string: url)?.scheme?.lowercased(),
                scheme == "http" || scheme == "https" {
@@ -167,18 +166,10 @@ struct WorktreeGroupRunTargetsBadge: View {
     }
 
     private func clear(
-        _ binding: AgentReportedStateStore.AgentReportedBinding
+        _ target: RunTargetStore.RunTarget
     ) {
-        // Bindings are path-keyed and every workspace in a group shares the
-        // same worktree path, so any id resolves to the same store entry.
-        guard let firstId = workspaceIds.first else { return }
-        WorkspaceMetadataStore.shared.setReportedBinding(
-            nil,
-            abilityId: binding.abilityId,
-            bindingId: binding.bindingId,
-            forWorkspaceId: firstId,
-            fallbackPath: reportedStatePath
-        )
+        guard let worktreePath else { return }
+        RunTargetStore.shared.removeTarget(id: target.id, forPath: worktreePath)
     }
 
     // MARK: Status visuals
@@ -196,7 +187,7 @@ struct WorktreeGroupRunTargetsBadge: View {
     }
 
     private var aggregateStatusColor: Color {
-        let statuses = bindings.map { normalizedStatus($0.status) }
+        let statuses = targets.map { normalizedStatus($0.status) }
         if statuses.contains(.error) { return color(for: .error) }
         if statuses.contains(.running) { return color(for: .running) }
         if statuses.allSatisfy({ $0 == .stopped }) { return color(for: .stopped) }

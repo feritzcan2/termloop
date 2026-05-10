@@ -201,10 +201,10 @@ enum AgentInputQueries {
         appendPart(
             to: &parts,
             kind: .reportedContext,
-            title: "Reported runtime context",
+            title: "Run target context",
             body: plan.reportedContextBlock,
-            source: .runtime("AgentReportedStateStore"),
-            editability: .sourceToggle("Reported by agents through TermLoop MCP tools."),
+            source: .runtime("RunTargetStore"),
+            editability: .sourceToggle("Reported by the running-your-application MCP tools."),
             scope: .workspace,
             enabled: !reportedContextDisabled,
             disableReason: reportedContextDisabled ? "Disabled for this run." : nil

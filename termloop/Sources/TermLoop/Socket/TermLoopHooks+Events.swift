@@ -612,92 +612,7 @@ extension TermLoopSocketCommands {
         return currentDirectory.isEmpty ? nil : currentDirectory
     }
 
-    /// Generic ability binding telemetry. Stores the opaque payload
-    /// keyed by `<abilityId>.<bindingId>` in the worktree-scoped reported
-    /// state store. Dedupes idempotent reports so observers don't churn.
-    static func workspaceReportAgentBinding(
-        _ params: [String: Any]
-    ) -> TerminalController.V2CallResult {
-        let wsId: UUID
-        let wsIdStr: String
-        switch resolveWorkspaceId(from: params) {
-        case .found(let id, let idString):
-            wsId = id
-            wsIdStr = idString
-        case .missing(let err):
-            return err
-        }
-        guard let abilityId = rawString(params, "ability_id")?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-              !abilityId.isEmpty else {
-            return .err(code: "invalid_params", message: "Missing or invalid ability_id", data: nil)
-        }
-        guard let bindingId = rawString(params, "binding_id")?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-              !bindingId.isEmpty else {
-            return .err(code: "invalid_params", message: "Missing or invalid binding_id", data: nil)
-        }
-        guard let label = rawString(params, "label")?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-              !label.isEmpty else {
-            return .err(code: "invalid_params", message: "Missing or invalid label", data: nil)
-        }
-        let normalizedStatus: String? = {
-            let trimmed = rawString(params, "status")?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return trimmed.isEmpty ? nil : trimmed
-        }()
-        let normalizedURL: String? = {
-            guard let urlRaw = rawString(params, "url")?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-                  !urlRaw.isEmpty,
-                  let parsed = URL(string: urlRaw),
-                  let scheme = parsed.scheme?.lowercased(),
-                  scheme == "http" || scheme == "https" else { return nil }
-            return parsed.absoluteString
-        }()
-
-        let value = AgentReportedStateStore.AgentReportedBinding(
-            abilityId: abilityId,
-            bindingId: bindingId,
-            label: label,
-            status: normalizedStatus,
-            url: normalizedURL,
-            reportedAt: Date()
-        )
-        switch WorkspaceMetadataStore.shared.setReportedBinding(
-            value,
-            abilityId: abilityId,
-            bindingId: bindingId,
-            forWorkspaceId: wsId,
-            fallbackPath: reportedStateFallbackPath(workspaceId: wsId, params: params)
-        ) {
-        case .noWorktree:
-            return .err(code: "no_worktree",
-                        message: "Workspace has no canonical worktree root",
-                        data: nil)
-        case .noChange:
-            return .ok([
-                "workspace_id": wsIdStr,
-                "ability_id": abilityId,
-                "binding_id": bindingId,
-                "deduped": true
-            ])
-        case .wrote:
-            return .ok([
-                "workspace_id": wsIdStr,
-                "ability_id": abilityId,
-                "binding_id": bindingId,
-                "label": label,
-                "status": normalizedStatus as Any? ?? NSNull(),
-                "url": normalizedURL as Any? ?? NSNull()
-            ])
-        }
-    }
-
-    /// Read the Jira ticket binding for a workspace. Counterpart to the
-    /// `set_jira_ticket` MCP tool — agent calls this to ask "what ticket am I
-    /// working on?" instead of re-deriving from the branch name.
+    /// Read the user/app-owned Jira ticket binding for a workspace.
     static func workspaceGetJiraTicket(
         _ params: [String: Any]
     ) -> TerminalController.V2CallResult {
@@ -719,19 +634,19 @@ extension TermLoopSocketCommands {
                         message: "Workspace has no canonical worktree root",
                         data: nil)
         }
-        guard let binding = AgentReportedStateStore.shared
-            .binding(abilityId: "working-with-jira",
-                     bindingId: "ticket",
-                     forPath: path) else {
+        guard let binding = WorktreeRemoteItemBindingStore.shared.binding(forPath: path),
+              binding.reference.provider == .jira else {
             return .ok(["workspace_id": wsIdStr, "set": false])
         }
+        let snapshot = RemoteWorkItemSnapshotStore.shared.snapshot(for: binding.reference)
+        let url = snapshot?.reference.url ?? binding.reference.url
         return .ok([
             "workspace_id": wsIdStr,
             "set": true,
-            "key": binding.label,
-            "status": binding.status as Any? ?? NSNull(),
-            "url": binding.url as Any? ?? NSNull(),
-            "reported_at": ISO8601DateFormatter().string(from: binding.reportedAt)
+            "key": binding.reference.key,
+            "status": snapshot?.statusLabel as Any? ?? NSNull(),
+            "url": url as Any? ?? NSNull(),
+            "reported_at": ISO8601DateFormatter().string(from: snapshot?.fetchedAt ?? binding.updatedAt)
         ])
     }
 
@@ -742,7 +657,6 @@ extension TermLoopSocketCommands {
     static func workspaceSetRunTargets(
         _ params: [String: Any]
     ) -> TerminalController.V2CallResult {
-        let abilityId = TermLoopBuiltInMCP.runningYourApplicationAbilityId
         let wsId: UUID
         let wsIdStr: String
         switch resolveWorkspaceId(from: params) {
@@ -764,7 +678,7 @@ extension TermLoopSocketCommands {
                         message: "Missing or invalid `targets` array",
                         data: nil)
         }
-        var bindings: [AgentReportedStateStore.AgentReportedBinding] = []
+        var targets: [RunTargetStore.RunTarget] = []
         var seenIds = Set<String>()
         let now = Date()
         for (index, raw) in rawTargets.enumerated() {
@@ -785,18 +699,17 @@ extension TermLoopSocketCommands {
                 path: raw["path"] as? String,
                 relativeTo: workspaceRootPath
             )
-            var bindingId = slugifyRunTargetLabel(label)
+            var targetId = slugifyRunTargetLabel(label)
             // De-collide labels that slug to the same string within one call.
-            if seenIds.contains(bindingId) {
+            if seenIds.contains(targetId) {
                 var suffix = 2
-                while seenIds.contains("\(bindingId)-\(suffix)") { suffix += 1 }
-                bindingId = "\(bindingId)-\(suffix)"
+                while seenIds.contains("\(targetId)-\(suffix)") { suffix += 1 }
+                targetId = "\(targetId)-\(suffix)"
             }
-            seenIds.insert(bindingId)
-            bindings.append(
-                AgentReportedStateStore.AgentReportedBinding(
-                    abilityId: abilityId,
-                    bindingId: bindingId,
+            seenIds.insert(targetId)
+            targets.append(
+                RunTargetStore.RunTarget(
+                    id: targetId,
                     label: label,
                     status: normalizedStatus,
                     url: normalizedURL,
@@ -804,33 +717,21 @@ extension TermLoopSocketCommands {
                 )
             )
         }
-        let outcome = WorkspaceMetadataStore.shared.replaceReportedBindings(
-            underAbilityId: abilityId,
-            with: bindings,
-            forWorkspaceId: wsId,
-            fallbackPath: fallbackPath
-        )
-        let labels = bindings.map { $0.bindingId }.joined(separator: ",")
+        let didChange = RunTargetStore.shared.setTargets(targets, forPath: workspaceRootPath)
+        let labels = targets.map(\.id).joined(separator: ",")
         lifecycleLog(
-            "rpc.set_run_targets workspace=\(wsIdStr) outcome=\(outcome) count=\(bindings.count) bindings=[\(labels)]"
+            "rpc.set_run_targets workspace=\(wsIdStr) changed=\(didChange) count=\(targets.count) targets=[\(labels)]"
         )
-        switch outcome {
-        case .noWorktree:
-            return .err(code: "no_worktree",
-                        message: "Workspace has no canonical worktree root",
-                        data: nil)
-        case .noChange:
+        if didChange {
             return .ok([
                 "workspace_id": wsIdStr,
-                "ability_id": abilityId,
-                "deduped": true,
-                "count": bindings.count
+                "count": targets.count
             ])
-        case .wrote:
+        } else {
             return .ok([
                 "workspace_id": wsIdStr,
-                "ability_id": abilityId,
-                "count": bindings.count
+                "deduped": true,
+                "count": targets.count
             ])
         }
     }
@@ -838,7 +739,6 @@ extension TermLoopSocketCommands {
     static func workspaceGetRunTargets(
         _ params: [String: Any]
     ) -> TerminalController.V2CallResult {
-        let abilityId = TermLoopBuiltInMCP.runningYourApplicationAbilityId
         let wsId: UUID
         let wsIdStr: String
         switch resolveWorkspaceId(from: params) {
@@ -857,21 +757,18 @@ extension TermLoopSocketCommands {
                         message: "Workspace has no canonical worktree root",
                         data: nil)
         }
-        let bindings = AgentReportedStateStore.shared
-            .bindings(forPath: path)
-            .filter { $0.abilityId == abilityId }
+        let targets = RunTargetStore.shared.targets(forPath: path)
         let formatter = ISO8601DateFormatter()
-        let payload: [[String: Any]] = bindings.map { binding in
+        let payload: [[String: Any]] = targets.map { target in
             [
-                "label": binding.label,
-                "status": binding.status as Any? ?? NSNull(),
-                "url": binding.url as Any? ?? NSNull(),
-                "reported_at": formatter.string(from: binding.reportedAt)
+                "label": target.label,
+                "status": target.status as Any? ?? NSNull(),
+                "url": target.url as Any? ?? NSNull(),
+                "reported_at": formatter.string(from: target.reportedAt)
             ]
         }
         return .ok([
             "workspace_id": wsIdStr,
-            "ability_id": abilityId,
             "targets": payload
         ])
     }

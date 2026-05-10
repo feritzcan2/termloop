@@ -8,13 +8,12 @@ struct AbilityBundleManifest: Codable {
     var tags: [String]
     var items: [AbilityItem]
     var termLoopMCPTools: [AbilityMCPToolBinding]
-    var bindings: [AbilityBinding]
 
     static let customizerPromptFile = "prompt-customizer.md"
     static let payloadDirectoryName = "payload"
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, description, activation, tags, items, termLoopMCPTools, bindings
+        case id, name, description, activation, tags, items, termLoopMCPTools
     }
 
     init(
@@ -24,8 +23,7 @@ struct AbilityBundleManifest: Codable {
         activation: AbilityActivation,
         tags: [String],
         items: [AbilityItem],
-        termLoopMCPTools: [AbilityMCPToolBinding] = [],
-        bindings: [AbilityBinding] = []
+        termLoopMCPTools: [AbilityMCPToolBinding] = []
     ) {
         self.id = id
         self.name = name
@@ -34,7 +32,6 @@ struct AbilityBundleManifest: Codable {
         self.tags = tags
         self.items = items
         self.termLoopMCPTools = termLoopMCPTools
-        self.bindings = bindings
     }
 
     init(from decoder: Decoder) throws {
@@ -48,7 +45,6 @@ struct AbilityBundleManifest: Codable {
             [AbilityMCPToolBinding].self,
             forKey: .termLoopMCPTools
         ) ?? []
-        self.bindings = try c.decodeIfPresent([AbilityBinding].self, forKey: .bindings) ?? []
 
         if c.contains(.items) {
             var items: [AbilityItem] = []
@@ -120,7 +116,6 @@ enum AbilityBundleStore {
             tags: manifest.tags,
             items: manifest.items,
             mcpTools: manifest.termLoopMCPTools,
-            bindings: manifest.bindings,
             metadataFilePath: manifestURL
         )
     }
@@ -175,8 +170,7 @@ enum AbilityBundleStore {
             activation: ability.activation,
             tags: ability.tags,
             items: ability.items,
-            termLoopMCPTools: ability.mcpTools,
-            bindings: ability.bindings
+            termLoopMCPTools: ability.mcpTools
         )
 
         let encoder = JSONEncoder()

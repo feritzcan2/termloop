@@ -781,7 +781,7 @@ final class WorktreeRepairCoordinator {
         )
         alert.informativeText = String(
             localized: "worktreeRepair.acceptObserved.confirmBody",
-            defaultValue: "TermLoop will update this workspace's expected branch to \(observedBranch) for:\n\(path)\n\nJira bindings, agent session state, and worktree path metadata are preserved.",
+            defaultValue: "TermLoop will update this workspace's expected branch to \(observedBranch) for:\n\(path)\n\nRemote item bindings, agent session state, and worktree path metadata are preserved.",
             table: "TermLoop"
         )
         alert.addButton(withTitle: String(

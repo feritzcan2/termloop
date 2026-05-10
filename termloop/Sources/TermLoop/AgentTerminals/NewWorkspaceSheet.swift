@@ -860,20 +860,27 @@ struct NewWorkspaceWithWorktreeForm: View {
               ticket.providerName.caseInsensitiveCompare("Jira") == .orderedSame else {
             return
         }
-        let binding = AgentReportedStateStore.AgentReportedBinding(
-            abilityId: TermLoopBuiltInMCP.jiraAbilityId,
-            bindingId: JiraTicketBindingPrompt.bindingId,
-            label: ticket.key,
-            status: nonEmpty(ticket.status),
+        let reference = RemoteWorkItemReference(
+            provider: .jira,
+            key: ticket.key,
             url: nonEmpty(ticket.url),
-            reportedAt: Date()
+            host: nil,
+            namespace: nil,
+            repository: nil,
+            number: nil
         )
-        _ = metadata.setReportedBinding(
-            binding,
-            abilityId: TermLoopBuiltInMCP.jiraAbilityId,
-            bindingId: JiraTicketBindingPrompt.bindingId,
-            forWorkspaceId: workspace.id,
-            fallbackPath: worktreePath
+        WorktreeRemoteItemBindingStore.shared.bind(reference, forPath: worktreePath)
+        RemoteWorkItemSnapshotStore.shared.upsert(
+            RemoteWorkItemSnapshot(
+                reference: reference,
+                title: ticket.title ?? ticket.key,
+                bodyMarkdown: nil,
+                statusLabel: nonEmpty(ticket.status),
+                assignees: [],
+                labels: [],
+                providerUpdatedAt: nil,
+                fetchedAt: Date()
+            )
         )
     }
 

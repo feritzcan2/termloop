@@ -28,12 +28,6 @@ struct Ability: Identifiable, Hashable {
     /// `enabled` flag the user can flip in the detail page. Implementations +
     /// schemas live centrally; the bundle only decides which to surface.
     var mcpTools: [AbilityMCPToolBinding] = []
-    /// Ability-driven binding declarations. Each entry tells the UI how to
-    /// render a payload posted via the matching ability/binding-specific
-    /// MCP tool (currently only `set_jira_ticket` for the Jira ability).
-    /// Schema-driven so future surfaces don't need new Swift types.
-    var bindings: [AbilityBinding] = []
-
     var enabledMCPToolNames: [String] {
         mcpTools.filter { $0.enabled }.map { $0.name }
     }
@@ -153,52 +147,6 @@ enum AbilityAgentFamily: String, Codable, CaseIterable, Hashable {
     }
 }
 
-struct AbilityBinding: Hashable, Codable {
-    /// Stable id within the ability (e.g. "ticket", "deploy", "incident").
-    /// Combined with the ability id to form the storage key:
-    /// `<abilityId>.<bindingId>`.
-    var id: String
-    var title: String
-    /// Optional fallback chip label when an agent reports a payload
-    /// without one (rare; well-behaved agents always send `label`).
-    var defaultLabel: String? = nil
-    /// How to render. The first renderer ships `.chip`; future kinds (.badge,
-    /// .link, .kvtable) layer on without breaking stored bindings.
-    var displayAs: DisplayKind = .chip
-
-    enum DisplayKind: String, Hashable, Codable {
-        case chip
-    }
-
-    init(id: String,
-         title: String,
-         defaultLabel: String? = nil,
-         displayAs: DisplayKind = .chip) {
-        self.id = id
-        self.title = title
-        self.defaultLabel = defaultLabel
-        self.displayAs = displayAs
-    }
-
-    // Custom decoder: Swift's synthesized `init(from:)` does NOT honor
-    // stored-property defaults for missing keys, so a manifest entry that
-    // omits the optional `displayAs` (every authored entry today does)
-    // would throw `keyNotFound` on `displayAs` — which propagates up
-    // through `AbilityBundleManifest` → `AbilityBundleStore.load` and
-    // makes the whole ability silently disappear from the starter list.
-    // Keep this decoder local so manifests can omit optional fields without
-    // disappearing from the starter list.
-    private enum CodingKeys: String, CodingKey { case id, title, defaultLabel, displayAs }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.id = try c.decode(String.self, forKey: .id)
-        self.title = try c.decode(String.self, forKey: .title)
-        self.defaultLabel = try c.decodeIfPresent(String.self, forKey: .defaultLabel)
-        self.displayAs = try c.decodeIfPresent(DisplayKind.self, forKey: .displayAs) ?? .chip
-    }
-}
-
 struct AbilityMCPRequirement: Hashable, Codable {
     var id: String
     var title: String
@@ -305,7 +253,7 @@ enum AbilityActivation: String, Codable, CaseIterable, Hashable {
 /// Per-ability binding to one of TermLoop's built-in MCP tools. Bundle ships
 /// the recommended set with `enabled: true`; the user can flip individual
 /// entries in the ability detail page. JSON is forgiving — a bare string like
-/// `"set_jira_ticket"` decodes as `{ name: "...", enabled: true }`.
+/// `"get_jira_ticket"` decodes as `{ name: "...", enabled: true }`.
 struct AbilityMCPToolBinding: Hashable, Codable {
     var name: String
     var enabled: Bool

@@ -223,14 +223,13 @@ struct ActiveAgentWorkspaceContextMenu: View {
                 }
             }
 
-            if snapshot.isWorktree,
-               JiraTicketBindingPrompt.isJiraAbilityActive(forWorkspace: workspace) {
+            if snapshot.isWorktree {
                 Button(String(
-                    localized: "contextMenu.setJiraTicket",
-                    defaultValue: "Set Jira Ticket URL…",
+                    localized: "contextMenu.setRemoteItem",
+                    defaultValue: "Set Remote Item…",
                     table: "TermLoop"
                 )) {
-                    JiraTicketBindingPrompt.present(forWorkspaceId: workspace.id)
+                    RemoteItemBindingPrompt.present(forWorkspaceId: workspace.id)
                 }
             }
 

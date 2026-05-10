@@ -71,11 +71,10 @@ enum AgentInvocationComposer {
         )
         let reportedContextBlock = overrides.disabledGenerated.contains(.reportedContext)
             ? nil
-            : AgentReportedContextSnapshotBuilder.composeBlock(
-                AgentReportedContextSnapshotBuilder.build(
+            : RunTargetContextSnapshotBuilder.composeBlock(
+                RunTargetContextSnapshotBuilder.build(
                     workspaceId: request.workspaceId,
                     projectId: request.projectId,
-                    branchName: request.branchName,
                     runCwd: request.runCwd
                 )
             )

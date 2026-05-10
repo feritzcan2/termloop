@@ -145,20 +145,17 @@ final class SidebarProjectRefreshCoordinator: ObservableObject {
                 fallbackPath: workspace.termLoopPresentationCwd()
             ) else { continue }
             guard byPath[path] == nil else { continue }
-            guard let binding = AgentReportedStateStore.shared.binding(
-                abilityId: TermLoopBuiltInMCP.jiraAbilityId,
-                bindingId: JiraTicketBindingPrompt.bindingId,
-                forPath: path
-            ) else { continue }
-            guard let input = RemoteWorkItemBindingRefreshCoordinator.input(
+            guard let binding = WorktreeRemoteItemBindingStore.shared.binding(forPath: path) else {
+                continue
+            }
+            byPath[path] = RemoteWorkItemBindingRefreshCoordinator.Input(
                 workspaceId: workspace.id,
-                reportedStatePath: path,
-                binding: binding
-            ) else { continue }
-            byPath[path] = input
+                worktreePath: path,
+                reference: binding.reference
+            )
         }
         return byPath.values.sorted { lhs, rhs in
-            lhs.reportedStatePath.localizedStandardCompare(rhs.reportedStatePath) == .orderedAscending
+            lhs.worktreePath.localizedStandardCompare(rhs.worktreePath) == .orderedAscending
         }
     }
 
@@ -186,44 +183,23 @@ final class RemoteWorkItemBindingRefreshCoordinator {
 
     struct Input: Hashable, Sendable {
         let workspaceId: UUID
-        let reportedStatePath: String
+        let worktreePath: String
         let reference: RemoteWorkItemReference
-        let priorURL: String?
     }
 
     private var refreshTask: Task<Void, Never>?
 
     private init() {}
 
-    static func input(
-        workspaceId: UUID,
-        reportedStatePath: String,
-        binding: AgentReportedStateStore.AgentReportedBinding
-    ) -> Input? {
-        let url = nonEmpty(binding.url)
-        let candidates = [url, binding.label].compactMap { $0 }
-        guard var reference = candidates
-            .lazy
-            .compactMap(RemoteWorkItemParser.parse)
-            .first(where: { $0.provider == .jira }) else {
-            return nil
-        }
-        if reference.url == nil {
-            reference.url = url
-        }
-        return Input(
-            workspaceId: workspaceId,
-            reportedStatePath: reportedStatePath,
-            reference: reference,
-            priorURL: url
-        )
-    }
-
     func refresh(inputs: [Input], reason: String) {
         guard !inputs.isEmpty else { return }
         refreshTask?.cancel()
         refreshTask = Task.detached(priority: .utility) { [inputs] in
-            let service = RemoteWorkItemService(providers: [JiraRemoteWorkItemProvider()])
+            let service = RemoteWorkItemService(providers: [
+                JiraRemoteWorkItemProvider(),
+                GitHubRemoteWorkItemProvider(),
+                GitLabRemoteWorkItemProvider()
+            ])
             for input in inputs {
                 guard !Task.isCancelled else { return }
                 do {
@@ -243,26 +219,8 @@ final class RemoteWorkItemBindingRefreshCoordinator {
         input: Input,
         reason: String
     ) {
-        let value = AgentReportedStateStore.AgentReportedBinding(
-            abilityId: TermLoopBuiltInMCP.jiraAbilityId,
-            bindingId: JiraTicketBindingPrompt.bindingId,
-            label: snapshot.reference.key,
-            status: snapshot.statusLabel,
-            url: snapshot.reference.url ?? input.priorURL,
-            reportedAt: Date()
-        )
-        _ = WorkspaceMetadataStore.shared.setReportedBinding(
-            value,
-            abilityId: TermLoopBuiltInMCP.jiraAbilityId,
-            bindingId: JiraTicketBindingPrompt.bindingId,
-            forWorkspaceId: input.workspaceId,
-            fallbackPath: input.reportedStatePath
-        )
+        RemoteWorkItemSnapshotStore.shared.upsert(snapshot)
+        WorktreeRemoteItemBindingStore.shared.bind(snapshot.reference, forPath: input.worktreePath)
         NSLog("[RemoteWorkItem] binding refreshed key=\(snapshot.reference.key) status=\(snapshot.statusLabel ?? "nil") reason=\(reason)")
-    }
-
-    private static func nonEmpty(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
     }
 }

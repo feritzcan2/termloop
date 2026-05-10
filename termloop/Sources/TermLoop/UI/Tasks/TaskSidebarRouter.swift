@@ -12,6 +12,7 @@ struct TaskSidebarRouter: View {
     var coordinator: TaskLifecycleCoordinator?
     @ObservedObject private var remoteSync: TaskRemoteSyncCoordinator
     @State private var isShowingSettings = false
+    @State private var isShowingCreateRemoteItem = false
     @State private var createWorktreeTaskId: UUID?
 
     init(
@@ -31,6 +32,9 @@ struct TaskSidebarRouter: View {
             .onChange(of: selection.selectedTaskId) { _, _ in syncSelectionValidity() }
             .sheet(isPresented: createWorktreeSheetBinding) {
                 createWorktreeSheet
+            }
+            .sheet(isPresented: $isShowingCreateRemoteItem) {
+                createRemoteItemSheet
             }
     }
 
@@ -88,6 +92,8 @@ struct TaskSidebarRouter: View {
                         return try? c.createTask(title: title, columnId: columnId)
                     }
                 },
+                onCreateRemoteItem: { beginCreateRemoteItem() },
+                isCreateRemoteItemDisabled: remoteSync.isSyncing,
                 onOpenSettings: { isShowingSettings = true }
             )
         }
@@ -109,6 +115,38 @@ struct TaskSidebarRouter: View {
             print("TaskSidebarRouter.openTaskSpec failed: \(error)")
             #endif
         }
+    }
+
+    private func beginCreateRemoteItem() {
+        guard remoteSync.settings.isEnabled else {
+            isShowingSettings = true
+            return
+        }
+        guard remoteSync.settings.container?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty == false else {
+            isShowingSettings = true
+            return
+        }
+        isShowingCreateRemoteItem = true
+    }
+
+    @ViewBuilder
+    private var createRemoteItemSheet: some View {
+        TaskCreateRemoteItemSheet(
+            provider: remoteSync.settings.provider,
+            container: remoteSync.settings.container ?? "",
+            onCancel: { isShowingCreateRemoteItem = false },
+            onCreate: { title, bodyMarkdown in
+                isShowingCreateRemoteItem = false
+                remoteSync.createRemoteWorkItem(
+                    title: title,
+                    bodyMarkdown: bodyMarkdown,
+                    onCreated: { taskId in selection.select(taskId) }
+                )
+            }
+        )
+        .frame(width: 520)
     }
 
     private var createWorktreeSheetBinding: Binding<Bool> {
@@ -148,6 +186,85 @@ struct TaskSidebarRouter: View {
         } else {
             EmptyView()
         }
+    }
+}
+
+private struct TaskCreateRemoteItemSheet: View {
+    let provider: RemoteWorkItemProviderId
+    let container: String
+    let onCancel: () -> Void
+    let onCreate: (String, String?) -> Void
+
+    @State private var title = ""
+    @State private var bodyMarkdown = ""
+
+    private var trimmedTitle: String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trimmedBody: String? {
+        let value = bodyMarkdown.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(String(localized: "tasks.remoteCreate.title",
+                            defaultValue: "Create \(provider.displayLabel) Item",
+                            table: "TermLoop"))
+                    .font(.system(size: 18, weight: .semibold))
+                Text(container)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(String(localized: "tasks.remoteCreate.field.title",
+                            defaultValue: "Title",
+                            table: "TermLoop"))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                TextField(String(localized: "tasks.remoteCreate.field.title.placeholder",
+                                 defaultValue: "What needs to be done?",
+                                 table: "TermLoop"),
+                          text: $title)
+                    .textFieldStyle(.roundedBorder)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(String(localized: "tasks.remoteCreate.field.description",
+                            defaultValue: "Description",
+                            table: "TermLoop"))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                TextEditor(text: $bodyMarkdown)
+                    .font(.system(size: 13))
+                    .frame(minHeight: 150)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+                    )
+            }
+
+            HStack {
+                Spacer()
+                Button(String(localized: "common.cancel",
+                              defaultValue: "Cancel",
+                              table: "TermLoop"),
+                       action: onCancel)
+                Button(String(localized: "tasks.remoteCreate.create",
+                              defaultValue: "Create",
+                              table: "TermLoop")) {
+                    onCreate(trimmedTitle, trimmedBody)
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(trimmedTitle.isEmpty)
+            }
+        }
+        .padding(18)
     }
 }
 

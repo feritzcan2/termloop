@@ -3,16 +3,14 @@
 
 import Foundation
 
-/// Read-only Tasks projection over the existing worktree-scoped work item
-/// binding. Tasks do not own remote issue state; they render whatever is
-/// attached to the task's worktree through `AgentReportedStateStore`.
+/// Read-only Tasks projection over user/app-owned remote item bindings.
 struct TaskWorkItemSnapshot: Equatable, Identifiable {
     let reference: RemoteWorkItemReference
     let title: String?
     let statusLabel: String?
+    let urlString: String?
     let taskFilePath: String?
-    let binding: AgentReportedStateStore.AgentReportedBinding?
-    let reportedStatePath: String?
+    let worktreePath: String?
     let workspaceId: UUID?
 
     var id: String { reference.storageKey }
@@ -20,7 +18,7 @@ struct TaskWorkItemSnapshot: Equatable, Identifiable {
     var key: String { reference.key }
 
     var url: URL? {
-        reference.url.flatMap(URL.init(string:)) ?? binding?.destinationURL
+        urlString.flatMap(URL.init(string:))
     }
 
     var compactLabel: String {
@@ -43,10 +41,12 @@ enum TaskWorkItemProjectionBuilder {
 
     static func snapshot(for task: TaskRecord) -> TaskWorkItemSnapshot? {
         if let reference = task.remoteWorkItem {
+            let cached = RemoteWorkItemSnapshotStore.shared.snapshot(for: reference)
             return remoteSnapshot(
                 reference: reference,
-                title: task.title,
-                statusLabel: task.remoteStatusLabel,
+                title: cached?.title ?? task.title,
+                statusLabel: cached?.statusLabel ?? task.remoteStatusLabel,
+                urlString: cached?.reference.url ?? reference.url,
                 taskFilePath: task.taskFilePath,
                 workspaceId: task.workspaceId,
                 worktreePath: task.worktreePath
@@ -59,6 +59,7 @@ enum TaskWorkItemProjectionBuilder {
         reference: RemoteWorkItemReference,
         title: String?,
         statusLabel: String?,
+        urlString: String?,
         taskFilePath: String?,
         workspaceId: UUID?,
         worktreePath: String?
@@ -67,9 +68,9 @@ enum TaskWorkItemProjectionBuilder {
             reference: reference,
             title: title?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
             statusLabel: statusLabel?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+            urlString: urlString?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
             taskFilePath: taskFilePath?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
-            binding: nil,
-            reportedStatePath: nil,
+            worktreePath: worktreePath,
             workspaceId: workspaceId ?? preferredWorkspaceId(
                 workspaceId: workspaceId,
                 worktreePath: worktreePath
@@ -81,26 +82,21 @@ enum TaskWorkItemProjectionBuilder {
         workspaceId: UUID?,
         worktreePath: String?
     ) -> TaskWorkItemSnapshot? {
-        let paths = reportedStatePaths(workspaceId: workspaceId, worktreePath: worktreePath)
+        let paths = worktreePaths(workspaceId: workspaceId, worktreePath: worktreePath)
         for candidate in paths {
-            guard let binding = AgentReportedStateStore.shared.binding(
-                abilityId: TermLoopBuiltInMCP.jiraAbilityId,
-                bindingId: JiraTicketBindingPrompt.bindingId,
-                forPath: candidate.path
-            ),
-                  var reference = reference(from: binding) else {
+            guard let binding = WorktreeRemoteItemBindingStore.shared.binding(forPath: candidate.path) else {
                 continue
             }
-            if reference.url == nil {
-                reference.url = binding.url?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-            }
+            let cached = RemoteWorkItemSnapshotStore.shared.snapshot(for: binding.reference)
             return TaskWorkItemSnapshot(
-                reference: reference,
-                title: nil,
-                statusLabel: binding.status?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+                reference: cached?.reference ?? binding.reference,
+                title: cached?.title.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+                statusLabel: cached?.statusLabel?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+                urlString: (cached?.reference.url ?? binding.reference.url)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .nilIfEmpty,
                 taskFilePath: nil,
-                binding: binding,
-                reportedStatePath: candidate.path,
+                worktreePath: candidate.path,
                 workspaceId: candidate.workspaceId ?? preferredWorkspaceId(
                     workspaceId: workspaceId,
                     worktreePath: worktreePath
@@ -118,7 +114,7 @@ enum TaskWorkItemProjectionBuilder {
         return WorkspaceMetadataStore.shared.workspaceIds(withWorktreePath: path).first
     }
 
-    private static func reportedStatePaths(
+    private static func worktreePaths(
         workspaceId: UUID?,
         worktreePath: String?
     ) -> [(path: String, workspaceId: UUID?)] {
@@ -158,18 +154,6 @@ enum TaskWorkItemProjectionBuilder {
         return result
     }
 
-    private static func reference(
-        from binding: AgentReportedStateStore.AgentReportedBinding
-    ) -> RemoteWorkItemReference? {
-        [
-            binding.url?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
-            binding.label.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-        ]
-        .compactMap { $0 }
-        .lazy
-        .compactMap(RemoteWorkItemParser.parse)
-        .first
-    }
 }
 
 private extension String {
