@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -23,6 +23,7 @@ import {
   type TaskColumnSummary,
   type TaskRecord,
   type TerminalAgentSummary,
+  type TermLoopClient,
   waitForTerminalSurface,
 } from "../../../lib/termloop-client";
 import { relativeTime } from "../../../lib/format";
@@ -214,31 +215,41 @@ export default function TaskDetailScreen() {
     }
   };
 
+  const lastFailureWasDirty =
+    task.provision_state === "failed" &&
+    /dirty|uncommit/i.test(task.provision_failure_reason ?? "");
+
   const onTapStartAgent = async () => {
     setAgentPickerOpen(true);
     await ensureAgentsLoaded();
   };
 
-  const startAgentWith = async (agentId: string | null) => {
-    setAgentPickerOpen(false);
+  const startAgentWith = async (agentId: string | null, allowDirty: boolean) => {
     setStarting(true);
     try {
       const result = await client.startTaskAgent({
         taskId: task.id,
         terminalAgentId: agentId ?? undefined,
         projectId: taskProjectId,
+        allowDirty: allowDirty || undefined,
       });
       if (result.workspace_id && result.status === "ready") {
-        // Already bound — open immediately.
+        setAgentPickerOpen(false);
         await openWorkspace(result.workspace_id);
         await refresh();
-      } else {
-        Alert.alert(
-          "Provisioning",
-          "Worktree is being prepared. The task card will update when ready — pull to refresh."
-        );
-        await refresh();
+        return;
       }
+      const settled = await pollUntilSettled(client, task.id, taskProjectId);
+      setTask(settled);
+      if (settled.provision_state === "ready" && settled.workspace_id) {
+        setAgentPickerOpen(false);
+        await openWorkspace(settled.workspace_id);
+        return;
+      }
+      Alert.alert(
+        "Worktree creation failed",
+        settled.provision_failure_reason ?? "Unknown error"
+      );
     } catch (err) {
       Alert.alert("Start failed", String((err as Error).message ?? err));
     } finally {
@@ -329,7 +340,12 @@ export default function TaskDetailScreen() {
           {ago ? <Text style={styles.chipAgo}>{ago}</Text> : null}
         </ScrollView>
 
-        <View style={styles.statusBar}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.statusBar}
+          contentContainerStyle={styles.statusBarContent}
+        >
           {columns.map((column) => {
             const active = task.column_id === column.id;
             return (
@@ -355,7 +371,7 @@ export default function TaskDetailScreen() {
               </Pressable>
             );
           })}
-        </View>
+        </ScrollView>
 
         <Text style={styles.sectionLabel}>Brief</Text>
         {task.brief ? (
@@ -438,8 +454,13 @@ export default function TaskDetailScreen() {
         agents={agents}
         selectedId={selectedAgentId}
         onSelect={setSelectedAgentId}
-        onClose={() => setAgentPickerOpen(false)}
+        onClose={() => {
+          if (starting) return;
+          setAgentPickerOpen(false);
+        }}
         onConfirm={startAgentWith}
+        defaultAllowDirty={lastFailureWasDirty}
+        starting={starting}
       />
     </SafeAreaView>
   );
@@ -536,7 +557,9 @@ interface AgentPickerSheetProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onClose: () => void;
-  onConfirm: (agentId: string | null) => void;
+  onConfirm: (agentId: string | null, allowDirty: boolean) => void;
+  defaultAllowDirty: boolean;
+  starting: boolean;
 }
 function AgentPickerSheet({
   visible,
@@ -545,7 +568,13 @@ function AgentPickerSheet({
   onSelect,
   onClose,
   onConfirm,
+  defaultAllowDirty,
+  starting,
 }: AgentPickerSheetProps) {
+  const [allowDirty, setAllowDirty] = useState(defaultAllowDirty);
+  useEffect(() => {
+    if (visible) setAllowDirty(defaultAllowDirty);
+  }, [visible, defaultAllowDirty]);
   return (
     <Modal
       visible={visible}
@@ -572,7 +601,7 @@ function AgentPickerSheet({
                   <Pressable
                     key={agent.id}
                     style={[styles.agentRow, active && styles.agentRowActive]}
-                    onPress={() => onSelect(agent.id)}
+                    onPress={() => !starting && onSelect(agent.id)}
                   >
                     <View style={{ flex: 1 }}>
                       <Text style={styles.agentTitle}>{agent.display_name}</Text>
@@ -589,15 +618,50 @@ function AgentPickerSheet({
             </ScrollView>
           )}
           <Pressable
-            style={[styles.btn, styles.btnPrimary, { marginTop: 14 }]}
-            onPress={() => onConfirm(selectedId)}
-            disabled={!selectedId && (agents?.length ?? 0) > 0}
+            style={[styles.toggleRow, allowDirty && styles.toggleRowActive]}
+            onPress={() => !starting && setAllowDirty((value) => !value)}
+            disabled={starting}
           >
+            <View style={[styles.checkbox, allowDirty && styles.checkboxActive]}>
+              {allowDirty ? <Text style={styles.checkboxMark}>✓</Text> : null}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleTitle}>
+                Start without taking uncommitted changes
+              </Text>
+              <Text style={styles.toggleHint}>
+                Worktree branches off HEAD; your edits stay in source.
+              </Text>
+            </View>
+          </Pressable>
+          <Pressable
+            style={[
+              styles.btn,
+              styles.btnPrimary,
+              { marginTop: 14 },
+              starting && styles.btnBusy,
+            ]}
+            onPress={() => onConfirm(selectedId, allowDirty)}
+            disabled={
+              starting || (!selectedId && (agents?.length ?? 0) > 0)
+            }
+          >
+            {starting ? (
+              <ActivityIndicator color={colors.onPrimary} size="small" />
+            ) : null}
             <Text style={styles.btnPrimaryText}>
-              {selectedId ? "Start agent" : "Skip — bind worktree only"}
+              {starting
+                ? "Provisioning…"
+                : selectedId
+                  ? "Start agent"
+                  : "Skip — bind worktree only"}
             </Text>
           </Pressable>
-          <Pressable style={styles.cancel} onPress={onClose}>
+          <Pressable
+            style={[styles.cancel, starting && styles.btnBusy]}
+            onPress={onClose}
+            disabled={starting}
+          >
             <Text style={styles.cancelText}>Cancel</Text>
           </Pressable>
         </Pressable>
@@ -609,6 +673,26 @@ function AgentPickerSheet({
 function shortId(id: string | null | undefined): string {
   if (!id) return "—";
   return `${id.slice(0, 8)}…${id.slice(-4)}`;
+}
+
+async function pollUntilSettled(
+  client: TermLoopClient,
+  taskId: string,
+  projectId: string,
+  timeoutMs = 60_000,
+  intervalMs = 1000
+): Promise<TaskRecord> {
+  const start = Date.now();
+  let last: TaskRecord | null = null;
+  while (Date.now() - start < timeoutMs) {
+    await new Promise((r) => setTimeout(r, intervalMs));
+    const result = await client.getTask({ taskId, projectId });
+    last = result.task;
+    if (last.provision_state === "ready" && last.workspace_id) return last;
+    if (last.provision_state === "failed") return last;
+  }
+  if (last) return last;
+  throw new Error("Timed out waiting for worktree provisioning");
 }
 
 function statusActiveStyleFor(columnId: string) {
@@ -728,20 +812,25 @@ const styles = StyleSheet.create({
   chipAgo: { color: colors.hint, fontSize: 11, fontWeight: "700" },
 
   statusBar: {
+    marginBottom: 16,
+    flexGrow: 0,
+  },
+  statusBarContent: {
     flexDirection: "row",
     gap: 4,
-    marginBottom: 16,
+    paddingRight: 14,
   },
   statusPill: {
-    flex: 1,
     height: 32,
+    minWidth: 64,
     borderRadius: radii.sm,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.bgElevated,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 4,
+    paddingHorizontal: 12,
+    flexShrink: 0,
   },
   statusPillBusy: { opacity: 0.5 },
   statusPillBacklog: {
@@ -912,6 +1001,53 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   cancelText: { color: colors.sub, fontSize: 13, fontWeight: "700" },
+
+  toggleRow: {
+    marginTop: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  toggleRowActive: {
+    borderColor: colors.borderAccent,
+    backgroundColor: colors.primaryDim,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkboxActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  checkboxMark: {
+    color: colors.onPrimary,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 14,
+  },
+  toggleTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  toggleHint: {
+    color: colors.sub,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  btnBusy: { opacity: 0.7 },
 
   agentList: { maxHeight: 320 },
   agentSpinner: { marginVertical: 24 },

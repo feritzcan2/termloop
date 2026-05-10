@@ -29,7 +29,7 @@ public final class TaskBoardWorktreeProvisioner: TaskBoundWorktreeProvisioning {
     public static let shared = TaskBoardWorktreeProvisioner()
     private init() {}
 
-    public func provision(projectRoot: URL, branchHint: String?) async throws
+    public func provision(projectRoot: URL, branchHint: String?, allowDirty: Bool) async throws
         -> TaskWorktreeProvisionResult
     {
         let branch = normalizedBranch(branchHint)
@@ -53,8 +53,10 @@ public final class TaskBoardWorktreeProvisioner: TaskBoundWorktreeProvisioning {
             effectivePath = existing.path
             createdWorktree = false
         } else {
-            guard try service.isClean(worktreePath: projectRoot.path) else {
-                throw TaskLifecycleError.provisionFailed(TaskProvisionFailureReason.dirtySourceCheckout)
+            if !allowDirty {
+                guard try service.isClean(worktreePath: projectRoot.path) else {
+                    throw TaskLifecycleError.provisionFailed(TaskProvisionFailureReason.dirtySourceCheckout)
+                }
             }
             let branchExists = try service.branches(in: projectRoot.path)
                 .contains { $0.name == branch }

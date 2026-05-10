@@ -152,13 +152,13 @@ final class FakeWorktreeCoordinator: TaskBoundWorktreeProvisioning {
     )
     var suspendProvision = false
     var suspendedContinuation: CheckedContinuation<TaskWorktreeProvisionResult, Error>?
-    private(set) var provisionCalls: [(projectRoot: URL, branchHint: String?)] = []
+    private(set) var provisionCalls: [(projectRoot: URL, branchHint: String?, allowDirty: Bool)] = []
     private(set) var teardownCalls: [(workspaceId: UUID?, worktreePath: String, projectRoot: URL)] = []
 
-    func provision(projectRoot: URL, branchHint: String?) async throws
+    func provision(projectRoot: URL, branchHint: String?, allowDirty: Bool) async throws
         -> TaskWorktreeProvisionResult
     {
-        provisionCalls.append((projectRoot: projectRoot, branchHint: branchHint))
+        provisionCalls.append((projectRoot: projectRoot, branchHint: branchHint, allowDirty: allowDirty))
         if suspendProvision {
             return try await withCheckedThrowingContinuation { continuation in
                 suspendedContinuation = continuation

@@ -31,7 +31,7 @@ public protocol TaskBoundWorkspaceMetadataStoring: AnyObject {
 
 @MainActor
 public protocol TaskBoundWorktreeProvisioning: AnyObject {
-    func provision(projectRoot: URL, branchHint: String?) async throws
+    func provision(projectRoot: URL, branchHint: String?, allowDirty: Bool) async throws
         -> TaskWorktreeProvisionResult
     func teardown(workspaceId: UUID?, worktreePath: String, projectRoot: URL) async throws
 }
@@ -120,7 +120,7 @@ public final class TaskLifecycleCoordinator {
 
     // MARK: - Bind (Todo → In Progress)
 
-    public func bindWorktree(taskId: UUID) async throws {
+    public func bindWorktree(taskId: UUID, allowDirty: Bool = false) async throws {
         let task = try requireTask(taskId)
         guard task.provisionState != .pending else {
             throw TaskLifecycleError.provisionInFlight(taskId)
@@ -137,7 +137,8 @@ public final class TaskLifecycleCoordinator {
         do {
             result = try await worktrees.provision(
                 projectRoot: store.projectRoot,
-                branchHint: task.branch ?? slugFrom(title: task.title)
+                branchHint: task.branch ?? slugFrom(title: task.title),
+                allowDirty: allowDirty
             )
         } catch {
             guard try failBindingIfCurrent(

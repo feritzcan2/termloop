@@ -36,7 +36,7 @@ enum RemoteItemBindingPrompt {
         present(forWorktreePath: resolvedPath, workspaceIds: workspaces.map(\.id))
     }
 
-    private static func present(forWorktreePath path: String, workspaceIds: [UUID]) {
+    static func present(forWorktreePath path: String, workspaceIds: [UUID] = []) {
         let store = WorktreeRemoteItemBindingStore.shared
         let prior = store.binding(forPath: path)
 

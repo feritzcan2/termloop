@@ -13,6 +13,8 @@ struct TaskSidebarRouter: View {
     @ObservedObject private var remoteSync: TaskRemoteSyncCoordinator
     @State private var isShowingSettings = false
     @State private var isShowingCreateRemoteItem = false
+    @State private var isCreatingRemoteItem = false
+    @State private var createRemoteItemError: String?
     @State private var createWorktreeTaskId: UUID?
 
     init(
@@ -128,7 +130,10 @@ struct TaskSidebarRouter: View {
             isShowingSettings = true
             return
         }
+        createRemoteItemError = nil
+        isCreatingRemoteItem = false
         isShowingCreateRemoteItem = true
+        remoteSync.loadIssueTypeOptionsIfNeeded()
     }
 
     @ViewBuilder
@@ -136,17 +141,36 @@ struct TaskSidebarRouter: View {
         TaskCreateRemoteItemSheet(
             provider: remoteSync.settings.provider,
             container: remoteSync.settings.container ?? "",
-            onCancel: { isShowingCreateRemoteItem = false },
-            onCreate: { title, bodyMarkdown in
+            issueTypes: remoteSync.issueTypeOptions,
+            isLoadingIssueTypes: remoteSync.isLoadingIssueTypes,
+            issueTypeMessage: remoteSync.issueTypeOptionsMessage,
+            isCreating: isCreatingRemoteItem,
+            errorMessage: createRemoteItemError,
+            onCancel: {
+                guard !isCreatingRemoteItem else { return }
                 isShowingCreateRemoteItem = false
+            },
+            onCreate: { title, bodyMarkdown, issueType in
+                createRemoteItemError = nil
+                isCreatingRemoteItem = true
                 remoteSync.createRemoteWorkItem(
                     title: title,
                     bodyMarkdown: bodyMarkdown,
-                    onCreated: { taskId in selection.select(taskId) }
+                    issueType: issueType,
+                    onCreated: { taskId in
+                        selection.select(taskId)
+                        isCreatingRemoteItem = false
+                        isShowingCreateRemoteItem = false
+                    },
+                    onFailed: { message in
+                        createRemoteItemError = message
+                        isCreatingRemoteItem = false
+                    }
                 )
             }
         )
         .frame(width: 520)
+        .interactiveDismissDisabled(isCreatingRemoteItem)
     }
 
     private var createWorktreeSheetBinding: Binding<Bool> {
@@ -190,13 +214,22 @@ struct TaskSidebarRouter: View {
 }
 
 private struct TaskCreateRemoteItemSheet: View {
+    private static let customIssueTypeTag = "__termloop_custom_issue_type__"
+
     let provider: RemoteWorkItemProviderId
     let container: String
+    let issueTypes: [TaskRemoteIssueTypeOption]
+    let isLoadingIssueTypes: Bool
+    let issueTypeMessage: String?
+    let isCreating: Bool
+    let errorMessage: String?
     let onCancel: () -> Void
-    let onCreate: (String, String?) -> Void
+    let onCreate: (String, String?, String?) -> Void
 
     @State private var title = ""
     @State private var bodyMarkdown = ""
+    @State private var selectedIssueType = ""
+    @State private var customIssueType = ""
 
     private var trimmedTitle: String {
         title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -205,6 +238,35 @@ private struct TaskCreateRemoteItemSheet: View {
     private var trimmedBody: String? {
         let value = bodyMarkdown.trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
+    }
+
+    private var selectableIssueTypes: [TaskRemoteIssueTypeOption] {
+        let nonSubtaskTypes = issueTypes.filter { !$0.isSubtask }
+        return nonSubtaskTypes.isEmpty ? issueTypes : nonSubtaskTypes
+    }
+
+    private var isCustomIssueTypeSelected: Bool {
+        selectedIssueType == Self.customIssueTypeTag || selectableIssueTypes.isEmpty
+    }
+
+    private var trimmedCustomIssueType: String? {
+        let value = customIssueType.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    private var selectedIssueTypeForCreate: String? {
+        guard provider == .jira else { return nil }
+        if isCustomIssueTypeSelected {
+            return trimmedCustomIssueType
+        }
+        let value = selectedIssueType.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    private var canCreate: Bool {
+        guard !trimmedTitle.isEmpty, !isCreating else { return false }
+        guard provider == .jira else { return true }
+        return selectedIssueTypeForCreate != nil
     }
 
     var body: some View {
@@ -232,6 +294,11 @@ private struct TaskCreateRemoteItemSheet: View {
                                  table: "TermLoop"),
                           text: $title)
                     .textFieldStyle(.roundedBorder)
+                    .disabled(isCreating)
+            }
+
+            if provider == .jira {
+                jiraIssueTypeSection
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -243,10 +310,48 @@ private struct TaskCreateRemoteItemSheet: View {
                 TextEditor(text: $bodyMarkdown)
                     .font(.system(size: 13))
                     .frame(minHeight: 150)
+                    .disabled(isCreating)
                     .overlay(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
                     )
+            }
+
+            if isCreating {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(String(localized: "tasks.remoteCreate.creating",
+                                defaultValue: "Creating remote item and linking local task…",
+                                table: "TermLoop"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let errorMessage, !errorMessage.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(String(localized: "tasks.remoteCreate.error",
+                                defaultValue: "Create failed",
+                                table: "TermLoop"))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.red)
+                    ScrollView {
+                        Text(errorMessage)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(.red)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                    }
+                    .frame(maxHeight: 120)
+                    .background(Color.red.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(Color.red.opacity(0.20), lineWidth: 1)
+                    )
+                }
             }
 
             HStack {
@@ -255,16 +360,98 @@ private struct TaskCreateRemoteItemSheet: View {
                               defaultValue: "Cancel",
                               table: "TermLoop"),
                        action: onCancel)
+                    .disabled(isCreating)
                 Button(String(localized: "tasks.remoteCreate.create",
                               defaultValue: "Create",
                               table: "TermLoop")) {
-                    onCreate(trimmedTitle, trimmedBody)
+                    onCreate(trimmedTitle, trimmedBody, selectedIssueTypeForCreate)
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(trimmedTitle.isEmpty)
+                .disabled(!canCreate)
             }
         }
         .padding(18)
+        .onAppear(perform: ensureIssueTypeSelection)
+        .onChange(of: issueTypes) { _, _ in ensureIssueTypeSelection() }
+    }
+
+    @ViewBuilder
+    private var jiraIssueTypeSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(String(localized: "tasks.remoteCreate.field.type",
+                        defaultValue: "Type",
+                        table: "TermLoop"))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            if !selectableIssueTypes.isEmpty {
+                Picker(
+                    String(localized: "tasks.remoteCreate.field.type",
+                           defaultValue: "Type",
+                           table: "TermLoop"),
+                    selection: $selectedIssueType
+                ) {
+                    ForEach(selectableIssueTypes) { issueType in
+                        Text(issueType.name).tag(issueType.name)
+                    }
+                    Text(String(localized: "tasks.remoteCreate.field.type.custom",
+                                defaultValue: "Custom…",
+                                table: "TermLoop"))
+                        .tag(Self.customIssueTypeTag)
+                }
+                .labelsHidden()
+                .disabled(isCreating)
+            } else if isLoadingIssueTypes {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(String(localized: "tasks.remoteCreate.issueType.loading",
+                                defaultValue: "Loading Jira issue types…",
+                                table: "TermLoop"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if isCustomIssueTypeSelected {
+                TextField(String(localized: "tasks.remoteCreate.field.type.placeholder",
+                                 defaultValue: "Task, Story, Bug…",
+                                 table: "TermLoop"),
+                          text: $customIssueType)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(isCreating)
+            }
+
+            if let message = issueTypeMessage?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !message.isEmpty {
+                Text(message)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(selectableIssueTypes.isEmpty ? .red : .secondary)
+                    .textSelection(.enabled)
+                    .lineLimit(4)
+            }
+        }
+    }
+
+    private func ensureIssueTypeSelection() {
+        guard provider == .jira else { return }
+        guard !selectableIssueTypes.isEmpty else {
+            selectedIssueType = Self.customIssueTypeTag
+            return
+        }
+        if selectedIssueType == Self.customIssueTypeTag, trimmedCustomIssueType != nil { return }
+        if selectableIssueTypes.contains(where: { $0.name == selectedIssueType }) { return }
+        selectedIssueType = defaultIssueTypeName(in: selectableIssueTypes)
+    }
+
+    private func defaultIssueTypeName(in issueTypes: [TaskRemoteIssueTypeOption]) -> String {
+        let preferredNames = ["Task", "Story", "Bug", "Feature Request"]
+        for preferredName in preferredNames {
+            if let match = issueTypes.first(where: { $0.name.caseInsensitiveCompare(preferredName) == .orderedSame }) {
+                return match.name
+            }
+        }
+        return issueTypes[0].name
     }
 }
 

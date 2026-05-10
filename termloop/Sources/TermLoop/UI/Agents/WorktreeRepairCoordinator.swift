@@ -35,7 +35,7 @@ final class WorktreeRepairCoordinator {
     ) {
         do {
             let project = try resolveProject(
-                projectId: sourceWorkspace?.projectId,
+                projectId: sourceWorkspace?.projectId ?? group.projectId,
                 fallbackWorkspaceIds: group.workspaces.map(\.id)
             )
             WorktreeRegistry.shared.refresh(
@@ -181,7 +181,7 @@ final class WorktreeRepairCoordinator {
     ) {
         do {
             let project = try resolveProject(
-                projectId: sourceWorkspace?.projectId,
+                projectId: sourceWorkspace?.projectId ?? group.projectId,
                 fallbackWorkspaceIds: group.workspaces.map(\.id)
             )
             let expectedBranch = try singleExpectedBranch(for: group)
@@ -335,7 +335,7 @@ final class WorktreeRepairCoordinator {
         do {
             let path = try requiredWorktreePath(for: group)
             let project = try resolveProject(
-                projectId: sourceWorkspace?.projectId,
+                projectId: sourceWorkspace?.projectId ?? group.projectId,
                 fallbackWorkspaceIds: group.workspaces.map(\.id)
             )
             guard confirmRepair(path: path) else { return }
@@ -388,7 +388,7 @@ final class WorktreeRepairCoordinator {
     ) {
         do {
             let project = try resolveProject(
-                projectId: sourceWorkspace?.projectId,
+                projectId: sourceWorkspace?.projectId ?? group.projectId,
                 fallbackWorkspaceIds: group.workspaces.map(\.id)
             )
             guard confirmPrune(projectName: project.name) else { return }
