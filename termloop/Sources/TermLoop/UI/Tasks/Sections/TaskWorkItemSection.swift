@@ -14,6 +14,9 @@ struct TaskWorkItemSection: View {
     let worktreePath: String?
     let projectId: UUID?
     @ObservedObject var remoteSync: TaskRemoteSyncCoordinator
+    /// When true, render only the inner row content without the section title
+    /// or card chrome. The caller is responsible for wrapping the row.
+    var unwrapped: Bool = false
 
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var worktreeProjectionStore = WorktreeProjectionStore.shared
@@ -32,19 +35,100 @@ struct TaskWorkItemSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            TaskSidebarSectionTitle(
-                String(localized: "tasks.sidebar.section.workItem",
-                       defaultValue: "Work Item",
-                       table: "TermLoop")
-            )
-
-            if let snapshot {
-                workItemRow(snapshot)
-            } else {
-                emptyState
+        if unwrapped {
+            innerContent
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                TaskSidebarSectionTitle(
+                    String(localized: "tasks.sidebar.section.workItem",
+                           defaultValue: "Work Item",
+                           table: "TermLoop")
+                )
+                innerContent
             }
         }
+    }
+
+    @ViewBuilder
+    private var innerContent: some View {
+        if let snapshot {
+            if unwrapped {
+                unwrappedWorkItemRow(snapshot)
+            } else {
+                workItemRow(snapshot)
+            }
+        } else {
+            emptyState
+        }
+    }
+
+    /// Compact row variant for the merged "Task" card. Drops the card
+    /// background (parent provides it) and the redundant title duplication.
+    private func unwrappedWorkItemRow(_ snapshot: TaskWorkItemSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: iconName(for: snapshot.reference.provider))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(tint(for: snapshot.reference.provider))
+                    .frame(width: 16, height: 18)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(snapshot.key)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.primary)
+                            .lineLimit(1)
+                        if let status = snapshot.statusLabel {
+                            statusPill(status)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    if let title = snapshot.title, title != snapshot.key {
+                        Text(title)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.primary.opacity(0.76))
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 0)
+                rowMenu(snapshot)
+            }
+        }
+    }
+
+    private func rowMenu(_ snapshot: TaskWorkItemSnapshot) -> some View {
+        Menu {
+            if snapshot.url != nil {
+                Button(action: { open(snapshot) }) {
+                    Label(String(localized: "tasks.sidebar.section.workItem.open",
+                                 defaultValue: "Open \(snapshot.reference.provider.displayLabel)",
+                                 table: "TermLoop"),
+                          systemImage: "arrow.up.right")
+                }
+            }
+            Button(action: { refresh(snapshot) }) {
+                Label(String(localized: "tasks.sidebar.section.workItem.refresh",
+                             defaultValue: "Refresh",
+                             table: "TermLoop"),
+                      systemImage: "arrow.clockwise")
+            }
+            Button(action: { presentTaskLinkPrompt(prior: snapshot.url?.absoluteString ?? snapshot.key) }) {
+                Label(String(localized: "tasks.sidebar.section.workItem.relink",
+                             defaultValue: "Relink",
+                             table: "TermLoop"),
+                      systemImage: "link")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
     }
 
     private func workItemRow(_ snapshot: TaskWorkItemSnapshot) -> some View {
@@ -240,50 +324,61 @@ struct TaskWorkItemSection: View {
 struct TaskSpecSection: View {
     let snapshot: TaskDetailSnapshot
     let onOpen: () -> Void
+    /// When true, render only the inner row content without the section title
+    /// or card chrome. The caller is responsible for wrapping the row.
+    var unwrapped: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            TaskSidebarSectionTitle(
-                String(localized: "tasks.sidebar.section.taskSpec",
-                       defaultValue: "Task Spec",
-                       table: "TermLoop")
-            )
+        if unwrapped {
+            innerRow
+        } else {
+            VStack(alignment: .leading, spacing: 7) {
+                TaskSidebarSectionTitle(
+                    String(localized: "tasks.sidebar.section.taskSpec",
+                           defaultValue: "Task Spec",
+                           table: "TermLoop")
+                )
 
-            HStack(alignment: .top, spacing: 9) {
-                Image(systemName: "doc.text")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 16, height: 18)
-
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(fileLabel)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.primary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-
-                    Text(summary)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-
-                Spacer(minLength: 0)
-
-                Button {
-                    onOpen()
-                } label: {
-                    Label(buttonTitle, systemImage: "square.and.pencil")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
-                .font(.system(size: 11, weight: .medium))
+                innerRow
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 9)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.56))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
-            .padding(.vertical, 8)
-            .padding(.horizontal, 9)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .controlBackgroundColor).opacity(0.56))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+    }
+
+    private var innerRow: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: "doc.text")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 16, height: 18)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(fileLabel)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Text(summary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 0)
+
+            Button {
+                onOpen()
+            } label: {
+                Label(buttonTitle, systemImage: "square.and.pencil")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.mini)
+            .font(.system(size: 11, weight: .medium))
         }
     }
 

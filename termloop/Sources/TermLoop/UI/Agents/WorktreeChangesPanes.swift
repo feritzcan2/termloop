@@ -13,6 +13,57 @@ extension WorktreeChangesSheet {
     }
 
     @ViewBuilder
+    func sourceChip(source: WorktreeChangesSource, index: Int, isSpecial: Bool) -> some View {
+        let isSelected = selectedSourceID == source.id
+        HStack(spacing: 8) {
+            if let iconName = sourceIconName(source) {
+                Image(systemName: iconName)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(sourceAccentColor(source))
+                    .frame(width: 14, height: 14)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(sourcePrimaryLabel(source, index: index))
+                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if let secondary = sourceSecondaryLabel(source) {
+                    Text(secondary)
+                        .font(TermLoopSidebarTheme.tinyMono)
+                        .foregroundStyle(TermLoopSidebarTheme.dimmer)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            Spacer(minLength: 4)
+            let count = sourceCountLabel(source)
+            if !count.isEmpty {
+                Text(count)
+                    .font(TermLoopSidebarTheme.tinyMono)
+                    .foregroundStyle(TermLoopSidebarTheme.dim)
+                    .monospacedDigit()
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(width: isSpecial ? 230 : 260, alignment: .leading)
+        .frame(minHeight: 44, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(sourceBackgroundColor(source: source, isSpecial: isSpecial))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(
+                    isSelected ? sourceAccentColor(source).opacity(0.55) : Color.primary.opacity(0.04),
+                    lineWidth: 1
+                )
+        )
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
     func sourceRow(source: WorktreeChangesSource, index: Int, isSpecial: Bool) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {

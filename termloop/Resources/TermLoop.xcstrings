@@ -3892,6 +3892,23 @@
         }
       }
     },
+    "shortcut.selectProjectByNumber.label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select Project 1…9"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクト1…9を選択"
+          }
+        }
+      }
+    },
     "titlebar.termLoopSettings.accessibilityLabel": {
       "extractionState": "manual",
       "localizations": {
