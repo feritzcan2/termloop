@@ -2149,6 +2149,11 @@ enum TermLoopHooks {
         }
     }
 
+    static func handleProjectNumberShortcut(digit: Int?, tabManager: TabManager?) -> Bool {
+        guard let digit else { return false }
+        return ProjectShortcutRouter.selectProject(forDigit: digit, tabManager: tabManager)
+    }
+
     /// Silently writes the six teleport hooks into `~/.claude/settings.json`
     /// if any are missing. Idempotent — re-adds only the events that aren't
     /// already present. Runs on every launch so a user who clears their

@@ -29,26 +29,11 @@ struct TaskSidebarDrillInView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 14) {
                     breadcrumb
                     header(detailSnapshot)
                     flatSection {
-                        TaskSpecSection(
-                            snapshot: detailSnapshot,
-                            onOpen: { onOpenTaskSpec?(detailSnapshot.id) }
-                        )
-                    }
-                    if shouldShowWorkItemSection(detailSnapshot) {
-                        flatSection {
-                            TaskWorkItemSection(
-                                taskId: detailSnapshot.id,
-                                taskWorkItem: workItemSnapshot(for: detailSnapshot),
-                                workspaceId: detailSnapshot.workspaceId,
-                                worktreePath: detailSnapshot.worktreePath,
-                                projectId: projectId,
-                                remoteSync: remoteSync
-                            )
-                        }
+                        mergedTaskCard(detailSnapshot)
                     }
                     Divider().opacity(0.6)
                     flatSection {
@@ -92,28 +77,69 @@ struct TaskSidebarDrillInView: View {
                         )
                     }
                     if hasWorktreeProjections(detailSnapshot) {
-                        Divider().opacity(0.6)
-                        flatSection {
+                        // Compact footer for git/PR status — both render as
+                        // single-line summaries when empty, full sections when
+                        // there is something to show.
+                        VStack(alignment: .leading, spacing: 8) {
                             TaskGitChangesSection(
                                 workspaceId: detailSnapshot.workspaceId,
                                 worktreePath: detailSnapshot.worktreePath,
                                 branch: detailSnapshot.branch,
                                 projectId: projectId
                             )
-                        }
-                        Divider().opacity(0.6)
-                        flatSection {
+                            Divider().opacity(0.6)
                             TaskOpenPRsSection(
                                 workspaceId: detailSnapshot.workspaceId,
                                 worktreePath: detailSnapshot.worktreePath,
                                 branch: detailSnapshot.branch
                             )
                         }
+                        .padding(.top, 4)
                     }
                 }
                 .padding(10)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// Single merged card containing the work-item link (Jira/GitHub/GitLab)
+    /// and the task.md spec row. Two rows, one card, one shared title — fixes
+    /// the prior "Task Spec / Work Item" duplication where the title and
+    /// `task.md` reference appeared in both sections.
+    @ViewBuilder
+    private func mergedTaskCard(_ snap: TaskDetailSnapshot) -> some View {
+        let showsWorkItem = shouldShowWorkItemSection(snap)
+        VStack(alignment: .leading, spacing: 6) {
+            TaskSidebarSectionTitle(
+                String(localized: "tasks.sidebar.section.task",
+                       defaultValue: "Task",
+                       table: "TermLoop")
+            )
+            VStack(alignment: .leading, spacing: 8) {
+                if showsWorkItem {
+                    TaskWorkItemSection(
+                        taskId: snap.id,
+                        taskWorkItem: workItemSnapshot(for: snap),
+                        workspaceId: snap.workspaceId,
+                        worktreePath: snap.worktreePath,
+                        projectId: projectId,
+                        remoteSync: remoteSync,
+                        unwrapped: true
+                    )
+                    Divider().opacity(0.35)
+                }
+                TaskSpecSection(
+                    snapshot: snap,
+                    onOpen: { onOpenTaskSpec?(snap.id) },
+                    unwrapped: true
+                )
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.56))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
     }
 
@@ -166,13 +192,13 @@ struct TaskSidebarDrillInView: View {
             provisionState: snap.provisionState,
             agentStatus: agentStatus(for: snap)
         )
-        return VStack(alignment: .leading, spacing: 9) {
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 10) {
                 Circle()
                     .fill(statusPresentation.color)
                     .frame(width: 9, height: 9)
-                    .padding(.top, 7)
-                VStack(alignment: .leading, spacing: 6) {
+                    .padding(.top, 8)
+                VStack(alignment: .leading, spacing: 4) {
                     TaskSidebarTitleField(
                         taskId: snap.id,
                         title: snap.title,
@@ -187,49 +213,60 @@ struct TaskSidebarDrillInView: View {
                 Spacer(minLength: 0)
             }
 
-            statusPills(snap, statusPresentation: statusPresentation)
+            // Single condensed meta line. Provision/agent state already lives
+            // in the colored dot above and the Worktree Agents section below —
+            // the header keeps just task identity (board column, remote
+            // status, optional out-of-sync hint).
+            headerMetaLine(snap, statusPresentation: statusPresentation)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func statusPills(
+    @ViewBuilder
+    private func headerMetaLine(
         _ snap: TaskDetailSnapshot,
         statusPresentation: TaskStatusPresentation
     ) -> some View {
+        let remoteStatus = remoteSync.settings.isEnabled
+            ? snap.remoteStatusLabel?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .nonEmptyTaskSidebarString
+            : nil
+        let columnText = columnTitle(snap.columnId)
+        let mismatch = remoteStatus.map { isStatusMismatch(boardStatus: columnText, remoteStatus: $0) } ?? false
+
         FlowPillRow(spacing: 6) {
             TaskSidebarPill(
                 icon: "rectangle.3.group",
-                text: String(localized: "tasks.sidebar.header.boardStatus",
-                             defaultValue: "Board: \(columnTitle(snap.columnId))",
-                             table: "TermLoop"),
+                text: columnText,
                 tint: .secondary
             )
-            if remoteSync.settings.isEnabled,
-               let remoteStatus = snap.remoteStatusLabel?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .nonEmptyTaskSidebarString {
+            if let remoteStatus {
                 TaskSidebarPill(
                     icon: "checklist",
-                    text: String(localized: "tasks.sidebar.header.remoteStatus",
-                                 defaultValue: "\(remoteProviderLabel(for: snap)): \(remoteStatus)",
-                                 table: "TermLoop"),
+                    text: "\(remoteProviderLabel(for: snap)) · \(remoteStatus)",
                     tint: .blue
                 )
-                if isStatusMismatch(boardStatus: columnTitle(snap.columnId), remoteStatus: remoteStatus) {
-                    TaskSidebarPill(
-                        icon: "arrow.triangle.2.circlepath",
-                        text: String(localized: "tasks.sidebar.header.statusMismatch",
-                                     defaultValue: "Out of sync",
-                                     table: "TermLoop"),
-                        tint: .orange
-                    )
-                }
             }
-            TaskSidebarPill(
-                icon: statusPresentation.iconName,
-                text: statusPresentation.text,
-                tint: statusPresentation.color
-            )
+            if mismatch {
+                TaskSidebarPill(
+                    icon: "arrow.triangle.2.circlepath",
+                    text: String(localized: "tasks.sidebar.header.statusMismatch",
+                                 defaultValue: "Out of sync",
+                                 table: "TermLoop"),
+                    tint: .orange
+                )
+            }
+            // Surface provision failures (failed/pending) in the header so the
+            // dot's red/orange is not silent. Agent "running" status is
+            // intentionally NOT mirrored here — it lives in Worktree Agents.
+            if statusPresentation.shouldShowInHeader {
+                TaskSidebarPill(
+                    icon: statusPresentation.iconName,
+                    text: statusPresentation.text,
+                    tint: statusPresentation.color
+                )
+            }
         }
     }
 
@@ -337,7 +374,7 @@ private struct TaskSidebarTitleField: View {
             axis: .vertical
         )
         .textFieldStyle(.plain)
-        .font(.system(size: 16, weight: .semibold))
+        .font(.system(size: 17, weight: .semibold))
         .foregroundStyle(.primary)
         .lineLimit(1...3)
         .padding(.vertical, 3)

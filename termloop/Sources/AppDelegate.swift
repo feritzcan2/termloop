@@ -11477,6 +11477,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return true
         }
 
+        // MARK: termloop-hook
+        if TermLoopHooks.handleProjectNumberShortcut(digit: numberedConfiguredShortcutDigit(event: event, action: .selectProjectByNumber), tabManager: tabManager) { return true }
+        // MARK: /termloop-hook
+
         // Numeric shortcuts for specific workspaces (9 = last workspace)
         // Always consume the event when the digit matches to prevent Ghostty's
         // goto_tab fallback from creating a new window when the index is out of bounds.

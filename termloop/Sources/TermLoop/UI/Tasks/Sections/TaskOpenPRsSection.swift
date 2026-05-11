@@ -31,34 +31,35 @@ struct TaskOpenPRsSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            TaskSidebarSectionTitle(
-                String(localized: "tasks.sidebar.section.pullRequests",
-                       defaultValue: "Pull Requests", table: "TermLoop")
-            )
-            if normalizedBranch == nil {
-                TaskSidebarEmptyText(
-                    String(localized: "tasks.sidebar.section.openPRs.noBranch",
-                           defaultValue: "No branch attached.", table: "TermLoop")
-                )
-            } else if normalizedWorktreePath == nil {
-                TaskSidebarEmptyText(
-                    String(localized: "tasks.sidebar.section.openPRs.noPath",
-                           defaultValue: "No worktree path attached.", table: "TermLoop")
-                )
-            } else if pullRequests.isEmpty {
-                TaskSidebarEmptyText(
-                    String(localized: "tasks.sidebar.section.pullRequests.empty",
-                           defaultValue: "No PRs found.", table: "TermLoop")
-                )
+        Group {
+            if normalizedBranch == nil || normalizedWorktreePath == nil || pullRequests.isEmpty {
+                compactEmptyRow
             } else {
-                summaryLine
-                prGroups
+                VStack(alignment: .leading, spacing: 6) {
+                    TaskSidebarSectionTitle(
+                        String(localized: "tasks.sidebar.section.pullRequests",
+                               defaultValue: "Pull Requests", table: "TermLoop")
+                    )
+                    summaryLine
+                    prGroups
+                }
             }
         }
         .onAppear { ensureLookup() }
         .onChange(of: normalizedWorktreePath) { _, _ in ensureLookup() }
         .onChange(of: normalizedBranch) { _, _ in ensureLookup() }
+    }
+
+    private var compactEmptyRow: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "arrow.triangle.pull")
+                .font(.system(size: 11, weight: .semibold))
+            Text(String(localized: "tasks.sidebar.section.pullRequests.compactEmpty",
+                        defaultValue: "No PRs", table: "TermLoop"))
+                .font(.system(size: 11, weight: .medium))
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(Color.secondary)
     }
 
     private var prGroups: some View {

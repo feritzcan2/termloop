@@ -2154,63 +2154,50 @@ struct WorktreeAgentsPanel: View {
                     groupSummaryKey(groupId: group.id, statuses: pullRequestStatuses)
                 ]
                 let allBranchPullRequests = renderSnapshot.allPullRequestsByBranch[group.id] ?? []
-                // Headline pills run on a single horizontal line so MERGED
-                // PRs / OPEN PRs / WORKTREE branch headers are one row tall
-                // instead of stacking PR pill + commit pill + remote/run chips
-                // vertically. Remote/run chips flow after the PR pill;
-                // git summary (commits/changes) sits at the trailing end.
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .center, spacing: 4) {
-                        pullRequestBadge(
-                            summary: pullRequestSummary,
-                            allPullRequests: allBranchPullRequests,
-                            group: group
-                        )
-                        if !runTargets.isEmpty {
-                            WorktreeGroupRunTargetsBadge(
-                                targets: runTargets,
-                                workspaceIds: group.workspaces.map(\.id),
-                                worktreePath: group.worktreePath
+                // Keep the git summary mounted outside the compact badge
+                // fallbacks. It is the primary "dirty worktree" signal for
+                // the Loop tab and must not disappear just because PR/run
+                // badges need a narrower layout.
+                HStack(alignment: .center, spacing: 4) {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .center, spacing: 4) {
+                            pullRequestBadge(
+                                summary: pullRequestSummary,
+                                allPullRequests: allBranchPullRequests,
+                                group: group
                             )
+                            if !runTargets.isEmpty {
+                                WorktreeGroupRunTargetsBadge(
+                                    targets: runTargets,
+                                    workspaceIds: group.workspaces.map(\.id),
+                                    worktreePath: group.worktreePath
+                                )
+                            }
+                            ForEach(remoteItemBadges) { snapshot in
+                                WorktreeGroupRemoteItemBadge(snapshot: snapshot)
+                                    .equatable()
+                            }
                         }
-                        ForEach(remoteItemBadges) { snapshot in
-                            WorktreeGroupRemoteItemBadge(snapshot: snapshot)
-                                .equatable()
-                        }
-                        WorktreeGroupGitSummaryView(
-                            group: group,
-                            preferredWorkspace: sourceWorkspace(for: group),
-                            openPullRequests: pullRequestSummary?.pullRequests.filter { $0.status == .open } ?? [],
-                            pullRequestLookupTick: pullRequestLookupTick
-                        )
-                    }
-                    // Compact fallbacks for narrow sidebars: keep remote/run
-                    // chips visible, then drop git metadata instead of
-                    // crushing branch titles/count tokens.
-                    HStack(alignment: .center, spacing: 4) {
-                        pullRequestBadge(
-                            summary: pullRequestSummary,
-                            allPullRequests: allBranchPullRequests,
-                            group: group
-                        )
-                        if !runTargets.isEmpty {
-                            WorktreeGroupRunTargetsBadge(
-                                targets: runTargets,
-                                workspaceIds: group.workspaces.map(\.id),
-                                worktreePath: group.worktreePath
+                        VStack(alignment: .trailing, spacing: 2) {
+                            pullRequestBadge(
+                                summary: pullRequestSummary,
+                                allPullRequests: allBranchPullRequests,
+                                group: group
                             )
+                            HStack(alignment: .center, spacing: 4) {
+                                if !runTargets.isEmpty {
+                                    WorktreeGroupRunTargetsBadge(
+                                        targets: runTargets,
+                                        workspaceIds: group.workspaces.map(\.id),
+                                        worktreePath: group.worktreePath
+                                    )
+                                }
+                                ForEach(remoteItemBadges) { snapshot in
+                                    WorktreeGroupRemoteItemBadge(snapshot: snapshot)
+                                        .equatable()
+                                }
+                            }
                         }
-                        ForEach(remoteItemBadges) { snapshot in
-                            WorktreeGroupRemoteItemBadge(snapshot: snapshot)
-                                .equatable()
-                        }
-                    }
-                    VStack(alignment: .trailing, spacing: 2) {
-                        pullRequestBadge(
-                            summary: pullRequestSummary,
-                            allPullRequests: allBranchPullRequests,
-                            group: group
-                        )
                         HStack(alignment: .center, spacing: 4) {
                             if !runTargets.isEmpty {
                                 WorktreeGroupRunTargetsBadge(
@@ -2224,7 +2211,15 @@ struct WorktreeAgentsPanel: View {
                                     .equatable()
                             }
                         }
+                        Color.clear
+                            .frame(width: 0, height: 0)
                     }
+                    WorktreeGroupGitSummaryView(
+                        group: group,
+                        preferredWorkspace: sourceWorkspace(for: group),
+                        openPullRequests: pullRequestSummary?.pullRequests.filter { $0.status == .open } ?? [],
+                        pullRequestLookupTick: pullRequestLookupTick
+                    )
                 }
                 .padding(.top, 1)
             }
@@ -2985,6 +2980,28 @@ struct WorktreeChangesSheet: View {
         return count == 1 ? "1 change" : "\(count) changes"
     }
 
+    private var specialSources: [WorktreeChangesSource] {
+        availableSources.filter {
+            switch $0 {
+            case .local, .baseComparison:
+                return true
+            case .commit:
+                return false
+            }
+        }
+    }
+
+    private var commitSources: [WorktreeChangesSource] {
+        availableSources.filter {
+            switch $0 {
+            case .commit:
+                return true
+            case .local, .baseComparison:
+                return false
+            }
+        }
+    }
+
     private var currentSourceLabel: String {
         switch currentSource {
         case .local:
@@ -3019,27 +3036,17 @@ struct WorktreeChangesSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(workspace.title)
+                    Text(String(
+                        localized: "worktreeChanges.title",
+                        defaultValue: "Worktree changes",
+                        table: "TermLoop"
+                    ))
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(Color.primary)
-                    if let branch, !branch.isEmpty {
-                        Text(branch)
-                            .font(TermLoopSidebarTheme.tinyMono)
-                            .foregroundStyle(TermLoopSidebarTheme.dim)
-                    }
-                    if let worktreePath, !worktreePath.isEmpty {
-                        Text((worktreePath as NSString).abbreviatingWithTildeInPath)
-                            .font(TermLoopSidebarTheme.tinyMono)
-                            .foregroundStyle(TermLoopSidebarTheme.dimmer)
-                            .textSelection(.enabled)
-                    }
-                    Text(sourceContextLine)
-                        .font(TermLoopSidebarTheme.tinyMono)
-                        .foregroundStyle(TermLoopSidebarTheme.dim)
-                        .textSelection(.enabled)
+                    worktreeMetaLine
                 }
                 Spacer()
                 Text(changeCountLabel)
@@ -3059,17 +3066,15 @@ struct WorktreeChangesSheet: View {
             sourceToolbar
 
             HSplitView {
-                sourceList
-                    .frame(minWidth: 220, idealWidth: 300)
                 filePane
-                    .frame(minWidth: 220, idealWidth: 320)
+                    .frame(minWidth: 260, idealWidth: 340)
                 diffPane
-                    .frame(minWidth: 320)
+                    .frame(minWidth: 480)
             }
         }
         .padding(18)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .frame(minWidth: onClose == nil ? 1080 : nil, minHeight: onClose == nil ? 620 : nil)
+        .frame(minWidth: onClose == nil ? 940 : nil, minHeight: onClose == nil ? 620 : nil)
         // Without an explicit window background the overlay let the host
         // chrome (terminal portal / dark default) bleed through, so the
         // sheet rendered dark even in light mode. `.windowBackgroundColor`
@@ -3099,6 +3104,26 @@ struct WorktreeChangesSheet: View {
         }
     }
 
+    @ViewBuilder
+    private var worktreeMetaLine: some View {
+        HStack(spacing: 8) {
+            if let branch, !branch.isEmpty {
+                Label(branch, systemImage: "arrow.triangle.branch")
+                    .font(TermLoopSidebarTheme.tinyMono)
+                    .foregroundStyle(TermLoopSidebarTheme.dim)
+                    .lineLimit(1)
+            }
+            if let worktreePath, !worktreePath.isEmpty {
+                Text((worktreePath as NSString).abbreviatingWithTildeInPath)
+                    .font(TermLoopSidebarTheme.tinyMono)
+                    .foregroundStyle(TermLoopSidebarTheme.dimmer)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
     private var sourceContextLine: String {
         switch currentSource {
         case .local:
@@ -3112,86 +3137,92 @@ struct WorktreeChangesSheet: View {
 
     @ViewBuilder
     private var sourceToolbar: some View {
-        HStack(spacing: 10) {
-            Button { moveToSource(offset: -1) } label: {
-                Label("Previous", systemImage: "chevron.left")
-            }
-            .buttonStyle(.borderless)
-            .disabled(!canMoveSource(offset: -1))
-
-            Button { moveToSource(offset: 1) } label: {
-                Label("Next", systemImage: "chevron.right")
-            }
-            .buttonStyle(.borderless)
-            .disabled(!canMoveSource(offset: 1))
-
-            Divider()
-                .frame(height: 14)
-
-            Text(currentSourceLabel)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.primary)
-
-            Spacer()
-
-            if case .baseComparison(let target) = currentSource {
-                TermLoopSidebarToken(
-                    label: "vs \(target.branch)",
-                    tone: .accent,
-                    emphasized: true
-                )
-            }
-        }
-        .padding(.horizontal, 2)
-    }
-
-    @ViewBuilder
-    private var sourceList: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 8) {
-                let specialSources = availableSources.filter {
-                    switch $0 {
-                    case .local, .baseComparison:
-                        return true
-                    case .commit:
-                        return false
-                    }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Button { moveToSource(offset: -1) } label: {
+                    Label(
+                        String(localized: "worktreeChanges.previous", defaultValue: "Previous", table: "TermLoop"),
+                        systemImage: "chevron.left"
+                    )
                 }
-                let commitSources = availableSources.filter {
-                    switch $0 {
-                    case .commit:
-                        return true
-                    case .local, .baseComparison:
-                        return false
-                    }
+                .buttonStyle(.borderless)
+                .disabled(!canMoveSource(offset: -1))
+
+                Button { moveToSource(offset: 1) } label: {
+                    Label(
+                        String(localized: "worktreeChanges.next", defaultValue: "Next", table: "TermLoop"),
+                        systemImage: "chevron.right"
+                    )
+                }
+                .buttonStyle(.borderless)
+                .disabled(!canMoveSource(offset: 1))
+
+                Divider()
+                    .frame(height: 14)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(currentSourceLabel)
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.primary)
+                        .lineLimit(1)
+                    Text(sourceContextLine)
+                        .font(TermLoopSidebarTheme.tinyMono)
+                        .foregroundStyle(TermLoopSidebarTheme.dim)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .textSelection(.enabled)
                 }
 
-                if !specialSources.isEmpty {
-                    sectionHeader("Views")
+                Spacer()
+
+                if case .baseComparison(let target) = currentSource {
+                    TermLoopSidebarToken(
+                        label: "vs \(target.branch)",
+                        tone: .accent,
+                        emphasized: true
+                    )
+                }
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
                     ForEach(Array(specialSources.enumerated()), id: \.element.id) { index, source in
                         Button {
                             selectedSourceID = source.id
                         } label: {
-                            sourceRow(source: source, index: index, isSpecial: true)
+                            sourceChip(source: source, index: index, isSpecial: true)
                         }
                         .buttonStyle(.plain)
                     }
-                }
 
-                if !commitSources.isEmpty {
-                    sectionHeader("Commits")
+                    if !specialSources.isEmpty, !commitSources.isEmpty {
+                        Divider()
+                            .frame(height: 34)
+                            .padding(.horizontal, 2)
+                    }
+
                     ForEach(Array(commitSources.enumerated()), id: \.element.id) { index, source in
                         Button {
                             selectedSourceID = source.id
                         } label: {
-                            sourceRow(source: source, index: index, isSpecial: false)
+                            sourceChip(source: source, index: index, isSpecial: false)
                         }
                         .buttonStyle(.plain)
                     }
                 }
+                .padding(.vertical, 1)
             }
-            .padding(.vertical, 4)
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.035))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+        )
     }
 
     @ViewBuilder
@@ -3682,6 +3713,9 @@ private struct WorktreeGroupGitSummaryView: View {
 
     @State private var snapshot: WorktreeGroupGitSummarySnapshot?
     @State private var refreshNonce: UInt64 = 0
+    @State private var observedLocalChangesPath: String?
+    @State private var observedLocalChanges: [SidebarGitChangeItem] = []
+    @State private var hasObservedLocalChanges = false
     /// Stable subscription keyed on `subscribedWorkspaceIds` — rebuilding
     /// `Publishers.MergeMany(...)` inside `body` re-subscribed per render.
     @State private var refreshSubscription: AnyCancellable?
@@ -3696,6 +3730,7 @@ private struct WorktreeGroupGitSummaryView: View {
     }
 
     var body: some View {
+        let path = resolvedWorktreePath
         Group {
             if let snapshot, snapshot.hasVisibleContent {
                 HStack(spacing: 4) {
@@ -3750,11 +3785,20 @@ private struct WorktreeGroupGitSummaryView: View {
         .task(id: refreshTaskKey) {
             await refreshSnapshot()
         }
+        .onReceive(localChangesPublisher(for: path)) { files in
+            handleObservedLocalChanges(files, path: path)
+        }
         .onAppear {
             ensureRefreshSubscription()
         }
         .onChange(of: group.workspaces.map(\.id)) { _ in
             ensureRefreshSubscription()
+        }
+        .onChange(of: path) { _, newPath in
+            observedLocalChangesPath = newPath
+            observedLocalChanges = []
+            hasObservedLocalChanges = false
+            refreshNonce &+= 1
         }
     }
 
@@ -3771,6 +3815,31 @@ private struct WorktreeGroupGitSummaryView: View {
             .receive(on: RunLoop.main)
             .debounce(for: .milliseconds(150), scheduler: RunLoop.main)
             .sink { _ in refreshNonce &+= 1 }
+    }
+
+    private func localChangesPublisher(for path: String?) -> AnyPublisher<[SidebarGitChangeItem], Never> {
+        guard let path else {
+            return Just([]).eraseToAnyPublisher()
+        }
+        return GitWorktreePresentationStore.shared.filesPublisher(for: path)
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .eraseToAnyPublisher()
+    }
+
+    private func handleObservedLocalChanges(_ files: [SidebarGitChangeItem], path: String?) {
+        if observedLocalChangesPath != path {
+            observedLocalChangesPath = path
+            observedLocalChanges = files
+            hasObservedLocalChanges = true
+            return
+        }
+        defer {
+            observedLocalChanges = files
+            hasObservedLocalChanges = true
+        }
+        guard hasObservedLocalChanges, files != observedLocalChanges else { return }
+        refreshNonce &+= 1
     }
 
     private var refreshTaskKey: String {

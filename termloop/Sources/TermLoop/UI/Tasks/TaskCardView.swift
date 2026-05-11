@@ -412,6 +412,16 @@ struct TaskStatusPresentation {
             return true
         }
     }
+
+    /// Whether to surface this status as a pill in the sidebar drill-in
+    /// header. Agent-derived statuses (e.g. "running") are intentionally
+    /// suppressed there — they're already shown in the Worktree Agents
+    /// section, and duplicating them adds noise. Provision-driven statuses
+    /// (failed/pending/ready/none) stay visible because the colored dot is
+    /// the only other signal in the header.
+    var shouldShowInHeader: Bool {
+        !usesAgentStatus
+    }
 }
 
 extension TaskProvisionState {

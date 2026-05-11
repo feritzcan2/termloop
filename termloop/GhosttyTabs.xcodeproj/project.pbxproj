@@ -211,6 +211,7 @@
 		A5001700 /* Project.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001701 /* Project.swift */; };
 		A5001702 /* ProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001703 /* ProjectStore.swift */; };
 		A5001704 /* ProjectSwitcherStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001705 /* ProjectSwitcherStrip.swift */; };
+		A5001706 /* ProjectShortcutRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001707 /* ProjectShortcutRouter.swift */; };
 		A5001710 /* SkillFrontmatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001711 /* SkillFrontmatter.swift */; };
 		A5001712 /* SkillCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001713 /* SkillCatalog.swift */; };
 		A5001714 /* SkillsCommandsPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001715 /* SkillsCommandsPopover.swift */; };
@@ -828,6 +829,7 @@
 		A5001701 /* Project.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Projects/Project.swift; sourceTree = "<group>"; };
 		A5001703 /* ProjectStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Projects/ProjectStore.swift; sourceTree = "<group>"; };
 		A5001705 /* ProjectSwitcherStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Projects/ProjectSwitcherStrip.swift; sourceTree = "<group>"; };
+		A5001707 /* ProjectShortcutRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Projects/ProjectShortcutRouter.swift; sourceTree = "<group>"; };
 		A5001711 /* SkillFrontmatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Skills/SkillFrontmatter.swift; sourceTree = "<group>"; };
 		A5001713 /* SkillCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Skills/SkillCatalog.swift; sourceTree = "<group>"; };
 		A5001715 /* SkillsCommandsPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Skills/SkillsCommandsPopover.swift; sourceTree = "<group>"; };
@@ -1727,6 +1729,7 @@
 				A5009001 /* DebugEventLogWindowController.swift */,
 				A5001703 /* ProjectStore.swift */,
 				A5001705 /* ProjectSwitcherStrip.swift */,
+				A5001707 /* ProjectShortcutRouter.swift */,
 				A5001711 /* SkillFrontmatter.swift */,
 				A5001713 /* SkillCatalog.swift */,
 				A5001715 /* SkillsCommandsPopover.swift */,
@@ -2474,6 +2477,7 @@
 				A5009000 /* DebugEventLogWindowController.swift in Sources */,
 				A5001702 /* ProjectStore.swift in Sources */,
 				A5001704 /* ProjectSwitcherStrip.swift in Sources */,
+				A5001706 /* ProjectShortcutRouter.swift in Sources */,
 				A5001710 /* SkillFrontmatter.swift in Sources */,
 				A5001712 /* SkillCatalog.swift in Sources */,
 				A5001714 /* SkillsCommandsPopover.swift in Sources */,
