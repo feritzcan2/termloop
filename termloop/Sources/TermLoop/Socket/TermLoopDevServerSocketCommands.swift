@@ -93,6 +93,10 @@ enum TermLoopDevServerSocketCommands {
             return .err(code: "invalid_params", message: "Missing profile_id", data: nil)
         }
         do {
+            for run in DevServerRunStore.shared.snapshots(projectId: store.projectId)
+                where run.key.profileId == profileId && run.isActive {
+                _ = try? DevServerRunCoordinator.shared.stop(runId: run.runId)
+            }
             try store.delete(profileId: profileId)
             return .ok(["profile_id": profileId, "deleted": true])
         } catch {
@@ -412,8 +416,12 @@ enum TermLoopDevServerSocketCommands {
             status = "failed"
         } else if snapshot.phase == .exited {
             status = "exited"
+        } else if snapshot.phase == .settingUp {
+            status = "setup_running"
+        } else if snapshot.phase == .starting {
+            status = "starting"
         } else {
-            status = "waiting"
+            status = "waiting_for_url"
         }
         return [
             "status": status,

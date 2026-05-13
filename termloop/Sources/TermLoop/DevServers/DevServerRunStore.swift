@@ -49,6 +49,7 @@ public final class DevServerRunStore: ObservableObject {
             command: command,
             phase: .starting,
             pid: nil,
+            processGroupId: nil,
             urls: [],
             latestURL: nil,
             recentErrorLines: [],
@@ -71,15 +72,15 @@ public final class DevServerRunStore: ObservableObject {
         return snapshot
     }
 
-    public func markRunning(runId: UUID, pid: Int32) -> DevServerRunSnapshot? {
+    public func markRunning(runId: UUID, pid: Int32, processGroupId: Int32?) -> DevServerRunSnapshot? {
         update(runId: runId) { snapshot in
-            snapshot = snapshot.with(phase: .running, pid: pid)
+            snapshot = snapshot.with(phase: .running, pid: pid, processGroupId: processGroupId)
         }
     }
 
-    public func markSettingUp(runId: UUID, pid: Int32?) -> DevServerRunSnapshot? {
+    public func markSettingUp(runId: UUID, pid: Int32?, processGroupId: Int32? = nil) -> DevServerRunSnapshot? {
         update(runId: runId) { snapshot in
-            snapshot = snapshot.with(phase: .settingUp, pid: pid)
+            snapshot = snapshot.with(phase: .settingUp, pid: pid, processGroupId: processGroupId)
         }
     }
 
@@ -265,6 +266,8 @@ public final class DevServerRunStore: ObservableObject {
             "workspace_id": snapshot.workspaceId?.uuidString as Any? ?? NSNull(),
             "phase": snapshot.phase.rawValue,
             "pid": snapshot.pid.map { Int($0) } as Any? ?? NSNull(),
+            "process_group_id": snapshot.processGroupId.map { Int($0) } as Any? ?? NSNull(),
+            "process_group_established": snapshot.processGroupId != nil,
             "cwd": snapshot.cwd,
             "worktree_path": snapshot.worktreePath,
             "urls": snapshot.urls,
@@ -284,6 +287,7 @@ private extension DevServerRunSnapshot {
     func with(
         phase: DevServerRunPhase? = nil,
         pid: Int32? = nil,
+        processGroupId: Int32? = nil,
         clearPID: Bool = false,
         urls: [String]? = nil,
         latestURL: String? = nil,
@@ -306,6 +310,7 @@ private extension DevServerRunSnapshot {
             command: command,
             phase: phase ?? self.phase,
             pid: clearPID ? nil : (pid ?? self.pid),
+            processGroupId: clearPID ? nil : (processGroupId ?? self.processGroupId),
             urls: urls ?? self.urls,
             latestURL: replaceLatestURL ? latestURL : self.latestURL,
             recentErrorLines: recentErrorLines ?? self.recentErrorLines,

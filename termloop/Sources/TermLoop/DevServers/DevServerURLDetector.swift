@@ -1,6 +1,7 @@
 // Copyright (c) 2026-present Ferit Özcan. All rights reserved.
 // Part of TermLoop — GPL-3.0-or-later
 
+import Darwin
 import Foundation
 
 public struct DevServerDetectedURL: Equatable, Hashable, Sendable {
@@ -74,6 +75,25 @@ public enum DevServerURLDetector {
         return components.url?.absoluteString
     }
 
+    public static func localPort(from raw: String) -> Int? {
+        guard let normalized = normalize(raw),
+              let components = URLComponents(string: normalized),
+              let scheme = components.scheme?.lowercased() else {
+            return nil
+        }
+        if let port = components.port { return port }
+        switch scheme {
+        case "http": return 80
+        case "https": return 443
+        default: return nil
+        }
+    }
+
+    public static func localPorts(from urls: [String]) -> [Int] {
+        var seen = Set<Int>()
+        return urls.compactMap(localPort(from:)).filter { seen.insert($0).inserted }
+    }
+
     private static func detectedURL(in line: String, range: NSRange, hasScheme: Bool) -> DevServerDetectedURL? {
         guard let swiftRange = Range(range, in: line) else { return nil }
         let original = String(line[swiftRange])
@@ -101,5 +121,29 @@ public enum DevServerURLDetector {
             || host == "0.0.0.0"
             || host == "::1"
             || host == "::"
+    }
+}
+
+public enum DevServerLocalPortProbe {
+    public static func isOccupied(port: Int) -> Bool {
+        guard (1...65_535).contains(port) else { return false }
+        let fd = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { Darwin.close(fd) }
+
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = in_port_t(port).bigEndian
+        guard inet_pton(AF_INET, "127.0.0.1", &address.sin_addr) == 1 else {
+            return false
+        }
+
+        let result = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                Darwin.connect(fd, sockaddrPointer, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        return result == 0
     }
 }

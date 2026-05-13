@@ -4543,7 +4543,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Add or edit profile"
+            "value": "Add profile"
           }
         }
       }
@@ -4554,7 +4554,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Testing… waiting for a URL or failure."
+            "value": "Waiting for a localhost URL…"
           }
         }
       }
@@ -4588,6 +4588,369 @@
           "stringUnit": {
             "state": "translated",
             "value": "Test exited before a URL was detected."
+          }
+        }
+      }
+    },
+    "devservers.kind.devServer": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dev server"
+          }
+        }
+      }
+    },
+    "devservers.kind.testRunner": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test runner"
+          }
+        }
+      }
+    },
+    "devservers.kind.worker": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Worker"
+          }
+        }
+      }
+    },
+    "devservers.kind.storybook": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Storybook"
+          }
+        }
+      }
+    },
+    "devservers.kind.typecheck": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Typecheck"
+          }
+        }
+      }
+    },
+    "devservers.setupPolicy.once": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Once per config"
+          }
+        }
+      }
+    },
+    "devservers.setupPolicy.always": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always"
+          }
+        }
+      }
+    },
+    "devservers.setupPolicy.never": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Never"
+          }
+        }
+      }
+    },
+    "devservers.process.processGroupUnavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Process group unavailable; stop will target the shell process only."
+          }
+        }
+      }
+    },
+    "devservers.process.portStillOccupied": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Warning: local port still appears occupied after stop: %1$@"
+          }
+        }
+      }
+    },
+    "devservers.sidebar.edit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit"
+          }
+        }
+      }
+    },
+    "devservers.editor.newProfile": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New profile"
+          }
+        }
+      }
+    },
+    "devservers.editor.editProfile": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit profile"
+          }
+        }
+      }
+    },
+    "devservers.editor.delete": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete"
+          }
+        }
+      }
+    },
+    "devservers.editor.confirmDelete": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm delete"
+          }
+        }
+      }
+    },
+    "devservers.editor.env": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Environment"
+          }
+        }
+      }
+    },
+    "devservers.editor.addEnv": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add env"
+          }
+        }
+      }
+    },
+    "devservers.editor.envKey": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "KEY"
+          }
+        }
+      }
+    },
+    "devservers.editor.envValue": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "value"
+          }
+        }
+      }
+    },
+    "devservers.editor.fallbackUrls": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fallback URLs"
+          }
+        }
+      }
+    },
+    "devservers.editor.addFallbackUrl": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add URL"
+          }
+        }
+      }
+    },
+    "devservers.editor.fallbackPlaceholder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "http://localhost:5173"
+          }
+        }
+      }
+    },
+    "devservers.editor.setupPolicy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Setup policy"
+          }
+        }
+      }
+    },
+    "devservers.editor.autoOpen": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-open URL"
+          }
+        }
+      }
+    },
+    "devservers.editor.test.saving": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saving profile…"
+          }
+        }
+      }
+    },
+    "devservers.editor.test.setupRunning": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Setup running…"
+          }
+        }
+      }
+    },
+    "devservers.editor.test.starting": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starting run…"
+          }
+        }
+      }
+    },
+    "devservers.editor.test.timedOut": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timed out waiting for a URL. The run is still active."
+          }
+        }
+      }
+    },
+    "devservers.error.invalidFallbackURL": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fallback URLs must be localhost HTTP URLs."
+          }
+        }
+      }
+    },
+    "devservers.agent.generateProfile": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generate profile with agent"
+          }
+        }
+      }
+    },
+    "devservers.agent.workspaceTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generate dev server profile"
+          }
+        }
+      }
+    },
+    "devservers.editor.autoOpenDefault": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-open uses the project default."
+          }
+        }
+      }
+    },
+    "devservers.editor.useProjectDefault": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use project default"
           }
         }
       }

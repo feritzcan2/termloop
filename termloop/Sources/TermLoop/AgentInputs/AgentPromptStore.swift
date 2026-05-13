@@ -480,6 +480,7 @@ Inspect the project and propose safe entries for `<projectRoot>/.termloop/devser
 Rules:
 - Do not run install, setup, cleanup, migration, or dev-server commands unless the user explicitly confirms.
 - Prefer package-manager scripts already present in the project.
+- Choose the narrowest profile `kind` (`dev_server`, `test_runner`, `worker`, `storybook`, or `typecheck`).
 - Use project-level profile config only; never write runtime process truth to `.termloop/tasks.json`.
 - Use commands that run from a task worktree. Set `workingDirectory` relative to the worktree root.
 - Include `setupCommand` only when it is safe and clearly needed.

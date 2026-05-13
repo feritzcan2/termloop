@@ -50,4 +50,14 @@ final class DevServerURLDetectorTests: XCTestCase {
             "http://localhost:5173/foo(bar)"
         )
     }
+
+    func testExtractsLocalPorts() {
+        XCTAssertEqual(DevServerURLDetector.localPort(from: "http://localhost:5173"), 5173)
+        XCTAssertEqual(DevServerURLDetector.localPort(from: "https://127.0.0.1"), 443)
+        XCTAssertEqual(DevServerURLDetector.localPort(from: "https://example.com:443"), nil)
+        XCTAssertEqual(
+            DevServerURLDetector.localPorts(from: ["http://localhost:5173", "127.0.0.1:5173", "http://localhost:3000"]),
+            [5173, 3000]
+        )
+    }
 }
