@@ -41,6 +41,24 @@ enum TermLoopHooks {
         let termLoopRestoreId: UUID?
     }
 
+    private struct MissingWorktreeBranchRestoreCandidate: Sendable {
+        let workspaceId: UUID
+        let projectId: UUID
+        let cwd: String
+    }
+
+    private struct MissingWorktreeBranchRestoreProject: Sendable {
+        let folderPath: String
+        let candidates: [MissingWorktreeBranchRestoreCandidate]
+    }
+
+    private struct MissingWorktreeBranchRestoreBinding: Sendable {
+        let workspaceId: UUID
+        let branch: String
+        let worktreePath: String
+        let baselineHead: String?
+    }
+
     static var restoredTerminalLauncher: (Workspace, TerminalAgent, String?, [String: String]) -> Void = {
         workspace, agent, cwd, env in
         TerminalAgentRunner.dispatchRestoredAgentCommand(in: workspace, agent: agent, cwd: cwd, env: env)
@@ -1056,7 +1074,7 @@ enum TermLoopHooks {
             )
 #endif
         }
-        restoreMissingWorktreeBranchBindings(workspaces: workspaces)
+        scheduleRestoreMissingWorktreeBranchBindings(workspaces: workspaces)
 
         let didRecoverBeforeRestore = backfillPersistedAgentSessionsIfNeeded()
 #if DEBUG
@@ -1427,15 +1445,8 @@ enum TermLoopHooks {
     /// Defensive restore-time reconciliation for worktree-bound workspaces.
     /// If positional metadata came back without `branch`, infer it from the
     /// workspace cwd by matching against `git worktree list` paths.
-    private static func restoreMissingWorktreeBranchBindings(workspaces: [Workspace]) {
-        struct Candidate {
-            let workspaceId: UUID
-            let projectId: UUID
-            let cwd: String
-        }
-
-        let service = GitWorktreeService()
-        let candidatesByProject: [UUID: [Candidate]] = Dictionary(grouping: workspaces.compactMap { workspace in
+    private static func scheduleRestoreMissingWorktreeBranchBindings(workspaces: [Workspace]) {
+        let candidatesByProject: [UUID: [MissingWorktreeBranchRestoreCandidate]] = Dictionary(grouping: workspaces.compactMap { workspace in
             let metadata = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: workspace.id)
             let normalizedBranch = metadata.branch?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -1450,13 +1461,40 @@ enum TermLoopHooks {
                 .compactMap { $0 }
                 .first(where: { !$0.isEmpty }) ?? ""
             guard !rawCwd.isEmpty else { return nil }
-            return Candidate(workspaceId: workspace.id, projectId: projectId, cwd: rawCwd)
+            return MissingWorktreeBranchRestoreCandidate(
+                workspaceId: workspace.id,
+                projectId: projectId,
+                cwd: rawCwd
+            )
         }, by: { candidate in
             candidate.projectId
         })
 
-        for (projectId, candidates) in candidatesByProject {
-            guard let project = ProjectStore.shared.project(id: projectId) else { continue }
+        let projects = candidatesByProject.compactMap { projectId, candidates -> MissingWorktreeBranchRestoreProject? in
+            guard let project = ProjectStore.shared.project(id: projectId) else { return nil }
+            return MissingWorktreeBranchRestoreProject(
+                folderPath: project.folderPath,
+                candidates: candidates
+            )
+        }
+        guard !projects.isEmpty else { return }
+
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 1.5) {
+            let bindings = resolveMissingWorktreeBranchBindings(projects: projects)
+            guard !bindings.isEmpty else { return }
+            Task { @MainActor in
+                applyMissingWorktreeBranchBindings(bindings)
+            }
+        }
+    }
+
+    private nonisolated static func resolveMissingWorktreeBranchBindings(
+        projects: [MissingWorktreeBranchRestoreProject]
+    ) -> [MissingWorktreeBranchRestoreBinding] {
+        let service = GitWorktreeService()
+        var bindings: [MissingWorktreeBranchRestoreBinding] = []
+
+        for project in projects {
             guard let worktrees = try? service.list(in: project.folderPath) else { continue }
 
             let indexed = worktrees.compactMap { entry -> (path: String, branch: String)? in
@@ -1470,27 +1508,48 @@ enum TermLoopHooks {
 
             guard !indexed.isEmpty else { continue }
 
-            for candidate in candidates {
+            for candidate in project.candidates {
                 let cwd = URL(fileURLWithPath: candidate.cwd).standardizedFileURL.path
                 guard let match = indexed.first(where: { entry in
                     cwd == entry.path || cwd.hasPrefix(entry.path + "/")
                 }) else {
                     continue
                 }
-                WorkspaceMetadataStore.shared.setBranch(
-                    match.branch,
-                    worktreePath: match.path,
-                    forWorkspaceId: candidate.workspaceId
-                )
                 let baseline = try? service.headRevision(worktreePath: match.path)
-                WorkspaceMetadataStore.shared.setWorktreeBaselineHead(
-                    baseline,
-                    forWorkspaceId: candidate.workspaceId
-                )
-                logger.info(
-                    "restore worktree branch recovered ws=\(candidate.workspaceId.uuidString, privacy: .public) branch=\(match.branch, privacy: .public)"
-                )
+                bindings.append(MissingWorktreeBranchRestoreBinding(
+                    workspaceId: candidate.workspaceId,
+                    branch: match.branch,
+                    worktreePath: match.path,
+                    baselineHead: baseline
+                ))
             }
+        }
+
+        return bindings
+    }
+
+    private static func applyMissingWorktreeBranchBindings(
+        _ bindings: [MissingWorktreeBranchRestoreBinding]
+    ) {
+        for binding in bindings {
+            let existingBranch = WorkspaceMetadataStore.shared
+                .metadata(forWorkspaceId: binding.workspaceId)
+                .branch?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard existingBranch.isEmpty else { continue }
+
+            WorkspaceMetadataStore.shared.setBranch(
+                binding.branch,
+                worktreePath: binding.worktreePath,
+                forWorkspaceId: binding.workspaceId
+            )
+            WorkspaceMetadataStore.shared.setWorktreeBaselineHead(
+                binding.baselineHead,
+                forWorkspaceId: binding.workspaceId
+            )
+            logger.info(
+                "restore worktree branch recovered ws=\(binding.workspaceId.uuidString, privacy: .public) branch=\(binding.branch, privacy: .public)"
+            )
         }
     }
 
