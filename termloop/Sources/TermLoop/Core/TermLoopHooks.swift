@@ -2507,6 +2507,7 @@ export const TermLoopOpenCode = async ({ $, directory }) => {
         WorkspaceMetadataStore.shared.forgetObservedWorkspaceTitle(workspaceId: workspaceId)
         WorkspaceMetadataStore.shared.clearAgentSession(forWorkspaceId: workspaceId)
         TaskSelectionStoreProvider.shared.closeInlineTerminals(workspaceId: workspaceId)
+        DevServerRunCoordinator.shared.stopRuns(workspaceId: workspaceId)
         MainAreaPresentationCoordinator.shared.handleNavigationEvent(.workspaceDidClose(workspaceId))
     }
 

@@ -40,7 +40,10 @@ final class DevServerProfileStoreTests: XCTestCase {
             id: "web",
             name: "Web",
             command: "npm run dev",
-            env: ["BROWSER": "none"]
+            env: ["BROWSER": "none"],
+            setupCommand: "npm install",
+            cleanupCommand: "npm run clean",
+            setupPolicy: .oncePerWorktreeProfileConfig
         )
         try store.upsert(profile)
 

@@ -4042,6 +4042,17 @@
         }
       }
     },
+    "devservers.sidebar.openURL": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open"
+          }
+        }
+      }
+    },
     "devservers.sidebar.restart": {
       "extractionState": "manual",
       "localizations": {
@@ -4368,6 +4379,215 @@
           "stringUnit": {
             "state": "translated",
             "value": "Exited with code %1$lld"
+          }
+        }
+      }
+    },
+    "devservers.phase.settingUp": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "setting up"
+          }
+        }
+      }
+    },
+    "devservers.error.setupFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dev server setup failed: %1$@"
+          }
+        }
+      }
+    },
+    "devservers.setup.running": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running setup command…"
+          }
+        }
+      }
+    },
+    "devservers.setup.complete": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Setup complete."
+          }
+        }
+      }
+    },
+    "devservers.setup.exitedWithCode": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Setup exited with code %1$lld"
+          }
+        }
+      }
+    },
+    "devservers.cleanup.running": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running cleanup command (%1$@)…"
+          }
+        }
+      }
+    },
+    "devservers.editor.id": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Profile id"
+          }
+        }
+      }
+    },
+    "devservers.editor.name": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name"
+          }
+        }
+      }
+    },
+    "devservers.editor.command": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Command"
+          }
+        }
+      }
+    },
+    "devservers.editor.cwd": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Working directory"
+          }
+        }
+      }
+    },
+    "devservers.editor.setup": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Setup command (optional)"
+          }
+        }
+      }
+    },
+    "devservers.editor.cleanup": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cleanup command (optional)"
+          }
+        }
+      }
+    },
+    "devservers.editor.save": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save"
+          }
+        }
+      }
+    },
+    "devservers.editor.saveAndTest": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save & Test"
+          }
+        }
+      }
+    },
+    "devservers.editor.addProfile": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add or edit profile"
+          }
+        }
+      }
+    },
+    "devservers.editor.test.waiting": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Testing… waiting for a URL or failure."
+          }
+        }
+      }
+    },
+    "devservers.editor.test.ready": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test ready: %1$@"
+          }
+        }
+      }
+    },
+    "devservers.editor.test.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test failed: %1$@"
+          }
+        }
+      }
+    },
+    "devservers.editor.test.exited": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test exited before a URL was detected."
           }
         }
       }

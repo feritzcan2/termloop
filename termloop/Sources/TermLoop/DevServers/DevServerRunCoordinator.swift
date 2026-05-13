@@ -14,6 +14,7 @@ public final class DevServerRunCoordinator {
     private let runStore: DevServerRunStore
     private var processes: [UUID: DevServerManagedProcess] = [:]
     private var openOnURLRunIds = Set<UUID>()
+    private var setupStateStores: [UUID: DevServerSetupStateStore] = [:]
 
     public convenience init() {
         self.init(runStore: DevServerRunStore.shared)
@@ -60,12 +61,36 @@ public final class DevServerRunCoordinator {
             profileEnv: resolved.profile.env
         )
 
+        if setupStateStore(for: resolved).needsSetup(
+            profile: resolved.profile,
+            worktreePath: resolved.worktreeRoot.path
+        ) {
+            return try launchSetup(run: run, resolved: resolved, environment: env)
+        }
+        return try launchDevServer(runId: run.runId, resolved: resolved, environment: env)
+    }
+
+    private func launchSetup(
+        run: DevServerRunSnapshot,
+        resolved: ResolvedStartContext,
+        environment: [String: String]
+    ) throws -> DevServerRunSnapshot {
+        guard let setupCommand = resolved.profile.setupCommand else { return run }
+        _ = runStore.appendLog(
+            runId: run.runId,
+            stream: .system,
+            text: String(
+                localized: "devservers.setup.running",
+                defaultValue: "Running setup command…",
+                table: "TermLoop"
+            )
+        )
         do {
             let managed = try DevServerProcessRunner.launch(
                 runId: run.runId,
-                command: resolved.profile.command,
+                command: setupCommand,
                 cwd: resolved.cwd,
-                environment: env,
+                environment: environment,
                 onLine: { [weak self] stream, line in
                     _Concurrency.Task { @MainActor in
                         self?.handleLine(
@@ -78,16 +103,63 @@ public final class DevServerRunCoordinator {
                 },
                 onExit: { [weak self] exitCode in
                     _Concurrency.Task { @MainActor in
-                        self?.handleExit(runId: run.runId, exitCode: exitCode)
+                        self?.handleSetupExit(
+                            runId: run.runId,
+                            exitCode: exitCode,
+                            resolved: resolved,
+                            environment: environment
+                        )
                     }
                 }
             )
             processes[run.runId] = managed
-            return runStore.markRunning(runId: run.runId, pid: managed.pid) ?? run
+            return runStore.markSettingUp(runId: run.runId, pid: managed.pid) ?? run
         } catch {
             let message = error.localizedDescription
             _ = runStore.appendLog(runId: run.runId, stream: .system, text: message)
             _ = runStore.markFailed(runId: run.runId, message: message)
+            throw DevServerRunError.setupFailed(message)
+        }
+    }
+
+    @discardableResult
+    private func launchDevServer(
+        runId: UUID,
+        resolved: ResolvedStartContext,
+        environment: [String: String]
+    ) throws -> DevServerRunSnapshot {
+        do {
+            let managed = try DevServerProcessRunner.launch(
+                runId: runId,
+                command: resolved.profile.command,
+                cwd: resolved.cwd,
+                environment: environment,
+                onLine: { [weak self] stream, line in
+                    _Concurrency.Task { @MainActor in
+                        self?.handleLine(
+                            runId: runId,
+                            profile: resolved.profile,
+                            stream: stream,
+                            line: line
+                        )
+                    }
+                },
+                onExit: { [weak self] exitCode in
+                    _Concurrency.Task { @MainActor in
+                        self?.handleExit(runId: runId, exitCode: exitCode)
+                    }
+                }
+            )
+            processes[runId] = managed
+            let snapshot = runStore.markRunning(runId: runId, pid: managed.pid)
+                ?? runStore.snapshot(runId: runId)
+            materializeFallbackURLs(runId: runId, profile: resolved.profile)
+            guard let snapshot else { throw DevServerRunError.runNotFound(runId) }
+            return runStore.snapshot(runId: runId) ?? snapshot
+        } catch {
+            let message = error.localizedDescription
+            _ = runStore.appendLog(runId: runId, stream: .system, text: message)
+            _ = runStore.markFailed(runId: runId, message: message)
             throw DevServerRunError.launchFailed(message)
         }
     }
@@ -151,6 +223,61 @@ public final class DevServerRunCoordinator {
             openOnURLRunIds.remove(snapshot.runId)
         }
         runStore.remove(projectId: projectId)
+        setupStateStores.removeValue(forKey: projectId)
+    }
+
+    public func stopRuns(workspaceId: UUID) {
+        for snapshot in runStore.snapshots() where snapshot.workspaceId == workspaceId && snapshot.isActive {
+            _ = try? stop(runId: snapshot.runId)
+        }
+    }
+
+    public func stopTaskRuns(projectId: UUID, taskId: UUID) {
+        for snapshot in runStore.snapshots(projectId: projectId, taskId: taskId) where snapshot.isActive {
+            _ = try? stop(runId: snapshot.runId)
+        }
+    }
+
+    public func stopTaskRunsAndCleanup(
+        projectId: UUID,
+        task: TaskRecord,
+        projectRoot: URL,
+        reason: String
+    ) {
+        stopTaskRuns(projectId: projectId, taskId: task.id)
+        guard let worktreePath = task.worktreePath?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !worktreePath.isEmpty,
+              let profileStore = DevServerProfileStoreProvider.shared.store(for: projectId),
+              profileStore.loadError == nil else {
+            return
+        }
+        for profile in profileStore.profiles where profile.cleanupCommand != nil {
+            runCleanup(
+                projectId: projectId,
+                task: task,
+                worktreePath: worktreePath,
+                profile: profile,
+                reason: reason
+            )
+            try? setupStateStore(projectId: projectId, projectRoot: projectRoot)
+                .clear(worktreePath: worktreePath, profileId: profile.id)
+        }
+    }
+
+    public func stopProjectRunsAndCleanup(projectId: UUID, reason: String) {
+        guard let taskStore = TaskBoardStoreProvider.shared.store(for: projectId) else {
+            remove(projectId: projectId)
+            return
+        }
+        for task in taskStore.fileSnapshot().tasks {
+            stopTaskRunsAndCleanup(
+                projectId: projectId,
+                task: task,
+                projectRoot: taskStore.projectRoot,
+                reason: reason
+            )
+        }
+        setupStateStores.removeValue(forKey: projectId)
     }
 
     private func handleLine(
@@ -177,6 +304,46 @@ public final class DevServerRunCoordinator {
         openOnURLRunIds.remove(runId)
         guard runStore.snapshot(runId: runId)?.isActive == true else { return }
         _ = runStore.markExited(runId: runId, exitCode: exitCode)
+    }
+
+    private func handleSetupExit(
+        runId: UUID,
+        exitCode: Int32,
+        resolved: ResolvedStartContext,
+        environment: [String: String]
+    ) {
+        processes.removeValue(forKey: runId)
+        guard let snapshot = runStore.snapshot(runId: runId), snapshot.isActive else { return }
+        if snapshot.phase == .stopping {
+            _ = runStore.markExited(runId: runId, exitCode: exitCode)
+            return
+        }
+        guard exitCode == 0 else {
+            let message = String(
+                localized: "devservers.setup.exitedWithCode",
+                defaultValue: "Setup exited with code \(Int(exitCode))",
+                table: "TermLoop"
+            )
+            _ = runStore.appendLog(runId: runId, stream: .system, text: message)
+            _ = runStore.markFailed(runId: runId, message: message)
+            return
+        }
+        do {
+            try setupStateStore(for: resolved).markComplete(
+                profile: resolved.profile,
+                worktreePath: resolved.worktreeRoot.path
+            )
+            _ = runStore.appendLog(
+                runId: runId,
+                stream: .system,
+                text: String(localized: "devservers.setup.complete", defaultValue: "Setup complete.", table: "TermLoop")
+            )
+            try launchDevServer(runId: runId, resolved: resolved, environment: environment)
+        } catch {
+            let message = error.localizedDescription
+            _ = runStore.appendLog(runId: runId, stream: .system, text: message)
+            _ = runStore.markFailed(runId: runId, message: message)
+        }
     }
 
     private func resolve(
@@ -221,12 +388,105 @@ public final class DevServerRunCoordinator {
         }
         return ResolvedStartContext(
             projectId: projectId,
+            projectRoot: taskStore.projectRoot,
             task: task,
             profileFile: profileStore.file,
             profile: profile,
             worktreeRoot: worktreeRoot,
             cwd: cwd
         )
+    }
+
+    private func materializeFallbackURLs(runId: UUID, profile: DevServerProfile) {
+        for fallback in profile.urlDetection.fallbackUrls {
+            guard let normalized = DevServerURLDetector.normalize(fallback) else { continue }
+            guard let snapshot = runStore.addURL(runId: runId, urlString: normalized),
+                  snapshot.latestURL == normalized,
+                  openOnURLRunIds.remove(runId) != nil,
+                  let url = URL(string: normalized) else {
+                continue
+            }
+            _ = onFirstURL?(snapshot, url)
+        }
+    }
+
+    private func setupStateStore(for resolved: ResolvedStartContext) -> DevServerSetupStateStore {
+        setupStateStore(projectId: resolved.projectId, projectRoot: resolved.projectRoot)
+    }
+
+    private func setupStateStore(projectId: UUID, projectRoot: URL) -> DevServerSetupStateStore {
+        if let store = setupStateStores[projectId] { return store }
+        let store = DevServerSetupStateStore(projectRoot: projectRoot)
+        setupStateStores[projectId] = store
+        return store
+    }
+
+    private func runCleanup(
+        projectId: UUID,
+        task: TaskRecord,
+        worktreePath: String,
+        profile: DevServerProfile,
+        reason: String
+    ) {
+        guard let cleanupCommand = profile.cleanupCommand else { return }
+        let worktreeRoot = URL(fileURLWithPath: worktreePath).resolvingSymlinksInPath()
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: worktreeRoot.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            return
+        }
+        let cwd = (try? resolveWorkingDirectory(profile.workingDirectory, worktreeRoot: worktreeRoot)) ?? worktreeRoot
+        let key = DevServerRunKey(projectId: projectId, taskId: task.id, profileId: "\(profile.id).cleanup")
+        guard runStore.activeSnapshot(for: key) == nil else { return }
+        let run = runStore.start(
+            key: key,
+            profileName: profile.name,
+            workspaceId: task.workspaceId,
+            worktreePath: worktreeRoot.path,
+            cwd: cwd.path,
+            command: cleanupCommand,
+            logLimit: 500
+        )
+        _ = runStore.appendLog(
+            runId: run.runId,
+            stream: .system,
+            text: String(
+                localized: "devservers.cleanup.running",
+                defaultValue: "Running cleanup command (\(reason))…",
+                table: "TermLoop"
+            )
+        )
+        let env = launchEnvironment(
+            projectId: projectId,
+            task: task,
+            profileId: profile.id,
+            runId: run.runId,
+            worktreePath: worktreeRoot.path,
+            profileEnv: profile.env
+        )
+        do {
+            let managed = try DevServerProcessRunner.launch(
+                runId: run.runId,
+                command: cleanupCommand,
+                cwd: cwd,
+                environment: env,
+                onLine: { [weak self] stream, line in
+                    _Concurrency.Task { @MainActor in
+                        self?.runStore.appendLog(runId: run.runId, stream: stream, text: line)
+                    }
+                },
+                onExit: { [weak self] exitCode in
+                    _Concurrency.Task { @MainActor in
+                        self?.processes.removeValue(forKey: run.runId)
+                        _ = self?.runStore.markExited(runId: run.runId, exitCode: exitCode)
+                    }
+                }
+            )
+            processes[run.runId] = managed
+            _ = runStore.markSettingUp(runId: run.runId, pid: managed.pid)
+        } catch {
+            _ = runStore.markFailed(runId: run.runId, message: error.localizedDescription)
+        }
     }
 
     private func resolveWorkingDirectory(_ raw: String, worktreeRoot: URL) throws -> URL {
@@ -265,6 +525,7 @@ public final class DevServerRunCoordinator {
 
     private struct ResolvedStartContext {
         let projectId: UUID
+        let projectRoot: URL
         let task: TaskRecord
         let profileFile: DevServerProfileFile
         let profile: DevServerProfile
