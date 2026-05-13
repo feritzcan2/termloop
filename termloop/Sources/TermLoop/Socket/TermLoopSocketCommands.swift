@@ -55,7 +55,6 @@ enum TermLoopSocketCommands {
         case "workspace.kill_claude_session":   return workspaceKillClaudeSession(params)
         case "workspace.prepare_claude_resume": return workspacePrepareClaudeResume(params)
         case "workspace.spawn_claude_session":  return workspaceSpawnClaudeSession(params)
-        case "workspace.claude_system_prompt":  return workspaceAgentSystemPrompt(params, defaultAgentId: TerminalAgent.claudeId)
         case "workspace.agent_system_prompt":   return workspaceAgentSystemPrompt(params, defaultAgentId: TerminalAgent.claudeId)
         case "worktree.list":     return worktreeList(params)
         case "worktree.attach":   return worktreeAttach(params)

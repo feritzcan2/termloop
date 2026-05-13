@@ -3120,56 +3120,40 @@ final class BrowserLinkOpenSettingsTests: XCTestCase {
         super.tearDown()
     }
 
-    func testTerminalLinksDefaultToCmuxBrowser() {
-        XCTAssertTrue(BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowser(defaults: defaults))
+    func testTerminalLinksDefaultToTermLoopBrowser() {
+        XCTAssertTrue(BrowserLinkOpenSettings.openTerminalLinksInTermLoopBrowser(defaults: defaults))
     }
 
     func testTerminalLinksPreferenceUsesStoredValue() {
-        defaults.set(false, forKey: BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowserKey)
-        XCTAssertFalse(BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowser(defaults: defaults))
+        defaults.set(false, forKey: BrowserLinkOpenSettings.openTerminalLinksInTermLoopBrowserKey)
+        XCTAssertFalse(BrowserLinkOpenSettings.openTerminalLinksInTermLoopBrowser(defaults: defaults))
 
-        defaults.set(true, forKey: BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowserKey)
-        XCTAssertTrue(BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowser(defaults: defaults))
+        defaults.set(true, forKey: BrowserLinkOpenSettings.openTerminalLinksInTermLoopBrowserKey)
+        XCTAssertTrue(BrowserLinkOpenSettings.openTerminalLinksInTermLoopBrowser(defaults: defaults))
     }
 
-    func testSidebarPullRequestLinksDefaultToCmuxBrowser() {
-        XCTAssertTrue(BrowserLinkOpenSettings.openSidebarPullRequestLinksInCmuxBrowser(defaults: defaults))
+    func testSidebarPullRequestLinksDefaultToTermLoopBrowser() {
+        XCTAssertTrue(BrowserLinkOpenSettings.openSidebarPullRequestLinksInTermLoopBrowser(defaults: defaults))
     }
 
     func testSidebarPullRequestLinksPreferenceUsesStoredValue() {
-        defaults.set(false, forKey: BrowserLinkOpenSettings.openSidebarPullRequestLinksInCmuxBrowserKey)
-        XCTAssertFalse(BrowserLinkOpenSettings.openSidebarPullRequestLinksInCmuxBrowser(defaults: defaults))
+        defaults.set(false, forKey: BrowserLinkOpenSettings.openSidebarPullRequestLinksInTermLoopBrowserKey)
+        XCTAssertFalse(BrowserLinkOpenSettings.openSidebarPullRequestLinksInTermLoopBrowser(defaults: defaults))
 
-        defaults.set(true, forKey: BrowserLinkOpenSettings.openSidebarPullRequestLinksInCmuxBrowserKey)
-        XCTAssertTrue(BrowserLinkOpenSettings.openSidebarPullRequestLinksInCmuxBrowser(defaults: defaults))
+        defaults.set(true, forKey: BrowserLinkOpenSettings.openSidebarPullRequestLinksInTermLoopBrowserKey)
+        XCTAssertTrue(BrowserLinkOpenSettings.openSidebarPullRequestLinksInTermLoopBrowser(defaults: defaults))
     }
 
-    func testOpenCommandInterceptionDefaultsToCmuxBrowser() {
-        XCTAssertTrue(BrowserLinkOpenSettings.interceptTerminalOpenCommandInCmuxBrowser(defaults: defaults))
+    func testOpenCommandInterceptionDefaultsToTermLoopBrowser() {
+        XCTAssertTrue(BrowserLinkOpenSettings.interceptTerminalOpenCommandInTermLoopBrowser(defaults: defaults))
     }
 
     func testOpenCommandInterceptionUsesStoredValue() {
-        defaults.set(false, forKey: BrowserLinkOpenSettings.interceptTerminalOpenCommandInCmuxBrowserKey)
-        XCTAssertFalse(BrowserLinkOpenSettings.interceptTerminalOpenCommandInCmuxBrowser(defaults: defaults))
+        defaults.set(false, forKey: BrowserLinkOpenSettings.interceptTerminalOpenCommandInTermLoopBrowserKey)
+        XCTAssertFalse(BrowserLinkOpenSettings.interceptTerminalOpenCommandInTermLoopBrowser(defaults: defaults))
 
-        defaults.set(true, forKey: BrowserLinkOpenSettings.interceptTerminalOpenCommandInCmuxBrowserKey)
-        XCTAssertTrue(BrowserLinkOpenSettings.interceptTerminalOpenCommandInCmuxBrowser(defaults: defaults))
-    }
-
-    func testOpenCommandInterceptionFallsBackToLegacyLinkToggleWhenUnset() {
-        defaults.set(false, forKey: BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowserKey)
-        XCTAssertFalse(BrowserLinkOpenSettings.interceptTerminalOpenCommandInCmuxBrowser(defaults: defaults))
-
-        defaults.set(true, forKey: BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowserKey)
-        XCTAssertTrue(BrowserLinkOpenSettings.interceptTerminalOpenCommandInCmuxBrowser(defaults: defaults))
-    }
-
-    func testSettingsInitialOpenCommandInterceptionValueFallsBackToLegacyLinkToggleWhenUnset() {
-        defaults.set(false, forKey: BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowserKey)
-        XCTAssertFalse(BrowserLinkOpenSettings.initialInterceptTerminalOpenCommandInCmuxBrowserValue(defaults: defaults))
-
-        defaults.set(true, forKey: BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowserKey)
-        XCTAssertTrue(BrowserLinkOpenSettings.initialInterceptTerminalOpenCommandInCmuxBrowserValue(defaults: defaults))
+        defaults.set(true, forKey: BrowserLinkOpenSettings.interceptTerminalOpenCommandInTermLoopBrowserKey)
+        XCTAssertTrue(BrowserLinkOpenSettings.interceptTerminalOpenCommandInTermLoopBrowser(defaults: defaults))
     }
 
     func testExternalOpenPatternsDefaultToEmpty() {

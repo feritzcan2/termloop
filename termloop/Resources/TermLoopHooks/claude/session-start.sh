@@ -5,7 +5,7 @@
 #   1. Block sessions whose actual cwd/branch drift from the worktree
 #      binding termloop intended at spawn time (when TERMLOOP_WORKTREE_PATH
 #      is set).
-#   2. Delegate lifecycle reporting to `cmux claude-hook session-start` so
+#   2. Delegate lifecycle reporting to `termloop claude-hook session-start` so
 #      session-store mapping, reverse lookup, and resume persistence all
 #      stay on the CLI's normalization path.
 set -euo pipefail

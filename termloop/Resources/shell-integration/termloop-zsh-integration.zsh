@@ -1,4 +1,4 @@
-# cmux shell integration for zsh
+# termloop shell integration for zsh
 # Injected automatically — do not source manually
 
 # Prefer zsh/net/unix for socket sends (no fork, ~0.2ms per send vs ~3ms
@@ -9,7 +9,7 @@ if zmodload zsh/net/unix 2>/dev/null; then
     _TERMLOOP_HAS_ZSOCKET=1
 fi
 
-_cmux_send() {
+_termloop_send() {
     local payload="$1"
     if (( _TERMLOOP_HAS_ZSOCKET )); then
         local fd
@@ -34,39 +34,39 @@ _cmux_send() {
 
 # Fire-and-forget send: synchronous when zsocket is available (fast, no fork),
 # backgrounded otherwise.
-_cmux_send_bg() {
+_termloop_send_bg() {
     if (( _TERMLOOP_HAS_ZSOCKET )); then
-        _cmux_send "$1"
+        _termloop_send "$1"
     else
-        { _cmux_send "$1" } >/dev/null 2>&1 &!
+        { _termloop_send "$1" } >/dev/null 2>&1 &!
     fi
 }
 
-_cmux_socket_is_unix() {
+_termloop_socket_is_unix() {
     [[ -n "$TERMLOOP_SOCKET_PATH" && -S "$TERMLOOP_SOCKET_PATH" ]]
 }
 
-_cmux_relay_cli_path() {
+_termloop_relay_cli_path() {
     if [[ -n "${TERMLOOP_BUNDLED_CLI_PATH:-}" && -x "${TERMLOOP_BUNDLED_CLI_PATH}" ]]; then
         print -r -- "${TERMLOOP_BUNDLED_CLI_PATH}"
         return 0
     fi
-    command -v cmux 2>/dev/null
+    command -v termloop 2>/dev/null
 }
 
-_cmux_socket_uses_remote_relay() {
+_termloop_socket_uses_remote_relay() {
     [[ -n "$TERMLOOP_SOCKET_PATH" ]] || return 1
     [[ "$TERMLOOP_SOCKET_PATH" == /* ]] && return 1
     [[ "$TERMLOOP_SOCKET_PATH" == *:* ]] || return 1
-    [[ -n "$(_cmux_relay_cli_path)" ]]
+    [[ -n "$(_termloop_relay_cli_path)" ]]
 }
 
-_cmux_has_port_scan_transport() {
-    _cmux_socket_is_unix && return 0
-    _cmux_socket_uses_remote_relay
+_termloop_has_port_scan_transport() {
+    _termloop_socket_is_unix && return 0
+    _termloop_socket_uses_remote_relay
 }
 
-_cmux_json_escape() {
+_termloop_json_escape() {
     local value="$1"
     value="${value//\\/\\\\}"
     value="${value//\"/\\\"}"
@@ -76,25 +76,25 @@ _cmux_json_escape() {
     print -r -- "$value"
 }
 
-_cmux_relay_rpc_bg() {
+_termloop_relay_rpc_bg() {
     local method="$1"
     local params="$2"
     local relay_cli=""
-    _cmux_socket_uses_remote_relay || return 1
-    relay_cli="$(_cmux_relay_cli_path)" || return 1
+    _termloop_socket_uses_remote_relay || return 1
+    relay_cli="$(_termloop_relay_cli_path)" || return 1
     { "$relay_cli" rpc "$method" "$params" >/dev/null 2>&1 || true } >/dev/null 2>&1 &!
 }
 
-_cmux_relay_rpc() {
+_termloop_relay_rpc() {
     local method="$1"
     local params="$2"
     local relay_cli=""
     local response=""
-    _cmux_socket_uses_remote_relay || return 1
-    # Relay `cmux rpc` exits nonzero on server error. The real remote CLI prints
+    _termloop_socket_uses_remote_relay || return 1
+    # Relay `termloop rpc` exits nonzero on server error. The real remote CLI prints
     # only the JSON result payload on success, while some test stubs return the
     # full `{"ok":...}` envelope. Retry only on explicit `ok:false`.
-    relay_cli="$(_cmux_relay_cli_path)" || return 1
+    relay_cli="$(_termloop_relay_cli_path)" || return 1
     response="$("$relay_cli" rpc "$method" "$params" 2>/dev/null)" || return 1
     response="${response//$'\n'/}"
     response="${response//$'\r'/}"
@@ -102,41 +102,41 @@ _cmux_relay_rpc() {
     return 0
 }
 
-_cmux_relay_workspace_id() {
+_termloop_relay_workspace_id() {
     [[ -n "$TERMLOOP_WORKSPACE_ID" ]] || return 1
     print -r -- "$TERMLOOP_WORKSPACE_ID"
 }
 
-_cmux_report_tty_via_relay() {
-    _cmux_socket_uses_remote_relay || return 1
+_termloop_report_tty_via_relay() {
+    _termloop_socket_uses_remote_relay || return 1
     local workspace_id=""
-    workspace_id="$(_cmux_relay_workspace_id)" || return 1
+    workspace_id="$(_termloop_relay_workspace_id)" || return 1
     [[ -n "$_TERMLOOP_TTY_NAME" ]] || return 1
 
     local tty_name_json params
-    tty_name_json="$(_cmux_json_escape "$_TERMLOOP_TTY_NAME")"
+    tty_name_json="$(_termloop_json_escape "$_TERMLOOP_TTY_NAME")"
     params="{\"workspace_id\":\"$workspace_id\",\"tty_name\":\"$tty_name_json\""
     if [[ -n "$TERMLOOP_PANEL_ID" ]]; then
         params+=",\"surface_id\":\"$TERMLOOP_PANEL_ID\""
     fi
     params+="}"
-    _cmux_relay_rpc "surface.report_tty" "$params"
+    _termloop_relay_rpc "surface.report_tty" "$params"
 }
 
-_cmux_ports_kick_via_relay() {
+_termloop_ports_kick_via_relay() {
     local reason="${1:-command}"
-    _cmux_socket_uses_remote_relay || return 1
+    _termloop_socket_uses_remote_relay || return 1
     local workspace_id=""
-    workspace_id="$(_cmux_relay_workspace_id)" || return 1
+    workspace_id="$(_termloop_relay_workspace_id)" || return 1
     local params="{\"workspace_id\":\"$workspace_id\",\"reason\":\"$reason\""
     if [[ -n "$TERMLOOP_PANEL_ID" ]]; then
         params+=",\"surface_id\":\"$TERMLOOP_PANEL_ID\""
     fi
     params+="}"
-    _cmux_relay_rpc_bg "surface.ports_kick" "$params"
+    _termloop_relay_rpc_bg "surface.ports_kick" "$params"
 }
 
-_cmux_restore_scrollback_once() {
+_termloop_restore_scrollback_once() {
     local path="${TERMLOOP_RESTORE_SCROLLBACK_FILE:-}"
     [[ -n "$path" ]] || return 0
     unset TERMLOOP_RESTORE_SCROLLBACK_FILE
@@ -146,15 +146,15 @@ _cmux_restore_scrollback_once() {
         /bin/rm -f -- "$path" >/dev/null 2>&1 || true
     fi
 }
-_cmux_restore_scrollback_once
+_termloop_restore_scrollback_once
 
-_cmux_now() {
+_termloop_now() {
     print -r -- "${EPOCHSECONDS:-$SECONDS}"
 }
 
 typeset -g _TERMLOOP_CLAUDE_WRAPPER=""
 typeset -g _TERMLOOP_CODEX_WRAPPER=""
-_cmux_install_claude_wrapper() {
+_termloop_install_claude_wrapper() {
     local integration_dir="${TERMLOOP_SHELL_INTEGRATION_DIR:-}"
     [[ -n "$integration_dir" ]] || return 0
 
@@ -169,9 +169,9 @@ _cmux_install_claude_wrapper() {
     builtin unalias claude >/dev/null 2>&1 || true
     eval 'claude() { "$_TERMLOOP_CLAUDE_WRAPPER" "$@"; }'
 }
-_cmux_install_claude_wrapper
+_termloop_install_claude_wrapper
 
-_cmux_install_codex_wrapper() {
+_termloop_install_codex_wrapper() {
     local integration_dir="${TERMLOOP_SHELL_INTEGRATION_DIR:-}"
     [[ -n "$integration_dir" ]] || return 0
 
@@ -192,7 +192,7 @@ _cmux_install_codex_wrapper() {
     builtin unalias codex >/dev/null 2>&1 || true
     eval 'codex() { "$_TERMLOOP_CODEX_WRAPPER" "$@"; }'
 }
-_cmux_install_codex_wrapper
+_termloop_install_codex_wrapper
 
 # Throttle heavy work to avoid prompt latency.
 typeset -g _TERMLOOP_PWD_LAST_PWD=""
@@ -230,7 +230,7 @@ typeset -ga _TERMLOOP_TMUX_SYNC_KEYS=(
     TERMLOOP_BUNDLED_CLI_PATH
     TERMLOOP_BUNDLE_ID
     TERMLOOP_CUSTOM_CLAUDE_PATH
-    CMUXD_UNIX_PATH
+    TERMLOOPD_UNIX_PATH
     TERMLOOP_REPO_ROOT
     TERMLOOP_DEBUG_LOG
     TERMLOOP_LOAD_GHOSTTY_ZSH_INTEGRATION
@@ -253,7 +253,7 @@ typeset -ga _TERMLOOP_TMUX_SURFACE_SCOPED_KEYS=(
     TERMLOOP_SURFACE_ID
 )
 
-_cmux_tmux_sync_key_is_managed() {
+_termloop_tmux_sync_key_is_managed() {
     local candidate="$1"
     local key
     for key in "${_TERMLOOP_TMUX_SYNC_KEYS[@]}"; do
@@ -262,7 +262,7 @@ _cmux_tmux_sync_key_is_managed() {
     return 1
 }
 
-_cmux_tmux_shell_env_signature() {
+_termloop_tmux_shell_env_signature() {
     local key value
     local -a parts
     for key in "${_TERMLOOP_TMUX_SYNC_KEYS[@]}"; do
@@ -273,12 +273,12 @@ _cmux_tmux_shell_env_signature() {
     print -r -- "${(j:\x1f:)parts}"
 }
 
-_cmux_tmux_publish_cmux_environment() {
+_termloop_tmux_publish_termloop_environment() {
     [[ -z "$TMUX" ]] || return 0
     command -v tmux >/dev/null 2>&1 || return 0
 
     local signature
-    signature="$(_cmux_tmux_shell_env_signature)"
+    signature="$(_termloop_tmux_shell_env_signature)"
     [[ -n "$signature" ]] || return 0
     [[ "$signature" == "$_TERMLOOP_TMUX_PUSH_SIGNATURE" ]] && return 0
 
@@ -296,7 +296,7 @@ _cmux_tmux_publish_cmux_environment() {
     _TERMLOOP_TMUX_PUSH_SIGNATURE="$signature"
 }
 
-_cmux_tmux_refresh_cmux_environment() {
+_termloop_tmux_refresh_termloop_environment() {
     [[ -n "$TMUX" ]] || return 0
     command -v tmux >/dev/null 2>&1 || return 0
 
@@ -307,7 +307,7 @@ _cmux_tmux_refresh_cmux_environment() {
     while IFS= read -r line; do
         [[ "$line" == TERMLOOP_* ]] || continue
         key="${line%%=*}"
-        _cmux_tmux_sync_key_is_managed "$key" || continue
+        _termloop_tmux_sync_key_is_managed "$key" || continue
         filtered+="${line}"$'\n'
     done <<< "$output"
 
@@ -318,7 +318,7 @@ _cmux_tmux_refresh_cmux_environment() {
     while IFS= read -r line; do
         [[ "$line" == TERMLOOP_* ]] || continue
         key="${line%%=*}"
-        _cmux_tmux_sync_key_is_managed "$key" || continue
+        _termloop_tmux_sync_key_is_managed "$key" || continue
         value="${line#*=}"
         if [[ "${(P)key}" != "$value" ]]; then
             export "$key=$value"
@@ -337,20 +337,20 @@ _cmux_tmux_refresh_cmux_environment() {
         _TERMLOOP_GIT_HEAD_SIGNATURE=""
         _TERMLOOP_GIT_FORCE=1
         _TERMLOOP_PR_FORCE=1
-        _cmux_stop_pr_poll_loop
-        _cmux_stop_git_head_watch
+        _termloop_stop_pr_poll_loop
+        _termloop_stop_git_head_watch
     fi
 }
 
-_cmux_tmux_sync_cmux_environment() {
+_termloop_tmux_sync_termloop_environment() {
     if [[ -n "$TMUX" ]]; then
-        _cmux_tmux_refresh_cmux_environment
+        _termloop_tmux_refresh_termloop_environment
     else
-        _cmux_tmux_publish_cmux_environment
+        _termloop_tmux_publish_termloop_environment
     fi
 }
 
-_cmux_ensure_ghostty_preexec_strips_both_marks() {
+_termloop_ensure_ghostty_preexec_strips_both_marks() {
     local fn_name="$1"
     (( $+functions[$fn_name] )) || return 0
 
@@ -374,7 +374,7 @@ _cmux_ensure_ghostty_preexec_strips_both_marks() {
     fi
 }
 
-_cmux_patch_ghostty_semantic_redraw() {
+_termloop_patch_ghostty_semantic_redraw() {
     local old_frag new_frag
     old_frag='133;A;cl=line'
     new_frag='133;A;redraw=last;cl=line'
@@ -393,14 +393,14 @@ _cmux_patch_ghostty_semantic_redraw() {
         _TERMLOOP_GHOSTTY_SEMANTIC_PATCHED=1
     fi
 
-    # Keep legacy + redraw-aware strip lines so prompts created before patching
-    # are still cleared by preexec.
-    _cmux_ensure_ghostty_preexec_strips_both_marks _ghostty_deferred_init
-    _cmux_ensure_ghostty_preexec_strips_both_marks _ghostty_preexec
+    # Keep both strip lines so prompts created before patching are still cleared
+    # by preexec.
+    _termloop_ensure_ghostty_preexec_strips_both_marks _ghostty_deferred_init
+    _termloop_ensure_ghostty_preexec_strips_both_marks _ghostty_preexec
 }
-_cmux_patch_ghostty_semantic_redraw
+_termloop_patch_ghostty_semantic_redraw
 
-_cmux_prompt_wrap_guard() {
+_termloop_prompt_wrap_guard() {
     local cmd_start="$1"
     local pwd="$2"
     [[ -n "$cmd_start" && "$cmd_start" != 0 ]] || return 0
@@ -417,7 +417,7 @@ _cmux_prompt_wrap_guard() {
     builtin print -r -- ""
 }
 
-_cmux_install_winch_guard() {
+_termloop_install_winch_guard() {
     (( _TERMLOOP_WINCH_GUARD_INSTALLED )) && return 0
 
     # Respect user-defined WINCH handlers (function-based or trap-based).
@@ -439,9 +439,9 @@ _cmux_install_winch_guard() {
 
     _TERMLOOP_WINCH_GUARD_INSTALLED=1
 }
-_cmux_install_winch_guard
+_termloop_install_winch_guard
 
-_cmux_git_resolve_head_path() {
+_termloop_git_resolve_head_path() {
     # Resolve the HEAD file path without invoking git (fast; works for worktrees).
     local dir="$PWD"
     while true; do
@@ -468,7 +468,7 @@ _cmux_git_resolve_head_path() {
     return 1
 }
 
-_cmux_git_head_signature() {
+_termloop_git_head_signature() {
     local head_path="$1"
     [[ -n "$head_path" && -r "$head_path" ]] || return 1
     local line=""
@@ -479,7 +479,7 @@ _cmux_git_head_signature() {
     return 1
 }
 
-_cmux_report_tty_payload() {
+_termloop_report_tty_payload() {
     [[ -n "$TERMLOOP_WORKSPACE_ID" ]] || return 0
     [[ -n "$_TERMLOOP_TTY_NAME" ]] || return 0
 
@@ -492,28 +492,28 @@ _cmux_report_tty_payload() {
     print -r -- "$payload"
 }
 
-_cmux_report_tty_once() {
+_termloop_report_tty_once() {
     # Send the TTY name to the app once per session so the batched port scanner
     # knows which TTY belongs to this panel.
     (( _TERMLOOP_TTY_REPORTED )) && return 0
-    _cmux_has_port_scan_transport || return 0
+    _termloop_has_port_scan_transport || return 0
 
-    if _cmux_socket_is_unix; then
+    if _termloop_socket_is_unix; then
         local payload=""
-        payload="$(_cmux_report_tty_payload)"
+        payload="$(_termloop_report_tty_payload)"
         [[ -n "$payload" ]] || return 0
         _TERMLOOP_TTY_REPORTED=1
-        _cmux_send_bg "$payload"
+        _termloop_send_bg "$payload"
     else
         [[ -n "$_TERMLOOP_TTY_NAME" ]] || return 0
         # Keep the first relay TTY report synchronous so the server can resolve
         # the target surface before command-start kicks begin their scan burst.
-        _cmux_report_tty_via_relay || return 0
+        _termloop_report_tty_via_relay || return 0
         _TERMLOOP_TTY_REPORTED=1
     fi
 }
 
-_cmux_report_shell_activity_state() {
+_termloop_report_shell_activity_state() {
     local state="$1"
     [[ -n "$state" ]] || return 0
     [[ -S "$TERMLOOP_SOCKET_PATH" ]] || return 0
@@ -521,27 +521,27 @@ _cmux_report_shell_activity_state() {
     [[ -n "$TERMLOOP_PANEL_ID" ]] || return 0
     [[ "$_TERMLOOP_SHELL_ACTIVITY_LAST" == "$state" ]] && return 0
     _TERMLOOP_SHELL_ACTIVITY_LAST="$state"
-    _cmux_send_bg "report_shell_state $state --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID"
+    _termloop_send_bg "report_shell_state $state --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID"
 }
 
-_cmux_ports_kick() {
+_termloop_ports_kick() {
     local reason="${1:-command}"
     # Lightweight: just tell the app to run a batched scan for this panel.
     # The app coalesces kicks across all panels and runs a single ps+lsof.
-    _cmux_has_port_scan_transport || return 0
+    _termloop_has_port_scan_transport || return 0
     [[ -n "$TERMLOOP_WORKSPACE_ID" ]] || return 0
-    if _cmux_socket_is_unix; then
+    if _termloop_socket_is_unix; then
         [[ -n "$TERMLOOP_PANEL_ID" ]] || return 0
     fi
-    _TERMLOOP_PORTS_LAST_RUN="$(_cmux_now)"
-    if _cmux_socket_is_unix; then
-        _cmux_send_bg "ports_kick --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID --reason=$reason"
+    _TERMLOOP_PORTS_LAST_RUN="$(_termloop_now)"
+    if _termloop_socket_is_unix; then
+        _termloop_send_bg "ports_kick --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID --reason=$reason"
     else
-        _cmux_ports_kick_via_relay "$reason"
+        _termloop_ports_kick_via_relay "$reason"
     fi
 }
 
-_cmux_report_git_branch_for_path() {
+_termloop_report_git_branch_for_path() {
     local repo_path="$1"
     [[ -n "$repo_path" ]] || return 0
     [[ -S "$TERMLOOP_SOCKET_PATH" ]] || return 0
@@ -556,13 +556,13 @@ _cmux_report_git_branch_for_path() {
     if [[ -n "$branch" ]]; then
         first="$(git -C "$repo_path" status --porcelain -uno 2>/dev/null | head -1)"
         [[ -n "$first" ]] && dirty_opt="--status=dirty"
-        _cmux_send "report_git_branch $branch $dirty_opt --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID"
+        _termloop_send "report_git_branch $branch $dirty_opt --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID"
     else
-        _cmux_send "clear_git_branch --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID"
+        _termloop_send "clear_git_branch --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID"
     fi
 }
 
-_cmux_record_pr_command_hint() {
+_termloop_record_pr_command_hint() {
     local cmd="$1"
     _TERMLOOP_LAST_PR_ACTION=""
     _TERMLOOP_LAST_PR_TARGET=""
@@ -632,7 +632,7 @@ _cmux_record_pr_command_hint() {
     done
 }
 
-_cmux_emit_pr_command_hint() {
+_termloop_emit_pr_command_hint() {
     [[ -S "$TERMLOOP_SOCKET_PATH" ]] || return 0
     [[ -n "$TERMLOOP_WORKSPACE_ID" ]] || return 0
     [[ -n "$TERMLOOP_PANEL_ID" ]] || return 0
@@ -643,19 +643,19 @@ _cmux_emit_pr_command_hint() {
         local quoted_target="${_TERMLOOP_LAST_PR_TARGET//\"/\\\"}"
         payload+=" --target=\"$quoted_target\""
     fi
-    _cmux_send_bg "$payload"
+    _termloop_send_bg "$payload"
     _TERMLOOP_LAST_PR_ACTION=""
     _TERMLOOP_LAST_PR_TARGET=""
 }
 
-_cmux_clear_pr_for_panel() {
+_termloop_clear_pr_for_panel() {
     [[ -S "$TERMLOOP_SOCKET_PATH" ]] || return 0
     [[ -n "$TERMLOOP_WORKSPACE_ID" ]] || return 0
     [[ -n "$TERMLOOP_PANEL_ID" ]] || return 0
-    _cmux_send_bg "clear_pr --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID"
+    _termloop_send_bg "clear_pr --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID"
 }
 
-_cmux_pr_output_indicates_no_pull_request() {
+_termloop_pr_output_indicates_no_pull_request() {
     local output="${1:l}"
     [[ "$output" == *"no pull requests found"* \
         || "$output" == *"no pull request found"* \
@@ -663,7 +663,7 @@ _cmux_pr_output_indicates_no_pull_request() {
         || "$output" == *"no pull request associated"* ]]
 }
 
-_cmux_github_repo_slug_for_path() {
+_termloop_github_repo_slug_for_path() {
     local repo_path="$1"
     local remote_url="" path_part=""
     [[ -n "$repo_path" ]] || return 0
@@ -697,17 +697,17 @@ _cmux_github_repo_slug_for_path() {
     print -r -- "$path_part"
 }
 
-_cmux_pr_cache_prefix() {
+_termloop_pr_cache_prefix() {
     [[ -n "$TERMLOOP_PANEL_ID" ]] || return 1
     print -r -- "/tmp/termloop-pr-cache-${TERMLOOP_PANEL_ID}"
 }
 
-_cmux_pr_force_signal_path() {
+_termloop_pr_force_signal_path() {
     [[ -n "$TERMLOOP_PANEL_ID" ]] || return 1
     print -r -- "/tmp/termloop-pr-force-${TERMLOOP_PANEL_ID}"
 }
 
-_cmux_pr_debug_log() {
+_termloop_pr_debug_log() {
     (( _TERMLOOP_PR_DEBUG )) || return 0
 
     local branch="$1"
@@ -716,9 +716,9 @@ _cmux_pr_debug_log() {
     printf '%s\tbranch=%s\tevent=%s\n' "$now" "$branch" "$event" >> /tmp/termloop-pr-debug.log
 }
 
-_cmux_pr_cache_clear() {
+_termloop_pr_cache_clear() {
     local prefix=""
-    prefix="$(_cmux_pr_cache_prefix 2>/dev/null || true)"
+    prefix="$(_termloop_pr_cache_prefix 2>/dev/null || true)"
     if [[ -n "$prefix" ]]; then
         /bin/rm -f -- \
             "${prefix}.branch" \
@@ -733,24 +733,24 @@ _cmux_pr_cache_clear() {
     _TERMLOOP_PR_NO_PR_BRANCH=""
 }
 
-_cmux_pr_request_probe() {
+_termloop_pr_request_probe() {
     local signal_path=""
-    signal_path="$(_cmux_pr_force_signal_path 2>/dev/null || true)"
+    signal_path="$(_termloop_pr_force_signal_path 2>/dev/null || true)"
     [[ -n "$signal_path" ]] || return 0
     : >| "$signal_path"
 }
 
-_cmux_report_pr_for_path() {
+_termloop_report_pr_for_path() {
     local repo_path="$1"
     local force_probe="${2:-0}"
     [[ -n "$repo_path" ]] || {
-        _cmux_pr_cache_clear
-        _cmux_clear_pr_for_panel
+        _termloop_pr_cache_clear
+        _termloop_clear_pr_for_panel
         return 0
     }
     [[ -d "$repo_path" ]] || {
-        _cmux_pr_cache_clear
-        _cmux_clear_pr_for_panel
+        _termloop_pr_cache_clear
+        _termloop_clear_pr_for_panel
         return 0
     }
     [[ -S "$TERMLOOP_SOCKET_PATH" ]] || return 0
@@ -765,13 +765,13 @@ _cmux_report_pr_for_path() {
     gh_repo_args=()
     branch="$(git -C "$repo_path" branch --show-current 2>/dev/null)"
     if [[ -z "$branch" ]] || ! command -v gh >/dev/null 2>&1; then
-        _cmux_pr_debug_log "$branch" "cache-miss:clear"
-        _cmux_pr_cache_clear
-        _cmux_clear_pr_for_panel
+        _termloop_pr_debug_log "$branch" "cache-miss:clear"
+        _termloop_pr_cache_clear
+        _termloop_clear_pr_for_panel
         return 0
     fi
 
-    prefix="$(_cmux_pr_cache_prefix 2>/dev/null || true)"
+    prefix="$(_termloop_pr_cache_prefix 2>/dev/null || true)"
     if [[ -n "$prefix" ]]; then
         branch_file="${prefix}.branch"
         repo_file="${prefix}.repo"
@@ -786,12 +786,12 @@ _cmux_report_pr_for_path() {
     _TERMLOOP_PR_LAST_BRANCH="$cache_branch"
     _TERMLOOP_PR_NO_PR_BRANCH="$cache_no_pr_branch"
     if [[ "$cache_branch" == "$branch" && -n "$cache_result" ]]; then
-        _cmux_pr_debug_log "$branch" "cache-refresh"
+        _termloop_pr_debug_log "$branch" "cache-refresh"
     else
-        _cmux_pr_debug_log "$branch" "cache-miss"
+        _termloop_pr_debug_log "$branch" "cache-miss"
     fi
 
-    repo_slug="$(_cmux_github_repo_slug_for_path "$repo_path")"
+    repo_slug="$(_termloop_github_repo_slug_for_path "$repo_path")"
     if [[ -n "$repo_slug" ]]; then
         gh_repo_args=(--repo "$repo_slug")
     fi
@@ -823,10 +823,10 @@ _cmux_report_pr_for_path() {
             fi
             _TERMLOOP_PR_LAST_BRANCH="$branch"
             _TERMLOOP_PR_NO_PR_BRANCH="$branch"
-            _cmux_clear_pr_for_panel
+            _termloop_clear_pr_for_panel
             return 0
         fi
-        if _cmux_pr_output_indicates_no_pull_request "$gh_error"; then
+        if _termloop_pr_output_indicates_no_pull_request "$gh_error"; then
             if [[ -n "$prefix" ]]; then
                 print -r -- "$branch" >| "$branch_file"
                 print -r -- "$repo_path" >| "$repo_file"
@@ -836,7 +836,7 @@ _cmux_report_pr_for_path() {
             fi
             _TERMLOOP_PR_LAST_BRANCH="$branch"
             _TERMLOOP_PR_NO_PR_BRANCH="$branch"
-            _cmux_clear_pr_for_panel
+            _termloop_clear_pr_for_panel
             return 0
         fi
 
@@ -870,16 +870,16 @@ _cmux_report_pr_for_path() {
     _TERMLOOP_PR_NO_PR_BRANCH=""
 
     local quoted_branch="${branch//\"/\\\"}"
-    _cmux_send "report_pr $number $url $status_opt --branch=\"$quoted_branch\" --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID"
+    _termloop_send "report_pr $number $url $status_opt --branch=\"$quoted_branch\" --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID"
 }
 
-_cmux_child_pids() {
+_termloop_child_pids() {
     local parent_pid="$1"
     [[ -n "$parent_pid" ]] || return 0
     /bin/ps -ax -o pid= -o ppid= 2>/dev/null | /usr/bin/awk -v parent="$parent_pid" '$2 == parent { print $1 }'
 }
 
-_cmux_kill_process_tree() {
+_termloop_kill_process_tree() {
     local pid="$1"
     local signal="${2:-TERM}"
     local child_pid=""
@@ -888,13 +888,13 @@ _cmux_kill_process_tree() {
     while IFS= read -r child_pid; do
         [[ -n "$child_pid" ]] || continue
         [[ "$child_pid" == "$pid" ]] && continue
-        _cmux_kill_process_tree "$child_pid" "$signal"
-    done < <(_cmux_child_pids "$pid")
+        _termloop_kill_process_tree "$child_pid" "$signal"
+    done < <(_termloop_child_pids "$pid")
 
     kill "-$signal" "$pid" >/dev/null 2>&1 || true
 }
 
-_cmux_run_pr_probe_with_timeout() {
+_termloop_run_pr_probe_with_timeout() {
     local repo_path="$1"
     local force_probe="${2:-0}"
     local probe_pid=""
@@ -902,7 +902,7 @@ _cmux_run_pr_probe_with_timeout() {
     local now=$started_at
 
     (
-        _cmux_report_pr_for_path "$repo_path" "$force_probe"
+        _termloop_report_pr_for_path "$repo_path" "$force_probe"
     ) &
     probe_pid=$!
 
@@ -910,10 +910,10 @@ _cmux_run_pr_probe_with_timeout() {
         sleep 1
         now="${EPOCHSECONDS:-$SECONDS}"
         if (( _TERMLOOP_ASYNC_JOB_TIMEOUT > 0 )) && (( now - started_at >= _TERMLOOP_ASYNC_JOB_TIMEOUT )); then
-            _cmux_kill_process_tree "$probe_pid" TERM
+            _termloop_kill_process_tree "$probe_pid" TERM
             sleep 0.2
             if kill -0 "$probe_pid" >/dev/null 2>&1; then
-                _cmux_kill_process_tree "$probe_pid" KILL
+                _termloop_kill_process_tree "$probe_pid" KILL
                 sleep 0.2
             fi
             if ! kill -0 "$probe_pid" >/dev/null 2>&1; then
@@ -926,7 +926,7 @@ _cmux_run_pr_probe_with_timeout() {
     wait "$probe_pid"
 }
 
-_cmux_halt_pr_poll_loop() {
+_termloop_halt_pr_poll_loop() {
     if [[ -n "$_TERMLOOP_PR_POLL_PID" ]]; then
         # Process-group kill: background jobs are process-group leaders, so
         # negative PID kills the loop + all descendants (gh, sleep) without
@@ -934,18 +934,18 @@ _cmux_halt_pr_poll_loop() {
         kill -KILL -- -"$_TERMLOOP_PR_POLL_PID" 2>/dev/null || true
     fi
     local signal_path=""
-    signal_path="$(_cmux_pr_force_signal_path 2>/dev/null || true)"
+    signal_path="$(_termloop_pr_force_signal_path 2>/dev/null || true)"
     [[ -n "$signal_path" ]] && /bin/rm -f -- "$signal_path" >/dev/null 2>&1 || true
     _TERMLOOP_PR_POLL_PID=""
     _TERMLOOP_PR_POLL_PWD=""
 }
 
-_cmux_stop_pr_poll_loop() {
-    _cmux_halt_pr_poll_loop
-    _cmux_pr_cache_clear
+_termloop_stop_pr_poll_loop() {
+    _termloop_halt_pr_poll_loop
+    _termloop_pr_cache_clear
 }
 
-_cmux_start_pr_poll_loop() {
+_termloop_start_pr_poll_loop() {
     [[ -S "$TERMLOOP_SOCKET_PATH" ]] || return 0
     [[ -n "$TERMLOOP_WORKSPACE_ID" ]] || return 0
     [[ -n "$TERMLOOP_PANEL_ID" ]] || return 0
@@ -961,7 +961,7 @@ _cmux_start_pr_poll_loop() {
     fi
 
     if [[ -n "$_TERMLOOP_PR_POLL_PID" ]] && kill -0 "$_TERMLOOP_PR_POLL_PID" 2>/dev/null; then
-        _cmux_halt_pr_poll_loop
+        _termloop_halt_pr_poll_loop
     else
         _TERMLOOP_PR_POLL_PID=""
     fi
@@ -969,7 +969,7 @@ _cmux_start_pr_poll_loop() {
 
     {
         local signal_path=""
-        signal_path="$(_cmux_pr_force_signal_path 2>/dev/null || true)"
+        signal_path="$(_termloop_pr_force_signal_path 2>/dev/null || true)"
         while true; do
             kill -0 "$watch_shell_pid" >/dev/null 2>&1 || break
             local force_probe=0
@@ -977,7 +977,7 @@ _cmux_start_pr_poll_loop() {
                 force_probe=1
                 /bin/rm -f -- "$signal_path" >/dev/null 2>&1 || true
             fi
-            _cmux_run_pr_probe_with_timeout "$watch_pwd" "$force_probe" || true
+            _termloop_run_pr_probe_with_timeout "$watch_pwd" "$force_probe" || true
 
             local slept=0
             while (( slept < interval )); do
@@ -993,50 +993,50 @@ _cmux_start_pr_poll_loop() {
     _TERMLOOP_PR_POLL_PID=$!
 }
 
-_cmux_stop_git_head_watch() {
+_termloop_stop_git_head_watch() {
     if [[ -n "$_TERMLOOP_GIT_HEAD_WATCH_PID" ]]; then
         kill "$_TERMLOOP_GIT_HEAD_WATCH_PID" >/dev/null 2>&1 || true
         _TERMLOOP_GIT_HEAD_WATCH_PID=""
     fi
 }
 
-_cmux_start_git_head_watch() {
+_termloop_start_git_head_watch() {
     [[ -S "$TERMLOOP_SOCKET_PATH" ]] || return 0
     [[ -n "$TERMLOOP_WORKSPACE_ID" ]] || return 0
     [[ -n "$TERMLOOP_PANEL_ID" ]] || return 0
 
     local watch_pwd="$PWD"
     local watch_head_path
-    watch_head_path="$(_cmux_git_resolve_head_path 2>/dev/null || true)"
+    watch_head_path="$(_termloop_git_resolve_head_path 2>/dev/null || true)"
     [[ -n "$watch_head_path" ]] || return 0
 
     local watch_head_signature
-    watch_head_signature="$(_cmux_git_head_signature "$watch_head_path" 2>/dev/null || true)"
+    watch_head_signature="$(_termloop_git_head_signature "$watch_head_path" 2>/dev/null || true)"
 
     _TERMLOOP_GIT_HEAD_LAST_PWD="$watch_pwd"
     _TERMLOOP_GIT_HEAD_PATH="$watch_head_path"
     _TERMLOOP_GIT_HEAD_SIGNATURE="$watch_head_signature"
 
-    _cmux_stop_git_head_watch
+    _termloop_stop_git_head_watch
     {
         local last_signature="$watch_head_signature"
         while true; do
             sleep 1
 
             local signature
-            signature="$(_cmux_git_head_signature "$watch_head_path" 2>/dev/null || true)"
+            signature="$(_termloop_git_head_signature "$watch_head_path" 2>/dev/null || true)"
             if [[ -n "$signature" && "$signature" != "$last_signature" ]]; then
                 last_signature="$signature"
-                _cmux_pr_cache_clear
-                _cmux_report_git_branch_for_path "$watch_pwd"
-                _cmux_clear_pr_for_panel
+                _termloop_pr_cache_clear
+                _termloop_report_git_branch_for_path "$watch_pwd"
+                _termloop_clear_pr_for_panel
             fi
         done
     } >/dev/null 2>&1 &!
     _TERMLOOP_GIT_HEAD_WATCH_PID=$!
 }
 
-_cmux_command_starts_nested_shell() {
+_termloop_command_starts_nested_shell() {
     local cmd="$1"
     local -a words
     words=("${(z)cmd}")
@@ -1086,11 +1086,11 @@ _cmux_command_starts_nested_shell() {
     return 1
 }
 
-_cmux_preexec() {
+_termloop_preexec() {
     if (( ! _TERMLOOP_DELAY_TERM_RESTORE_UNTIL_FIRST_PROMPT )); then
-        _cmux_restore_terminal_identity_after_startup
+        _termloop_restore_terminal_identity_after_startup
     fi
-    _cmux_tmux_sync_cmux_environment
+    _termloop_tmux_sync_termloop_environment
     local cmd="${1## }"
 
     if [[ -z "$_TERMLOOP_TTY_NAME" ]]; then
@@ -1100,9 +1100,9 @@ _cmux_preexec() {
         [[ -n "$t" && "$t" != "not a tty" ]] && _TERMLOOP_TTY_NAME="$t"
     fi
 
-    _TERMLOOP_CMD_START="$(_cmux_now)"
-    _cmux_report_shell_activity_state running
-    _cmux_record_pr_command_hint "$cmd"
+    _TERMLOOP_CMD_START="$(_termloop_now)"
+    _termloop_report_shell_activity_state running
+    _termloop_record_pr_command_hint "$cmd"
 
     # Heuristic: commands that may change git branch/dirty state without changing $PWD.
     case "$cmd" in
@@ -1112,34 +1112,34 @@ _cmux_preexec() {
     esac
 
     # Register TTY + kick batched port scan for foreground commands (servers).
-    _cmux_report_tty_once
-    _cmux_ports_kick command
-    _cmux_halt_pr_poll_loop
-    _cmux_stop_git_head_watch
-    if _cmux_command_starts_nested_shell "$cmd"; then
+    _termloop_report_tty_once
+    _termloop_ports_kick command
+    _termloop_halt_pr_poll_loop
+    _termloop_stop_git_head_watch
+    if _termloop_command_starts_nested_shell "$cmd"; then
         return 0
     fi
-    _cmux_start_git_head_watch
+    _termloop_start_git_head_watch
 }
 
-_cmux_precmd() {
+_termloop_precmd() {
     local last_status=$?
     if (( _TERMLOOP_DELAY_TERM_RESTORE_UNTIL_FIRST_PROMPT )); then
         _TERMLOOP_DELAY_TERM_RESTORE_UNTIL_FIRST_PROMPT=0
     fi
-    _cmux_stop_git_head_watch
-    _cmux_tmux_sync_cmux_environment
+    _termloop_stop_git_head_watch
+    _termloop_tmux_sync_termloop_environment
 
-    local cmux_has_unix_socket=0
-    _cmux_socket_is_unix && cmux_has_unix_socket=1
-    (( cmux_has_unix_socket )) || _cmux_has_port_scan_transport || return 0
+    local termloop_has_unix_socket=0
+    _termloop_socket_is_unix && termloop_has_unix_socket=1
+    (( termloop_has_unix_socket )) || _termloop_has_port_scan_transport || return 0
     [[ -n "$TERMLOOP_WORKSPACE_ID" ]] || return 0
     if [[ -n "$TERMLOOP_PANEL_ID" ]]; then
-        _cmux_report_shell_activity_state prompt
+        _termloop_report_shell_activity_state prompt
     fi
 
     # Handle cases where Ghostty integration initializes after this file.
-    (( _TERMLOOP_GHOSTTY_SEMANTIC_PATCHED )) || _cmux_patch_ghostty_semantic_redraw
+    (( _TERMLOOP_GHOSTTY_SEMANTIC_PATCHED )) || _termloop_patch_ghostty_semantic_redraw
 
     if [[ -z "$_TERMLOOP_TTY_NAME" ]]; then
         local t
@@ -1148,9 +1148,9 @@ _cmux_precmd() {
         [[ -n "$t" && "$t" != "not a tty" ]] && _TERMLOOP_TTY_NAME="$t"
     fi
 
-    _cmux_report_tty_once
+    _termloop_report_tty_once
 
-    local now="$(_cmux_now)"
+    local now="$(_termloop_now)"
     local cmd_start="$_TERMLOOP_CMD_START"
     _TERMLOOP_CMD_START=0
     local cmd_dur=0
@@ -1158,9 +1158,9 @@ _cmux_precmd() {
         cmd_dur=$(( now - cmd_start ))
     fi
 
-    if (( ! cmux_has_unix_socket )); then
+    if (( ! termloop_has_unix_socket )); then
         if (( cmd_dur >= 2 || now - _TERMLOOP_PORTS_LAST_RUN >= 10 )); then
-            _cmux_ports_kick refresh
+            _termloop_ports_kick refresh
         fi
         return 0
     fi
@@ -1168,7 +1168,7 @@ _cmux_precmd() {
     [[ -n "$TERMLOOP_PANEL_ID" ]] || return 0
     local pwd="$PWD"
 
-    _cmux_prompt_wrap_guard "$cmd_start" "$pwd"
+    _termloop_prompt_wrap_guard "$cmd_start" "$pwd"
 
     # Post-wake socket writes can occasionally leave a probe process wedged.
     # If one probe is stale, clear the guard so fresh async probes can resume.
@@ -1188,11 +1188,11 @@ _cmux_precmd() {
     if [[ "$pwd" != "$_TERMLOOP_PWD_LAST_PWD" ]]; then
         _TERMLOOP_PWD_LAST_PWD="$pwd"
         local qpwd="${pwd//\"/\\\"}"
-        _cmux_send_bg "report_pwd \"${qpwd}\" --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID"
+        _termloop_send_bg "report_pwd \"${qpwd}\" --workspace=$TERMLOOP_WORKSPACE_ID --panel=$TERMLOOP_PANEL_ID"
     fi
 
     # Git branch/dirty: update immediately on directory change, otherwise every ~3s.
-    # While a foreground command is running, _cmux_start_git_head_watch probes HEAD
+    # While a foreground command is running, _termloop_start_git_head_watch probes HEAD
     # once per second so agent-initiated git checkouts still surface quickly.
     local should_git=0
     local git_head_changed=0
@@ -1201,12 +1201,12 @@ _cmux_precmd() {
     # tools like `gh pr checkout`, etc.). Detect HEAD changes and force a refresh.
     if [[ "$pwd" != "$_TERMLOOP_GIT_HEAD_LAST_PWD" ]]; then
         _TERMLOOP_GIT_HEAD_LAST_PWD="$pwd"
-        _TERMLOOP_GIT_HEAD_PATH="$(_cmux_git_resolve_head_path 2>/dev/null || true)"
+        _TERMLOOP_GIT_HEAD_PATH="$(_termloop_git_resolve_head_path 2>/dev/null || true)"
         _TERMLOOP_GIT_HEAD_SIGNATURE=""
     fi
     if [[ -n "$_TERMLOOP_GIT_HEAD_PATH" ]]; then
         local head_signature
-        head_signature="$(_cmux_git_head_signature "$_TERMLOOP_GIT_HEAD_PATH" 2>/dev/null || true)"
+        head_signature="$(_termloop_git_head_signature "$_TERMLOOP_GIT_HEAD_PATH" 2>/dev/null || true)"
         if [[ -n "$head_signature" ]]; then
             if [[ -z "$_TERMLOOP_GIT_HEAD_SIGNATURE" ]]; then
                 # The first observed HEAD value establishes the baseline for this
@@ -1256,18 +1256,18 @@ _cmux_precmd() {
             _TERMLOOP_GIT_LAST_PWD="$pwd"
             _TERMLOOP_GIT_LAST_RUN=$now
             {
-                _cmux_report_git_branch_for_path "$pwd"
+                _termloop_report_git_branch_for_path "$pwd"
             } >/dev/null 2>&1 &!
             _TERMLOOP_GIT_JOB_PID=$!
             _TERMLOOP_GIT_JOB_STARTED_AT=$now
         fi
     fi
     if (( git_head_changed )); then
-        _cmux_pr_cache_clear
-        _cmux_clear_pr_for_panel
+        _termloop_pr_cache_clear
+        _termloop_clear_pr_for_panel
     fi
     if (( last_status == 0 )); then
-        _cmux_emit_pr_command_hint
+        _termloop_emit_pr_command_hint
     else
         _TERMLOOP_LAST_PR_ACTION=""
         _TERMLOOP_LAST_PR_TARGET=""
@@ -1277,11 +1277,11 @@ _cmux_precmd() {
     # - Periodic scan to avoid stale values.
     # - Forced scan when a long-running command returns to the prompt (common when stopping a server).
     if (( cmd_dur >= 2 || now - _TERMLOOP_PORTS_LAST_RUN >= 10 )); then
-        _cmux_ports_kick refresh
+        _termloop_ports_kick refresh
     fi
 }
 
-_cmux_bundled_bin_dir() {
+_termloop_bundled_bin_dir() {
     if [[ -n "${GHOSTTY_BIN_DIR:-}" ]]; then
         local gui_dir="${GHOSTTY_BIN_DIR%/}"
         local bin_dir="${gui_dir%/MacOS}/Resources/bin"
@@ -1298,7 +1298,7 @@ _cmux_bundled_bin_dir() {
 }
 
 # Ensure Resources/bin is at the front of PATH, and remove the app's
-# Contents/MacOS entry so the GUI cmux binary cannot shadow the CLI cmux.
+# Contents/MacOS entry so the GUI termloop binary cannot shadow the CLI termloop.
 # Shell init (.zprofile/.zshrc) may prepend other dirs after launch.
 # We fix this once on first prompt (after all init files have run).
 #
@@ -1307,9 +1307,9 @@ _cmux_bundled_bin_dir() {
 # even if the user's `.zshrc` re-prepends `~/.local/bin` / `~/.bun/bin`
 # after this hook fires. PATH precedence alone has been unreliable across
 # user setups (homebrew shellenv, bun, mise, direnv, etc.).
-_cmux_fix_path() {
+_termloop_fix_path() {
     local bin_dir=""
-    bin_dir="$(_cmux_bundled_bin_dir)"
+    bin_dir="$(_termloop_bundled_bin_dir)"
     if [[ -n "$bin_dir" ]]; then
         local gui_dir="${GHOSTTY_BIN_DIR:-}"
         gui_dir="${gui_dir%/}"
@@ -1330,10 +1330,10 @@ _cmux_fix_path() {
             fi
         done
     fi
-    add-zsh-hook -d precmd _cmux_fix_path
+    add-zsh-hook -d precmd _termloop_fix_path
 }
 
-_cmux_restore_terminal_identity_after_startup() {
+_termloop_restore_terminal_identity_after_startup() {
     if [[ -n "${TERMLOOP_ZSH_RESTORE_TERM:-}" ]]; then
         builtin export TERM="$TERMLOOP_ZSH_RESTORE_TERM"
         builtin unset TERMLOOP_ZSH_RESTORE_TERM
@@ -1341,13 +1341,13 @@ _cmux_restore_terminal_identity_after_startup() {
     _TERMLOOP_DELAY_TERM_RESTORE_UNTIL_FIRST_PROMPT=0
 }
 
-_cmux_zshexit() {
-    _cmux_stop_git_head_watch
-    _cmux_stop_pr_poll_loop
+_termloop_zshexit() {
+    _termloop_stop_git_head_watch
+    _termloop_stop_pr_poll_loop
 }
 
 autoload -Uz add-zsh-hook
-add-zsh-hook preexec _cmux_preexec
-add-zsh-hook precmd _cmux_precmd
-add-zsh-hook precmd _cmux_fix_path
-add-zsh-hook zshexit _cmux_zshexit
+add-zsh-hook preexec _termloop_preexec
+add-zsh-hook precmd _termloop_precmd
+add-zsh-hook precmd _termloop_fix_path
+add-zsh-hook zshexit _termloop_zshexit

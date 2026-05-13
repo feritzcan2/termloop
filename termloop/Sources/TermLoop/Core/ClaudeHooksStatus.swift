@@ -38,7 +38,6 @@ final class ClaudeHooksStatus: ObservableObject {
         return command.contains("TERMLOOP_WORKSPACE_ID")
             || command.contains("TERMLOOP_SURFACE_ID")
             || command.contains("TERMLOOP_BUNDLED_CLI_PATH")
-            || command.contains("/TermLoopHooks/claude/")
     }
 
     func refreshIfStale() {
@@ -238,7 +237,7 @@ final class OpenCodeHooksStatus: ObservableObject {
         refreshIfStale()
     }
 
-    private static let hookMarker = "cmux opencode-hook"
+    private static let hookMarker = "termloop opencode-hook"
 
     func refreshIfStale() {
         if Date().timeIntervalSince(lastCheck) >= cacheInterval {
@@ -268,6 +267,6 @@ final class OpenCodeHooksStatus: ObservableObject {
     }
 
     static func pluginPath() -> String {
-        (pluginsDirectoryPath() as NSString).appendingPathComponent("cmux-termloop.js")
+        (pluginsDirectoryPath() as NSString).appendingPathComponent("termloop-opencode.js")
     }
 }

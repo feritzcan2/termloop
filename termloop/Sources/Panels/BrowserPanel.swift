@@ -532,59 +532,54 @@ final class BrowserProfileStore: ObservableObject {
 }
 
 enum BrowserLinkOpenSettings {
-    static let openTerminalLinksInCmuxBrowserKey = "browserOpenTerminalLinksInCmuxBrowser"
-    static let defaultOpenTerminalLinksInCmuxBrowser: Bool = true
+    static let openTerminalLinksInTermLoopBrowserKey = "browserOpenTerminalLinksInTermLoopBrowser"
+    static let defaultOpenTerminalLinksInTermLoopBrowser: Bool = true
 
-    static let openSidebarPullRequestLinksInCmuxBrowserKey = "browserOpenSidebarPullRequestLinksInCmuxBrowser"
-    static let defaultOpenSidebarPullRequestLinksInCmuxBrowser: Bool = true
+    static let openSidebarPullRequestLinksInTermLoopBrowserKey = "browserOpenSidebarPullRequestLinksInTermLoopBrowser"
+    static let defaultOpenSidebarPullRequestLinksInTermLoopBrowser: Bool = true
 
-    static let openSidebarPortLinksInCmuxBrowserKey = "browserOpenSidebarPortLinksInCmuxBrowser"
-    static let defaultOpenSidebarPortLinksInCmuxBrowser: Bool = true
+    static let openSidebarPortLinksInTermLoopBrowserKey = "browserOpenSidebarPortLinksInTermLoopBrowser"
+    static let defaultOpenSidebarPortLinksInTermLoopBrowser: Bool = true
 
-    static let interceptTerminalOpenCommandInCmuxBrowserKey = "browserInterceptTerminalOpenCommandInCmuxBrowser"
-    static let defaultInterceptTerminalOpenCommandInCmuxBrowser: Bool = true
+    static let interceptTerminalOpenCommandInTermLoopBrowserKey = "browserInterceptTerminalOpenCommandInTermLoopBrowser"
+    static let defaultInterceptTerminalOpenCommandInTermLoopBrowser: Bool = true
 
     static let browserHostWhitelistKey = "browserHostWhitelist"
     static let defaultBrowserHostWhitelist: String = ""
     static let browserExternalOpenPatternsKey = "browserExternalOpenPatterns"
     static let defaultBrowserExternalOpenPatterns: String = ""
 
-    static func openTerminalLinksInCmuxBrowser(defaults: UserDefaults = .standard) -> Bool {
-        if defaults.object(forKey: openTerminalLinksInCmuxBrowserKey) == nil {
-            return defaultOpenTerminalLinksInCmuxBrowser
+    static func openTerminalLinksInTermLoopBrowser(defaults: UserDefaults = .standard) -> Bool {
+        if defaults.object(forKey: openTerminalLinksInTermLoopBrowserKey) == nil {
+            return defaultOpenTerminalLinksInTermLoopBrowser
         }
-        return defaults.bool(forKey: openTerminalLinksInCmuxBrowserKey)
+        return defaults.bool(forKey: openTerminalLinksInTermLoopBrowserKey)
     }
 
-    static func openSidebarPullRequestLinksInCmuxBrowser(defaults: UserDefaults = .standard) -> Bool {
-        if defaults.object(forKey: openSidebarPullRequestLinksInCmuxBrowserKey) == nil {
-            return defaultOpenSidebarPullRequestLinksInCmuxBrowser
+    static func openSidebarPullRequestLinksInTermLoopBrowser(defaults: UserDefaults = .standard) -> Bool {
+        if defaults.object(forKey: openSidebarPullRequestLinksInTermLoopBrowserKey) == nil {
+            return defaultOpenSidebarPullRequestLinksInTermLoopBrowser
         }
-        return defaults.bool(forKey: openSidebarPullRequestLinksInCmuxBrowserKey)
+        return defaults.bool(forKey: openSidebarPullRequestLinksInTermLoopBrowserKey)
     }
 
-    static func openSidebarPortLinksInCmuxBrowser(defaults: UserDefaults = .standard) -> Bool {
-        if defaults.object(forKey: openSidebarPortLinksInCmuxBrowserKey) == nil {
-            return defaultOpenSidebarPortLinksInCmuxBrowser
+    static func openSidebarPortLinksInTermLoopBrowser(defaults: UserDefaults = .standard) -> Bool {
+        if defaults.object(forKey: openSidebarPortLinksInTermLoopBrowserKey) == nil {
+            return defaultOpenSidebarPortLinksInTermLoopBrowser
         }
-        return defaults.bool(forKey: openSidebarPortLinksInCmuxBrowserKey)
+        return defaults.bool(forKey: openSidebarPortLinksInTermLoopBrowserKey)
     }
 
-    static func interceptTerminalOpenCommandInCmuxBrowser(defaults: UserDefaults = .standard) -> Bool {
-        if defaults.object(forKey: interceptTerminalOpenCommandInCmuxBrowserKey) != nil {
-            return defaults.bool(forKey: interceptTerminalOpenCommandInCmuxBrowserKey)
+    static func interceptTerminalOpenCommandInTermLoopBrowser(defaults: UserDefaults = .standard) -> Bool {
+        if defaults.object(forKey: interceptTerminalOpenCommandInTermLoopBrowserKey) != nil {
+            return defaults.bool(forKey: interceptTerminalOpenCommandInTermLoopBrowserKey)
         }
 
-        // Migrate existing behavior for users who only had the link-click toggle.
-        if defaults.object(forKey: openTerminalLinksInCmuxBrowserKey) != nil {
-            return defaults.bool(forKey: openTerminalLinksInCmuxBrowserKey)
-        }
-
-        return defaultInterceptTerminalOpenCommandInCmuxBrowser
+        return defaultInterceptTerminalOpenCommandInTermLoopBrowser
     }
 
-    static func initialInterceptTerminalOpenCommandInCmuxBrowserValue(defaults: UserDefaults = .standard) -> Bool {
-        interceptTerminalOpenCommandInCmuxBrowser(defaults: defaults)
+    static func initialInterceptTerminalOpenCommandInTermLoopBrowserValue(defaults: UserDefaults = .standard) -> Bool {
+        interceptTerminalOpenCommandInTermLoopBrowser(defaults: defaults)
     }
 
     static func hostWhitelist(defaults: UserDefaults = .standard) -> [String] {

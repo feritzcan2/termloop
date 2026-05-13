@@ -33,15 +33,6 @@ enum TermLoopCLICommands {
             try ClaudeHookInstaller.install(jsonOutput: jsonOutput)
         case "check-claude-hooks":
             try ClaudeHookInstaller.check(jsonOutput: jsonOutput)
-        case "claude-system-prompt":
-            // Legacy verb → legacy socket method. Lets a new CLI talk to an
-            // older running app that only knows `workspace.claude_system_prompt`.
-            try agentSystemPrompt(
-                commandArgs: commandArgs,
-                client: client,
-                defaultAgentId: "claude",
-                socketMethod: "workspace.claude_system_prompt"
-            )
         case "agent-system-prompt":
             try agentSystemPrompt(
                 commandArgs: commandArgs,

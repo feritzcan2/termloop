@@ -266,7 +266,7 @@ private final class CLISocketSentryTelemetry {
         if !tmpSockets.isEmpty {
             context["tmp_termloop_sockets"] = tmpSockets
         }
-        let taggedSockets = tmpSockets.filter { $0 != CLISocketPathResolver.legacyDefaultSocketPath }
+        let taggedSockets = tmpSockets.filter { $0 != CLISocketPathResolver.tmpDefaultSocketPath }
         if CLISocketPathResolver.isImplicitDefaultPath(socketPath),
            (envSocketPath?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
            !taggedSockets.isEmpty {
@@ -297,7 +297,7 @@ private final class CLISocketSentryTelemetry {
         }
         var sockets: [String] = []
         for name in entries.sorted() {
-            guard name.hasPrefix("cmux"), name.hasSuffix(".sock") else { continue }
+            guard name.hasPrefix("termloop"), name.hasSuffix(".sock") else { continue }
             let fullPath = URL(fileURLWithPath: directory)
                 .appendingPathComponent(name, isDirectory: false)
                 .path
@@ -742,20 +742,20 @@ private enum CLISocketPathResolver {
     private static let appSupportDirectoryName = "termloop"
     private static let stableSocketFileName = "termloop.sock"
     private static let lastSocketPathFileName = "last-socket-path"
-    static let legacyDefaultSocketPath = "/tmp/termloop.sock"
+    static let tmpDefaultSocketPath = "/tmp/termloop.sock"
     private static let fallbackSocketPath = "/tmp/termloop-debug.sock"
     private static let stagingSocketPath = "/tmp/termloop-staging.sock"
-    private static let legacyLastSocketPathFile = "/tmp/termloop-last-socket-path"
+    private static let tmpLastSocketPathFile = "/tmp/termloop-last-socket-path"
 
     static var defaultSocketPath: String {
         let stablePath: String? = stableSocketDirectoryURL()?
             .appendingPathComponent(stableSocketFileName, isDirectory: false)
             .path
-        return stablePath ?? legacyDefaultSocketPath
+        return stablePath ?? tmpDefaultSocketPath
     }
 
     static func isImplicitDefaultPath(_ path: String) -> Bool {
-        path == defaultSocketPath || path == legacyDefaultSocketPath
+        path == defaultSocketPath || path == tmpDefaultSocketPath
     }
 
     static func resolve(
@@ -793,7 +793,7 @@ private enum CLISocketPathResolver {
 
         candidates.append(requestedPath)
         candidates.append(defaultSocketPath)
-        candidates.append(legacyDefaultSocketPath)
+        candidates.append(tmpDefaultSocketPath)
         candidates.append(fallbackSocketPath)
         candidates.append(stagingSocketPath)
         candidates.append(contentsOf: discoverTaggedSockets(limit: 12))
@@ -807,7 +807,7 @@ private enum CLISocketPathResolver {
         let primaryCandidate: String? = stableSocketDirectoryURL()?
             .appendingPathComponent(lastSocketPathFileName, isDirectory: false)
             .path
-        let candidates = [primaryCandidate, legacyLastSocketPathFile].compactMap { $0 }
+        let candidates = [primaryCandidate, tmpLastSocketPathFile].compactMap { $0 }
 
         for candidate in candidates {
             guard let data = try? String(contentsOfFile: candidate, encoding: .utf8) else {
@@ -834,7 +834,7 @@ private enum CLISocketPathResolver {
                 var st = stat()
                 guard lstat(path, &st) == 0 else { continue }
                 guard (st.st_mode & mode_t(S_IFMT)) == mode_t(S_IFSOCK) else { continue }
-                if path == defaultSocketPath || path == legacyDefaultSocketPath || path == fallbackSocketPath || path == stagingSocketPath {
+                if path == defaultSocketPath || path == tmpDefaultSocketPath || path == fallbackSocketPath || path == stagingSocketPath {
                     continue
                 }
                 let modified = TimeInterval(st.st_mtimespec.tv_sec) + TimeInterval(st.st_mtimespec.tv_nsec) / 1_000_000_000
@@ -1646,7 +1646,7 @@ enum CLIProcessRunner {
     }
 }
 
-struct CMUXCLI {
+struct TermLoopCLI {
     let args: [String]
 
     private static let debugLastSocketHintPath = "/tmp/termloop-last-socket-path"
@@ -1996,7 +1996,7 @@ struct CMUXCLI {
             }
         }
 
-        // Generic agent hook handlers: gracefully no-op outside cmux
+        // Generic agent hook handlers: gracefully no-op outside termloop
         if ["copilot-hook", "codebuddy-hook", "factory-hook", "qoder-hook"].contains(command) {
             guard ProcessInfo.processInfo.environment["TERMLOOP_SURFACE_ID"] != nil else {
                 print("{}")
@@ -2257,7 +2257,7 @@ struct CMUXCLI {
         // MARK: termloop-hook
         case "list-projects", "current-project", "new-project", "rename-project",
              "set-project-folder", "delete-project", "switch-project",
-             "install-claude-hooks", "check-claude-hooks", "claude-system-prompt", "agent-system-prompt":
+             "install-claude-hooks", "check-claude-hooks", "agent-system-prompt":
             _ = try TermLoopCLICommands.handle(subcommand: command, commandArgs: commandArgs, client: client, jsonOutput: jsonOutput)
         // MARK: /termloop-hook
 
@@ -3010,38 +3010,6 @@ struct CMUXCLI {
         // Browser commands
         case "browser":
             try runBrowserCommand(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
-
-        // Legacy aliases shimmed onto the v2 browser command surface.
-        case "open-browser":
-            try runBrowserCommand(commandArgs: ["open"] + commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
-
-        case "navigate":
-            let bridged = replaceToken(commandArgs, from: "--panel", to: "--surface")
-            try runBrowserCommand(commandArgs: ["navigate"] + bridged, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
-
-        case "browser-back":
-            let bridged = replaceToken(commandArgs, from: "--panel", to: "--surface")
-            try runBrowserCommand(commandArgs: ["back"] + bridged, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
-
-        case "browser-forward":
-            let bridged = replaceToken(commandArgs, from: "--panel", to: "--surface")
-            try runBrowserCommand(commandArgs: ["forward"] + bridged, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
-
-        case "browser-reload":
-            let bridged = replaceToken(commandArgs, from: "--panel", to: "--surface")
-            try runBrowserCommand(commandArgs: ["reload"] + bridged, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
-
-        case "get-url":
-            let bridged = replaceToken(commandArgs, from: "--panel", to: "--surface")
-            try runBrowserCommand(commandArgs: ["get-url"] + bridged, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
-
-        case "focus-webview":
-            let bridged = replaceToken(commandArgs, from: "--panel", to: "--surface")
-            try runBrowserCommand(commandArgs: ["focus-webview"] + bridged, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
-
-        case "is-webview-focused":
-            let bridged = replaceToken(commandArgs, from: "--panel", to: "--surface")
-            try runBrowserCommand(commandArgs: ["is-webview-focused"] + bridged, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
 
         // Markdown commands
         case "markdown":
@@ -4455,7 +4423,7 @@ struct CMUXCLI {
             if let workspaceWindowId, !workspaceWindowId.isEmpty {
                 selectParams["window_id"] = workspaceWindowId
             }
-            // `cmux ssh` is an explicit "open this remote workspace now" action,
+            // `termloop ssh` is an explicit "open this remote workspace now" action,
             // so we intentionally select the newly created workspace after wiring
             // up the remote connection — unless --no-focus is passed.
             if !sshOptions.noFocus {
@@ -4660,19 +4628,19 @@ struct CMUXCLI {
             remoteBootstrapInstallShell(remoteRelayPort: options.remoteRelayPort)
         )
         var lines: [String] = [
-            "cmux_workspace_id=\"${TERMLOOP_WORKSPACE_ID:-}\"",
-            "cmux_surface_id=\"${TERMLOOP_SURFACE_ID:-}\"",
-            "cmux_remote_bootstrap_b64=\(shellQuote(encodedBootstrapScript))",
-            "cmux_remote_bootstrap=\"$(printf %s \"$cmux_remote_bootstrap_b64\" | base64 -d 2>/dev/null || printf %s \"$cmux_remote_bootstrap_b64\" | base64 -D 2>/dev/null)\"",
-            "cmux_remote_bootstrap=\"$(printf '%s' \"$cmux_remote_bootstrap\" | sed \"s/__TERMLOOP_WORKSPACE_ID__/$cmux_workspace_id/g; s/__TERMLOOP_SURFACE_ID__/$cmux_surface_id/g\")\"",
-            "if ! printf '%s' \"$cmux_remote_bootstrap\" | command \(installSSHPrefix) -T \(shellQuote(options.destination)) \(shellQuote(remoteBootstrapInstallCommand)); then",
+            "termloop_workspace_id=\"${TERMLOOP_WORKSPACE_ID:-}\"",
+            "termloop_surface_id=\"${TERMLOOP_SURFACE_ID:-}\"",
+            "termloop_remote_bootstrap_b64=\(shellQuote(encodedBootstrapScript))",
+            "termloop_remote_bootstrap=\"$(printf %s \"$termloop_remote_bootstrap_b64\" | base64 -d 2>/dev/null || printf %s \"$termloop_remote_bootstrap_b64\" | base64 -D 2>/dev/null)\"",
+            "termloop_remote_bootstrap=\"$(printf '%s' \"$termloop_remote_bootstrap\" | sed \"s/__TERMLOOP_WORKSPACE_ID__/$termloop_workspace_id/g; s/__TERMLOOP_SURFACE_ID__/$termloop_surface_id/g\")\"",
+            "if ! printf '%s' \"$termloop_remote_bootstrap\" | command \(installSSHPrefix) -T \(shellQuote(options.destination)) \(shellQuote(remoteBootstrapInstallCommand)); then",
             "  exit 1",
             "fi",
-            "cmux_remote_command_template=\(shellQuote(remoteCommandTemplate))",
-            "cmux_remote_command=\"$(printf '%s' \"$cmux_remote_command_template\" | sed \"s/__TERMLOOP_WORKSPACE_ID__/$cmux_workspace_id/g; s/__TERMLOOP_SURFACE_ID__/$cmux_surface_id/g\")\"",
+            "termloop_remote_command_template=\(shellQuote(remoteCommandTemplate))",
+            "termloop_remote_command=\"$(printf '%s' \"$termloop_remote_command_template\" | sed \"s/__TERMLOOP_WORKSPACE_ID__/$termloop_workspace_id/g; s/__TERMLOOP_SURFACE_ID__/$termloop_surface_id/g\")\"",
         ]
 
-        var sshInvocation = "command \(sessionSSHPrefix) -o \"RemoteCommand=$cmux_remote_command\""
+        var sshInvocation = "command \(sessionSSHPrefix) -o \"RemoteCommand=$termloop_remote_command\""
         if !hasSSHOptionKey(options.sshOptions, key: "RequestTTY") {
             sshInvocation += " -tt"
         }
@@ -4693,10 +4661,10 @@ struct CMUXCLI {
         [
             "set -eu",
             "umask 077",
-            "cmux_bootstrap_path=\"$HOME/.termloop/relay/\(remoteRelayPort).bootstrap.sh\"",
+            "termloop_bootstrap_path=\"$HOME/.termloop/relay/\(remoteRelayPort).bootstrap.sh\"",
             "mkdir -p \"$HOME/.termloop/relay\"",
-            "cat > \"$cmux_bootstrap_path\"",
-            "chmod 700 \"$cmux_bootstrap_path\" >/dev/null 2>&1 || true",
+            "cat > \"$termloop_bootstrap_path\"",
+            "chmod 700 \"$termloop_bootstrap_path\" >/dev/null 2>&1 || true",
         ].joined(separator: "\n")
     }
 
@@ -4706,13 +4674,13 @@ struct CMUXCLI {
     ) -> String {
         var lines = remoteBootstrapTTYCaptureLines(remoteRelayPort: remoteRelayPort, includeRelayRPC: false)
         lines += [
-            "cmux_tmp=$(mktemp \"${TMPDIR:-/tmp}/termloop-ssh-bootstrap.XXXXXX\") || exit 1",
-            "(printf %s '\(base64Placeholder)' | base64 -d 2>/dev/null || printf %s '\(base64Placeholder)' | base64 -D 2>/dev/null) > \"$cmux_tmp\" || { rm -f \"$cmux_tmp\"; exit 1; }",
-            "chmod 700 \"$cmux_tmp\" >/dev/null 2>&1 || true",
-            "/bin/sh \"$cmux_tmp\"",
-            "cmux_status=$?",
-            "rm -f \"$cmux_tmp\"",
-            "exit $cmux_status",
+            "termloop_tmp=$(mktemp \"${TMPDIR:-/tmp}/termloop-ssh-bootstrap.XXXXXX\") || exit 1",
+            "(printf %s '\(base64Placeholder)' | base64 -d 2>/dev/null || printf %s '\(base64Placeholder)' | base64 -D 2>/dev/null) > \"$termloop_tmp\" || { rm -f \"$termloop_tmp\"; exit 1; }",
+            "chmod 700 \"$termloop_tmp\" >/dev/null 2>&1 || true",
+            "/bin/sh \"$termloop_tmp\"",
+            "termloop_status=$?",
+            "rm -f \"$termloop_tmp\"",
+            "exit $termloop_status",
         ]
         return lines.joined(separator: "\n")
     }
@@ -4724,28 +4692,28 @@ struct CMUXCLI {
         guard remoteRelayPort > 0 else { return [] }
 
         var lines: [String] = [
-            "cmux_bootstrap_tty=\"$(tty 2>/dev/null || true)\"",
-            "cmux_bootstrap_tty=\"${cmux_bootstrap_tty##*/}\"",
-            "if [ -n \"$cmux_bootstrap_tty\" ] && [ \"$cmux_bootstrap_tty\" != \"not a tty\" ]; then",
+            "termloop_bootstrap_tty=\"$(tty 2>/dev/null || true)\"",
+            "termloop_bootstrap_tty=\"${termloop_bootstrap_tty##*/}\"",
+            "if [ -n \"$termloop_bootstrap_tty\" ] && [ \"$termloop_bootstrap_tty\" != \"not a tty\" ]; then",
             "  mkdir -p \"$HOME/.termloop/relay\" >/dev/null 2>&1 || true",
-            "  printf '%s' \"$cmux_bootstrap_tty\" > \"$HOME/.termloop/relay/\(remoteRelayPort).tty\" 2>/dev/null || true",
-            "  export TERMLOOP_BOOTSTRAP_TTY=\"$cmux_bootstrap_tty\"",
+            "  printf '%s' \"$termloop_bootstrap_tty\" > \"$HOME/.termloop/relay/\(remoteRelayPort).tty\" 2>/dev/null || true",
+            "  export TERMLOOP_BOOTSTRAP_TTY=\"$termloop_bootstrap_tty\"",
         ]
 
         if includeRelayRPC {
             lines += [
-                "  cmux_relay_cli=\"$HOME/.termloop/bin/termloop\"",
-                "  if [ ! -x \"$cmux_relay_cli\" ]; then cmux_relay_cli=\"$(command -v termloop 2>/dev/null || true)\"; fi",
-                "  if [ -n \"$cmux_relay_cli\" ]; then",
-                "    cmux_relay_report_tty='{\"workspace_id\":\"__TERMLOOP_WORKSPACE_ID__\",\"tty_name\":\"'$cmux_bootstrap_tty'\"}'",
-                "    cmux_relay_ports_kick='{\"workspace_id\":\"__TERMLOOP_WORKSPACE_ID__\",\"reason\":\"command\"}'",
+                "  termloop_relay_cli=\"$HOME/.termloop/bin/termloop\"",
+                "  if [ ! -x \"$termloop_relay_cli\" ]; then termloop_relay_cli=\"$(command -v termloop 2>/dev/null || true)\"; fi",
+                "  if [ -n \"$termloop_relay_cli\" ]; then",
+                "    termloop_relay_report_tty='{\"workspace_id\":\"__TERMLOOP_WORKSPACE_ID__\",\"tty_name\":\"'$termloop_bootstrap_tty'\"}'",
+                "    termloop_relay_ports_kick='{\"workspace_id\":\"__TERMLOOP_WORKSPACE_ID__\",\"reason\":\"command\"}'",
                 "    if [ -n \"__TERMLOOP_SURFACE_ID__\" ]; then",
-                "      cmux_relay_report_tty='{\"workspace_id\":\"__TERMLOOP_WORKSPACE_ID__\",\"surface_id\":\"__TERMLOOP_SURFACE_ID__\",\"tty_name\":\"'$cmux_bootstrap_tty'\"}'",
-                "      cmux_relay_ports_kick='{\"workspace_id\":\"__TERMLOOP_WORKSPACE_ID__\",\"surface_id\":\"__TERMLOOP_SURFACE_ID__\",\"reason\":\"command\"}'",
+                "      termloop_relay_report_tty='{\"workspace_id\":\"__TERMLOOP_WORKSPACE_ID__\",\"surface_id\":\"__TERMLOOP_SURFACE_ID__\",\"tty_name\":\"'$termloop_bootstrap_tty'\"}'",
+                "      termloop_relay_ports_kick='{\"workspace_id\":\"__TERMLOOP_WORKSPACE_ID__\",\"surface_id\":\"__TERMLOOP_SURFACE_ID__\",\"reason\":\"command\"}'",
                 "    fi",
-                "    TERMLOOP_SOCKET_PATH=\"127.0.0.1:\(remoteRelayPort)\" TERMLOOP_SOCKET=\"127.0.0.1:\(remoteRelayPort)\" \"$cmux_relay_cli\" rpc surface.report_tty \"$cmux_relay_report_tty\" >/dev/null 2>&1 || true",
-                "    TERMLOOP_SOCKET_PATH=\"127.0.0.1:\(remoteRelayPort)\" TERMLOOP_SOCKET=\"127.0.0.1:\(remoteRelayPort)\" \"$cmux_relay_cli\" rpc surface.ports_kick \"$cmux_relay_ports_kick\" >/dev/null 2>&1 || true",
-                "    unset cmux_relay_cli cmux_relay_report_tty cmux_relay_ports_kick",
+                "    TERMLOOP_SOCKET_PATH=\"127.0.0.1:\(remoteRelayPort)\" TERMLOOP_SOCKET=\"127.0.0.1:\(remoteRelayPort)\" \"$termloop_relay_cli\" rpc surface.report_tty \"$termloop_relay_report_tty\" >/dev/null 2>&1 || true",
+                "    TERMLOOP_SOCKET_PATH=\"127.0.0.1:\(remoteRelayPort)\" TERMLOOP_SOCKET=\"127.0.0.1:\(remoteRelayPort)\" \"$termloop_relay_cli\" rpc surface.ports_kick \"$termloop_relay_ports_kick\" >/dev/null 2>&1 || true",
+                "    unset termloop_relay_cli termloop_relay_report_tty termloop_relay_ports_kick",
                 "  fi",
             ]
         }
@@ -4817,16 +4785,16 @@ struct CMUXCLI {
         ]
         if let bundledZshIntegration {
             outerLines += [
-                "cat > \"$termloop_shell_dir/termloop-zsh-integration.zsh\" <<'CMUXCMUXZSH'",
+                "cat > \"$termloop_shell_dir/termloop-zsh-integration.zsh\" <<'TERMLOOP_ZSH_PAYLOAD'",
                 bundledZshIntegration,
-                "CMUXCMUXZSH",
+                "TERMLOOP_ZSH_PAYLOAD",
             ]
         }
         if let bundledBashIntegration {
             outerLines += [
-                "cat > \"$termloop_shell_dir/termloop-bash-integration.bash\" <<'CMUXCMUXBASH'",
+                "cat > \"$termloop_shell_dir/termloop-bash-integration.bash\" <<'TERMLOOP_BASH_PAYLOAD'",
                 bundledBashIntegration,
-                "CMUXCMUXBASH",
+                "TERMLOOP_BASH_PAYLOAD",
             ]
         }
         outerLines.append(contentsOf: commonShellExportLines)
@@ -4834,26 +4802,26 @@ struct CMUXCLI {
             "TERMLOOP_LOGIN_SHELL=\"${SHELL:-/bin/zsh}\"",
             "case \"${TERMLOOP_LOGIN_SHELL##*/}\" in",
             "  zsh)",
-            "    cat > \"$termloop_shell_dir/.zshenv\" <<'CMUXZSHENV'",
+            "    cat > \"$termloop_shell_dir/.zshenv\" <<'TERMLOOPZSHENV'",
         ]
         outerLines.append(contentsOf: zshEnvLines)
         outerLines += [
-            "CMUXZSHENV",
-            "    cat > \"$termloop_shell_dir/.zprofile\" <<'CMUXZSHPROFILE'",
+            "TERMLOOPZSHENV",
+            "    cat > \"$termloop_shell_dir/.zprofile\" <<'TERMLOOPZSHPROFILE'",
         ]
         outerLines.append(contentsOf: zshProfileLines)
         outerLines += [
-            "CMUXZSHPROFILE",
-            "    cat > \"$termloop_shell_dir/.zshrc\" <<'CMUXZSHRC'",
+            "TERMLOOPZSHPROFILE",
+            "    cat > \"$termloop_shell_dir/.zshrc\" <<'TERMLOOPZSHRC'",
         ]
         outerLines.append(contentsOf: zshRCLines)
         outerLines += [
-            "CMUXZSHRC",
-            "    cat > \"$termloop_shell_dir/.zlogin\" <<'CMUXZSHLOGIN'",
+            "TERMLOOPZSHRC",
+            "    cat > \"$termloop_shell_dir/.zlogin\" <<'TERMLOOPZSHLOGIN'",
         ]
         outerLines.append(contentsOf: zshLoginLines)
         outerLines += [
-            "CMUXZSHLOGIN",
+            "TERMLOOPZSHLOGIN",
             "    chmod 600 \"$termloop_shell_dir/.zshenv\" \"$termloop_shell_dir/.zprofile\" \"$termloop_shell_dir/.zshrc\" \"$termloop_shell_dir/.zlogin\" >/dev/null 2>&1 || true",
         ]
         outerLines.append(contentsOf: relayWarmupLines.map { "    " + $0 })
@@ -4863,11 +4831,11 @@ struct CMUXCLI {
             "    exec \"$TERMLOOP_LOGIN_SHELL\" -il",
             "    ;;",
             "  bash)",
-            "    cat > \"$termloop_shell_dir/.bashrc\" <<'CMUXBASHRC'",
+            "    cat > \"$termloop_shell_dir/.bashrc\" <<'TERMLOOPBASHRC'",
         ]
         outerLines.append(contentsOf: bashRCLines)
         outerLines += [
-            "CMUXBASHRC",
+            "TERMLOOPBASHRC",
             "    chmod 600 \"$termloop_shell_dir/.bashrc\" >/dev/null 2>&1 || true",
         ]
         outerLines.append(contentsOf: relayWarmupLines.map { "    " + $0 })
@@ -4960,23 +4928,23 @@ struct CMUXCLI {
 
     private func interactiveRemoteTerminalSetupLines(terminfoSource: String?) -> [String] {
         var lines: [String] = [
-            "cmux_term='xterm-256color'",
+            "termloop_term='xterm-256color'",
             "if command -v infocmp >/dev/null 2>&1 && infocmp xterm-ghostty >/dev/null 2>&1; then",
-            "  cmux_term='xterm-ghostty'",
+            "  termloop_term='xterm-ghostty'",
             "fi",
-            "export TERM=\"$cmux_term\"",
+            "export TERM=\"$termloop_term\"",
         ]
         guard let terminfoSource else { return lines }
         let trimmedTerminfoSource = terminfoSource.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTerminfoSource.isEmpty else { return lines }
         lines += [
-            "if [ \"$cmux_term\" != 'xterm-ghostty' ]; then",
+            "if [ \"$termloop_term\" != 'xterm-ghostty' ]; then",
             "  (",
             "    command -v tic >/dev/null 2>&1 || exit 0",
             "    mkdir -p \"$HOME/.terminfo\" 2>/dev/null || exit 0",
-            "    cat <<'CMUXTERMINFO' | tic -x - >/dev/null 2>&1",
+            "    cat <<'TERMLOOPTERMINFO' | tic -x - >/dev/null 2>&1",
             trimmedTerminfoSource,
-            "CMUXTERMINFO",
+            "TERMLOOPTERMINFO",
             "  ) >/dev/null 2>&1 &",
             "fi",
         ]
@@ -5010,26 +4978,26 @@ struct CMUXCLI {
             return []
         }
         return [
-            "cmux_relay_cli=\"${TERMLOOP_BUNDLED_CLI_PATH:-$HOME/.termloop/bin/termloop}\"",
-            "if [ ! -x \"$cmux_relay_cli\" ]; then cmux_relay_cli=\"$(command -v termloop 2>/dev/null || true)\"; fi",
-            "cmux_relay_tty=\"${TERMLOOP_BOOTSTRAP_TTY:-}\"",
-            "if [ -z \"$cmux_relay_tty\" ]; then cmux_relay_tty=\"$(tty 2>/dev/null || true)\"; fi",
-            "cmux_relay_tty=\"${cmux_relay_tty##*/}\"",
-            "if [ -n \"$cmux_relay_tty\" ] && [ \"$cmux_relay_tty\" != \"not a tty\" ]; then",
+            "termloop_relay_cli=\"${TERMLOOP_BUNDLED_CLI_PATH:-$HOME/.termloop/bin/termloop}\"",
+            "if [ ! -x \"$termloop_relay_cli\" ]; then termloop_relay_cli=\"$(command -v termloop 2>/dev/null || true)\"; fi",
+            "termloop_relay_tty=\"${TERMLOOP_BOOTSTRAP_TTY:-}\"",
+            "if [ -z \"$termloop_relay_tty\" ]; then termloop_relay_tty=\"$(tty 2>/dev/null || true)\"; fi",
+            "termloop_relay_tty=\"${termloop_relay_tty##*/}\"",
+            "if [ -n \"$termloop_relay_tty\" ] && [ \"$termloop_relay_tty\" != \"not a tty\" ]; then",
             "  mkdir -p \"$HOME/.termloop/relay\" >/dev/null 2>&1 || true",
-            "  printf '%s' \"$cmux_relay_tty\" > \"$HOME/.termloop/relay/\(remoteRelayPort).tty\" 2>/dev/null || true",
+            "  printf '%s' \"$termloop_relay_tty\" > \"$HOME/.termloop/relay/\(remoteRelayPort).tty\" 2>/dev/null || true",
             "fi",
-            "if [ -n \"$cmux_relay_cli\" ] && [ -n \"$TERMLOOP_WORKSPACE_ID\" ] && [ -n \"$cmux_relay_tty\" ] && [ \"$cmux_relay_tty\" != \"not a tty\" ]; then",
-            "  cmux_relay_report_tty=\"{\\\"workspace_id\\\":\\\"$TERMLOOP_WORKSPACE_ID\\\",\\\"tty_name\\\":\\\"$cmux_relay_tty\\\"}\"",
-            "  cmux_relay_ports_kick=\"{\\\"workspace_id\\\":\\\"$TERMLOOP_WORKSPACE_ID\\\",\\\"reason\\\":\\\"command\\\"}\"",
+            "if [ -n \"$termloop_relay_cli\" ] && [ -n \"$TERMLOOP_WORKSPACE_ID\" ] && [ -n \"$termloop_relay_tty\" ] && [ \"$termloop_relay_tty\" != \"not a tty\" ]; then",
+            "  termloop_relay_report_tty=\"{\\\"workspace_id\\\":\\\"$TERMLOOP_WORKSPACE_ID\\\",\\\"tty_name\\\":\\\"$termloop_relay_tty\\\"}\"",
+            "  termloop_relay_ports_kick=\"{\\\"workspace_id\\\":\\\"$TERMLOOP_WORKSPACE_ID\\\",\\\"reason\\\":\\\"command\\\"}\"",
             "  if [ -n \"$TERMLOOP_SURFACE_ID\" ]; then",
-            "    cmux_relay_report_tty=\"{\\\"workspace_id\\\":\\\"$TERMLOOP_WORKSPACE_ID\\\",\\\"surface_id\\\":\\\"$TERMLOOP_SURFACE_ID\\\",\\\"tty_name\\\":\\\"$cmux_relay_tty\\\"}\"",
-            "    cmux_relay_ports_kick=\"{\\\"workspace_id\\\":\\\"$TERMLOOP_WORKSPACE_ID\\\",\\\"surface_id\\\":\\\"$TERMLOOP_SURFACE_ID\\\",\\\"reason\\\":\\\"command\\\"}\"",
+            "    termloop_relay_report_tty=\"{\\\"workspace_id\\\":\\\"$TERMLOOP_WORKSPACE_ID\\\",\\\"surface_id\\\":\\\"$TERMLOOP_SURFACE_ID\\\",\\\"tty_name\\\":\\\"$termloop_relay_tty\\\"}\"",
+            "    termloop_relay_ports_kick=\"{\\\"workspace_id\\\":\\\"$TERMLOOP_WORKSPACE_ID\\\",\\\"surface_id\\\":\\\"$TERMLOOP_SURFACE_ID\\\",\\\"reason\\\":\\\"command\\\"}\"",
             "  fi",
-            "  \"$cmux_relay_cli\" rpc surface.report_tty \"$cmux_relay_report_tty\" >/dev/null 2>&1 || true",
-            "  \"$cmux_relay_cli\" rpc surface.ports_kick \"$cmux_relay_ports_kick\" >/dev/null 2>&1 || true",
+            "  \"$termloop_relay_cli\" rpc surface.report_tty \"$termloop_relay_report_tty\" >/dev/null 2>&1 || true",
+            "  \"$termloop_relay_cli\" rpc surface.ports_kick \"$termloop_relay_ports_kick\" >/dev/null 2>&1 || true",
             "fi",
-            "unset TERMLOOP_BOOTSTRAP_TTY cmux_relay_cli cmux_relay_tty cmux_relay_report_tty cmux_relay_ports_kick",
+            "unset TERMLOOP_BOOTSTRAP_TTY termloop_relay_cli termloop_relay_tty termloop_relay_report_tty termloop_relay_ports_kick",
         ]
     }
 
@@ -5133,13 +5101,13 @@ struct CMUXCLI {
         let encodedLiteral = shellQuote(encodedScript)
         var lines = remoteBootstrapTTYCaptureLines(remoteRelayPort: remoteRelayPort, includeRelayRPC: false)
         lines += [
-            "cmux_tmp=$(mktemp \"${TMPDIR:-/tmp}/termloop-ssh-bootstrap.XXXXXX\") || exit 1",
-            "(printf %s \(encodedLiteral) | base64 -d 2>/dev/null || printf %s \(encodedLiteral) | base64 -D 2>/dev/null) > \"$cmux_tmp\" || { rm -f \"$cmux_tmp\"; exit 1; }",
-            "chmod 700 \"$cmux_tmp\" >/dev/null 2>&1 || true",
-            "/bin/sh \"$cmux_tmp\"",
-            "cmux_status=$?",
-            "rm -f \"$cmux_tmp\"",
-            "exit $cmux_status",
+            "termloop_tmp=$(mktemp \"${TMPDIR:-/tmp}/termloop-ssh-bootstrap.XXXXXX\") || exit 1",
+            "(printf %s \(encodedLiteral) | base64 -d 2>/dev/null || printf %s \(encodedLiteral) | base64 -D 2>/dev/null) > \"$termloop_tmp\" || { rm -f \"$termloop_tmp\"; exit 1; }",
+            "chmod 700 \"$termloop_tmp\" >/dev/null 2>&1 || true",
+            "/bin/sh \"$termloop_tmp\"",
+            "termloop_status=$?",
+            "rm -f \"$termloop_tmp\"",
+            "exit $termloop_status",
         ]
         return lines.joined(separator: "\n")
     }
@@ -5165,8 +5133,8 @@ struct CMUXCLI {
         }
         scriptLines += [
             "TERMLOOP_SSH_SESSION_ENDED=0",
-            "cmux_ssh_session_end() { if [ \"${TERMLOOP_SSH_SESSION_ENDED:-0}\" = 1 ]; then return; fi; TERMLOOP_SSH_SESSION_ENDED=1; \(lifecycleCleanup); }",
-            "trap 'cmux_ssh_session_end' EXIT HUP INT TERM",
+            "termloop_ssh_session_end() { if [ \"${TERMLOOP_SSH_SESSION_ENDED:-0}\" = 1 ]; then return; fi; TERMLOOP_SSH_SESSION_ENDED=1; \(lifecycleCleanup); }",
+            "trap 'termloop_ssh_session_end' EXIT HUP INT TERM",
         ]
         if isShellSnippet {
             scriptLines.append(sshCommand)
@@ -5174,10 +5142,10 @@ struct CMUXCLI {
             scriptLines.append("command \(sshCommand)")
         }
         scriptLines += [
-            "cmux_ssh_status=$?",
+            "termloop_ssh_status=$?",
             "trap - EXIT HUP INT TERM",
-            "cmux_ssh_session_end",
-            "exit $cmux_ssh_status",
+            "termloop_ssh_session_end",
+            "exit $termloop_ssh_status",
         ]
         let script = scriptLines.joined(separator: "\n")
         return try writeSSHStartupScript(script, remoteRelayPort: remoteRelayPort)
@@ -5424,20 +5392,20 @@ struct CMUXCLI {
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
         return [
-            preferredCLIPath.map { "cmux_reconnect_cli=\(shellQuote($0));" } ?? "cmux_reconnect_cli=\"\";",
-            "cmux_reconnect_socket=\"${TERMLOOP_SOCKET_PATH:-${TERMLOOP_SOCKET:-}}\";",
-            "if [ -z \"$cmux_reconnect_cli\" ] && [ -n \"${TERMLOOP_BUNDLED_CLI_PATH:-}\" ]; then cmux_reconnect_cli=\"$TERMLOOP_BUNDLED_CLI_PATH\"; fi;",
-            "if [ ! -x \"$cmux_reconnect_cli\" ]; then cmux_reconnect_cli=\"$(command -v termloop 2>/dev/null || true)\"; fi;",
+            preferredCLIPath.map { "termloop_reconnect_cli=\(shellQuote($0));" } ?? "termloop_reconnect_cli=\"\";",
+            "termloop_reconnect_socket=\"${TERMLOOP_SOCKET_PATH:-${TERMLOOP_SOCKET:-}}\";",
+            "if [ -z \"$termloop_reconnect_cli\" ] && [ -n \"${TERMLOOP_BUNDLED_CLI_PATH:-}\" ]; then termloop_reconnect_cli=\"$TERMLOOP_BUNDLED_CLI_PATH\"; fi;",
+            "if [ ! -x \"$termloop_reconnect_cli\" ]; then termloop_reconnect_cli=\"$(command -v termloop 2>/dev/null || true)\"; fi;",
             "if [ -n \"${TERMLOOP_WORKSPACE_ID:-}\" ]; then",
-            "if [ -z \"$cmux_reconnect_socket\" ]; then printf '%s\\n' 'termloop: deferred SSH reconnect skipped, local termloop socket not found' >&2;",
-            "elif [ -z \"$cmux_reconnect_cli\" ] || [ ! -x \"$cmux_reconnect_cli\" ]; then printf '%s\\n' 'termloop: deferred SSH reconnect skipped, local termloop CLI not found' >&2;",
+            "if [ -z \"$termloop_reconnect_socket\" ]; then printf '%s\\n' 'termloop: deferred SSH reconnect skipped, local termloop socket not found' >&2;",
+            "elif [ -z \"$termloop_reconnect_cli\" ] || [ ! -x \"$termloop_reconnect_cli\" ]; then printf '%s\\n' 'termloop: deferred SSH reconnect skipped, local termloop CLI not found' >&2;",
             "else",
-            "cmux_reconnect_payload=\"{\\\"workspace_id\\\":\\\"$TERMLOOP_WORKSPACE_ID\\\",\\\"foreground_auth_token\\\":\\\"\(escapedForegroundAuthToken)\\\"}\";",
-            "\"$cmux_reconnect_cli\" --socket \"$cmux_reconnect_socket\" rpc workspace.remote.foreground_auth_ready \"$cmux_reconnect_payload\" >/dev/null 2>&1 || true;",
-            "unset cmux_reconnect_payload;",
+            "termloop_reconnect_payload=\"{\\\"workspace_id\\\":\\\"$TERMLOOP_WORKSPACE_ID\\\",\\\"foreground_auth_token\\\":\\\"\(escapedForegroundAuthToken)\\\"}\";",
+            "\"$termloop_reconnect_cli\" --socket \"$termloop_reconnect_socket\" rpc workspace.remote.foreground_auth_ready \"$termloop_reconnect_payload\" >/dev/null 2>&1 || true;",
+            "unset termloop_reconnect_payload;",
             "fi;",
             "fi;",
-            "unset cmux_reconnect_socket cmux_reconnect_cli;",
+            "unset termloop_reconnect_socket termloop_reconnect_cli;",
         ].joined(separator: " ")
     }
 
@@ -5668,7 +5636,7 @@ struct CMUXCLI {
 
         func displayBrowserValue(_ value: Any) -> String {
             if let dict = value as? [String: Any],
-               let type = dict["__cmux_t"] as? String,
+               let type = dict["__termloop_t"] as? String,
                type == "undefined" {
                 return "undefined"
             }
@@ -7417,7 +7385,7 @@ struct CMUXCLI {
             Flags:
               --action <name>              Action name (required if not positional)
               --tab <id|ref|index>         Target tab (accepts tab:<n> or surface:<n>; default: $TERMLOOP_SURFACE_ID, then focused tab)
-              --surface <id|ref|index>     Alias for --tab (backward compatibility)
+              --surface <id|ref|index>     Alias for --tab
               --workspace <id|ref|index>   Workspace context (default: current/$TERMLOOP_WORKSPACE_ID)
               --title <text>               Title for rename (or pass trailing title text)
               --url <url>                  Optional URL for new-browser-right
@@ -8339,23 +8307,6 @@ struct CMUXCLI {
               termloop browser surface:1 navigate https://google.com
               termloop browser --surface surface:1 snapshot --interactive
             """
-        // Legacy browser aliases — point users to `termloop browser --help`
-        case "open-browser":
-            return "Legacy alias for 'termloop browser open'. Run 'termloop browser --help' for details."
-        case "navigate":
-            return "Legacy alias for 'termloop browser navigate'. Run 'termloop browser --help' for details."
-        case "browser-back":
-            return "Legacy alias for 'termloop browser back'. Run 'termloop browser --help' for details."
-        case "browser-forward":
-            return "Legacy alias for 'termloop browser forward'. Run 'termloop browser --help' for details."
-        case "browser-reload":
-            return "Legacy alias for 'termloop browser reload'. Run 'termloop browser --help' for details."
-        case "get-url":
-            return "Legacy alias for 'termloop browser get-url'. Run 'termloop browser --help' for details."
-        case "focus-webview":
-            return "Legacy alias for 'termloop browser focus-webview'. Run 'termloop browser --help' for details."
-        case "is-webview-focused":
-            return "Legacy alias for 'termloop browser is-webview-focused'. Run 'termloop browser --help' for details."
         case "markdown":
             return """
             Usage: termloop markdown open <path> [options]
@@ -8427,8 +8378,8 @@ struct CMUXCLI {
 
         let selection = currentThemeSelection()
         var environment = ProcessInfo.processInfo.environment
-        environment["TERMLOOP_THEME_PICKER_CONFIG"] = try cmuxThemeOverrideConfigURL().path
-        environment["TERMLOOP_THEME_PICKER_BUNDLE_ID"] = currentCmuxAppBundleIdentifier() ?? Self.termloopThemeOverrideBundleIdentifier
+        environment["TERMLOOP_THEME_PICKER_CONFIG"] = try termloopThemeOverrideConfigURL().path
+        environment["TERMLOOP_THEME_PICKER_BUNDLE_ID"] = currentTermLoopAppBundleIdentifier() ?? Self.termloopThemeOverrideBundleIdentifier
         environment["TERMLOOP_THEME_PICKER_TARGET"] = defaultThemePickerTargetMode(current: selection).rawValue
         environment["TERMLOOP_THEME_PICKER_COLOR_SCHEME"] = defaultAppearancePrefersDarkThemes() ? "dark" : "light"
         if let light = selection.light {
@@ -8605,7 +8556,7 @@ struct CMUXCLI {
     private func printThemesList(jsonOutput: Bool) throws {
         let themes = availableThemeNames()
         let current = currentThemeSelection()
-        let configPath = try cmuxThemeOverrideConfigURL().path
+        let configPath = try termloopThemeOverrideConfigURL().path
 
         if jsonOutput {
             let currentPayload: [String: Any] = [
@@ -8971,7 +8922,7 @@ struct CMUXCLI {
         return lastValue
     }
 
-    private func cmuxThemeOverrideConfigURL() throws -> URL {
+    private func termloopThemeOverrideConfigURL() throws -> URL {
         guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             throw CLIError(message: "Unable to resolve Application Support directory")
         }
@@ -8982,7 +8933,7 @@ struct CMUXCLI {
 
     private func writeManagedThemeOverride(rawThemeValue: String) throws -> URL {
         let fileManager = FileManager.default
-        let configURL = try cmuxThemeOverrideConfigURL()
+        let configURL = try termloopThemeOverrideConfigURL()
         let directoryURL = configURL.deletingLastPathComponent()
         try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true, attributes: nil)
 
@@ -9002,7 +8953,7 @@ struct CMUXCLI {
 
     private func clearManagedThemeOverride() throws -> URL {
         let fileManager = FileManager.default
-        let configURL = try cmuxThemeOverrideConfigURL()
+        let configURL = try termloopThemeOverrideConfigURL()
         guard let existingContents = try readOptionalThemeOverrideContents(at: configURL) else {
             return configURL
         }
@@ -9058,7 +9009,7 @@ struct CMUXCLI {
     }
 
     private func reloadThemesIfPossible() -> ThemeReloadStatus {
-        let bundleIdentifier = currentCmuxAppBundleIdentifier() ?? Self.termloopThemeOverrideBundleIdentifier
+        let bundleIdentifier = currentTermLoopAppBundleIdentifier() ?? Self.termloopThemeOverrideBundleIdentifier
         DistributedNotificationCenter.default().post(
             name: Notification.Name(Self.termloopThemesReloadNotificationName),
             object: nil,
@@ -9067,7 +9018,7 @@ struct CMUXCLI {
         return ThemeReloadStatus(requested: true, targetBundleIdentifier: bundleIdentifier)
     }
 
-    private func currentCmuxAppBundleIdentifier() -> String? {
+    private func currentTermLoopAppBundleIdentifier() -> String? {
         if let bundleIdentifier = ProcessInfo.processInfo.environment["TERMLOOP_BUNDLE_ID"]?.trimmingCharacters(in: .whitespacesAndNewlines),
            !bundleIdentifier.isEmpty {
             return bundleIdentifier
@@ -9180,11 +9131,7 @@ struct CMUXCLI {
         args.contains(name)
     }
 
-    private func replaceToken(_ args: [String], from: String, to: String) -> [String] {
-        args.map { $0 == from ? to : $0 }
-    }
-
-    /// Unescape CLI escape sequences to match legacy v1 send behavior.
+    /// Unescape CLI escape sequences for terminal send behavior.
     /// \n and \r → carriage return (Enter), \t → tab.
     private func unescapeSendText(_ text: String) -> String {
         return text
@@ -9347,201 +9294,8 @@ struct CMUXCLI {
             params["caller"] = caller
         }
 
-        do {
-            let payload = try client.sendV2(method: "system.tree", params: params)
-            return treePayloadWithMarkers(payload)
-        } catch let error as CLIError where error.message.hasPrefix("method_not_found:") {
-            // Back-compat fallback for older servers that don't support system.tree.
-            return try buildLegacyTreePayload(options: options, params: params, client: client)
-        }
-    }
-
-    private func buildLegacyTreePayload(
-        options: TreeCommandOptions,
-        params: [String: Any],
-        client: SocketClient
-    ) throws -> [String: Any] {
-        var identifyParams: [String: Any] = [:]
-        if let caller = params["caller"] as? [String: Any], !caller.isEmpty {
-            identifyParams["caller"] = caller
-        }
-
-        let identifyPayload = try client.sendV2(method: "system.identify", params: identifyParams)
-        let focused = identifyPayload["focused"] as? [String: Any] ?? [:]
-        let caller = identifyPayload["caller"] as? [String: Any] ?? [:]
-        let activePath = parseTreePath(payload: focused)
-        let windows = try buildTreeWindowNodes(options: options, activePath: activePath, client: client)
-
-        return treePayloadWithMarkers([
-            "active": focused.isEmpty ? NSNull() : focused,
-            "caller": caller.isEmpty ? NSNull() : caller,
-            "windows": windows
-        ])
-    }
-
-    private func buildTreeWindowNodes(
-        options: TreeCommandOptions,
-        activePath: TreePath,
-        client: SocketClient
-    ) throws -> [[String: Any]] {
-        let windowsPayload = try client.sendV2(method: "window.list")
-        let allWindows = windowsPayload["windows"] as? [[String: Any]] ?? []
-
-        if let workspaceRaw = options.workspaceHandle {
-            guard let workspaceHandle = try normalizeWorkspaceHandle(workspaceRaw, client: client) else {
-                throw CLIError(message: "Invalid workspace handle")
-            }
-
-            let workspaceListPayload = try client.sendV2(method: "workspace.list", params: ["workspace_id": workspaceHandle])
-            let workspaceWindowHandle = (workspaceListPayload["window_ref"] as? String) ?? (workspaceListPayload["window_id"] as? String)
-            let window = allWindows.first(where: { treeItemMatchesHandle($0, handle: workspaceWindowHandle) })
-                ?? treeFallbackWindow(from: workspaceListPayload)
-
-            let workspaces = workspaceListPayload["workspaces"] as? [[String: Any]] ?? []
-            if workspaces.isEmpty {
-                throw CLIError(message: "Workspace not found")
-            }
-            let workspaceNodes = try workspaces.map { try buildTreeWorkspaceNode(workspace: $0, activePath: activePath, client: client) }
-            var node = window
-            let isActiveWindow = treeItemMatchesHandle(node, handle: activePath.windowHandle)
-            node["current"] = isActiveWindow
-            node["active"] = isActiveWindow
-            node["workspaces"] = workspaceNodes
-            node["workspace_count"] = workspaceNodes.count
-            return [node]
-        }
-
-        let targetWindows: [[String: Any]]
-        if options.includeAllWindows {
-            targetWindows = allWindows
-        } else if let currentWindowHandle = activePath.windowHandle {
-            let currentOnly = allWindows.filter { treeItemMatchesHandle($0, handle: currentWindowHandle) }
-            targetWindows = currentOnly.isEmpty ? Array(allWindows.prefix(1)) : currentOnly
-        } else {
-            targetWindows = Array(allWindows.prefix(1))
-        }
-
-        return try targetWindows.map {
-            try buildTreeWindowNode(
-                window: $0,
-                activePath: activePath,
-                client: client
-            )
-        }
-    }
-
-    private func treeFallbackWindow(from payload: [String: Any]) -> [String: Any] {
-        let workspaces = payload["workspaces"] as? [[String: Any]] ?? []
-        let selectedWorkspace = workspaces.first(where: { ($0["selected"] as? Bool) == true })
-        return [
-            "id": payload["window_id"] ?? NSNull(),
-            "ref": payload["window_ref"] ?? NSNull(),
-            "index": 0,
-            "key": false,
-            "visible": true,
-            "workspace_count": workspaces.count,
-            "selected_workspace_id": selectedWorkspace?["id"] ?? NSNull(),
-            "selected_workspace_ref": selectedWorkspace?["ref"] ?? NSNull(),
-        ]
-    }
-
-    private func buildTreeWindowNode(
-        window: [String: Any],
-        activePath: TreePath,
-        client: SocketClient
-    ) throws -> [String: Any] {
-        var workspaceParams: [String: Any] = [:]
-        if let windowHandle = treeItemHandle(window) {
-            workspaceParams["window_id"] = windowHandle
-        }
-        let workspacePayload = try client.sendV2(method: "workspace.list", params: workspaceParams)
-        let workspaces = workspacePayload["workspaces"] as? [[String: Any]] ?? []
-        let workspaceNodes = try workspaces.map { try buildTreeWorkspaceNode(workspace: $0, activePath: activePath, client: client) }
-        var windowNode = window
-        let isActiveWindow = treeItemMatchesHandle(windowNode, handle: activePath.windowHandle)
-        windowNode["current"] = isActiveWindow
-        windowNode["active"] = isActiveWindow
-        windowNode["workspaces"] = workspaceNodes
-        windowNode["workspace_count"] = workspaceNodes.count
-        return windowNode
-    }
-
-    private func buildTreeWorkspaceNode(
-        workspace: [String: Any],
-        activePath: TreePath,
-        client: SocketClient
-    ) throws -> [String: Any] {
-        var workspaceNode = workspace
-        guard let workspaceHandle = treeItemHandle(workspace) else {
-            workspaceNode["panes"] = []
-            return workspaceNode
-        }
-
-        let panePayload = try client.sendV2(method: "pane.list", params: ["workspace_id": workspaceHandle])
-        let surfacePayload = try client.sendV2(method: "surface.list", params: ["workspace_id": workspaceHandle])
-        let panes = panePayload["panes"] as? [[String: Any]] ?? []
-        let surfaces = surfacePayload["surfaces"] as? [[String: Any]] ?? []
-        let browserURLsByHandle = fetchTreeBrowserURLs(
-            workspaceHandle: workspaceHandle,
-            surfaces: surfaces,
-            client: client
-        )
-
-        var surfacesByPane: [String: [[String: Any]]] = [:]
-        for surface in surfaces {
-            var surfaceNode = surface
-            if surfaceNode["selected"] == nil {
-                surfaceNode["selected"] = (surfaceNode["selected_in_pane"] as? Bool) == true
-            }
-            surfaceNode["active"] = treeItemMatchesHandle(surfaceNode, handle: activePath.surfaceHandle)
-
-            let surfaceType = ((surfaceNode["type"] as? String) ?? "").lowercased()
-            if surfaceType == "browser",
-               let url = treeBrowserURL(surface: surfaceNode, urlsByHandle: browserURLsByHandle),
-               !url.isEmpty {
-                surfaceNode["url"] = url
-            } else {
-                surfaceNode["url"] = NSNull()
-            }
-
-            guard let paneHandle = treeRelatedHandle(surfaceNode, refKey: "pane_ref", idKey: "pane_id") else {
-                continue
-            }
-            surfacesByPane[paneHandle, default: []].append(surfaceNode)
-        }
-
-        for paneHandle in surfacesByPane.keys {
-            surfacesByPane[paneHandle]?.sort {
-                let lhs = intFromAny($0["index_in_pane"]) ?? intFromAny($0["index"]) ?? Int.max
-                let rhs = intFromAny($1["index_in_pane"]) ?? intFromAny($1["index"]) ?? Int.max
-                return lhs < rhs
-            }
-        }
-
-        let paneNodes: [[String: Any]] = panes.map { pane in
-            var paneNode = pane
-            paneNode["active"] = treeItemMatchesHandle(paneNode, handle: activePath.paneHandle)
-            if let paneHandle = treeItemHandle(paneNode) {
-                paneNode["surfaces"] = surfacesByPane[paneHandle] ?? []
-            } else {
-                paneNode["surfaces"] = []
-            }
-            return paneNode
-        }
-
-        workspaceNode["active"] = treeItemMatchesHandle(workspaceNode, handle: activePath.workspaceHandle)
-        workspaceNode["panes"] = paneNodes
-        return workspaceNode
-    }
-
-    private func treeItemHandle(_ item: [String: Any]) -> String? {
-        if let ref = item["ref"] as? String, !ref.isEmpty {
-            return ref
-        }
-        if let id = item["id"] as? String, !id.isEmpty {
-            return id
-        }
-        return nil
+        let payload = try client.sendV2(method: "system.tree", params: params)
+        return treePayloadWithMarkers(payload)
     }
 
     private func treeRelatedHandle(_ item: [String: Any], refKey: String, idKey: String) -> String? {
@@ -9632,71 +9386,6 @@ struct CMUXCLI {
             windowNode["workspaces"] = workspaceNodes
             return windowNode
         }
-    }
-
-    private func fetchTreeBrowserURLs(
-        workspaceHandle: String,
-        surfaces: [[String: Any]],
-        client: SocketClient
-    ) -> [String: String] {
-        let hasBrowserSurfaces = surfaces.contains {
-            (($0["type"] as? String) ?? "").lowercased() == "browser"
-        }
-        guard hasBrowserSurfaces else { return [:] }
-
-        if let payload = try? client.sendV2(
-            method: "browser.tab.list",
-            params: ["workspace_id": workspaceHandle]
-        ) {
-            let tabs = payload["tabs"] as? [[String: Any]] ?? []
-            var urlByHandle: [String: String] = [:]
-            for tab in tabs {
-                guard let url = tab["url"] as? String, !url.isEmpty else { continue }
-                if let id = tab["id"] as? String, !id.isEmpty {
-                    urlByHandle[id] = url
-                }
-                if let ref = tab["ref"] as? String, !ref.isEmpty {
-                    urlByHandle[ref] = url
-                }
-            }
-            return urlByHandle
-        }
-
-        // Fallback for older servers that may not support browser.tab.list.
-        var fallbackURLs: [String: String] = [:]
-        for surface in surfaces {
-            guard ((surface["type"] as? String) ?? "").lowercased() == "browser" else { continue }
-            guard let surfaceHandle = treeItemHandle(surface) else { continue }
-            guard let payload = try? client.sendV2(
-                method: "browser.url.get",
-                params: ["workspace_id": workspaceHandle, "surface_id": surfaceHandle]
-            ),
-            let url = payload["url"] as? String,
-            !url.isEmpty else {
-                continue
-            }
-            fallbackURLs[surfaceHandle] = url
-            if let id = surface["id"] as? String, !id.isEmpty {
-                fallbackURLs[id] = url
-            }
-            if let ref = surface["ref"] as? String, !ref.isEmpty {
-                fallbackURLs[ref] = url
-            }
-        }
-        return fallbackURLs
-    }
-
-    private func treeBrowserURL(surface: [String: Any], urlsByHandle: [String: String]) -> String? {
-        if let id = surface["id"] as? String, let url = urlsByHandle[id] {
-            return url
-        }
-        if let ref = surface["ref"] as? String, let url = urlsByHandle[ref] {
-            return url
-        }
-        if let handle = treeItemHandle(surface), let url = urlsByHandle[handle] {
-            return url
-        }
-        return nil
     }
 
     private func treeItemMatchesHandle(_ item: [String: Any], handle: String?) -> Bool {
@@ -10585,7 +10274,7 @@ struct CMUXCLI {
         }
     }
 
-    private func isCmuxClaudeWrapper(at path: String) -> Bool {
+    private func isTermLoopClaudeWrapper(at path: String) -> Bool {
         guard let data = FileManager.default.contents(atPath: path) else { return false }
         let prefixData = data.prefix(512)
         guard let prefix = String(data: prefixData, encoding: .utf8) else { return false }
@@ -10613,7 +10302,7 @@ struct CMUXCLI {
         resolveExecutableInSearchPath(
             "claude",
             searchPath: searchPath,
-            skip: { self.isCmuxClaudeWrapper(at: $0) }
+            skip: { self.isTermLoopClaudeWrapper(at: $0) }
         )
     }
 
@@ -10638,7 +10327,7 @@ struct CMUXCLI {
         explicitPassword: String?,
         focusedContext: TmuxCompatFocusedContext?,
         tmuxPathPrefix: String,
-        cmuxBinEnvVar: String,
+        termloopBinEnvVar: String,
         termOverrideEnvVar: String,
         extraEnvVars: [(key: String, value: String)] = []
     ) {
@@ -10658,7 +10347,7 @@ struct CMUXCLI {
             ?? "%1"
         let fakeTerm = processEnvironment[termOverrideEnvVar] ?? "screen-256color"
 
-        setenv(cmuxBinEnvVar, executablePath, 1)
+        setenv(termloopBinEnvVar, executablePath, 1)
         setenv("PATH", updatedPath, 1)
         setenv("TMUX", fakeTmuxValue, 1)
         setenv("TMUX_PANE", fakeTmuxPane, 1)
@@ -10708,7 +10397,7 @@ struct CMUXCLI {
             explicitPassword: explicitPassword,
             focusedContext: focusedContext,
             tmuxPathPrefix: "termloop-claude-teams",
-            cmuxBinEnvVar: "TERMLOOP_CLAUDE_TEAMS_TERMLOOP_BIN",
+            termloopBinEnvVar: "TERMLOOP_CLAUDE_TEAMS_TERMLOOP_BIN",
             termOverrideEnvVar: "TERMLOOP_CLAUDE_TEAMS_TERM",
             extraEnvVars: [
                 (key: "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", value: "1"),
@@ -10808,7 +10497,7 @@ struct CMUXCLI {
                 guard FileManager.default.fileExists(atPath: trimmed, isDirectory: &isDir),
                       !isDir.boolValue,
                       FileManager.default.isExecutableFile(atPath: trimmed),
-                      !isCmuxClaudeWrapper(at: trimmed) else { continue }
+                      !isTermLoopClaudeWrapper(at: trimmed) else { continue }
                 return trimmed
             }
             return resolveClaudeExecutable(searchPath: launcherEnvironment["PATH"])
@@ -11286,7 +10975,7 @@ struct CMUXCLI {
             explicitPassword: explicitPassword,
             focusedContext: focusedContext,
             tmuxPathPrefix: "termloop-omo",
-            cmuxBinEnvVar: "TERMLOOP_OMO_TERMLOOP_BIN",
+            termloopBinEnvVar: "TERMLOOP_OMO_TERMLOOP_BIN",
             termOverrideEnvVar: "TERMLOOP_OMO_TERM",
             extraEnvVars: [(key: "OPENCODE_PORT", value: openCodePort)]
         )
@@ -11408,7 +11097,7 @@ struct CMUXCLI {
             explicitPassword: explicitPassword,
             focusedContext: focusedContext,
             tmuxPathPrefix: "termloop-omx",
-            cmuxBinEnvVar: "TERMLOOP_OMX_TERMLOOP_BIN",
+            termloopBinEnvVar: "TERMLOOP_OMX_TERMLOOP_BIN",
             termOverrideEnvVar: "TERMLOOP_OMX_TERM"
         )
     }
@@ -11511,7 +11200,7 @@ struct CMUXCLI {
             explicitPassword: explicitPassword,
             focusedContext: focusedContext,
             tmuxPathPrefix: "termloop-omc",
-            cmuxBinEnvVar: "TERMLOOP_OMC_TERMLOOP_BIN",
+            termloopBinEnvVar: "TERMLOOP_OMC_TERMLOOP_BIN",
             termOverrideEnvVar: "TERMLOOP_OMC_TERM"
         )
         // omc wraps Claude Code, so it needs the same NODE_OPTIONS restore module
@@ -13823,7 +13512,6 @@ struct CMUXCLI {
         let configDirEnvOverride: String? // e.g. "CODEX_HOME" overrides configDir
         let sessionStoreSuffix: String // e.g. "cursor" -> ~/.termloop/cursor-hook-sessions.json
         let disableEnvVar: String   // e.g. "TERMLOOP_CURSOR_HOOKS_DISABLED"
-        let hookMarker: String      // Marker in commands: "termloop cursor-hook"
         let format: HookFormat
         let events: [HookEvent]
         let postInstallAction: PostInstallAction?
@@ -13835,7 +13523,7 @@ struct CMUXCLI {
 
         struct HookEvent {
             let agentEvent: String
-            let cmuxSubcommand: String
+            let termLoopSubcommand: String
         }
 
         enum PostInstallAction {
@@ -13854,13 +13542,13 @@ struct CMUXCLI {
 
         init(name: String, displayName: String, statusKey: String,
              configDir: String, configFile: String, configDirEnvOverride: String? = nil,
-             sessionStoreSuffix: String, disableEnvVar: String, hookMarker: String,
+             sessionStoreSuffix: String, disableEnvVar: String,
              format: HookFormat, events: [HookEvent], postInstallAction: PostInstallAction? = nil) {
             self.name = name; self.displayName = displayName; self.statusKey = statusKey
             self.configDir = configDir; self.configFile = configFile
             self.configDirEnvOverride = configDirEnvOverride
             self.sessionStoreSuffix = sessionStoreSuffix; self.disableEnvVar = disableEnvVar
-            self.hookMarker = hookMarker; self.format = format; self.events = events
+            self.format = format; self.events = events
             self.postInstallAction = postInstallAction
         }
     }
@@ -13887,12 +13575,12 @@ struct CMUXCLI {
             name: "codex", displayName: "Codex", statusKey: "codex",
             configDir: ".codex", configFile: "hooks.json", configDirEnvOverride: "CODEX_HOME",
             sessionStoreSuffix: "codex", disableEnvVar: "TERMLOOP_CODEX_HOOKS_DISABLED",
-            hookMarker: "termloop codex-hook", format: .nested(timeoutSeconds: 5),
+            format: .nested(timeoutSeconds: 5),
             events: [
-                .init(agentEvent: "SessionStart", cmuxSubcommand: "session-start"),
-                .init(agentEvent: "UserPromptSubmit", cmuxSubcommand: "prompt-submit"),
-                .init(agentEvent: "Stop", cmuxSubcommand: "stop"),
-                .init(agentEvent: "PermissionRequest", cmuxSubcommand: "permission-request"),
+                .init(agentEvent: "SessionStart", termLoopSubcommand: "session-start"),
+                .init(agentEvent: "UserPromptSubmit", termLoopSubcommand: "prompt-submit"),
+                .init(agentEvent: "Stop", termLoopSubcommand: "stop"),
+                .init(agentEvent: "PermissionRequest", termLoopSubcommand: "permission-request"),
             ],
             postInstallAction: .codexConfigToml
         ),
@@ -13900,72 +13588,72 @@ struct CMUXCLI {
             name: "cursor", displayName: "Cursor", statusKey: "cursor",
             configDir: ".cursor", configFile: "hooks.json",
             sessionStoreSuffix: "cursor", disableEnvVar: "TERMLOOP_CURSOR_HOOKS_DISABLED",
-            hookMarker: "termloop cursor-hook", format: .flat,
+            format: .flat,
             events: [
-                .init(agentEvent: "beforeSubmitPrompt", cmuxSubcommand: "prompt-submit"),
-                .init(agentEvent: "stop", cmuxSubcommand: "stop"),
-                .init(agentEvent: "afterAgentResponse", cmuxSubcommand: "agent-response"),
-                .init(agentEvent: "beforeShellExecution", cmuxSubcommand: "shell-exec"),
-                .init(agentEvent: "afterShellExecution", cmuxSubcommand: "shell-done"),
+                .init(agentEvent: "beforeSubmitPrompt", termLoopSubcommand: "prompt-submit"),
+                .init(agentEvent: "stop", termLoopSubcommand: "stop"),
+                .init(agentEvent: "afterAgentResponse", termLoopSubcommand: "agent-response"),
+                .init(agentEvent: "beforeShellExecution", termLoopSubcommand: "shell-exec"),
+                .init(agentEvent: "afterShellExecution", termLoopSubcommand: "shell-done"),
             ]
         ),
         AgentHookDef(
             name: "gemini", displayName: "Gemini", statusKey: "gemini",
             configDir: ".gemini", configFile: "settings.json",
             sessionStoreSuffix: "gemini", disableEnvVar: "TERMLOOP_GEMINI_HOOKS_DISABLED",
-            hookMarker: "termloop gemini-hook", format: .nested(timeoutSeconds: 10),
+            format: .nested(timeoutSeconds: 10),
             events: [
-                .init(agentEvent: "SessionStart", cmuxSubcommand: "session-start"),
-                .init(agentEvent: "BeforeAgent", cmuxSubcommand: "prompt-submit"),
-                .init(agentEvent: "AfterAgent", cmuxSubcommand: "stop"),
-                .init(agentEvent: "SessionEnd", cmuxSubcommand: "session-end"),
+                .init(agentEvent: "SessionStart", termLoopSubcommand: "session-start"),
+                .init(agentEvent: "BeforeAgent", termLoopSubcommand: "prompt-submit"),
+                .init(agentEvent: "AfterAgent", termLoopSubcommand: "stop"),
+                .init(agentEvent: "SessionEnd", termLoopSubcommand: "session-end"),
             ]
         ),
         AgentHookDef(
             name: "copilot", displayName: "Copilot", statusKey: "copilot",
             configDir: ".copilot", configFile: "config.json",
             sessionStoreSuffix: "copilot", disableEnvVar: "TERMLOOP_COPILOT_HOOKS_DISABLED",
-            hookMarker: "termloop copilot-hook", format: .nested(timeoutSeconds: 5),
+            format: .nested(timeoutSeconds: 5),
             events: [
-                .init(agentEvent: "SessionStart", cmuxSubcommand: "session-start"),
-                .init(agentEvent: "Stop", cmuxSubcommand: "stop"),
-                .init(agentEvent: "Notification", cmuxSubcommand: "stop"),
-                .init(agentEvent: "SessionEnd", cmuxSubcommand: "session-end"),
+                .init(agentEvent: "SessionStart", termLoopSubcommand: "session-start"),
+                .init(agentEvent: "Stop", termLoopSubcommand: "stop"),
+                .init(agentEvent: "Notification", termLoopSubcommand: "stop"),
+                .init(agentEvent: "SessionEnd", termLoopSubcommand: "session-end"),
             ]
         ),
         AgentHookDef(
             name: "codebuddy", displayName: "CodeBuddy", statusKey: "codebuddy",
             configDir: ".codebuddy", configFile: "settings.json",
             sessionStoreSuffix: "codebuddy", disableEnvVar: "TERMLOOP_CODEBUDDY_HOOKS_DISABLED",
-            hookMarker: "termloop codebuddy-hook", format: .nested(timeoutSeconds: 5),
+            format: .nested(timeoutSeconds: 5),
             events: [
-                .init(agentEvent: "SessionStart", cmuxSubcommand: "session-start"),
-                .init(agentEvent: "Stop", cmuxSubcommand: "stop"),
-                .init(agentEvent: "Notification", cmuxSubcommand: "stop"),
-                .init(agentEvent: "SessionEnd", cmuxSubcommand: "session-end"),
+                .init(agentEvent: "SessionStart", termLoopSubcommand: "session-start"),
+                .init(agentEvent: "Stop", termLoopSubcommand: "stop"),
+                .init(agentEvent: "Notification", termLoopSubcommand: "stop"),
+                .init(agentEvent: "SessionEnd", termLoopSubcommand: "session-end"),
             ]
         ),
         AgentHookDef(
             name: "factory", displayName: "Factory", statusKey: "factory",
             configDir: ".factory", configFile: "settings.json",
             sessionStoreSuffix: "factory", disableEnvVar: "TERMLOOP_FACTORY_HOOKS_DISABLED",
-            hookMarker: "termloop factory-hook", format: .nested(timeoutSeconds: 5),
+            format: .nested(timeoutSeconds: 5),
             events: [
-                .init(agentEvent: "SessionStart", cmuxSubcommand: "session-start"),
-                .init(agentEvent: "Stop", cmuxSubcommand: "stop"),
-                .init(agentEvent: "Notification", cmuxSubcommand: "stop"),
-                .init(agentEvent: "SessionEnd", cmuxSubcommand: "session-end"),
+                .init(agentEvent: "SessionStart", termLoopSubcommand: "session-start"),
+                .init(agentEvent: "Stop", termLoopSubcommand: "stop"),
+                .init(agentEvent: "Notification", termLoopSubcommand: "stop"),
+                .init(agentEvent: "SessionEnd", termLoopSubcommand: "session-end"),
             ]
         ),
         AgentHookDef(
             name: "qoder", displayName: "Qoder", statusKey: "qoder",
             configDir: ".qoder", configFile: "settings.json",
             sessionStoreSuffix: "qoder", disableEnvVar: "TERMLOOP_QODER_HOOKS_DISABLED",
-            hookMarker: "termloop qoder-hook", format: .nested(timeoutSeconds: 5),
+            format: .nested(timeoutSeconds: 5),
             events: [
-                .init(agentEvent: "SessionStart", cmuxSubcommand: "session-start"),
-                .init(agentEvent: "Stop", cmuxSubcommand: "stop"),
-                .init(agentEvent: "SessionEnd", cmuxSubcommand: "session-end"),
+                .init(agentEvent: "SessionStart", termLoopSubcommand: "session-start"),
+                .init(agentEvent: "Stop", termLoopSubcommand: "stop"),
+                .init(agentEvent: "SessionEnd", termLoopSubcommand: "session-end"),
             ]
         ),
     ]
@@ -13978,7 +13666,6 @@ struct CMUXCLI {
         configFile: "opencode.json",
         sessionStoreSuffix: "opencode",
         disableEnvVar: "TERMLOOP_OPENCODE_HOOKS_DISABLED",
-        hookMarker: "termloop opencode-hook",
         format: .nested(timeoutSeconds: 5),
         events: []
     )
@@ -13999,31 +13686,31 @@ struct CMUXCLI {
         //   1. TERMLOOP_BUNDLED_CLI_PATH (always set when TermLoop launches the agent)
         //   2. $PATH lookup via `command -v termloop`
         //
-        // Guards short-circuit to `echo '{}'` outside an TermLoop launch or
+        // Guards short-circuit to `echo '{}'` outside a TermLoop launch or
         // when global/per-agent disable flags are set.
         let bin = "${TERMLOOP_BUNDLED_CLI_PATH:-$(command -v termloop)}"
         return """
-        CMUX_BIN="\(bin)"; \
+        TERMLOOP_BIN="\(bin)"; \
         { [ -n "$TERMLOOP_SURFACE_ID" ] || [ -n "$TERMLOOP_WORKSPACE_ID" ]; } \
         && [ "$TERMLOOP_HOOKS_DISABLED" != "1" ] \
         && [ "$\(def.disableEnvVar)" != "1" ] \
-        && [ -n "$CMUX_BIN" ] && [ -x "$CMUX_BIN" ] \
-        && { "$CMUX_BIN" \(def.name)-hook \(event.cmuxSubcommand) >/dev/null 2>/dev/null || true; echo '{}'; } \
+        && [ -n "$TERMLOOP_BIN" ] && [ -x "$TERMLOOP_BIN" ] \
+        && { "$TERMLOOP_BIN" \(def.name)-hook \(event.termLoopSubcommand) >/dev/null 2>/dev/null || true; echo '{}'; } \
         || echo '{}'
         """
     }
 
     private func isOwnedHookCommand(_ command: String, for def: AgentHookDef) -> Bool {
         let lowercase = command.lowercased()
-        if lowercase.contains(def.hookMarker.lowercased()) {
+        let hookCommandName = "\(def.name)-hook"
+        if lowercase.contains("termloop \(hookCommandName)") {
             return true
         }
-        if lowercase.contains("\(def.name)-hook")
+        if lowercase.contains(hookCommandName)
             && (
                 lowercase.contains("termloop_bundled_cli_path")
-                    || lowercase.contains("cmux_bin")
                     || lowercase.contains("command -v termloop")
-                    || lowercase.contains("/termloophooks/")
+                    || lowercase.contains("termloop_bin")
             ) {
             return true
         }
@@ -15175,11 +14862,11 @@ private func codexManagedBlockRange(in content: String) -> Range<String.Index>? 
 
 
 @main
-struct CMUXTermMain {
+struct TermLoopTermMain {
     static func main() {
         // CLI tools should ignore SIGPIPE so closed stdout pipes do not terminate the process.
         _ = signal(SIGPIPE, SIG_IGN)
-        let cli = CMUXCLI(args: CommandLine.arguments)
+        let cli = TermLoopCLI(args: CommandLine.arguments)
         do {
             try cli.run()
         } catch {

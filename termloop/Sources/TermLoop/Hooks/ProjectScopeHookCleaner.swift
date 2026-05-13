@@ -8,9 +8,7 @@ import os
 /// `.codex`, or `.gemini` config file. User-owned entries and unrelated
 /// root-level keys are preserved verbatim.
 ///
-/// Ownership detection matches either the stable CLI marker
-/// (`<agent>-hook`) or the legacy bundle/DerivedData path
-/// `/TermLoopHooks/<agent>/` that older builds wrote into project configs.
+/// Ownership detection matches the stable CLI marker (`<agent>-hook`).
 enum ProjectScopeHookCleaner {
     private static let logger = Logger(subsystem: "com.termloop.fork", category: "hook-cleaner")
 
@@ -95,12 +93,15 @@ enum ProjectScopeHookCleaner {
         }
     }
 
-    /// True if the command is TermLoop-owned for the given agent. Matches
-    /// the stable marker (`<agent>-hook`) or the legacy bundle-bash form
-    /// `.../TermLoopHooks/<agent>/*.sh` that older builds wrote.
+    /// True if the command is TermLoop-owned for the given agent.
     static func isTermLoopOwnedCommand(_ command: String, agent: HookManagedAgent) -> Bool {
-        command.contains(agent.stableCommandMarker)
-            || command.contains("/TermLoopHooks/\(agent.rawValue)/")
+        let lowercase = command.lowercased()
+        let marker = agent.stableCommandMarker
+        guard lowercase.contains(marker) else { return false }
+        return lowercase.contains("termloop \(marker)")
+            || lowercase.contains("termloop_bundled_cli_path")
+            || lowercase.contains("command -v termloop")
+            || lowercase.contains("termloop_bin")
     }
 
     /// File is deletion-safe only when `hooks` is empty and no other user keys

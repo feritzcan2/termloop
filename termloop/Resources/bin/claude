@@ -4,7 +4,7 @@
 # When running inside a termloop terminal (TERMLOOP_SURFACE_ID is set), this wrapper
 # intercepts `claude` invocations to inject --session-id and --settings flags
 # so that Claude Code hooks fire back into termloop for notifications/status.
-# Outside cmux, it passes through to the real claude binary unchanged.
+# Outside termloop, it passes through to the real claude binary unchanged.
 
 resolve_explicit_claude_path() {
     local candidate="${1:-}"
@@ -65,23 +65,23 @@ find_real_claude() {
 }
 
 # Return 0 only when TERMLOOP_SOCKET_PATH points to a live termloop socket.
-cmux_socket_available() {
+termloop_socket_available() {
     local socket="${TERMLOOP_SOCKET_PATH:-}"
     [[ -n "$socket" && -S "$socket" ]] || return 1
 
-    local self_dir cmux_bin
+    local self_dir termloop_bin
     self_dir="$(cd "$(dirname "$0")" && pwd)"
-    cmux_bin="$self_dir/termloop"
-    [[ -x "$cmux_bin" ]] || cmux_bin="$(command -v termloop || true)"
-    [[ -n "$cmux_bin" ]] || return 1
+    termloop_bin="$self_dir/termloop"
+    [[ -x "$termloop_bin" ]] || termloop_bin="$(command -v termloop || true)"
+    [[ -n "$termloop_bin" ]] || return 1
 
     # Keep stale/hung socket checks bounded so claude startup does not block
     # behind the CLI default timeout (15s).
     TERMLOOP_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
-        "$cmux_bin" --socket "$socket" ping >/dev/null 2>&1
+        "$termloop_bin" --socket "$socket" ping >/dev/null 2>&1
 }
 
-resolve_hook_cmux_bin() {
+resolve_hook_termloop_bin() {
     local self_dir bundled_cli
     bundled_cli="${TERMLOOP_BUNDLED_CLI_PATH:-}"
     if [[ -n "$bundled_cli" && -x "$bundled_cli" ]]; then
@@ -107,15 +107,15 @@ resolve_hook_cmux_bin() {
 
 # Pass through if not in a termloop terminal, hooks are disabled, or the TermLoop
 # socket is unavailable (stale env / app not running).
-IN_CMUX=0
+IN_TERMLOOP=0
 if [[ -n "$TERMLOOP_SURFACE_ID" ]]; then
-    IN_CMUX=1
+    IN_TERMLOOP=1
 fi
 
-if [[ "$IN_CMUX" == "0" || "$TERMLOOP_CLAUDE_HOOKS_DISABLED" == "1" ]] || ! cmux_socket_available; then
-    # In TermLoop-launched shells, preserve old behavior and always clear nested
-    # Claude session markers, even when we must pass through due to stale socket.
-    if [[ "$IN_CMUX" == "1" ]]; then
+if [[ "$IN_TERMLOOP" == "0" || "$TERMLOOP_CLAUDE_HOOKS_DISABLED" == "1" ]] || ! termloop_socket_available; then
+    # In TermLoop-launched shells, always clear nested Claude session markers,
+    # even when we must pass through due to a stale socket.
+    if [[ "$IN_TERMLOOP" == "1" ]]; then
         unset CLAUDECODE
     fi
     REAL_CLAUDE="$(find_real_claude)" || { echo "Error: claude not found in PATH" >&2; exit 127; }
