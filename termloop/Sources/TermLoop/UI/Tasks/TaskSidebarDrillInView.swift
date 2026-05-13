@@ -100,23 +100,7 @@ struct TaskSidebarDrillInView: View {
                         .padding(.top, 4)
                     }
                     flatSection {
-                        DisclosureGroup(
-                            isExpanded: $isDevServersExpanded,
-                            content: {
-                                DevServerTaskSection(
-                                    snapshot: detailSnapshot,
-                                    projectId: projectId
-                                )
-                                .padding(.top, 6)
-                            },
-                            label: {
-                                TaskSidebarSectionTitle(
-                                    String(localized: "devservers.sidebar.title",
-                                           defaultValue: "Dev Servers",
-                                           table: "TermLoop")
-                                )
-                            }
-                        )
+                        devServersSection
                     }
                 }
                 .padding(10)
@@ -179,6 +163,40 @@ struct TaskSidebarDrillInView: View {
     private func hasWorktreeProjections(_ snap: TaskDetailSnapshot) -> Bool {
         let trimmedPath = snap.worktreePath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return !trimmedPath.isEmpty
+    }
+
+    private var devServersSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                isDevServersExpanded.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: isDevServersExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 12)
+                    TaskSidebarSectionTitle(devServersTitle)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(devServersTitle)
+
+            if isDevServersExpanded {
+                DevServerTaskSection(
+                    snapshot: detailSnapshot,
+                    projectId: projectId
+                )
+                .padding(.top, 6)
+            }
+        }
+    }
+
+    private var devServersTitle: String {
+        String(localized: "devservers.sidebar.title",
+               defaultValue: "Dev Servers",
+               table: "TermLoop")
     }
 
     private func shouldShowWorkItemSection(_ snap: TaskDetailSnapshot) -> Bool {
