@@ -288,6 +288,7 @@ enum TerminalAgentRunner {
             command: command,
             attempt: 0
         )
+        scheduleCodexHookReviewProbeIfNeeded(agent: agent, in: workspace)
         TermLoopHooks.schedulePersistedAgentSessionRecoveryIfNeeded(agentId: agent.id)
     }
 
@@ -363,6 +364,7 @@ enum TerminalAgentRunner {
             command: commandToDispatch,
             attempt: 0
         )
+        scheduleCodexHookReviewProbeIfNeeded(agent: agent, in: workspace)
         TermLoopHooks.schedulePersistedAgentSessionRecoveryIfNeeded(agentId: agent.id)
     }
 
@@ -665,6 +667,17 @@ enum TerminalAgentRunner {
         sendCommandWhenReady(to: workspace, command: command, attempt: 0)
     }
 
+    static func scheduleCodexHookReviewProbeIfNeeded(
+        agent: TerminalAgent,
+        in workspace: Workspace
+    ) {
+        guard agent.id == AgentCatalogStore.codexId else { return }
+        guard CodexHooksStatus.shared.claimReviewProbeSession(workspaceId: workspace.id) else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + codexHookReviewProbeInitialDelay) {
+            runCodexHookReviewProbe(in: workspace, attempt: 0)
+        }
+    }
+
     private static func installClaudeProjectMCPServersIfNeeded(
         agent: TerminalAgent,
         cwd: String?,
@@ -748,6 +761,9 @@ enum TerminalAgentRunner {
     private static let shellReadyStableSamplesRequired = 3
     private static let shellEchoStableSamplesRequired = 2
     private static let visibleTextLineLimit = 60
+    private static let codexHookReviewProbeInitialDelay: TimeInterval = 0.8
+    private static let codexHookReviewProbeInterval: TimeInterval = 0.7
+    private static let codexHookReviewProbeMaxAttempts = 18
 
     private final class ShellEnterGuard {
         var didSendEnter = false
@@ -1029,6 +1045,41 @@ enum TerminalAgentRunner {
             .compactMap { $0 as? TerminalPanel }
             .sorted { $0.id.uuidString < $1.id.uuidString }
             .first
+    }
+
+    private static func runCodexHookReviewProbe(
+        in workspace: Workspace,
+        attempt: Int
+    ) {
+        guard attempt < codexHookReviewProbeMaxAttempts else { return }
+        guard !CodexHooksStatus.shared.reviewRequired else { return }
+
+        guard let panel = targetTerminalPanel(in: workspace) else {
+            workspace.requestBackgroundTerminalSurfaceStartIfNeeded()
+            scheduleNextCodexHookReviewProbe(in: workspace, attempt: attempt)
+            return
+        }
+        guard panel.surface.surface != nil else {
+            panel.surface.requestBackgroundSurfaceStartIfNeeded()
+            scheduleNextCodexHookReviewProbe(in: workspace, attempt: attempt)
+            return
+        }
+
+        let visibleText = currentVisibleTerminalText(for: panel)
+        if CodexHooksStatus.outputIndicatesReviewRequired(visibleText) {
+            CodexHooksStatus.shared.markReviewRequired(workspaceId: workspace.id)
+            return
+        }
+        scheduleNextCodexHookReviewProbe(in: workspace, attempt: attempt)
+    }
+
+    private static func scheduleNextCodexHookReviewProbe(
+        in workspace: Workspace,
+        attempt: Int
+    ) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + codexHookReviewProbeInterval) {
+            runCodexHookReviewProbe(in: workspace, attempt: attempt + 1)
+        }
     }
 
     private static func shellEnvironmentPrefix(_ env: [String: String]) -> String {

@@ -357,6 +357,7 @@ enum TermLoopCLICommands {
         sessionId: String? = nil,
         cwd: String? = nil,
         pid: Int? = nil,
+        source: String? = nil,
         client: SocketClient
     ) {
         var params: [String: Any] = [
@@ -370,6 +371,7 @@ enum TermLoopCLICommands {
         params["session_id"] = sessionId as Any? ?? NSNull()
         params["cwd"] = cwd as Any? ?? NSNull()
         params["pid"] = (pid != nil && (pid ?? 0) > 0) ? pid! : NSNull()
+        params["source"] = source as Any? ?? NSNull()
         _ = try? client.sendV2(method: "workspace.report_agent_activity", params: params)
     }
 
