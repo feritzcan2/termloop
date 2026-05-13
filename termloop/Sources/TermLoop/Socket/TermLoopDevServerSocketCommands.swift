@@ -14,12 +14,14 @@ enum TermLoopDevServerSocketCommands {
         case "devservers.profiles.list":   return profilesList(params)
         case "devservers.profiles.upsert": return profilesUpsert(params, isTcpClient: isTcpClient)
         case "devservers.profiles.delete": return profilesDelete(params, isTcpClient: isTcpClient)
+        case "devservers.profiles.save_and_test": return profilesSaveAndTest(params, isTcpClient: isTcpClient)
         case "devservers.start":           return start(params)
         case "devservers.stop":            return stop(params)
         case "devservers.restart":         return restart(params)
         case "devservers.runs.list":       return runsList(params)
         case "devservers.logs":            return logs(params)
         case "devservers.open_url":        return openURL(params)
+        case "devservers.preview.inspect": return previewInspect(params)
         default:                            return nil
         }
     }
@@ -95,6 +97,53 @@ enum TermLoopDevServerSocketCommands {
             return .ok(["profile_id": profileId, "deleted": true])
         } catch {
             return .err(code: "store_unavailable", message: error.localizedDescription, data: nil)
+        }
+    }
+
+    private static func profilesSaveAndTest(
+        _ params: [String: Any],
+        isTcpClient: Bool
+    ) -> TerminalController.V2CallResult {
+        guard !isTcpClient else {
+            return .err(code: "forbidden", message: "Profile mutation requires a local Unix socket", data: nil)
+        }
+        guard let taskId = uuid(params, "task_id") else {
+            return .err(code: "invalid_params", message: "Missing or invalid task_id", data: nil)
+        }
+        let resolved = resolveProfileStore(params)
+        guard case .success(let store) = resolved else {
+            if case .failure(let error) = resolved { return error }
+            return .err(code: "store_unavailable", message: "Could not load dev server profiles", data: nil)
+        }
+        if let loadError = store.loadError {
+            return .err(code: "store_unavailable", message: loadError.localizedDescription, data: nil)
+        }
+        guard let rawProfile = params["profile"] as? [String: Any] else {
+            return .err(code: "invalid_params", message: "Missing profile", data: nil)
+        }
+        do {
+            let profile = try decodeProfile(rawProfile)
+            try store.upsert(profile)
+            let snapshot = try DevServerRunCoordinator.shared.start(
+                projectId: store.projectId,
+                taskId: taskId,
+                profileId: profile.id,
+                restart: true,
+                openOnURL: (params["open_on_url"] as? Bool) ?? true
+            )
+            return .ok([
+                "profile": profilePayload(profile),
+                "run": runPayload(snapshot),
+                "test": saveAndTestPayload(snapshot)
+            ])
+        } catch let error as DevServerProfileError {
+            return .err(code: "invalid_params", message: error.localizedDescription, data: nil)
+        } catch let error as DevServerProfileStoreError {
+            return .err(code: "store_unavailable", message: error.localizedDescription, data: nil)
+        } catch let error as DevServerRunError {
+            return runErrorToV2(error)
+        } catch {
+            return .err(code: "invalid_params", message: error.localizedDescription, data: nil)
         }
     }
 
@@ -215,6 +264,26 @@ enum TermLoopDevServerSocketCommands {
         return .ok(["run_id": runId.uuidString, "url": normalized, "opened": opened])
     }
 
+    private static func previewInspect(_ params: [String: Any]) -> TerminalController.V2CallResult {
+        guard let runId = uuid(params, "run_id") else {
+            return .err(code: "invalid_params", message: "Missing or invalid run_id", data: nil)
+        }
+        guard let snapshot = DevServerRunStore.shared.snapshot(runId: runId) else {
+            return .err(code: "run_not_found", message: "Run not found", data: nil)
+        }
+        guard let context = DevServerBrowserInspector.context(for: snapshot) else {
+            return .err(
+                code: "unsupported",
+                message: "No matching TermLoop browser preview is available for this run",
+                data: [
+                    "run_id": runId.uuidString,
+                    "supported_methods": DevServerBrowserInspector.supportedMethods
+                ]
+            )
+        }
+        return .ok(["run_id": runId.uuidString, "browser": context])
+    }
+
     private enum ProfileStoreResolution {
         case success(DevServerProfileStore)
         case failure(TerminalController.V2CallResult)
@@ -275,6 +344,9 @@ enum TermLoopDevServerSocketCommands {
             command: command,
             workingDirectory: nonEmptyString(raw, "working_directory", "workingDirectory") ?? ".",
             env: try stringDictionary(raw["env"]),
+            setupCommand: nonEmptyString(raw, "setup_command", "setupCommand"),
+            cleanupCommand: nonEmptyString(raw, "cleanup_command", "cleanupCommand"),
+            setupPolicy: setupPolicy(raw),
             urlDetection: DevServerURLDetection(
                 autoDetect: bool(urlDetection, "auto_detect", "autoDetect") ?? true,
                 fallbackUrls: stringArray(urlDetection, "fallback_urls", "fallbackUrls"),
@@ -309,6 +381,10 @@ enum TermLoopDevServerSocketCommands {
             "command": profile.command,
             "working_directory": profile.workingDirectory,
             "env": profile.env,
+            "setup_command": profile.setupCommand as Any? ?? NSNull(),
+            "cleanup_command": profile.cleanupCommand as Any? ?? NSNull(),
+            "setup_policy": profile.setupPolicy.rawValue,
+            "setup_config_hash": DevServerSetupStateStore.configHash(for: profile),
             "url_detection": [
                 "auto_detect": profile.urlDetection.autoDetect,
                 "fallback_urls": profile.urlDetection.fallbackUrls,
@@ -325,6 +401,27 @@ enum TermLoopDevServerSocketCommands {
         [
             "auto_open_first_url": defaults.autoOpenFirstUrl,
             "log_line_limit": defaults.logLineLimit
+        ]
+    }
+
+    private static func saveAndTestPayload(_ snapshot: DevServerRunSnapshot) -> [String: Any] {
+        let status: String
+        if snapshot.latestURL != nil {
+            status = "ready"
+        } else if snapshot.phase == .failed {
+            status = "failed"
+        } else if snapshot.phase == .exited {
+            status = "exited"
+        } else {
+            status = "waiting"
+        }
+        return [
+            "status": status,
+            "phase": snapshot.phase.rawValue,
+            "url": snapshot.latestURL as Any? ?? NSNull(),
+            "error_message": snapshot.errorMessage as Any? ?? NSNull(),
+            "run_id": snapshot.runId.uuidString,
+            "follow_events": ["devserver.url", "devserver.status", "devserver.log"]
         ]
     }
 
@@ -377,6 +474,12 @@ enum TermLoopDevServerSocketCommands {
             result[key] = string
         }
         return result
+    }
+
+    private static func setupPolicy(_ raw: [String: Any]) -> DevServerSetupPolicy {
+        let value = nonEmptyString(raw, "setup_policy", "setupPolicy")
+            ?? DevServerSetupPolicy.oncePerWorktreeProfileConfig.rawValue
+        return DevServerSetupPolicy(rawValue: value) ?? .oncePerWorktreeProfileConfig
     }
 
     private static func jsonObject(_ raw: Any?) throws -> [String: JSONValue] {

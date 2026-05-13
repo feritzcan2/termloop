@@ -24,6 +24,14 @@ private struct DevServerTaskSectionContent: View {
     @ObservedObject private var runStore = DevServerRunStore.shared
     @State private var errorMessage: String?
     @State private var shownLogRunId: UUID?
+    @State private var showDraftEditor = false
+    @State private var draftId = "web"
+    @State private var draftName = "Web"
+    @State private var draftCommand = ""
+    @State private var draftWorkingDirectory = "."
+    @State private var draftSetupCommand = ""
+    @State private var draftCleanupCommand = ""
+    @State private var pendingSaveAndTestRunId: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -44,6 +52,12 @@ private struct DevServerTaskSectionContent: View {
                         profileRow(profile)
                     }
                 }
+            }
+            if profileStore.loadError == nil {
+                draftEditor
+            }
+            if let run = pendingSaveAndTestRun {
+                saveAndTestResult(run)
             }
             if let errorMessage {
                 Text(errorMessage)
@@ -98,7 +112,17 @@ private struct DevServerTaskSectionContent: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.accentColor)
-                .help(String(localized: "devservers.sidebar.openURL.help", defaultValue: "Open in TermLoop Browser", table: "TermLoop"))
+                    .help(String(localized: "devservers.sidebar.openURL.help", defaultValue: "Open in TermLoop Browser", table: "TermLoop"))
+            }
+            if let errorLine = projectedErrorLine(current) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle")
+                    Text(errorLine)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                }
+                .font(.system(size: 10))
+                .foregroundStyle(.orange)
             }
         }
         .padding(.vertical, 8)
@@ -138,6 +162,67 @@ private struct DevServerTaskSectionContent: View {
         }
     }
 
+    @ViewBuilder
+    private var draftEditor: some View {
+        DisclosureGroup(
+            isExpanded: $showDraftEditor,
+            content: {
+                VStack(alignment: .leading, spacing: 7) {
+                    TextField(
+                        String(localized: "devservers.editor.id", defaultValue: "Profile id", table: "TermLoop"),
+                        text: $draftId
+                    )
+                    TextField(
+                        String(localized: "devservers.editor.name", defaultValue: "Name", table: "TermLoop"),
+                        text: $draftName
+                    )
+                    TextField(
+                        String(localized: "devservers.editor.command", defaultValue: "Command", table: "TermLoop"),
+                        text: $draftCommand
+                    )
+                    TextField(
+                        String(localized: "devservers.editor.cwd", defaultValue: "Working directory", table: "TermLoop"),
+                        text: $draftWorkingDirectory
+                    )
+                    TextField(
+                        String(localized: "devservers.editor.setup", defaultValue: "Setup command (optional)", table: "TermLoop"),
+                        text: $draftSetupCommand
+                    )
+                    TextField(
+                        String(localized: "devservers.editor.cleanup", defaultValue: "Cleanup command (optional)", table: "TermLoop"),
+                        text: $draftCleanupCommand
+                    )
+                    HStack(spacing: 8) {
+                        Button(String(localized: "devservers.editor.save", defaultValue: "Save", table: "TermLoop")) {
+                            saveDraft(startAfterSave: false)
+                        }
+                        .buttonStyle(.borderless)
+
+                        Button(String(localized: "devservers.editor.saveAndTest", defaultValue: "Save & Test", table: "TermLoop")) {
+                            saveDraft(startAfterSave: true)
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(!hasWorktreeBinding)
+
+                        Spacer()
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                }
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11))
+                .padding(.top, 6)
+            },
+            label: {
+                Text(String(localized: "devservers.editor.addProfile", defaultValue: "Add or edit profile", table: "TermLoop"))
+                    .font(.system(size: 12, weight: .semibold))
+            }
+        )
+        .padding(.vertical, 8)
+        .padding(.horizontal, 9)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.40))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
     private func logsButton(_ run: DevServerRunSnapshot) -> some View {
         Button(String(localized: "devservers.sidebar.logs", defaultValue: "Logs", table: "TermLoop")) {
             shownLogRunId = run.runId
@@ -153,6 +238,69 @@ private struct DevServerTaskSectionContent: View {
                 lines: runStore.logs(runId: run.runId, limit: 300)
             )
         }
+    }
+
+    private var pendingSaveAndTestRun: DevServerRunSnapshot? {
+        _ = runStore.version
+        guard let pendingSaveAndTestRunId else { return nil }
+        return runStore.snapshot(runId: pendingSaveAndTestRunId)
+    }
+
+    private func saveAndTestResult(_ run: DevServerRunSnapshot) -> some View {
+        let detail: String
+        let color: Color
+        if let url = run.latestURL {
+            detail = String(
+                localized: "devservers.editor.test.ready",
+                defaultValue: "Test ready: \(url)",
+                table: "TermLoop"
+            )
+            color = Color(red: 0.30, green: 0.78, blue: 0.36)
+        } else if run.phase == .failed {
+            detail = String(
+                localized: "devservers.editor.test.failed",
+                defaultValue: "Test failed: \(run.errorMessage ?? run.phase.localizedLabel)",
+                table: "TermLoop"
+            )
+            color = .red
+        } else if run.phase == .exited {
+            detail = String(
+                localized: "devservers.editor.test.exited",
+                defaultValue: "Test exited before a URL was detected.",
+                table: "TermLoop"
+            )
+            color = .orange
+        } else {
+            detail = String(
+                localized: "devservers.editor.test.waiting",
+                defaultValue: "Testing… waiting for a URL or failure.",
+                table: "TermLoop"
+            )
+            color = .secondary
+        }
+
+        let iconName = run.latestURL != nil
+            ? "checkmark.circle"
+            : (run.phase == .failed ? "exclamationmark.triangle" : "hourglass")
+        return HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: iconName)
+                .foregroundStyle(color)
+            Text(detail)
+                .lineLimit(2)
+                .truncationMode(.tail)
+            Spacer(minLength: 0)
+            if let url = run.latestURL {
+                Button(String(localized: "devservers.sidebar.openURL", defaultValue: "Open", table: "TermLoop")) {
+                    openURL(run: run, rawURL: url)
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .font(.system(size: 11))
+        .padding(.vertical, 6)
+        .padding(.horizontal, 9)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.40))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func runs(for profile: DevServerProfile) -> [DevServerRunSnapshot] {
@@ -191,6 +339,42 @@ private struct DevServerTaskSectionContent: View {
         }
     }
 
+    private func saveDraft(startAfterSave: Bool) {
+        runAction {
+            if !startAfterSave {
+                pendingSaveAndTestRunId = nil
+            }
+            if let loadError = profileStore.loadError {
+                throw loadError
+            }
+            let profile = try DevServerProfile(
+                id: draftId,
+                name: draftName,
+                command: draftCommand,
+                workingDirectory: draftWorkingDirectory,
+                setupCommand: draftSetupCommand,
+                cleanupCommand: draftCleanupCommand,
+                urlDetection: DevServerURLDetection(
+                    autoDetect: true,
+                    fallbackUrls: [],
+                    readyRegexes: []
+                ),
+                presentation: DevServerPresentation(autoOpenFirstUrl: true)
+            )
+            try profileStore.upsert(profile)
+            if startAfterSave {
+                let run = try DevServerRunCoordinator.shared.start(
+                    projectId: projectId,
+                    taskId: snapshot.id,
+                    profileId: profile.id,
+                    restart: true,
+                    openOnURL: true
+                )
+                pendingSaveAndTestRunId = run.runId
+            }
+        }
+    }
+
     private func stop(_ run: DevServerRunSnapshot) {
         runAction { _ = try DevServerRunCoordinator.shared.stop(runId: run.runId) }
     }
@@ -200,6 +384,14 @@ private struct DevServerTaskSectionContent: View {
               let normalized = DevServerURLDetector.normalize(rawURL),
               let url = URL(string: normalized) else { return }
         _ = DevServerBrowserRouter.open(snapshot: run, url: url, focus: true)
+    }
+
+    private func projectedErrorLine(_ run: DevServerRunSnapshot?) -> String? {
+        guard let run else { return nil }
+        if run.phase == .failed, let errorMessage = run.errorMessage {
+            return errorMessage
+        }
+        return run.recentErrorLines.last
     }
 
     private func runAction(_ action: () throws -> Void) {
@@ -238,7 +430,7 @@ private struct DevServerTaskSectionContent: View {
     private func color(for phase: DevServerRunPhase) -> Color {
         switch phase {
         case .running: return Color(red: 0.30, green: 0.78, blue: 0.36)
-        case .starting, .stopping: return .orange
+        case .starting, .settingUp, .stopping: return .orange
         case .failed: return Color(red: 0.92, green: 0.36, blue: 0.31)
         case .idle, .exited: return .secondary.opacity(0.7)
         }

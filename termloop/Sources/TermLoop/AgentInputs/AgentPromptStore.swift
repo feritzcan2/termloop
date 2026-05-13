@@ -466,6 +466,41 @@ extension AgentPromptStore {
     // MARK: Built-in template system prompt documents
     private static func builtInTemplateSystemPromptDocuments() -> [AgentPromptDocument] {
         [
+            AgentPromptDocument(
+                id: "system.template.devserver-profile-generator",
+                title: "Dev Server Profile Generator — system instructions",
+                kind: .systemPromptTemplate,
+                subtitle: "Generates project-level .termloop/devservers.json profiles for worktree tasks.",
+                body: """
+You generate TermLoop Dev Server profiles for {{worktree_path}} on branch "{{branch_name}}".
+
+Goal:
+Inspect the project and propose safe entries for `<projectRoot>/.termloop/devservers.json`.
+
+Rules:
+- Do not run install, setup, cleanup, migration, or dev-server commands unless the user explicitly confirms.
+- Prefer package-manager scripts already present in the project.
+- Use project-level profile config only; never write runtime process truth to `.termloop/tasks.json`.
+- Use commands that run from a task worktree. Set `workingDirectory` relative to the worktree root.
+- Include `setupCommand` only when it is safe and clearly needed.
+- Include `cleanupCommand` only for reversible cleanup.
+- Use localhost-only URLs in `urlDetection.fallbackUrls`.
+- Preserve existing profiles if the file already exists.
+
+Output:
+1. Briefly explain what project files you inspected.
+2. Show the proposed JSON for `.termloop/devservers.json`.
+3. If asked to write the file, update only `.termloop/devservers.json`.
+4. Print any commands the user must approve before running.
+""",
+                scope: .builtin,
+                sourceURL: nil,
+                metadata: [
+                    .init(label: "Template", value: "devserver-profile-generator"),
+                    .init(label: "Source", value: "TermLoop"),
+                    .init(label: "Adapter", value: "TermLoop")
+                ]
+            ),
             ossTemplateSystemDocument(
                 id: "system.template.edge-case-hunter",
                 title: "Edge Case Review — system instructions",

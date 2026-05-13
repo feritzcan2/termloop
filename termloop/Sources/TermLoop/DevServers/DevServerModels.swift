@@ -10,6 +10,7 @@ public enum RunProfileKind: String, Codable, Equatable, Hashable, Sendable {
 public enum DevServerRunPhase: String, Codable, Equatable, Hashable, Sendable {
     case idle
     case starting
+    case settingUp = "setting_up"
     case running
     case stopping
     case exited
@@ -21,6 +22,8 @@ public enum DevServerRunPhase: String, Codable, Equatable, Hashable, Sendable {
             return String(localized: "devservers.phase.idle", defaultValue: "idle", table: "TermLoop")
         case .starting:
             return String(localized: "devservers.phase.starting", defaultValue: "starting", table: "TermLoop")
+        case .settingUp:
+            return String(localized: "devservers.phase.settingUp", defaultValue: "setting up", table: "TermLoop")
         case .running:
             return String(localized: "devservers.phase.running", defaultValue: "running", table: "TermLoop")
         case .stopping:
@@ -190,6 +193,12 @@ public struct DevServerPresentation: Codable, Equatable, Sendable {
     }
 }
 
+public enum DevServerSetupPolicy: String, Codable, Equatable, Hashable, Sendable {
+    case oncePerWorktreeProfileConfig = "once_per_worktree_profile_config"
+    case always
+    case never
+}
+
 public struct DevServerProfile: Codable, Identifiable, Equatable, Sendable {
     public var id: String
     public var name: String
@@ -197,6 +206,9 @@ public struct DevServerProfile: Codable, Identifiable, Equatable, Sendable {
     public var command: String
     public var workingDirectory: String
     public var env: [String: String]
+    public var setupCommand: String?
+    public var cleanupCommand: String?
+    public var setupPolicy: DevServerSetupPolicy
     public var urlDetection: DevServerURLDetection
     public var presentation: DevServerPresentation
     public var extensions: [String: JSONValue]
@@ -208,6 +220,9 @@ public struct DevServerProfile: Codable, Identifiable, Equatable, Sendable {
         command: String,
         workingDirectory: String = ".",
         env: [String: String] = [:],
+        setupCommand: String? = nil,
+        cleanupCommand: String? = nil,
+        setupPolicy: DevServerSetupPolicy = .oncePerWorktreeProfileConfig,
         urlDetection: DevServerURLDetection = DevServerURLDetection(),
         presentation: DevServerPresentation = DevServerPresentation(),
         extensions: [String: JSONValue] = [:]
@@ -230,6 +245,9 @@ public struct DevServerProfile: Codable, Identifiable, Equatable, Sendable {
             let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? nil : trimmed
         }
+        self.setupCommand = Self.normalizedOptionalCommand(setupCommand)
+        self.cleanupCommand = Self.normalizedOptionalCommand(cleanupCommand)
+        self.setupPolicy = setupPolicy
         self.urlDetection = urlDetection
         self.presentation = presentation
         self.extensions = extensions
@@ -242,6 +260,9 @@ public struct DevServerProfile: Codable, Identifiable, Equatable, Sendable {
         case command
         case workingDirectory
         case env
+        case setupCommand
+        case cleanupCommand
+        case setupPolicy
         case urlDetection
         case presentation
         case extensions
@@ -256,6 +277,10 @@ public struct DevServerProfile: Codable, Identifiable, Equatable, Sendable {
             command: try container.decode(String.self, forKey: .command),
             workingDirectory: try container.decodeIfPresent(String.self, forKey: .workingDirectory) ?? ".",
             env: try container.decodeIfPresent([String: String].self, forKey: .env) ?? [:],
+            setupCommand: try container.decodeIfPresent(String.self, forKey: .setupCommand),
+            cleanupCommand: try container.decodeIfPresent(String.self, forKey: .cleanupCommand),
+            setupPolicy: try container.decodeIfPresent(DevServerSetupPolicy.self, forKey: .setupPolicy)
+                ?? .oncePerWorktreeProfileConfig,
             urlDetection: try container.decodeIfPresent(DevServerURLDetection.self, forKey: .urlDetection) ?? DevServerURLDetection(),
             presentation: try container.decodeIfPresent(DevServerPresentation.self, forKey: .presentation) ?? DevServerPresentation(),
             extensions: try container.decodeIfPresent([String: JSONValue].self, forKey: .extensions) ?? [:]
@@ -274,6 +299,11 @@ public struct DevServerProfile: Codable, Identifiable, Equatable, Sendable {
                 || scalar == "_"
                 || scalar == "-"
         }
+    }
+
+    public static func normalizedOptionalCommand(_ raw: String?) -> String? {
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
@@ -391,6 +421,7 @@ public struct DevServerRunSnapshot: Identifiable, Equatable, Sendable {
     public let pid: Int32?
     public let urls: [String]
     public let latestURL: String?
+    public let recentErrorLines: [String]
     public let logCursor: Int
     public let startedAt: Date
     public let updatedAt: Date
@@ -401,7 +432,7 @@ public struct DevServerRunSnapshot: Identifiable, Equatable, Sendable {
     public var id: UUID { runId }
 
     public var isActive: Bool {
-        phase == .starting || phase == .running || phase == .stopping
+        phase == .starting || phase == .settingUp || phase == .running || phase == .stopping
     }
 }
 
@@ -422,6 +453,7 @@ public struct TaskDevServerSummary: Equatable, Sendable {
         let phases = runs.map(\.phase)
         if phases.contains(.failed) { return .failed }
         if phases.contains(.running) { return .running }
+        if phases.contains(.settingUp) { return .settingUp }
         if phases.contains(.starting) { return .starting }
         if phases.contains(.stopping) { return .stopping }
         if phases.contains(.exited) { return .exited }
@@ -430,6 +462,10 @@ public struct TaskDevServerSummary: Equatable, Sendable {
 
     public var latestURL: String? {
         runs.compactMap(\.latestURL).first
+    }
+
+    public var recentErrorLines: [String] {
+        Array(runs.flatMap(\.recentErrorLines).suffix(5))
     }
 
     public var compactLabel: String {
@@ -458,6 +494,7 @@ public enum DevServerRunError: Error, Equatable, LocalizedError {
     case worktreeMissing(String)
     case invalidWorkingDirectory(String)
     case launchFailed(String)
+    case setupFailed(String)
     case runNotFound(UUID)
     case forbidden(String)
 
@@ -471,6 +508,7 @@ public enum DevServerRunError: Error, Equatable, LocalizedError {
         case .worktreeMissing: return "worktree_missing"
         case .invalidWorkingDirectory: return "invalid_params"
         case .launchFailed: return "launch_failed"
+        case .setupFailed: return "setup_failed"
         case .runNotFound: return "run_not_found"
         case .forbidden: return "forbidden"
         }
@@ -526,6 +564,12 @@ public enum DevServerRunError: Error, Equatable, LocalizedError {
             return String(
                 localized: "devservers.error.launchFailed",
                 defaultValue: "Dev server launch failed: \(message)",
+                table: "TermLoop"
+            )
+        case .setupFailed(let message):
+            return String(
+                localized: "devservers.error.setupFailed",
+                defaultValue: "Dev server setup failed: \(message)",
                 table: "TermLoop"
             )
         case .runNotFound(let id):

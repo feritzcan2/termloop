@@ -25,7 +25,7 @@ struct DevServerStatusChip: View {
     private var color: Color {
         switch summary.dominantPhase {
         case .running: return Color(red: 0.30, green: 0.78, blue: 0.36)
-        case .starting, .stopping: return .orange
+        case .starting, .settingUp, .stopping: return .orange
         case .failed: return Color(red: 0.92, green: 0.36, blue: 0.31)
         case .exited, .idle: return .secondary
         }

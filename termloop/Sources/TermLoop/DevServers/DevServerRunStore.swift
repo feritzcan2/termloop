@@ -51,6 +51,7 @@ public final class DevServerRunStore: ObservableObject {
             pid: nil,
             urls: [],
             latestURL: nil,
+            recentErrorLines: [],
             logCursor: 0,
             startedAt: now,
             updatedAt: now,
@@ -73,6 +74,12 @@ public final class DevServerRunStore: ObservableObject {
     public func markRunning(runId: UUID, pid: Int32) -> DevServerRunSnapshot? {
         update(runId: runId) { snapshot in
             snapshot = snapshot.with(phase: .running, pid: pid)
+        }
+    }
+
+    public func markSettingUp(runId: UUID, pid: Int32?) -> DevServerRunSnapshot? {
+        update(runId: runId) { snapshot in
+            snapshot = snapshot.with(phase: .settingUp, pid: pid)
         }
     }
 
@@ -128,7 +135,16 @@ public final class DevServerRunStore: ObservableObject {
         if state.logs.count > state.logLimit {
             state.logs.removeFirst(state.logs.count - state.logLimit)
         }
-        state.snapshot = state.snapshot.with(logCursor: line.sequence, updatedAt: line.timestamp)
+        var recentErrors = state.snapshot.recentErrorLines
+        if stream == .stderr {
+            recentErrors.append(text)
+            recentErrors = Array(recentErrors.suffix(5))
+        }
+        state.snapshot = state.snapshot.with(
+            recentErrorLines: recentErrors,
+            logCursor: line.sequence,
+            updatedAt: line.timestamp
+        )
         runsById[runId] = state
         publishLog(line: line, snapshot: state.snapshot)
         bumpVersion()
@@ -253,6 +269,7 @@ public final class DevServerRunStore: ObservableObject {
             "worktree_path": snapshot.worktreePath,
             "urls": snapshot.urls,
             "latest_url": snapshot.latestURL as Any? ?? NSNull(),
+            "recent_error_lines": snapshot.recentErrorLines,
             "log_cursor": snapshot.logCursor,
             "started_at": snapshot.startedAt.timeIntervalSince1970,
             "updated_at": snapshot.updatedAt.timeIntervalSince1970,
@@ -271,6 +288,7 @@ private extension DevServerRunSnapshot {
         urls: [String]? = nil,
         latestURL: String? = nil,
         replaceLatestURL: Bool = false,
+        recentErrorLines: [String]? = nil,
         logCursor: Int? = nil,
         updatedAt: Date = Date(),
         exitedAt: Date? = nil,
@@ -290,6 +308,7 @@ private extension DevServerRunSnapshot {
             pid: clearPID ? nil : (pid ?? self.pid),
             urls: urls ?? self.urls,
             latestURL: replaceLatestURL ? latestURL : self.latestURL,
+            recentErrorLines: recentErrorLines ?? self.recentErrorLines,
             logCursor: logCursor ?? self.logCursor,
             startedAt: startedAt,
             updatedAt: updatedAt,
