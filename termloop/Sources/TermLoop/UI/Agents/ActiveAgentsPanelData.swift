@@ -110,6 +110,26 @@ extension ActiveAgentsPanel {
         )
     }
 
+    func refreshRestoredAgentPresentations(tabs: [Workspace]) {
+        let workspaceIds = tabs.compactMap { workspace -> UUID? in
+            let metadata = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: workspace.id)
+            guard metadata.persistedAgentSession != nil
+                    || metadata.agentKind != nil
+                    || metadata.agentSpawnedAt != nil
+                    || metadata.lastUserPromptAt != nil
+                    || metadata.awaitingInputSince != nil
+                    || metadata.lastMessagePreview != nil
+                    || metadata.lastAttentionKindRaw != nil
+                    || TerminalAgentActivityStore.shared.state(forWorkspaceId: workspace.id) != nil
+                    || TerminalAgentActivityStore.shared.pendingPlaceholderState(workspaceId: workspace.id) != nil
+            else {
+                return nil
+            }
+            return workspace.id
+        }
+        TerminalAgentActivityStore.shared.refreshPresentations(forWorkspaceIds: workspaceIds)
+    }
+
     /// Scope for the restore button's session scan: every tracked workspace's
     /// cwd, plus the active project's folder path as a fallback.
     func resumeCwds(tabs: [Workspace]) -> [String] {

@@ -23,13 +23,21 @@ extension ActiveAgentsPanel {
             }
         }
         .frame(maxWidth: .infinity)
+        .onAppear {
+            refreshRestoredAgentPresentations(tabs: scopedTabs)
+        }
+        .onChange(of: scopedTabs.map(\.id)) {
+            refreshRestoredAgentPresentations(tabs: projectScopedTabs())
+        }
         .onReceive(WorkspaceMetadataStore.shared.$agentSessionVersion) { newValue in
             guard newValue != agentSessionTick else { return }
             agentSessionTick = newValue
+            refreshRestoredAgentPresentations(tabs: projectScopedTabs())
         }
         .onReceive(WorkspaceMetadataStore.shared.$projectScopeVersion) { newValue in
             guard newValue != projectScopeTick else { return }
             projectScopeTick = newValue
+            refreshRestoredAgentPresentations(tabs: projectScopedTabs())
         }
         .onReceive(TerminalAgentActivityStore.shared.$presentationVersion) { newValue in
             guard newValue != activityTick else { return }
