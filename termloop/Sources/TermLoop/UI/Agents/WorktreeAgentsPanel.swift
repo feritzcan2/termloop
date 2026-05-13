@@ -2895,6 +2895,7 @@ struct WorktreeChangesSheet: View {
     /// commit patches are immutable enough to cache safely.
     @State private var commitDiffCache: [String: String] = [:]
     @State private var refreshNonce: UInt64 = 0
+    @FocusState private var isFileNavigationFocused: Bool
 
     private var effectiveDirectory: String {
         worktreePath ?? workspace.termLoopPresentationCwd() ?? workspace.currentDirectory
@@ -3080,6 +3081,17 @@ struct WorktreeChangesSheet: View {
         // sheet rendered dark even in light mode. `.windowBackgroundColor`
         // adapts to system appearance — matches `AgentsCatalogMainAreaView`.
         .background(Color(nsColor: .windowBackgroundColor))
+        .focusable()
+        .focused($isFileNavigationFocused)
+        .onAppear {
+            isFileNavigationFocused = true
+        }
+        .onKeyPress(.upArrow) {
+            moveFileSelection(offset: -1) ? .handled : .ignored
+        }
+        .onKeyPress(.downArrow) {
+            moveFileSelection(offset: 1) ? .handled : .ignored
+        }
         .task(id: refreshKey) {
             await refreshComparisonState()
         }
@@ -3089,8 +3101,9 @@ struct WorktreeChangesSheet: View {
         .task(id: diffTaskKey) {
             await loadDiff()
         }
-        .onChange(of: selectedSourceID) { _ in
+        .onChange(of: selectedSourceID) { _, _ in
             syncSelectedPath()
+            isFileNavigationFocused = true
         }
         .onReceive(
             Publishers.MergeMany([
@@ -3227,35 +3240,48 @@ struct WorktreeChangesSheet: View {
 
     @ViewBuilder
     private var fileList: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 6) {
-                sectionHeader("Files")
-                ForEach(changes, id: \.path) { file in
-                    Button {
-                        selectedPath = file.path
-                    } label: {
-                        HStack(spacing: 10) {
-                            statusBadge(for: file.status)
-                            Text(file.path)
-                                .font(TermLoopSidebarTheme.tinyMono)
-                                .foregroundStyle(Color.primary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Spacer(minLength: 0)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 6) {
+                    sectionHeader("Files")
+                    ForEach(changes, id: \.path) { file in
+                        Button {
+                            selectedPath = file.path
+                            isFileNavigationFocused = true
+                        } label: {
+                            HStack(spacing: 10) {
+                                statusBadge(for: file.status)
+                                Text(file.path)
+                                    .font(TermLoopSidebarTheme.tinyMono)
+                                    .foregroundStyle(Color.primary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Spacer(minLength: 0)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 5)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(selectedPath == file.path ? Color.accentColor.opacity(0.16) : Color.clear)
+                            )
+                            .contentShape(Rectangle())
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 5)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(selectedPath == file.path ? Color.accentColor.opacity(0.16) : Color.clear)
-                        )
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
+                        .id(file.path)
                     }
-                    .buttonStyle(.plain)
                 }
+                .padding(.vertical, 4)
             }
-            .padding(.vertical, 4)
+            .onAppear {
+                scrollSelectedPath(into: proxy, animated: false)
+            }
+            .onChange(of: selectedPath) { _, _ in
+                scrollSelectedPath(into: proxy, animated: true)
+            }
+            .onChange(of: changes) { _, _ in
+                scrollSelectedPath(into: proxy, animated: false)
+            }
         }
     }
 
@@ -3569,6 +3595,33 @@ struct WorktreeChangesSheet: View {
             selectedPath = preselectedPath
         } else {
             selectedPath = changes.first?.path
+        }
+    }
+
+    @MainActor
+    private func moveFileSelection(offset: Int) -> Bool {
+        guard !changes.isEmpty else { return false }
+
+        let currentIndex = selectedPath.flatMap { path in
+            changes.firstIndex { $0.path == path }
+        } ?? 0
+        let nextIndex = min(max(currentIndex + offset, changes.startIndex), changes.index(before: changes.endIndex))
+        selectedPath = changes[nextIndex].path
+        isFileNavigationFocused = true
+        return true
+    }
+
+    @MainActor
+    private func scrollSelectedPath(into proxy: ScrollViewProxy, animated: Bool) {
+        guard let selectedPath,
+              changes.contains(where: { $0.path == selectedPath }) else { return }
+
+        if animated {
+            withAnimation(.easeInOut(duration: 0.12)) {
+                proxy.scrollTo(selectedPath, anchor: .center)
+            }
+        } else {
+            proxy.scrollTo(selectedPath, anchor: .center)
         }
     }
 

@@ -1945,7 +1945,7 @@ private enum BrowserFindCommandEquivalent {
     case hideFind
     case useSelection
 
-    var keepsCmuxBrowserFindBarOwnershipWhenVisible: Bool {
+    var keepsTermLoopBrowserFindBarOwnershipWhenVisible: Bool {
         switch self {
         case .find, .findNext, .findPrevious, .hideFind:
             return true
@@ -2034,7 +2034,7 @@ func shouldRouteBrowserFindCommandEquivalentThroughWebContentFirst(
         return false
     }
 
-    if shortcut.keepsCmuxBrowserFindBarOwnershipWhenVisible,
+    if shortcut.keepsTermLoopBrowserFindBarOwnershipWhenVisible,
        let owningWebView {
         let browserFindBarIsVisible = MainActor.assumeIsolated {
             AppDelegate.shared?.browserFindBarIsVisible(for: owningWebView) == true

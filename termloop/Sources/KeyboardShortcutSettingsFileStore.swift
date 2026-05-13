@@ -50,8 +50,8 @@ final class CmuxSettingsFileStore {
         "sidebar.showNotificationMessage",
         "sidebar.showBranchDirectory",
         "sidebar.showPullRequests",
-        "sidebar.openPullRequestLinksInCmuxBrowser",
-        "sidebar.openPortLinksInCmuxBrowser",
+        "sidebar.openPullRequestLinksInTermLoopBrowser",
+        "sidebar.openPortLinksInTermLoopBrowser",
         "sidebar.showSSH",
         "sidebar.showPorts",
         "sidebar.showLog",
@@ -80,8 +80,8 @@ final class CmuxSettingsFileStore {
         "browser.defaultSearchEngine",
         "browser.showSearchSuggestions",
         "browser.theme",
-        "browser.openTerminalLinksInCmuxBrowser",
-        "browser.interceptTerminalOpenCommandInCmuxBrowser",
+        "browser.openTerminalLinksInTermLoopBrowser",
+        "browser.interceptTerminalOpenCommandInTermLoopBrowser",
         "browser.hostsToOpenInEmbeddedBrowser",
         "browser.urlsToAlwaysOpenExternally",
         "browser.insecureHttpHostsAllowedInEmbeddedBrowser",
@@ -503,11 +503,11 @@ final class CmuxSettingsFileStore {
         if let value = jsonBool(section["showPullRequests"]) {
             snapshot.managedUserDefaults["sidebarShowPullRequest"] = .bool(value)
         }
-        if let value = jsonBool(section["openPullRequestLinksInCmuxBrowser"]) {
-            snapshot.managedUserDefaults[BrowserLinkOpenSettings.openSidebarPullRequestLinksInCmuxBrowserKey] = .bool(value)
+        if let value = jsonBool(section["openPullRequestLinksInTermLoopBrowser"]) {
+            snapshot.managedUserDefaults[BrowserLinkOpenSettings.openSidebarPullRequestLinksInTermLoopBrowserKey] = .bool(value)
         }
-        if let value = jsonBool(section["openPortLinksInCmuxBrowser"]) {
-            snapshot.managedUserDefaults[BrowserLinkOpenSettings.openSidebarPortLinksInCmuxBrowserKey] = .bool(value)
+        if let value = jsonBool(section["openPortLinksInTermLoopBrowser"]) {
+            snapshot.managedUserDefaults[BrowserLinkOpenSettings.openSidebarPortLinksInTermLoopBrowserKey] = .bool(value)
         }
         if let value = jsonBool(section["showSSH"]) {
             snapshot.managedUserDefaults["sidebarShowSSH"] = .bool(value)
@@ -757,11 +757,11 @@ final class CmuxSettingsFileStore {
             }
             snapshot.managedUserDefaults[BrowserThemeSettings.modeKey] = .string(mode.rawValue)
         }
-        if let value = jsonBool(section["openTerminalLinksInCmuxBrowser"]) {
-            snapshot.managedUserDefaults[BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowserKey] = .bool(value)
+        if let value = jsonBool(section["openTerminalLinksInTermLoopBrowser"]) {
+            snapshot.managedUserDefaults[BrowserLinkOpenSettings.openTerminalLinksInTermLoopBrowserKey] = .bool(value)
         }
-        if let value = jsonBool(section["interceptTerminalOpenCommandInCmuxBrowser"]) {
-            snapshot.managedUserDefaults[BrowserLinkOpenSettings.interceptTerminalOpenCommandInCmuxBrowserKey] = .bool(value)
+        if let value = jsonBool(section["interceptTerminalOpenCommandInTermLoopBrowser"]) {
+            snapshot.managedUserDefaults[BrowserLinkOpenSettings.interceptTerminalOpenCommandInTermLoopBrowserKey] = .bool(value)
         }
         if let values = jsonStringArray(section["hostsToOpenInEmbeddedBrowser"]) {
             let normalized = values
@@ -1350,8 +1350,8 @@ final class CmuxSettingsFileStore {
                     "showNotificationMessage": SidebarWorkspaceDetailSettings.defaultShowNotificationMessage,
                     "showBranchDirectory": true,
                     "showPullRequests": true,
-                    "openPullRequestLinksInCmuxBrowser": BrowserLinkOpenSettings.defaultOpenSidebarPullRequestLinksInCmuxBrowser,
-                    "openPortLinksInCmuxBrowser": BrowserLinkOpenSettings.defaultOpenSidebarPortLinksInCmuxBrowser,
+                    "openPullRequestLinksInTermLoopBrowser": BrowserLinkOpenSettings.defaultOpenSidebarPullRequestLinksInTermLoopBrowser,
+                    "openPortLinksInTermLoopBrowser": BrowserLinkOpenSettings.defaultOpenSidebarPortLinksInTermLoopBrowser,
                     "showSSH": true,
                     "showPorts": true,
                     "showLog": true,
@@ -1400,8 +1400,8 @@ final class CmuxSettingsFileStore {
                     "defaultSearchEngine": BrowserSearchSettings.defaultSearchEngine.rawValue,
                     "showSearchSuggestions": BrowserSearchSettings.defaultSearchSuggestionsEnabled,
                     "theme": BrowserThemeSettings.defaultMode.rawValue,
-                    "openTerminalLinksInCmuxBrowser": BrowserLinkOpenSettings.defaultOpenTerminalLinksInCmuxBrowser,
-                    "interceptTerminalOpenCommandInCmuxBrowser": BrowserLinkOpenSettings.defaultInterceptTerminalOpenCommandInCmuxBrowser,
+                    "openTerminalLinksInTermLoopBrowser": BrowserLinkOpenSettings.defaultOpenTerminalLinksInTermLoopBrowser,
+                    "interceptTerminalOpenCommandInTermLoopBrowser": BrowserLinkOpenSettings.defaultInterceptTerminalOpenCommandInTermLoopBrowser,
                     "hostsToOpenInEmbeddedBrowser": [String](),
                     "urlsToAlwaysOpenExternally": [String](),
                     "insecureHttpHostsAllowedInEmbeddedBrowser": BrowserInsecureHTTPSettings.defaultAllowlistPatterns,
