@@ -780,7 +780,13 @@ private struct DevServerTaskSectionContent: View {
                 reasonTag: "devservers.profileGenerator",
                 projectId: projectId,
                 runTarget: .projectRoot(projectId),
-                openAdvanced: true
+                openAdvanced: true,
+                onLaunchedWorkspace: { workspace in
+                    WorkspaceMetadataStore.shared.setProjectId(projectId, forWorkspaceId: workspace.id)
+                    WorkspaceMetadataStore.shared.setLastUserPromptAt(Date(), forWorkspaceId: workspace.id)
+                    TerminalAgentActivityStore.shared.refreshPresentations(forWorkspaceIds: [workspace.id])
+                    TermLoopHooks.saveCriticalAgentRestoreStateSync()
+                }
             )
         )
     }

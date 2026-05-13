@@ -181,6 +181,16 @@ final class TerminalAgentActivityStore: ObservableObject {
         schedulePresentationFlush()
     }
 
+    func refreshPresentations(forWorkspaceIds workspaceIds: [UUID]) {
+        let uniqueIds = Set(workspaceIds)
+        guard !uniqueIds.isEmpty else { return }
+        dirtyPresentationWorkspaceIds.formUnion(uniqueIds)
+        Self.lifecycleLog(
+            "store.presentationRefresh count=\(uniqueIds.count) dirtyCount=\(dirtyPresentationWorkspaceIds.count)"
+        )
+        schedulePresentationFlush()
+    }
+
     private func schedulePresentationFlush() {
         if isPresentationFlushScheduled { return }
         isPresentationFlushScheduled = true
