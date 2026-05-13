@@ -4917,7 +4917,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Generate profile with agent"
+            "value": "Generate run profiles with agent"
           }
         }
       }
@@ -4928,7 +4928,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Generate dev server profile"
+            "value": "Generate run profiles"
           }
         }
       }

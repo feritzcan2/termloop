@@ -1,7 +1,7 @@
 ---
 id: devserver-profile-generator
-name: Generate Dev Server Profile
-description: Inspect the project and propose safe .termloop/devservers.json run profiles
+name: Generate Run Profiles
+description: Inspect the project, ask clarifying questions, and propose safe .termloop/devservers.json run profiles
 icon: 🧩
 scope: folder
 permissionMode: ask
@@ -15,4 +15,4 @@ variables: []
 timeoutSeconds: 1200
 systemPromptDocumentId: "system.template.devserver-profile-generator"
 ---
-Inspect this project and propose or update `.termloop/devservers.json` profiles for common local workflows. Preserve existing profiles, prefer localhost-bound commands, include setup/cleanup only when safe, and ask before running commands that install dependencies or mutate the project.
+Inspect this project and help configure `.termloop/devservers.json` run profiles for useful workflows: dev servers, native app reload/build commands, test runners, typecheckers, Storybook, workers, docs servers, or similar project commands. First summarize what scripts/files you found and ask concise clarifying questions when the desired workflows are ambiguous. Preserve existing profiles, prefer commands already in the repo, use localhost URLs only for browser workflows, and ask before running install/build/test/server commands or mutating files.

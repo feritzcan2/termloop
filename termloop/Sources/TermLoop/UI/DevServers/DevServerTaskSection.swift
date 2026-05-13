@@ -33,9 +33,6 @@ private struct DevServerTaskSectionContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TaskSidebarSectionTitle(
-                String(localized: "devservers.sidebar.title", defaultValue: "Dev Servers", table: "TermLoop")
-            )
             headerActions
             if let loadError = profileStore.loadError {
                 messageCard(
