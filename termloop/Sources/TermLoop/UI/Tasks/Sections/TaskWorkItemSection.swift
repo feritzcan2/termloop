@@ -324,6 +324,8 @@ struct TaskWorkItemSection: View {
 struct TaskSpecSection: View {
     let snapshot: TaskDetailSnapshot
     let onOpen: () -> Void
+    var onRefineWithAgent: (() -> Void)? = nil
+    var onExecuteWithAgent: (() -> Void)? = nil
     /// When true, render only the inner row content without the section title
     /// or card chrome. The caller is responsible for wrapping the row.
     var unwrapped: Bool = false
@@ -371,15 +373,41 @@ struct TaskSpecSection: View {
 
             Spacer(minLength: 0)
 
+            Image(systemName: "square.and.pencil")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.top, 2)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onOpen)
+        .contextMenu {
             Button {
                 onOpen()
             } label: {
-                Label(buttonTitle, systemImage: "square.and.pencil")
+                Label(openMenuTitle, systemImage: "square.and.pencil")
             }
-            .buttonStyle(.bordered)
-            .controlSize(.mini)
-            .font(.system(size: 11, weight: .medium))
+
+            Button {
+                onRefineWithAgent?()
+            } label: {
+                Label(String(localized: "tasks.sidebar.section.taskSpec.refineWithAgent",
+                             defaultValue: "Refine with Agent",
+                             table: "TermLoop"),
+                      systemImage: "sparkles")
+            }
+            .disabled(onRefineWithAgent == nil)
+
+            Button {
+                onExecuteWithAgent?()
+            } label: {
+                Label(String(localized: "tasks.sidebar.section.taskSpec.executeWithAgent",
+                             defaultValue: "Execute with Agent",
+                             table: "TermLoop"),
+                      systemImage: "play.fill")
+            }
+            .disabled(onExecuteWithAgent == nil)
         }
+        .help(openHelp)
     }
 
     private var fileLabel: String {
@@ -402,7 +430,7 @@ struct TaskSpecSection: View {
                       table: "TermLoop")
     }
 
-    private var buttonTitle: String {
+    private var openMenuTitle: String {
         if taskFilePath != nil {
             return String(localized: "tasks.sidebar.section.taskSpec.open",
                           defaultValue: "Open",
@@ -410,6 +438,17 @@ struct TaskSpecSection: View {
         }
         return String(localized: "tasks.sidebar.section.taskSpec.create",
                       defaultValue: "Create",
+                      table: "TermLoop")
+    }
+
+    private var openHelp: String {
+        if taskFilePath != nil {
+            return String(localized: "tasks.sidebar.section.taskSpec.openHelp",
+                          defaultValue: "Open task.md in the editor",
+                          table: "TermLoop")
+        }
+        return String(localized: "tasks.sidebar.section.taskSpec.createHelp",
+                      defaultValue: "Create task.md and open it in the editor",
                       table: "TermLoop")
     }
 
