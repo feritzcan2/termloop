@@ -2144,8 +2144,11 @@ enum TermLoopHooks {
         TaskQuickActionsBridge.requestOpenWorktreePath = { path in
             WorktreeRepairCoordinator.shared.openFolder(path: path)
         }
-        TaskQuickActionsBridge.requestNewAgentPanel = { workspaceId in
-            TermLoopHooks.presentTaskAgentQuickAction(workspaceId: workspaceId)
+        TaskQuickActionsBridge.requestNewAgentPanel = { context, onLaunchedWorkspaceId in
+            TermLoopHooks.presentTaskAgentQuickAction(
+                context: context,
+                onLaunchedWorkspaceId: onLaunchedWorkspaceId
+            )
         }
     }
 
@@ -2994,6 +2997,30 @@ extension TermLoopHooks {
                 promptText: nil,
                 launchSource: .quickAction,
                 reasonTag: "quickAction.freePrompt"
+            )
+        )
+    }
+
+    static func presentTaskAgentQuickAction(
+        context: TaskAgentLaunchContext,
+        onLaunchedWorkspaceId: ((UUID) -> Void)? = nil
+    ) {
+        QuickActionController.shared.present(
+            prefill: QuickActionPresentationRequest(
+                initialSurface: .run,
+                promptText: nil,
+                launchSource: .quickAction,
+                reasonTag: "quickAction.freePrompt",
+                projectId: context.projectId,
+                runTarget: .worktree(
+                    projectId: context.projectId,
+                    path: context.cwdPath,
+                    branch: context.branchName,
+                    workspaceId: context.targetWorkspaceId,
+                ),
+                onLaunchedWorkspace: { workspace in
+                    onLaunchedWorkspaceId?(workspace.id)
+                }
             )
         )
     }

@@ -76,6 +76,7 @@ struct TaskSidebarRouter: View {
                     { id, brief in try? c.updateBrief(taskId: id, brief: brief) }
                 },
                 onCreateWorktree: coordinator == nil ? nil : { id in createWorktreeTaskId = id },
+                onStartAgent: coordinator == nil ? nil : { id in startAgent(taskId: id) },
                 onOpenSettings: { isShowingSettings = true },
                 onUnbind: coordinator.map { c in
                     { id in try? c.unbindWorktree(taskId: id) }
@@ -118,6 +119,54 @@ struct TaskSidebarRouter: View {
             print("TaskSidebarRouter.openTaskSpec failed: \(error)")
             #endif
         }
+    }
+
+    private func startAgent(taskId: UUID) {
+        do {
+            let context = try agentLaunchContext(taskId: taskId)
+            TaskQuickActions.startAgentFromTasks(
+                context: context,
+                onLaunchedWorkspaceId: { workspaceId in
+                    selection.openInlineTerminal(workspaceId: workspaceId)
+                    TaskQuickActions.showWorkspaceInline(workspaceId: workspaceId)
+                }
+            )
+        } catch {
+            #if DEBUG
+            print("TaskSidebarRouter.startAgent failed: \(error)")
+            #endif
+        }
+    }
+
+    private func agentLaunchContext(taskId: UUID) throws -> TaskAgentLaunchContext {
+        guard let task = store.fileSnapshot().tasks.first(where: { $0.id == taskId }) else {
+            throw TaskLifecycleError.taskNotFound(taskId)
+        }
+        let targetWorkspace = task.workspaceId.flatMap { AppDelegate.shared?.workspaceFor(tabId: $0) }
+        let normalizedWorktreePath = TaskPathNormalization
+            .resolveDisplayAndKey(task.worktreePath, relativeTo: store.projectRoot)?
+            .displayPath
+        let cwdPath = nonEmptyTrimmed(normalizedWorktreePath)
+            ?? nonEmptyTrimmed(targetWorkspace?.termLoopPresentationCwd())
+        guard let cwdPath else {
+            throw TaskLifecycleError.notBound(taskId)
+        }
+        let branch = nonEmptyTrimmed(task.branch)
+            ?? targetWorkspace.flatMap { nonEmptyTrimmed(WorkspaceMetadataStore.shared.branch(for: $0)) }
+            ?? (try? GitWorktreeService().currentBranch(in: cwdPath)).flatMap(nonEmptyTrimmed)
+            ?? TaskPathNormalization.resolveDisplayAndKey(cwdPath)?.leafName
+            ?? nonEmptyTrimmed(task.title)
+        return TaskAgentLaunchContext(
+            targetWorkspaceId: targetWorkspace?.id,
+            projectId: store.projectId,
+            cwdPath: cwdPath,
+            branchName: branch
+        )
+    }
+
+    private func nonEmptyTrimmed(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func beginCreateRemoteItem() {

@@ -7,7 +7,7 @@ import Foundation
 /// QuickAction composer.
 enum QuickActionAutocompleteKind {
     case folder
-    case workspace
+    case worktree
     case markdown
 }
 
@@ -90,7 +90,7 @@ actor MarkdownFileIndex {
 enum QuickActionAutocompleteSource {
     static let maxResults = 500
 
-    /// Gather candidates for the given context. Folder/workspace lists are
+    /// Gather candidates for the given context. Folder/worktree lists are
     /// resolved on the main actor; markdown is pulled from the actor cache.
     @MainActor
     static func candidates(
@@ -99,28 +99,25 @@ enum QuickActionAutocompleteSource {
         var items: [QuickActionAutocompleteItem] = []
 
         if let projectId = context.projectId {
-            if let tabs = AppDelegate.shared?.tabManager?.tabs {
-                let workspaces = tabs.filter { $0.projectId == projectId }
-                    .sorted {
-                        QuickActionWorkspaceTargetPill
-                            .workspaceDisplayName($0)
-                            .localizedCaseInsensitiveCompare(
-                                QuickActionWorkspaceTargetPill.workspaceDisplayName($1)
-                            ) == .orderedAscending
-                    }
-                for ws in workspaces {
-                    let name = QuickActionWorkspaceTargetPill.workspaceDisplayName(ws)
-                    let insert = escapeInsert(name)
+            if let project = ProjectStore.shared.project(id: projectId) {
+                let tabs = AppDelegate.shared?.tabManager?.tabs ?? []
+                let projection = WorktreeProjectionStore.shared.snapshot(
+                    project: project,
+                    workspaces: tabs
+                )
+                for entry in projection.entries where !entry.isMain {
+                    let name = entry.branch?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                        ?? URL(fileURLWithPath: entry.path).lastPathComponent
                     items.append(QuickActionAutocompleteItem(
-                        id: "ws:\(ws.id.uuidString)",
+                        id: "worktree:\(entry.pathKey)",
                         displayName: name,
-                        insertText: insert,
+                        insertText: escapeInsert(name),
                         subtitle: String(
-                            localized: "quickAction.autocomplete.kind.workspace",
-                            defaultValue: "workspace",
+                            localized: "quickAction.autocomplete.kind.worktree",
+                            defaultValue: "worktree",
                             table: "TermLoop"
                         ),
-                        kind: .workspace
+                        kind: .worktree
                     ))
                 }
             }
@@ -185,4 +182,8 @@ enum QuickActionAutocompleteSource {
         let needsQuoting = raw.rangeOfCharacter(from: .whitespacesAndNewlines) != nil
         return needsQuoting ? "\"\(raw)\"" : raw
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

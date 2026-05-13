@@ -86,6 +86,15 @@ public final class TaskLifecycleCoordinator {
         try store.saveNow()
     }
 
+    public func deleteTask(_ id: UUID) throws {
+        _ = try store.mutate { file in
+            guard file.tasks.contains(where: { $0.id == id }) else { return false }
+            file.tasks.removeAll { $0.id == id }
+            return true
+        }
+        try store.saveNow()
+    }
+
     // MARK: - Column move
 
     public func moveColumn(taskId: UUID, to columnId: TaskColumnId) async throws {

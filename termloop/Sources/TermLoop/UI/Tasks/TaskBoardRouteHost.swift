@@ -49,7 +49,11 @@ struct TaskBoardRouteHost: View {
             .onReceive(WorkspaceMetadataStore.shared.$projectScopeVersion) { _ in
                 TaskBoardReconcileScheduler.shared.request(projectId: projectId, reason: "metadata.projectScope")
             }
-            .onChange(of: selection.inlineTerminalWorkspaceId) { _, _ in
+            // `selection` is resolved from a per-window provider instead of
+            // being owned by this host as a `@StateObject`. Subscribe directly
+            // so AppKit terminal portals are hidden even when only the child
+            // Tasks page re-renders after a card selection change.
+            .onReceive(selection.$inlineTerminalWorkspaceId) { _ in
                 applyInlineTerminalPresentation(reason: "taskBoard.inlineTerminalWorkspace")
             }
         } else {
