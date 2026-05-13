@@ -78,6 +78,12 @@ struct TaskSidebarDrillInView: View {
                             }
                         )
                     }
+                    flatSection {
+                        DevServerTaskSection(
+                            snapshot: detailSnapshot,
+                            projectId: projectId
+                        )
+                    }
                     if hasWorktreeProjections(detailSnapshot) {
                         // Compact footer for git/PR status — both render as
                         // single-line summaries when empty, full sections when

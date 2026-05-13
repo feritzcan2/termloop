@@ -12,6 +12,7 @@ struct TaskCardView: View {
     let card: TaskCardSummary
     let agentStatus: TaskAgentStatusSummary?
     let workItem: TaskWorkItemSnapshot?
+    let devServerSummary: TaskDevServerSummary?
     @ObservedObject var selection: TaskSelectionStore
     var onSelect: ((TaskCardSummary) -> Void)?
     var onCommandClick: ((TaskCardSummary) -> Void)?
@@ -33,6 +34,7 @@ struct TaskCardView: View {
                 } else {
                     remoteStatusChip
                 }
+                devServerChip
                 sourceChip
                 Spacer(minLength: 0)
             }
@@ -215,6 +217,13 @@ struct TaskCardView: View {
 
     private var agentBadges: [TaskAgentBadgeSummary] {
         agentStatus?.agents ?? []
+    }
+
+    @ViewBuilder
+    private var devServerChip: some View {
+        if let devServerSummary {
+            DevServerStatusChip(summary: devServerSummary)
+        }
     }
 
     private var identityText: String? {

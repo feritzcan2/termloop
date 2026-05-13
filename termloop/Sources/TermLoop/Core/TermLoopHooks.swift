@@ -1579,10 +1579,12 @@ enum TermLoopHooks {
     }
 
     /// Reserved TermLoop shutdown hook. Terminal agents live inside
-    /// Ghostty panes and are torn down by upstream's own shutdown path,
-    /// so the body is empty — kept as an extension point for future
-    /// async-flush or persistence work.
-    static func applicationWillTerminate() {}
+    /// Ghostty panes and are torn down by upstream's own shutdown path.
+    /// Dev-server runs are plain child processes, so terminate them here
+    /// before the app exits.
+    static func applicationWillTerminate() {
+        DevServerRunCoordinator.shared.stopAllBestEffort()
+    }
 
     /// Called from `Workspace.newTerminalSurface` right after the panel is
     /// registered and its bonsplit tab exists. Seeds `panelDirectories` with
@@ -2123,6 +2125,7 @@ enum TermLoopHooks {
         ensureCodexHooksInstalled()
         ensureGeminiHooksInstalled()
         ensureOpenCodeHooksInstalled()
+        DevServerBrowserRouter.install()
         PushDispatcher.shared.start()
         #if DEBUG
         dlog("bridge.bootstrap v=2 bridges=\(WorkspaceBridgeStore.shared.bridges.count)")

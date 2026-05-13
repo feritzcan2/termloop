@@ -3942,6 +3942,435 @@
           }
         }
       }
+    },
+    "devservers.card.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dev server: %1$@"
+          }
+        }
+      }
+    },
+    "devservers.card.helpWithURL": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dev server: %1$@\n%2$@"
+          }
+        }
+      }
+    },
+    "devservers.logs.empty": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No logs yet."
+          }
+        }
+      }
+    },
+    "devservers.sidebar.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dev Servers"
+          }
+        }
+      }
+    },
+    "devservers.sidebar.loadFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not read dev server profiles"
+          }
+        }
+      }
+    },
+    "devservers.sidebar.empty.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No dev server profiles"
+          }
+        }
+      }
+    },
+    "devservers.sidebar.empty.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create or edit .termloop/devservers.json to add project run profiles."
+          }
+        }
+      }
+    },
+    "devservers.sidebar.empty.openConfig": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open config"
+          }
+        }
+      }
+    },
+    "devservers.sidebar.openURL.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open in TermLoop Browser"
+          }
+        }
+      }
+    },
+    "devservers.sidebar.restart": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restart"
+          }
+        }
+      }
+    },
+    "devservers.sidebar.stop": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop"
+          }
+        }
+      }
+    },
+    "devservers.sidebar.logs": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logs"
+          }
+        }
+      }
+    },
+    "devservers.sidebar.start": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start"
+          }
+        }
+      }
+    },
+    "devservers.sidebar.cwdRoot": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "worktree"
+          }
+        }
+      }
+    },
+    "devservers.error.invalidProfileId": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Profile id must contain letters, numbers, dot, underscore, or dash."
+          }
+        }
+      }
+    },
+    "devservers.error.invalidName": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Profile name cannot be empty."
+          }
+        }
+      }
+    },
+    "devservers.error.invalidCommand": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Profile command cannot be empty."
+          }
+        }
+      }
+    },
+    "devservers.error.invalidWorkingDirectory": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Working directory cannot be empty."
+          }
+        }
+      }
+    },
+    "devservers.error.unsupportedSchema": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unsupported dev server schema %1$lld. This TermLoop build supports up to %2$lld."
+          }
+        }
+      }
+    },
+    "devservers.error.decodingFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not read dev server profiles: %1$@"
+          }
+        }
+      }
+    },
+    "devservers.error.writeFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not write dev server profiles: %1$@"
+          }
+        }
+      }
+    },
+    "devservers.card.singleLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "devservers.card.multiLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dev (%1$lld) · %2$@"
+          }
+        }
+      }
+    },
+    "devservers.phase.idle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "idle"
+          }
+        }
+      }
+    },
+    "devservers.phase.starting": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "starting"
+          }
+        }
+      }
+    },
+    "devservers.phase.running": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "running"
+          }
+        }
+      }
+    },
+    "devservers.phase.stopping": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "stopping"
+          }
+        }
+      }
+    },
+    "devservers.phase.exited": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "exited"
+          }
+        }
+      }
+    },
+    "devservers.phase.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "failed"
+          }
+        }
+      }
+    },
+    "devservers.error.noProject": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No active project"
+          }
+        }
+      }
+    },
+    "devservers.error.storeUnavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dev server store is unavailable"
+          }
+        }
+      }
+    },
+    "devservers.error.profileNotFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dev server profile not found: %1$@"
+          }
+        }
+      }
+    },
+    "devservers.error.taskNotFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task not found: %1$@"
+          }
+        }
+      }
+    },
+    "devservers.error.taskNotBound": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task is not bound to a worktree"
+          }
+        }
+      }
+    },
+    "devservers.error.worktreeMissing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Worktree is missing: %1$@"
+          }
+        }
+      }
+    },
+    "devservers.error.invalidWorkingDirectoryPath": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid working directory: %1$@"
+          }
+        }
+      }
+    },
+    "devservers.error.launchFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dev server launch failed: %1$@"
+          }
+        }
+      }
+    },
+    "devservers.error.runNotFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dev server run not found: %1$@"
+          }
+        }
+      }
+    },
+    "devservers.run.exitedWithCode": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exited with code %1$lld"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

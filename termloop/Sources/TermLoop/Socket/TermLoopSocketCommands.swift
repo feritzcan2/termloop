@@ -17,8 +17,9 @@ enum TermLoopSocketCommands {
     /// by TermLoop (upstream should handle it).
     ///
     /// `isTcpClient` is set when the connection arrived via the mobile TCP
-    /// bridge. TCP callers are limited to a read-only subset of `agent.*`
-    /// methods — mutating calls receive a `forbidden` error.
+    /// bridge. TCP callers are limited per command family; dev-server profile
+    /// mutation remains Unix-socket-only while run/status/log/open commands are
+    /// available to remote clients.
     static func handle(method: String, params: [String: Any],
                        isTcpClient: Bool = false,
                        socketFd: Int32 = -1) -> TerminalController.V2CallResult? {
@@ -36,6 +37,15 @@ enum TermLoopSocketCommands {
             socketFd: socketFd
         ) {
             return response
+        }
+        if method.hasPrefix("devservers.") {
+            if let response = TermLoopDevServerSocketCommands.handle(
+                method: method,
+                params: params,
+                isTcpClient: isTcpClient
+            ) {
+                return response
+            }
         }
         if method.hasPrefix("tasks.") {
             if let response = TermLoopTaskSocketCommands.handle(method: method, params: params) {
