@@ -3,8 +3,29 @@
 
 import Foundation
 
-public enum RunProfileKind: String, Codable, Equatable, Hashable, Sendable {
+public enum RunProfileKind: String, Codable, CaseIterable, Identifiable, Equatable, Hashable, Sendable {
     case devServer = "dev_server"
+    case testRunner = "test_runner"
+    case worker
+    case storybook
+    case typecheck
+
+    public var id: String { rawValue }
+
+    public var localizedLabel: String {
+        switch self {
+        case .devServer:
+            return String(localized: "devservers.kind.devServer", defaultValue: "Dev server", table: "TermLoop")
+        case .testRunner:
+            return String(localized: "devservers.kind.testRunner", defaultValue: "Test runner", table: "TermLoop")
+        case .worker:
+            return String(localized: "devservers.kind.worker", defaultValue: "Worker", table: "TermLoop")
+        case .storybook:
+            return String(localized: "devservers.kind.storybook", defaultValue: "Storybook", table: "TermLoop")
+        case .typecheck:
+            return String(localized: "devservers.kind.typecheck", defaultValue: "Typecheck", table: "TermLoop")
+        }
+    }
 }
 
 public enum DevServerRunPhase: String, Codable, Equatable, Hashable, Sendable {
@@ -193,10 +214,23 @@ public struct DevServerPresentation: Codable, Equatable, Sendable {
     }
 }
 
-public enum DevServerSetupPolicy: String, Codable, Equatable, Hashable, Sendable {
+public enum DevServerSetupPolicy: String, Codable, CaseIterable, Identifiable, Equatable, Hashable, Sendable {
     case oncePerWorktreeProfileConfig = "once_per_worktree_profile_config"
     case always
     case never
+
+    public var id: String { rawValue }
+
+    public var localizedLabel: String {
+        switch self {
+        case .oncePerWorktreeProfileConfig:
+            return String(localized: "devservers.setupPolicy.once", defaultValue: "Once per config", table: "TermLoop")
+        case .always:
+            return String(localized: "devservers.setupPolicy.always", defaultValue: "Always", table: "TermLoop")
+        case .never:
+            return String(localized: "devservers.setupPolicy.never", defaultValue: "Never", table: "TermLoop")
+        }
+    }
 }
 
 public struct DevServerProfile: Codable, Identifiable, Equatable, Sendable {
@@ -419,6 +453,7 @@ public struct DevServerRunSnapshot: Identifiable, Equatable, Sendable {
     public let command: String
     public let phase: DevServerRunPhase
     public let pid: Int32?
+    public let processGroupId: Int32?
     public let urls: [String]
     public let latestURL: String?
     public let recentErrorLines: [String]

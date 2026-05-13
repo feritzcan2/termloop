@@ -35,7 +35,9 @@ public final class DevServerRunCoordinator {
         let resolved = try resolve(projectId: explicitProjectId, taskId: taskId, profileId: profileId)
         let key = DevServerRunKey(projectId: resolved.projectId, taskId: taskId, profileId: profileId)
         if restart {
-            stopImmediately(key: key)
+            if stopImmediately(key: key) {
+                Thread.sleep(forTimeInterval: 0.15)
+            }
         } else if let active = runStore.activeSnapshot(for: key) {
             if openOnURL { openOnURLRunIds.insert(active.runId) }
             return active
@@ -113,7 +115,12 @@ public final class DevServerRunCoordinator {
                 }
             )
             processes[run.runId] = managed
-            return runStore.markSettingUp(runId: run.runId, pid: managed.pid) ?? run
+            warnIfProcessGroupUnavailable(managed: managed, runId: run.runId)
+            return runStore.markSettingUp(
+                runId: run.runId,
+                pid: managed.pid,
+                processGroupId: managed.processGroupId
+            ) ?? run
         } catch {
             let message = error.localizedDescription
             _ = runStore.appendLog(runId: run.runId, stream: .system, text: message)
@@ -151,7 +158,12 @@ public final class DevServerRunCoordinator {
                 }
             )
             processes[runId] = managed
-            let snapshot = runStore.markRunning(runId: runId, pid: managed.pid)
+            warnIfProcessGroupUnavailable(managed: managed, runId: runId)
+            let snapshot = runStore.markRunning(
+                runId: runId,
+                pid: managed.pid,
+                processGroupId: managed.processGroupId
+            )
                 ?? runStore.snapshot(runId: runId)
             materializeFallbackURLs(runId: runId, profile: resolved.profile)
             guard let snapshot else { throw DevServerRunError.runNotFound(runId) }
@@ -170,6 +182,7 @@ public final class DevServerRunCoordinator {
         }
         guard snapshot.isActive else { return snapshot }
         _ = runStore.markStopping(runId: runId)
+        schedulePortReleaseCheck(snapshot: snapshot, skipIfReplaced: false)
         if let process = processes[runId] {
             process.stop()
         } else {
@@ -183,13 +196,16 @@ public final class DevServerRunCoordinator {
         _ = try? stop(runId: snapshot.runId)
     }
 
-    private func stopImmediately(key: DevServerRunKey) {
-        guard let snapshot = runStore.activeSnapshot(for: key) else { return }
+    @discardableResult
+    private func stopImmediately(key: DevServerRunKey) -> Bool {
+        guard let snapshot = runStore.activeSnapshot(for: key) else { return false }
         _ = runStore.markStopping(runId: snapshot.runId)
+        schedulePortReleaseCheck(snapshot: snapshot, skipIfReplaced: true)
         processes[snapshot.runId]?.stopImmediately()
         processes.removeValue(forKey: snapshot.runId)
         openOnURLRunIds.remove(snapshot.runId)
         _ = runStore.markExited(runId: snapshot.runId, exitCode: SIGKILL)
+        return true
     }
 
     public func restart(
@@ -483,10 +499,67 @@ public final class DevServerRunCoordinator {
                 }
             )
             processes[run.runId] = managed
-            _ = runStore.markSettingUp(runId: run.runId, pid: managed.pid)
+            warnIfProcessGroupUnavailable(managed: managed, runId: run.runId)
+            _ = runStore.markSettingUp(
+                runId: run.runId,
+                pid: managed.pid,
+                processGroupId: managed.processGroupId
+            )
         } catch {
             _ = runStore.markFailed(runId: run.runId, message: error.localizedDescription)
         }
+    }
+
+    private func warnIfProcessGroupUnavailable(managed: DevServerManagedProcess, runId: UUID) {
+        guard managed.processGroupId == nil else { return }
+        _ = runStore.appendLog(
+            runId: runId,
+            stream: .system,
+            text: String(
+                localized: "devservers.process.processGroupUnavailable",
+                defaultValue: "Process group unavailable; stop will target the shell process only.",
+                table: "TermLoop"
+            )
+        )
+    }
+
+    private func schedulePortReleaseCheck(snapshot: DevServerRunSnapshot, skipIfReplaced: Bool) {
+        let ports = DevServerURLDetector.localPorts(from: snapshot.urls)
+        guard !ports.isEmpty else { return }
+        let runId = snapshot.runId
+        let key = snapshot.key
+        _Concurrency.Task { [weak self] in
+            try? await _Concurrency.Task.sleep(nanoseconds: 3_000_000_000)
+            await MainActor.run {
+                self?.verifyPortsReleased(runId: runId, key: key, ports: ports, skipIfReplaced: skipIfReplaced)
+            }
+        }
+    }
+
+    private func verifyPortsReleased(
+        runId: UUID,
+        key: DevServerRunKey,
+        ports: [Int],
+        skipIfReplaced: Bool
+    ) {
+        guard runStore.snapshot(runId: runId) != nil else { return }
+        if skipIfReplaced,
+           let active = runStore.activeSnapshot(for: key),
+           active.runId != runId {
+            return
+        }
+        let occupied = ports.filter { DevServerLocalPortProbe.isOccupied(port: $0) }
+        guard !occupied.isEmpty else { return }
+        let portList = occupied.map(String.init).joined(separator: ", ")
+        _ = runStore.appendLog(
+            runId: runId,
+            stream: .stderr,
+            text: String(
+                localized: "devservers.process.portStillOccupied",
+                defaultValue: "Warning: local port still appears occupied after stop: \(portList)",
+                table: "TermLoop"
+            )
+        )
     }
 
     private func resolveWorkingDirectory(_ raw: String, worktreeRoot: URL) throws -> URL {

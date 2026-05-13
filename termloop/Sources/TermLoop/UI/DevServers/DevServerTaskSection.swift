@@ -25,19 +25,18 @@ private struct DevServerTaskSectionContent: View {
     @State private var errorMessage: String?
     @State private var shownLogRunId: UUID?
     @State private var showDraftEditor = false
-    @State private var draftId = "web"
-    @State private var draftName = "Web"
-    @State private var draftCommand = ""
-    @State private var draftWorkingDirectory = "."
-    @State private var draftSetupCommand = ""
-    @State private var draftCleanupCommand = ""
+    @State private var draft = DevServerProfileDraft.newProfile()
+    @State private var pendingDeleteProfileId: String?
     @State private var pendingSaveAndTestRunId: UUID?
+    @State private var saveAndTestState: DevServerSaveAndTestState?
+    @State private var timedOutSaveAndTestRunIds = Set<UUID>()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             TaskSidebarSectionTitle(
                 String(localized: "devservers.sidebar.title", defaultValue: "Dev Servers", table: "TermLoop")
             )
+            headerActions
             if let loadError = profileStore.loadError {
                 messageCard(
                     icon: "exclamationmark.triangle",
@@ -58,6 +57,8 @@ private struct DevServerTaskSectionContent: View {
             }
             if let run = pendingSaveAndTestRun {
                 saveAndTestResult(run)
+            } else if saveAndTestState == .saving {
+                saveAndTestSavingResult
             }
             if let errorMessage {
                 Text(errorMessage)
@@ -73,10 +74,29 @@ private struct DevServerTaskSectionContent: View {
         messageCard(
             icon: "server.rack",
             title: String(localized: "devservers.sidebar.empty.title", defaultValue: "No dev server profiles", table: "TermLoop"),
-            detail: String(localized: "devservers.sidebar.empty.detail", defaultValue: "Create or edit .termloop/devservers.json to add project run profiles.", table: "TermLoop"),
-            actionTitle: String(localized: "devservers.sidebar.empty.openConfig", defaultValue: "Open config", table: "TermLoop"),
-            action: openProfileFile
+            detail: String(localized: "devservers.sidebar.empty.detail", defaultValue: "Create or edit .termloop/devservers.json to add project run profiles.", table: "TermLoop")
         )
+    }
+
+    private var headerActions: some View {
+        HStack(spacing: 8) {
+            Button(String(localized: "devservers.editor.newProfile", defaultValue: "New profile", table: "TermLoop")) {
+                beginCreate()
+            }
+            .buttonStyle(.borderless)
+            .disabled(profileStore.loadError != nil)
+
+            Button(String(localized: "devservers.sidebar.empty.openConfig", defaultValue: "Open config", table: "TermLoop")) {
+                openProfileFile()
+            }
+            .buttonStyle(.borderless)
+
+            Button(String(localized: "devservers.agent.generateProfile", defaultValue: "Generate profile with agent", table: "TermLoop")) {
+                openProfileGenerator()
+            }
+            .buttonStyle(.borderless)
+        }
+        .font(.system(size: 11, weight: .medium))
     }
 
     private func profileRow(_ profile: DevServerProfile) -> some View {
@@ -86,9 +106,18 @@ private struct DevServerTaskSectionContent: View {
             HStack(spacing: 7) {
                 statusDot(current?.phase ?? .idle)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(profile.name)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.primary)
+                    HStack(spacing: 5) {
+                        Text(profile.name)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.primary)
+                        Text(profile.kind.localizedLabel)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color.secondary.opacity(0.12))
+                            .clipShape(Capsule())
+                    }
                     Text(commandPreview(profile))
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(.secondary)
@@ -134,6 +163,12 @@ private struct DevServerTaskSectionContent: View {
 
     private func controls(profile: DevServerProfile, current: DevServerRunSnapshot?) -> some View {
         HStack(spacing: 5) {
+            Button(String(localized: "devservers.sidebar.edit", defaultValue: "Edit", table: "TermLoop")) {
+                beginEdit(profile)
+            }
+            .font(.system(size: 11, weight: .medium))
+            .buttonStyle(.borderless)
+
             if let current, current.isActive {
                 Button(String(localized: "devservers.sidebar.restart", defaultValue: "Restart", table: "TermLoop")) {
                     restart(profile)
@@ -168,30 +203,93 @@ private struct DevServerTaskSectionContent: View {
             isExpanded: $showDraftEditor,
             content: {
                 VStack(alignment: .leading, spacing: 7) {
-                    TextField(
-                        String(localized: "devservers.editor.id", defaultValue: "Profile id", table: "TermLoop"),
-                        text: $draftId
-                    )
+                    HStack(spacing: 8) {
+                        TextField(
+                            String(localized: "devservers.editor.id", defaultValue: "Profile id", table: "TermLoop"),
+                            text: $draft.id
+                        )
+                        Picker("", selection: $draft.kind) {
+                            ForEach(RunProfileKind.allCases) { kind in
+                                Text(kind.localizedLabel).tag(kind)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 128)
+                    }
                     TextField(
                         String(localized: "devservers.editor.name", defaultValue: "Name", table: "TermLoop"),
-                        text: $draftName
+                        text: $draft.name
                     )
                     TextField(
                         String(localized: "devservers.editor.command", defaultValue: "Command", table: "TermLoop"),
-                        text: $draftCommand
+                        text: $draft.command
                     )
                     TextField(
                         String(localized: "devservers.editor.cwd", defaultValue: "Working directory", table: "TermLoop"),
-                        text: $draftWorkingDirectory
+                        text: $draft.workingDirectory
                     )
+
+                    editablePairs(
+                        title: String(localized: "devservers.editor.env", defaultValue: "Environment", table: "TermLoop"),
+                        rows: $draft.envRows,
+                        addTitle: String(localized: "devservers.editor.addEnv", defaultValue: "Add env", table: "TermLoop")
+                    )
+
+                    editableStrings(
+                        title: String(localized: "devservers.editor.fallbackUrls", defaultValue: "Fallback URLs", table: "TermLoop"),
+                        rows: $draft.fallbackURLRows,
+                        addTitle: String(localized: "devservers.editor.addFallbackUrl", defaultValue: "Add URL", table: "TermLoop")
+                    )
+
                     TextField(
                         String(localized: "devservers.editor.setup", defaultValue: "Setup command (optional)", table: "TermLoop"),
-                        text: $draftSetupCommand
+                        text: $draft.setupCommand
                     )
                     TextField(
                         String(localized: "devservers.editor.cleanup", defaultValue: "Cleanup command (optional)", table: "TermLoop"),
-                        text: $draftCleanupCommand
+                        text: $draft.cleanupCommand
                     )
+                    HStack(spacing: 8) {
+                        Picker(
+                            String(localized: "devservers.editor.setupPolicy", defaultValue: "Setup policy", table: "TermLoop"),
+                            selection: $draft.setupPolicy
+                        ) {
+                            ForEach(DevServerSetupPolicy.allCases) { policy in
+                                Text(policy.localizedLabel).tag(policy)
+                            }
+                        }
+                        .frame(maxWidth: 190)
+
+                        Toggle(
+                            String(localized: "devservers.editor.autoOpen", defaultValue: "Auto-open URL", table: "TermLoop"),
+                            isOn: Binding(
+                                get: { draft.autoOpenFirstURL },
+                                set: { value in
+                                    draft.autoOpenFirstURL = value
+                                    draft.usesProjectAutoOpenDefault = false
+                                }
+                            )
+                        )
+                    }
+                    if draft.usesProjectAutoOpenDefault {
+                        Text(String(localized: "devservers.editor.autoOpenDefault", defaultValue: "Auto-open uses the project default.", table: "TermLoop"))
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Button(String(localized: "devservers.editor.useProjectDefault", defaultValue: "Use project default", table: "TermLoop")) {
+                            draft.usesProjectAutoOpenDefault = true
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 10))
+                    }
+
+                    if let validation = draft.validationMessage {
+                        Text(validation)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
                     HStack(spacing: 8) {
                         Button(String(localized: "devservers.editor.save", defaultValue: "Save", table: "TermLoop")) {
                             saveDraft(startAfterSave: false)
@@ -204,6 +302,14 @@ private struct DevServerTaskSectionContent: View {
                         .buttonStyle(.borderless)
                         .disabled(!hasWorktreeBinding)
 
+                        if draft.originalId != nil {
+                            Button(deleteButtonTitle) {
+                                deleteDraftProfile()
+                            }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.red)
+                        }
+
                         Spacer()
                     }
                     .font(.system(size: 11, weight: .medium))
@@ -213,7 +319,7 @@ private struct DevServerTaskSectionContent: View {
                 .padding(.top, 6)
             },
             label: {
-                Text(String(localized: "devservers.editor.addProfile", defaultValue: "Add or edit profile", table: "TermLoop"))
+                Text(editorTitle)
                     .font(.system(size: 12, weight: .semibold))
             }
         )
@@ -221,6 +327,66 @@ private struct DevServerTaskSectionContent: View {
         .padding(.horizontal, 9)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.40))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func editablePairs(
+        title: String,
+        rows: Binding<[EditableEnvironmentRow]>,
+        addTitle: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+            ForEach(rows) { $row in
+                HStack(spacing: 5) {
+                    TextField(String(localized: "devservers.editor.envKey", defaultValue: "KEY", table: "TermLoop"), text: $row.key)
+                    TextField(String(localized: "devservers.editor.envValue", defaultValue: "value", table: "TermLoop"), text: $row.value)
+                    Button {
+                        draft.envRows.removeAll { $0.id == row.id }
+                    } label: {
+                        Image(systemName: "xmark.circle")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            Button(addTitle) {
+                draft.envRows.append(EditableEnvironmentRow(key: "", value: ""))
+            }
+            .buttonStyle(.borderless)
+        }
+    }
+
+    private func editableStrings(
+        title: String,
+        rows: Binding<[EditableStringRow]>,
+        addTitle: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+            ForEach(rows) { $row in
+                HStack(spacing: 5) {
+                    TextField(
+                        String(localized: "devservers.editor.fallbackPlaceholder", defaultValue: "http://localhost:5173", table: "TermLoop"),
+                        text: $row.value
+                    )
+                    Button {
+                        draft.fallbackURLRows.removeAll { $0.id == row.id }
+                    } label: {
+                        Image(systemName: "xmark.circle")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            Button(addTitle) {
+                draft.fallbackURLRows.append(EditableStringRow(value: ""))
+            }
+            .buttonStyle(.borderless)
+        }
     }
 
     private func logsButton(_ run: DevServerRunSnapshot) -> some View {
@@ -246,7 +412,21 @@ private struct DevServerTaskSectionContent: View {
         return runStore.snapshot(runId: pendingSaveAndTestRunId)
     }
 
+    private var saveAndTestSavingResult: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "hourglass")
+            Text(String(localized: "devservers.editor.test.saving", defaultValue: "Saving profile…", table: "TermLoop"))
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(.secondary)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 9)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.40))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
     private func saveAndTestResult(_ run: DevServerRunSnapshot) -> some View {
+        let status = saveAndTestDisplayStatus(run)
         let detail: String
         let color: Color
         if let url = run.latestURL {
@@ -256,10 +436,17 @@ private struct DevServerTaskSectionContent: View {
                 table: "TermLoop"
             )
             color = Color(red: 0.30, green: 0.78, blue: 0.36)
+        } else if timedOutSaveAndTestRunIds.contains(run.runId), run.isActive {
+            detail = String(
+                localized: "devservers.editor.test.timedOut",
+                defaultValue: "Timed out waiting for a URL. The run is still active.",
+                table: "TermLoop"
+            )
+            color = .orange
         } else if run.phase == .failed {
             detail = String(
                 localized: "devservers.editor.test.failed",
-                defaultValue: "Test failed: \(run.errorMessage ?? run.phase.localizedLabel)",
+                defaultValue: "Test failed: \(projectedErrorLine(run) ?? run.phase.localizedLabel)",
                 table: "TermLoop"
             )
             color = .red
@@ -270,10 +457,19 @@ private struct DevServerTaskSectionContent: View {
                 table: "TermLoop"
             )
             color = .orange
+        } else if status == .saving {
+            detail = String(localized: "devservers.editor.test.saving", defaultValue: "Saving profile…", table: "TermLoop")
+            color = .secondary
+        } else if run.phase == .settingUp {
+            detail = String(localized: "devservers.editor.test.setupRunning", defaultValue: "Setup running…", table: "TermLoop")
+            color = .orange
+        } else if run.phase == .starting {
+            detail = String(localized: "devservers.editor.test.starting", defaultValue: "Starting run…", table: "TermLoop")
+            color = .orange
         } else {
             detail = String(
                 localized: "devservers.editor.test.waiting",
-                defaultValue: "Testing… waiting for a URL or failure.",
+                defaultValue: "Waiting for a localhost URL…",
                 table: "TermLoop"
             )
             color = .secondary
@@ -282,18 +478,21 @@ private struct DevServerTaskSectionContent: View {
         let iconName = run.latestURL != nil
             ? "checkmark.circle"
             : (run.phase == .failed ? "exclamationmark.triangle" : "hourglass")
-        return HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: iconName)
-                .foregroundStyle(color)
-            Text(detail)
-                .lineLimit(2)
-                .truncationMode(.tail)
-            Spacer(minLength: 0)
-            if let url = run.latestURL {
-                Button(String(localized: "devservers.sidebar.openURL", defaultValue: "Open", table: "TermLoop")) {
-                    openURL(run: run, rawURL: url)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: iconName)
+                    .foregroundStyle(color)
+                Text(detail)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                Spacer(minLength: 0)
+                if let url = run.latestURL {
+                    Button(String(localized: "devservers.sidebar.openURL", defaultValue: "Open", table: "TermLoop")) {
+                        openURL(run: run, rawURL: url)
+                    }
+                    .buttonStyle(.borderless)
                 }
-                .buttonStyle(.borderless)
+                logsButton(run)
             }
         }
         .font(.system(size: 11))
@@ -301,6 +500,19 @@ private struct DevServerTaskSectionContent: View {
         .padding(.horizontal, 9)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.40))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func saveAndTestDisplayStatus(_ run: DevServerRunSnapshot) -> DevServerSaveAndTestState {
+        if let saveAndTestState, saveAndTestState == .saving { return .saving }
+        if run.latestURL != nil { return .ready }
+        if timedOutSaveAndTestRunIds.contains(run.runId), run.isActive { return .timedOut }
+        switch run.phase {
+        case .settingUp: return .setupRunning
+        case .starting: return .starting
+        case .running, .stopping, .idle: return .waitingForURL
+        case .failed: return .failed
+        case .exited: return .exitedBeforeURL
+        }
     }
 
     private func runs(for profile: DevServerProfile) -> [DevServerRunSnapshot] {
@@ -315,6 +527,20 @@ private struct DevServerTaskSectionContent: View {
 
     private var hasWorktreeBinding: Bool {
         snapshot.worktreePath?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
+
+    private var editorTitle: String {
+        if draft.originalId == nil {
+            return String(localized: "devservers.editor.addProfile", defaultValue: "Add profile", table: "TermLoop")
+        }
+        return String(localized: "devservers.editor.editProfile", defaultValue: "Edit profile", table: "TermLoop")
+    }
+
+    private var deleteButtonTitle: String {
+        if pendingDeleteProfileId == draft.originalId {
+            return String(localized: "devservers.editor.confirmDelete", defaultValue: "Confirm delete", table: "TermLoop")
+        }
+        return String(localized: "devservers.editor.delete", defaultValue: "Delete", table: "TermLoop")
     }
 
     private func start(_ profile: DevServerProfile) {
@@ -339,29 +565,37 @@ private struct DevServerTaskSectionContent: View {
         }
     }
 
+    private func beginCreate() {
+        pendingDeleteProfileId = nil
+        errorMessage = nil
+        draft = .newProfile()
+        showDraftEditor = true
+    }
+
+    private func beginEdit(_ profile: DevServerProfile) {
+        pendingDeleteProfileId = nil
+        errorMessage = nil
+        draft = DevServerProfileDraft(profile: profile)
+        showDraftEditor = true
+    }
+
     private func saveDraft(startAfterSave: Bool) {
         runAction {
+            saveAndTestState = startAfterSave ? .saving : nil
             if !startAfterSave {
                 pendingSaveAndTestRunId = nil
+                timedOutSaveAndTestRunIds.removeAll()
             }
             if let loadError = profileStore.loadError {
                 throw loadError
             }
-            let profile = try DevServerProfile(
-                id: draftId,
-                name: draftName,
-                command: draftCommand,
-                workingDirectory: draftWorkingDirectory,
-                setupCommand: draftSetupCommand,
-                cleanupCommand: draftCleanupCommand,
-                urlDetection: DevServerURLDetection(
-                    autoDetect: true,
-                    fallbackUrls: [],
-                    readyRegexes: []
-                ),
-                presentation: DevServerPresentation(autoOpenFirstUrl: true)
-            )
+            let profile = try draft.makeProfile()
             try profileStore.upsert(profile)
+            if let originalId = draft.originalId, originalId != profile.id {
+                stopRuns(profileId: originalId)
+                try profileStore.delete(profileId: originalId)
+            }
+            draft = DevServerProfileDraft(profile: profile)
             if startAfterSave {
                 let run = try DevServerRunCoordinator.shared.start(
                     projectId: projectId,
@@ -371,12 +605,41 @@ private struct DevServerTaskSectionContent: View {
                     openOnURL: true
                 )
                 pendingSaveAndTestRunId = run.runId
+                saveAndTestState = saveAndTestDisplayStatus(run)
+                scheduleSaveAndTestTimeout(runId: run.runId)
+            } else {
+                saveAndTestState = nil
             }
+        }
+    }
+
+    private func deleteDraftProfile() {
+        guard let profileId = draft.originalId else { return }
+        guard pendingDeleteProfileId == profileId else {
+            pendingDeleteProfileId = profileId
+            return
+        }
+        runAction {
+            if let loadError = profileStore.loadError { throw loadError }
+            stopRuns(profileId: profileId)
+            try profileStore.delete(profileId: profileId)
+            pendingDeleteProfileId = nil
+            pendingSaveAndTestRunId = nil
+            saveAndTestState = nil
+            draft = .newProfile()
+            showDraftEditor = !profileStore.profiles.isEmpty
         }
     }
 
     private func stop(_ run: DevServerRunSnapshot) {
         runAction { _ = try DevServerRunCoordinator.shared.stop(runId: run.runId) }
+    }
+
+    private func stopRuns(profileId: String) {
+        for run in runStore.snapshots(projectId: projectId, taskId: snapshot.id)
+            where run.key.profileId == profileId && run.isActive {
+            _ = try? DevServerRunCoordinator.shared.stop(runId: run.runId)
+        }
     }
 
     private func openURL(run: DevServerRunSnapshot?, rawURL: String) {
@@ -394,11 +657,28 @@ private struct DevServerTaskSectionContent: View {
         return run.recentErrorLines.last
     }
 
+    private func scheduleSaveAndTestTimeout(runId: UUID) {
+        _Concurrency.Task {
+            try? await _Concurrency.Task.sleep(nanoseconds: 45_000_000_000)
+            await MainActor.run {
+                guard pendingSaveAndTestRunId == runId,
+                      let run = runStore.snapshot(runId: runId),
+                      run.latestURL == nil,
+                      run.isActive else {
+                    return
+                }
+                timedOutSaveAndTestRunIds.insert(runId)
+                saveAndTestState = .timedOut
+            }
+        }
+    }
+
     private func runAction(_ action: () throws -> Void) {
         do {
             errorMessage = nil
             try action()
         } catch {
+            saveAndTestState = nil
             errorMessage = error.localizedDescription
         }
     }
@@ -412,6 +692,26 @@ private struct DevServerTaskSectionContent: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func openProfileGenerator() {
+        QuickActionController.shared.present(
+            prefill: QuickActionPresentationRequest(
+                initialSurface: .run,
+                composition: .template(id: "devserver-profile-generator"),
+                systemPromptDocumentId: "system.template.devserver-profile-generator",
+                advancedTitle: String(
+                    localized: "devservers.agent.workspaceTitle",
+                    defaultValue: "Generate dev server profile",
+                    table: "TermLoop"
+                ),
+                launchSource: .quickAction,
+                reasonTag: "devservers.profileGenerator",
+                projectId: projectId,
+                runTarget: .projectRoot(projectId),
+                openAdvanced: true
+            )
+        )
     }
 
     private func commandPreview(_ profile: DevServerProfile) -> String {
@@ -466,5 +766,200 @@ private struct DevServerTaskSectionContent: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.56))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private enum DevServerSaveAndTestState: Equatable {
+    case saving
+    case setupRunning
+    case starting
+    case waitingForURL
+    case ready
+    case failed
+    case exitedBeforeURL
+    case timedOut
+}
+
+private struct EditableEnvironmentRow: Identifiable, Equatable {
+    var id = UUID()
+    var key: String
+    var value: String
+}
+
+private struct EditableStringRow: Identifiable, Equatable {
+    var id = UUID()
+    var value: String
+}
+
+private struct DevServerProfileDraft: Equatable {
+    var originalId: String?
+    var id: String
+    var name: String
+    var kind: RunProfileKind
+    var command: String
+    var workingDirectory: String
+    var envRows: [EditableEnvironmentRow]
+    var fallbackURLRows: [EditableStringRow]
+    var setupCommand: String
+    var cleanupCommand: String
+    var setupPolicy: DevServerSetupPolicy
+    var autoOpenFirstURL: Bool
+    var usesProjectAutoOpenDefault: Bool
+    var autoDetectURLs: Bool
+    var readyRegexes: [String]
+    var extensions: [String: JSONValue]
+
+    static func newProfile() -> DevServerProfileDraft {
+        DevServerProfileDraft(
+            originalId: nil,
+            id: "web",
+            name: "Web",
+            kind: .devServer,
+            command: "",
+            workingDirectory: ".",
+            envRows: [],
+            fallbackURLRows: [],
+            setupCommand: "",
+            cleanupCommand: "",
+            setupPolicy: .oncePerWorktreeProfileConfig,
+            autoOpenFirstURL: true,
+            usesProjectAutoOpenDefault: false,
+            autoDetectURLs: true,
+            readyRegexes: [],
+            extensions: [:]
+        )
+    }
+
+    init(profile: DevServerProfile) {
+        self.originalId = profile.id
+        self.id = profile.id
+        self.name = profile.name
+        self.kind = profile.kind
+        self.command = profile.command
+        self.workingDirectory = profile.workingDirectory
+        self.envRows = profile.env
+            .sorted { $0.key < $1.key }
+            .map { EditableEnvironmentRow(key: $0.key, value: $0.value) }
+        self.fallbackURLRows = profile.urlDetection.fallbackUrls.map { EditableStringRow(value: $0) }
+        self.setupCommand = profile.setupCommand ?? ""
+        self.cleanupCommand = profile.cleanupCommand ?? ""
+        self.setupPolicy = profile.setupPolicy
+        self.autoOpenFirstURL = profile.presentation.autoOpenFirstUrl ?? false
+        self.usesProjectAutoOpenDefault = profile.presentation.autoOpenFirstUrl == nil
+        self.autoDetectURLs = profile.urlDetection.autoDetect
+        self.readyRegexes = profile.urlDetection.readyRegexes
+        self.extensions = profile.extensions
+    }
+
+    private init(
+        originalId: String?,
+        id: String,
+        name: String,
+        kind: RunProfileKind,
+        command: String,
+        workingDirectory: String,
+        envRows: [EditableEnvironmentRow],
+        fallbackURLRows: [EditableStringRow],
+        setupCommand: String,
+        cleanupCommand: String,
+        setupPolicy: DevServerSetupPolicy,
+        autoOpenFirstURL: Bool,
+        usesProjectAutoOpenDefault: Bool,
+        autoDetectURLs: Bool,
+        readyRegexes: [String],
+        extensions: [String: JSONValue]
+    ) {
+        self.originalId = originalId
+        self.id = id
+        self.name = name
+        self.kind = kind
+        self.command = command
+        self.workingDirectory = workingDirectory
+        self.envRows = envRows
+        self.fallbackURLRows = fallbackURLRows
+        self.setupCommand = setupCommand
+        self.cleanupCommand = cleanupCommand
+        self.setupPolicy = setupPolicy
+        self.autoOpenFirstURL = autoOpenFirstURL
+        self.usesProjectAutoOpenDefault = usesProjectAutoOpenDefault
+        self.autoDetectURLs = autoDetectURLs
+        self.readyRegexes = readyRegexes
+        self.extensions = extensions
+    }
+
+    var validationMessage: String? {
+        if !DevServerProfile.isValidId(DevServerProfile.normalizedId(id)) {
+            return String(
+                localized: "devservers.error.invalidProfileId",
+                defaultValue: "Profile id must contain letters, numbers, dot, underscore, or dash.",
+                table: "TermLoop"
+            )
+        }
+        if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return String(localized: "devservers.error.invalidName", defaultValue: "Profile name cannot be empty.", table: "TermLoop")
+        }
+        if command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return String(localized: "devservers.error.invalidCommand", defaultValue: "Profile command cannot be empty.", table: "TermLoop")
+        }
+        if workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return String(localized: "devservers.error.invalidWorkingDirectory", defaultValue: "Working directory cannot be empty.", table: "TermLoop")
+        }
+        if fallbackURLRows.contains(where: { row in
+            let raw = row.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !raw.isEmpty && DevServerURLDetector.normalize(raw) == nil
+        }) {
+            return String(
+                localized: "devservers.error.invalidFallbackURL",
+                defaultValue: "Fallback URLs must be localhost HTTP URLs.",
+                table: "TermLoop"
+            )
+        }
+        return nil
+    }
+
+    func makeProfile() throws -> DevServerProfile {
+        if let validationMessage {
+            throw DevServerProfileDraftError(validationMessage)
+        }
+        var env: [String: String] = [:]
+        for row in envRows {
+            let key = row.key.trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = row.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !key.isEmpty, !value.isEmpty else { continue }
+            env[key] = value
+        }
+        let fallbackURLs = fallbackURLRows.compactMap { row -> String? in
+            let raw = row.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !raw.isEmpty else { return nil }
+            return DevServerURLDetector.normalize(raw)
+        }
+        return try DevServerProfile(
+            id: id,
+            name: name,
+            kind: kind,
+            command: command,
+            workingDirectory: workingDirectory,
+            env: env,
+            setupCommand: setupCommand,
+            cleanupCommand: cleanupCommand,
+            setupPolicy: setupPolicy,
+            urlDetection: DevServerURLDetection(
+                autoDetect: autoDetectURLs,
+                fallbackUrls: fallbackURLs,
+                readyRegexes: readyRegexes
+            ),
+            presentation: DevServerPresentation(
+                autoOpenFirstUrl: usesProjectAutoOpenDefault ? nil : autoOpenFirstURL
+            ),
+            extensions: extensions
+        )
+    }
+}
+
+private struct DevServerProfileDraftError: LocalizedError {
+    let errorDescription: String?
+
+    init(_ message: String) {
+        self.errorDescription = message
     }
 }

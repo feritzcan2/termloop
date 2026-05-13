@@ -39,11 +39,18 @@ final class DevServerProfileStoreTests: XCTestCase {
         let profile = try DevServerProfile(
             id: "web",
             name: "Web",
+            kind: .testRunner,
             command: "npm run dev",
             env: ["BROWSER": "none"],
             setupCommand: "npm install",
             cleanupCommand: "npm run clean",
-            setupPolicy: .oncePerWorktreeProfileConfig
+            setupPolicy: .oncePerWorktreeProfileConfig,
+            urlDetection: DevServerURLDetection(
+                autoDetect: true,
+                fallbackUrls: ["http://localhost:5173"],
+                readyRegexes: ["ready"]
+            ),
+            presentation: DevServerPresentation(autoOpenFirstUrl: true)
         )
         try store.upsert(profile)
 

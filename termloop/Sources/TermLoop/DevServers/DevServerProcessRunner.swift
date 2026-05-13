@@ -7,9 +7,9 @@ import Foundation
 public final class DevServerManagedProcess: @unchecked Sendable {
     public let runId: UUID
     public let pid: Int32
+    public let processGroupId: pid_t?
 
     private let process: Process
-    private let processGroupId: pid_t?
     private let stdoutReader: DevServerPipeReader
     private let stderrReader: DevServerPipeReader
 
