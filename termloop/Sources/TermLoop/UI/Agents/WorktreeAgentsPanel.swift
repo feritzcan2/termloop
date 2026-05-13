@@ -520,49 +520,77 @@ final class WorktreeDeletionCoordinator {
         #if DEBUG
         dlog("worktree.delete.perform.begin requestedBranch=\(target.requestedBranch ?? "nil") registeredBranch=\(target.registeredBranch ?? "nil") mode=\(mode) project=\(target.project.name)[\(target.project.id.uuidString.prefix(8))] worktreePath=\(target.worktreePath ?? "nil") localChanges=\(target.hasLocalChanges ? 1 : 0) live=\(target.liveWorkspaces.count)")
         #endif
-        if mode == .branchAndWorktree || mode == .worktreeOnly {
-            primeClosableWindows(for: target.liveWorkspaces)
+        let removedWorktree = try removeWorktreeIfNeeded(target: target, mode: mode)
 
-            for workspaceId in target.workspaceIds {
-                if mode == .worktreeOnly {
-                    WorkspaceMetadataStore.shared.setWorktreePath(nil, forWorkspaceId: workspaceId)
-                } else {
-                    WorkspaceMetadataStore.shared.setBranch(nil, forWorkspaceId: workspaceId)
-                }
-            }
-
-            for workspace in target.liveWorkspaces {
-                AppDelegate.shared?.tabManagerFor(tabId: workspace.id)?.closeWorkspace(workspace)
-            }
-
-            if let worktreePath = target.worktreePath {
-                try worktreeService.remove(
-                    folder: target.project.folderPath,
-                    path: worktreePath,
-                    force: target.hasLocalChanges
+        do {
+            try deleteBranchIfNeeded(target: target, mode: mode)
+        } catch {
+            if removedWorktree {
+                closeDeletedWorktreeWorkspaces(target: target, mode: .worktreeOnly)
+                persistDeleteSideEffects(target: target)
+                let detail = (error as? LocalizedError)?.errorDescription
+                    ?? error.localizedDescription
+                throw WorktreeError.invalidParams(
+                    reason: "The worktree folder was deleted, but deleting the branch failed: \(detail)"
                 )
             }
+            throw error
         }
 
-        if mode == .branchAndWorktree || mode == .branchOnly {
-            guard let branchToDelete = target.branchToDelete else {
-                throw WorktreeError.invalidParams(reason: "No safe branch deletion target.")
-            }
-            _ = try GitCommandRunner.runMutation(
-                ["branch", "-D", branchToDelete],
-                in: target.project.folderPath,
-                kind: .mutation,
-                caller: "WorktreeDeletionCoordinator.branchDelete",
-                invalidates: [.project(target.project.folderPath)]
-            )
+        if removedWorktree {
+            closeDeletedWorktreeWorkspaces(target: target, mode: mode)
         }
-
-        AppDelegate.shared?.saveSessionSnapshot(includeScrollback: false, forceSync: true)
-        refreshWorktreeRegistryAfterDeletion(projectFolder: target.project.folderPath)
-        TaskBoardReconcileScheduler.shared.request(projectId: target.project.id, reason: "worktreeDeleted")
+        persistDeleteSideEffects(target: target)
         #if DEBUG
         dlog("worktree.delete.perform.result branch=\(target.branchToDelete ?? "nil") mode=\(mode) project=\(target.project.name)[\(target.project.id.uuidString.prefix(8))]")
         #endif
+    }
+
+    private func removeWorktreeIfNeeded(target: Target, mode: DeletionMode) throws -> Bool {
+        guard mode == .branchAndWorktree || mode == .worktreeOnly else { return false }
+        guard let worktreePath = target.worktreePath else { return false }
+        try worktreeService.remove(
+            folder: target.project.folderPath,
+            path: worktreePath,
+            force: true
+        )
+        return true
+    }
+
+    private func deleteBranchIfNeeded(target: Target, mode: DeletionMode) throws {
+        guard mode == .branchAndWorktree || mode == .branchOnly else { return }
+        guard let branchToDelete = target.branchToDelete else {
+            throw WorktreeError.invalidParams(reason: "No safe branch deletion target.")
+        }
+        _ = try GitCommandRunner.runMutation(
+            ["branch", "-D", branchToDelete],
+            in: target.project.folderPath,
+            kind: .mutation,
+            caller: "WorktreeDeletionCoordinator.branchDelete",
+            invalidates: [.project(target.project.folderPath)]
+        )
+    }
+
+    private func closeDeletedWorktreeWorkspaces(target: Target, mode: DeletionMode) {
+        primeClosableWindows(for: target.liveWorkspaces)
+
+        for workspaceId in target.workspaceIds {
+            if mode == .worktreeOnly {
+                WorkspaceMetadataStore.shared.setWorktreePath(nil, forWorkspaceId: workspaceId)
+            } else {
+                WorkspaceMetadataStore.shared.setBranch(nil, forWorkspaceId: workspaceId)
+            }
+        }
+
+        for workspace in target.liveWorkspaces {
+            AppDelegate.shared?.tabManagerFor(tabId: workspace.id)?.closeWorkspace(workspace)
+        }
+    }
+
+    private func persistDeleteSideEffects(target: Target) {
+        AppDelegate.shared?.saveSessionSnapshot(includeScrollback: false, forceSync: true)
+        refreshWorktreeRegistryAfterDeletion(projectFolder: target.project.folderPath)
+        TaskBoardReconcileScheduler.shared.request(projectId: target.project.id, reason: "worktreeDeleted")
     }
 
     private func refreshWorktreeRegistryAfterDeletion(projectFolder: String) {
@@ -786,7 +814,7 @@ struct WorktreeAgentsPanel: View {
         let branchTick: Int
         let worktreeProjectionVersion: UInt64
         let pullRequestTick: UInt64
-        let worktreePullRequestLookupTick: UInt64
+        let worktreePullRequestLookupSignature: PullRequestLookupSignature
         let activeProjectId: UUID?
         let agentSessionTick: Int
         let projectScopeTick: Int
@@ -795,6 +823,17 @@ struct WorktreeAgentsPanel: View {
         let remoteItemTick: Int
         let remoteSnapshotTick: Int
         let runTargetTick: Int
+    }
+
+    private struct PullRequestLookupSignature: Equatable {
+        struct Entry: Equatable {
+            let input: WorktreeBranchPullRequestStore.LookupInput
+            let pullRequests: [SidebarPullRequestState]
+        }
+
+        static let empty = PullRequestLookupSignature(entries: [])
+
+        let entries: [Entry]
     }
 
     private final class RenderMemo {
@@ -836,8 +875,8 @@ struct WorktreeAgentsPanel: View {
 
     @EnvironmentObject private var tabManager: TabManager
     @ObservedObject private var projectStore = ProjectStore.shared
-    @ObservedObject private var worktreePullRequestStore = WorktreeBranchPullRequestStore.shared
     @ObservedObject private var worktreeProjectionStore = WorktreeProjectionStore.shared
+    private let worktreePullRequestStore = WorktreeBranchPullRequestStore.shared
 
     /// Narrow subscription — matches `ActiveAgentsPanel`'s rationale: the
     /// metadata store fires `objectWillChange` on every report_* telemetry
@@ -846,6 +885,7 @@ struct WorktreeAgentsPanel: View {
     @State private var projectScopeTick: Int = 0
     @State private var branchTick: Int = 0
     @State private var pullRequestTick: UInt64 = 0
+    @State private var pullRequestLookupSignature: PullRequestLookupSignature = .empty
     @State private var activityTick: Int = 0
     @State private var taskBoardTick: UInt64 = 0
     @State private var hasDeferredActivityTick = false
@@ -862,6 +902,7 @@ struct WorktreeAgentsPanel: View {
     @State private var taskBoardSubscription: AnyCancellable?
     @State private var subscribedTaskProjectId: UUID?
     @State private var subscribedWorkspaceIds: [UUID] = []
+    @State private var observedWorktreeHeadSignature: String?
     @State private var didApplyInitialBranchAutoExpand: Bool = false
     @State private var showsAllOpenPullRequests: Bool = false
     @State private var showsAllMergedPullRequests: Bool = false
@@ -899,7 +940,7 @@ struct WorktreeAgentsPanel: View {
                 branchTick: branchTick,
                 worktreeProjectionVersion: worktreeProjectionStore.version,
                 pullRequestTick: pullRequestTick,
-                worktreePullRequestLookupTick: worktreePullRequestStore.version,
+                worktreePullRequestLookupSignature: pullRequestLookupSignature,
                 activeProjectId: projectStore.activeProjectId,
                 agentSessionTick: agentSessionTick,
                 projectScopeTick: projectScopeTick,
@@ -935,8 +976,7 @@ struct WorktreeAgentsPanel: View {
                             showsAllGroups: $showsAllOpenPullRequests,
                             pullRequestStatuses: [.open],
                             renderSnapshot: renderSnapshot,
-                            collapsedBranchSet: collapsedBranchSet,
-                            pullRequestLookupTick: worktreePullRequestStore.version
+                            collapsedBranchSet: collapsedBranchSet
                         )
                     }
                     if showsEmptySections || !renderSnapshot.orderedSections.mergedPullRequests.isEmpty {
@@ -959,8 +999,7 @@ struct WorktreeAgentsPanel: View {
                             showsAllGroups: $showsAllMergedPullRequests,
                             pullRequestStatuses: [.merged],
                             renderSnapshot: renderSnapshot,
-                            collapsedBranchSet: collapsedBranchSet,
-                            pullRequestLookupTick: worktreePullRequestStore.version
+                            collapsedBranchSet: collapsedBranchSet
                         )
                     }
                     if showsEmptySections || !renderSnapshot.orderedSections.worktrees.isEmpty {
@@ -984,7 +1023,6 @@ struct WorktreeAgentsPanel: View {
                             pullRequestStatuses: nil,
                             renderSnapshot: renderSnapshot,
                             collapsedBranchSet: collapsedBranchSet,
-                            pullRequestLookupTick: worktreePullRequestStore.version,
                             addWorktreeAction: {
                                 QuickActionController.shared.present(initialSurface: .worktree)
                             }
@@ -1047,35 +1085,97 @@ struct WorktreeAgentsPanel: View {
             }
             refreshWorktreeProjection(for: scopedTabs, reason: "appear")
             subscribeToActiveTaskBoardStore()
+            refreshWorktreeHeadProjectionIfChanged(for: scopedTabs, reason: "headBaseline", marksProjection: false)
             refreshWorktreePullRequests(renderSnapshot.pullRequestLookupInputs, reason: "appear")
         }
         .onChange(of: scopedTabs.map(\.id)) { _ in
             refreshWorktreeProjection(for: scopedTabs, reason: "tabsChanged")
+            observedWorktreeHeadSignature = nil
         }
         .onChange(of: projectStore.activeProjectId) { _ in
             refreshWorktreeProjection(for: scopedTabs, reason: "activeProjectChanged")
+            observedWorktreeHeadSignature = nil
             subscribeToActiveTaskBoardStore()
         }
         .onChange(of: renderSnapshot.pullRequestLookupInputs) { inputs in
+            refreshPullRequestLookupSignature(inputs: inputs)
             refreshWorktreePullRequests(inputs, reason: "inputsChanged")
         }
+        .onReceive(WorktreeBranchPullRequestStore.shared.$version.removeDuplicates()) { _ in
+            refreshPullRequestLookupSignature(inputs: renderSnapshot.pullRequestLookupInputs)
+        }
         .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
-            if hasAttachedWorktree(in: scopedTabs) {
-                // External `git switch` / rebase / bisect edits `.git/HEAD`
-                // without touching TermLoop metadata. Tick presentation so
-                // the disk-only HEAD overlay in `termLoopCachedWorktreeStatus`
-                // can surface drift without waiting for a registry refresh or
-                // app restart.
-                worktreeProjectionStore.markChanged(reason: "panel.timer")
-            }
+            // External `git switch` / rebase / bisect edits `.git/HEAD`
+            // without touching TermLoop metadata. Poll the cheap HEAD files,
+            // but only invalidate SwiftUI when the observed ref actually moves.
+            refreshWorktreeHeadProjectionIfChanged(for: scopedTabs, reason: "headChanged")
             refreshWorktreePullRequests(renderSnapshot.pullRequestLookupInputs, reason: "timer")
         }
     }
 
-    private func hasAttachedWorktree(in workspaces: [Workspace]) -> Bool {
-        workspaces.contains { workspace in
-            WorkspaceMetadataStore.shared.branch(for: workspace) != nil
+    private func refreshPullRequestLookupSignature(
+        inputs: [WorktreeBranchPullRequestStore.LookupInput]
+    ) {
+        let next = makePullRequestLookupSignature(inputs: inputs)
+        guard next != pullRequestLookupSignature else { return }
+        pullRequestLookupSignature = next
+    }
+
+    private func makePullRequestLookupSignature(
+        inputs: [WorktreeBranchPullRequestStore.LookupInput]
+    ) -> PullRequestLookupSignature {
+        let entries = inputs
+            .sorted {
+                if $0.directory != $1.directory {
+                    return $0.directory < $1.directory
+                }
+                return $0.branch < $1.branch
+            }
+            .map { input in
+                PullRequestLookupSignature.Entry(
+                    input: input,
+                    pullRequests: worktreePullRequestStore.cachedPullRequests(
+                        directory: input.directory,
+                        branch: input.branch
+                    )
+                )
+            }
+        return PullRequestLookupSignature(entries: entries)
+    }
+
+    private func refreshWorktreeHeadProjectionIfChanged(
+        for workspaces: [Workspace],
+        reason: String,
+        marksProjection: Bool = true
+    ) {
+        let signature = worktreeHeadSignature(for: workspaces)
+        guard observedWorktreeHeadSignature != nil else {
+            observedWorktreeHeadSignature = signature
+            return
         }
+        guard signature != observedWorktreeHeadSignature else { return }
+        observedWorktreeHeadSignature = signature
+        if marksProjection {
+            worktreeProjectionStore.markChanged(reason: "panel.\(reason)")
+        }
+    }
+
+    private func worktreeHeadSignature(for workspaces: [Workspace]) -> String {
+        workspaces.compactMap { workspace -> String? in
+            let expectedBranch = WorkspaceMetadataStore.shared.branch(for: workspace)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !expectedBranch.isEmpty else { return nil }
+            let path = WorktreeResolver.normalizePath(
+                WorkspaceMetadataStore.shared.worktreePath(forWorkspaceId: workspace.id)
+            ) ?? WorktreeResolver.normalizePath(workspace.termLoopPresentationCwd())
+            guard let path else { return nil }
+            let observed = TermLoopWorktreeHeadReader
+                .currentObservedRefWithoutGit(checkoutPath: path)?
+                .displayName ?? "unknown"
+            return "\(workspace.id.uuidString)|\(path)|\(expectedBranch)|\(observed)"
+        }
+        .sorted()
+        .joined(separator: "\n")
     }
 
     private func groupSummaryKey(
@@ -1579,7 +1679,6 @@ struct WorktreeAgentsPanel: View {
         pullRequestStatuses: Set<SidebarPullRequestStatus>?,
         renderSnapshot: RenderSnapshot,
         collapsedBranchSet: Set<String>,
-        pullRequestLookupTick: UInt64,
         addWorktreeAction: (() -> Void)? = nil
     ) -> some View {
         let visibleLimit = sectionKind.initialVisibleLimit
@@ -1617,15 +1716,14 @@ struct WorktreeAgentsPanel: View {
                         mediumHeight: 180,
                         minHeight: 72
                     ) {
-                        LazyVStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: 4) {
                             ForEach(visibleGroups) { group in
                                 worktreeGroupView(
                                     group,
                                     sectionKind: sectionKind,
                                     pullRequestStatuses: pullRequestStatuses,
                                     renderSnapshot: renderSnapshot,
-                                    collapsedBranchSet: collapsedBranchSet,
-                                    pullRequestLookupTick: pullRequestLookupTick
+                                    collapsedBranchSet: collapsedBranchSet
                                 )
                             }
                             if orderedGroups.count > visibleLimit {
@@ -1992,8 +2090,7 @@ struct WorktreeAgentsPanel: View {
         sectionKind: WorktreeAgentsSectionKind,
         pullRequestStatuses: Set<SidebarPullRequestStatus>?,
         renderSnapshot: RenderSnapshot,
-        collapsedBranchSet: Set<String>,
-        pullRequestLookupTick: UInt64
+        collapsedBranchSet: Set<String>
     ) -> some View {
         let expanded = !collapsedBranchSet.contains(group.id)
         let path = group.worktreePath.map {
@@ -2217,8 +2314,7 @@ struct WorktreeAgentsPanel: View {
                     WorktreeGroupGitSummaryView(
                         group: group,
                         preferredWorkspace: sourceWorkspace(for: group),
-                        openPullRequests: pullRequestSummary?.pullRequests.filter { $0.status == .open } ?? [],
-                        pullRequestLookupTick: pullRequestLookupTick
+                        openPullRequests: pullRequestSummary?.pullRequests.filter { $0.status == .open } ?? []
                     )
                 }
                 .padding(.top, 1)
@@ -2551,7 +2647,7 @@ struct WorktreeAgentsPanel: View {
             .onTapGesture { toggleExpanded(branch: group.id) }
 
             if expanded {
-                LazyVStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 1) {
                     if orderedWorkspaces.isEmpty {
                         Text(
                             String(
@@ -3242,7 +3338,7 @@ struct WorktreeChangesSheet: View {
     private var fileList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 6) {
                     sectionHeader("Files")
                     ForEach(changes, id: \.path) { file in
                         Button {
@@ -3373,7 +3469,7 @@ struct WorktreeChangesSheet: View {
                                 .foregroundStyle(TermLoopSidebarTheme.dim)
                                 .frame(maxWidth: .infinity, alignment: .topLeading)
                         } else {
-                            LazyVStack(alignment: .leading, spacing: 0) {
+                            VStack(alignment: .leading, spacing: 0) {
                                 ForEach(Array(diffLines.enumerated()), id: \.offset) { _, line in
                                     diffLineView(line)
                                 }
@@ -3762,13 +3858,14 @@ private struct WorktreeGroupGitSummaryView: View {
     let group: WorktreeAgentsGroup
     let preferredWorkspace: Workspace?
     let openPullRequests: [SidebarPullRequestState]
-    let pullRequestLookupTick: UInt64
 
     @State private var snapshot: WorktreeGroupGitSummarySnapshot?
     @State private var refreshNonce: UInt64 = 0
     @State private var observedLocalChangesPath: String?
     @State private var observedLocalChanges: [SidebarGitChangeItem] = []
     @State private var hasObservedLocalChanges = false
+    @State private var localChangesSubscription: AnyCancellable?
+    @State private var subscribedLocalChangesPath: String?
     /// Stable subscription keyed on `subscribedWorkspaceIds` — rebuilding
     /// `Publishers.MergeMany(...)` inside `body` re-subscribed per render.
     @State private var refreshSubscription: AnyCancellable?
@@ -3779,6 +3876,7 @@ private struct WorktreeGroupGitSummaryView: View {
         let path: String
         let baselineHeads: [String]
         let unmergedBaseBranches: [String]
+        let openPullRequestIdentity: String
         let refreshNonce: UInt64
     }
 
@@ -3838,11 +3936,9 @@ private struct WorktreeGroupGitSummaryView: View {
         .task(id: refreshTaskKey) {
             await refreshSnapshot()
         }
-        .onReceive(localChangesPublisher(for: path)) { files in
-            handleObservedLocalChanges(files, path: path)
-        }
         .onAppear {
             ensureRefreshSubscription()
+            ensureLocalChangesSubscription(path: path)
         }
         .onChange(of: group.workspaces.map(\.id)) { _ in
             ensureRefreshSubscription()
@@ -3851,6 +3947,7 @@ private struct WorktreeGroupGitSummaryView: View {
             observedLocalChangesPath = newPath
             observedLocalChanges = []
             hasObservedLocalChanges = false
+            ensureLocalChangesSubscription(path: newPath)
             refreshNonce &+= 1
         }
     }
@@ -3870,11 +3967,22 @@ private struct WorktreeGroupGitSummaryView: View {
             .sink { _ in refreshNonce &+= 1 }
     }
 
-    private func localChangesPublisher(for path: String?) -> AnyPublisher<[SidebarGitChangeItem], Never> {
+    private func ensureLocalChangesSubscription(path: String?) {
+        guard path != subscribedLocalChangesPath else { return }
+        subscribedLocalChangesPath = path
+        localChangesSubscription = nil
         guard let path else {
-            return Just([]).eraseToAnyPublisher()
+            handleObservedLocalChanges([], path: nil)
+            return
         }
-        return GitWorktreePresentationStore.shared.filesPublisher(for: path)
+        localChangesSubscription = localChangesPublisher(for: path)
+            .sink { files in
+                handleObservedLocalChanges(files, path: path)
+            }
+    }
+
+    private func localChangesPublisher(for path: String) -> AnyPublisher<[SidebarGitChangeItem], Never> {
+        GitWorktreePresentationStore.shared.filesPublisher(for: path)
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .eraseToAnyPublisher()
@@ -3897,7 +4005,23 @@ private struct WorktreeGroupGitSummaryView: View {
 
     private var refreshTaskKey: String {
         let baseKey = openPullRequestBaseBranches.joined(separator: ",")
-        return "\(group.branch)|\(resolvedWorktreePath ?? "none")|\(baseKey)|\(pullRequestLookupTick)|\(refreshNonce)"
+        return "\(group.branch)|\(resolvedWorktreePath ?? "none")|\(baseKey)|\(openPullRequestIdentityKey)|\(refreshNonce)"
+    }
+
+    private var openPullRequestIdentityKey: String {
+        openPullRequests.map { state in
+            [
+                state.label,
+                String(state.number),
+                state.url.absoluteString,
+                state.status.rawValue,
+                state.statusDetail ?? "",
+                state.branch ?? "",
+                state.baseBranch ?? "",
+                state.isStale ? "stale" : "fresh"
+            ].joined(separator: "|")
+        }
+        .joined(separator: "\n")
     }
 
     private var openPullRequestBaseBranches: [String] {
@@ -3958,6 +4082,7 @@ private struct WorktreeGroupGitSummaryView: View {
             path: path,
             baselineHeads: baselineHeads,
             unmergedBaseBranches: openPullRequestBaseBranches,
+            openPullRequestIdentity: openPullRequestIdentityKey,
             refreshNonce: refreshNonce
         )
     }

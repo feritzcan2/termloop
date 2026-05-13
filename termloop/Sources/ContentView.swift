@@ -15356,6 +15356,7 @@ private struct TitlebarLeadingInsetReader: NSViewRepresentable {
 struct SidebarTrailingBorder: View {
     @AppStorage("sidebarMatchTerminalBackground") private var matchTerminalBackground = false
     @State private var separatorColor: NSColor = chromeSeparatorColor()
+    private static var cachedChromeSeparator: (key: String, color: NSColor)?
 
     var body: some View {
         if matchTerminalBackground {
@@ -15378,16 +15379,22 @@ struct SidebarTrailingBorder: View {
         let srgb = chrome.usingColorSpace(.sRGB) ?? chrome
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         srgb.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let key = "\(r),\(g),\(b),\(a)"
+        if let cachedChromeSeparator, cachedChromeSeparator.key == key {
+            return cachedChromeSeparator.color
+        }
         let luminance = 0.299 * r + 0.587 * g + 0.114 * b
         let isLight = luminance > 0.5
         let amount: CGFloat = isLight ? -0.12 : 0.16
         let alpha: CGFloat = isLight ? 0.26 : 0.36
-        return NSColor(
+        let color = NSColor(
             red: min(1.0, max(0.0, r + amount)),
             green: min(1.0, max(0.0, g + amount)),
             blue: min(1.0, max(0.0, b + amount)),
             alpha: alpha
         )
+        cachedChromeSeparator = (key, color)
+        return color
     }
 }
 

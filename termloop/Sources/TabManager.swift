@@ -820,7 +820,11 @@ class TabManager: ObservableObject {
     /// Global monotonically increasing counter for TERMLOOP_PORT ordinal assignment.
     /// Static so port ranges don't overlap across multiple windows (each window has its own TabManager).
     private static var nextPortOrdinal: Int = 0
-    private nonisolated static let initialWorkspaceGitProbeDelays: [TimeInterval] = [0, 0.5, 1.5, 3.0, 6.0, 10.0]
+    // Newly created panels should get git chrome shortly after creation.
+    // Startup restore gets a slower cadence below so fork/exec bursts do not
+    // compete with window reconstruction and first terminal layout.
+    private nonisolated static let initialWorkspaceGitProbeDelays: [TimeInterval] = [1.5, 3.0, 6.0, 10.0]
+    private nonisolated static let restoredWorkspaceGitProbeDelays: [TimeInterval] = [8.0, 20.0]
     private nonisolated static let backgroundPollInterval: TimeInterval = 60
     private nonisolated static let selectedPollInterval: TimeInterval = 20
     // The selected/background PR refresh intervals are 20s/60s; a frequent
@@ -1752,7 +1756,9 @@ class TabManager: ObservableObject {
             workspaceId: workspaceId,
             panelId: panelId,
             reason: reason,
-            delays: Self.initialWorkspaceGitProbeDelays
+            delays: reason == "restore"
+                ? Self.restoredWorkspaceGitProbeDelays
+                : Self.initialWorkspaceGitProbeDelays
         )
     }
 
@@ -6721,7 +6727,8 @@ extension TabManager {
             for terminalPanel in terminalPanels {
                 scheduleInitialWorkspaceGitMetadataRefreshIfPossible(
                     workspaceId: workspace.id,
-                    panelId: terminalPanel.id
+                    panelId: terminalPanel.id,
+                    reason: "restore"
                 )
             }
         }

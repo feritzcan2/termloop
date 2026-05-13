@@ -173,23 +173,26 @@ enum TermLoopSidebarTheme {
     /// read like native macOS sidebar section labels (Finder/Mail). Color
     /// is the only thing that differs between modes (see
     /// `adaptiveSectionColor`).
-    static func adaptiveSectionTitle(_ text: String) -> AttributedString {
-        AttributedString(text)
+    static func adaptiveSectionTitle(_ text: String) -> String {
+        text
     }
 
     /// Section header font, paired with `adaptiveSectionTitle`. System
     /// semibold in both modes — no SF Mono. Size remains caller-controlled
     /// so each section can keep its own metric.
+    static let adaptiveSectionFont11: Font = .system(size: 11, weight: .semibold)
+    static let adaptiveSectionFont13: Font = .system(size: 13, weight: .semibold)
+
     static func adaptiveSectionFont(size: CGFloat = 11) -> Font {
-        .system(size: size, weight: .semibold)
+        if size == 11 { return adaptiveSectionFont11 }
+        if size == 13 { return adaptiveSectionFont13 }
+        return .system(size: size, weight: .semibold)
     }
 
     /// `secondaryLabelColor` auto-adapts to appearance, so this single call
     /// gives the soft-gray section header in light mode and the lighter
     /// gray in dark mode without any branching.
-    static var adaptiveSectionColor: Color {
-        Color(nsColor: .secondaryLabelColor)
-    }
+    static let adaptiveSectionColor: Color = Color(nsColor: .secondaryLabelColor)
 
     static func color(for state: TerminalAgentDisplayState) -> Color {
         switch state {
