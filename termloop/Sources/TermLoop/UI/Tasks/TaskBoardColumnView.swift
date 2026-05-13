@@ -19,6 +19,7 @@ struct TaskBoardColumnView: View {
     var onCommandClick: ((TaskCardSummary) -> Void)?
     var onOpenAgentTerminal: ((TaskCardSummary, UUID) -> Void)?
     var onArchive: ((UUID) -> Void)?
+    var onDelete: ((UUID) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -37,7 +38,8 @@ struct TaskBoardColumnView: View {
                                 onSelect: onSelect,
                                 onCommandClick: onCommandClick,
                                 onOpenAgentTerminal: onOpenAgentTerminal,
-                                onArchive: onArchive
+                                onArchive: onArchive,
+                                onDelete: onDelete
                             )
                         }
                     }

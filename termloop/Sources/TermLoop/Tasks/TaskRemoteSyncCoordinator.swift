@@ -204,7 +204,6 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 settings.remoteSync.remoteItemsEnabled = enabled
                 if !enabled {
                     settings.remoteSync.syncAssignedToMe = false
-                    settings.remoteSync.syncColumnMovesToRemote = false
                 }
                 settings.remoteSync.lastError = nil
             }
@@ -284,9 +283,6 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                     settings.remoteSync.remoteItemsEnabled = true
                 }
                 settings.remoteSync.syncAssignedToMe = enabled
-                if !enabled {
-                    settings.remoteSync.syncColumnMovesToRemote = false
-                }
                 if enabled {
                     settings.remoteSync.lastError = nil
                 }
@@ -365,20 +361,6 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 settings.remoteSync.lastError = nil
             }
             hydrateRemoteMetadataFromCache()
-        } catch {
-            lastMessage = String(describing: error)
-        }
-    }
-
-    public func setSyncColumnMovesToRemote(_ enabled: Bool) {
-        do {
-            try store.updateSettings { settings in
-                if enabled {
-                    settings.remoteSync.remoteItemsEnabled = true
-                    settings.remoteSync.syncAssignedToMe = true
-                }
-                settings.remoteSync.syncColumnMovesToRemote = enabled
-            }
         } catch {
             lastMessage = String(describing: error)
         }
@@ -868,7 +850,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 let snapshot = try await service.fetch(reference)
                 try Task.checkCancellation()
                 await MainActor.run {
-                    self?.applyLinkedSnapshot(snapshot, taskId: taskId)
+                    _ = self?.applyLinkedSnapshot(snapshot, taskId: taskId)
                 }
             } catch {
                 await MainActor.run {
@@ -894,7 +876,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 let snapshot = try await service.fetch(reference)
                 try Task.checkCancellation()
                 await MainActor.run {
-                    self?.applyLinkedSnapshot(snapshot, taskId: taskId)
+                    _ = self?.applyLinkedSnapshot(snapshot, taskId: taskId)
                 }
             } catch {
                 await MainActor.run {
@@ -906,7 +888,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
 
     public func maybePromptRemoteStatusSync(taskId: UUID, to columnId: TaskColumnId) {
         let syncSettings = store.settingsSnapshot
-        guard syncSettings.remoteSync.isAssignedSyncEnabled, syncSettings.remoteSync.syncColumnMovesToRemote else { return }
+        guard syncSettings.remoteSync.isEnabled else { return }
         guard let targetStatus = syncSettings.columns
             .first(where: { $0.columnId == columnId })?
             .remoteStatusLabel?
@@ -966,11 +948,20 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 }
                 guard let option else {
                     await MainActor.run {
-                        self?.isSyncing = false
-                        self?.lastMessage = String(
+                        guard let self else { return }
+                        let message = String(
                             localized: "tasks.remoteSync.status.noMatchingStatus",
                             defaultValue: "Could not find a matching remote status for \(targetStatus). Refresh remote statuses and try again.",
                             table: "TermLoop"
+                        )
+                        self.isSyncing = false
+                        self.lastMessage = message
+                        self.presentSyncResultAlert(
+                            title: String(localized: "tasks.remoteSync.status.updateFailedTitle",
+                                          defaultValue: "Remote Status Update Failed",
+                                          table: "TermLoop"),
+                            message: message,
+                            style: .warning
                         )
                     }
                     return
@@ -982,11 +973,47 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 )
                 try Task.checkCancellation()
                 await MainActor.run {
-                    self?.applyLinkedSnapshot(snapshot, taskId: taskId)
+                    guard let self else { return }
+                    guard self.applyLinkedSnapshot(snapshot, taskId: taskId) else {
+                        self.presentSyncResultAlert(
+                            title: String(localized: "tasks.remoteSync.status.updatedLocalFailedTitle",
+                                          defaultValue: "Remote Status Updated, Local Sync Failed",
+                                          table: "TermLoop"),
+                            message: self.lastMessage ?? String(
+                                localized: "tasks.remoteSync.status.updatedLocalFailedBody",
+                                defaultValue: "\(reference.key) was updated remotely, but the local task could not be refreshed.",
+                                table: "TermLoop"
+                            ),
+                            style: .warning
+                        )
+                        return
+                    }
+                    let status = snapshot.statusLabel?
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .nilIfEmpty ?? option.label
+                    let message = String(localized: "tasks.remoteSync.status.updatedBody",
+                                         defaultValue: "\(reference.key) is now \(status).",
+                                         table: "TermLoop")
+                    self.finishSync(message: message)
+                    self.presentSyncResultAlert(
+                        title: String(localized: "tasks.remoteSync.status.updatedTitle",
+                                      defaultValue: "Remote Status Updated",
+                                      table: "TermLoop"),
+                        message: message
+                    )
                 }
             } catch {
                 await MainActor.run {
-                    self?.finishSync(error: error)
+                    guard let self else { return }
+                    self.finishSync(error: error)
+                    guard !(error is CancellationError) else { return }
+                    self.presentSyncResultAlert(
+                        title: String(localized: "tasks.remoteSync.status.updateFailedTitle",
+                                      defaultValue: "Remote Status Update Failed",
+                                      table: "TermLoop"),
+                        message: Self.humanError(error),
+                        style: .warning
+                    )
                 }
             }
         }
@@ -1242,19 +1269,28 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
     }
 
-    private func applyLinkedSnapshot(_ snapshot: RemoteWorkItemSnapshot, taskId: UUID) {
+    @discardableResult
+    private func applyLinkedSnapshot(_ snapshot: RemoteWorkItemSnapshot, taskId: UUID) -> Bool {
         RemoteWorkItemSnapshotStore.shared.upsert(snapshot)
         let now = Date()
+        var foundTask = false
         var shouldMaterialize = false
         do {
             store.mutate { file in
                 guard let idx = file.tasks.firstIndex(where: { $0.id == taskId }) else { return false }
+                foundTask = true
                 let old = file.tasks[idx]
                 let hadLastError = file.settings.remoteSync.lastError != nil
                 update(&file.tasks[idx], with: snapshot, syncedAt: now)
                 file.settings.remoteSync.lastError = nil
                 shouldMaterialize = true
                 return file.tasks[idx] != old || hadLastError
+            }
+            guard foundTask else {
+                finishSync(message: String(localized: "tasks.remoteSync.localTaskMissing",
+                                           defaultValue: "Remote item was fetched, but the local task no longer exists.",
+                                           table: "TermLoop"))
+                return false
             }
             if shouldMaterialize {
                 materialize([(taskId, snapshot)])
@@ -1263,8 +1299,10 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
             finishSync(message: String(localized: "tasks.remoteSync.linked",
                                        defaultValue: "Linked work item.",
                                        table: "TermLoop"))
+            return true
         } catch {
             finishSync(error: error)
+            return false
         }
     }
 
@@ -2156,11 +2194,38 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
     }
 
-    private func presentSyncResultAlert(title: String, message: String) {
+    private func presentSyncResultAlert(
+        title: String,
+        message: String,
+        style: NSAlert.Style = .informational
+    ) {
         let alert = NSAlert()
         alert.messageText = title
-        alert.informativeText = message
-        alert.alertStyle = .informational
+        alert.alertStyle = style
+        if message.count > 240 || message.contains("\n") {
+            alert.informativeText = String(localized: "tasks.remoteSync.alert.details",
+                                           defaultValue: "Details:",
+                                           table: "TermLoop")
+            let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 560, height: 180))
+            scrollView.hasVerticalScroller = true
+            scrollView.hasHorizontalScroller = true
+            scrollView.borderType = .bezelBorder
+
+            let textView = NSTextView(frame: scrollView.bounds)
+            textView.isEditable = false
+            textView.isSelectable = true
+            textView.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+            textView.string = message
+            textView.textContainer?.containerSize = NSSize(
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+            textView.textContainer?.widthTracksTextView = false
+            scrollView.documentView = textView
+            alert.accessoryView = scrollView
+        } else {
+            alert.informativeText = message
+        }
         alert.addButton(withTitle: String(localized: "common.ok",
                                           defaultValue: "OK",
                                           table: "TermLoop"))

@@ -770,17 +770,6 @@ private struct TaskColumnSettingsView: View {
                 .buttonStyle(.plain)
             }
 
-            if showsRemoteControls {
-                Toggle(isOn: remoteColumnMoveBinding) {
-                    Text(String(localized: "tasks.settings.syncColumnMoves",
-                                defaultValue: "Ask to sync board moves to remote",
-                                table: "TermLoop"))
-                        .font(.system(size: 12, weight: .medium))
-                }
-                .toggleStyle(.switch)
-                .controlSize(.small)
-            }
-
             HStack(spacing: 6) {
                 Button(action: presentAddColumnPrompt) {
                     Image(systemName: "plus")
@@ -827,13 +816,6 @@ private struct TaskColumnSettingsView: View {
                 )
             }
         }
-    }
-
-    private var remoteColumnMoveBinding: Binding<Bool> {
-        Binding(
-            get: { remoteSync.settings.syncColumnMovesToRemote },
-            set: { remoteSync.setSyncColumnMovesToRemote($0) }
-        )
     }
 
     private func presentAddColumnPrompt() {

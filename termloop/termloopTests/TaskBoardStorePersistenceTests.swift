@@ -28,25 +28,21 @@ final class TaskBoardStorePersistenceTests: XCTestCase {
         XCTAssertFalse(store.fileSnapshot().settings.remoteSync.remoteItemsEnabled)
         XCTAssertFalse(store.fileSnapshot().settings.remoteSync.isEnabled)
         XCTAssertFalse(store.fileSnapshot().settings.remoteSync.syncAssignedToMe)
-        XCTAssertFalse(store.fileSnapshot().settings.remoteSync.syncColumnMovesToRemote)
         XCTAssertEqual(store.fileSnapshot().settings.remoteSync.limit, 50)
     }
 
     func testRemoteSyncAssignedFlagControlsBoardSyncBehavior() throws {
         let enabled = TaskRemoteSyncSettings(
             remoteItemsEnabled: true,
-            syncAssignedToMe: true,
-            syncColumnMovesToRemote: true
+            syncAssignedToMe: true
         )
         XCTAssertTrue(enabled.remoteItemsEnabled)
         XCTAssertTrue(enabled.syncAssignedToMe)
-        XCTAssertTrue(enabled.syncColumnMovesToRemote)
         XCTAssertTrue(enabled.isAssignedSyncEnabled)
 
         let assignedSync = TaskRemoteSyncSettings(
             remoteItemsEnabled: true,
-            syncAssignedToMe: true,
-            syncColumnMovesToRemote: true
+            syncAssignedToMe: true
         )
         let decoded = try JSONDecoder.tasks.decode(
             TaskRemoteSyncSettings.self,
@@ -57,7 +53,6 @@ final class TaskBoardStorePersistenceTests: XCTestCase {
         XCTAssertTrue(encodedText.contains("\"remoteItemsEnabled\""))
         XCTAssertTrue(decoded.remoteItemsEnabled)
         XCTAssertTrue(decoded.syncAssignedToMe)
-        XCTAssertTrue(decoded.syncColumnMovesToRemote)
         XCTAssertTrue(decoded.isAssignedSyncEnabled)
     }
 
@@ -66,7 +61,6 @@ final class TaskBoardStorePersistenceTests: XCTestCase {
         {
           "remoteItemsEnabled": false,
           "syncAssignedToMe": true,
-          "syncColumnMovesToRemote": true,
           "provider": "jira",
           "limit": 30
         }
@@ -75,7 +69,6 @@ final class TaskBoardStorePersistenceTests: XCTestCase {
         XCTAssertFalse(decoded.remoteItemsEnabled)
         XCTAssertFalse(decoded.isEnabled)
         XCTAssertFalse(decoded.syncAssignedToMe)
-        XCTAssertFalse(decoded.syncColumnMovesToRemote)
     }
 
     func testRoundTripPreservesTasks() throws {

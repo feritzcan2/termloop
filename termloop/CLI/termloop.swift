@@ -13830,7 +13830,7 @@ struct CMUXCLI {
 
         enum HookFormat {
             case flat       // Cursor: {"hooks": {"event": [{"command": "..."}]}, "version": 1}
-            case nested(timeoutMs: Int)  // Codex/Gemini: nested with type/command/timeout
+            case nested(timeoutSeconds: Int)  // Codex/Gemini: nested with type/command/timeout
         }
 
         struct HookEvent {
@@ -13887,7 +13887,7 @@ struct CMUXCLI {
             name: "codex", displayName: "Codex", statusKey: "codex",
             configDir: ".codex", configFile: "hooks.json", configDirEnvOverride: "CODEX_HOME",
             sessionStoreSuffix: "codex", disableEnvVar: "TERMLOOP_CODEX_HOOKS_DISABLED",
-            hookMarker: "termloop codex-hook", format: .nested(timeoutMs: 5000),
+            hookMarker: "termloop codex-hook", format: .nested(timeoutSeconds: 5),
             events: [
                 .init(agentEvent: "SessionStart", cmuxSubcommand: "session-start"),
                 .init(agentEvent: "UserPromptSubmit", cmuxSubcommand: "prompt-submit"),
@@ -13913,7 +13913,7 @@ struct CMUXCLI {
             name: "gemini", displayName: "Gemini", statusKey: "gemini",
             configDir: ".gemini", configFile: "settings.json",
             sessionStoreSuffix: "gemini", disableEnvVar: "TERMLOOP_GEMINI_HOOKS_DISABLED",
-            hookMarker: "termloop gemini-hook", format: .nested(timeoutMs: 10000),
+            hookMarker: "termloop gemini-hook", format: .nested(timeoutSeconds: 10),
             events: [
                 .init(agentEvent: "SessionStart", cmuxSubcommand: "session-start"),
                 .init(agentEvent: "BeforeAgent", cmuxSubcommand: "prompt-submit"),
@@ -13925,7 +13925,7 @@ struct CMUXCLI {
             name: "copilot", displayName: "Copilot", statusKey: "copilot",
             configDir: ".copilot", configFile: "config.json",
             sessionStoreSuffix: "copilot", disableEnvVar: "TERMLOOP_COPILOT_HOOKS_DISABLED",
-            hookMarker: "termloop copilot-hook", format: .nested(timeoutMs: 5000),
+            hookMarker: "termloop copilot-hook", format: .nested(timeoutSeconds: 5),
             events: [
                 .init(agentEvent: "SessionStart", cmuxSubcommand: "session-start"),
                 .init(agentEvent: "Stop", cmuxSubcommand: "stop"),
@@ -13937,7 +13937,7 @@ struct CMUXCLI {
             name: "codebuddy", displayName: "CodeBuddy", statusKey: "codebuddy",
             configDir: ".codebuddy", configFile: "settings.json",
             sessionStoreSuffix: "codebuddy", disableEnvVar: "TERMLOOP_CODEBUDDY_HOOKS_DISABLED",
-            hookMarker: "termloop codebuddy-hook", format: .nested(timeoutMs: 5000),
+            hookMarker: "termloop codebuddy-hook", format: .nested(timeoutSeconds: 5),
             events: [
                 .init(agentEvent: "SessionStart", cmuxSubcommand: "session-start"),
                 .init(agentEvent: "Stop", cmuxSubcommand: "stop"),
@@ -13949,7 +13949,7 @@ struct CMUXCLI {
             name: "factory", displayName: "Factory", statusKey: "factory",
             configDir: ".factory", configFile: "settings.json",
             sessionStoreSuffix: "factory", disableEnvVar: "TERMLOOP_FACTORY_HOOKS_DISABLED",
-            hookMarker: "termloop factory-hook", format: .nested(timeoutMs: 5000),
+            hookMarker: "termloop factory-hook", format: .nested(timeoutSeconds: 5),
             events: [
                 .init(agentEvent: "SessionStart", cmuxSubcommand: "session-start"),
                 .init(agentEvent: "Stop", cmuxSubcommand: "stop"),
@@ -13961,7 +13961,7 @@ struct CMUXCLI {
             name: "qoder", displayName: "Qoder", statusKey: "qoder",
             configDir: ".qoder", configFile: "settings.json",
             sessionStoreSuffix: "qoder", disableEnvVar: "TERMLOOP_QODER_HOOKS_DISABLED",
-            hookMarker: "termloop qoder-hook", format: .nested(timeoutMs: 5000),
+            hookMarker: "termloop qoder-hook", format: .nested(timeoutSeconds: 5),
             events: [
                 .init(agentEvent: "SessionStart", cmuxSubcommand: "session-start"),
                 .init(agentEvent: "Stop", cmuxSubcommand: "stop"),
@@ -13979,7 +13979,7 @@ struct CMUXCLI {
         sessionStoreSuffix: "opencode",
         disableEnvVar: "TERMLOOP_OPENCODE_HOOKS_DISABLED",
         hookMarker: "termloop opencode-hook",
-        format: .nested(timeoutMs: 5000),
+        format: .nested(timeoutSeconds: 5),
         events: []
     )
 
@@ -14037,8 +14037,8 @@ struct CMUXCLI {
             switch def.format {
             case .flat:
                 result[event.agentEvent] = [["command": cmd]]
-            case .nested(let timeoutMs):
-                result[event.agentEvent] = [["hooks": [["type": "command", "command": cmd, "timeout": timeoutMs] as [String: Any]]] as [String: Any]]
+            case .nested(let timeoutSeconds):
+                result[event.agentEvent] = [["hooks": [["type": "command", "command": cmd, "timeout": timeoutSeconds] as [String: Any]]] as [String: Any]]
             }
         }
         return result

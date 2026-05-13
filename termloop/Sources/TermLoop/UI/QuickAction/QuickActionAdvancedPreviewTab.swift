@@ -86,7 +86,7 @@ struct QuickActionAdvancedPreviewTab: View {
                     .cornerRadius(3)
             }
             Text(String(localized: "quickAction.preview.tab.abilitiesSource",
-                        defaultValue: "Ability rules and generated workspace context included in this run.",
+                        defaultValue: "Ability rules and generated folder context included in this run.",
                         table: "TermLoop"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
