@@ -469,6 +469,7 @@ private struct SidebarProjectOnboardingEmptyState: View {
 private struct SidebarTutorialStack: View {
     var body: some View {
         VStack(spacing: 8) {
+            SidebarCodexHookReviewBanner()
             SidebarAgentHooksWarning()
             SidebarRepoStatusBanner()
 
@@ -534,6 +535,127 @@ private struct SidebarTutorialStack: View {
         .padding(.horizontal, TermLoopSidebarTheme.rowInsetH)
         .padding(.top, 6)
         .padding(.bottom, 8)
+    }
+}
+
+private struct SidebarCodexHookReviewBanner: View {
+    private static let dismissId = "codex-hook-review-required"
+
+    @ObservedObject private var codexStatus = CodexHooksStatus.shared
+    @ObservedObject private var sessionState = SidebarTutorialSessionState.shared
+
+    private var isVisible: Bool {
+        codexStatus.installed
+            && codexStatus.reviewRequired
+            && !sessionState.isDismissed(id: Self.dismissId)
+    }
+
+    var body: some View {
+        if isVisible {
+            HStack(spacing: 8) {
+                Button(action: focusReviewWorkspace) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.red)
+                            .frame(width: 14)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(String(
+                                localized: "sidebar.codexHookReview.title",
+                                defaultValue: "Codex hook review needed",
+                                table: "TermLoop"
+                            ))
+                            .font(TermLoopSidebarTheme.bodyMonoStrong)
+                            .lineLimit(1)
+
+                            Text(String(
+                                localized: "sidebar.codexHookReview.subtitle",
+                                defaultValue: "Run /hooks in Codex and approve TermLoop hooks so agent status and activity update in the sidebar.",
+                                table: "TermLoop"
+                            ))
+                            .font(TermLoopSidebarTheme.tinyMono)
+                            .foregroundStyle(TermLoopSidebarTheme.dimmer)
+                            .lineLimit(3)
+                        }
+
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .foregroundStyle(Color.primary)
+                }
+                .buttonStyle(.plain)
+                .help(String(
+                    localized: "sidebar.codexHookReview.focus.help",
+                    defaultValue: "Focus the Codex session that needs hook review.",
+                    table: "TermLoop"
+                ))
+
+                if codexStatus.reviewWorkspaceId != nil {
+                    Button(String(
+                        localized: "sidebar.codexHookReview.review",
+                        defaultValue: "Review",
+                        table: "TermLoop"
+                    )) {
+                        focusReviewWorkspace()
+                    }
+                    .buttonStyle(.plain)
+                    .font(TermLoopSidebarTheme.tinyMono)
+                    .foregroundStyle(Color.red)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(Color.red.opacity(0.10))
+                    )
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .stroke(Color.red.opacity(0.20), lineWidth: 1)
+                    )
+                    .help(String(
+                        localized: "sidebar.codexHookReview.review.help",
+                        defaultValue: "Focus Codex so you can run /hooks and approve TermLoop hooks.",
+                        table: "TermLoop"
+                    ))
+                }
+
+                Button {
+                    sessionState.dismiss(id: Self.dismissId)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(TermLoopSidebarTheme.dim)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(String(
+                    localized: "sidebarTutorial.dismiss.help",
+                    defaultValue: "Hide until app relaunch",
+                    table: "TermLoop"
+                ))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.red.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.red.opacity(0.26), lineWidth: 1)
+            )
+            .onAppear {
+                codexStatus.refreshIfStale()
+            }
+        }
+    }
+
+    private func focusReviewWorkspace() {
+        guard let workspaceId = codexStatus.reviewWorkspaceId else { return }
+        _ = TermLoopHooks.focusWorkspace(workspaceId: workspaceId)
     }
 }
 

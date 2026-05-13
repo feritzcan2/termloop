@@ -2199,6 +2199,7 @@ enum TermLoopHooks {
         do {
             try installAgentHooksViaBundledCLI(agentName: "codex")
             CodexHooksStatus.shared.markDirty()
+            CodexHooksStatus.shared.resetReviewProbeBudget()
             return true
         } catch {
             NSLog("TermLoopHooks: auto-install of Codex hooks failed: \(error)")

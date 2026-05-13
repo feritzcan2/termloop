@@ -110,4 +110,14 @@ final class ClaudeHookInstallerCommandTests: XCTestCase {
             )
         }
     }
+
+    @MainActor
+    func test_codexHookReviewOutputDetector_matchesCodexReviewWarning() {
+        XCTAssertTrue(CodexHooksStatus.outputIndicatesReviewRequired(
+            "4 hooks need review before they can run. Open /hooks to review them."
+        ))
+        XCTAssertFalse(CodexHooksStatus.outputIndicatesReviewRequired(
+            "Codex is ready for the next task."
+        ))
+    }
 }

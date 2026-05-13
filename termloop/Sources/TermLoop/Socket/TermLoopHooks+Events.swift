@@ -171,11 +171,17 @@ extension TermLoopSocketCommands {
         }()
         let sessionId = rawString(params, "session_id")
         let cwd = rawString(params, "cwd")
+        let source = rawString(params, "source")?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
         let pid: pid_t? = {
             if let n = params["pid"] as? Int, n > 0 { return pid_t(n) }
             if let n = params["pid"] as? Int32, n > 0 { return n }
             return nil
         }()
+        if agentId == "codex", source == "hook" {
+            CodexHooksStatus.shared.markCodexHookObserved()
+        }
         lifecycleLog(
             "rpc.reportAgentActivity.enter workspace=\(wsId.uuidString) agent=\(agentId) phase=\(phase.rawValue) attention=\(attentionKind?.rawValue ?? "nil") userPrompt=\(userPromptSubmitted ? 1 : 0) session=\(sessionId ?? "nil") cwd=\(cwd ?? "nil") pid=\(pid.map(String.init) ?? "nil") preview=\(preview ?? "nil")"
         )

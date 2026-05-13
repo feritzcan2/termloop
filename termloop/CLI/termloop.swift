@@ -13935,6 +13935,7 @@ struct TermLoopCLI {
                 sessionId: sessionId,
                 cwd: input.cwd,
                 pid: pid,
+                source: "hook",
                 client: client
             )
             if let pid, let sessionId {
@@ -13969,6 +13970,7 @@ struct TermLoopCLI {
                 sessionId: sessionId,
                 cwd: input.cwd ?? mapped?.cwd,
                 pid: pid,
+                source: "hook",
                 client: client
             )
 
@@ -14009,6 +14011,7 @@ struct TermLoopCLI {
                 sessionId: sessionId,
                 cwd: input.cwd ?? mapped?.cwd,
                 pid: pid,
+                source: "hook",
                 client: client
             )
 
@@ -14032,6 +14035,7 @@ struct TermLoopCLI {
                 sessionId: sessionId,
                 cwd: cwd,
                 pid: pid,
+                source: "hook",
                 client: client
             )
 
@@ -14083,6 +14087,7 @@ struct TermLoopCLI {
                     sessionId: sessionId,
                     cwd: cwd,
                     pid: pid,
+                    source: "hook",
                     client: client
                 )
             } catch {
@@ -14194,6 +14199,7 @@ struct TermLoopCLI {
                 sessionId: sessionId,
                 cwd: cwd,
                 pid: pid,
+                source: "hook",
                 client: client
             )
         case "error":
@@ -14206,6 +14212,7 @@ struct TermLoopCLI {
                 sessionId: sessionId,
                 cwd: cwd,
                 pid: pid,
+                source: "hook",
                 client: client
             )
         default:
