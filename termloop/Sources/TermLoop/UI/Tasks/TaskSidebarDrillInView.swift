@@ -26,6 +26,7 @@ struct TaskSidebarDrillInView: View {
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
     @ObservedObject private var worktreeProjectionStore = WorktreeProjectionStore.shared
     @EnvironmentObject private var tabManager: TabManager
+    @State private var isDevServersExpanded = false
     var onUnbind: ((UUID) -> Void)?
     var onArchive: ((UUID) -> Void)?
 
@@ -78,12 +79,6 @@ struct TaskSidebarDrillInView: View {
                             }
                         )
                     }
-                    flatSection {
-                        DevServerTaskSection(
-                            snapshot: detailSnapshot,
-                            projectId: projectId
-                        )
-                    }
                     if hasWorktreeProjections(detailSnapshot) {
                         // Compact footer for git/PR status — both render as
                         // single-line summaries when empty, full sections when
@@ -103,6 +98,25 @@ struct TaskSidebarDrillInView: View {
                             )
                         }
                         .padding(.top, 4)
+                    }
+                    flatSection {
+                        DisclosureGroup(
+                            isExpanded: $isDevServersExpanded,
+                            content: {
+                                DevServerTaskSection(
+                                    snapshot: detailSnapshot,
+                                    projectId: projectId
+                                )
+                                .padding(.top, 6)
+                            },
+                            label: {
+                                TaskSidebarSectionTitle(
+                                    String(localized: "devservers.sidebar.title",
+                                           defaultValue: "Dev Servers",
+                                           table: "TermLoop")
+                                )
+                            }
+                        )
                     }
                 }
                 .padding(10)
