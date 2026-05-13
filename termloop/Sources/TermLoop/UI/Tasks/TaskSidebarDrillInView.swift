@@ -14,6 +14,8 @@ struct TaskSidebarDrillInView: View {
     var columnTitle: (TaskColumnId) -> String = { $0.defaultTitle }
     var onRebind: ((UUID) -> Void)?
     var onOpenTaskSpec: ((UUID) -> Void)?
+    var onRefineTaskSpec: ((UUID) -> Void)?
+    var onExecuteTaskSpec: ((UUID) -> Void)?
     var onUpdateTitle: ((UUID, String) -> Void)?
     var onUpdateBrief: ((UUID, String?) -> Void)?
     var onCreateWorktree: ((UUID) -> Void)?
@@ -132,6 +134,12 @@ struct TaskSidebarDrillInView: View {
                 TaskSpecSection(
                     snapshot: snap,
                     onOpen: { onOpenTaskSpec?(snap.id) },
+                    onRefineWithAgent: onRefineTaskSpec.map { refine in
+                        { refine(snap.id) }
+                    },
+                    onExecuteWithAgent: onExecuteTaskSpec.map { execute in
+                        { execute(snap.id) }
+                    },
                     unwrapped: true
                 )
             }

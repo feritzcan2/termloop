@@ -69,6 +69,16 @@ struct TaskSidebarRouter: View {
                         openTaskSpec(taskId: id, coordinator: c, title: detailSnapshot.title)
                     }
                 },
+                onRefineTaskSpec: coordinator.map { c in
+                    { id in
+                        refineTaskSpec(taskId: id, coordinator: c)
+                    }
+                },
+                onExecuteTaskSpec: coordinator.map { c in
+                    { id in
+                        executeTaskSpec(taskId: id, coordinator: c)
+                    }
+                },
                 onUpdateTitle: coordinator.map { c in
                     { id, title in try? c.updateTitle(taskId: id, title: title) }
                 },
@@ -118,6 +128,64 @@ struct TaskSidebarRouter: View {
             print("TaskSidebarRouter.openTaskSpec failed: \(error)")
             #endif
         }
+    }
+
+    private func refineTaskSpec(taskId: UUID, coordinator: TaskLifecycleCoordinator) {
+        guard let task = store.fileSnapshot().tasks.first(where: { $0.id == taskId }) else {
+            return
+        }
+        do {
+            let path = try coordinator.ensureTaskSpecFile(taskId: taskId)
+            TaskQuickActions.refineTaskSpecWithAgent(
+                taskTitle: task.title,
+                taskFilePath: path,
+                workspaceId: task.workspaceId,
+                projectId: store.projectId
+            )
+        } catch {
+            #if DEBUG
+            print("TaskSidebarRouter.refineTaskSpec failed: \(error)")
+            #endif
+        }
+    }
+
+    private func executeTaskSpec(taskId: UUID, coordinator: TaskLifecycleCoordinator) {
+        guard let task = store.fileSnapshot().tasks.first(where: { $0.id == taskId }) else {
+            return
+        }
+        do {
+            let path = try coordinator.ensureTaskSpecFile(taskId: taskId)
+            TaskQuickActions.executeTaskSpecWithAgent(
+                taskTitle: task.title,
+                workspaceId: task.workspaceId,
+                projectId: store.projectId,
+                promptText: executionPromptText(for: task, taskFilePath: path)
+            )
+        } catch {
+            #if DEBUG
+            print("TaskSidebarRouter.executeTaskSpec failed: \(error)")
+            #endif
+        }
+    }
+
+    private func executionPromptText(for task: TaskRecord, taskFilePath: String) -> String {
+        let taskMarkdown = (try? String(contentsOfFile: taskFilePath, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let taskMarkdown, !taskMarkdown.isEmpty {
+            return taskMarkdown
+        }
+        let body = task.remoteWorkItem
+            .flatMap { RemoteWorkItemSnapshotStore.shared.snapshot(for: $0) }?
+            .bodyMarkdown?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let body, !body.isEmpty {
+            return body
+        }
+        if let brief = task.brief?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !brief.isEmpty {
+            return brief
+        }
+        return task.title.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func beginCreateRemoteItem() {

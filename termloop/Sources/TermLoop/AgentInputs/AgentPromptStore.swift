@@ -705,10 +705,6 @@ Only questions that block correct implementation.
                 sourceURL: "https://raw.githubusercontent.com/OpenHands/OpenHands/main/openhands/agenthub/codeact_agent/prompts/system_prompt.j2",
                 license: "MIT / Apache-2.0",
                 body: """
-You implement a scoped coding task in {{workspace_path}} on branch "{{branch_name}}".
-
-This template is adapted from OpenHands' coding-agent workflow and Aider's scope discipline: solve the requested technical problem, edit files directly, keep scope tight, and verify the change.
-
 Rules:
 - If the user asks a question, answer it; do not start changing code unless the request implies implementation.
 - Read the relevant files before editing.

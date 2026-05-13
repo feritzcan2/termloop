@@ -6,10 +6,9 @@ import Foundation
 /// Quick actions available from the Tasks page (sidebar drill-in actions and
 /// card context menus).
 ///
-/// Per CLAUDE.md: agent-spawn must use the existing AgentInputs prompt
-/// templates. We never inline a prompt string here; instead we route through
-/// the existing Quick Action affordance which shows the user the template
-/// picker.
+/// Per CLAUDE.md, agent-spawn instructions must stay visible. These actions
+/// route through Quick Action so templates or pasted task text remain visible
+/// and editable before launch.
 @MainActor
 enum TaskQuickActions {
     /// Switch the active sidebar tab to `.work` and select the bound workspace.
@@ -48,6 +47,53 @@ enum TaskQuickActions {
         TaskQuickActionsBridge.requestNewAgentPanel(workspaceId)
     }
 
+    /// Open Quick Action with the task-spec refiner template selected. The
+    /// template owns the prompt text; Tasks only supplies visible variables and
+    /// workspace/project context.
+    static func refineTaskSpecWithAgent(
+        taskTitle: String,
+        taskFilePath: String,
+        workspaceId: UUID?,
+        projectId: UUID
+    ) {
+        let trimmedPath = taskFilePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPath.isEmpty else { return }
+        if let workspaceId {
+            showWorkspaceInline(workspaceId: workspaceId)
+        }
+        TaskQuickActionsBridge.requestRefineTaskSpecAgent(
+            TaskSpecRefinementRequest(
+                taskTitle: taskTitle,
+                taskFilePath: trimmedPath,
+                workspaceId: workspaceId,
+                projectId: projectId
+            )
+        )
+    }
+
+    /// Open Quick Action as a free-prompt run with the task text pasted into
+    /// the composer. No execution system prompt/template is selected here.
+    static func executeTaskSpecWithAgent(
+        taskTitle: String,
+        workspaceId: UUID?,
+        projectId: UUID,
+        promptText: String
+    ) {
+        let trimmedPrompt = promptText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPrompt.isEmpty else { return }
+        if let workspaceId {
+            showWorkspaceInline(workspaceId: workspaceId)
+        }
+        TaskQuickActionsBridge.requestExecuteTaskSpecAgent(
+            TaskSpecExecutionRequest(
+                taskTitle: taskTitle,
+                workspaceId: workspaceId,
+                projectId: projectId,
+                promptText: trimmedPrompt
+            )
+        )
+    }
+
     static func openTaskFile(path: String, displayTitle: String) {
         MarkdownDocumentStore.shared.open(
             fileURL: URL(fileURLWithPath: path, isDirectory: false).resolvingSymlinksInPath(),
@@ -58,6 +104,20 @@ enum TaskQuickActions {
     }
 }
 
+struct TaskSpecRefinementRequest {
+    let taskTitle: String
+    let taskFilePath: String
+    let workspaceId: UUID?
+    let projectId: UUID
+}
+
+struct TaskSpecExecutionRequest {
+    let taskTitle: String
+    let workspaceId: UUID?
+    let projectId: UUID
+    let promptText: String
+}
+
 /// Indirection point so the actions don't directly couple to AppDelegate /
 /// TabManager APIs. The real bridge is set at app startup; tests can stub.
 @MainActor
@@ -66,4 +126,6 @@ public enum TaskQuickActionsBridge {
     public static var requestSelectWorkspaceInline: (UUID) -> Bool = { _ in false }
     public static var requestOpenWorktreePath: (String) -> Void = { _ in }
     public static var requestNewAgentPanel: (UUID) -> Void = { _ in }
+    static var requestRefineTaskSpecAgent: (TaskSpecRefinementRequest) -> Void = { _ in }
+    static var requestExecuteTaskSpecAgent: (TaskSpecExecutionRequest) -> Void = { _ in }
 }

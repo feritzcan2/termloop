@@ -2147,6 +2147,12 @@ enum TermLoopHooks {
         TaskQuickActionsBridge.requestNewAgentPanel = { workspaceId in
             TermLoopHooks.presentTaskAgentQuickAction(workspaceId: workspaceId)
         }
+        TaskQuickActionsBridge.requestRefineTaskSpecAgent = { request in
+            TermLoopHooks.presentTaskSpecRefinerQuickAction(request)
+        }
+        TaskQuickActionsBridge.requestExecuteTaskSpecAgent = { request in
+            TermLoopHooks.presentTaskSpecExecutionQuickAction(request)
+        }
     }
 
     static func handleProjectNumberShortcut(digit: Int?, tabManager: TabManager?) -> Bool {
@@ -2994,6 +3000,64 @@ extension TermLoopHooks {
                 promptText: nil,
                 launchSource: .quickAction,
                 reasonTag: "quickAction.freePrompt"
+            )
+        )
+    }
+
+    static func presentTaskSpecRefinerQuickAction(_ request: TaskSpecRefinementRequest) {
+        let templateId = "task-refiner-agent"
+        guard AgentTemplateStore.shared.template(id: templateId) != nil else {
+            #if DEBUG
+            dlog("tasks.refinerQuickAction.missingTemplate id=\(templateId)")
+            #endif
+            return
+        }
+        let trimmedTaskTitle = request.taskTitle
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = trimmedTaskTitle.isEmpty
+            ? String(localized: "tasks.refiner.taskFallbackTitle",
+                     defaultValue: "task.md",
+                     table: "TermLoop")
+            : trimmedTaskTitle
+        let displayTitle = String(localized: "tasks.refiner.agentTitle",
+                                  defaultValue: "Refiner Agent",
+                                  table: "TermLoop")
+        QuickActionController.shared.present(
+            prefill: QuickActionPresentationRequest(
+                initialSurface: .run,
+                targetWorkspaceId: request.workspaceId,
+                composition: .template(id: templateId),
+                advancedTitle: displayTitle,
+                variableValues: [
+                    "task_file_path": request.taskFilePath,
+                    "task_title": title
+                ],
+                launchSource: .quickAction,
+                reasonTag: "tasks.refineTaskSpec",
+                projectId: request.projectId
+            )
+        )
+    }
+
+    static func presentTaskSpecExecutionQuickAction(_ request: TaskSpecExecutionRequest) {
+        let trimmedTaskTitle = request.taskTitle
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayTitle = trimmedTaskTitle.isEmpty
+            ? String(localized: "tasks.executor.agentTitle",
+                     defaultValue: "Task Agent",
+                     table: "TermLoop")
+            : trimmedTaskTitle
+        QuickActionController.shared.present(
+            prefill: QuickActionPresentationRequest(
+                initialSurface: .run,
+                targetWorkspaceId: request.workspaceId,
+                promptText: request.promptText,
+                advancedSystemPrompt: "",
+                systemPromptDocumentId: "",
+                advancedTitle: displayTitle,
+                launchSource: .quickAction,
+                reasonTag: "tasks.executeTaskSpec",
+                projectId: request.projectId
             )
         )
     }
