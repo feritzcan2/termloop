@@ -203,6 +203,13 @@ private struct DevServerTaskSectionContent: View {
             .font(.system(size: 11, weight: .medium))
             .buttonStyle(.borderless)
 
+            Button(rowDeleteTitle(for: profile)) {
+                deleteProfileRow(profile)
+            }
+            .font(.system(size: 11, weight: .medium))
+            .buttonStyle(.borderless)
+            .foregroundStyle(pendingDeleteProfileId == profile.id ? .red : .secondary)
+
             if let current, current.isActive {
                 Button(String(localized: "devservers.sidebar.restart", defaultValue: "Restart", table: "TermLoop")) {
                     restart(profile)
@@ -577,6 +584,13 @@ private struct DevServerTaskSectionContent: View {
         return String(localized: "devservers.editor.delete", defaultValue: "Delete", table: "TermLoop")
     }
 
+    private func rowDeleteTitle(for profile: DevServerProfile) -> String {
+        if pendingDeleteProfileId == profile.id {
+            return String(localized: "devservers.editor.confirmDelete", defaultValue: "Confirm delete", table: "TermLoop")
+        }
+        return String(localized: "devservers.editor.delete", defaultValue: "Delete", table: "TermLoop")
+    }
+
     private func start(_ profile: DevServerProfile) {
         runAction {
             _ = try DevServerRunCoordinator.shared.start(
@@ -668,6 +682,23 @@ private struct DevServerTaskSectionContent: View {
             saveAndTestState = nil
             draft = .newProfile()
             showDraftEditor = !profileStore.profiles.isEmpty
+        }
+    }
+
+    private func deleteProfileRow(_ profile: DevServerProfile) {
+        guard pendingDeleteProfileId == profile.id else {
+            pendingDeleteProfileId = profile.id
+            return
+        }
+        runAction {
+            if let loadError = profileStore.loadError { throw loadError }
+            stopRuns(profileId: profile.id)
+            try profileStore.delete(profileId: profile.id)
+            pendingDeleteProfileId = nil
+            if draft.originalId == profile.id {
+                draft = .newProfile()
+                showDraftEditor = false
+            }
         }
     }
 
