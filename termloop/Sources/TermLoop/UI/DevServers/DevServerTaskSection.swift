@@ -71,11 +71,37 @@ private struct DevServerTaskSectionContent: View {
     }
 
     private var emptyState: some View {
-        messageCard(
-            icon: "server.rack",
-            title: String(localized: "devservers.sidebar.empty.title", defaultValue: "No dev server profiles", table: "TermLoop"),
-            detail: String(localized: "devservers.sidebar.empty.detail", defaultValue: "Create or edit .termloop/devservers.json to add project run profiles.", table: "TermLoop")
-        )
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 7) {
+                Image(systemName: "server.rack")
+                    .foregroundStyle(.secondary)
+                Text(String(localized: "devservers.sidebar.empty.title", defaultValue: "No dev server profiles", table: "TermLoop"))
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer(minLength: 0)
+            }
+            Text(String(localized: "devservers.sidebar.empty.detail", defaultValue: "Create or edit .termloop/devservers.json to add project run profiles.", table: "TermLoop"))
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                Button(String(localized: "devservers.agent.generateProfile", defaultValue: "Generate profile with agent", table: "TermLoop")) {
+                    openProfileGenerator()
+                }
+                .buttonStyle(.borderless)
+                .font(.system(size: 11, weight: .semibold))
+
+                Button(String(localized: "devservers.sidebar.empty.openConfig", defaultValue: "Open config", table: "TermLoop")) {
+                    openProfileFile()
+                }
+                .buttonStyle(.borderless)
+                .font(.system(size: 11, weight: .medium))
+            }
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.56))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var headerActions: some View {
