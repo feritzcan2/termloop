@@ -34,13 +34,14 @@ public final class DevServerRunCoordinator {
     ) throws -> DevServerRunSnapshot {
         let resolved = try resolve(projectId: explicitProjectId, taskId: taskId, profileId: profileId)
         let key = DevServerRunKey(projectId: resolved.projectId, taskId: taskId, profileId: profileId)
+        let delayLaunchForRestart: Bool
         if restart {
-            if stopImmediately(key: key) {
-                Thread.sleep(forTimeInterval: 0.15)
-            }
+            delayLaunchForRestart = stopImmediately(key: key)
         } else if let active = runStore.activeSnapshot(for: key) {
             if openOnURL { openOnURLRunIds.insert(active.runId) }
             return active
+        } else {
+            delayLaunchForRestart = false
         }
 
         let run = runStore.start(
@@ -63,13 +64,50 @@ public final class DevServerRunCoordinator {
             profileEnv: resolved.profile.env
         )
 
+        if delayLaunchForRestart {
+            launchAfterRestartDelay(run: run, resolved: resolved, environment: env)
+            return run
+        }
+
+        return try launchResolvedRun(run: run, resolved: resolved, environment: env)
+    }
+
+    private func launchAfterRestartDelay(
+        run: DevServerRunSnapshot,
+        resolved: ResolvedStartContext,
+        environment: [String: String]
+    ) {
+        _Concurrency.Task { [weak self] in
+            try? await _Concurrency.Task.sleep(nanoseconds: 150_000_000)
+            await MainActor.run {
+                guard let self,
+                      self.runStore.snapshot(runId: run.runId)?.isActive == true else {
+                    return
+                }
+                do {
+                    try self.launchResolvedRun(run: run, resolved: resolved, environment: environment)
+                } catch {
+                    let message = error.localizedDescription
+                    _ = self.runStore.appendLog(runId: run.runId, stream: .system, text: message)
+                    _ = self.runStore.markFailed(runId: run.runId, message: message)
+                }
+            }
+        }
+    }
+
+    @discardableResult
+    private func launchResolvedRun(
+        run: DevServerRunSnapshot,
+        resolved: ResolvedStartContext,
+        environment: [String: String]
+    ) throws -> DevServerRunSnapshot {
         if setupStateStore(for: resolved).needsSetup(
             profile: resolved.profile,
             worktreePath: resolved.worktreeRoot.path
         ) {
-            return try launchSetup(run: run, resolved: resolved, environment: env)
+            return try launchSetup(run: run, resolved: resolved, environment: environment)
         }
-        return try launchDevServer(runId: run.runId, resolved: resolved, environment: env)
+        return try launchDevServer(runId: run.runId, resolved: resolved, environment: environment)
     }
 
     private func launchSetup(
