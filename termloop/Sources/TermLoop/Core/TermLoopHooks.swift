@@ -1647,7 +1647,7 @@ enum TermLoopHooks {
     #endif
 
     /// Conditionally swaps the terminal content for TermLoop-owned overlays.
-    /// A SwiftUI `.overlay` can't visually cover cmux's terminal
+    /// A SwiftUI `.overlay` can't visually cover TermLoop's terminal
     /// surface because Ghostty renders into a window-level AppKit portal
     /// view (`WindowTerminalHostView`) that sits above SwiftUI in the
     /// NSWindow's view tree. Removing the SwiftUI anchor entirely — by
@@ -2144,8 +2144,11 @@ enum TermLoopHooks {
         TaskQuickActionsBridge.requestOpenWorktreePath = { path in
             WorktreeRepairCoordinator.shared.openFolder(path: path)
         }
-        TaskQuickActionsBridge.requestNewAgentPanel = { workspaceId in
-            TermLoopHooks.presentTaskAgentQuickAction(workspaceId: workspaceId)
+        TaskQuickActionsBridge.requestNewAgentPanel = { context, onLaunchedWorkspaceId in
+            TermLoopHooks.presentTaskAgentQuickAction(
+                context: context,
+                onLaunchedWorkspaceId: onLaunchedWorkspaceId
+            )
         }
         TaskQuickActionsBridge.requestRefineTaskSpecAgent = { request in
             TermLoopHooks.presentTaskSpecRefinerQuickAction(request)
@@ -2308,7 +2311,7 @@ enum TermLoopHooks {
 
     private static func openCodePluginSource() -> String {
         #"""
-export const CmuxTermLoop = async ({ $, directory }) => {
+export const TermLoopOpenCode = async ({ $, directory }) => {
   const sessionStatus = new Map()
   const seenUserMessageIds = new Set()
 
@@ -3004,6 +3007,31 @@ extension TermLoopHooks {
         )
     }
 
+
+    static func presentTaskAgentQuickAction(
+        context: TaskAgentLaunchContext,
+        onLaunchedWorkspaceId: ((UUID) -> Void)? = nil
+    ) {
+        QuickActionController.shared.present(
+            prefill: QuickActionPresentationRequest(
+                initialSurface: .run,
+                promptText: nil,
+                launchSource: .quickAction,
+                reasonTag: "quickAction.freePrompt",
+                projectId: context.projectId,
+                runTarget: .worktree(
+                    projectId: context.projectId,
+                    path: context.cwdPath,
+                    branch: context.branchName,
+                    workspaceId: context.targetWorkspaceId
+                ),
+                onLaunchedWorkspace: { workspace in
+                    onLaunchedWorkspaceId?(workspace.id)
+                }
+            )
+        )
+    }
+
     static func presentTaskSpecRefinerQuickAction(_ request: TaskSpecRefinementRequest) {
         let templateId = "task-refiner-agent"
         guard AgentTemplateStore.shared.template(id: templateId) != nil else {
@@ -3047,6 +3075,14 @@ extension TermLoopHooks {
                      defaultValue: "Task Agent",
                      table: "TermLoop")
             : trimmedTaskTitle
+        let runTarget = request.launchContext.map { context in
+            QuickActionRunTarget.worktree(
+                projectId: context.projectId,
+                path: context.cwdPath,
+                branch: context.branchName,
+                workspaceId: context.targetWorkspaceId
+            )
+        }
         QuickActionController.shared.present(
             prefill: QuickActionPresentationRequest(
                 initialSurface: .run,
@@ -3057,7 +3093,8 @@ extension TermLoopHooks {
                 advancedTitle: displayTitle,
                 launchSource: .quickAction,
                 reasonTag: "tasks.executeTaskSpec",
-                projectId: request.projectId
+                projectId: request.projectId,
+                runTarget: runTarget
             )
         )
     }
@@ -3079,11 +3116,11 @@ extension TermLoopHooks {
 #if DEBUG
 import Combine
 
-/// Instruments each root-level `@StateObject` publisher in `cmuxApp` with a
+/// Instruments each root-level `@StateObject` publisher in `TermLoopApp` with a
 /// `dlog()` tick so we can count who ticks how often during normal app use.
 /// Enabled only in DEBUG builds; entirely removed in release.
 ///
-/// Usage (in `cmuxApp.swift` body, inside `WindowGroup { ContentView(...) ... }`):
+/// Usage (in `termloopApp.swift` body, inside `WindowGroup { ContentView(...) ... }`):
 /// ```
 /// // MARK: termloop-hook
 /// .background(TermLoopRootTickInstrumentation(
@@ -3092,7 +3129,7 @@ import Combine
 ///     sidebarState: sidebarState,
 ///     sidebarSelectionState: sidebarSelectionState,
 ///     fileExplorerState: fileExplorerState,
-///     cmuxConfigStore: cmuxConfigStore
+///     termloopConfigStore: termloopConfigStore
 /// ))
 /// // MARK: /termloop-hook
 /// ```
@@ -3103,7 +3140,7 @@ struct TermLoopRootTickInstrumentation: View {
     let sidebarState: SidebarState
     let sidebarSelectionState: SidebarSelectionState
     let fileExplorerState: FileExplorerState
-    let cmuxConfigStore: CmuxConfigStore
+    let termloopConfigStore: CmuxConfigStore
 
     var body: some View {
         Color.clear
@@ -3124,8 +3161,8 @@ struct TermLoopRootTickInstrumentation: View {
             .onReceive(fileExplorerState.objectWillChange) { _ in
                 dlog("roottick.fileExplorerState")
             }
-            .onReceive(cmuxConfigStore.objectWillChange) { _ in
-                dlog("roottick.cmuxConfigStore")
+            .onReceive(termloopConfigStore.objectWillChange) { _ in
+                dlog("roottick.termloopConfigStore")
             }
     }
 }
@@ -3493,7 +3530,6 @@ enum TermLoopV2KnownRefsRefreshGate {
              "workspace.kill_claude_session",
              "workspace.prepare_claude_resume",
              "workspace.spawn_claude_session",
-             "workspace.claude_system_prompt",
              "workspace.agent_system_prompt":
             return false
         default:

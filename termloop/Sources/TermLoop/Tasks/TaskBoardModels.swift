@@ -284,7 +284,6 @@ public struct TaskRecord: Codable, Identifiable, Equatable, Hashable, Sendable {
 public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
     public var remoteItemsEnabled: Bool
     public var syncAssignedToMe: Bool
-    public var syncColumnMovesToRemote: Bool
     public var provider: RemoteWorkItemProviderId
     /// Per-provider selected container so switching tabs preserves each provider's project/repo.
     public var providerContainers: [RemoteWorkItemProviderId: String]
@@ -301,7 +300,6 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
     public init(
         remoteItemsEnabled: Bool = false,
         syncAssignedToMe: Bool = false,
-        syncColumnMovesToRemote: Bool = false,
         provider: RemoteWorkItemProviderId = .jira,
         providerContainers: [RemoteWorkItemProviderId: String] = [:],
         jiraSite: String? = nil,
@@ -313,7 +311,6 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
     ) {
         self.remoteItemsEnabled = remoteItemsEnabled
         self.syncAssignedToMe = remoteItemsEnabled && syncAssignedToMe
-        self.syncColumnMovesToRemote = remoteItemsEnabled && syncAssignedToMe && syncColumnMovesToRemote
         self.provider = provider
         var containers = providerContainers.compactMapValues {
             $0.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
@@ -333,7 +330,6 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case remoteItemsEnabled
         case syncAssignedToMe
-        case syncColumnMovesToRemote
         case provider
         case providerContainers
         case jiraSite
@@ -348,9 +344,7 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.remoteItemsEnabled = try container.decodeIfPresent(Bool.self, forKey: .remoteItemsEnabled) ?? false
         let decodedSyncAssigned = try container.decodeIfPresent(Bool.self, forKey: .syncAssignedToMe) ?? false
-        let decodedSyncColumns = try container.decodeIfPresent(Bool.self, forKey: .syncColumnMovesToRemote) ?? false
         self.syncAssignedToMe = remoteItemsEnabled && decodedSyncAssigned
-        self.syncColumnMovesToRemote = remoteItemsEnabled && decodedSyncAssigned && decodedSyncColumns
         self.provider = try container.decodeIfPresent(RemoteWorkItemProviderId.self, forKey: .provider) ?? .jira
         var providerContainers = try container.decodeIfPresent([RemoteWorkItemProviderId: String].self, forKey: .providerContainers) ?? [:]
         providerContainers = providerContainers.compactMapValues {
@@ -385,7 +379,6 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
 
         try container.encode(remoteItemsEnabled, forKey: .remoteItemsEnabled)
         try container.encode(remoteItemsEnabled && syncAssignedToMe, forKey: .syncAssignedToMe)
-        try container.encode(remoteItemsEnabled && syncAssignedToMe && syncColumnMovesToRemote, forKey: .syncColumnMovesToRemote)
         try container.encode(provider, forKey: .provider)
         try container.encode(containers, forKey: .providerContainers)
         try container.encodeIfPresent(jiraSite?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty, forKey: .jiraSite)
@@ -405,7 +398,7 @@ public struct TaskColumnSettings: Codable, Equatable, Sendable, Identifiable {
     public var columnId: TaskColumnId
     public var title: String
     public var isEnabled: Bool
-    /// Optional provider status label used when syncColumnMovesToRemote is enabled.
+    /// Optional provider status label used when board moves are mirrored to remote work items.
     public var remoteStatusLabel: String?
 
     public init(

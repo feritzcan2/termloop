@@ -19,6 +19,7 @@ struct TaskSidebarDrillInView: View {
     var onUpdateTitle: ((UUID, String) -> Void)?
     var onUpdateBrief: ((UUID, String?) -> Void)?
     var onCreateWorktree: ((UUID) -> Void)?
+    var onStartAgent: ((UUID) -> Void)?
     var onOpenSettings: () -> Void = {}
 
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
@@ -53,8 +54,7 @@ struct TaskSidebarDrillInView: View {
                                 )
                             },
                             onStartAgent: {
-                                guard let workspaceId = detailSnapshot.workspaceId else { return }
-                                TaskQuickActions.startAgentFromTasks(workspaceId: workspaceId)
+                                onStartAgent?(detailSnapshot.id)
                             },
                             onCreateWorktree: {
                                 onCreateWorktree?(detailSnapshot.id)

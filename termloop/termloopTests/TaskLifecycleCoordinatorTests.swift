@@ -42,6 +42,22 @@ final class TaskLifecycleCoordinatorTests: XCTestCase {
         XCTAssertEqual(snap?.cards.first?.title, "first")
     }
 
+    func testRestoreTaskReturnsArchivedTaskToActiveColumn() throws {
+        let id = try coordinator.createTask(title: "first", columnId: .backlog)
+        try coordinator.archiveTask(id)
+        XCTAssertEqual(store.archivedSnapshots.first?.id, id)
+        XCTAssertFalse(store.columnSnapshots.contains { column in
+            column.cards.contains { $0.id == id }
+        })
+
+        try coordinator.restoreTask(id)
+
+        XCTAssertTrue(store.archivedSnapshots.isEmpty)
+        let snap = store.columnSnapshots.first { $0.id == .backlog }
+        XCTAssertEqual(snap?.cards.first?.id, id)
+        XCTAssertNil(store.fileSnapshot().tasks.first { $0.id == id }?.archivedAt)
+    }
+
     func testMoveManualTaskToInProgressDoesNotProvision() async throws {
         let id = try coordinator.createTask(title: "feat", columnId: .todo)
         try await coordinator.moveColumn(taskId: id, to: .inProgress)

@@ -71,7 +71,7 @@ struct QuickActionAutocompleteRow: View {
     private var iconName: String {
         switch item.kind {
         case .folder: return "folder"
-        case .workspace: return "square.stack.3d.up"
+        case .worktree: return "arrow.triangle.branch"
         case .markdown: return "doc.text"
         }
     }
@@ -79,7 +79,7 @@ struct QuickActionAutocompleteRow: View {
     private var iconTint: Color {
         switch item.kind {
         case .folder: return Color(red: 0.73, green: 0.55, blue: 1.0)
-        case .workspace: return Color(red: 0.30, green: 0.82, blue: 0.76)
+        case .worktree: return Color(red: 0.30, green: 0.82, blue: 0.76)
         case .markdown: return Color.secondary
         }
     }

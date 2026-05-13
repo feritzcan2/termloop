@@ -172,7 +172,7 @@ final class AgentPromptStore: ObservableObject {
         case .systemPromptTemplate:
             return "Write reusable system instructions here."
         case .bridgeSourcePrompt:
-            return "Write the source-side handoff body. Use placeholders like {{workspace_title}} and {{cwd}}."
+            return "Write the source-side handoff body. Use placeholders like {{cwd}}."
         case .bridgeTargetPrompt:
             return "Write the target-side system instructions. Use placeholders like {{source_agent}}."
         case .forkHandoffPrompt:
@@ -376,7 +376,7 @@ extension AgentPromptStore {
                 id: forkHandoffDocumentID,
                 title: "Fork handoff default prompt",
                 kind: .forkHandoffPrompt,
-                subtitle: "Prefills Quick Action when a user forks an active workspace into another agent.",
+                subtitle: "Prefills Quick Action when a user forks an active session into another agent.",
                 body: ForkHandoffPromptDefaults.defaultTemplateBody,
                 scope: .builtin,
                 sourceURL: nil,
@@ -475,7 +475,7 @@ extension AgentPromptStore {
                 sourceURL: "https://raw.githubusercontent.com/danielmiessler/fabric/main/data/patterns/review_code/system.md",
                 license: "MIT",
                 body: """
-You are running an edge-case focused code review for {{workspace_path}} on branch "{{branch_name}}".
+You are running an edge-case focused code review for {{worktree_path}} on branch "{{branch_name}}".
 
 This template is adapted from Fabric's `review_code` pattern: review the diff systematically, prioritize concrete defects, and explain risks with evidence.
 
@@ -542,7 +542,7 @@ Never force-push. Never invent tests. Do not include marketing language.
                 sourceURL: "https://raw.githubusercontent.com/danielmiessler/fabric/main/data/patterns/review_code/system.md",
                 license: "MIT",
                 body: """
-You are a senior code reviewer for {{workspace_path}} on branch "{{branch_name}}".
+You are a senior code reviewer for {{worktree_path}} on branch "{{branch_name}}".
 
 This template is adapted from Fabric's `review_code` pattern: understand context first, analyze systematically, and return prioritized concrete recommendations.
 
@@ -568,13 +568,13 @@ Each finding must include `file:line` or the closest available diff hunk, the ri
             ossTemplateSystemDocument(
                 id: "system.template.save-agent",
                 title: "Change Summary — system instructions",
-                subtitle: "OSS-derived system instructions for summarizing workspace changes.",
+                subtitle: "OSS-derived system instructions for summarizing worktree changes.",
                 template: "save-agent",
                 sourceName: "Fabric summarize_git_diff",
                 sourceURL: "https://raw.githubusercontent.com/danielmiessler/fabric/main/data/patterns/summarize_git_diff/system.md",
                 license: "MIT",
                 body: """
-You summarize workspace changes in {{workspace_path}} on branch "{{branch_name}}".
+You summarize worktree changes in {{worktree_path}} on branch "{{branch_name}}".
 
 This template is adapted from Fabric's `summarize_git_diff` pattern: produce a concise, human-readable change summary in conventional-commit style.
 
@@ -604,7 +604,7 @@ Print the file path and stop. If there is no diff, write "No local changes found
                 sourceURL: "https://raw.githubusercontent.com/danielmiessler/fabric/main/data/patterns/summarize_git_diff/system.md",
                 license: "MIT",
                 body: """
-You summarize git diffs for {{workspace_path}} on branch "{{branch_name}}".
+You summarize git diffs for {{worktree_path}} on branch "{{branch_name}}".
 
 This template is adapted from Fabric's `summarize_git_diff` pattern: produce a short conventional-commit style title and compact change bullets.
 
@@ -633,7 +633,7 @@ Do not invent intent or tests. If there is no diff, say "No local changes found.
                 sourceURL: "https://raw.githubusercontent.com/danielmiessler/fabric/main/data/patterns/explain_code/system.md",
                 license: "MIT",
                 body: """
-You explain code, configuration, documentation, or terminal output from {{workspace_path}}.
+You explain code, configuration, documentation, or terminal output from {{worktree_path}}.
 
 This template is adapted from Fabric's `explain_code` pattern: classify the input, explain the important behavior, and answer the user's concrete question.
 
@@ -662,7 +662,7 @@ Use only the sections that fit the input. Keep it concise and evidence-based.
                 sourceURL: "https://raw.githubusercontent.com/danielmiessler/fabric/main/data/patterns/create_prd/system.md",
                 license: "MIT",
                 body: """
-You turn a feature idea into a scoped product and implementation plan for {{workspace_path}}.
+You turn a feature idea into a scoped product and implementation plan for {{worktree_path}}.
 
 This template is adapted from Fabric's `create_prd` and `create_design_document` patterns: clarify objectives, users, requirements, architecture, risks, and open questions.
 
@@ -736,7 +736,7 @@ Final output:
                 sourceURL: "https://raw.githubusercontent.com/danielmiessler/fabric/main/data/patterns/analyze_logs/system.md",
                 license: "MIT",
                 body: """
-You triage logs, errors, alerts, or incident notes for {{workspace_path}}.
+You triage logs, errors, alerts, or incident notes for {{worktree_path}}.
 
 This template is adapted from Fabric's `analyze_logs` and `analyze_incident` patterns: extract symptoms, evidence, likely causes, impact, and concrete remediation steps from the provided data.
 
@@ -773,7 +773,7 @@ Longer-term fixes, monitoring, or tests.
                 sourceURL: "https://raw.githubusercontent.com/danielmiessler/fabric/main/data/patterns/explain_docs/system.md",
                 license: "MIT",
                 body: """
-You write or improve project documentation in {{workspace_path}}.
+You write or improve project documentation in {{worktree_path}}.
 
 This template is adapted from Fabric's `explain_docs` and `generate_code_rules` patterns: turn source material into clear usage instructions and concise rules.
 
@@ -800,7 +800,7 @@ Output should include the touched docs and any verification performed.
                 kind: .systemPromptTemplate,
                 subtitle: "Default system instructions for the Scattered Orchestration Finder template.",
                 body: """
-You are the Scattered Orchestration Finder for {{workspace_path}} on branch "{{branch_name}}".
+You are the Scattered Orchestration Finder for {{worktree_path}} on branch "{{branch_name}}".
 
 You are looking for one specific refactor class: write-side operations (state transitions, side-effects, dispatch) whose ordering, policy branching, and paired side-effects have drifted across multiple call sites. The fix is almost always one coordinator/lifecycle layer that owns the decisions and ordering, with pure helpers underneath.
 
@@ -1239,7 +1239,7 @@ When your `<position>` is empty for two consecutive turns, the debate has conver
                 kind: .systemPromptTemplate,
                 subtitle: "Default system instructions for the Project Keywords template.",
                 body: """
-You are the Project Keywords agent running in {{workspace_path}} (project "{{project_name}}").
+You are the Project Keywords agent running in {{worktree_path}} (project "{{project_name}}").
 
 Your job is to maintain a single file at `.termloop/project-keywords.md` that lists the project's important keywords — the kind of terms a user would say when asking someone to work on a part of this codebase (e.g. "worktree sidebar", "TCP bridge", "project layer", "AgentSpawner").
 

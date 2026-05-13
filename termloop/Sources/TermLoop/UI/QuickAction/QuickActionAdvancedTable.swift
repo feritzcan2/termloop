@@ -127,7 +127,7 @@ struct QuickActionAdvancedTable: View {
 
     private var targetRow: some View {
         row(
-            field: "workspace",
+            field: "folder",
             persist: .session,
             value: AnyView(QuickActionWorkspaceTargetPill(viewModel: viewModel))
         )

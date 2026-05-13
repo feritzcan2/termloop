@@ -89,7 +89,7 @@ final class ProjectScopeHookCleanerTests: XCTestCase {
                 "SessionStart": [
                     [
                         "hooks": [
-                            ["type": "command", "command": "cmux gemini-hook session-start"]
+                            ["type": "command", "command": "termloop gemini-hook session-start"]
                         ]
                     ] as [String: Any]
                 ]
@@ -111,17 +111,16 @@ final class ProjectScopeHookCleanerTests: XCTestCase {
             agent: .claude
         ))
         XCTAssertTrue(ProjectScopeHookCleaner.isTermLoopOwnedCommand(
-            "CMUX_BIN=\"${TERMLOOP_BUNDLED_CLI_PATH:-$(command -v termloop)}\" ; exec $CMUX_BIN gemini-hook stop",
+            "TERMLOOP_BIN=\"${TERMLOOP_BUNDLED_CLI_PATH:-$(command -v termloop)}\" ; exec $TERMLOOP_BIN gemini-hook stop",
             agent: .gemini
-        ))
-        // Legacy bundle-bash form — previously-written by older builds.
-        XCTAssertTrue(ProjectScopeHookCleaner.isTermLoopOwnedCommand(
-            "bash '/Applications/TermLoop.app/Contents/Resources/TermLoopHooks/claude/stop.sh'",
-            agent: .claude
         ))
         XCTAssertFalse(ProjectScopeHookCleaner.isTermLoopOwnedCommand(
             "/usr/local/bin/my-tool --arg",
             agent: .claude
+        ))
+        XCTAssertFalse(ProjectScopeHookCleaner.isTermLoopOwnedCommand(
+            "/usr/local/bin/my-codex-hook --arg",
+            agent: .codex
         ))
         // Wrong agent — not owned.
         XCTAssertFalse(ProjectScopeHookCleaner.isTermLoopOwnedCommand(
@@ -129,7 +128,7 @@ final class ProjectScopeHookCleanerTests: XCTestCase {
             agent: .codex
         ))
         XCTAssertFalse(ProjectScopeHookCleaner.isTermLoopOwnedCommand(
-            "bash '/.../TermLoopHooks/codex/stop.sh'",
+            "termloop codex-hook stop",
             agent: .claude
         ))
     }

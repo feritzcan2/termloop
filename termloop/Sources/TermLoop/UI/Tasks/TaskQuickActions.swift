@@ -3,6 +3,25 @@
 
 import Foundation
 
+public struct TaskAgentLaunchContext {
+    public let targetWorkspaceId: UUID?
+    public let projectId: UUID
+    public let cwdPath: String
+    public let branchName: String?
+
+    public init(
+        targetWorkspaceId: UUID?,
+        projectId: UUID,
+        cwdPath: String,
+        branchName: String?
+    ) {
+        self.targetWorkspaceId = targetWorkspaceId
+        self.projectId = projectId
+        self.cwdPath = cwdPath
+        self.branchName = branchName
+    }
+}
+
 /// Quick actions available from the Tasks page (sidebar drill-in actions and
 /// card context menus).
 ///
@@ -42,9 +61,11 @@ enum TaskQuickActions {
     /// Ask the existing Quick Action agent picker to open for the bound
     /// workspace without leaving the Tasks page. No prompt is supplied — the
     /// user picks a template in the existing UI.
-    static func startAgentFromTasks(workspaceId: UUID) {
-        showWorkspaceInline(workspaceId: workspaceId)
-        TaskQuickActionsBridge.requestNewAgentPanel(workspaceId)
+    static func startAgentFromTasks(
+        context: TaskAgentLaunchContext,
+        onLaunchedWorkspaceId: ((UUID) -> Void)? = nil
+    ) {
+        TaskQuickActionsBridge.requestNewAgentPanel(context, onLaunchedWorkspaceId)
     }
 
     /// Open Quick Action with the task-spec refiner template selected. The
@@ -77,7 +98,8 @@ enum TaskQuickActions {
         taskTitle: String,
         workspaceId: UUID?,
         projectId: UUID,
-        promptText: String
+        promptText: String,
+        launchContext: TaskAgentLaunchContext? = nil
     ) {
         let trimmedPrompt = promptText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedPrompt.isEmpty else { return }
@@ -89,7 +111,8 @@ enum TaskQuickActions {
                 taskTitle: taskTitle,
                 workspaceId: workspaceId,
                 projectId: projectId,
-                promptText: trimmedPrompt
+                promptText: trimmedPrompt,
+                launchContext: launchContext
             )
         )
     }
@@ -116,6 +139,7 @@ struct TaskSpecExecutionRequest {
     let workspaceId: UUID?
     let projectId: UUID
     let promptText: String
+    let launchContext: TaskAgentLaunchContext?
 }
 
 /// Indirection point so the actions don't directly couple to AppDelegate /
@@ -125,7 +149,7 @@ public enum TaskQuickActionsBridge {
     public static var requestFocusWorkspace: (UUID) -> Bool = { _ in false }
     public static var requestSelectWorkspaceInline: (UUID) -> Bool = { _ in false }
     public static var requestOpenWorktreePath: (String) -> Void = { _ in }
-    public static var requestNewAgentPanel: (UUID) -> Void = { _ in }
+    public static var requestNewAgentPanel: (TaskAgentLaunchContext, ((UUID) -> Void)?) -> Void = { _, _ in }
     static var requestRefineTaskSpecAgent: (TaskSpecRefinementRequest) -> Void = { _ in }
     static var requestExecuteTaskSpecAgent: (TaskSpecExecutionRequest) -> Void = { _ in }
 }

@@ -265,6 +265,9 @@ private struct TaskBoardCanvas: View {
                             },
                             onArchive: coordinator.map { c in
                                 { id in try? c.archiveTask(id) }
+                            },
+                            onDelete: coordinator.map { c in
+                                { id in try? c.deleteTask(id) }
                             }
                         )
                         .frame(width: columnWidth)

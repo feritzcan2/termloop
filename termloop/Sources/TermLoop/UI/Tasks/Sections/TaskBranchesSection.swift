@@ -224,7 +224,8 @@ struct TaskBranchesSection: View {
     }
 
     private var canStartAgent: Bool {
-        guard onStartAgent != nil, taskWorkspaceId != nil else { return false }
+        guard onStartAgent != nil else { return false }
+        guard taskWorkspaceId != nil || normalizedWorktreePath != nil else { return false }
         return provisionState != .pending
     }
 

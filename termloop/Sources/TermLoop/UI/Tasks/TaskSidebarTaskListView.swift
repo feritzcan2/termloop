@@ -13,6 +13,7 @@ struct TaskSidebarTaskListView: View {
     var onCreateRemoteItem: (() -> Void)?
     var isCreateRemoteItemDisabled = false
     var onOpenSettings: () -> Void = {}
+    var onRestoreArchived: ((UUID) -> Void)?
 
     @State private var isArchivedExpanded = false
     @State private var isAllTasksExpanded = false
@@ -52,7 +53,8 @@ struct TaskSidebarTaskListView: View {
                 allTasksDisclosure
                 archivedSection(
                     cards: store.archivedSnapshots,
-                    workItems: workItems
+                    workItems: workItems,
+                    onRestore: onRestoreArchived
                 )
                 TaskSidebarSettingsButton(action: onOpenSettings)
             }
@@ -128,7 +130,8 @@ struct TaskSidebarTaskListView: View {
     @ViewBuilder
     private func archivedSection(
         cards: [TaskCardSummary],
-        workItems: [UUID: TaskWorkItemSnapshot]
+        workItems: [UUID: TaskWorkItemSnapshot],
+        onRestore: ((UUID) -> Void)?
     ) -> some View {
         if !cards.isEmpty {
             VStack(alignment: .leading, spacing: 5) {
@@ -164,7 +167,8 @@ struct TaskSidebarTaskListView: View {
                             status: nil,
                             workItem: workItems[card.id],
                             isSelectable: false,
-                            isArchived: true
+                            isArchived: true,
+                            onRestore: onRestore
                         )
                     }
                 }
@@ -224,7 +228,8 @@ struct TaskSidebarTaskListView: View {
         status: TaskAgentStatusSummary?,
         workItem: TaskWorkItemSnapshot?,
         isSelectable: Bool = true,
-        isArchived: Bool = false
+        isArchived: Bool = false,
+        onRestore: ((UUID) -> Void)? = nil
     ) -> some View {
         let statusPresentation = TaskStatusPresentation(
             provisionState: card.provisionState,
@@ -257,10 +262,30 @@ struct TaskSidebarTaskListView: View {
                     .foregroundStyle(Color.accentColor)
                     .lineLimit(1)
             }
-            Text(trailingStatus)
-                .font(.system(size: 10, weight: .regular))
-                .foregroundStyle(statusColor)
-                .lineLimit(1)
+            if isArchived, let onRestore {
+                Button {
+                    onRestore(card.id)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.system(size: 9, weight: .semibold))
+                        Text(String(localized: "tasks.sidebar.archived.restore",
+                                    defaultValue: "restore", table: "TermLoop"))
+                            .font(.system(size: 10, weight: .regular))
+                    }
+                    .foregroundStyle(TermLoopSidebarTheme.dim)
+                    .lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .help(String(localized: "tasks.sidebar.archived.restore.help",
+                             defaultValue: "Restore task",
+                             table: "TermLoop"))
+            } else {
+                Text(trailingStatus)
+                    .font(.system(size: 10, weight: .regular))
+                    .foregroundStyle(statusColor)
+                    .lineLimit(1)
+            }
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)

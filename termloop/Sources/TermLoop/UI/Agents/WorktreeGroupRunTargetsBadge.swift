@@ -151,7 +151,7 @@ struct WorktreeGroupRunTargetsBadge: View {
             parts.append(url)
             if let scheme = URL(string: url)?.scheme?.lowercased(),
                scheme == "http" || scheme == "https" {
-                parts.append("⌘/⌥-click to open in cmux browser")
+                parts.append("⌘/⌥-click to open in TermLoop browser")
             }
         }
         return parts.joined(separator: "\n")

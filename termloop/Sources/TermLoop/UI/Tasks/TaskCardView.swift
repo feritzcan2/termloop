@@ -17,6 +17,7 @@ struct TaskCardView: View {
     var onCommandClick: ((TaskCardSummary) -> Void)?
     var onOpenAgentTerminal: ((TaskCardSummary, UUID) -> Void)?
     var onArchive: ((UUID) -> Void)?
+    var onDelete: ((UUID) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -81,6 +82,11 @@ struct TaskCardView: View {
             Button(String(localized: "tasks.card.menu.archive",
                           defaultValue: "Archive", table: "TermLoop")) {
                 onArchive?(card.id)
+            }
+            Divider()
+            Button(role: .destructive, action: { onDelete?(card.id) }) {
+                Text(String(localized: "tasks.card.menu.delete",
+                            defaultValue: "Delete", table: "TermLoop"))
             }
         }
     }

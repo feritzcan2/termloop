@@ -15,22 +15,22 @@ enum QuickActionError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .workspaceNotFound(let id):
+        case .workspaceNotFound:
             return String(
                 localized: "quickAction.error.workspaceNotFound",
-                defaultValue: "Target workspace \(id.uuidString.prefix(8)) is no longer available.",
+                defaultValue: "Selected folder is no longer available.",
                 table: "TermLoop"
             )
         case .spawnCwdFailed(let err):
             return String(
                 localized: "quickAction.error.spawnCwdFailed",
-                defaultValue: "Could not resolve workspace directory: \(err.localizedDescription)",
+                defaultValue: "Could not resolve folder: \(err.localizedDescription)",
                 table: "TermLoop"
             )
         case .workspaceScopeRequiresTarget:
             return String(
                 localized: "quickAction.error.workspaceScopeRequiresTarget",
-                defaultValue: "This template requires a workspace.",
+                defaultValue: "Pick a folder to run in.",
                 table: "TermLoop"
             )
         case .noCurrentProject:
@@ -79,7 +79,15 @@ enum QuickActionRunResolver {
         case previewFast
     }
 
-    static let autoFilledVariableNames: Set<String> = ["branch_name", "workspace_path", "repo_name", "project_name", "timestamp"]
+    static let autoFilledVariableNames: Set<String> = [
+        "branch_name",
+        "cwd",
+        "workspace_path",
+        "worktree_path",
+        "repo_name",
+        "project_name",
+        "timestamp"
+    ]
     private static let timestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -288,6 +296,16 @@ enum QuickActionRunResolver {
         return values
     }
 
+    static func resolvedVariableValues(
+        for template: AgentTemplate,
+        context: ResolvedContext,
+        variableOverrides: [String: String]
+    ) throws -> [String: String] {
+        var values = variableOverrides
+        autoFill(&values, for: template, using: context)
+        return values
+    }
+
     // MARK: Internals
 
     private static func resolveContext(
@@ -382,7 +400,7 @@ enum QuickActionRunResolver {
             switch name {
             case "branch_name":
                 values[name] = branchName
-            case "workspace_path":
+            case "cwd", "workspace_path", "worktree_path":
                 values[name] = cwdPath
             case "repo_name":
                 values[name] = repoName

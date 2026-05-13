@@ -3,12 +3,12 @@
 
 import Foundation
 
-/// CLI entry point for `cmux install-claude-hooks` and `cmux check-claude-hooks`.
+/// CLI entry point for `termloop install-claude-hooks` and `termloop check-claude-hooks`.
 /// Reads and writes `~/.claude/settings.json` idempotently: merges the five
 /// hook events teleport needs while preserving any unrelated entries the user
 /// already has.
 enum ClaudeHookInstaller {
-    private static let insideCmuxGuard =
+    private static let insideTermLoopGuard =
         "{ [ -n \"$TERMLOOP_SURFACE_ID\" ] || [ -n \"$TERMLOOP_WORKSPACE_ID\" ]; }"
     private static let perAgentDisableGuard =
         "[ \"$TERMLOOP_CLAUDE_HOOKS_DISABLED\" != \"1\" ]"
@@ -24,12 +24,12 @@ enum ClaudeHookInstaller {
     /// no-op.
     static var requiredHooks: [(event: String, command: String)] {
         [
-            ("SessionStart",     guardedCmuxCommand("claude-hook session-start")),
-            ("PreToolUse",       guardedCmuxCommand("claude-hook pre-tool-use")),
-            ("UserPromptSubmit", guardedCmuxCommand("claude-hook prompt-submit")),
-            ("Stop",             guardedCmuxCommand("claude-hook stop")),
-            ("SessionEnd",       guardedCmuxCommand("claude-hook session-end")),
-            ("Notification",     guardedCmuxCommand("claude-hook notification"))
+            ("SessionStart",     guardedTermLoopCommand("claude-hook session-start")),
+            ("PreToolUse",       guardedTermLoopCommand("claude-hook pre-tool-use")),
+            ("UserPromptSubmit", guardedTermLoopCommand("claude-hook prompt-submit")),
+            ("Stop",             guardedTermLoopCommand("claude-hook stop")),
+            ("SessionEnd",       guardedTermLoopCommand("claude-hook session-end")),
+            ("Notification",     guardedTermLoopCommand("claude-hook notification"))
         ]
     }
 
@@ -49,24 +49,21 @@ enum ClaudeHookInstaller {
         return command.contains("TERMLOOP_WORKSPACE_ID")
             || command.contains("TERMLOOP_SURFACE_ID")
             || command.contains("TERMLOOP_BUNDLED_CLI_PATH")
-            || command.contains("/TermLoopHooks/claude/")
     }
 
-    /// True for any command we previously wrote — current stable marker form
-    /// or the legacy `.../TermLoopHooks/claude/*.sh` bundle-bash form.
-    /// Used at install time to replace our own old output without touching
-    /// user-owned hooks.
+    /// True for the current stable marker form. Used at install time to replace
+    /// our own output without touching user-owned hooks.
     private static func isTermLoopOwnedClaudeCommand(_ command: String) -> Bool {
-        command.contains("claude-hook") || command.contains("/TermLoopHooks/claude/")
+        isInstalledTermLoopHookCommand(command, suffix: "claude-hook")
     }
 
-    private static func guardedCmuxCommand(_ subcommand: String) -> String {
+    private static func guardedTermLoopCommand(_ subcommand: String) -> String {
         let bin = "${TERMLOOP_BUNDLED_CLI_PATH:-$(command -v termloop)}"
         return """
-        CMUX_BIN="\(bin)"; \
-        \(insideCmuxGuard) && \(globalDisableGuard) && \(perAgentDisableGuard) \
-        && [ -n "$CMUX_BIN" ] && [ -x "$CMUX_BIN" ] \
-        && { "$CMUX_BIN" \(subcommand) >/dev/null 2>/dev/null || true; echo '{}'; } \
+        TERMLOOP_BIN="\(bin)"; \
+        \(insideTermLoopGuard) && \(globalDisableGuard) && \(perAgentDisableGuard) \
+        && [ -n "$TERMLOOP_BIN" ] && [ -x "$TERMLOOP_BIN" ] \
+        && { "$TERMLOOP_BIN" \(subcommand) >/dev/null 2>/dev/null || true; echo '{}'; } \
         || echo '{}'
         """
     }
@@ -94,9 +91,7 @@ enum ClaudeHookInstaller {
                 continue
             }
 
-            // Drop every entry we previously wrote — any command containing
-            // our stable marker or a legacy bundle-bash path is ours to
-            // replace. User-owned hooks are untouched.
+            // Drop every current TermLoop-owned entry. User-owned hooks are untouched.
             entries = entries.filter { entry in
                 if let cmd = entry["command"] as? String, isTermLoopOwnedClaudeCommand(cmd) {
                     return false
