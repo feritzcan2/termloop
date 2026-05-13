@@ -4954,6 +4954,17 @@
           }
         }
       }
+    },
+    "devservers.sidebar.refresh": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refresh"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

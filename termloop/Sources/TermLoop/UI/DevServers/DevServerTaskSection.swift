@@ -84,6 +84,12 @@ private struct DevServerTaskSectionContent: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 10) {
+                Button(String(localized: "devservers.sidebar.refresh", defaultValue: "Refresh", table: "TermLoop")) {
+                    refreshProfiles()
+                }
+                .buttonStyle(.borderless)
+                .font(.system(size: 11, weight: .semibold))
+
                 Button(String(localized: "devservers.agent.generateProfile", defaultValue: "Generate profile with agent", table: "TermLoop")) {
                     openProfileGenerator()
                 }
@@ -111,6 +117,11 @@ private struct DevServerTaskSectionContent: View {
             }
             .buttonStyle(.borderless)
             .disabled(profileStore.loadError != nil)
+
+            Button(String(localized: "devservers.sidebar.refresh", defaultValue: "Refresh", table: "TermLoop")) {
+                refreshProfiles()
+            }
+            .buttonStyle(.borderless)
 
             Button(String(localized: "devservers.sidebar.empty.openConfig", defaultValue: "Open config", table: "TermLoop")) {
                 openProfileFile()
@@ -589,6 +600,12 @@ private struct DevServerTaskSectionContent: View {
                 openOnURL: profile.presentation.autoOpenFirstUrl ?? profileStore.defaults.autoOpenFirstUrl
             )
         }
+    }
+
+    private func refreshProfiles() {
+        errorMessage = nil
+        pendingDeleteProfileId = nil
+        profileStore.loadOrCreate()
     }
 
     private func beginCreate() {
