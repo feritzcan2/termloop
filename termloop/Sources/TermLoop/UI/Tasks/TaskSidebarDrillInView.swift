@@ -167,7 +167,9 @@ struct TaskSidebarDrillInView: View {
     }
 
     private var devServersSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let activeCount = devServersActiveCount
+        let runningColor = Color(red: 0.30, green: 0.78, blue: 0.36)
+        return VStack(alignment: .leading, spacing: 8) {
             Divider().opacity(0.35)
 
             Button {
@@ -176,18 +178,18 @@ struct TaskSidebarDrillInView: View {
                 HStack(spacing: 7) {
                     Image(systemName: "server.rack")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(devServersActiveCount > 0 ? Color(red: 0.30, green: 0.78, blue: 0.36) : Color.secondary)
+                        .foregroundStyle(activeCount > 0 ? runningColor : Color.secondary)
                         .frame(width: 14)
                     Text(devServersCollapsedTitle)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
-                    if devServersActiveCount > 0 {
-                        Text(devServersRunningSummary)
+                    if activeCount > 0 {
+                        Text(devServersRunningSummary(activeCount))
                             .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(Color(red: 0.30, green: 0.78, blue: 0.36))
+                            .foregroundStyle(runningColor)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
-                            .background(Color(red: 0.30, green: 0.78, blue: 0.36).opacity(0.14))
+                            .background(runningColor.opacity(0.14))
                             .clipShape(Capsule())
                     }
                     Spacer(minLength: 0)
@@ -235,9 +237,9 @@ struct TaskSidebarDrillInView: View {
             .count
     }
 
-    private var devServersRunningSummary: String {
+    private func devServersRunningSummary(_ activeCount: Int) -> String {
         String(localized: "devservers.sidebar.runningCount",
-               defaultValue: "\(devServersActiveCount) running",
+               defaultValue: "\(activeCount) running",
                table: "TermLoop")
     }
 
