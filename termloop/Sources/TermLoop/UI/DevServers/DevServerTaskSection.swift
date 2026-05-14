@@ -823,7 +823,9 @@ private struct DevServerTaskSectionContent: View {
         guard let run,
               let normalized = DevServerURLDetector.normalize(rawURL),
               let url = URL(string: normalized) else { return }
-        _ = DevServerBrowserRouter.open(snapshot: run, url: url, focus: true)
+        if !DevServerBrowserRouter.open(snapshot: run, url: url, focus: true) {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private func projectedErrorLine(_ run: DevServerRunSnapshot?) -> String? {

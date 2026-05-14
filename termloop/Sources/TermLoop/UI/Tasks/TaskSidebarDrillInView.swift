@@ -1,6 +1,7 @@
 // Copyright (c) 2026-present Ferit Özcan. All rights reserved.
 // Part of TermLoop — GPL-3.0-or-later
 
+import AppKit
 import SwiftUI
 
 /// Sidebar content when a task is selected. Pulls the selected task's snapshot
@@ -108,6 +109,7 @@ struct TaskSidebarDrillInView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onAppear { DevServerBrowserRouter.install() }
     }
 
     /// Single merged card containing the work-item link (Jira/GitHub/GitLab)
@@ -167,7 +169,9 @@ struct TaskSidebarDrillInView: View {
     }
 
     private var devServersSection: some View {
-        let activeCount = devServersActiveCount
+        let activeRuns = devServersActiveRuns
+        let activeCount = activeRuns.count
+        let visibleURLRun = activeRuns.first { $0.latestURL != nil }
         let runningColor = Color(red: 0.30, green: 0.78, blue: 0.36)
         return VStack(alignment: .leading, spacing: 8) {
             Divider().opacity(0.35)
@@ -207,6 +211,10 @@ struct TaskSidebarDrillInView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(devServersTitle)
 
+            if let visibleURLRun, let latestURL = visibleURLRun.latestURL {
+                devServerFooterURLButton(run: visibleURLRun, url: latestURL, accent: runningColor)
+            }
+
             if isDevServersExpanded {
                 DevServerTaskSection(
                     snapshot: detailSnapshot,
@@ -230,17 +238,53 @@ struct TaskSidebarDrillInView: View {
                table: "TermLoop")
     }
 
-    private var devServersActiveCount: Int {
+    private var devServersActiveRuns: [DevServerRunSnapshot] {
         _ = devServerRunStore.version
         return devServerRunStore.snapshots(projectId: projectId, taskId: detailSnapshot.id)
             .filter(\.isActive)
-            .count
+            .sorted { lhs, rhs in lhs.updatedAt > rhs.updatedAt }
     }
 
     private func devServersRunningSummary(_ activeCount: Int) -> String {
         String(localized: "devservers.sidebar.runningCount",
                defaultValue: "\(activeCount) running",
                table: "TermLoop")
+    }
+
+    private func devServerFooterURLButton(run: DevServerRunSnapshot, url: String, accent: Color) -> some View {
+        Button {
+            openDevServerURL(run: run, rawURL: url)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "safari")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(url)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.up.forward")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(accent.opacity(0.85))
+            }
+            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+            .background(accent.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(accent)
+        .help(String(localized: "devservers.sidebar.openURL.help", defaultValue: "Open in TermLoop Browser", table: "TermLoop"))
+    }
+
+    private func openDevServerURL(run: DevServerRunSnapshot, rawURL: String) {
+        guard let normalized = DevServerURLDetector.normalize(rawURL),
+              let url = URL(string: normalized) else {
+            return
+        }
+        if !DevServerBrowserRouter.open(snapshot: run, url: url, focus: true) {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private func shouldShowWorkItemSection(_ snap: TaskDetailSnapshot) -> Bool {
