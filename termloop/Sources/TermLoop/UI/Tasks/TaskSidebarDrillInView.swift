@@ -25,6 +25,7 @@ struct TaskSidebarDrillInView: View {
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
     @ObservedObject private var worktreeProjectionStore = WorktreeProjectionStore.shared
+    @ObservedObject private var devServerRunStore = DevServerRunStore.shared
     @EnvironmentObject private var tabManager: TabManager
     @State private var isDevServersExpanded = false
     var onUnbind: ((UUID) -> Void)?
@@ -166,18 +167,39 @@ struct TaskSidebarDrillInView: View {
     }
 
     private var devServersSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider().opacity(0.35)
+
             Button {
                 isDevServersExpanded.toggle()
             } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: isDevServersExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
+                HStack(spacing: 7) {
+                    Image(systemName: "server.rack")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(devServersActiveCount > 0 ? Color(red: 0.30, green: 0.78, blue: 0.36) : Color.secondary)
+                        .frame(width: 14)
+                    Text(devServersCollapsedTitle)
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
-                        .frame(width: 12)
-                    TaskSidebarSectionTitle(devServersTitle)
+                    if devServersActiveCount > 0 {
+                        Text(devServersRunningSummary)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Color(red: 0.30, green: 0.78, blue: 0.36))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color(red: 0.30, green: 0.78, blue: 0.36).opacity(0.14))
+                            .clipShape(Capsule())
+                    }
                     Spacer(minLength: 0)
+                    Image(systemName: isDevServersExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.secondary.opacity(0.85))
+                        .frame(width: 10)
                 }
+                .padding(.vertical, 5)
+                .padding(.horizontal, 7)
+                .background(isDevServersExpanded ? Color(nsColor: .controlBackgroundColor).opacity(0.35) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -191,11 +213,31 @@ struct TaskSidebarDrillInView: View {
                 .padding(.top, 6)
             }
         }
+        .padding(.top, 2)
     }
 
     private var devServersTitle: String {
         String(localized: "devservers.sidebar.title",
                defaultValue: "Dev Servers",
+               table: "TermLoop")
+    }
+
+    private var devServersCollapsedTitle: String {
+        String(localized: "devservers.sidebar.runProfiles",
+               defaultValue: "Run profiles",
+               table: "TermLoop")
+    }
+
+    private var devServersActiveCount: Int {
+        _ = devServerRunStore.version
+        return devServerRunStore.snapshots(projectId: projectId, taskId: detailSnapshot.id)
+            .filter(\.isActive)
+            .count
+    }
+
+    private var devServersRunningSummary: String {
+        String(localized: "devservers.sidebar.runningCount",
+               defaultValue: "\(devServersActiveCount) running",
                table: "TermLoop")
     }
 

@@ -3987,6 +3987,28 @@
         }
       }
     },
+    "devservers.sidebar.runProfiles": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run profiles"
+          }
+        }
+      }
+    },
+    "devservers.sidebar.runningCount": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld running"
+          }
+        }
+      }
+    },
     "devservers.sidebar.loadFailed": {
       "extractionState": "manual",
       "localizations": {
