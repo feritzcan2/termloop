@@ -18,6 +18,7 @@ struct TaskBoardPage<TerminalContent: View>: View {
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
     @ObservedObject private var worktreeProjectionStore = WorktreeProjectionStore.shared
+    @ObservedObject private var devServerRunStore = DevServerRunStore.shared
     @EnvironmentObject private var tabManager: TabManager
 
     init(
@@ -48,6 +49,7 @@ struct TaskBoardPage<TerminalContent: View>: View {
                             remoteSync: remoteSync,
                             agentStatusesByTaskId: agentStatusesByTaskId,
                             workItemsByTaskId: workItemsByTaskId,
+                            devServerSummariesByTaskId: devServerSummariesByTaskId,
                             onSelect: selectFromBoard
                         )
                     },
@@ -61,6 +63,7 @@ struct TaskBoardPage<TerminalContent: View>: View {
                     remoteSync: remoteSync,
                     agentStatusesByTaskId: agentStatusesByTaskId,
                     workItemsByTaskId: workItemsByTaskId,
+                    devServerSummariesByTaskId: devServerSummariesByTaskId,
                     onSelect: selectFromBoard
                 )
             }
@@ -99,6 +102,15 @@ struct TaskBoardPage<TerminalContent: View>: View {
         return TaskWorkItemProjectionBuilder.snapshots(
             for: store.fileSnapshot().tasks,
             projectId: store.projectId
+        )
+    }
+
+    private var devServerSummariesByTaskId: [UUID: TaskDevServerSummary] {
+        _ = devServerRunStore.version
+        return TaskDevServerProjectionBuilder.summaries(
+            for: store.fileSnapshot().tasks,
+            projectId: store.projectId,
+            runStore: devServerRunStore
         )
     }
 
@@ -216,6 +228,7 @@ private struct TaskBoardCanvas: View {
     @ObservedObject var remoteSync: TaskRemoteSyncCoordinator
     let agentStatusesByTaskId: [UUID: TaskAgentStatusSummary]
     let workItemsByTaskId: [UUID: TaskWorkItemSnapshot]
+    let devServerSummariesByTaskId: [UUID: TaskDevServerSummary]
     var onSelect: ((TaskCardSummary) -> Void)?
 
     var body: some View {
@@ -235,6 +248,7 @@ private struct TaskBoardCanvas: View {
                             selection: selection,
                             agentStatusesByTaskId: agentStatusesByTaskId,
                             workItemsByTaskId: workItemsByTaskId,
+                            devServerSummariesByTaskId: devServerSummariesByTaskId,
                             onMove: coordinator.map { c in
                                 { taskId, target in
                                     _Concurrency.Task { @MainActor in

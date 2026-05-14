@@ -21,20 +21,10 @@ enum WorkspaceAgentMigration {
         for wsId in ids {
             let metadata = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: wsId)
             guard metadata.terminalAgentId == nil,
-                  hasAgentEvidence(metadata) else { continue }
+                  metadata.hasAgentEvidence else { continue }
             WorkspaceMetadataStore.shared.setTerminalAgentId(fallback, for: wsId)
             affected.append(wsId)
         }
         return affected
-    }
-
-    private static func hasAgentEvidence(_ metadata: WorkspaceMetadataStore.Metadata) -> Bool {
-        metadata.persistedAgentSession != nil
-            || metadata.agentKind != nil
-            || metadata.agentSpawnedAt != nil
-            || metadata.lastUserPromptAt != nil
-            || metadata.awaitingInputSince != nil
-            || metadata.lastMessagePreview != nil
-            || metadata.lastAttentionKindRaw != nil
     }
 }

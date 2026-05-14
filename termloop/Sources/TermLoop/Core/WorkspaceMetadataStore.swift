@@ -111,6 +111,16 @@ final class WorkspaceMetadataStore: ObservableObject {
         /// workspace metadata across restart-time UUID reminting so
         /// `WorkspaceBridgeStore.rebindAfterRestore` can find both endpoints.
         var bridgeMembership: BridgeMembership?
+
+        var hasAgentEvidence: Bool {
+            persistedAgentSession != nil
+                || agentKind != nil
+                || agentSpawnedAt != nil
+                || lastUserPromptAt != nil
+                || awaitingInputSince != nil
+                || lastMessagePreview != nil
+                || lastAttentionKindRaw != nil
+        }
     }
 
     @Published private(set) var byWorkspaceId: [UUID: Metadata] = [:]

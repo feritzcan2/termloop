@@ -26,7 +26,9 @@ struct TaskSidebarDrillInView: View {
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
     @ObservedObject private var worktreeProjectionStore = WorktreeProjectionStore.shared
+    @ObservedObject private var devServerRunStore = DevServerRunStore.shared
     @EnvironmentObject private var tabManager: TabManager
+    @State private var isDevServersExpanded = false
     var onUnbind: ((UUID) -> Void)?
     var onArchive: ((UUID) -> Void)?
 
@@ -102,11 +104,15 @@ struct TaskSidebarDrillInView: View {
                         }
                         .padding(.top, 4)
                     }
+                    flatSection {
+                        devServersSection
+                    }
                 }
                 .padding(10)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onAppear { DevServerBrowserRouter.install() }
     }
 
     /// Single merged card containing the work-item link (Jira/GitHub/GitLab)
@@ -163,6 +169,119 @@ struct TaskSidebarDrillInView: View {
     private func hasWorktreeProjections(_ snap: TaskDetailSnapshot) -> Bool {
         let trimmedPath = snap.worktreePath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return !trimmedPath.isEmpty
+    }
+
+    private var devServersSection: some View {
+        let activeRuns = devServersActiveRuns
+        let activeCount = activeRuns.count
+        let visibleURLRun = activeRuns.first { $0.latestURL != nil }
+        let runningColor = Color(red: 0.30, green: 0.78, blue: 0.36)
+        return VStack(alignment: .leading, spacing: 8) {
+            Divider().opacity(0.35)
+
+            Button {
+                isDevServersExpanded.toggle()
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "server.rack")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(activeCount > 0 ? runningColor : Color.secondary)
+                        .frame(width: 14)
+                    Text(devServersCollapsedTitle)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    if activeCount > 0 {
+                        Text(devServersRunningSummary(activeCount))
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(runningColor)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(runningColor.opacity(0.14))
+                            .clipShape(Capsule())
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: isDevServersExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.secondary.opacity(0.85))
+                        .frame(width: 10)
+                }
+                .padding(.vertical, 5)
+                .padding(.horizontal, 7)
+                .background(isDevServersExpanded ? Color(nsColor: .controlBackgroundColor).opacity(0.35) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(devServersTitle)
+
+            if let visibleURLRun, let latestURL = visibleURLRun.latestURL {
+                devServerFooterURLButton(run: visibleURLRun, url: latestURL, accent: runningColor)
+            }
+
+            if isDevServersExpanded {
+                DevServerTaskSection(
+                    snapshot: detailSnapshot,
+                    projectId: projectId
+                )
+                .padding(.top, 6)
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private var devServersTitle: String {
+        String(localized: "devservers.sidebar.title",
+               defaultValue: "Dev Servers",
+               table: "TermLoop")
+    }
+
+    private var devServersCollapsedTitle: String {
+        String(localized: "devservers.sidebar.runProfiles",
+               defaultValue: "Run profiles",
+               table: "TermLoop")
+    }
+
+    private var devServersActiveRuns: [DevServerRunSnapshot] {
+        _ = devServerRunStore.version
+        return devServerRunStore.snapshots(projectId: projectId, taskId: detailSnapshot.id)
+            .filter(\.isActive)
+            .sorted { lhs, rhs in lhs.updatedAt > rhs.updatedAt }
+    }
+
+    private func devServersRunningSummary(_ activeCount: Int) -> String {
+        String(localized: "devservers.sidebar.runningCount",
+               defaultValue: "\(activeCount) running",
+               table: "TermLoop")
+    }
+
+    private func devServerFooterURLButton(run: DevServerRunSnapshot, url: String, accent: Color) -> some View {
+        Button {
+            openDevServerURL(run: run, rawURL: url)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "safari")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(url)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.up.forward")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(accent.opacity(0.85))
+            }
+            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+            .background(accent.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(accent)
+        .help(String(localized: "devservers.sidebar.openURL.help", defaultValue: "Open URL. Command-click forces TermLoop Browser.", table: "TermLoop"))
+    }
+
+    private func openDevServerURL(run: DevServerRunSnapshot, rawURL: String) {
+        DevServerBrowserRouter.openFromUserClick(snapshot: run, rawURL: rawURL, focus: true)
     }
 
     private func shouldShowWorkItemSection(_ snap: TaskDetailSnapshot) -> Bool {

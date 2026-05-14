@@ -272,10 +272,7 @@ enum TaskAgentProjectionBuilder {
         )
         let hasAgentIdentity = presentation != nil
             || metadata.terminalAgentId != nil
-            || metadata.persistedAgentSession != nil
-            || metadata.agentKind != nil
-            || metadata.agentSpawnedAt != nil
-            || metadata.lastUserPromptAt != nil
+            || metadata.hasAgentEvidence
         guard hasAgentIdentity else { return nil }
 
         let preferred = isVisibleAgentWorkspace(presentation: presentation, metadata: metadata)
@@ -331,10 +328,7 @@ enum TaskAgentProjectionBuilder {
         if presentation.source != .bound {
             return true
         }
-        return metadata.persistedAgentSession != nil
-            || metadata.lastUserPromptAt != nil
-            || metadata.agentKind != nil
-            || metadata.agentSpawnedAt != nil
+        return metadata.hasAgentEvidence
     }
 
     private static func isPreferredAgent(_ lhs: TaskWorktreeAgentSnapshot, _ rhs: TaskWorktreeAgentSnapshot) -> Bool {

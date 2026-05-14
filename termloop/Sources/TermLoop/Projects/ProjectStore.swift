@@ -202,6 +202,9 @@ final class ProjectStore: ObservableObject {
         guard let index = projects.firstIndex(where: { $0.id == id }) else {
             throw ProjectStoreError.notFound(id)
         }
+        guard projects[index].folderPath != normalizedPath else { return }
+        DevServerRunCoordinator.shared.stopProjectRunsAndCleanup(projectId: id, reason: "project_folder_changed")
+        DevServerProfileStoreProvider.shared.remove(projectId: id)
         projects[index].folderPath = normalizedPath
         onMutation?()
     }
@@ -253,8 +256,10 @@ final class ProjectStore: ObservableObject {
         guard let index = projects.firstIndex(where: { $0.id == id }) else {
             throw ProjectStoreError.notFound(id)
         }
+        DevServerRunCoordinator.shared.stopProjectRunsAndCleanup(projectId: id, reason: "project_delete")
         projects.remove(at: index)
         TaskBoardStoreProvider.shared.remove(projectId: id)
+        DevServerProfileStoreProvider.shared.remove(projectId: id)
         openProjectIds.removeAll { $0 == id }
         if activeProjectId == id {
             activeProjectId = projects.first?.id
