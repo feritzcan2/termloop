@@ -1,7 +1,6 @@
 // Copyright (c) 2026-present Ferit Özcan. All rights reserved.
 // Part of TermLoop — GPL-3.0-or-later
 
-import AppKit
 import SwiftUI
 
 /// Sidebar content when a task is selected. Pulls the selected task's snapshot
@@ -274,17 +273,11 @@ struct TaskSidebarDrillInView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(accent)
-        .help(String(localized: "devservers.sidebar.openURL.help", defaultValue: "Open in TermLoop Browser", table: "TermLoop"))
+        .help(String(localized: "devservers.sidebar.openURL.help", defaultValue: "Open URL. Command-click forces TermLoop Browser.", table: "TermLoop"))
     }
 
     private func openDevServerURL(run: DevServerRunSnapshot, rawURL: String) {
-        guard let normalized = DevServerURLDetector.normalize(rawURL),
-              let url = URL(string: normalized) else {
-            return
-        }
-        if !DevServerBrowserRouter.open(snapshot: run, url: url, focus: true) {
-            NSWorkspace.shared.open(url)
-        }
+        DevServerBrowserRouter.openFromUserClick(snapshot: run, rawURL: rawURL, focus: true)
     }
 
     private func shouldShowWorkItemSection(_ snap: TaskDetailSnapshot) -> Bool {

@@ -30,4 +30,26 @@ enum DevServerBrowserRouter {
         }
         return workspace.newBrowserSplit(from: sourcePanelId, orientation: .horizontal, url: url, focus: focus) != nil
     }
+
+    @discardableResult
+    static func openFromUserClick(snapshot: DevServerRunSnapshot, url: URL, focus: Bool = true) -> Bool {
+        let forceInternalBrowser = NSApp.currentEvent?.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .contains(.command) == true
+        if open(snapshot: snapshot, url: url, focus: focus) {
+            return true
+        }
+        guard !forceInternalBrowser else { return false }
+        NSWorkspace.shared.open(url)
+        return true
+    }
+
+    @discardableResult
+    static func openFromUserClick(snapshot: DevServerRunSnapshot, rawURL: String, focus: Bool = true) -> Bool {
+        guard let normalized = DevServerURLDetector.normalize(rawURL),
+              let url = URL(string: normalized) else {
+            return false
+        }
+        return openFromUserClick(snapshot: snapshot, url: url, focus: focus)
+    }
 }
