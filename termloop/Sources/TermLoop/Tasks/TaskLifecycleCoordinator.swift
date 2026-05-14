@@ -82,8 +82,15 @@ public final class TaskLifecycleCoordinator {
     }
 
     public func archiveTask(_ id: UUID) throws {
+        let task = try requireTask(id)
         try mutateTask(id) { $0.archivedAt = Date(); $0.updatedAt = Date() }
         try store.saveNow()
+        DevServerRunCoordinator.shared.stopTaskRunsAndCleanup(
+            projectId: store.projectId,
+            task: task,
+            projectRoot: store.projectRoot,
+            reason: "archive"
+        )
     }
 
     public func restoreTask(_ id: UUID) throws {
@@ -96,12 +103,19 @@ public final class TaskLifecycleCoordinator {
     }
 
     public func deleteTask(_ id: UUID) throws {
-        _ = try store.mutate { file in
+        let task = try requireTask(id)
+        _ = store.mutate { file in
             guard file.tasks.contains(where: { $0.id == id }) else { return false }
             file.tasks.removeAll { $0.id == id }
             return true
         }
         try store.saveNow()
+        DevServerRunCoordinator.shared.stopTaskRunsAndCleanup(
+            projectId: store.projectId,
+            task: task,
+            projectRoot: store.projectRoot,
+            reason: "delete"
+        )
     }
 
     // MARK: - Column move
@@ -204,6 +218,14 @@ public final class TaskLifecycleCoordinator {
             t.updatedAt = Date()
         }
         try store.saveNow()
+        if let oldPath = task.worktreePath, oldPath != result.worktreePath {
+            DevServerRunCoordinator.shared.stopTaskRunsAndCleanup(
+                projectId: store.projectId,
+                task: task,
+                projectRoot: store.projectRoot,
+                reason: "worktree_migration"
+            )
+        }
     }
 
     public func bindExistingWorktree(
@@ -240,6 +262,14 @@ public final class TaskLifecycleCoordinator {
             t.updatedAt = Date()
         }
         try store.saveNow()
+        if let oldPath = current.worktreePath, oldPath != worktreePath {
+            DevServerRunCoordinator.shared.stopTaskRunsAndCleanup(
+                projectId: store.projectId,
+                task: current,
+                projectRoot: store.projectRoot,
+                reason: "worktree_migration"
+            )
+        }
     }
 
     @discardableResult
@@ -367,6 +397,12 @@ extension TaskLifecycleCoordinator {
         }
         rebalanceColumnIfNeeded(.todo)
         try store.saveNow()
+        DevServerRunCoordinator.shared.stopTaskRunsAndCleanup(
+            projectId: store.projectId,
+            task: task,
+            projectRoot: store.projectRoot,
+            reason: "cancel_binding"
+        )
 
         if task.workspaceId != nil || (task.ownsWorktree && task.worktreePath != nil) {
             // Fire-and-forget cleanup. Failure leaves a repair banner on next reconcile.
@@ -422,6 +458,7 @@ extension TaskLifecycleCoordinator {
 
     /// Unbind without removing the worktree (user used "Unbind" from repair banner).
     public func unbindWorktree(taskId: UUID) throws {
+        let task = try requireTask(taskId)
         try mutateTask(taskId) { t in
             t.workspaceId = nil
             t.worktreePath = nil
@@ -432,6 +469,12 @@ extension TaskLifecycleCoordinator {
             t.updatedAt = Date()
         }
         try store.saveNow()
+        DevServerRunCoordinator.shared.stopTaskRunsAndCleanup(
+            projectId: store.projectId,
+            task: task,
+            projectRoot: store.projectRoot,
+            reason: "unbind"
+        )
     }
 }
 
@@ -445,6 +488,7 @@ extension TaskLifecycleCoordinator {
         projectRoot: URL,
         snapshot: TaskWorkspaceListingSnapshot
     ) throws -> TaskBoardReconcileSummary {
+        let beforeTasks = store.fileSnapshot().tasks
         let descriptors = snapshot.descriptors
         // Use bucketed dictionaries. Duplicate metadata rows are corruption;
         // first wins so reconcile keeps running and leaves repair to the UI.
@@ -606,6 +650,7 @@ extension TaskLifecycleCoordinator {
 
         if changed {
             try store.saveNow()
+            cleanupDevServerRunsForReconciledTasks(beforeTasks: beforeTasks, reason: "reconcile")
         }
         return TaskBoardReconcileSummary(
             projectId: store.projectId,
@@ -620,6 +665,28 @@ extension TaskLifecycleCoordinator {
             missingCount: missingCount,
             importedCount: importedCount
         )
+    }
+
+    private func cleanupDevServerRunsForReconciledTasks(beforeTasks: [TaskRecord], reason: String) {
+        let afterById = Dictionary(uniqueKeysWithValues: store.fileSnapshot().tasks.map { ($0.id, $0) })
+        var cleaned = Set<UUID>()
+        for before in beforeTasks {
+            guard cleaned.insert(before.id).inserted,
+                  before.archivedAt == nil,
+                  before.worktreePath?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else { continue }
+            let after = afterById[before.id]
+            let shouldCleanup = after == nil
+                || after?.archivedAt != nil
+                || after?.worktreePath != before.worktreePath
+                || (after?.worktreePath == nil && before.worktreePath != nil)
+            guard shouldCleanup else { continue }
+            DevServerRunCoordinator.shared.stopTaskRunsAndCleanup(
+                projectId: store.projectId,
+                task: before,
+                projectRoot: store.projectRoot,
+                reason: reason
+            )
+        }
     }
 
     private func shouldMarkReadyAfterDescriptorMatch(_ state: TaskProvisionState) -> Bool {
