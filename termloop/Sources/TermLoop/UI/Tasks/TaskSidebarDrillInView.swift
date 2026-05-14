@@ -19,6 +19,7 @@ struct TaskSidebarDrillInView: View {
     var onUpdateTitle: ((UUID, String) -> Void)?
     var onUpdateBrief: ((UUID, String?) -> Void)?
     var onCreateWorktree: ((UUID) -> Void)?
+    var onLinkWorktree: ((UUID) -> Void)?
     var onStartAgent: ((UUID) -> Void)?
     var onOpenSettings: () -> Void = {}
 
@@ -60,6 +61,9 @@ struct TaskSidebarDrillInView: View {
                             },
                             onCreateWorktree: {
                                 onCreateWorktree?(detailSnapshot.id)
+                            },
+                            onLinkWorktree: onLinkWorktree.map { link in
+                                { link(detailSnapshot.id) }
                             },
                             onClearWorktreeError: {
                                 onUnbind?(detailSnapshot.id)

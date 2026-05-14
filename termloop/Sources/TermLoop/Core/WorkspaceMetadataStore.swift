@@ -369,6 +369,10 @@ final class WorkspaceMetadataStore: ObservableObject {
         byWorkspaceId[workspace.id]?.branch
     }
 
+    func branch(forWorkspaceId id: UUID) -> String? {
+        byWorkspaceId[id]?.branch
+    }
+
     func worktreePath(for workspace: Workspace) -> String? {
         byWorkspaceId[workspace.id]?.worktreePath
     }
