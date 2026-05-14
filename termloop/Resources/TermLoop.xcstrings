@@ -4922,6 +4922,17 @@
         }
       }
     },
+    "devservers.agent.generateButton": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generate"
+          }
+        }
+      }
+    },
     "devservers.agent.workspaceTitle": {
       "extractionState": "manual",
       "localizations": {
@@ -4962,6 +4973,50 @@
           "stringUnit": {
             "state": "translated",
             "value": "Refresh"
+          }
+        }
+      }
+    },
+    "devservers.sidebar.worktreeRequired.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create or bind a worktree before starting or testing profiles."
+          }
+        }
+      }
+    },
+    "devservers.sidebar.actionFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dev server action failed"
+          }
+        }
+      }
+    },
+    "devservers.sidebar.deleteConfirm.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete this profile from devservers.json?"
+          }
+        }
+      }
+    },
+    "devservers.sidebar.cancel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
           }
         }
       }
