@@ -492,6 +492,7 @@ Rules:
 - Include `setupCommand` only when it is safe, clearly needed, and confirmed by the user.
 - Include `cleanupCommand` only for reversible cleanup.
 - Use localhost-only URLs in `urlDetection.fallbackUrls`; omit URLs for non-browser workflows.
+- Proactively check multi-worktree hazards before proposing profiles: fixed ports, shared databases/caches, lock files, simulator/device state, and generated output directories. If a fixed localhost port is used, mention the conflict risk and prefer an obvious repo-supported port override. If the override is not obvious, ask before inventing one.
 - Preserve existing profiles if the file already exists.
 
 Output:
