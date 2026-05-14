@@ -32,8 +32,10 @@ private struct DevServerTaskSectionContent: View {
     @State private var timedOutSaveAndTestRunIds = Set<UUID>()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            headerActions
+        VStack(alignment: .leading, spacing: 10) {
+            if profileStore.loadError != nil || !profileStore.profiles.isEmpty {
+                headerActions
+            }
             if let loadError = profileStore.loadError {
                 messageCard(
                     icon: "exclamationmark.triangle",
@@ -43,13 +45,16 @@ private struct DevServerTaskSectionContent: View {
             } else if profileStore.profiles.isEmpty {
                 emptyState
             } else {
+                if !hasWorktreeBinding {
+                    worktreeRequiredCard
+                }
                 VStack(alignment: .leading, spacing: 7) {
                     ForEach(profileStore.profiles) { profile in
                         profileRow(profile)
                     }
                 }
             }
-            if profileStore.loadError == nil {
+            if profileStore.loadError == nil, showDraftEditor || !profileStore.profiles.isEmpty {
                 draftEditor
             }
             if let run = pendingSaveAndTestRun {
@@ -58,99 +63,153 @@ private struct DevServerTaskSectionContent: View {
                 saveAndTestSavingResult
             }
             if let errorMessage {
-                Text(errorMessage)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
+                messageCard(
+                    icon: "exclamationmark.triangle",
+                    title: String(localized: "devservers.sidebar.actionFailed", defaultValue: "Dev server action failed", table: "TermLoop"),
+                    detail: errorMessage
+                )
             }
         }
         .onAppear { DevServerBrowserRouter.install() }
     }
 
     private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 7) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 9) {
                 Image(systemName: "server.rack")
-                    .foregroundStyle(.secondary)
-                Text(String(localized: "devservers.sidebar.empty.title", defaultValue: "No dev server profiles", table: "TermLoop"))
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(String(localized: "devservers.sidebar.empty.title", defaultValue: "No dev server profiles", table: "TermLoop"))
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(String(localized: "devservers.sidebar.empty.detail", defaultValue: "Create or edit .termloop/devservers.json to add project run profiles.", table: "TermLoop"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Spacer(minLength: 0)
             }
-            Text(String(localized: "devservers.sidebar.empty.detail", defaultValue: "Create or edit .termloop/devservers.json to add project run profiles.", table: "TermLoop"))
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 10) {
-                Button(String(localized: "devservers.sidebar.refresh", defaultValue: "Refresh", table: "TermLoop")) {
-                    refreshProfiles()
-                }
-                .buttonStyle(.borderless)
-                .font(.system(size: 11, weight: .semibold))
 
-                Button(String(localized: "devservers.agent.generateProfile", defaultValue: "Generate profile with agent", table: "TermLoop")) {
+            HStack(spacing: 7) {
+                Button {
                     openProfileGenerator()
+                } label: {
+                    Label(
+                        String(localized: "devservers.agent.generateProfile", defaultValue: "Generate run profiles with agent", table: "TermLoop"),
+                        systemImage: "sparkles"
+                    )
                 }
-                .buttonStyle(.borderless)
-                .font(.system(size: 11, weight: .semibold))
+                .buttonStyle(.borderedProminent)
 
-                Button(String(localized: "devservers.sidebar.empty.openConfig", defaultValue: "Open config", table: "TermLoop")) {
-                    openProfileFile()
+                Button {
+                    beginCreate()
+                } label: {
+                    Label(
+                        String(localized: "devservers.editor.newProfile", defaultValue: "New profile", table: "TermLoop"),
+                        systemImage: "plus"
+                    )
                 }
-                .buttonStyle(.borderless)
-                .font(.system(size: 11, weight: .medium))
+                .buttonStyle(.bordered)
+
+                Spacer(minLength: 0)
+
+                Button {
+                    refreshProfiles()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .help(String(localized: "devservers.sidebar.refresh", defaultValue: "Refresh", table: "TermLoop"))
+
+                Button {
+                    openProfileFile()
+                } label: {
+                    Image(systemName: "doc.text")
+                }
+                .buttonStyle(.bordered)
+                .help(String(localized: "devservers.sidebar.empty.openConfig", defaultValue: "Open config", table: "TermLoop"))
             }
+            .controlSize(.small)
+            .font(.system(size: 11, weight: .medium))
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 9)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.56))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.58))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private var headerActions: some View {
-        HStack(spacing: 8) {
-            Button(String(localized: "devservers.editor.newProfile", defaultValue: "New profile", table: "TermLoop")) {
-                beginCreate()
+        HStack(spacing: 7) {
+            Button {
+                openProfileGenerator()
+            } label: {
+                Label(
+                    String(localized: "devservers.agent.generateButton", defaultValue: "Generate", table: "TermLoop"),
+                    systemImage: "sparkles"
+                )
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.bordered)
+            .help(String(localized: "devservers.agent.generateProfile", defaultValue: "Generate run profiles with agent", table: "TermLoop"))
+
+            Button {
+                beginCreate()
+            } label: {
+                Label(
+                    String(localized: "devservers.editor.newProfile", defaultValue: "New profile", table: "TermLoop"),
+                    systemImage: "plus"
+                )
+            }
+            .buttonStyle(.bordered)
             .disabled(profileStore.loadError != nil)
 
-            Button(String(localized: "devservers.sidebar.refresh", defaultValue: "Refresh", table: "TermLoop")) {
+            Spacer(minLength: 0)
+
+            Button {
                 refreshProfiles()
+            } label: {
+                Image(systemName: "arrow.clockwise")
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.bordered)
+            .help(String(localized: "devservers.sidebar.refresh", defaultValue: "Refresh", table: "TermLoop"))
 
-            Button(String(localized: "devservers.sidebar.empty.openConfig", defaultValue: "Open config", table: "TermLoop")) {
+            Button {
                 openProfileFile()
+            } label: {
+                Image(systemName: "doc.text")
             }
-            .buttonStyle(.borderless)
-
-            Button(String(localized: "devservers.agent.generateProfile", defaultValue: "Generate profile with agent", table: "TermLoop")) {
-                openProfileGenerator()
-            }
-            .buttonStyle(.borderless)
+            .buttonStyle(.bordered)
+            .help(String(localized: "devservers.sidebar.empty.openConfig", defaultValue: "Open config", table: "TermLoop"))
         }
         .font(.system(size: 11, weight: .medium))
+        .controlSize(.small)
+    }
+
+    private var worktreeRequiredCard: some View {
+        messageCard(
+            icon: "point.3.connected.trianglepath.dotted",
+            title: String(localized: "devservers.error.taskNotBound", defaultValue: "Task is not bound to a worktree", table: "TermLoop"),
+            detail: String(localized: "devservers.sidebar.worktreeRequired.detail", defaultValue: "Create or bind a worktree before starting or testing profiles.", table: "TermLoop")
+        )
     }
 
     private func profileRow(_ profile: DevServerProfile) -> some View {
         let runs = runs(for: profile)
         let current = runs.first
-        return VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 7) {
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
                 statusDot(current?.phase ?? .idle)
-                VStack(alignment: .leading, spacing: 2) {
+                    .padding(.top, 6)
+
+                VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 5) {
                         Text(profile.name)
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(.primary)
-                        Text(profile.kind.localizedLabel)
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(Color.secondary.opacity(0.12))
-                            .clipShape(Capsule())
+                            .lineLimit(1)
+                        phasePill(current?.phase ?? .idle)
+                        kindPill(profile.kind)
                     }
                     Text(commandPreview(profile))
                         .font(.system(size: 10, design: .monospaced))
@@ -158,24 +217,12 @@ private struct DevServerTaskSectionContent: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
+
                 Spacer(minLength: 8)
                 controls(profile: profile, current: current)
             }
-            if let url = current?.latestURL {
-                Button {
-                    openURL(run: current, rawURL: url)
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "safari")
-                        Text(url)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    .font(.system(size: 11))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.accentColor)
-                    .help(String(localized: "devservers.sidebar.openURL.help", defaultValue: "Open in TermLoop Browser", table: "TermLoop"))
+            if let current, let url = current.latestURL {
+                profileURLButton(url, run: current)
             }
             if let errorLine = projectedErrorLine(current) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -187,55 +234,113 @@ private struct DevServerTaskSectionContent: View {
                 .font(.system(size: 10))
                 .foregroundStyle(.orange)
             }
+            if pendingDeleteProfileId == profile.id {
+                deleteConfirmationRow(profile)
+            }
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 9)
+        .padding(.vertical, 9)
+        .padding(.horizontal, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.56))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
+    @ViewBuilder
     private func controls(profile: DevServerProfile, current: DevServerRunSnapshot?) -> some View {
-        HStack(spacing: 5) {
-            Button(String(localized: "devservers.sidebar.edit", defaultValue: "Edit", table: "TermLoop")) {
-                beginEdit(profile)
-            }
-            .font(.system(size: 11, weight: .medium))
-            .buttonStyle(.borderless)
-
-            Button(rowDeleteTitle(for: profile)) {
-                deleteProfileRow(profile)
-            }
-            .font(.system(size: 11, weight: .medium))
-            .buttonStyle(.borderless)
-            .foregroundStyle(pendingDeleteProfileId == profile.id ? .red : .secondary)
-
+        HStack(spacing: 6) {
             if let current, current.isActive {
-                Button(String(localized: "devservers.sidebar.restart", defaultValue: "Restart", table: "TermLoop")) {
-                    restart(profile)
-                }
-                .font(.system(size: 11, weight: .medium))
-                .buttonStyle(.borderless)
-
                 Button(String(localized: "devservers.sidebar.stop", defaultValue: "Stop", table: "TermLoop")) {
                     stop(current)
                 }
-                .font(.system(size: 11, weight: .medium))
-                .buttonStyle(.borderless)
+                .buttonStyle(.bordered)
 
                 logsButton(current)
+                profileMoreMenu(profile: profile, current: current)
             } else {
-                Button(String(localized: "devservers.sidebar.start", defaultValue: "Start", table: "TermLoop")) {
+                Button {
                     start(profile)
+                } label: {
+                    Label(
+                        String(localized: "devservers.sidebar.start", defaultValue: "Start", table: "TermLoop"),
+                        systemImage: "play.fill"
+                    )
                 }
-                .font(.system(size: 11, weight: .medium))
-                .buttonStyle(.borderless)
+                .buttonStyle(.borderedProminent)
                 .disabled(!hasWorktreeBinding)
+
                 if let current {
                     logsButton(current)
                 }
+                profileMoreMenu(profile: profile, current: current)
             }
         }
+        .font(.system(size: 11, weight: .medium))
+        .controlSize(.small)
+    }
+
+    private func profileMoreMenu(profile: DevServerProfile, current: DevServerRunSnapshot?) -> some View {
+        Menu {
+            Button(String(localized: "devservers.sidebar.edit", defaultValue: "Edit", table: "TermLoop")) {
+                beginEdit(profile)
+            }
+            if current?.isActive == true {
+                Button(String(localized: "devservers.sidebar.restart", defaultValue: "Restart", table: "TermLoop")) {
+                    restart(profile)
+                }
+            }
+            Divider()
+            Button(role: .destructive) {
+                deleteProfileRow(profile)
+            } label: {
+                Text(rowDeleteTitle(for: profile))
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .frame(width: 24)
+    }
+
+    private func profileURLButton(_ url: String, run: DevServerRunSnapshot) -> some View {
+        Button {
+            openURL(run: run, rawURL: url)
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "safari")
+                Text(url)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 11, weight: .medium))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.accentColor)
+        .help(String(localized: "devservers.sidebar.openURL.help", defaultValue: "Open in TermLoop Browser", table: "TermLoop"))
+    }
+
+    private func deleteConfirmationRow(_ profile: DevServerProfile) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "trash")
+            Text(String(localized: "devservers.sidebar.deleteConfirm.detail", defaultValue: "Delete this profile from devservers.json?", table: "TermLoop"))
+                .lineLimit(2)
+            Spacer(minLength: 0)
+            Button(String(localized: "devservers.sidebar.cancel", defaultValue: "Cancel", table: "TermLoop")) {
+                pendingDeleteProfileId = nil
+            }
+            .buttonStyle(.borderless)
+            Button(String(localized: "devservers.editor.confirmDelete", defaultValue: "Confirm delete", table: "TermLoop")) {
+                deleteProfileRow(profile)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.red)
+        }
+        .font(.system(size: 10, weight: .medium))
+        .foregroundStyle(.secondary)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .background(Color.red.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 
     @ViewBuilder
@@ -335,25 +440,26 @@ private struct DevServerTaskSectionContent: View {
                         Button(String(localized: "devservers.editor.save", defaultValue: "Save", table: "TermLoop")) {
                             saveDraft(startAfterSave: false)
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.bordered)
 
                         Button(String(localized: "devservers.editor.saveAndTest", defaultValue: "Save & Test", table: "TermLoop")) {
                             saveDraft(startAfterSave: true)
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.borderedProminent)
                         .disabled(!hasWorktreeBinding)
 
                         if draft.originalId != nil {
                             Button(deleteButtonTitle) {
                                 deleteDraftProfile()
                             }
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.bordered)
                             .foregroundStyle(.red)
                         }
 
                         Spacer()
                     }
                     .font(.system(size: 11, weight: .medium))
+                    .controlSize(.small)
                 }
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 11))
@@ -796,6 +902,26 @@ private struct DevServerTaskSectionContent: View {
             ? String(localized: "devservers.sidebar.cwdRoot", defaultValue: "worktree", table: "TermLoop")
             : profile.workingDirectory
         return "\(cwd) $ \(profile.command)"
+    }
+
+    private func phasePill(_ phase: DevServerRunPhase) -> some View {
+        Text(phase.localizedLabel.uppercased())
+            .font(.system(size: 8, weight: .bold))
+            .foregroundStyle(color(for: phase))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(color(for: phase).opacity(0.14))
+            .clipShape(Capsule())
+    }
+
+    private func kindPill(_ kind: RunProfileKind) -> some View {
+        Text(kind.localizedLabel)
+            .font(.system(size: 9, weight: .medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(Color.secondary.opacity(0.12))
+            .clipShape(Capsule())
     }
 
     private func statusDot(_ phase: DevServerRunPhase) -> some View {
