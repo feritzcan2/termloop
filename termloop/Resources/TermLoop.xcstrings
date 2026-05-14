@@ -4059,7 +4059,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open in TermLoop Browser"
+            "value": "Open URL. Command-click forces TermLoop Browser."
           }
         }
       }

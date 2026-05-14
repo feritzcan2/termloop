@@ -316,7 +316,7 @@ private struct DevServerTaskSectionContent: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(Color.accentColor)
-        .help(String(localized: "devservers.sidebar.openURL.help", defaultValue: "Open in TermLoop Browser", table: "TermLoop"))
+        .help(String(localized: "devservers.sidebar.openURL.help", defaultValue: "Open URL. Command-click forces TermLoop Browser.", table: "TermLoop"))
     }
 
     private func deleteConfirmationRow(_ profile: DevServerProfile) -> some View {
@@ -820,12 +820,8 @@ private struct DevServerTaskSectionContent: View {
     }
 
     private func openURL(run: DevServerRunSnapshot?, rawURL: String) {
-        guard let run,
-              let normalized = DevServerURLDetector.normalize(rawURL),
-              let url = URL(string: normalized) else { return }
-        if !DevServerBrowserRouter.open(snapshot: run, url: url, focus: true) {
-            NSWorkspace.shared.open(url)
-        }
+        guard let run else { return }
+        DevServerBrowserRouter.openFromUserClick(snapshot: run, rawURL: rawURL, focus: true)
     }
 
     private func projectedErrorLine(_ run: DevServerRunSnapshot?) -> String? {
