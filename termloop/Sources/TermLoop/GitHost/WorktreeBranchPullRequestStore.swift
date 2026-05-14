@@ -44,11 +44,13 @@ final class WorktreeBranchPullRequestStore: ObservableObject {
     private var entries: [CacheKey: Entry] = [:]
     private var inflight: Set<CacheKey> = []
     private var inflightFetchRoots: Set<String> = []
+    private var inflightFetchRootLookups: Set<String> = []
     private var lastFetchAtByRoot: [String: Date] = [:]
     private let positiveRefreshInterval: TimeInterval = 20
     private let absentRefreshInterval: TimeInterval = 15
     private let terminalRefreshInterval: TimeInterval = 15 * 60
     private let fetchThrottleInterval: TimeInterval = 60
+    private let fetchDeferralNanoseconds: UInt64 = 2_000_000_000
     private let maxEntries = 256
 
     private init() {}
@@ -192,32 +194,47 @@ final class WorktreeBranchPullRequestStore: ObservableObject {
     }
 
     private func scheduleRepoFetch(for directory: String) {
-        guard !inflightFetchRoots.contains(directory) else { return }
+        guard !inflightFetchRootLookups.contains(directory) else { return }
+        inflightFetchRootLookups.insert(directory)
+        Task.detached(priority: .utility) {
+            let projectRoot = Self.projectRoot(for: directory)
+            await MainActor.run {
+                self.inflightFetchRootLookups.remove(directory)
+                guard let projectRoot else { return }
+                self.scheduleResolvedRepoFetch(projectRoot: projectRoot)
+            }
+        }
+    }
+
+    private func scheduleResolvedRepoFetch(projectRoot: String) {
+        guard !inflightFetchRoots.contains(projectRoot) else { return }
         let now = Date()
-        if let lastFetchAt = lastFetchAtByRoot[directory],
+        if let lastFetchAt = lastFetchAtByRoot[projectRoot],
            now.timeIntervalSince(lastFetchAt) < fetchThrottleInterval {
             return
         }
 
-        inflightFetchRoots.insert(directory)
-        lastFetchAtByRoot[directory] = now
+        inflightFetchRoots.insert(projectRoot)
+        lastFetchAtByRoot[projectRoot] = now
 
+        let fetchDelay = fetchDeferralNanoseconds
         Task.detached(priority: .utility) {
             defer {
                 Task { @MainActor in
-                    self.inflightFetchRoots.remove(directory)
+                    self.inflightFetchRoots.remove(projectRoot)
                 }
             }
-
-            guard let projectRoot = Self.projectRoot(for: directory) else { return }
             do {
+                try await Task.sleep(nanoseconds: fetchDelay)
                 try ProcessGitStateProvider().fetchAll(projectRoot: projectRoot)
                 await MainActor.run {
                     self.version &+= 1
                 }
+            } catch is CancellationError {
+                return
             } catch {
 #if DEBUG
-                dlog("worktree.prLookup.fetch.failed dir=\(directory) root=\(projectRoot) error=\(error.localizedDescription)")
+                dlog("worktree.prLookup.fetch.failed root=\(projectRoot) error=\(error.localizedDescription)")
 #endif
             }
         }
