@@ -17,6 +17,7 @@ struct TaskBranchesSection: View {
     var onOpenWorktree: (() -> Void)? = nil
     var onStartAgent: (() -> Void)? = nil
     var onCreateWorktree: (() -> Void)? = nil
+    var onLinkWorktree: (() -> Void)? = nil
     var onClearWorktreeError: (() -> Void)? = nil
     var onRebind: (() -> Void)? = nil
     var onUnbind: (() -> Void)? = nil
@@ -47,7 +48,9 @@ struct TaskBranchesSection: View {
                 TaskWorktreeSetupCard(
                     state: provisionState,
                     isCreateDisabled: onCreateWorktree == nil,
+                    isLinkDisabled: onLinkWorktree == nil,
                     onCreate: { onCreateWorktree?() },
+                    onLink: { onLinkWorktree?() },
                     onClearError: { onClearWorktreeError?() }
                 )
             }
@@ -288,7 +291,9 @@ struct TaskBranchesSection: View {
 private struct TaskWorktreeSetupCard: View {
     let state: TaskProvisionState
     var isCreateDisabled = false
+    var isLinkDisabled = false
     let onCreate: () -> Void
+    var onLink: (() -> Void)? = nil
     let onClearError: () -> Void
 
     var body: some View {
@@ -331,6 +336,18 @@ private struct TaskWorktreeSetupCard: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .disabled(isPending || isCreateDisabled)
+
+                if let onLink {
+                    Button(action: onLink) {
+                        Image(systemName: "link")
+                        Text(String(localized: "tasks.sidebar.worktreeSetup.link",
+                                    defaultValue: "Link Worktree",
+                                    table: "TermLoop"))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(isPending || isLinkDisabled)
+                }
 
                 if isFailed {
                     Button(action: onClearError) {

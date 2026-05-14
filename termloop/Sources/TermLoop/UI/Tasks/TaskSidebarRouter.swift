@@ -16,6 +16,7 @@ struct TaskSidebarRouter: View {
     @State private var isCreatingRemoteItem = false
     @State private var createRemoteItemError: String?
     @State private var createWorktreeTaskId: UUID?
+    @State private var linkWorktreeTaskId: UUID?
 
     init(
         store: TaskBoardStore,
@@ -34,6 +35,9 @@ struct TaskSidebarRouter: View {
             .onChange(of: selection.selectedTaskId) { _, _ in syncSelectionValidity() }
             .sheet(isPresented: createWorktreeSheetBinding) {
                 createWorktreeSheet
+            }
+            .sheet(isPresented: linkWorktreeSheetBinding) {
+                linkWorktreeSheet
             }
             .sheet(isPresented: $isShowingCreateRemoteItem) {
                 createRemoteItemSheet
@@ -86,6 +90,7 @@ struct TaskSidebarRouter: View {
                     { id, brief in try? c.updateBrief(taskId: id, brief: brief) }
                 },
                 onCreateWorktree: coordinator == nil ? nil : { id in createWorktreeTaskId = id },
+                onLinkWorktree: coordinator == nil ? nil : { id in linkWorktreeTaskId = id },
                 onStartAgent: coordinator == nil ? nil : { id in startAgent(taskId: id) },
                 onOpenSettings: { isShowingSettings = true },
                 onUnbind: coordinator.map { c in
@@ -334,6 +339,71 @@ struct TaskSidebarRouter: View {
         } else {
             EmptyView()
         }
+    }
+
+    private var linkWorktreeSheetBinding: Binding<Bool> {
+        Binding(
+            get: { coordinator != nil && linkWorktreeTask != nil },
+            set: { isPresented in
+                if !isPresented {
+                    linkWorktreeTaskId = nil
+                }
+            }
+        )
+    }
+
+    private var linkWorktreeTask: TaskRecord? {
+        guard let taskId = linkWorktreeTaskId else { return nil }
+        return store.fileSnapshot().tasks.first { $0.id == taskId }
+    }
+
+    @ViewBuilder
+    private var linkWorktreeSheet: some View {
+        if let coordinator,
+           let task = linkWorktreeTask {
+            let store = store
+            TaskLinkWorktreeSheet(
+                task: task,
+                projectId: store.projectId,
+                loadExistingPaths: {
+                    TaskSidebarRouter.linkedWorktreeKeys(
+                        in: store.fileSnapshot().tasks,
+                        excluding: task.id,
+                        projectRoot: store.projectRoot
+                    )
+                },
+                onLink: { descriptor in
+                    guard let workspaceId = descriptor.workspaceId else { return }
+                    try coordinator.bindExistingWorktree(
+                        taskId: task.id,
+                        workspaceId: workspaceId,
+                        branch: descriptor.branch ?? "",
+                        worktreePath: descriptor.worktreePath,
+                        ownsWorktree: false
+                    )
+                    linkWorktreeTaskId = nil
+                },
+                onCancel: { linkWorktreeTaskId = nil }
+            )
+        } else {
+            EmptyView()
+        }
+    }
+
+    private static func linkedWorktreeKeys(
+        in tasks: [TaskRecord],
+        excluding taskId: UUID,
+        projectRoot: URL
+    ) -> Set<String> {
+        var seen: Set<String> = []
+        for task in tasks {
+            guard task.id != taskId, task.archivedAt == nil else { continue }
+            guard let path = task.worktreePath,
+                  let key = TaskPathNormalization.resolveDisplayAndKey(path, relativeTo: projectRoot)?.keyPath
+            else { continue }
+            seen.insert(key)
+        }
+        return seen
     }
 }
 
@@ -629,6 +699,191 @@ private struct TaskCreateWorktreeSheet: View {
     private func nonEmptyTrimmed(_ value: String?) -> String? {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+private struct TaskLinkWorktreeSheet: View {
+    let task: TaskRecord
+    let projectId: UUID
+    let loadExistingPaths: () -> Set<String>
+    let onLink: (TaskWorkspaceDescriptor) throws -> Void
+    let onCancel: () -> Void
+
+    @State private var candidates: [Candidate]?
+    @State private var errorMessage: String?
+    @State private var selectedKey: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(String(localized: "tasks.linkWorktree.title",
+                            defaultValue: "Link Existing Worktree",
+                            table: "TermLoop"))
+                    .font(.system(size: 18, weight: .semibold))
+                Text(task.title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            content
+
+            if let errorMessage, !errorMessage.isEmpty {
+                Text(errorMessage)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+                    .lineLimit(4)
+            }
+
+            HStack {
+                Spacer()
+                Button(String(localized: "common.cancel",
+                              defaultValue: "Cancel",
+                              table: "TermLoop"),
+                       action: onCancel)
+                Button(String(localized: "tasks.linkWorktree.link",
+                              defaultValue: "Link",
+                              table: "TermLoop")) {
+                    performLink()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(selectedKey == nil)
+            }
+        }
+        .padding(18)
+        .frame(width: 520)
+        .task { await loadCandidates() }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch candidates {
+        case nil:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text(String(localized: "tasks.linkWorktree.loading",
+                            defaultValue: "Loading worktrees…",
+                            table: "TermLoop"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
+        case let .some(items) where items.isEmpty:
+            VStack(spacing: 6) {
+                Image(systemName: "tray")
+                    .font(.system(size: 22, weight: .light))
+                    .foregroundStyle(.secondary)
+                Text(String(localized: "tasks.linkWorktree.empty",
+                            defaultValue: "No unlinked worktrees with a workspace are available in this project.",
+                            table: "TermLoop"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 380)
+            }
+            .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
+        case let .some(items):
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(items) { candidate in
+                        row(candidate)
+                    }
+                }
+            }
+            .frame(minHeight: 200, maxHeight: 320)
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func row(_ candidate: Candidate) -> some View {
+        let isSelected = selectedKey == candidate.keyPath
+        Button {
+            selectedKey = candidate.keyPath
+        } label: {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16, height: 16)
+                    .padding(.top, 1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(candidate.displayLabel)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(candidate.displayPath)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer(minLength: 0)
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+            .padding(.vertical, 6)
+            .padding(.horizontal, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func performLink() {
+        guard let key = selectedKey,
+              let candidate = candidates?.first(where: { $0.keyPath == key }) else { return }
+        do {
+            try onLink(candidate.descriptor)
+        } catch {
+            errorMessage = (error as NSError).localizedDescription
+        }
+    }
+
+    private func loadCandidates() async {
+        let projectRoot = TaskBoardWorkspaceListingAdapter.shared.projectRoot(for: projectId)
+        let existingPaths = loadExistingPaths()
+        let snapshot = await TaskBoardWorkspaceListingAdapter.shared.workspaceSnapshot(in: projectId)
+        candidates = snapshot.descriptors
+            .compactMap { descriptor -> Candidate? in
+                guard descriptor.workspaceId != nil else { return nil }
+                guard let resolved = TaskPathNormalization.resolveDisplayAndKey(
+                    descriptor.worktreePath, relativeTo: projectRoot)
+                else { return nil }
+                guard !existingPaths.contains(resolved.keyPath) else { return nil }
+                return Candidate(
+                    keyPath: resolved.keyPath,
+                    displayPath: resolved.displayPath,
+                    leafName: resolved.leafName,
+                    descriptor: descriptor
+                )
+            }
+            .sorted { $0.leafName.localizedCaseInsensitiveCompare($1.leafName) == .orderedAscending }
+    }
+
+    struct Candidate: Identifiable {
+        let keyPath: String
+        let displayPath: String
+        let leafName: String
+        let descriptor: TaskWorkspaceDescriptor
+
+        var id: String { keyPath }
+
+        var displayLabel: String {
+            let trimmed = descriptor.branch?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmed.isEmpty ? leafName : trimmed
+        }
     }
 }
 
