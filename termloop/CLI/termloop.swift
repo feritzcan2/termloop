@@ -12710,14 +12710,29 @@ struct TermLoopCLI {
     ) throws -> String {
         if let preferred = nonEmptyClaudeHookIdentifier(preferred) {
             if isUUID(preferred) {
-                return preferred
+                return workspaceIdCorrectedByCallerTTY(preferred, client: client)
             }
             return try resolveWorkspaceIdForClaudeHook(preferred, client: client)
         }
         if let fallback = nonEmptyClaudeHookIdentifier(fallback), isUUID(fallback) {
-            return fallback
+            return workspaceIdCorrectedByCallerTTY(fallback, client: client)
         }
         return try resolveWorkspaceIdForClaudeHook(fallback, client: client)
+    }
+
+    private func workspaceIdCorrectedByCallerTTY(
+        _ workspaceId: String,
+        client: SocketClient
+    ) -> String {
+        guard let callerWorkspaceId = resolveCallerWorkspaceIdByTTY(client: client),
+              callerWorkspaceId != workspaceId,
+              (try? client.sendV2(method: "surface.list", params: ["workspace_id": callerWorkspaceId])) != nil else {
+            return workspaceId
+        }
+        agentLifecycleCLILog(
+            "hook.workspace.correctedByCallerTTY requested=\(workspaceId) caller=\(callerWorkspaceId)"
+        )
+        return callerWorkspaceId
     }
 
     private func resolvePreferredSurfaceIdForClaudeHook(
@@ -12727,15 +12742,13 @@ struct TermLoopCLI {
         client: SocketClient
     ) throws -> String {
         if let preferred = nonEmptyClaudeHookIdentifier(preferred) {
-            if isUUID(preferred) {
-                return preferred
-            }
             return try resolveSurfaceIdForClaudeHook(preferred, workspaceId: workspaceId, client: client)
         }
-        if let fallback = nonEmptyClaudeHookIdentifier(fallback), isUUID(fallback) {
-            return fallback
-        }
-        return try resolveSurfaceIdForClaudeHook(fallback, workspaceId: workspaceId, client: client)
+        return try resolveSurfaceIdForClaudeHook(
+            nonEmptyClaudeHookIdentifier(fallback),
+            workspaceId: workspaceId,
+            client: client
+        )
     }
 
     private func nonEmptyClaudeHookIdentifier(_ value: String?) -> String? {
@@ -12897,9 +12910,9 @@ struct TermLoopCLI {
         workspaceId: String,
         client: SocketClient
     ) throws -> String {
-        if let raw,
-           !raw.isEmpty,
-           let candidate = try? resolveSurfaceId(raw, workspaceId: workspaceId, client: client),
+        let requestedSurface = normalizedHandleValue(raw)
+        if let requestedSurface,
+           let candidate = try? resolveSurfaceId(requestedSurface, workspaceId: workspaceId, client: client),
            let listed = try? client.sendV2(method: "surface.list", params: ["workspace_id": workspaceId]) {
             let items = listed["surfaces"] as? [[String: Any]] ?? []
             if items.contains(where: {
@@ -12907,6 +12920,9 @@ struct TermLoopCLI {
             }) {
                 return candidate
             }
+            agentLifecycleCLILog(
+                "hook.surface.rejected workspace=\(workspaceId) requested=\(requestedSurface) candidate=\(candidate) reason=not_in_workspace"
+            )
         }
         if let callerSurfaceId = resolveCallerSurfaceIdByTTY(workspaceId: workspaceId, client: client),
            let listed = try? client.sendV2(method: "surface.list", params: ["workspace_id": workspaceId]) {
@@ -12914,10 +12930,21 @@ struct TermLoopCLI {
             if items.contains(where: {
                 ($0["id"] as? String) == callerSurfaceId || ($0["ref"] as? String) == callerSurfaceId
             }) {
+                if let requestedSurface, requestedSurface != callerSurfaceId {
+                    agentLifecycleCLILog(
+                        "hook.surface.correctedByCallerTTY workspace=\(workspaceId) requested=\(requestedSurface) caller=\(callerSurfaceId)"
+                    )
+                }
                 return callerSurfaceId
             }
         }
-        return try resolveSurfaceId(nil, workspaceId: workspaceId, client: client)
+        let fallbackSurfaceId = try resolveSurfaceId(nil, workspaceId: workspaceId, client: client)
+        if let requestedSurface, requestedSurface != fallbackSurfaceId {
+            agentLifecycleCLILog(
+                "hook.surface.fallbackFocused workspace=\(workspaceId) requested=\(requestedSurface) fallback=\(fallbackSurfaceId)"
+            )
+        }
+        return fallbackSurfaceId
     }
 
     private struct CallerTerminalBinding {

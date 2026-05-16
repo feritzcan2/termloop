@@ -237,9 +237,9 @@ enum KeyboardShortcutSettings {
             case .toggleTerminalCopyMode:
                 return StoredShortcut(key: "m", command: true, shift: true, option: false, control: false)
             case .selectProjectByNumber:
-                return StoredShortcut(key: "1", command: false, shift: true, option: false, control: false)
-            case .selectWorkspaceByNumber:
                 return StoredShortcut(key: "1", command: true, shift: false, option: false, control: false)
+            case .selectWorkspaceByNumber:
+                return StoredShortcut(key: "1", command: true, shift: false, option: true, control: false)
             case .toggleFileExplorer:
                 return StoredShortcut(key: "b", command: true, shift: false, option: true, control: false)
             case .openBrowser:

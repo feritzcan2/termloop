@@ -220,6 +220,540 @@ struct WorktreeAgentsGroup: Identifiable {
 }
 
 @MainActor
+struct WorktreeGroupContextMenu: View {
+    let group: WorktreeAgentsGroup
+    let sourceWorkspace: Workspace?
+    let tabManager: TabManager
+    var onChanged: (() -> Void)? = nil
+    var onDeleted: (() -> Void)? = nil
+
+    var body: some View {
+        Button {
+            WorktreeRepairCoordinator.shared.refreshStatus(
+                group: group,
+                sourceWorkspace: sourceWorkspace,
+                onRefresh: { onChanged?() }
+            )
+        } label: {
+            Label(
+                String(
+                    localized: "worktreeAgents.group.refreshStatus",
+                    defaultValue: "Refresh Git Worktree Status",
+                    table: "TermLoop"
+                ),
+                systemImage: "arrow.clockwise"
+            )
+        }
+
+        if let worktreePath = group.worktreePath {
+            let openTarget = projectId.flatMap { ProjectStore.shared.project(id: $0)?.worktreeOpenTarget }
+            Menu {
+                Button {
+                    WorktreeRepairCoordinator.shared.openFolder(path: worktreePath)
+                } label: {
+                    Label(
+                        String(
+                            localized: "worktreeAgents.group.openFolder",
+                            defaultValue: "Open Folder",
+                            table: "TermLoop"
+                        ),
+                        systemImage: "folder"
+                    )
+                }
+
+                Button {
+                    WorktreeRepairCoordinator.shared.openConfiguredTarget(
+                        projectId: projectId,
+                        worktreePath: worktreePath
+                    )
+                } label: {
+                    Label(openTargetLabel(for: openTarget), systemImage: "arrow.up.right.square")
+                }
+
+                Button {
+                    WorktreeRepairCoordinator.shared.configureOpenTarget(
+                        projectId: projectId,
+                        worktreePath: worktreePath
+                    )
+                } label: {
+                    Label(
+                        String(
+                            localized: "worktreeAgents.group.configureOpenTarget",
+                            defaultValue: "Configure Open Target…",
+                            table: "TermLoop"
+                        ),
+                        systemImage: "slider.horizontal.3"
+                    )
+                }
+
+                if openTarget != nil {
+                    Button {
+                        WorktreeRepairCoordinator.shared.clearOpenTarget(projectId: projectId)
+                    } label: {
+                        Label(
+                            String(
+                                localized: "worktreeAgents.group.clearOpenTarget",
+                                defaultValue: "Clear Open Target",
+                                table: "TermLoop"
+                            ),
+                            systemImage: "xmark.circle"
+                        )
+                    }
+                }
+
+                Divider()
+
+                Button {
+                    WorktreeRepairCoordinator.shared.reveal(path: worktreePath)
+                } label: {
+                    Label(
+                        String(
+                            localized: "worktreeAgents.group.revealWorktree",
+                            defaultValue: "Reveal in Finder",
+                            table: "TermLoop"
+                        ),
+                        systemImage: "magnifyingglass"
+                    )
+                }
+
+                Button {
+                    WorktreeRepairCoordinator.shared.copyPath(worktreePath)
+                } label: {
+                    Label(
+                        String(
+                            localized: "worktreeAgents.group.copyPath",
+                            defaultValue: "Copy Path",
+                            table: "TermLoop"
+                        ),
+                        systemImage: "doc.on.doc"
+                    )
+                }
+            } label: {
+                Label(
+                    String(
+                        localized: "worktreeAgents.group.openWorktreeMenu",
+                        defaultValue: "Open Worktree",
+                        table: "TermLoop"
+                    ),
+                    systemImage: "arrow.up.right.square"
+                )
+            }
+        }
+
+        if group.statusKind == .branchDrift,
+           canPerformBranchActions,
+           group.worktreePath != nil {
+            Button {
+                WorktreeRepairCoordinator.shared.switchToExpectedBranch(
+                    group: group,
+                    sourceWorkspace: sourceWorkspace,
+                    onRefresh: { onChanged?() }
+                )
+            } label: {
+                Label(
+                    String(
+                        localized: "worktreeAgents.group.switchToExpectedBranch",
+                        defaultValue: "Switch Git Back to Expected Branch…",
+                        table: "TermLoop"
+                    ),
+                    systemImage: "arrow.triangle.2.circlepath"
+                )
+            }
+        }
+
+        if group.statusKind == .branchDrift,
+           group.observedRef?.branchName != nil,
+           group.worktreePath != nil {
+            Button {
+                WorktreeRepairCoordinator.shared.acceptObservedBranch(
+                    group: group,
+                    onRefresh: { onChanged?() }
+                )
+            } label: {
+                Label(
+                    String(
+                        localized: "worktreeAgents.group.acceptObservedBranch",
+                        defaultValue: "Use Current Git Branch as Expected…",
+                        table: "TermLoop"
+                    ),
+                    systemImage: "checkmark.circle"
+                )
+            }
+        }
+
+        if group.statusKind == .missingRegistration, group.worktreePath != nil {
+            Button {
+                WorktreeRepairCoordinator.shared.repairRegistration(
+                    group: group,
+                    sourceWorkspace: sourceWorkspace,
+                    onRefresh: { onChanged?() }
+                )
+            } label: {
+                Label(
+                    String(
+                        localized: "worktreeAgents.group.repairRegistration",
+                        defaultValue: "Repair Git Registration…",
+                        table: "TermLoop"
+                    ),
+                    systemImage: "wrench.and.screwdriver"
+                )
+            }
+        }
+
+        if group.statusKind == .prunable {
+            Button {
+                WorktreeRepairCoordinator.shared.pruneStaleRegistrations(
+                    group: group,
+                    sourceWorkspace: sourceWorkspace,
+                    onRefresh: { onChanged?() }
+                )
+            } label: {
+                Label(
+                    String(
+                        localized: "worktreeAgents.group.pruneRegistrations",
+                        defaultValue: "Prune Stale Registrations…",
+                        table: "TermLoop"
+                    ),
+                    systemImage: "scissors"
+                )
+            }
+        }
+
+        Divider()
+
+        if group.needsAttention {
+            Button {
+                WorktreeRepairCoordinator.shared.detachGroupFromWorktree(
+                    group: group,
+                    onRefresh: { onChanged?() }
+                )
+            } label: {
+                Label(
+                    String(
+                        localized: "worktreeAgents.group.detachFromWorktree",
+                        defaultValue: "Detach from Worktree…",
+                        table: "TermLoop"
+                    ),
+                    systemImage: "rectangle.portrait.and.arrow.right"
+                )
+            }
+        }
+
+        if !group.workspaces.isEmpty {
+            Button {
+                _ = WorkspaceHideCoordinator.confirmAndCollapse(
+                    workspaces: group.workspaces,
+                    tabManager: tabManager,
+                    targetName: group.branch
+                )
+            } label: {
+                Label(
+                    String(
+                        localized: "worktreeAgents.group.collapse",
+                        defaultValue: "Collapse Worktree…",
+                        table: "TermLoop"
+                    ),
+                    systemImage: "archivebox"
+                )
+            }
+        }
+
+        if canPerformBranchActions, !group.workspaces.isEmpty {
+            Button {
+                moveGroupToCurrentLocalBranch()
+            } label: {
+                Label(
+                    String(
+                        localized: "worktreeAgents.group.moveToCurrentLocalBranch",
+                        defaultValue: "Move to current local branch…",
+                        table: "TermLoop"
+                    ),
+                    systemImage: "arrow.turn.up.left"
+                )
+            }
+        }
+
+        Divider()
+
+        Button {
+            if let worktreePath = group.worktreePath {
+                RemoteItemBindingPrompt.present(
+                    forWorktreePath: worktreePath,
+                    workspaceIds: group.workspaces.map(\.id)
+                )
+            } else {
+                RemoteItemBindingPrompt.present(forGroupWorkspaces: group.workspaces)
+            }
+        } label: {
+            Label(
+                String(
+                    localized: "worktreeAgents.group.setRemoteItem",
+                    defaultValue: "Set Remote Item…",
+                    table: "TermLoop"
+                ),
+                systemImage: "link"
+            )
+        }
+
+        Divider()
+
+        if canDeleteGroup {
+            Button {
+                WorktreeDeletionCoordinator.shared.confirmAndDelete(
+                    branch: singleExpectedBranch,
+                    worktreePath: canDeletePhysicalWorktree ? group.worktreePath : nil,
+                    projectId: projectId,
+                    fallbackWorkspaceIds: group.workspaces.map(\.id),
+                    onDeleted: { onDeleted?() }
+                )
+            } label: {
+                Label(
+                    deleteLabel,
+                    systemImage: "trash.fill"
+                )
+            }
+        }
+    }
+
+    private var projectId: UUID? {
+        sourceWorkspace?.projectId ?? group.projectId ?? group.workspaces.first?.projectId
+    }
+
+    private var canPerformBranchActions: Bool {
+        group.expectedBranches.count == 1
+    }
+
+    private var singleExpectedBranch: String? {
+        canPerformBranchActions ? group.expectedBranches.first : nil
+    }
+
+    private var canDeletePhysicalWorktree: Bool {
+        guard group.worktreePath != nil else { return false }
+        switch group.statusKind {
+        case .missingRegistration, .missingPath, .unknown, .prunable:
+            return false
+        default:
+            return true
+        }
+    }
+
+    private var canDeleteGroup: Bool {
+        canDeletePhysicalWorktree || canPerformBranchActions
+    }
+
+    private var deleteLabel: String {
+        if canDeletePhysicalWorktree {
+            return String(
+                localized: "worktreeAgents.group.deleteWorktree",
+                defaultValue: "Delete Worktree…",
+                table: "TermLoop"
+            )
+        }
+        return String(
+            localized: "worktreeAgents.group.deleteBranch",
+            defaultValue: "Delete Branch…",
+            table: "TermLoop"
+        )
+    }
+
+    private func openTargetLabel(for target: WorktreeOpenTarget?) -> String {
+        guard let target else {
+            return String(
+                localized: "worktreeAgents.group.openTarget.configureFirst",
+                defaultValue: "Open Target…",
+                table: "TermLoop"
+            )
+        }
+        let rawRelative = target.relativePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let relative = rawRelative.isEmpty ? "." : rawRelative
+        if let appName = target.applicationDisplayName?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !appName.isEmpty {
+            return String(
+                localized: "worktreeAgents.group.openTarget.withApp",
+                defaultValue: "Open \(relative) in \(appName)",
+                table: "TermLoop"
+            )
+        }
+        return String(
+            localized: "worktreeAgents.group.openTarget.default",
+            defaultValue: "Open \(relative)",
+            table: "TermLoop"
+        )
+    }
+
+    private func moveGroupToCurrentLocalBranch() {
+        do {
+            let inspection = try WorktreeCoordinator.shared.inspectDetachToCurrentLocalBranch(
+                workspaces: group.workspaces,
+                worktreePath: group.worktreePath
+            )
+
+            guard inspection.runningWorkspaceIds.isEmpty else {
+                presentGroupMoveError(
+                    String(
+                        localized: "worktreeAgents.group.move.runningError",
+                        defaultValue: "Stop running agents in this worktree before moving it back to \(inspection.currentLocalBranch).",
+                        table: "TermLoop"
+                    )
+                )
+                return
+            }
+
+            guard !inspection.hasUnmergedCommits else {
+                presentGroupMoveError(
+                    String(
+                        localized: "worktreeAgents.group.move.unmergedError",
+                        defaultValue: "Branch \(inspection.worktreeBranch) has commits that are not merged into \(inspection.currentLocalBranch). Merge them first.",
+                        table: "TermLoop"
+                    )
+                )
+                return
+            }
+
+            let policy: WorktreeCoordinator.LocalChangesPolicy
+            if inspection.hasLocalChanges {
+                guard let selected = selectLocalChangesPolicy(
+                    for: inspection,
+                    workspaceCount: group.workspaces.count
+                ) else { return }
+                policy = selected
+            } else {
+                guard confirmCleanGroupMove(
+                    inspection: inspection,
+                    workspaceCount: group.workspaces.count
+                ) else { return }
+                policy = .discardAll
+            }
+
+            let result = try WorktreeCoordinator.shared.detachToCurrentLocalBranch(
+                workspaces: group.workspaces,
+                worktreePath: group.worktreePath,
+                localChangesPolicy: policy
+            )
+            onChanged?()
+            if !result.worktreeRemoved {
+                presentGroupMoveInfo(
+                    String(
+                        localized: "worktreeAgents.group.move.leftOnDisk",
+                        defaultValue: "Detached \(result.workspaceCount) workspace(s) to \(result.currentLocalBranch). Local changes were left in the worktree at \(result.worktreePath).",
+                        table: "TermLoop"
+                    )
+                )
+            }
+        } catch {
+            presentGroupMoveError((error as? LocalizedError)?.errorDescription ?? "\(error)")
+        }
+    }
+
+    private func confirmCleanGroupMove(
+        inspection: WorktreeCoordinator.DetachToCurrentLocalBranchInspection,
+        workspaceCount: Int
+    ) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = String(
+            localized: "worktreeAgents.group.move.cleanTitle",
+            defaultValue: "Move to \(inspection.currentLocalBranch)?",
+            table: "TermLoop"
+        )
+        alert.informativeText = String(
+            localized: "worktreeAgents.group.move.cleanBody",
+            defaultValue: "This detaches \(workspaceCount) workspace(s) from \(inspection.worktreeBranch) and removes the clean worktree at \(inspection.worktreePath).",
+            table: "TermLoop"
+        )
+        alert.addButton(withTitle: String(
+            localized: "worktreeAgents.group.move.confirm",
+            defaultValue: "Move",
+            table: "TermLoop"
+        ))
+        alert.addButton(withTitle: String(
+            localized: "common.cancel",
+            defaultValue: "Cancel",
+            table: "TermLoop"
+        ))
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func selectLocalChangesPolicy(
+        for inspection: WorktreeCoordinator.DetachToCurrentLocalBranchInspection,
+        workspaceCount: Int
+    ) -> WorktreeCoordinator.LocalChangesPolicy? {
+        let alert = NSAlert()
+        alert.messageText = String(
+            localized: "worktreeAgents.group.move.localChangesTitle",
+            defaultValue: "Local changes in worktree",
+            table: "TermLoop"
+        )
+        alert.informativeText = String(
+            localized: "worktreeAgents.group.move.localChangesBody",
+            defaultValue: "TermLoop will move \(workspaceCount) workspace(s) from “\(inspection.worktreeBranch)” back to “\(inspection.currentLocalBranch)”. This worktree has local changes that may only exist in:\n\(inspection.worktreePath)\n\nChoose how to handle those changes.",
+            table: "TermLoop"
+        )
+        alert.addButton(withTitle: String(
+            localized: "worktreeAgents.group.move.optionLeave.short",
+            defaultValue: "Keep Worktree",
+            table: "TermLoop"
+        ))
+
+        if inspection.rootHasLocalChanges {
+            alert.informativeText += "\n\n" + String(
+                localized: "worktreeAgents.group.move.rootDirtyNote",
+                defaultValue: "The current local branch already has local changes, so bringing worktree changes over is disabled until that checkout is clean.",
+                table: "TermLoop"
+            )
+        } else {
+            alert.addButton(withTitle: String(
+                localized: "worktreeAgents.group.move.optionBring.short",
+                defaultValue: "Bring Changes",
+                table: "TermLoop"
+            ))
+        }
+        alert.addButton(withTitle: String(
+            localized: "worktreeAgents.group.move.optionDiscard.short",
+            defaultValue: "Discard Changes",
+            table: "TermLoop"
+        ))
+        alert.addButton(withTitle: String(
+            localized: "common.cancel",
+            defaultValue: "Cancel",
+            table: "TermLoop"
+        ))
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return .leaveInWorktree
+        case .alertSecondButtonReturn where !inspection.rootHasLocalChanges:
+            return .moveToCurrentBranch
+        case .alertSecondButtonReturn:
+            return .discardAll
+        case .alertThirdButtonReturn where !inspection.rootHasLocalChanges:
+            return .discardAll
+        default:
+            return nil
+        }
+    }
+
+    private func presentGroupMoveError(_ message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(
+            localized: "worktreeAgents.group.move.errorTitle",
+            defaultValue: "Worktree move failed",
+            table: "TermLoop"
+        )
+        alert.informativeText = message
+        alert.runModal()
+    }
+
+    private func presentGroupMoveInfo(_ message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = message
+        alert.runModal()
+    }
+}
+
+@MainActor
 final class WorktreeDeletionCoordinator {
     static let shared = WorktreeDeletionCoordinator()
 

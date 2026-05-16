@@ -1898,7 +1898,7 @@ private struct DebugWindowControlsView: View {
                         Toggle("Always show shortcut hints", isOn: $alwaysShowShortcutHints)
 
                         hintOffsetSection(
-                            "Sidebar Cmd+1…9",
+                            "Sidebar Cmd+Opt+1…9",
                             x: $sidebarShortcutHintXOffset,
                             y: $sidebarShortcutHintYOffset
                         )
@@ -3101,7 +3101,7 @@ private struct SidebarDebugView: View {
                         Toggle("Always show shortcut hints", isOn: $alwaysShowShortcutHints)
 
                         hintOffsetSection(
-                            "Sidebar Cmd+1…9",
+                            "Sidebar Cmd+Opt+1…9",
                             x: $sidebarShortcutHintXOffset,
                             y: $sidebarShortcutHintYOffset
                         )

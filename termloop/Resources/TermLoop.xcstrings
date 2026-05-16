@@ -3280,6 +3280,23 @@
         }
       }
     },
+    "tasks.sidebar.section.taskSpec.copyFullPath": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Full Path"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フルパスをコピー"
+          }
+        }
+      }
+    },
     "tcpBridge.bindAll.label": {
       "extractionState": "manual",
       "localizations": {

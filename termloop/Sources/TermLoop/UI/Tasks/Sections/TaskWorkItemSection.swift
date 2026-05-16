@@ -387,6 +387,17 @@ struct TaskSpecSection: View {
                 Label(openMenuTitle, systemImage: "square.and.pencil")
             }
 
+            if let taskFilePath {
+                Button {
+                    copyFullPath(taskFilePath)
+                } label: {
+                    Label(String(localized: "tasks.sidebar.section.taskSpec.copyFullPath",
+                                 defaultValue: "Copy Full Path",
+                                 table: "TermLoop"),
+                          systemImage: "doc.on.doc")
+                }
+            }
+
             Button {
                 onRefineWithAgent?()
             } label: {
@@ -408,6 +419,12 @@ struct TaskSpecSection: View {
             .disabled(onExecuteWithAgent == nil)
         }
         .help(openHelp)
+    }
+
+    private func copyFullPath(_ path: String) {
+        let fullPath = URL(fileURLWithPath: path, isDirectory: false).standardizedFileURL.path
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(fullPath, forType: .string)
     }
 
     private var fileLabel: String {

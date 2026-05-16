@@ -988,6 +988,22 @@ extension TermLoopSocketCommands {
         let metadata = WorkspaceMetadataStore.shared
         let priorWaiting = metadata.metadata(forWorkspaceId: workspaceId).awaitingInputSince != nil
         let priorPersistedSession = metadata.persistedAgentSession(for: workspaceId)
+        if let mismatchReason = observedAgentBindingMismatchReason(
+            workspaceId: workspaceId,
+            observedAgentId: agentId
+        ) {
+            lifecycleLog(
+                "rpc.reportAgentActivity.ignored workspace=\(workspaceId.uuidString) agent=\(agentId) phase=\(phase.rawValue) reason=\(mismatchReason)"
+            )
+            return .ok([
+                "workspace_id": workspaceId.uuidString,
+                "agent_id": agentId,
+                "phase": phase.rawValue,
+                "awaiting_since": NSNull(),
+                "ignored": true,
+                "reason": mismatchReason
+            ])
+        }
         let normalizedSessionId = metadata.acceptedObservedSessionId(
             agentId: agentId,
             sessionId: sessionId,
@@ -1119,15 +1135,44 @@ extension TermLoopSocketCommands {
               !normalizedSessionId.isEmpty else {
             return false
         }
-        let normalizedAgentId = agentId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedAgentId.isEmpty,
-              TerminalAgentRegistry.shared.agent(id: normalizedAgentId) != nil else {
+        guard let normalizedAgentId = normalizedRegisteredAgentId(agentId) else {
             return false
         }
         return WorkspaceMetadataStore.shared.setTerminalAgentId(
             normalizedAgentId,
             for: workspaceId
         )
+    }
+
+    static func observedAgentBindingMismatchReason(
+        workspaceId: UUID,
+        observedAgentId agentId: String
+    ) -> String? {
+        guard let normalizedAgentId = normalizedRegisteredAgentId(agentId) else {
+            return nil
+        }
+        let metadata = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: workspaceId)
+        if let persisted = metadata.persistedAgentSession,
+           let persistedAgentId = normalizedRegisteredAgentId(persisted.agentId),
+           persistedAgentId != normalizedAgentId {
+            return "persisted_agent_mismatch"
+        }
+        if let state = TerminalAgentActivityStore.shared.state(forWorkspaceId: workspaceId),
+           state.isVisibleInActiveAgents,
+           let liveAgentId = normalizedRegisteredAgentId(state.agentId),
+           liveAgentId != normalizedAgentId {
+            return "live_agent_mismatch"
+        }
+        return nil
+    }
+
+    private static func normalizedRegisteredAgentId(_ agentId: String) -> String? {
+        let normalizedAgentId = agentId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedAgentId.isEmpty,
+              TerminalAgentRegistry.shared.agent(id: normalizedAgentId) != nil else {
+            return nil
+        }
+        return normalizedAgentId
     }
 
     private static func clearAgentActivityCommon(workspaceId: UUID) {

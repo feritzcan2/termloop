@@ -1001,7 +1001,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         }
     }
 
-    func testCmdDigitRoutesToEventWindowWhenActiveManagerIsStale() {
+    func testCmdOptionDigitRoutesWorkspaceShortcutToEventWindowWhenActiveManagerIsStale() {
         guard let appDelegate = AppDelegate.shared else {
             XCTFail("Expected AppDelegate.shared")
             return
@@ -1040,11 +1040,11 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 
         guard let event = makeKeyDownEvent(
             key: "1",
-            modifiers: [.command],
+            modifiers: [.command, .option],
             keyCode: 18, // kVK_ANSI_1
             windowNumber: secondWindow.windowNumber
         ) else {
-            XCTFail("Failed to construct Cmd+1 event")
+            XCTFail("Failed to construct Cmd+Option+1 event")
             return
         }
 
@@ -1054,9 +1054,9 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        XCTAssertEqual(firstManager.selectedTabId, firstSelectedBefore, "Cmd+1 must not select a tab in stale active window")
-        XCTAssertNotEqual(secondManager.selectedTabId, secondSelectedBefore, "Cmd+1 should change tab selection in event window")
-        XCTAssertEqual(secondManager.selectedTabId, secondFirstTabId, "Cmd+1 should select first tab in the event window")
+        XCTAssertEqual(firstManager.selectedTabId, firstSelectedBefore, "Cmd+Option+1 must not select a tab in stale active window")
+        XCTAssertNotEqual(secondManager.selectedTabId, secondSelectedBefore, "Cmd+Option+1 should change tab selection in event window")
+        XCTAssertEqual(secondManager.selectedTabId, secondFirstTabId, "Cmd+Option+1 should select first tab in the event window")
         XCTAssertTrue(appDelegate.tabManager === secondManager, "Shortcut routing should retarget active manager to event window")
     }
 
@@ -3782,11 +3782,11 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 
         guard let event = makeKeyDownEvent(
             key: "1",
-            modifiers: [.command],
+            modifiers: [.command, .option],
             keyCode: 18,
             windowNumber: Int.max
         ) else {
-            XCTFail("Failed to construct Cmd+1 event")
+            XCTFail("Failed to construct Cmd+Option+1 event")
             return
         }
 
@@ -3796,8 +3796,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        XCTAssertEqual(firstManager.selectedTabId, firstSelectedBefore, "Unresolved event window must not route Cmd+1 into stale manager")
-        XCTAssertEqual(secondManager.selectedTabId, secondSelectedBefore, "Unresolved event window must not route Cmd+1 into key/main fallback manager")
+        XCTAssertEqual(firstManager.selectedTabId, firstSelectedBefore, "Unresolved event window must not route Cmd+Option+1 into stale manager")
+        XCTAssertEqual(secondManager.selectedTabId, secondSelectedBefore, "Unresolved event window must not route Cmd+Option+1 into key/main fallback manager")
         XCTAssertTrue(appDelegate.tabManager === firstManager, "Unresolved event window should not retarget active manager")
     }
 

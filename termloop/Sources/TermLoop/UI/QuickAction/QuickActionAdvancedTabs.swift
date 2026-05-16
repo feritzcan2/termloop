@@ -62,17 +62,6 @@ struct QuickActionAdvancedTabs: View {
             }
             .frame(maxWidth: .infinity, minHeight: 260, maxHeight: 320, alignment: .topLeading)
             .clipped()
-            .background(
-                HStack(spacing: 0) {
-                    Button("", action: { selection = .preview })
-                        .keyboardShortcut("1", modifiers: .command)
-                        .hidden()
-                    Button("", action: { selection = .raw })
-                        .keyboardShortcut("2", modifiers: .command)
-                        .hidden()
-                }
-                .frame(width: 0, height: 0)
-            )
         }
     }
 
