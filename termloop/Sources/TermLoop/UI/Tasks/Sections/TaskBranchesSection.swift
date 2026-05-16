@@ -91,6 +91,18 @@ struct TaskBranchesSection: View {
             }
             Spacer(minLength: 0)
         }
+        .contentShape(Rectangle())
+        .contextMenu {
+            if let group = taskWorktreeGroup {
+                WorktreeGroupContextMenu(
+                    group: group,
+                    sourceWorkspace: sourceWorkspace(for: group),
+                    tabManager: tabManager,
+                    onChanged: { worktreeProjectionStore.markChanged(reason: "taskSidebar.contextMenu") },
+                    onDeleted: { worktreeProjectionStore.markChanged(reason: "taskSidebar.delete") }
+                )
+            }
+        }
     }
 
     private var actionRow: some View {
@@ -216,6 +228,114 @@ struct TaskBranchesSection: View {
 
     private var currentBranchName: String? {
         liveBranch ?? normalizedBranch
+    }
+
+    private var taskWorktreeGroup: WorktreeAgentsGroup? {
+        guard let path = normalizedWorktreePath else { return nil }
+        let workspaces = taskWorktreeWorkspaces
+        let status = taskWorktreeStatus(path: path, workspaces: workspaces)
+        let expectedBranches = [normalizedBranch ?? liveBranch].compactMap { value in
+            value?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        }
+        let branchLabel = currentBranchName
+            ?? TaskAgentProjectionBuilder.pathLeaf(path)
+            ?? String(localized: "tasks.sidebar.section.branches.detached",
+                      defaultValue: "Detached HEAD", table: "TermLoop")
+        return WorktreeAgentsGroup(
+            id: "path:\(WorktreeResolver.normalizePath(path) ?? path)",
+            branch: branchLabel,
+            workspaces: workspaces,
+            worktreePath: path,
+            projectId: projectId,
+            statusKind: status?.kind,
+            observedRef: status?.observedRef,
+            expectedBranches: expectedBranches,
+            needsAttention: status?.needsUserAttention ?? false
+        )
+    }
+
+    private var taskWorktreeWorkspaces: [Workspace] {
+        var orderedIds: [UUID] = []
+        func append(_ workspaceId: UUID?) {
+            guard let workspaceId, !orderedIds.contains(workspaceId) else { return }
+            orderedIds.append(workspaceId)
+        }
+
+        if let path = normalizedWorktreePath {
+            taskWorktreeProjectionEntry?.workspaceIds.forEach { append($0) }
+            WorkspaceMetadataStore.shared
+                .workspaceIds(withWorktreePath: path, projectId: projectId)
+                .forEach { append($0) }
+        }
+        append(taskWorkspaceId)
+
+        let workspaceById = Dictionary(
+            uniqueKeysWithValues: tabManager.tabs.map { ($0.id, $0) }
+        )
+        return orderedIds.compactMap { workspaceById[$0] }
+    }
+
+    private var taskWorktreeProjectionEntry: WorktreeProjectionEntry? {
+        guard let projectId,
+              let path = normalizedWorktreePath else { return nil }
+        return WorktreeProjectionStore.shared
+            .snapshot(projectId: projectId, workspaces: tabManager.tabs)?
+            .entry(forWorktreePath: path)
+    }
+
+    private func taskWorktreeStatus(path: String, workspaces: [Workspace]) -> WorktreeStatus? {
+        let workspaceStatuses = workspaces.compactMap {
+            $0.termLoopCachedWorktreeStatus(maximumAge: 60)
+        }
+        if let attention = workspaceStatuses.first(where: \.needsUserAttention) {
+            return attention
+        }
+        if let first = workspaceStatuses.first {
+            return first
+        }
+
+        if let projectId,
+           let project = ProjectStore.shared.project(id: projectId),
+           let snapshot = WorktreeRegistry.shared.cachedSnapshot(
+                projectFolder: project.folderPath,
+                maximumAge: 60
+           ) {
+            return WorktreeReconciler.status(
+                for: WorktreeReconciler.Binding(
+                    expectedBranch: normalizedBranch,
+                    worktreePath: path
+                ),
+                entries: snapshot.entries
+            )
+        }
+
+        guard let expected = normalizedBranch,
+              let observed = TermLoopWorktreeHeadReader.currentObservedRefWithoutGit(checkoutPath: path),
+              observed.branchName != expected else {
+            return nil
+        }
+        return WorktreeStatus(
+            kind: .branchDrift,
+            expectedBranch: expected,
+            path: path,
+            pathSource: .metadata,
+            observedRef: observed,
+            isMain: false,
+            isLocked: false,
+            isPrunable: false,
+            message: nil
+        )
+    }
+
+    private func sourceWorkspace(for group: WorktreeAgentsGroup) -> Workspace? {
+        if let taskWorkspaceId,
+           let workspace = tabManager.tabs.first(where: { $0.id == taskWorkspaceId }) {
+            return workspace
+        }
+        if let selected = group.workspaces.first(where: { $0.id == tabManager.selectedTabId }) {
+            return selected
+        }
+        return group.workspaces.first
     }
 
     private var hasWorktreeContext: Bool {

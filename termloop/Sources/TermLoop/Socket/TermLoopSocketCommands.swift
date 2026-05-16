@@ -385,6 +385,19 @@ enum TermLoopSocketCommands {
                 "reason": "workspace_not_live"
             ])
         }
+        if let mismatchReason = observedAgentBindingMismatchReason(
+            workspaceId: workspaceId,
+            observedAgentId: TerminalAgent.claudeId
+        ) {
+            return .ok([
+                "workspace_id": workspaceIdStr,
+                "session_id": sessionId,
+                "cwd": orNull(cwd),
+                "pid": pid.map { Int($0) as Any } ?? NSNull(),
+                "ignored": true,
+                "reason": mismatchReason
+            ])
+        }
         guard let acceptedSessionId = WorkspaceMetadataStore.shared.acceptedObservedSessionId(
             agentId: TerminalAgent.claudeId,
             sessionId: sessionId,

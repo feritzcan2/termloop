@@ -216,13 +216,20 @@ This fork ships with crash reporting disabled by default.
 | Shortcut | Action |
 |----------|--------|
 | ⌘ N | New workspace |
-| ⌘ 1–8 | Jump to workspace 1–8 |
-| ⌘ 9 | Jump to last workspace |
+| ⌘ ⌥ 1–8 | Jump to workspace 1–8 |
+| ⌘ ⌥ 9 | Jump to last workspace |
 | ⌃ ⌘ ] | Next workspace |
 | ⌃ ⌘ [ | Previous workspace |
 | ⌘ ⇧ W | Close workspace |
 | ⌘ ⇧ R | Rename workspace |
 | ⌘ B | Toggle sidebar |
+
+### Projects
+
+| Shortcut | Action |
+|----------|--------|
+| ⌘ 1–8 | Jump to project 1–8 |
+| ⌘ 9 | Jump to last project |
 
 ### Surfaces
 
