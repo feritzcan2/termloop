@@ -71,6 +71,18 @@ last_cursor_reset: ?std.time.Instant = null,
 /// to keep track of any state or if its already been freed.
 thread_enter_state: ?*ThreadEnterState = null,
 
+/// cmux fork: optional raw-PTY tap callback. Fired on Ghostty's IO thread
+/// immediately before each chunk of bytes is handed to the terminal stream
+/// parser. Set via the C API `ghostty_surface_set_pty_tap` and used by cmux
+/// to fan out the byte stream to remote (mobile) mirror clients.
+///
+/// The callback runs on the IO thread and MUST be cheap, non-blocking, and
+/// allocation-free in the steady state. It receives the same bytes that the
+/// parser is about to consume — multi-byte UTF-8 sequences may split across
+/// invocations.
+pty_tap: ?*const fn (?*anyopaque, [*]const u8, usize) callconv(.c) void = null,
+pty_tap_userdata: ?*anyopaque = null,
+
 /// The state we need to keep around only until we enter the IO
 /// thread. Then we can throw it all away.
 const ThreadEnterState = struct {
