@@ -14,6 +14,7 @@ public final class DevServerRunCoordinator {
     private let runStore: DevServerRunStore
     private var processes: [UUID: DevServerManagedProcess] = [:]
     private var openOnURLRunIds = Set<UUID>()
+    private var localSetupSatisfiedRunIds = Set<UUID>()
     private var setupStateStores: [UUID: DevServerSetupStateStore] = [:]
 
     public convenience init() {
@@ -101,6 +102,11 @@ public final class DevServerRunCoordinator {
         resolved: ResolvedStartContext,
         environment: [String: String]
     ) throws -> DevServerRunSnapshot {
+        if resolved.profile.requiresLocalSetup,
+           !localSetupSatisfiedRunIds.contains(run.runId),
+           try launchLocalSetupIfNeeded(run: run, resolved: resolved, environment: environment) {
+            return runStore.snapshot(runId: run.runId) ?? run
+        }
         if setupStateStore(for: resolved).needsSetup(
             profile: resolved.profile,
             worktreePath: resolved.worktreeRoot.path
@@ -108,6 +114,73 @@ public final class DevServerRunCoordinator {
             return try launchSetup(run: run, resolved: resolved, environment: environment)
         }
         return try launchDevServer(runId: run.runId, resolved: resolved, environment: environment)
+    }
+
+    private func launchLocalSetupIfNeeded(
+        run: DevServerRunSnapshot,
+        resolved: ResolvedStartContext,
+        environment: [String: String]
+    ) throws -> Bool {
+        guard let store = WorktreeSetupStoreProvider.shared.store(for: resolved.projectId) else {
+            return false
+        }
+        store.load()
+        if let loadError = store.loadError {
+            throw DevServerRunError.setupFailed(loadError.localizedDescription)
+        }
+        guard store.configExists,
+              store.file.hasRunnableSetup else {
+            localSetupSatisfiedRunIds.insert(run.runId)
+            return false
+        }
+        let status = WorktreeSetupCoordinator.shared.visibleStatus(
+            projectId: resolved.projectId,
+            worktreePath: resolved.worktreeRoot.path
+        )
+        guard status?.phase == .needed || status?.phase == .failed || status?.phase == .running else {
+            localSetupSatisfiedRunIds.insert(run.runId)
+            return false
+        }
+        _ = runStore.appendLog(
+            runId: run.runId,
+            stream: .system,
+            text: String(
+                localized: "devservers.localSetup.running",
+                defaultValue: "Running local setup before this profile…",
+                table: "TermLoop"
+            )
+        )
+        let snapshot = runStore.markSettingUp(
+            runId: run.runId,
+            pid: nil,
+            processGroupId: nil
+        )
+        let started = try WorktreeSetupCoordinator.shared.start(
+            projectId: resolved.projectId,
+            taskId: resolved.task.id,
+            projectRoot: resolved.projectRoot,
+            worktreePath: resolved.worktreeRoot.path,
+            force: status?.phase == .failed,
+            reason: "devserver",
+            extraEnvironment: environment,
+            onLog: { [weak self] stream, line in
+                self?.runStore.appendLog(runId: run.runId, stream: stream, text: line)
+            },
+            completion: { [weak self] result in
+                guard let self else { return }
+                _Concurrency.Task { @MainActor in
+                    self.handleLocalSetupComplete(
+                        runId: run.runId,
+                        result: result,
+                        resolved: resolved,
+                        environment: environment
+                    )
+                }
+            }
+        )
+        _ = started
+        _ = snapshot
+        return true
     }
 
     private func launchSetup(
@@ -226,6 +299,7 @@ public final class DevServerRunCoordinator {
         } else {
             _ = runStore.markExited(runId: runId, exitCode: 0)
         }
+        localSetupSatisfiedRunIds.remove(runId)
         return runStore.snapshot(runId: runId) ?? snapshot
     }
 
@@ -242,6 +316,7 @@ public final class DevServerRunCoordinator {
         processes[snapshot.runId]?.stopImmediately()
         processes.removeValue(forKey: snapshot.runId)
         openOnURLRunIds.remove(snapshot.runId)
+        localSetupSatisfiedRunIds.remove(snapshot.runId)
         _ = runStore.markExited(runId: snapshot.runId, exitCode: SIGKILL)
         return true
     }
@@ -268,6 +343,7 @@ public final class DevServerRunCoordinator {
         }
         processes.removeAll()
         openOnURLRunIds.removeAll()
+        localSetupSatisfiedRunIds.removeAll()
     }
 
     public func remove(projectId: UUID) {
@@ -275,9 +351,11 @@ public final class DevServerRunCoordinator {
             processes[snapshot.runId]?.stopImmediately()
             processes.removeValue(forKey: snapshot.runId)
             openOnURLRunIds.remove(snapshot.runId)
+            localSetupSatisfiedRunIds.remove(snapshot.runId)
         }
         runStore.remove(projectId: projectId)
         setupStateStores.removeValue(forKey: projectId)
+        WorktreeSetupCoordinator.shared.remove(projectId: projectId)
     }
 
     public func stopRuns(workspaceId: UUID) {
@@ -300,8 +378,17 @@ public final class DevServerRunCoordinator {
     ) {
         stopTaskRuns(projectId: projectId, taskId: task.id)
         guard let worktreePath = task.worktreePath?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !worktreePath.isEmpty,
-              let profileStore = DevServerProfileStoreProvider.shared.store(for: projectId),
+              !worktreePath.isEmpty else {
+            return
+        }
+        WorktreeSetupCoordinator.shared.runCleanup(
+            projectId: projectId,
+            taskId: task.id,
+            projectRoot: projectRoot,
+            worktreePath: worktreePath,
+            reason: reason
+        )
+        guard let profileStore = DevServerProfileStoreProvider.shared.store(for: projectId),
               profileStore.loadError == nil else {
             return
         }
@@ -356,6 +443,7 @@ public final class DevServerRunCoordinator {
     private func handleExit(runId: UUID, exitCode: Int32) {
         processes.removeValue(forKey: runId)
         openOnURLRunIds.remove(runId)
+        localSetupSatisfiedRunIds.remove(runId)
         guard runStore.snapshot(runId: runId)?.isActive == true else { return }
         _ = runStore.markExited(runId: runId, exitCode: exitCode)
     }
@@ -394,6 +482,39 @@ public final class DevServerRunCoordinator {
             )
             try launchDevServer(runId: runId, resolved: resolved, environment: environment)
         } catch {
+            let message = error.localizedDescription
+            _ = runStore.appendLog(runId: runId, stream: .system, text: message)
+            _ = runStore.markFailed(runId: runId, message: message)
+        }
+    }
+
+    private func handleLocalSetupComplete(
+        runId: UUID,
+        result: Result<Void, Error>,
+        resolved: ResolvedStartContext,
+        environment: [String: String]
+    ) {
+        guard let snapshot = runStore.snapshot(runId: runId), snapshot.isActive else { return }
+        if snapshot.phase == .stopping {
+            _ = runStore.markExited(runId: runId, exitCode: 0)
+            return
+        }
+        switch result {
+        case .success:
+            localSetupSatisfiedRunIds.insert(runId)
+            _ = runStore.appendLog(
+                runId: runId,
+                stream: .system,
+                text: String(localized: "devservers.localSetup.complete", defaultValue: "Local setup complete.", table: "TermLoop")
+            )
+            do {
+                try launchResolvedRun(run: snapshot, resolved: resolved, environment: environment)
+            } catch {
+                let message = error.localizedDescription
+                _ = runStore.appendLog(runId: runId, stream: .system, text: message)
+                _ = runStore.markFailed(runId: runId, message: message)
+            }
+        case .failure(let error):
             let message = error.localizedDescription
             _ = runStore.appendLog(runId: runId, stream: .system, text: message)
             _ = runStore.markFailed(runId: runId, message: message)

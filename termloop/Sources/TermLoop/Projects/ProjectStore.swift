@@ -205,6 +205,7 @@ final class ProjectStore: ObservableObject {
         guard projects[index].folderPath != normalizedPath else { return }
         DevServerRunCoordinator.shared.stopProjectRunsAndCleanup(projectId: id, reason: "project_folder_changed")
         DevServerProfileStoreProvider.shared.remove(projectId: id)
+        WorktreeSetupStoreProvider.shared.remove(projectId: id)
         projects[index].folderPath = normalizedPath
         onMutation?()
     }
@@ -260,6 +261,7 @@ final class ProjectStore: ObservableObject {
         projects.remove(at: index)
         TaskBoardStoreProvider.shared.remove(projectId: id)
         DevServerProfileStoreProvider.shared.remove(projectId: id)
+        WorktreeSetupStoreProvider.shared.remove(projectId: id)
         openProjectIds.removeAll { $0 == id }
         if activeProjectId == id {
             activeProjectId = projects.first?.id

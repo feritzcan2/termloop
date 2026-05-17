@@ -243,6 +243,7 @@ public struct DevServerProfile: Codable, Identifiable, Equatable, Sendable {
     public var setupCommand: String?
     public var cleanupCommand: String?
     public var setupPolicy: DevServerSetupPolicy
+    public var requiresLocalSetup: Bool
     public var urlDetection: DevServerURLDetection
     public var presentation: DevServerPresentation
     public var extensions: [String: JSONValue]
@@ -257,6 +258,7 @@ public struct DevServerProfile: Codable, Identifiable, Equatable, Sendable {
         setupCommand: String? = nil,
         cleanupCommand: String? = nil,
         setupPolicy: DevServerSetupPolicy = .oncePerWorktreeProfileConfig,
+        requiresLocalSetup: Bool = false,
         urlDetection: DevServerURLDetection = DevServerURLDetection(),
         presentation: DevServerPresentation = DevServerPresentation(),
         extensions: [String: JSONValue] = [:]
@@ -282,6 +284,7 @@ public struct DevServerProfile: Codable, Identifiable, Equatable, Sendable {
         self.setupCommand = Self.normalizedOptionalCommand(setupCommand)
         self.cleanupCommand = Self.normalizedOptionalCommand(cleanupCommand)
         self.setupPolicy = setupPolicy
+        self.requiresLocalSetup = requiresLocalSetup
         self.urlDetection = urlDetection
         self.presentation = presentation
         self.extensions = extensions
@@ -297,6 +300,7 @@ public struct DevServerProfile: Codable, Identifiable, Equatable, Sendable {
         case setupCommand
         case cleanupCommand
         case setupPolicy
+        case requiresLocalSetup
         case urlDetection
         case presentation
         case extensions
@@ -315,6 +319,7 @@ public struct DevServerProfile: Codable, Identifiable, Equatable, Sendable {
             cleanupCommand: try container.decodeIfPresent(String.self, forKey: .cleanupCommand),
             setupPolicy: try container.decodeIfPresent(DevServerSetupPolicy.self, forKey: .setupPolicy)
                 ?? .oncePerWorktreeProfileConfig,
+            requiresLocalSetup: try container.decodeIfPresent(Bool.self, forKey: .requiresLocalSetup) ?? false,
             urlDetection: try container.decodeIfPresent(DevServerURLDetection.self, forKey: .urlDetection) ?? DevServerURLDetection(),
             presentation: try container.decodeIfPresent(DevServerPresentation.self, forKey: .presentation) ?? DevServerPresentation(),
             extensions: try container.decodeIfPresent([String: JSONValue].self, forKey: .extensions) ?? [:]

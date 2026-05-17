@@ -245,6 +245,8 @@ struct WorktreeGroupContextMenu: View {
             )
         }
 
+        LocalSetupWorktreeMenuItems(projectId: projectId, worktreePath: group.worktreePath)
+
         if let worktreePath = group.worktreePath {
             let openTarget = projectId.flatMap { ProjectStore.shared.project(id: $0)?.worktreeOpenTarget }
             Menu {
@@ -2116,7 +2118,8 @@ struct WorktreeAgentsPanel: View {
         isCollapsed: Binding<Bool>,
         storageKey: String,
         mediumHeight: CGFloat,
-        addWorktreeAction: (() -> Void)? = nil
+        addWorktreeAction: (() -> Void)? = nil,
+        localSetupGroups: [WorktreeAgentsGroup]? = nil
     ) -> some View {
         let hideTooltip = String(
             localized: "worktreeAgents.panel.hide.help",
@@ -2159,6 +2162,9 @@ struct WorktreeAgentsPanel: View {
                     table: "TermLoop"
                 ))
             }
+            if let localSetupGroups {
+                worktreeAgentsSectionMenu(groups: localSetupGroups)
+            }
             Text(verbatim: sectionCountLabel(
                 groupCount: groupCount,
                 workspaceCount: workspaceCount,
@@ -2188,6 +2194,52 @@ struct WorktreeAgentsPanel: View {
             defaultValue: "Click to expand/collapse",
             table: "TermLoop"
         ))
+    }
+
+    private func worktreeAgentsSectionMenu(groups: [WorktreeAgentsGroup]) -> some View {
+        let projectId = projectStore.activeProjectId ?? groups.compactMap(\.projectId).first
+        let runTargets = groups.compactMap { group -> LocalSetupMenuRunTarget? in
+            guard let worktreePath = group.worktreePath,
+                  (group.projectId ?? projectId) != nil else { return nil }
+            return LocalSetupMenuRunTarget(
+                projectId: group.projectId ?? projectId,
+                worktreePath: worktreePath,
+                label: worktreeMenuLabel(for: group)
+            )
+        }
+        return Menu {
+            LocalSetupMenuItems(projectId: projectId, runTargets: runTargets)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(TermLoopSidebarTheme.dim)
+                .frame(width: 14, height: 14)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(String(
+            localized: "worktreeAgents.panel.moreActions.tooltip",
+            defaultValue: "More worktree actions",
+            table: "TermLoop"
+        ))
+        .accessibilityLabel(String(
+            localized: "worktreeAgents.panel.moreActions.accessibilityLabel",
+            defaultValue: "More worktree actions",
+            table: "TermLoop"
+        ))
+    }
+
+    private func worktreeMenuLabel(for group: WorktreeAgentsGroup) -> String {
+        if let worktreePath = group.worktreePath {
+            let leaf = URL(fileURLWithPath: worktreePath).lastPathComponent
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !leaf.isEmpty, leaf != group.branch {
+                return "\(group.branch) · \(leaf)"
+            }
+        }
+        return group.branch
     }
 
     private func sectionCountLabel(groupCount: Int, workspaceCount: Int, short: Bool = false) -> String {
@@ -2229,7 +2281,8 @@ struct WorktreeAgentsPanel: View {
                 isCollapsed: isCollapsed,
                 storageKey: storageKey,
                 mediumHeight: 180,
-                addWorktreeAction: addWorktreeAction
+                addWorktreeAction: addWorktreeAction,
+                localSetupGroups: sectionKind == .worktrees ? orderedGroups : nil
             )
             .padding(.horizontal, TermLoopSidebarTheme.rowInsetH)
             .padding(.top, 6)
@@ -2888,6 +2941,8 @@ struct WorktreeAgentsPanel: View {
                     let projectId = sourceWorkspace(for: group)?.projectId
                         ?? group.projectId
                         ?? group.workspaces.first?.projectId
+                    LocalSetupWorktreeMenuItems(projectId: projectId, worktreePath: worktreePath)
+
                     let openTarget = projectId
                         .flatMap { ProjectStore.shared.project(id: $0)?.worktreeOpenTarget }
                     Menu {
