@@ -3666,6 +3666,10 @@ struct WorktreeChangesSheet: View {
         }
     }
 
+    private func closeSheet() {
+        if let onClose { onClose() } else { dismiss() }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
@@ -3688,9 +3692,10 @@ struct WorktreeChangesSheet: View {
                     defaultValue: "Done",
                     table: "TermLoop"
                 )) {
-                    if let onClose { onClose() } else { dismiss() }
+                    closeSheet()
                 }
                 .buttonStyle(.borderless)
+                .keyboardShortcut(.cancelAction)
             }
 
             Divider()
@@ -3721,6 +3726,9 @@ struct WorktreeChangesSheet: View {
         }
         .onKeyPress(.downArrow) {
             moveFileSelection(offset: 1) ? .handled : .ignored
+        }
+        .onExitCommand {
+            closeSheet()
         }
         .task(id: refreshKey) {
             await refreshComparisonState()

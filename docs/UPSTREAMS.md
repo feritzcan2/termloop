@@ -7,7 +7,7 @@ This repo tracks upstream source code as normal directories, not git submodules.
 | Path | Source repo | Tracking branch | Pinned commit |
 |---|---|---|---|
 | `termloop/` | `https://github.com/feritzcan2/cmux-fork.git` | `master` | `b80c94300fd4f1e661c96fb1b9c0c66ee3d9630a` |
-| `termloop/ghostty/` | `https://github.com/feritzcan2/ghostty.git` | `main` | `3b684a085d40ec79e8a0ae863a4f2b48ed4dba74` |
+| `termloop/ghostty/` | `https://github.com/feritzcan2/ghostty.git` | `main` | `08187ef82fa7f5b877f0468257eeabdac8aec74d` |
 | `termloop/homebrew-cmux/` | `https://github.com/manaflow-ai/homebrew-cmux.git` | `main` | `a5f372ecfa5ee3903af6e1faba0eda096b4f5746` |
 | `termloop/vendor/bonsplit/` | `https://github.com/feritzcan2/bonsplit.git` | `main` | `ce2fc16e0ca6b0c4b977456b453b11a3e99efdc0` |
 

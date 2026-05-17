@@ -18,6 +18,7 @@ struct MarkdownEditor: View {
     @Binding var text: AttributedString
     var autosaveDebounce: Duration?
     var onCommit: ((String) -> Void)?
+    var onEscape: (() -> Void)?
     var placeholder: String?
 
     @State private var saveTask: Task<Void, Never>?
@@ -25,7 +26,7 @@ struct MarkdownEditor: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            MarkdownTextView(text: $text)
+            MarkdownTextView(text: $text, onEscape: onEscape)
                 .background(MarkdownTheme.editorBg)
                 .onAppear { isLoaded = true }
                 .onChange(of: text) { newValue in
@@ -66,6 +67,7 @@ struct MarkdownEditor: View {
 
 private struct MarkdownTextView: NSViewRepresentable {
     @Binding var text: AttributedString
+    var onEscape: (() -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -73,6 +75,7 @@ private struct MarkdownTextView: NSViewRepresentable {
         let scrollView = MarkdownPlainTextView.scrollableTextView()
         let textView = scrollView.documentView as! MarkdownPlainTextView
         textView.delegate = context.coordinator
+        textView.onEscape = { context.coordinator.parent.onEscape?() }
         textView.widthTracksTextView = true
         textView.highlightSelectedLine = false
         textView.allowsDocumentBackgroundColorChange = false
@@ -92,7 +95,8 @@ private struct MarkdownTextView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
-        let textView = scrollView.documentView as! STTextView
+        let textView = scrollView.documentView as! MarkdownPlainTextView
+        textView.onEscape = { context.coordinator.parent.onEscape?() }
 
         let incoming = String(text.characters)
         applyBackground(to: textView, in: scrollView)
@@ -182,6 +186,18 @@ private struct MarkdownTextView: NSViewRepresentable {
 }
 
 private final class MarkdownPlainTextView: STTextView {
+    var onEscape: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        if ShortcutStroke.isEscapeCancelEvent(event),
+           !hasMarkedText(),
+           let onEscape {
+            onEscape()
+            return
+        }
+        super.keyDown(with: event)
+    }
+
     override func paste(_ sender: Any?) {
         pasteAsPlainText(sender)
     }
