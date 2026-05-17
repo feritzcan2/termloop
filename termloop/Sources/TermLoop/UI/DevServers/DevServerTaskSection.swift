@@ -407,6 +407,11 @@ private struct DevServerTaskSectionContent: View {
                         .frame(maxWidth: 190)
 
                         Toggle(
+                            String(localized: "devservers.editor.requiresLocalSetup", defaultValue: "Requires local setup", table: "TermLoop"),
+                            isOn: $draft.requiresLocalSetup
+                        )
+
+                        Toggle(
                             String(localized: "devservers.editor.autoOpen", defaultValue: "Auto-open URL", table: "TermLoop"),
                             isOn: Binding(
                                 get: { draft.autoOpenFirstURL },
@@ -1004,6 +1009,7 @@ private struct DevServerProfileDraft: Equatable {
     var setupCommand: String
     var cleanupCommand: String
     var setupPolicy: DevServerSetupPolicy
+    var requiresLocalSetup: Bool
     var autoOpenFirstURL: Bool
     var usesProjectAutoOpenDefault: Bool
     var autoDetectURLs: Bool
@@ -1023,6 +1029,7 @@ private struct DevServerProfileDraft: Equatable {
             setupCommand: "",
             cleanupCommand: "",
             setupPolicy: .oncePerWorktreeProfileConfig,
+            requiresLocalSetup: false,
             autoOpenFirstURL: true,
             usesProjectAutoOpenDefault: false,
             autoDetectURLs: true,
@@ -1045,6 +1052,7 @@ private struct DevServerProfileDraft: Equatable {
         self.setupCommand = profile.setupCommand ?? ""
         self.cleanupCommand = profile.cleanupCommand ?? ""
         self.setupPolicy = profile.setupPolicy
+        self.requiresLocalSetup = profile.requiresLocalSetup
         self.autoOpenFirstURL = profile.presentation.autoOpenFirstUrl ?? false
         self.usesProjectAutoOpenDefault = profile.presentation.autoOpenFirstUrl == nil
         self.autoDetectURLs = profile.urlDetection.autoDetect
@@ -1064,6 +1072,7 @@ private struct DevServerProfileDraft: Equatable {
         setupCommand: String,
         cleanupCommand: String,
         setupPolicy: DevServerSetupPolicy,
+        requiresLocalSetup: Bool,
         autoOpenFirstURL: Bool,
         usesProjectAutoOpenDefault: Bool,
         autoDetectURLs: Bool,
@@ -1081,6 +1090,7 @@ private struct DevServerProfileDraft: Equatable {
         self.setupCommand = setupCommand
         self.cleanupCommand = cleanupCommand
         self.setupPolicy = setupPolicy
+        self.requiresLocalSetup = requiresLocalSetup
         self.autoOpenFirstURL = autoOpenFirstURL
         self.usesProjectAutoOpenDefault = usesProjectAutoOpenDefault
         self.autoDetectURLs = autoDetectURLs
@@ -1144,6 +1154,7 @@ private struct DevServerProfileDraft: Equatable {
             setupCommand: setupCommand,
             cleanupCommand: cleanupCommand,
             setupPolicy: setupPolicy,
+            requiresLocalSetup: requiresLocalSetup,
             urlDetection: DevServerURLDetection(
                 autoDetect: autoDetectURLs,
                 fallbackUrls: fallbackURLs,
