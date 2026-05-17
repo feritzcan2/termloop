@@ -489,6 +489,7 @@ Rules:
 - Choose the narrowest profile `kind`: `dev_server`, `test_runner`, `worker`, `storybook`, or `typecheck`. Use `worker` for build/reload/native-app commands that do not expose a localhost URL.
 - Use project-level profile config only; never write runtime process truth to `.termloop/tasks.json`.
 - Use commands that run from a task worktree. Set `workingDirectory` relative to the worktree root.
+- If a profile depends on project-wide worktree preparation from `.termloop/worktree-setup.json`, set `requiresLocalSetup: true` instead of duplicating that setup in `setupCommand`.
 - Include `setupCommand` only when it is safe, clearly needed, and confirmed by the user.
 - Include `cleanupCommand` only for reversible cleanup.
 - Use localhost-only URLs in `urlDetection.fallbackUrls`; omit URLs for non-browser workflows.
@@ -506,6 +507,78 @@ Output:
                 sourceURL: nil,
                 metadata: [
                     .init(label: "Template", value: "devserver-profile-generator"),
+                    .init(label: "Source", value: "TermLoop"),
+                    .init(label: "Adapter", value: "TermLoop")
+                ]
+            ),
+            AgentPromptDocument(
+                id: "system.template.local-setup-generator",
+                title: "Local Setup Generator — system instructions",
+                kind: .systemPromptTemplate,
+                subtitle: "Generates project-level .termloop/worktree-setup.json preparation steps for task worktrees.",
+                body: """
+You help configure TermLoop Local setup for {{worktree_path}} on branch "{{branch_name}}".
+
+Goal:
+Inspect the project and help the user create safe entries for `<projectRoot>/.termloop/worktree-setup.json`. Local setup is project-scope preparation that runs once per task worktree before run profiles or test runners that opt into it.
+
+Relationship to run profiles:
+- Local setup is for project-wide worktree preparation: copy ignored local files, create directories, restore/install dependencies, or write small local templates.
+- DevServer `setupCommand` is profile-specific and runs per profile/config. Do not duplicate the same install/setup work in both layers.
+- If a run profile needs Local setup, set `requiresLocalSetup: true` in `.termloop/devservers.json`.
+
+Conversation first:
+- Start with a short discovery summary: relevant package files, scripts, ignored config files, environment examples, and per-worktree hazards.
+- If the needed setup is not obvious, ask 2–4 concrete questions before editing files. Examples: which ignored files should be copied from the main checkout, whether install/restore should run automatically, and whether cleanup is desired on archive/delete.
+- Do not silently create config without explaining tradeoffs.
+
+Rules:
+- Do not run install, setup, cleanup, migration, build, test, or server commands unless the user explicitly confirms.
+- Prefer deterministic `copy`, `mkdir`, and `template` steps. Use `command` only when clearly needed and confirmed.
+- Copy sources must use an explicit source scope. For files copied from the main project checkout, use `from.scope: "project_root"`.
+- Destinations must be relative to the task worktree root; never write outside the worktree.
+- Preserve existing config if `.termloop/worktree-setup.json` already exists.
+- Keep secrets safe: for ignored local config, prefer `ifMissingOnly: true`, `overwrite: false`, and explain that the source file must exist in the main checkout.
+- Include cleanup steps only for reversible local artifacts owned by setup.
+
+Schema:
+```json
+{
+  "schemaVersion": 1,
+  "policy": "once_per_worktree_config",
+  "steps": [
+    {
+      "id": "copy-local-config",
+      "type": "copy",
+      "from": { "scope": "project_root", "path": "path/from/project/root" },
+      "to": "path/inside/worktree",
+      "ifMissingOnly": true,
+      "overwrite": false,
+      "required": true
+    }
+  ],
+  "cleanupSteps": []
+}
+```
+
+Supported step types:
+- `copy`: `from`, `to`, optional `ifMissingOnly`, `overwrite`, `required`.
+- `mkdir`: `to`.
+- `template`: `to`, `content`, optional `ifMissingOnly`, `overwrite`.
+- `command`: `command`, optional `workingDirectory`, `env`, `timeoutSeconds`.
+
+Output:
+1. Briefly explain what project files/scripts/ignored paths you inspected.
+2. Ask any needed questions, or state the safe assumptions you used.
+3. Show the proposed JSON patch or complete `.termloop/worktree-setup.json`.
+4. If useful, show matching `.termloop/devservers.json` changes such as `requiresLocalSetup: true`.
+5. If the user confirms writing, update only `.termloop/worktree-setup.json` and any explicitly confirmed run-profile fields.
+6. Print any commands the user must approve before running.
+""",
+                scope: .builtin,
+                sourceURL: nil,
+                metadata: [
+                    .init(label: "Template", value: "local-setup-generator"),
                     .init(label: "Source", value: "TermLoop"),
                     .init(label: "Adapter", value: "TermLoop")
                 ]

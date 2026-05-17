@@ -6,6 +6,7 @@ This folder owns project-scoped run profile configuration and in-memory runtime 
 
 - Persist only profile/config truth in `<projectRoot>/.termloop/devservers.json`.
 - Persist setup-completion metadata only in `<projectRoot>/.termloop/devserver-setup-state.json`.
+- Project-wide Local setup lives separately in `<projectRoot>/.termloop/worktree-setup.json` and is owned by `WorktreeSetup`.
 - Runtime process truth (phase, pid, process group, URLs, log cursor, log lines, warnings) is in-memory only in `DevServerRunStore` and must never be written to `tasks.json`.
 - `TaskRecord` remains a projection over `WorkspaceMetadataStore`; dev-server state is rendered through projection builders.
 - `DevServerRunCoordinator` is the single writer for process lifecycle. UI and socket handlers call the coordinator rather than mutating runtime state directly.
@@ -21,6 +22,7 @@ This folder owns project-scoped run profile configuration and in-memory runtime 
 - `profiles[].id`, `name`, `kind`, `command`, `workingDirectory`
 - `profiles[].env`
 - `profiles[].setupCommand`, `cleanupCommand`, `setupPolicy`
+- `profiles[].requiresLocalSetup`
 - `profiles[].urlDetection.autoDetect`, `fallbackUrls`, `readyRegexes`
 - `profiles[].presentation.autoOpenFirstUrl`
 - `profiles[].extensions` for future run-profile/test-runner metadata
@@ -40,6 +42,13 @@ Setup policy values:
 - `once_per_worktree_profile_config` runs setup once per worktree/profile/config hash.
 - `always` runs setup before every start.
 - `never` skips setup even when `setupCommand` is present.
+
+`requiresLocalSetup` means the profile should run project-scope Local setup first when `.termloop/worktree-setup.json` exists and is pending for the task worktree. Keep the distinction clear:
+
+- Local setup (`WorktreeSetup`) is project-scope and once per worktree/config. Use it for copying ignored local config, creating local files, or shared restore/install preparation.
+- `setupCommand` is profile-scope and once per worktree/profile/config. Use it only for profile-specific warmups.
+
+Do not duplicate the same install/setup work in both layers.
 
 Cleanup commands run best-effort when tasks are archived/deleted, bindings migrate/detach, or projects are removed. Cleanup must run inside the task worktree and must not write runtime state to task persistence.
 

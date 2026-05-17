@@ -27,6 +27,7 @@ struct TaskBranchesSection: View {
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
     @ObservedObject private var worktreeProjectionStore = WorktreeProjectionStore.shared
+    @ObservedObject private var localSetupCoordinator = WorktreeSetupCoordinator.shared
     @EnvironmentObject private var tabManager: TabManager
 
     var body: some View {
@@ -39,6 +40,7 @@ struct TaskBranchesSection: View {
             if hasWorktreeContext {
                 worktreeContext
                 actionRow
+                localSetupStatusRow
                 repairBannerIfNeeded
                 agentList
                 if !secondaryBranches.isEmpty {
@@ -93,6 +95,10 @@ struct TaskBranchesSection: View {
         }
         .contentShape(Rectangle())
         .contextMenu {
+            if projectId != nil {
+                LocalSetupWorktreeMenuItems(projectId: projectId, worktreePath: normalizedWorktreePath)
+                Divider()
+            }
             if let group = taskWorktreeGroup {
                 WorktreeGroupContextMenu(
                     group: group,
@@ -127,11 +133,41 @@ struct TaskBranchesSection: View {
             }
             .disabled(!canStartAgent)
 
-            Spacer(minLength: 0)
+            localSetupMenu
         }
         .buttonStyle(.bordered)
         .controlSize(.mini)
         .font(.system(size: 12, weight: .medium))
+    }
+
+    @ViewBuilder
+    private var localSetupMenu: some View {
+        Spacer(minLength: 0)
+        if projectId != nil {
+            Menu {
+                LocalSetupWorktreeMenuItems(projectId: projectId, worktreePath: normalizedWorktreePath)
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .frame(width: 24)
+            .help(String(localized: "worktreeSetup.menu.help", defaultValue: "Local setup actions", table: "TermLoop"))
+        }
+    }
+
+    @ViewBuilder
+    private var localSetupStatusRow: some View {
+        if let status = localSetupStatus, let projectId {
+            LocalSetupInlineStatusRow(
+                status: status,
+                logs: localSetupCoordinator.logs(projectId: projectId, worktreePath: status.worktreePath),
+                onPrepare: { LocalSetupActions.run(projectId: projectId, worktreePath: status.worktreePath, force: status.phase == .failed) },
+                onSkip: { LocalSetupActions.skip(projectId: projectId, worktreePath: status.worktreePath) },
+                onCancel: { LocalSetupActions.cancel(projectId: projectId, worktreePath: status.worktreePath) },
+                onOpenConfig: { LocalSetupActions.openConfig(projectId: projectId) },
+                onGenerate: { LocalSetupActions.openGenerator(projectId: projectId) }
+            )
+        }
     }
 
     @ViewBuilder
@@ -352,6 +388,15 @@ struct TaskBranchesSection: View {
         return provisionState != .pending
     }
 
+    private var localSetupStatus: WorktreeSetupStatusSnapshot? {
+        _ = localSetupCoordinator.version
+        guard let projectId,
+              let path = normalizedWorktreePath else {
+            return nil
+        }
+        return localSetupCoordinator.visibleStatus(projectId: projectId, worktreePath: path)
+    }
+
     private var secondaryBranches: [String] {
         var values: [String] = []
         _ = worktreeProjectionStore.version
@@ -405,7 +450,6 @@ struct TaskBranchesSection: View {
         guard !parent.isEmpty else { return leaf }
         return "…/\(parent)/\(leaf)"
     }
-
 }
 
 private struct TaskWorktreeSetupCard: View {

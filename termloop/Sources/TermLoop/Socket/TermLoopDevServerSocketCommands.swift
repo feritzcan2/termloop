@@ -351,6 +351,7 @@ enum TermLoopDevServerSocketCommands {
             setupCommand: nonEmptyString(raw, "setup_command", "setupCommand"),
             cleanupCommand: nonEmptyString(raw, "cleanup_command", "cleanupCommand"),
             setupPolicy: setupPolicy(raw),
+            requiresLocalSetup: bool(raw, "requires_local_setup", "requiresLocalSetup") ?? false,
             urlDetection: DevServerURLDetection(
                 autoDetect: bool(urlDetection, "auto_detect", "autoDetect") ?? true,
                 fallbackUrls: stringArray(urlDetection, "fallback_urls", "fallbackUrls"),
@@ -388,6 +389,7 @@ enum TermLoopDevServerSocketCommands {
             "setup_command": profile.setupCommand as Any? ?? NSNull(),
             "cleanup_command": profile.cleanupCommand as Any? ?? NSNull(),
             "setup_policy": profile.setupPolicy.rawValue,
+            "requires_local_setup": profile.requiresLocalSetup,
             "setup_config_hash": DevServerSetupStateStore.configHash(for: profile),
             "url_detection": [
                 "auto_detect": profile.urlDetection.autoDetect,
