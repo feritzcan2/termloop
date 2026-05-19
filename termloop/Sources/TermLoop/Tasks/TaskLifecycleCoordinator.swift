@@ -478,6 +478,267 @@ extension TaskLifecycleCoordinator {
     }
 }
 
+extension TaskLifecycleCoordinator {
+    @discardableResult
+    func upsertRemoteItemBinding(
+        reference: RemoteWorkItemReference,
+        snapshot: RemoteWorkItemSnapshot? = nil,
+        workspaceId: UUID?,
+        worktreePath: String,
+        branch: String?,
+        at date: Date = Date()
+    ) throws -> UUID? {
+        guard let resolvedPath = TaskPathNormalization.resolveDisplayAndKey(
+            worktreePath,
+            relativeTo: store.projectRoot
+        ) else {
+            return nil
+        }
+
+        let effectiveReference = snapshot?.reference ?? reference
+        let trimmedBranch = branch?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nonEmptyTaskLifecycleString
+        var affectedTaskId: UUID?
+        var createdInProgressTask = false
+
+        let changed = store.mutate { file in
+            var didChange = false
+            let activeIndexes = file.tasks.indices.filter { file.tasks[$0].archivedAt == nil }
+            let pathIndex = activeIndexes.first { idx in
+                Self.normalizedTaskPathKey(
+                    file.tasks[idx].worktreePath,
+                    relativeTo: store.projectRoot
+                ) == resolvedPath.keyPath
+            }
+            let workspaceIndex = workspaceId.flatMap { workspaceId in
+                activeIndexes.first { file.tasks[$0].workspaceId == workspaceId }
+            }
+            let remoteIndex = activeIndexes.first { idx in
+                file.tasks[idx].remoteWorkItem?.storageKey == effectiveReference.storageKey
+            }
+
+            if let idx = pathIndex ?? workspaceIndex ?? remoteIndex {
+                let old = file.tasks[idx]
+                Self.applyRemoteItemBinding(
+                    to: &file.tasks[idx],
+                    reference: effectiveReference,
+                    snapshot: snapshot,
+                    workspaceId: workspaceId,
+                    resolvedPath: resolvedPath,
+                    branch: trimmedBranch,
+                    date: date
+                )
+                affectedTaskId = file.tasks[idx].id
+                didChange = file.tasks[idx] != old
+            } else {
+                let rank = Self.nextRank(in: .inProgress, file: file)
+                let status = snapshot?.statusLabel?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .nonEmptyTaskLifecycleString
+                let task = TaskRecord(
+                    projectId: store.projectId,
+                    title: Self.remoteBindingTitle(reference: effectiveReference, snapshot: snapshot),
+                    origin: .remote,
+                    remoteWorkItem: effectiveReference,
+                    remoteStatusLabel: status,
+                    lastRemoteSyncAt: snapshot?.fetchedAt,
+                    columnId: .inProgress,
+                    rank: rank,
+                    workspaceId: workspaceId,
+                    worktreePath: resolvedPath.displayPath,
+                    branch: trimmedBranch,
+                    ownsWorktree: false,
+                    bindingGeneration: 1,
+                    provisionState: .ready,
+                    createdAt: date,
+                    updatedAt: date
+                )
+                file.tasks.append(task)
+                affectedTaskId = task.id
+                createdInProgressTask = true
+                didChange = true
+            }
+
+            if createdInProgressTask {
+                didChange = TaskBoardStore.rebalanceColumnIfNeeded(.inProgress, in: &file) || didChange
+            }
+            return didChange
+        }
+
+        if changed {
+            try store.saveNow()
+        }
+
+        if let snapshot, let affectedTaskId {
+            let taskFilePath = try TaskMarkdownFileWriter.writeRemoteSnapshot(
+                snapshot,
+                taskId: affectedTaskId,
+                projectRoot: store.projectRoot
+            )
+            let filePathChanged = store.mutate { file in
+                guard let idx = file.tasks.firstIndex(where: { $0.id == affectedTaskId }),
+                      file.tasks[idx].taskFilePath != taskFilePath else {
+                    return false
+                }
+                file.tasks[idx].taskFilePath = taskFilePath
+                file.tasks[idx].updatedAt = Date()
+                return true
+            }
+            if filePathChanged {
+                try store.saveNow()
+            }
+        }
+
+        return affectedTaskId
+    }
+
+    private static func applyRemoteItemBinding(
+        to task: inout TaskRecord,
+        reference: RemoteWorkItemReference,
+        snapshot: RemoteWorkItemSnapshot?,
+        workspaceId: UUID?,
+        resolvedPath: TaskResolvedWorktreePath,
+        branch: String?,
+        date: Date
+    ) {
+        let original = task
+        let priorWorkspaceId = task.workspaceId
+        let priorWorktreePath = task.worktreePath
+        let priorBranch = task.branch
+        let priorReferenceKey = task.remoteWorkItem?.storageKey
+
+        if let snapshotTitle = snapshot?.title
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nonEmptyTaskLifecycleString {
+            task.title = snapshotTitle
+        } else if priorReferenceKey != reference.storageKey || task.remoteWorkItem == nil {
+            task.title = reference.key
+        }
+
+        task.origin = .remote
+        task.remoteWorkItem = reference
+        if let snapshot {
+            task.remoteStatusLabel = snapshot.statusLabel?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .nonEmptyTaskLifecycleString
+            task.lastRemoteSyncAt = snapshot.fetchedAt
+        } else if priorReferenceKey != reference.storageKey {
+            task.remoteStatusLabel = nil
+            task.lastRemoteSyncAt = nil
+        }
+
+        task.workspaceId = workspaceId ?? task.workspaceId
+        task.worktreePath = resolvedPath.displayPath
+        task.branch = branch ?? task.branch
+        if task.provisionState != .pending {
+            task.provisionState = .ready
+        }
+
+        if task.workspaceId != priorWorkspaceId
+            || task.worktreePath != priorWorktreePath
+            || task.branch != priorBranch {
+            task.bindingGeneration += 1
+        }
+        if task != original {
+            task.updatedAt = date
+        }
+    }
+
+    private static func remoteBindingTitle(
+        reference: RemoteWorkItemReference,
+        snapshot: RemoteWorkItemSnapshot?
+    ) -> String {
+        snapshot?.title
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nonEmptyTaskLifecycleString
+            ?? reference.key
+    }
+
+    private static func nextRank(in columnId: TaskColumnId, file: TaskBoardFile) -> String {
+        let existing = file.tasks
+            .filter { $0.columnId == columnId && $0.archivedAt == nil }
+            .map(\.rank)
+            .sorted()
+        guard let last = existing.last else { return TaskRanking.initial() }
+        return TaskRanking.after(last)
+    }
+
+    private static func normalizedTaskPathKey(_ path: String?, relativeTo projectRoot: URL) -> String? {
+        TaskPathNormalization.resolveDisplayAndKey(path, relativeTo: projectRoot)?.keyPath
+    }
+}
+
+@MainActor
+enum TaskWorktreeRemoteItemMaterializer {
+    @discardableResult
+    static func materialize(
+        reference: RemoteWorkItemReference,
+        snapshot: RemoteWorkItemSnapshot? = nil,
+        workspaceIds: [UUID],
+        worktreePath: String,
+        reason: String
+    ) -> UUID? {
+        guard let projectId = resolveProjectId(workspaceIds: workspaceIds, worktreePath: worktreePath),
+              let store = TaskBoardStoreProvider.shared.store(for: projectId) else {
+            return nil
+        }
+
+        let metadata = WorkspaceMetadataStore.shared
+        let resolvedPath = TaskPathNormalization
+            .resolveDisplayAndKey(worktreePath, relativeTo: store.projectRoot)?
+            .displayPath ?? worktreePath
+        let workspaceId = preferredWorkspaceId(
+            workspaceIds: workspaceIds,
+            projectId: projectId,
+            worktreePath: resolvedPath
+        )
+        let branch = workspaceId.flatMap { metadata.branch(forWorkspaceId: $0) }
+
+        do {
+            let taskId = try TaskLifecycleCoordinator.makeForProject(store: store)
+                .upsertRemoteItemBinding(
+                    reference: reference,
+                    snapshot: snapshot,
+                    workspaceId: workspaceId,
+                    worktreePath: resolvedPath,
+                    branch: branch
+                )
+            TaskBoardReconcileScheduler.shared.request(projectId: projectId, reason: reason)
+            return taskId
+        } catch {
+            NSLog("[Tasks] remote item task materialize failed key=\(reference.key) reason=\(reason) error=\(String(describing: error))")
+            return nil
+        }
+    }
+
+    private static func resolveProjectId(workspaceIds: [UUID], worktreePath: String) -> UUID? {
+        let metadata = WorkspaceMetadataStore.shared
+        if let projectId = workspaceIds.compactMap({ metadata.projectId(forWorkspaceId: $0) }).first {
+            return projectId
+        }
+        if let project = ProjectStore.shared.project(containingPath: worktreePath) {
+            return project.id
+        }
+        return ProjectStore.shared.activeProjectId
+    }
+
+    private static func preferredWorkspaceId(
+        workspaceIds: [UUID],
+        projectId: UUID,
+        worktreePath: String
+    ) -> UUID? {
+        let metadata = WorkspaceMetadataStore.shared
+        if let workspaceId = workspaceIds.first(where: { metadata.projectId(forWorkspaceId: $0) == projectId }) {
+            return workspaceId
+        }
+        if let workspaceId = workspaceIds.first {
+            return workspaceId
+        }
+        return metadata.workspaceIds(withWorktreePath: worktreePath, projectId: projectId).first
+    }
+}
+
 private extension String {
     var nonEmptyTaskLifecycleString: String? { isEmpty ? nil : self }
 }

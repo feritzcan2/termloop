@@ -440,3 +440,53 @@ final class TerminalAgentRunnerForkTests: XCTestCase {
         XCTAssertFalse(status.permitsAgentLaunch)
     }
 }
+
+final class GitWorktreeServiceRemovalTests: XCTestCase {
+    func testRemoveCleansFilesystemWhenGitAlreadyUnregisteredWorktree() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("git-worktree-remove-\(UUID().uuidString)", isDirectory: true)
+        let repo = root.appendingPathComponent("repo", isDirectory: true)
+        let worktree = repo
+            .appendingPathComponent(".termloop-worktrees", isDirectory: true)
+            .appendingPathComponent("feature__leftover", isDirectory: true)
+        defer { try? fileManager.removeItem(at: root) }
+
+        try fileManager.createDirectory(at: worktree, withIntermediateDirectories: true)
+        try "leftover".write(
+            to: worktree.appendingPathComponent(".DS_Store"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let fakeGit = root.appendingPathComponent("git")
+        let script = """
+        #!/bin/sh
+        if [ "$1" = "worktree" ] && [ "$2" = "list" ]; then
+          printf 'worktree %s\\nHEAD abc123\\nbranch refs/heads/main\\n\\n' "$PWD"
+          exit 0
+        fi
+        if [ "$1" = "worktree" ] && [ "$2" = "remove" ]; then
+          target="$3"
+          if [ "$3" = "--force" ]; then target="$4"; fi
+          echo "error: failed to delete '$target': Directory not empty" >&2
+          exit 1
+        fi
+        echo "unexpected git $*" >&2
+        exit 2
+        """
+        try script.write(to: fakeGit, atomically: true, encoding: .utf8)
+        try fileManager.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o755))],
+            ofItemAtPath: fakeGit.path
+        )
+
+        try GitWorktreeService(gitPath: fakeGit.path).remove(
+            folder: repo.path,
+            path: worktree.path,
+            force: true
+        )
+
+        XCTAssertFalse(fileManager.fileExists(atPath: worktree.path))
+    }
+}

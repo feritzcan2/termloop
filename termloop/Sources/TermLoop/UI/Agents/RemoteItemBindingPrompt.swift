@@ -141,6 +141,12 @@ enum RemoteItemBindingPrompt {
             return
         }
         WorktreeRemoteItemBindingStore.shared.bind(reference, forPath: worktreePath)
+        TaskWorktreeRemoteItemMaterializer.materialize(
+            reference: reference,
+            workspaceIds: workspaceIds,
+            worktreePath: worktreePath,
+            reason: "manualRemoteWorkItemLink"
+        )
         guard let firstId = workspaceIds.first else { return }
         RemoteWorkItemBindingRefreshCoordinator.shared.refresh(
             inputs: [

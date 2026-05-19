@@ -221,6 +221,13 @@ final class RemoteWorkItemBindingRefreshCoordinator {
     ) {
         RemoteWorkItemSnapshotStore.shared.upsert(snapshot)
         WorktreeRemoteItemBindingStore.shared.bind(snapshot.reference, forPath: input.worktreePath)
+        TaskWorktreeRemoteItemMaterializer.materialize(
+            reference: snapshot.reference,
+            snapshot: snapshot,
+            workspaceIds: [input.workspaceId],
+            worktreePath: input.worktreePath,
+            reason: reason
+        )
         NSLog("[RemoteWorkItem] binding refreshed key=\(snapshot.reference.key) status=\(snapshot.statusLabel ?? "nil") reason=\(reason)")
     }
 }

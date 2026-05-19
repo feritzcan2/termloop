@@ -221,7 +221,7 @@ extension TermLoopSidebar {
                         case .loop:
                             GeometryReader { proxy in
                                 ScrollView {
-                                    VStack(spacing: 0) {
+                                    VStack(alignment: .leading, spacing: 0) {
                                         Spacer(minLength: 0)
                                         SidebarTutorialStack()
                                         if !isWorktreeAgentsHidden {
@@ -231,7 +231,9 @@ extension TermLoopSidebar {
                                             ActiveAgentsPanel()
                                         }
                                     }
+                                    .frame(width: proxy.size.width, alignment: .leading)
                                     .frame(minHeight: proxy.size.height, alignment: .bottom)
+                                    .clipped()
                                 }
                                 .overlay(alignment: .top) {
                                     SidebarTopScrim(height: 20)

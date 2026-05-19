@@ -137,6 +137,166 @@ final class TaskLifecycleCoordinatorTests: XCTestCase {
         XCTAssertEqual(task.provisionState, .pending)
         XCTAssertEqual(fakeWorktrees.provisionCalls.count, 0)
     }
+
+    func testRemoteItemBindingCreatesInProgressWorktreeTask() throws {
+        let workspaceId = UUID()
+        let reference = RemoteWorkItemReference(
+            provider: .jira,
+            key: "UKIE-42",
+            url: nil,
+            host: nil,
+            namespace: nil,
+            repository: nil,
+            number: nil
+        )
+
+        let taskId = try XCTUnwrap(coordinator.upsertRemoteItemBinding(
+            reference: reference,
+            workspaceId: workspaceId,
+            worktreePath: "/tmp/ukie-42",
+            branch: "feature/UKIE-42"
+        ))
+
+        let task = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == taskId })
+        XCTAssertEqual(task.title, "UKIE-42")
+        XCTAssertEqual(task.origin, .remote)
+        XCTAssertEqual(task.remoteWorkItem, reference)
+        XCTAssertEqual(task.columnId, .inProgress)
+        XCTAssertEqual(task.workspaceId, workspaceId)
+        XCTAssertEqual(task.worktreePath, "/tmp/ukie-42")
+        XCTAssertEqual(task.branch, "feature/UKIE-42")
+        XCTAssertEqual(task.bindingGeneration, 1)
+        XCTAssertEqual(task.provisionState, .ready)
+        XCTAssertEqual(store.columnSnapshots.first { $0.id == .inProgress }?.cards.first?.id, taskId)
+    }
+
+    func testRemoteItemBindingUpdatesExistingWorktreeTaskWithoutDuplicate() throws {
+        let existingId = UUID()
+        let workspaceId = UUID()
+        let path = "/tmp/existing-remote-worktree"
+        try store.appendForTesting(TaskRecord(
+            id: existingId,
+            projectId: projectId,
+            title: "feature/existing",
+            origin: .worktree,
+            columnId: .inProgress,
+            rank: TaskRanking.initial(),
+            workspaceId: workspaceId,
+            worktreePath: path,
+            branch: "feature/existing",
+            bindingGeneration: 1,
+            provisionState: .ready
+        ))
+        try store.saveNow()
+        let reference = RemoteWorkItemReference(
+            provider: .jira,
+            key: "UKIE-77",
+            url: "https://example.atlassian.net/browse/UKIE-77",
+            host: "example.atlassian.net",
+            namespace: nil,
+            repository: nil,
+            number: nil
+        )
+        let snapshot = RemoteWorkItemSnapshot(
+            reference: reference,
+            title: "Fix terminal task board",
+            bodyMarkdown: "Body",
+            statusLabel: "In Progress",
+            assignees: [],
+            labels: [],
+            providerUpdatedAt: nil,
+            fetchedAt: Date(timeIntervalSince1970: 1_777_000_000)
+        )
+
+        let taskId = try XCTUnwrap(coordinator.upsertRemoteItemBinding(
+            reference: reference,
+            snapshot: snapshot,
+            workspaceId: workspaceId,
+            worktreePath: path,
+            branch: "feature/existing"
+        ))
+
+        XCTAssertEqual(taskId, existingId)
+        XCTAssertEqual(store.fileSnapshot().tasks.count, 1)
+        let task = try XCTUnwrap(store.fileSnapshot().tasks.first)
+        XCTAssertEqual(task.title, "Fix terminal task board")
+        XCTAssertEqual(task.origin, .remote)
+        XCTAssertEqual(task.remoteWorkItem, reference)
+        XCTAssertEqual(task.remoteStatusLabel, "In Progress")
+        XCTAssertEqual(task.bindingGeneration, 1)
+        XCTAssertNotNil(task.taskFilePath)
+    }
+
+    func testRemoteItemBindingAttachesExistingRemoteTaskToWorktree() throws {
+        let existingId = UUID()
+        let reference = RemoteWorkItemReference(
+            provider: .github,
+            key: "owner/repo#12",
+            url: nil,
+            host: "github.com",
+            namespace: "owner",
+            repository: "repo",
+            number: 12
+        )
+        try store.appendForTesting(TaskRecord(
+            id: existingId,
+            projectId: projectId,
+            title: "Existing remote task",
+            origin: .remote,
+            remoteWorkItem: reference,
+            columnId: .backlog,
+            rank: TaskRanking.initial()
+        ))
+        try store.saveNow()
+
+        let taskId = try XCTUnwrap(coordinator.upsertRemoteItemBinding(
+            reference: reference,
+            workspaceId: UUID(),
+            worktreePath: "/tmp/owner-repo-12",
+            branch: "feature/owner-repo-12"
+        ))
+
+        XCTAssertEqual(taskId, existingId)
+        XCTAssertEqual(store.fileSnapshot().tasks.count, 1)
+        let task = try XCTUnwrap(store.fileSnapshot().tasks.first)
+        XCTAssertEqual(task.columnId, .backlog)
+        XCTAssertEqual(task.worktreePath, "/tmp/owner-repo-12")
+        XCTAssertEqual(task.branch, "feature/owner-repo-12")
+        XCTAssertEqual(task.bindingGeneration, 1)
+        XCTAssertEqual(task.provisionState, .ready)
+    }
+
+    func testRemoteItemBindingNoOpsWhenBindingIsUnchanged() throws {
+        let workspaceId = UUID()
+        let reference = RemoteWorkItemReference(
+            provider: .jira,
+            key: "UKIE-88",
+            url: nil,
+            host: nil,
+            namespace: nil,
+            repository: nil,
+            number: nil
+        )
+        let taskId = try XCTUnwrap(coordinator.upsertRemoteItemBinding(
+            reference: reference,
+            workspaceId: workspaceId,
+            worktreePath: "/tmp/ukie-88",
+            branch: "feature/UKIE-88",
+            at: Date(timeIntervalSince1970: 1_777_000_000)
+        ))
+        let before = try XCTUnwrap(store.fileSnapshot().tasks.first { $0.id == taskId })
+
+        let repeatedId = try XCTUnwrap(coordinator.upsertRemoteItemBinding(
+            reference: reference,
+            workspaceId: workspaceId,
+            worktreePath: "/tmp/ukie-88",
+            branch: "feature/UKIE-88",
+            at: Date(timeIntervalSince1970: 1_888_000_000)
+        ))
+
+        XCTAssertEqual(repeatedId, taskId)
+        XCTAssertEqual(store.fileSnapshot().tasks.first { $0.id == taskId }, before)
+    }
 }
 
 // MARK: - Test doubles

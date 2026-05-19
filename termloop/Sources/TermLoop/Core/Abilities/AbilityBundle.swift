@@ -1,5 +1,17 @@
 import Foundation
 
+// Older working-with-jira ability bundles may still name these removed tools.
+// Strip them on load/save so they do not reappear in UI or launch context.
+private let deprecatedTermLoopJiraMCPToolNames: Set<String> = [
+    "get_jira_ticket",
+    "set_jira_ticket"
+]
+
+private func isDeprecatedTermLoopJiraMCPTool(_ name: String?) -> Bool {
+    guard let name else { return false }
+    return deprecatedTermLoopJiraMCPToolNames.contains(name)
+}
+
 struct AbilityBundleManifest: Codable {
     var id: String
     var name: String
@@ -41,10 +53,10 @@ struct AbilityBundleManifest: Codable {
         self.description = try c.decode(String.self, forKey: .description)
         self.activation = try c.decode(AbilityActivation.self, forKey: .activation)
         self.tags = try c.decodeIfPresent([String].self, forKey: .tags) ?? []
-        self.termLoopMCPTools = try c.decodeIfPresent(
+        self.termLoopMCPTools = (try c.decodeIfPresent(
             [AbilityMCPToolBinding].self,
             forKey: .termLoopMCPTools
-        ) ?? []
+        ) ?? []).filter { !isDeprecatedTermLoopJiraMCPTool($0.name) }
 
         if c.contains(.items) {
             var items: [AbilityItem] = []
@@ -141,6 +153,9 @@ enum AbilityBundleStore {
         let frontmatter = parsed?.frontmatter ?? [:]
         let fallbackTitle = humanizedPayloadTitle(fileURL.deletingPathExtension().lastPathComponent)
         let mcpToolName = stringValue(frontmatter["mcpTool"])?.nilIfBlank()
+        if isDeprecatedTermLoopJiraMCPTool(mcpToolName) {
+            return nil
+        }
         return AbilityPayloadBlock(
             id: fileURL.deletingPathExtension().lastPathComponent,
             title: stringValue(frontmatter["title"])?.nilIfBlank() ?? fallbackTitle,
@@ -170,7 +185,7 @@ enum AbilityBundleStore {
             activation: ability.activation,
             tags: ability.tags,
             items: ability.items,
-            termLoopMCPTools: ability.mcpTools
+            termLoopMCPTools: ability.mcpTools.filter { !isDeprecatedTermLoopJiraMCPTool($0.name) }
         )
 
         let encoder = JSONEncoder()
@@ -182,7 +197,7 @@ enum AbilityBundleStore {
             content: ability.customizerPromptBody,
             at: bundleURL.appendingPathComponent(AbilityBundleManifest.customizerPromptFile)
         )
-        for block in ability.payloadBlocks {
+        for block in ability.payloadBlocks where !isDeprecatedTermLoopJiraMCPTool(block.mcpToolName) {
             try writePayloadBlock(block)
         }
     }

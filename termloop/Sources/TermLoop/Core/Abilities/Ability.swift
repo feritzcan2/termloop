@@ -253,7 +253,7 @@ enum AbilityActivation: String, Codable, CaseIterable, Hashable {
 /// Per-ability binding to one of TermLoop's built-in MCP tools. Bundle ships
 /// the recommended set with `enabled: true`; the user can flip individual
 /// entries in the ability detail page. JSON is forgiving — a bare string like
-/// `"get_jira_ticket"` decodes as `{ name: "...", enabled: true }`.
+/// `"set_run_targets"` decodes as `{ name: "...", enabled: true }`.
 struct AbilityMCPToolBinding: Hashable, Codable {
     var name: String
     var enabled: Bool
