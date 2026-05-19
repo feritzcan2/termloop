@@ -2455,6 +2455,96 @@ struct WorktreeAgentsPanel: View {
         .equatable()
     }
 
+    private func worktreeGroupMetadataRow(
+        group: WorktreeAgentsGroup,
+        pullRequestSummary: WorktreeAgentsPullRequestSummary.Summary?,
+        allPullRequests: [SidebarPullRequestState],
+        runTargets: [RunTargetStore.RunTarget],
+        remoteItemBadges: [WorktreeGroupRemoteItemBadgeSnapshot]
+    ) -> some View {
+        let preferredWorkspace = sourceWorkspace(for: group)
+        let openPullRequests = pullRequestSummary?.pullRequests.filter { $0.status == .open } ?? []
+        return HStack(alignment: .center, spacing: 4) {
+            worktreeGroupMetadataBadges(
+                group: group,
+                pullRequestSummary: pullRequestSummary,
+                allPullRequests: allPullRequests,
+                runTargets: runTargets,
+                remoteItemBadges: remoteItemBadges
+            )
+            WorktreeGroupGitSummaryView(
+                group: group,
+                preferredWorkspace: preferredWorkspace,
+                openPullRequests: openPullRequests
+            )
+        }
+    }
+
+    private func worktreeGroupMetadataBadges(
+        group: WorktreeAgentsGroup,
+        pullRequestSummary: WorktreeAgentsPullRequestSummary.Summary?,
+        allPullRequests: [SidebarPullRequestState],
+        runTargets: [RunTargetStore.RunTarget],
+        remoteItemBadges: [WorktreeGroupRemoteItemBadgeSnapshot]
+    ) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: 4) {
+                pullRequestBadge(
+                    summary: pullRequestSummary,
+                    allPullRequests: allPullRequests,
+                    group: group
+                )
+                worktreeGroupSupplementalBadges(
+                    group: group,
+                    runTargets: runTargets,
+                    remoteItemBadges: remoteItemBadges
+                )
+            }
+
+            VStack(alignment: .trailing, spacing: 2) {
+                pullRequestBadge(
+                    summary: pullRequestSummary,
+                    allPullRequests: allPullRequests,
+                    group: group
+                )
+                worktreeGroupSupplementalBadges(
+                    group: group,
+                    runTargets: runTargets,
+                    remoteItemBadges: remoteItemBadges
+                )
+            }
+
+            worktreeGroupSupplementalBadges(
+                group: group,
+                runTargets: runTargets,
+                remoteItemBadges: remoteItemBadges
+            )
+
+            Color.clear
+                .frame(width: 0, height: 0)
+        }
+    }
+
+    private func worktreeGroupSupplementalBadges(
+        group: WorktreeAgentsGroup,
+        runTargets: [RunTargetStore.RunTarget],
+        remoteItemBadges: [WorktreeGroupRemoteItemBadgeSnapshot]
+    ) -> some View {
+        HStack(alignment: .center, spacing: 4) {
+            if !runTargets.isEmpty {
+                WorktreeGroupRunTargetsBadge(
+                    targets: runTargets,
+                    workspaceIds: group.workspaces.map(\.id),
+                    worktreePath: group.worktreePath
+                )
+            }
+            ForEach(remoteItemBadges) { snapshot in
+                WorktreeGroupRemoteItemBadge(snapshot: snapshot)
+                    .equatable()
+            }
+        }
+    }
+
     private func addAgent(to group: WorktreeAgentsGroup, agent: TerminalAgent) {
         guard let source = sourceWorkspace(for: group) else {
             guard let projectId = group.projectId,
@@ -2709,203 +2799,138 @@ struct WorktreeAgentsPanel: View {
         let orderedWorkspaces = renderSnapshot.orderedWorkspacesByBranch[group.id] ?? group.workspaces
         let runTargets = renderSnapshot.runTargetsByBranch[group.id] ?? []
         let remoteItemBadges = renderSnapshot.remoteItemBadgeSnapshotsByBranch[group.id] ?? []
+        let pullRequestSummary = renderSnapshot.groupSummaryByKey[
+            groupSummaryKey(groupId: group.id, statuses: pullRequestStatuses)
+        ]
+        let allBranchPullRequests = renderSnapshot.allPullRequestsByBranch[group.id] ?? []
         VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .top, spacing: 6) {
-                Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(TermLoopSidebarTheme.dim)
-                    .frame(width: 10)
-                    .padding(.top, 2)
-                Image(systemName: "shippingbox.fill")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(isArchivedSection ? TermLoopSidebarTheme.dimmer : TermLoopSidebarTheme.dim)
-                    .frame(width: 10, height: 10)
-                    .padding(.top, 2)
-                // Branch name only — the shippingbox icon already says
-                // "branch", and the path was rendered as broken middle-truncated
-                // text on every row. Path lives in the help() tooltip below
-                // for the rare time you actually need it.
-                //
-                // Common Git Flow / GitHub Flow prefixes (`feature/`, `bugfix/`,
-                // `hotfix/`, `chore/`, `refactor/`, `release/`) are rendered
-                // dim so the meaningful tail (ticket ID / topic) gets visual
-                // weight. Renders as a single attributed Text so truncation
-                // still works as one unit.
-                Text(renderSnapshot.branchAttributedStringByBranch[group.id] ?? Self.branchAttributedString(group.branch))
-                    .font(WorktreeAgentsPanelTypography.branchValue)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(path ?? group.branch)
-                if let pathLeaf, !pathLeaf.isEmpty {
-                    Text(verbatim: "· \(pathLeaf)")
-                        .font(TermLoopSidebarTheme.tinyMono)
-                        .foregroundStyle(TermLoopSidebarTheme.dimmer)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .center, spacing: 6) {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(TermLoopSidebarTheme.dim)
+                        .frame(width: 10)
+                    Image(systemName: "shippingbox.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(isArchivedSection ? TermLoopSidebarTheme.dimmer : TermLoopSidebarTheme.dim)
+                        .frame(width: 10, height: 10)
+                    Text(renderSnapshot.branchAttributedStringByBranch[group.id] ?? Self.branchAttributedString(group.branch))
+                        .font(WorktreeAgentsPanelTypography.branchValue)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .help(path ?? pathLeaf)
-                }
-                if let statusLabel = worktreeStatusLabel(for: group) {
-                    TermLoopSidebarToken(
-                        label: statusLabel,
-                        iconSystemName: "exclamationmark.triangle.fill",
-                        tone: .warning,
-                        emphasized: true
-                    )
-                    .help(worktreeStatusTooltip(for: group))
-                }
-                Spacer()
-                SidebarActionSlot(isVisible: showsCollapseAction, width: 14, height: 14) {
-                    Button {
-                        _ = WorkspaceHideCoordinator.confirmAndCollapse(
-                            workspaces: group.workspaces,
-                            tabManager: tabManager,
-                            targetName: group.branch
-                        )
-                    } label: {
-                        Image(systemName: "archivebox")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(TermLoopSidebarTheme.dim)
-                            .frame(width: 14, height: 14)
-                            .contentShape(Rectangle())
+                        .layoutPriority(1)
+                        .help(path ?? group.branch)
+                    if let pathLeaf, !pathLeaf.isEmpty {
+                        Text(verbatim: "· \(pathLeaf)")
+                            .font(TermLoopSidebarTheme.tinyMono)
+                            .foregroundStyle(TermLoopSidebarTheme.dimmer)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .layoutPriority(0)
+                            .help(path ?? pathLeaf)
                     }
-                    .buttonStyle(.plain)
-                    .help(String(
-                        localized: "worktreeAgents.group.collapse.tooltip",
-                        defaultValue: "Collapse this worktree and stop its agents",
-                        table: "TermLoop"
-                    ))
-                }
-                SidebarActionSlot(isVisible: showsAddAction, width: 14, height: 14) {
-                    Menu {
-                        ForEach(availableAgents, id: \.id) { agent in
-                            Button {
-                                addAgent(to: group, agent: agent)
-                            } label: {
-                                Label(addAgentLabel(for: agent), systemImage: agent.icon)
-                            }
-                        }
-                    } label: {
-                        Text(verbatim: "+")
-                            .font(TermLoopSidebarTheme.bodyMonoStrong)
-                            .foregroundStyle(TermLoopSidebarTheme.dim)
-                            .frame(width: 14, height: 14)
-                            .contentShape(Rectangle())
+                    if let statusLabel = worktreeStatusLabel(for: group) {
+                        TermLoopSidebarToken(
+                            label: statusLabel,
+                            iconSystemName: "exclamationmark.triangle.fill",
+                            tone: .warning,
+                            emphasized: true
+                        )
+                        .help(worktreeStatusTooltip(for: group))
                     }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .help(String(
-                        localized: "worktreeAgents.group.hoverAdd.tooltip",
-                        defaultValue: "Add agent on this branch",
-                        table: "TermLoop"
-                    ))
-                }
-                SidebarActionSlot(isVisible: showsDeleteAction, width: 14, height: 14) {
-                    let deleteTooltip = canDeletePhysicalWorktree
-                        ? String(
-                            localized: "worktreeAgents.group.hoverDelete.worktreeTooltip",
-                            defaultValue: "Delete this worktree",
-                            table: "TermLoop"
-                        )
-                        : String(
-                            localized: "worktreeAgents.group.hoverDelete.branchTooltip",
-                            defaultValue: "Delete this branch",
-                            table: "TermLoop"
-                        )
-                    Button {
-                        WorktreeDeletionCoordinator.shared.confirmAndDelete(
-                            branch: singleExpectedBranch,
-                            worktreePath: canDeletePhysicalWorktree ? group.worktreePath : nil,
-                            projectId: sourceWorkspace(for: group)?.projectId ?? group.projectId,
-                            fallbackWorkspaceIds: group.workspaces.map(\.id),
-                            onDeleted: { worktreeProjectionStore.markChanged(reason: "panel.delete") }
-                        )
-                    } label: {
-                        Image(systemName: "trash")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(TermLoopSidebarTheme.dim)
-                            .frame(width: 14, height: 14)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(deleteTooltip)
-                }
-                Text(verbatim: "\(group.workspaces.count)")
-                    .font(TermLoopSidebarTheme.tinyMono)
-                    .foregroundStyle(isArchivedSection ? TermLoopSidebarTheme.dimmer : TermLoopSidebarTheme.dim)
-                    .monospacedDigit()
-                    .padding(.top, 2)
-                let pullRequestSummary = renderSnapshot.groupSummaryByKey[
-                    groupSummaryKey(groupId: group.id, statuses: pullRequestStatuses)
-                ]
-                let allBranchPullRequests = renderSnapshot.allPullRequestsByBranch[group.id] ?? []
-                // Keep the git summary mounted outside the compact badge
-                // fallbacks. It is the primary "dirty worktree" signal for
-                // the Loop tab and must not disappear just because PR/run
-                // badges need a narrower layout.
-                HStack(alignment: .center, spacing: 4) {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .center, spacing: 4) {
-                            pullRequestBadge(
-                                summary: pullRequestSummary,
-                                allPullRequests: allBranchPullRequests,
-                                group: group
+                    Spacer()
+                    SidebarActionSlot(isVisible: showsCollapseAction, width: 14, height: 14) {
+                        Button {
+                            _ = WorkspaceHideCoordinator.confirmAndCollapse(
+                                workspaces: group.workspaces,
+                                tabManager: tabManager,
+                                targetName: group.branch
                             )
-                            if !runTargets.isEmpty {
-                                WorktreeGroupRunTargetsBadge(
-                                    targets: runTargets,
-                                    workspaceIds: group.workspaces.map(\.id),
-                                    worktreePath: group.worktreePath
-                                )
-                            }
-                            ForEach(remoteItemBadges) { snapshot in
-                                WorktreeGroupRemoteItemBadge(snapshot: snapshot)
-                                    .equatable()
-                            }
+                        } label: {
+                            Image(systemName: "archivebox")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(TermLoopSidebarTheme.dim)
+                                .frame(width: 14, height: 14)
+                                .contentShape(Rectangle())
                         }
-                        VStack(alignment: .trailing, spacing: 2) {
-                            pullRequestBadge(
-                                summary: pullRequestSummary,
-                                allPullRequests: allBranchPullRequests,
-                                group: group
-                            )
-                            HStack(alignment: .center, spacing: 4) {
-                                if !runTargets.isEmpty {
-                                    WorktreeGroupRunTargetsBadge(
-                                        targets: runTargets,
-                                        workspaceIds: group.workspaces.map(\.id),
-                                        worktreePath: group.worktreePath
-                                    )
-                                }
-                                ForEach(remoteItemBadges) { snapshot in
-                                    WorktreeGroupRemoteItemBadge(snapshot: snapshot)
-                                        .equatable()
+                        .buttonStyle(.plain)
+                        .help(String(
+                            localized: "worktreeAgents.group.collapse.tooltip",
+                            defaultValue: "Collapse this worktree and stop its agents",
+                            table: "TermLoop"
+                        ))
+                    }
+                    SidebarActionSlot(isVisible: showsAddAction, width: 14, height: 14) {
+                        Menu {
+                            ForEach(availableAgents, id: \.id) { agent in
+                                Button {
+                                    addAgent(to: group, agent: agent)
+                                } label: {
+                                    Label(addAgentLabel(for: agent), systemImage: agent.icon)
                                 }
                             }
+                        } label: {
+                            Text(verbatim: "+")
+                                .font(TermLoopSidebarTheme.bodyMonoStrong)
+                                .foregroundStyle(TermLoopSidebarTheme.dim)
+                                .frame(width: 14, height: 14)
+                                .contentShape(Rectangle())
                         }
-                        HStack(alignment: .center, spacing: 4) {
-                            if !runTargets.isEmpty {
-                                WorktreeGroupRunTargetsBadge(
-                                    targets: runTargets,
-                                    workspaceIds: group.workspaces.map(\.id),
-                                    worktreePath: group.worktreePath
-                                )
-                            }
-                            ForEach(remoteItemBadges) { snapshot in
-                                WorktreeGroupRemoteItemBadge(snapshot: snapshot)
-                                    .equatable()
-                            }
-                        }
-                        Color.clear
-                            .frame(width: 0, height: 0)
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .help(String(
+                            localized: "worktreeAgents.group.hoverAdd.tooltip",
+                            defaultValue: "Add agent on this branch",
+                            table: "TermLoop"
+                        ))
                     }
-                    WorktreeGroupGitSummaryView(
-                        group: group,
-                        preferredWorkspace: sourceWorkspace(for: group),
-                        openPullRequests: pullRequestSummary?.pullRequests.filter { $0.status == .open } ?? []
-                    )
+                    SidebarActionSlot(isVisible: showsDeleteAction, width: 14, height: 14) {
+                        let deleteTooltip = canDeletePhysicalWorktree
+                            ? String(
+                                localized: "worktreeAgents.group.hoverDelete.worktreeTooltip",
+                                defaultValue: "Delete this worktree",
+                                table: "TermLoop"
+                            )
+                            : String(
+                                localized: "worktreeAgents.group.hoverDelete.branchTooltip",
+                                defaultValue: "Delete this branch",
+                                table: "TermLoop"
+                            )
+                        Button {
+                            WorktreeDeletionCoordinator.shared.confirmAndDelete(
+                                branch: singleExpectedBranch,
+                                worktreePath: canDeletePhysicalWorktree ? group.worktreePath : nil,
+                                projectId: sourceWorkspace(for: group)?.projectId ?? group.projectId,
+                                fallbackWorkspaceIds: group.workspaces.map(\.id),
+                                onDeleted: { worktreeProjectionStore.markChanged(reason: "panel.delete") }
+                            )
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(TermLoopSidebarTheme.dim)
+                                .frame(width: 14, height: 14)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help(deleteTooltip)
+                    }
+                    Text(verbatim: "\(group.workspaces.count)")
+                        .font(TermLoopSidebarTheme.tinyMono)
+                        .foregroundStyle(isArchivedSection ? TermLoopSidebarTheme.dimmer : TermLoopSidebarTheme.dim)
+                        .monospacedDigit()
                 }
-                .padding(.top, 1)
+                worktreeGroupMetadataRow(
+                    group: group,
+                    pullRequestSummary: pullRequestSummary,
+                    allPullRequests: allBranchPullRequests,
+                    runTargets: runTargets,
+                    remoteItemBadges: remoteItemBadges
+                )
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.leading, 32)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 1)
             .padding(.horizontal, 4)
             .padding(.vertical, 2)
             .background(
