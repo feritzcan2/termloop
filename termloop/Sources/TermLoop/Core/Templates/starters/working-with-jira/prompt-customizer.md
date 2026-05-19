@@ -91,7 +91,6 @@ After approval, write `.termloop/skills/working-with-jira/SKILL.md` with:
 - a project-specific context section
 - ticket identification rules
 - TermLoop workspace context rules:
-  - when resuming an in-progress workspace, call `mcp__termloop__get_jira_ticket` before guessing from the branch name
   - remote item bindings are user/app-owned; do not try to report or mutate the sidebar chip from the agent
 - pre-transition checks
 - transition rules

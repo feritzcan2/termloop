@@ -252,6 +252,7 @@ final class AbilityStoreTests: XCTestCase {
         }
         XCTAssertEqual(installed.name, "Working With Jira")
         XCTAssertEqual(installed.activation, .off)
+        XCTAssertTrue(installed.mcpTools.isEmpty)
         XCTAssertTrue(installed.payloadBlocks.contains {
             $0.body.contains("Jira") || $0.body.contains("jira")
         })
@@ -499,14 +500,14 @@ final class AbilityStoreTests: XCTestCase {
                     title: "Update ticket chip",
                     description: "",
                     enabled: true,
-                    body: "Telemetry: call `mcp__termloop__set_jira_ticket`.",
-                    fileURL: URL(fileURLWithPath: "/tmp/working-with-jira/payload/010-update-ticket-chip.md"),
-                    mcpToolName: "set_jira_ticket",
+                    body: "Telemetry: call `mcp__termloop__set_run_targets`.",
+                    fileURL: URL(fileURLWithPath: "/tmp/working-with-jira/payload/010-update-run-targets.md"),
+                    mcpToolName: "set_run_targets",
                     includeInSkillFooter: true
                 )
             ],
             items: [.requiredSkill("working-with-jira")],
-            mcpTools: [AbilityMCPToolBinding(name: "set_jira_ticket")],
+            mcpTools: [AbilityMCPToolBinding(name: "set_run_targets")],
             metadataFilePath: URL(fileURLWithPath: "/tmp/jira.json")
         )
 

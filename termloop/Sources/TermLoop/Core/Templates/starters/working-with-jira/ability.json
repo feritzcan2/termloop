@@ -1,8 +1,5 @@
 {
   "activation" : "worktree",
-  "termLoopMCPTools" : [
-    "get_jira_ticket"
-  ],
   "description" : "Use when working on Jira tickets.",
   "id" : "working-with-jira",
   "items" : [

@@ -16,10 +16,6 @@ enum TermLoopMCPServer {
     private static let askToRequestIdEnvKey = "TERMLOOP_ASK_TO_REQUEST_ID"
     private static let askToReplyTokenEnvKey = "TERMLOOP_ASK_TO_REPLY_TOKEN"
 
-    /// CLI-side copy of the Jira ticket reader tool name. The app side keeps a
-    /// matching constant, but the CLI target does not link app sources.
-    private static let getJiraTicketToolName = "get_jira_ticket"
-    private static let jiraAbilityId = "working-with-jira"
     private static let askToToolName = "ask_to"
     private static let replyToRequestToolName = "reply_to_request"
     private static let contextBankProposeToolName = "context_bank_propose_suggestion"
@@ -56,18 +52,6 @@ enum TermLoopMCPServer {
     /// Single source of truth for TermLoop's built-in MCP tools. Add new
     /// entries here; ability bundles only need to opt-in by listing the name.
     private static let builtInTools: [BuiltInTool] = [
-        BuiltInTool(
-            name: getJiraTicketToolName,
-            description: "Read the Jira ticket user/app binding for this workspace. Returns `set: false` when no ticket is bound. Use this instead of guessing from the branch name when picking up an in-progress workspace.",
-            inputSchema: [
-                "type": "object",
-                "properties": [:],
-                "additionalProperties": false
-            ],
-            alwaysOn: false,
-            requiresAskToReplyContext: false,
-            handler: runGetJiraTicket
-        ),
         BuiltInTool(
             name: setRunTargetsToolName,
             description: "Tell TermLoop what's running for this workspace right now (dev server URL, app bundle path, dashboard, log file). PURE TELEMETRY — does NOT start or stop anything. FULL REPLACE: send the complete set on every call; anything dropped from the array disappears from the sidebar chip. Each entry is one chip row in the worktree's Running popover. Call after starting/stopping the app or when status changes; skip duplicate calls when nothing changed.",
@@ -422,12 +406,6 @@ enum TermLoopMCPServer {
     /// owning ability is not turned off. Tolerant of legacy bare-string
     /// entries. Returns nil (not empty set) when the directory is missing so
     /// the caller can distinguish "no abilities" from "can't see abilities".
-    ///
-    /// Mirrors `TerminalAgentRunner.enabledAbilityMCPToolNames`: the
-    /// `working-with-jira` ability auto-opts into `get_jira_ticket` whenever
-    /// it is active, so a tool-only ability discovered via the disk
-    /// fallback (e.g., MCP server invoked outside the runner-launched env)
-    /// still sees the read-side tool.
     private static func enabledToolNamesFromCWDIfAvailable() -> Set<String>? {
         guard let abilitiesDir = abilitiesDirectoryFromCWD() else {
             return nil
@@ -444,17 +422,16 @@ enum TermLoopMCPServer {
             if (json["activation"] as? String) == abilityActivationOffToken { continue }
             if let tools = json["termLoopMCPTools"] as? [Any] {
                 for tool in tools {
-                    if let name = tool as? String {
+                    if let name = tool as? String,
+                       !isDeprecatedJiraToolName(name) {
                         names.insert(name)
                     } else if let obj = tool as? [String: Any],
                               let name = obj["name"] as? String,
-                              (obj["enabled"] as? Bool) ?? true {
+                              (obj["enabled"] as? Bool) ?? true,
+                              !isDeprecatedJiraToolName(name) {
                         names.insert(name)
                     }
                 }
-            }
-            if (json["id"] as? String) == jiraAbilityId {
-                names.insert(getJiraTicketToolName)
             }
             if (json["id"] as? String) == runningYourApplicationAbilityId {
                 names.insert(setRunTargetsToolName)
@@ -462,6 +439,10 @@ enum TermLoopMCPServer {
             }
         }
         return names
+    }
+
+    private static func isDeprecatedJiraToolName(_ name: String) -> Bool {
+        name == "get_jira_ticket" || name == "set_jira_ticket"
     }
 
     private static func abilitiesDirectoryFromCWD() -> String? {
@@ -486,53 +467,6 @@ enum TermLoopMCPServer {
     }
 
     // MARK: Built-in tool handlers
-
-    /// Returns the user/app-owned Jira ticket binding for this workspace, or
-    /// "no ticket set yet".
-    private static func runGetJiraTicket(
-        id: Any,
-        arguments: [String: Any],
-        processEnv: [String: String],
-        socketPath: String
-    ) -> [String: Any] {
-        let workspaceParams = workspaceTargetParams(env: processEnv)
-        guard !workspaceParams.isEmpty else {
-            return toolResult(id: id,
-                              text: "TermLoop daemon target unknown: TERMLOOP_WORKSPACE_ID env var is unset and current working directory is empty.",
-                              isError: true)
-        }
-        do {
-            let client = try authenticatedDaemonClient(socketPath: socketPath)
-            defer { client.close() }
-            let response = try client.sendV2(
-                method: "workspace.get_jira_ticket",
-                params: workspaceParams
-            )
-            if let errorText = extractErrorMessage(response) {
-                return toolResult(id: id, text: errorText, isError: true)
-            }
-            guard let result = (response["result"] as? [String: Any]) else {
-                return toolResult(id: id,
-                                  text: "TermLoop daemon returned no result for workspace.get_jira_ticket — daemon may not be running. Restart TermLoop and try again.",
-                                  isError: true)
-            }
-            let isSet = (result["set"] as? Bool) ?? false
-            guard isSet, let key = result["key"] as? String else {
-                return toolResult(id: id,
-                                  text: "No Jira ticket set for this workspace yet.",
-                                  isError: false)
-            }
-            let status = (result["status"] as? String).map { " · \($0)" } ?? ""
-            let url = (result["url"] as? String).map { " (\($0))" } ?? ""
-            return toolResult(id: id,
-                              text: "\(key)\(status)\(url)",
-                              isError: false)
-        } catch {
-            return toolResult(id: id,
-                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(mcpErrorDescription(error))",
-                              isError: true)
-        }
-    }
 
     /// Run targets telemetry. Maps `(targets: [{label, url?, path?, status?}])`
     /// onto the `workspace.set_run_targets` V2 method, which atomically

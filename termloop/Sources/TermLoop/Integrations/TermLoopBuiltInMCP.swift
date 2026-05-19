@@ -8,16 +8,6 @@ enum TermLoopBuiltInMCP {
     static let askToToolName = "ask_to"
     static let replyToRequestToolName = "reply_to_request"
 
-    /// Tool names that other modules need to spell. Keep them as named
-    /// constants so refactors and grep stay aligned across the runner, the
-    /// auto-include rules, and the in-app tool registration. The CLI's
-    /// `TermLoopMCPServer` owns its own copy because the CLI target does
-    /// not link app sources.
-    static let getJiraTicketToolName = "get_jira_ticket"
-    /// Owning ability for the Jira ticket reader. Agents can read a user/app
-    /// owned binding but cannot write one.
-    static let jiraAbilityId = "working-with-jira"
-
     static let setRunTargetsToolName = "set_run_targets"
     static let getRunTargetsToolName = "get_run_targets"
     /// Owning ability for the Run Targets bindings. Used by the runner to
@@ -38,7 +28,6 @@ enum TermLoopBuiltInMCP {
             capabilities: [
                 "ask_to",
                 "reply_to_request",
-                "get_jira_ticket",
                 "set_run_targets",
                 "get_run_targets",
                 "context_bank_propose_suggestion",
@@ -167,18 +156,6 @@ struct TermLoopBuiltInToolMeta {
             }
             """,
             alwaysOn: true
-        ),
-        TermLoopBuiltInToolMeta(
-            name: TermLoopBuiltInMCP.getJiraTicketToolName,
-            description: "Read the Jira ticket user/app binding for this workspace. Returns `set: false` when no ticket is bound. Use this instead of guessing from the branch name when picking up an in-progress workspace.",
-            inputSchemaJSON: """
-            {
-              "type": "object",
-              "properties": {},
-              "additionalProperties": false
-            }
-            """,
-            alwaysOn: false
         ),
         TermLoopBuiltInToolMeta(
             name: TermLoopBuiltInMCP.getRunTargetsToolName,
