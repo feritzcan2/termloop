@@ -17,6 +17,7 @@ struct AbilityCatalogRow: View {
     let onSelect: () -> Void
     let isSelected: Bool
     let onOpenEditor: (() -> Void)?
+    let openEditorLabel: String?
     let onInstallOrReset: (() -> Void)?
     let installOrResetLabel: String?
     let onDelete: (() -> Void)?
@@ -54,7 +55,7 @@ struct AbilityCatalogRow: View {
                             .toggleStyle(.switch)
                             .controlSize(.mini)
                             .labelsHidden()
-                            .help(activation == .off ? "Enable ability" : "Disable ability")
+                            .help(activation == .off ? "Enable project rule" : "Disable project rule")
                         }
                         if let activation, let onSetActivation {
                             AbilityActivationMenu(activation: activation, onSelect: onSetActivation)
@@ -97,7 +98,7 @@ struct AbilityCatalogRow: View {
 
                 if let onOpenEditor {
                     Button(action: onOpenEditor) {
-                        Text("Edit")
+                        Text(openEditorLabel ?? "Edit skill")
                             .font(TermLoopSidebarTheme.tinyMono)
                     }
                     .buttonStyle(.link)
@@ -159,8 +160,8 @@ struct AbilityActivationBadge: View {
     private var label: String {
         switch activation {
         case .always: return "ALWAYS"
-        case .worktree: return "WORKTREE"
-        case .listed: return "LISTED"
+        case .worktree: return "WORKTREES"
+        case .listed: return "ON DEMAND"
         case .off: return "OFF"
         }
     }
@@ -220,9 +221,9 @@ private struct AbilityActivationMenu: View {
 
     private func label(for activation: AbilityActivation) -> String {
         switch activation {
-        case .always: return "Always"
-        case .worktree: return "Worktree"
-        case .listed: return "Listed"
+        case .always: return "Always apply"
+        case .worktree: return "Apply in worktrees"
+        case .listed: return "On demand"
         case .off: return "Off"
         }
     }

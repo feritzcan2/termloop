@@ -1,5 +1,5 @@
 {
-  "activation" : "worktree",
+  "activation" : "listed",
   "description" : "Use when working on Jira tickets.",
   "id" : "working-with-jira",
   "items" : [

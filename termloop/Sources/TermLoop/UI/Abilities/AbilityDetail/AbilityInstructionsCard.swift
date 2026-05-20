@@ -13,15 +13,15 @@ struct AbilityInstructionsCard: View {
 
     var body: some View {
         AbilityDetailCard(
-            title: "Project skills",
-            subtitle: "This ability hasn't declared any required skills yet."
+            title: "Skill",
+            subtitle: "This legacy rule does not declare a canonical project skill yet."
         ) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Add required skills to `ability.json`, or customize with the agent to author the workflow.")
+                Text("Add a required skill to `ability.json`, or improve with the agent to migrate this into an editable project skill.")
                     .font(TermLoopSidebarTheme.bodyMono)
                     .foregroundStyle(TermLoopSidebarTheme.dim)
                 Button(action: onCustomize) {
-                    Label("Customize with agent", systemImage: "sparkles")
+                    Label("Improve with agent", systemImage: "sparkles")
                 }
                 .buttonStyle(.borderedProminent)
             }
@@ -46,8 +46,8 @@ struct AbilityRequiredSkillsCard: View {
 
     var body: some View {
         AbilityDetailCard(
-            title: "Project skills",
-            subtitle: "Ability-specific workflow lives in skill files. Agents read and update these alongside payload blocks."
+            title: "Skill",
+            subtitle: "This is the canonical, editable project skill. TermLoop syncs it into each agent's native skill catalog."
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(ability.requiredSkillIDs, id: \.self) { id in
@@ -58,7 +58,7 @@ struct AbilityRequiredSkillsCard: View {
             Button {
                 onCustomize()
             } label: {
-                Label("Customize skill with agent", systemImage: "sparkles")
+                Label("Improve with agent", systemImage: "sparkles")
             }
             .buttonStyle(.borderless)
         }
@@ -101,6 +101,12 @@ struct AbilityRequiredSkillsCard: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
+                } else {
+                    Button("Create skill") {
+                        createBlankSkill(id: id)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
                 }
                 TermLoopSidebarToken(
                     label: probe.statusLabel,
@@ -129,7 +135,7 @@ struct AbilityRequiredSkillsCard: View {
                     .background(MarkdownTheme.insetBg)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             } else if probe.exists {
-                Text("Skill file exists but has no body yet. Use Customize skill with agent or Edit skill.")
+                Text("Skill exists but has no body yet. Use Improve with agent or Edit skill.")
                     .font(TermLoopSidebarTheme.bodyMono)
                     .foregroundStyle(TermLoopSidebarTheme.dim)
             } else {
@@ -140,7 +146,7 @@ struct AbilityRequiredSkillsCard: View {
                     Button {
                         onCustomize()
                     } label: {
-                        Label("Create with agent", systemImage: "sparkles")
+                        Label("Write with agent", systemImage: "sparkles")
                     }
                     .buttonStyle(.borderedProminent)
                 }
@@ -169,7 +175,7 @@ struct AbilityRequiredSkillsCard: View {
             let hasOutOfSync = nativeLocations.contains { !$0.isSynced }
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    Text("Skill files")
+                    Text("Skills")
                         .font(TermLoopSidebarTheme.sectionCaps)
                         .foregroundStyle(Color.primary)
                     Spacer(minLength: 8)
@@ -185,7 +191,7 @@ struct AbilityRequiredSkillsCard: View {
                     .controlSize(.mini)
                     .disabled(!canonicalExists || !canSync)
                 }
-                Text("Canonical is the source of truth. Native skill files are linked when the agent supports it; Codex uses a managed real copy because it ignores symlinked SKILL.md files.")
+                Text("Canonical is the source of truth. Native skills are linked when the agent supports it; Codex uses a managed real copy because it ignores symlinked SKILL.md files.")
                     .font(TermLoopSidebarTheme.tinyMono)
                     .foregroundStyle(TermLoopSidebarTheme.dimmer)
                     .fixedSize(horizontal: false, vertical: true)
@@ -278,6 +284,26 @@ struct AbilityRequiredSkillsCard: View {
         }
     }
 
+    private func createBlankSkill(id: String) {
+        do {
+            let fileURL = try ProjectSkillWriter.ensureCanonicalSkill(
+                skillId: id,
+                title: ability.name,
+                description: ability.description,
+                projectFolderPath: projectFolderPath
+            )
+            ProjectSkillMaterializer.materialize(
+                projectFolderPath: projectFolderPath,
+                skillId: id,
+                ability: ability
+            )
+            refreshTick &+= 1
+            openSkillFile(fileURL, title: ability.name)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     private func editSkill(_ url: URL, title: String) {
         openSkillFile(url, title: title)
     }
@@ -286,7 +312,8 @@ struct AbilityRequiredSkillsCard: View {
         MarkdownDocumentStore.shared.open(
             fileURL: url.resolvingSymlinksInPath(),
             folderName: "SKILLS",
-            displayTitle: title
+            displayTitle: title,
+            mode: .edit
         )
     }
 }

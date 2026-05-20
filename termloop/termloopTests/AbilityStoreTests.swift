@@ -261,7 +261,22 @@ final class AbilityStoreTests: XCTestCase {
         ))
 
         store.toggleActivation(id: "working-with-jira")
-        XCTAssertEqual(store.ability(id: "working-with-jira")?.activation, .worktree)
+        XCTAssertEqual(store.ability(id: "working-with-jira")?.activation, .listed)
+    }
+
+    func testBundledStartersIncludeGitAndPRRulesAsListedRule() throws {
+        guard let starter = ProjectInstructionStore.loadStarters().first(where: { $0.id == "working-with-git" }) else {
+            return XCTFail("expected bundled working-with-git starter")
+        }
+        XCTAssertEqual(starter.name, "Git & PR Rules")
+        XCTAssertEqual(starter.activation, .listed)
+
+        let ability = try XCTUnwrap(ProjectInstructionStore.loadStarterAbility(starter))
+        XCTAssertEqual(ability.requiredSkillIDs, ["working-with-git"])
+        XCTAssertTrue(ability.payloadBlocks.contains {
+            $0.body.contains("working-with-git")
+        })
+        XCTAssertTrue(ability.customizerPromptBody?.contains("Git & PR Skill Customizer") ?? false)
     }
 
     func testInstallSystemTemplateCreatesWorkingWithDebuggingAbilityFromBundledMarkdown() throws {
@@ -590,6 +605,71 @@ final class AbilityStoreTests: XCTestCase {
 
         XCTAssertEqual(skills.map(\.name), ["running-your-application"])
         XCTAssertEqual(skills.first?.fileURL.standardizedFileURL.path, skillFile.standardizedFileURL.path)
+    }
+
+    func testProjectSkillWriterCreatesCanonicalSkillSkeletonWithoutOverwriting() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let repo = tmp.appendingPathComponent("repo")
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+
+        let ability = Ability(
+            id: "working-with-git",
+            name: "Git & PR Rules",
+            description: "Use when working with branches and PRs.",
+            activation: .listed,
+            items: [.requiredSkill("working-with-git")],
+            metadataFilePath: URL(fileURLWithPath: "/tmp/git.json")
+        )
+
+        let fileURL = try ProjectSkillWriter.ensureCanonicalSkill(
+            for: ability,
+            projectFolderPath: repo.path
+        )
+        XCTAssertEqual(
+            fileURL.standardizedFileURL.path,
+            repo.appendingPathComponent(".termloop/skills/working-with-git/SKILL.md").standardizedFileURL.path
+        )
+        let first = try String(contentsOf: fileURL, encoding: .utf8)
+        XCTAssertTrue(first.contains("name: \"working-with-git\""))
+        XCTAssertTrue(first.contains("# Git & PR Rules"))
+
+        try "user edited".write(to: fileURL, atomically: true, encoding: .utf8)
+        _ = try ProjectSkillWriter.ensureCanonicalSkill(
+            for: ability,
+            projectFolderPath: repo.path
+        )
+        XCTAssertEqual(try String(contentsOf: fileURL, encoding: .utf8), "user edited")
+    }
+
+    func testProjectSkillWriterRejectsInvalidSkillIdsAndMissingProject() throws {
+        let repo = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+
+        for invalidId in ["", "../etc", "foo/bar", ".foo"] {
+            XCTAssertThrowsError(try ProjectSkillWriter.ensureCanonicalSkill(
+                skillId: invalidId,
+                title: "Invalid",
+                description: "Use when invalid.",
+                projectFolderPath: repo.path
+            )) { error in
+                guard case ProjectSkillWriter.WriterError.invalidSkillId(_) = error else {
+                    return XCTFail("expected invalidSkillId for \(invalidId), got \(error)")
+                }
+            }
+        }
+
+        XCTAssertThrowsError(try ProjectSkillWriter.ensureCanonicalSkill(
+            skillId: "valid-skill",
+            title: "Valid",
+            description: "Use when valid.",
+            projectFolderPath: nil
+        )) { error in
+            guard case ProjectSkillWriter.WriterError.missingProject = error else {
+                return XCTFail("expected missingProject, got \(error)")
+            }
+        }
     }
 
     func testProjectSkillMaterializerCopiesCanonicalSkillIntoWorktreeAgentCatalogs() throws {

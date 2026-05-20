@@ -385,7 +385,7 @@ enum ProjectInstructionStore {
     /// `Sources/TermLoop/Core/Templates/starters/<slug>/`. Each is a full
     /// ability bundle (`ability.json` + `payload/*.md` + optional
     /// `prompt-customizer.md`) that the user can copy into their project via
-    /// the Abilities panel.
+    /// the Project Rules panel.
     static func loadStarters() -> [AbilityStarter] { startersCache.starters }
 
     static func loadStarterAbility(_ starter: AbilityStarter) -> Ability? {

@@ -17,7 +17,7 @@ struct AbilitySetupCard: View {
     var body: some View {
         AbilityDetailCard(
             title: "Setup",
-            subtitle: "Tools and connections this ability expects."
+            subtitle: "Tools and connections this project rule expects."
         ) {
             if ability.items.isEmpty {
                 Text("No external requirements declared.")
