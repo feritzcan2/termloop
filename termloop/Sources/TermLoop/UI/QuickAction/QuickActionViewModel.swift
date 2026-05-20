@@ -1699,7 +1699,7 @@ final class QuickActionViewModel: ObservableObject {
         let alert = NSAlert()
         alert.messageText = String(
             localized: "quickAction.disablePermanently.title",
-            defaultValue: "Disable ability “\(ability.name)”?",
+            defaultValue: "Disable project rule “\(ability.name)”?",
             table: "TermLoop"
         )
         alert.informativeText = String(

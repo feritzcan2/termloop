@@ -86,13 +86,13 @@ struct QuickActionAdvancedPreviewTab: View {
                     .cornerRadius(3)
             }
             Text(String(localized: "quickAction.preview.tab.abilitiesSource",
-                        defaultValue: "Ability rules and generated folder context included in this run.",
+                        defaultValue: "Project rules and generated folder context included in this run.",
                         table: "TermLoop"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if contextInstructionParts.isEmpty {
                 Text(String(localized: "quickAction.preview.tab.noAbilities",
-                            defaultValue: "No project abilities or generated context are active for this preview.",
+                            defaultValue: "No project rules or generated context are active for this preview.",
                             table: "TermLoop"))
                     .foregroundStyle(.secondary)
             } else {

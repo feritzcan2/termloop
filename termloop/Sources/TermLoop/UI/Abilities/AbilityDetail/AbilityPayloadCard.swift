@@ -39,8 +39,8 @@ struct AbilityPayloadCard: View {
 
     var body: some View {
         AbilityDetailCard(
-            title: "Agent payload",
-            subtitle: "These blocks will be sent as `--append-system-prompt` when this ability is active."
+            title: "Advanced agent payload",
+            subtitle: "Optional low-level prompt blocks sent with this project rule. Most teams should edit the skill above instead."
         ) {
             VStack(alignment: .leading, spacing: 10) {
                 if ability.payloadBlocks.isEmpty {
