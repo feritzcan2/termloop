@@ -387,7 +387,7 @@ final class QuickActionPreviewViewModelTests: XCTestCase {
 
         XCTAssertEqual(
             list?.editability,
-            .notEditable("Toggle the ability's activation in the Abilities panel.")
+            .notEditable("Toggle the project rule's activation in the Rules panel.")
         )
     }
 

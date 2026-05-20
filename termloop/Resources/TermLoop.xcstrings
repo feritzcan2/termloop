@@ -296,13 +296,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ability Creator"
+            "value": "Rule Creator"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ability Creator"
+            "value": "Rule Creator"
           }
         }
       }
@@ -313,13 +313,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ability: %@"
+            "value": "Rule: %@"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ability: %@"
+            "value": "Rule: %@"
           }
         }
       }
@@ -2946,13 +2946,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Skills"
+            "value": "Project Rules"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "スキル"
+            "value": "プロジェクトルール"
           }
         }
       }
@@ -3830,13 +3830,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Abilities"
+            "value": "Rules"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "アビリティ"
+            "value": "ルール"
           }
         }
       }
@@ -5056,6 +5056,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cancel"
+          }
+        }
+      }
+    },
+    "sidebar.projectRules.headerTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project Rules"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトルール"
           }
         }
       }

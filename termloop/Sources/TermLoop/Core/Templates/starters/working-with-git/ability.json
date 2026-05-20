@@ -1,0 +1,19 @@
+{
+  "activation" : "listed",
+  "description" : "Use when working with branches, commits, pull requests, merge conflicts, or repository history in this project.",
+  "id" : "working-with-git",
+  "items" : [
+    {
+      "type" : "requiredSkill",
+      "value" : "working-with-git"
+    }
+  ],
+  "name" : "Git & PR Rules",
+  "tags" : [
+    "git",
+    "branch",
+    "commit",
+    "pr",
+    "review"
+  ]
+}

@@ -378,10 +378,10 @@ enum AgentInputQueries {
         parts.append(
             AgentInstructionPart(
                 kind: .onDemandAbilityList,
-                title: "Available on-demand abilities",
+                title: "Available on-demand project rules",
                 body: body,
-                source: .generated("ProjectInstructionStore listed abilities"),
-                editability: .notEditable("Toggle the ability's activation in the Abilities panel."),
+                source: .generated("ProjectInstructionStore listed project rules"),
+                editability: .notEditable("Toggle the project rule's activation in the Rules panel."),
                 enabled: true,
                 disableReason: nil,
                 scope: .project
@@ -395,7 +395,7 @@ enum AgentInputQueries {
     ) {
         guard !skills.isEmpty else { return }
         var lines = [
-            "The following project skill files are required by active/on-demand abilities. Read them before doing the matching work."
+            "The following project skill files are required by active/on-demand project rules. Read them before doing the matching work."
         ]
         lines += skills.map { skill in
             let description = skill.description?
@@ -413,7 +413,7 @@ enum AgentInputQueries {
                 title: "Required project skills",
                 body: lines.joined(separator: "\n"),
                 source: .generated("ProjectInstructionStore skill references"),
-                editability: .notEditable("Skill files are opened from the ability detail."),
+                editability: .notEditable("Skill files are opened from Project Rules detail."),
                 enabled: true,
                 disableReason: nil,
                 scope: .project

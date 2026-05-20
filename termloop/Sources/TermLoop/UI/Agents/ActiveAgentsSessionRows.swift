@@ -90,7 +90,7 @@ struct AbilityAgentRow: View, Equatable {
     private var title: String {
         // Workspace title for system-starter sessions carries the specific
         // ability slug ("ability-creator: working-with-git") — much more
-        // useful than the generic "Ability Creator" kind fallback when
+        // useful than the generic "Rule Creator" kind fallback when
         // multiple system starters are active at once.
         if let ws = AppDelegate.shared?.workspaceFor(tabId: session.workspaceId) {
             let custom = ws.customTitle?.trimmingCharacters(in: .whitespaces) ?? ""
@@ -101,20 +101,20 @@ struct AbilityAgentRow: View, Equatable {
         case .abilityCreator:
             return String(
                 localized: "agents.panel.abilityCreator.title",
-                defaultValue: "Ability Creator",
+                defaultValue: "Rule Creator",
                 table: "TermLoop"
             )
         case .abilityRefiner(let abilityId):
             let template = String(
                 localized: "agents.panel.abilityRefiner.title",
-                defaultValue: "Ability: %@",
+                defaultValue: "Rule: %@",
                 table: "TermLoop"
             )
             return String(format: template, abilityId)
         case .abilityDiscussion(let abilityId):
             let template = String(
                 localized: "agents.panel.abilityDiscussion.title",
-                defaultValue: "Ability Chat: %@",
+                defaultValue: "Rule Chat: %@",
                 table: "TermLoop"
             )
             return String(format: template, abilityId)

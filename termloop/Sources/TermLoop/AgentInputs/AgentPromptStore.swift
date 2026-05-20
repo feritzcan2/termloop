@@ -147,10 +147,10 @@ final class AgentPromptStore: ObservableObject {
         case .bridgeSourcePrompt: return "New Bridge Source Prompt"
         case .bridgeTargetPrompt: return "New Bridge Target Prompt"
         case .forkHandoffPrompt: return "New Fork Handoff Prompt"
-        case .abilityCreatorPrompt: return "New Ability Creator Prompt"
-        case .abilityRefinerPrompt: return "New Ability Refiner Prompt"
-        case .systemAbilityDefaultTemplate: return "New System Ability Template"
-        case .systemAbilityCreatorPrompt: return "New System Ability Creator Prompt"
+        case .abilityCreatorPrompt: return "New Project Rule Creator Prompt"
+        case .abilityRefinerPrompt: return "New Project Rule Refiner Prompt"
+        case .systemAbilityDefaultTemplate: return "New System Rule Template"
+        case .systemAbilityCreatorPrompt: return "New System Rule Creator Prompt"
         }
     }
 
@@ -160,10 +160,10 @@ final class AgentPromptStore: ObservableObject {
         case .bridgeSourcePrompt: return "Bridge source-side handoff template."
         case .bridgeTargetPrompt: return "Bridge target-side system instructions template."
         case .forkHandoffPrompt: return "Quick Action fork/handoff template."
-        case .abilityCreatorPrompt: return "Meta-prompt for creating a project ability."
-        case .abilityRefinerPrompt: return "Meta-prompt for refining an existing project ability."
-        case .systemAbilityDefaultTemplate: return "Default body installed for a system ability family."
-        case .systemAbilityCreatorPrompt: return "Meta-prompt for generating a system ability."
+        case .abilityCreatorPrompt: return "Meta-prompt for creating a project rule."
+        case .abilityRefinerPrompt: return "Meta-prompt for refining an existing project rule."
+        case .systemAbilityDefaultTemplate: return "Default body installed for a system rule family."
+        case .systemAbilityCreatorPrompt: return "Meta-prompt for generating a system rule."
         }
     }
 
@@ -182,9 +182,9 @@ final class AgentPromptStore: ObservableObject {
         case .abilityRefinerPrompt:
             return "Write the refiner meta-prompt here."
         case .systemAbilityDefaultTemplate:
-            return "Write the default installed system ability body here."
+            return "Write the default installed system rule body here."
         case .systemAbilityCreatorPrompt:
-            return "Write the meta-prompt that generates this system ability."
+            return "Write the meta-prompt that generates this system rule."
         }
     }
 
@@ -389,9 +389,9 @@ extension AgentPromptStore {
         docs.append(
             AgentPromptDocument(
                 id: abilityDocumentID(.creator),
-                title: "Ability creator prompt",
+                title: "Project rule creator prompt",
                 kind: .abilityCreatorPrompt,
-                subtitle: "Generic fallback meta-prompt used when a starter ability has no domain-specific customizer.",
+                subtitle: "Generic fallback meta-prompt used when a starter project rule has no domain-specific customizer.",
                 body: ProjectInstructionStore.builtInPromptBody(.creator),
                 scope: .builtin,
                 sourceURL: nil,
@@ -1483,11 +1483,11 @@ Code/commits/PRs: write normal. "stop caveman" or "normal mode": revert. Level p
                 id: "system.template.concise-docs",
                 title: "Concise Docs — system instructions",
                 kind: .systemPromptTemplate,
-                subtitle: "Generic concise documentation style for any artifact-writing task (CLAUDE.md, instructions.md, READMEs, ability docs).",
+                subtitle: "Generic concise documentation style for any artifact-writing task (CLAUDE.md, instructions.md, READMEs, project rule docs).",
                 body: """
 # Concise documentation style
 
-Apply to every artifact you write or edit (CLAUDE.md, instructions.md, README sections, ability docs, design notes) and to chat replies that summarize what you wrote. No "speak vs write" split — same rule both.
+Apply to every artifact you write or edit (CLAUDE.md, instructions.md, README sections, project rule docs, design notes) and to chat replies that summarize what you wrote. No "speak vs write" split — same rule both.
 
 ## Drop
 - Filler: just, really, basically, actually, simply, in order to, that being said.

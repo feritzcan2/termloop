@@ -309,6 +309,139 @@ enum AbilityBundleStore {
     }
 }
 
+enum ProjectSkillWriter {
+    enum WriterError: LocalizedError {
+        case missingProject
+        case invalidSkillId(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .missingProject:
+                return "No active project folder is available."
+            case .invalidSkillId(let id):
+                return "Invalid project skill id: \(id)"
+            }
+        }
+    }
+
+    static func primarySkillId(for ability: Ability) -> String {
+        ability.requiredSkillIDs.first ?? ability.id
+    }
+
+    static func canonicalSkillFileURL(
+        projectFolderPath: String?,
+        skillId: String
+    ) throws -> URL {
+        guard let projectFolderPath,
+              !projectFolderPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw WriterError.missingProject
+        }
+        let safeId = try validatedSkillId(skillId)
+        return URL(fileURLWithPath: projectFolderPath, isDirectory: true)
+            .appendingPathComponent(".termloop", isDirectory: true)
+            .appendingPathComponent("skills", isDirectory: true)
+            .appendingPathComponent(safeId, isDirectory: true)
+            .appendingPathComponent("SKILL.md", isDirectory: false)
+    }
+
+    @discardableResult
+    static func ensureCanonicalSkill(
+        for ability: Ability,
+        projectFolderPath: String?
+    ) throws -> URL {
+        try ensureCanonicalSkill(
+            skillId: primarySkillId(for: ability),
+            title: ability.name,
+            description: ability.description,
+            projectFolderPath: projectFolderPath
+        )
+    }
+
+    @discardableResult
+    static func ensureCanonicalSkill(
+        skillId: String,
+        title: String,
+        description: String,
+        projectFolderPath: String?
+    ) throws -> URL {
+        let fileURL = try canonicalSkillFileURL(
+            projectFolderPath: projectFolderPath,
+            skillId: skillId
+        )
+        if FileManager.default.fileExists(atPath: fileURL.path) {
+            return fileURL
+        }
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try skeletonSkillBody(
+            skillId: skillId,
+            title: title,
+            description: description
+        ).write(to: fileURL, atomically: true, encoding: .utf8)
+        return fileURL
+    }
+
+    private static func validatedSkillId(_ value: String) throws -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              trimmed.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]*$"#, options: .regularExpression) != nil,
+              !trimmed.contains("..") else {
+            throw WriterError.invalidSkillId(value)
+        }
+        return trimmed
+    }
+
+    private static func skeletonSkillBody(
+        skillId: String,
+        title: String,
+        description: String
+    ) -> String {
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let heading = normalizedTitle.isEmpty ? humanizedTitle(skillId) : normalizedTitle
+        let normalizedDescription = description
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\n", with: " ")
+        let frontmatterDescription = normalizedDescription.isEmpty
+            ? "Use when this project skill applies."
+            : normalizedDescription
+        return """
+        ---
+        name: \(yamlScalar(skillId))
+        description: \(yamlScalar(frontmatterDescription))
+        ---
+
+        # \(heading)
+
+        Add the project-specific skill instructions agents should follow for \(heading). Keep this file short, concrete, and update it whenever the team's workflow changes.
+
+        """
+    }
+
+    private static func yamlScalar(_ value: String) -> String {
+        let escaped = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
+    }
+
+    private static func humanizedTitle(_ id: String) -> String {
+        id
+            .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "_", with: " ")
+            .split(separator: " ")
+            .map { token in
+                let lower = token.lowercased()
+                if ["git", "pr", "jira"].contains(lower) {
+                    return lower.uppercased()
+                }
+                return lower.prefix(1).uppercased() + lower.dropFirst()
+            }
+            .joined(separator: " ")
+    }
+}
+
 private extension String {
     func nilIfBlank() -> String? {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)

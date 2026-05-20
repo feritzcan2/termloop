@@ -33,7 +33,7 @@ struct AbilityLaunchEditSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
-                Text(TermLoopSidebarTheme.caps("Launch Ability Agent"))
+                Text(TermLoopSidebarTheme.caps("Launch Project Rule Agent"))
                     .font(TermLoopSidebarTheme.sectionCaps)
                     .foregroundStyle(TermLoopSidebarTheme.dim)
                 Text(verbatim: title)

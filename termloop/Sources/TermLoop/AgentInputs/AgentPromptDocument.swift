@@ -52,10 +52,10 @@ extension AgentPromptDocument.Kind {
         case .bridgeSourcePrompt: return "bridge source"
         case .bridgeTargetPrompt: return "bridge target"
         case .forkHandoffPrompt: return "fork"
-        case .abilityCreatorPrompt: return "ability creator"
-        case .abilityRefinerPrompt: return "ability refiner"
-        case .systemAbilityDefaultTemplate: return "system ability"
-        case .systemAbilityCreatorPrompt: return "system ability creator"
+        case .abilityCreatorPrompt: return "project rule creator"
+        case .abilityRefinerPrompt: return "project rule refiner"
+        case .systemAbilityDefaultTemplate: return "system rule"
+        case .systemAbilityCreatorPrompt: return "system rule creator"
         }
     }
 
@@ -70,13 +70,13 @@ extension AgentPromptDocument.Kind {
         case .forkHandoffPrompt:
             return "Fork handoff prompt"
         case .abilityCreatorPrompt:
-            return "Meta-prompt for ability creation"
+            return "Meta-prompt for project rule creation"
         case .abilityRefinerPrompt:
-            return "Meta-prompt for ability refinement"
+            return "Meta-prompt for project rule refinement"
         case .systemAbilityDefaultTemplate:
-            return "Default system-ability body"
+            return "Default system-rule body"
         case .systemAbilityCreatorPrompt:
-            return "Meta-prompt for system-ability creation"
+            return "Meta-prompt for system-rule creation"
         }
     }
 

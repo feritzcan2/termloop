@@ -111,11 +111,11 @@ struct AgentsSidebarView: View {
         Button("New Bridge Target Prompt") { createPrompt(.bridgeTargetPrompt) }
         Button("New Fork Handoff Prompt") { createPrompt(.forkHandoffPrompt) }
         Divider()
-        Button("New Ability Creator Prompt") { createPrompt(.abilityCreatorPrompt) }
-        Button("New Ability Refiner Prompt") { createPrompt(.abilityRefinerPrompt) }
+        Button("New Project Rule Creator Prompt") { createPrompt(.abilityCreatorPrompt) }
+        Button("New Project Rule Refiner Prompt") { createPrompt(.abilityRefinerPrompt) }
         Divider()
-        Button("New System Ability Template") { createPrompt(.systemAbilityDefaultTemplate) }
-        Button("New System Ability Creator Prompt") { createPrompt(.systemAbilityCreatorPrompt) }
+        Button("New System Rule Template") { createPrompt(.systemAbilityDefaultTemplate) }
+        Button("New System Rule Creator Prompt") { createPrompt(.systemAbilityCreatorPrompt) }
     }
 
     private var sectionFilterBar: some View {
@@ -390,7 +390,7 @@ enum AgentsCatalogFilter: String, CaseIterable, Identifiable {
         switch self {
         case .templates: return "Templates"
         case .prompts: return "Prompts"
-        case .abilities: return "Abilities"
+        case .abilities: return "Rules"
         case .runtime: return "Runtime"
         }
     }
@@ -515,9 +515,9 @@ enum AgentsCatalogContent {
         case .bridgeSourcePrompt: return "Bridge Source"
         case .bridgeTargetPrompt: return "Bridge Target"
         case .forkHandoffPrompt: return "Fork Prompt"
-        case .abilityCreatorPrompt: return "Ability Prompt"
-        case .abilityRefinerPrompt: return "Ability Prompt"
-        case .systemAbilityDefaultTemplate: return "System Ability"
+        case .abilityCreatorPrompt: return "Project Rule Prompt"
+        case .abilityRefinerPrompt: return "Project Rule Prompt"
+        case .systemAbilityDefaultTemplate: return "System Rule"
         case .systemAbilityCreatorPrompt: return "Creator Prompt"
         }
     }
@@ -758,7 +758,7 @@ struct AgentsCatalogMainAreaView: View {
         case .prompts:
             return "Create a reusable project prompt from the + menu, or edit a built-in prompt and save it as a project override."
         case .abilities:
-            return "Create ability prompt overrides from the + menu, or edit a built-in ability prompt and save it as a project override."
+            return "Create project rule prompt overrides from the + menu, or edit a built-in project rule prompt and save it as a project override."
         case .runtime:
             return "Runtime fragments are generated views."
         }

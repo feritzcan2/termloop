@@ -29,10 +29,16 @@ struct AbilitiesPanel: View {
     @State private var projectScopeTick: Int = 0
 
     /// Persisted collapsed state — click the header to toggle.
-    @AppStorage("termloop.abilities.collapsed.v2") private var abilitiesCollapsed: Bool = true
+    @AppStorage("termloop.projectRules.collapsed.v1") private var abilitiesCollapsed: Bool = false
 
     private var hasActiveProject: Bool {
         projectStore.activeProjectId != nil
+    }
+
+    private var projectFolderPath: String? {
+        guard let id = projectStore.activeProjectId,
+              let project = projectStore.project(id: id) else { return nil }
+        return project.folderPath
     }
 
     private struct AbilityCatalogItem: Identifiable {
@@ -51,7 +57,7 @@ struct AbilitiesPanel: View {
         var isInstalled: Bool { ability != nil }
         var installOrResetLabel: String? {
             guard starter != nil else { return nil }
-            return isInstalled ? "Reset" : "Install"
+            return isInstalled ? "Reset" : "Write with agent"
         }
 
         private var abilityPreview: Ability? {
@@ -98,7 +104,7 @@ struct AbilitiesPanel: View {
                 if !hasActiveProject {
                     Text(String(
                         localized: "abilities.panel.selectProjectAbilities",
-                        defaultValue: "Select a project to manage abilities.",
+                        defaultValue: "Select a project to manage rules.",
                         table: "TermLoop"
                     ))
                         .font(TermLoopSidebarTheme.tinyMono)
@@ -169,7 +175,7 @@ struct AbilitiesPanel: View {
                 pendingCustomizeChoice = nil
             }
         } message: { _ in
-            Text("Continue the existing customizer session, or start a fresh one for this ability.")
+            Text("Continue the existing improvement session, or start a fresh one for this project rule.")
         }
         .sheet(isPresented: $newSheetVisible) {
             AbilityNewSheet { name, description in
@@ -212,7 +218,7 @@ struct AbilitiesPanel: View {
             }
             .buttonStyle(.plain)
             .disabled(!hasActiveProject)
-            .help("Create a new ability bundle")
+            .help("Create a new project rule")
         }
         .contentShape(Rectangle())
         .onTapGesture { abilitiesCollapsed.toggle() }
@@ -220,15 +226,15 @@ struct AbilitiesPanel: View {
 
     private var headerTitle: String {
         String(
-            localized: "sidebar.workSubTab.abilities",
-            defaultValue: "Abilities",
+            localized: "sidebar.projectRules.headerTitle",
+            defaultValue: "Project Rules",
             table: "TermLoop"
         )
     }
 
     private var pendingCustomizeChoiceTitle: String {
-        guard let item = pendingCustomizeChoice else { return "Customize with agent" }
-        return "Customize \(item.title)?"
+        guard let item = pendingCustomizeChoice else { return "Improve with agent" }
+        return "Improve \(item.title)?"
     }
 
     // MARK: - States
@@ -237,7 +243,7 @@ struct AbilitiesPanel: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(String(
                 localized: "abilities.panel.starterHintAbilities",
-                defaultValue: "Start from a built-in ability or create a custom one.",
+                defaultValue: "Start from a built-in project rule or create a custom one.",
                 table: "TermLoop"
             ))
                 .font(TermLoopSidebarTheme.tinyMono)
@@ -259,18 +265,19 @@ struct AbilitiesPanel: View {
                     showsStarterBadge: item.ability == nil && item.starter != nil,
                     assignedAgentTitle: assignedAgentTitle(for: assignedWorkspaceId),
                     primaryActionLabel: assignedWorkspaceId == nil
-                        ? (item.ability == nil ? "Create with agent" : "Discuss")
+                        ? (item.ability == nil ? "Add & edit skill" : "Edit skill")
                         : "Open agent",
-                    onPrimaryAction: { openOrStartAbilityAgent(for: item) },
+                    onPrimaryAction: { primaryRuleAction(for: item) },
                     onSelect: { selectAbilityDetail(for: item) },
                     isSelected: detailState.selectedAbilityId == item.id,
                     onOpenEditor: item.ability.map { ability in
-                        { openInMarkdownEditor(ability) }
+                        { openOrStartAbilityAgent(for: item) }
                     },
+                    openEditorLabel: item.ability == nil ? nil : "Improve with agent",
                     onInstallOrReset: item.starter.map { starter in
                         item.isInstalled
                             ? { resetStarter(starter) }
-                            : { installStarter(starter) }
+                            : { openOrStartAbilityAgent(for: item) }
                     },
                     installOrResetLabel: item.installOrResetLabel,
                     onDelete: item.ability.flatMap { ability in
@@ -317,22 +324,68 @@ struct AbilitiesPanel: View {
 
     // MARK: - Actions
 
+    private func primaryRuleAction(for item: AbilityCatalogItem) {
+        if assignedAbilityWorkspaceId(for: item.id) != nil {
+            openOrStartAbilityAgent(for: item)
+            return
+        }
+        if let ability = item.ability {
+            openRuleEditor(ability)
+            return
+        }
+        if let starter = item.starter {
+            addStarterAndEdit(starter)
+        }
+    }
+
     private func selectAbilityDetail(for item: AbilityCatalogItem) {
         if let ability = item.ability {
             detailState.show(ability.id)
             return
         }
         if let starter = item.starter {
-            if !store.isInitialized {
-                store.initializeDirectory()
-            }
-            guard let ability = store.installStarter(starter) else {
-                errorMessage = "Could not install the starter ability."
-                return
-            }
-            detailState.show(ability.id)
+            addStarterAndShowDetail(starter)
             return
         }
+    }
+
+    private func addStarterAndShowDetail(_ starter: AbilityStarter) {
+        if !store.isInitialized {
+            store.initializeDirectory()
+        }
+        guard let ability = store.installStarter(starter) else {
+            errorMessage = "Could not add the starter project rule."
+            return
+        }
+        // Plain row selection installs the bundle at the store default `.off`
+        // state and shows the detail page. It must not auto-enable or create
+        // the canonical skill file; those side effects belong to explicit CTAs.
+        detailState.show(ability.id)
+    }
+
+    private func addStarterAndEdit(_ starter: AbilityStarter) {
+        if let ability = installStarterRule(starter) {
+            openRuleEditor(ability)
+        }
+    }
+
+    /// Explicit install path for starter CTAs. Row selection uses
+    /// `addStarterAndShowDetail` so a plain title click does not open or write
+    /// the canonical skill editor unexpectedly; CTAs intentionally install,
+    /// enable, and prepare the editable skill.
+    private func installStarterRule(_ starter: AbilityStarter) -> Ability? {
+        if !store.isInitialized {
+            store.initializeDirectory()
+        }
+        guard let installed = store.installStarter(starter) else {
+            errorMessage = "Could not add the starter project rule."
+            return nil
+        }
+        let target: AbilityActivation = starter.activation == .off
+            ? .listed
+            : starter.activation
+        store.setActivation(id: installed.id, target)
+        return store.ability(id: installed.id) ?? installed
     }
 
     private func openInMarkdownEditor(_ ability: Ability) {
@@ -340,9 +393,34 @@ struct AbilitiesPanel: View {
         MarkdownDocumentStore.shared.open(
             fileURL: sourceURL,
             folderName: String(localized: "abilities.section.title",
-                               defaultValue: "ABILITIES", table: "TermLoop"),
+                               defaultValue: "SKILLS", table: "TermLoop"),
             displayTitle: ability.name
         )
+    }
+
+    private func openRuleEditor(_ ability: Ability) {
+        do {
+            let sourceURL = try ProjectSkillWriter.ensureCanonicalSkill(
+                for: ability,
+                projectFolderPath: projectFolderPath
+            )
+            ProjectSkillMaterializer.materialize(
+                projectFolderPath: projectFolderPath,
+                skillIds: ability.requiredSkillIDs.isEmpty
+                    ? [ProjectSkillWriter.primarySkillId(for: ability)]
+                    : ability.requiredSkillIDs
+            )
+            MarkdownDocumentStore.shared.open(
+                fileURL: sourceURL,
+                folderName: String(localized: "abilities.section.title",
+                                   defaultValue: "SKILLS", table: "TermLoop"),
+                displayTitle: ability.name,
+                mode: .edit
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+            openInMarkdownEditor(ability)
+        }
     }
 
     private func assignedAbilityWorkspaceId(for abilityId: String) -> UUID? {
@@ -397,7 +475,7 @@ struct AbilitiesPanel: View {
     /// current project.
     private func presentNewAbilitySheet() {
         guard hasActiveProject else {
-            errorMessage = "Select a project before creating an ability."
+            errorMessage = "Select a project before creating a project rule."
             return
         }
         if !store.isInitialized {
@@ -413,7 +491,7 @@ struct AbilitiesPanel: View {
             return
         }
         if store.ability(id: slug) != nil {
-            errorMessage = "An ability with slug '\(slug)' already exists."
+            errorMessage = "A project rule with slug '\(slug)' already exists."
             return
         }
         guard let dir = store.abilitiesDirectoryURL() else {
@@ -427,11 +505,11 @@ struct AbilitiesPanel: View {
             description: description.isEmpty ? "Use when…" : description,
             activation: .listed,
             tags: [],
-            items: [],
+            items: [.requiredSkill(slug)],
             metadataFilePath: bundleURL.appendingPathComponent("ability.json")
         )
         store.save(ability)
-        detailState.show(slug)
+        openRuleEditor(ability)
     }
 
     private func slugify(_ text: String) -> String {
@@ -490,28 +568,17 @@ struct AbilitiesPanel: View {
         }
     }
 
-    private func installStarter(_ starter: AbilityStarter) {
-        if !store.isInitialized {
-            store.initializeDirectory()
-        }
-        guard let ability = store.installStarter(starter) else {
-            errorMessage = "Could not install the starter ability."
-            return
-        }
-        detailState.show(ability.id)
-    }
-
     /// Sidebar Toggle handler for not-yet-installed starter rows. Installs
     /// the bundle, then immediately flips activation to the starter's
     /// intended mode (or `.listed` when the starter itself ships `.off`),
     /// bypassing the install-as-off default so a single tap turns the
-    /// ability on.
+    /// project rule on.
     private func installAndEnableStarter(_ starter: AbilityStarter) {
         if !store.isInitialized {
             store.initializeDirectory()
         }
         guard let installed = store.installStarter(starter) else {
-            errorMessage = "Could not install the starter ability."
+            errorMessage = "Could not add the starter project rule."
             return
         }
         let target: AbilityActivation = starter.activation == .off
@@ -529,7 +596,7 @@ struct AbilitiesPanel: View {
             MarkdownDocumentStore.shared.close()
         }
         guard let ability = store.installStarter(starter) else {
-            errorMessage = "Could not reset the starter ability."
+            errorMessage = "Could not reset the starter project rule."
             return
         }
         detailState.show(ability.id)
@@ -560,7 +627,7 @@ struct AbilitiesPanel: View {
         }
         guard let projectId = projectStore.activeProjectId,
               projectStore.project(id: projectId) != nil else {
-            errorMessage = "Select a project before opening an ability agent."
+            errorMessage = "Select a project before opening a project rule agent."
             return
         }
         MainAreaActivation.activateAbilityDetailSurface(abilityId: item.id)
@@ -579,8 +646,8 @@ struct AbilitiesPanel: View {
                 ?? ProjectInstructionStore.bundledPrompt(.creator))
                 + "\n\nTarget bundle: `\(bundlePath)`\n"
             launchAbilityAgent(
-                title: "ability: \(ability.name)",
-                prompt: "Customize the **\(ability.name)** ability for this project. Begin Phase 1 (detection).",
+                title: "rule: \(ability.name)",
+                prompt: "Improve the **\(ability.name)** project rule for this project. Begin Phase 1 (detection).",
                 systemPromptBody: systemBody,
                 kind: .abilityDiscussion(abilityId: ability.id),
                 source: .abilityRefiner
@@ -595,8 +662,8 @@ struct AbilitiesPanel: View {
             systemBody += "\n\nTarget bundle: `\(target.path)` (will be created if missing)\n"
         }
         launchAbilityAgent(
-            title: "ability: \(starter.name)",
-            prompt: "Customize the **\(starter.name)** ability for this project. Begin Phase 1 (detection).",
+            title: "rule: \(starter.name)",
+            prompt: "Write the **\(starter.name)** project rule for this project. Begin Phase 1 (detection).",
             systemPromptBody: systemBody,
             kind: .abilityDiscussion(abilityId: starter.id),
             source: .abilityCreator
@@ -642,14 +709,14 @@ struct AbilitiesPanel: View {
         guard let project = projectStore.project(id: projectId) else { return }
         let agentId = persistedSession.agentId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let agent = TerminalAgentRegistry.shared.agent(id: agentId) else {
-            errorMessage = "Could not restore the prior ability session because the agent `\(agentId)` is unavailable."
+            errorMessage = "Could not restore the prior project rule session because the agent `\(agentId)` is unavailable."
             return
         }
         let normalizedCwd = persistedSession.cwd?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let cwd = (normalizedCwd?.isEmpty == false ? normalizedCwd : nil) ?? project.folderPath
         let workspace = tabManager.addWorkspace(
-            title: "ability: \(item.title)",
+            title: "rule: \(item.title)",
             workingDirectory: cwd,
             select: true,
             eagerLoadTerminal: true,
@@ -851,6 +918,19 @@ struct AbilityDetailPage: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         header(for: ability)
+                        if ability.requiredSkillIDs.isEmpty {
+                            AbilityInstructionsCard(
+                                ability: ability,
+                                onCustomize: { detailState.requestCustomize() }
+                            )
+                        } else {
+                            AbilityRequiredSkillsCard(
+                                ability: ability,
+                                projectFolderPath: projectFolderPath,
+                                onCustomize: { detailState.requestCustomize() }
+                            )
+                            .id("skills-\(skillFileWatcher.tick)")
+                        }
                         AbilitySetupCard(
                             ability: ability,
                             projectFolderPath: projectFolderPath
@@ -867,19 +947,6 @@ struct AbilityDetailPage: View {
                             }
                         )
                         AbilityPayloadCard(ability: ability)
-                        if ability.requiredSkillIDs.isEmpty {
-                            AbilityInstructionsCard(
-                                ability: ability,
-                                onCustomize: { detailState.requestCustomize() }
-                            )
-                        } else {
-                            AbilityRequiredSkillsCard(
-                                ability: ability,
-                                projectFolderPath: projectFolderPath,
-                                onCustomize: { detailState.requestCustomize() }
-                            )
-                            .id("skills-\(skillFileWatcher.tick)")
-                        }
                     }
                     .padding(16)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -891,7 +958,7 @@ struct AbilityDetailPage: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
         .confirmationDialog(
-            "Delete \(ability?.name ?? "ability")?",
+            "Delete \(ability?.name ?? "project rule")?",
             isPresented: $deleteConfirmation,
             titleVisibility: .visible
         ) {
@@ -945,7 +1012,7 @@ struct AbilityDetailPage: View {
                 }
             } label: {
                 TermLoopSidebarToken(
-                    label: ability.activation.rawValue,
+                    label: activationLabel(ability.activation),
                     tone: .accent,
                     emphasized: true
                 )
@@ -955,15 +1022,15 @@ struct AbilityDetailPage: View {
             Button {
                 detailState.requestCustomize()
             } label: {
-                Label("Customize with agent", systemImage: "sparkles")
+                Label("Improve with agent", systemImage: "sparkles")
             }
             .buttonStyle(.borderedProminent)
             Menu {
-                Button("Restart customizer (fresh)") {
+                Button("Restart improvement agent") {
                     detailState.requestCustomize(forceFresh: true)
                 }
                 Divider()
-                Button("Open ability.json") { open(ability.metadataFilePath, title: "\(ability.name) manifest") }
+                Button("Open rule manifest") { open(ability.metadataFilePath, title: "\(ability.name) manifest") }
                 Button("Show bundle in Finder") { revealInFinder(ability.metadataFilePath.deletingLastPathComponent()) }
                 Button("Copy bundle path") {
                     NSPasteboard.general.clearContents()
@@ -975,7 +1042,7 @@ struct AbilityDetailPage: View {
                 Divider()
                 Button("Close detail") { detailState.close() }
                 Divider()
-                Button("Delete ability", role: .destructive) { deleteConfirmation = true }
+                Button("Delete project rule", role: .destructive) { deleteConfirmation = true }
             } label: {
                 Image(systemName: "ellipsis.circle")
             }
@@ -987,9 +1054,9 @@ struct AbilityDetailPage: View {
 
     private var missingState: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Ability not found")
+            Text("Project rule not found")
                 .font(TermLoopSidebarTheme.bodyMonoStrong)
-            Text("The selected ability is no longer available in the active project.")
+            Text("The selected project rule is no longer available in the active project.")
                 .font(TermLoopSidebarTheme.tinyMono)
                 .foregroundStyle(TermLoopSidebarTheme.dim)
             Button("Back to terminal") { detailState.close() }
@@ -1005,7 +1072,7 @@ struct AbilityDetailPage: View {
             fileURL: url,
             folderName: String(
                 localized: "abilities.section.title",
-                defaultValue: "ABILITIES",
+                defaultValue: "SKILLS",
                 table: "TermLoop"
             ),
             displayTitle: title
@@ -1018,9 +1085,9 @@ struct AbilityDetailPage: View {
 
     private func activationLabel(_ mode: AbilityActivation) -> String {
         switch mode {
-        case .always: return "always inject"
-        case .worktree: return "inject in worktrees"
-        case .listed: return "list on demand"
+        case .always: return "always apply"
+        case .worktree: return "apply in worktrees"
+        case .listed: return "on demand"
         case .off: return "off"
         }
     }

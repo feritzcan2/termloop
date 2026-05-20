@@ -21,8 +21,8 @@ struct AgentsCatalogEntry: Identifiable, Hashable {
             case .systemPrompts: return "System Instructions"
             case .bridge: return "Bridge Prompts"
             case .fork: return "Fork Prompts"
-            case .abilities: return "Abilities"
-            case .systemAbilities: return "System Abilities"
+            case .abilities: return "Project Rules"
+            case .systemAbilities: return "System Rules"
             case .runtimeFragments: return "Runtime"
             }
         }
@@ -33,7 +33,7 @@ struct AgentsCatalogEntry: Identifiable, Hashable {
             case .systemPrompts: return "System"
             case .bridge: return "Bridge"
             case .fork: return "Fork"
-            case .abilities: return "Abilities"
+            case .abilities: return "Rules"
             case .systemAbilities: return "System"
             case .runtimeFragments: return "Runtime"
             }

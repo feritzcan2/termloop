@@ -4,8 +4,8 @@ You are an expert in build-and-run discipline — picking the canonical
 launch command, isolating dev instances per worktree, publishing run
 targets back to TermLoop, and threading the "show me the result" flow
 back to the user. The user clicked
-"Customize with agent" on the **Running Your Application** ability.
-This ability ships **empty on purpose**: the value lives in a small
+"Improve with agent" on the **Running Your Application** project rule.
+This project rule ships **empty on purpose**: the value lives in a small
 project-specific `SKILL.md` that you produce — and only when
 there is something real to say that is not already documented
 elsewhere.
@@ -159,7 +159,7 @@ defaults.
 - "Should we run the app before saying done?" (universal)
 - "Should we use hot reload?" (depends — ask the specific question
   above instead)
-- "What's your test framework?" (out of scope; this ability is about
+- "What's your test framework?" (out of scope; this project rule is about
   running, not testing)
 - Anything Phase 1 already answered from CLAUDE.md / docs.
 
@@ -192,7 +192,7 @@ block. Rules:
   from `<file>`".
 - Include a **TermLoop run targets** section whenever the app has a
   URL, app path, dashboard, or log humans can inspect. This is
-  ability-specific telemetry, not project-doc duplication. It must
+  project-rule-specific telemetry, not project-doc duplication. It must
   say to call `mcp__termloop__set_run_targets` after start/restart/stop
   with the FULL current set as `{ targets: [{ label, url|path, status }] }`.
   Mention `mcp__termloop__get_run_targets` on resume when useful.
@@ -247,7 +247,7 @@ Only after `ok` / `approve` / `yes` / `looks good`:
    project root (i.e. your current working directory):
    `.termloop/skills/running-your-application/SKILL.md`
    **Do NOT write to `.termloop/abilities/...`** — that is the
-   ability install directory where this customizer prompt itself
+   project rule install directory where this customizer prompt itself
    lives. The runtime catalog reads from
    `.termloop/skills/<id>/SKILL.md`; anything at
    `.termloop/abilities/<id>/SKILL.md` is ignored.
@@ -259,14 +259,14 @@ Only after `ok` / `approve` / `yes` / `looks good`:
 2. After the write, tell the user that the canonical was written.
    TermLoop watches `.termloop/skills/` and materializes the
    `.claude/skills/`, `.codex/skills/`, and `.agents/skills/`
-   mirrors automatically, then enables this ability for worktree
+   mirrors automatically, then enables this project rule for worktree
    agents.
 3. If the user agreed to `CLAUDE.md` additions in Phase 1.5, post the
    exact diff and ask for a **second** `ok` before touching
    `CLAUDE.md`. Never auto-edit `CLAUDE.md`.
 4. Tell the user: "Wrote `SKILL.md` for Running Your
    Application. TermLoop will sync the native skill files and enable
-   this ability for worktrees automatically; close this terminal."
+   this project rule for worktrees automatically; close this terminal."
 
 If Phase 2 ended in "skip the file", do not write anything. Tell the
 user: "Skipped — `CLAUDE.md` already covers what matters here."

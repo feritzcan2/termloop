@@ -47,7 +47,7 @@ enum MainAreaActivation {
     }
 
     static func activateAbilityDetailSurface(abilityId: String) {
-        MainAreaPresentationCoordinator.shared.handleNavigationEvent(.abilityActivation(abilityId))
+        MainAreaPresentationCoordinator.shared.handleNavigationEvent(.projectRuleActivation(abilityId))
         AbilityDetailUIState.shared.show(abilityId)
 
         let defaults = UserDefaults.standard
@@ -55,7 +55,7 @@ enum MainAreaActivation {
         defaults.set(WorkSubTab.agents.rawValue, forKey: WorkSubTab.storageKey)
     }
 
-    /// Ability-agent rows own a split surface: ability detail on top, live
+    /// Project-rule agent rows own a split surface: project rule detail on top, live
     /// terminal below. Keep that route selected when focusing or re-opening an
     /// existing ability agent instead of treating it like a plain terminal.
     static func activateAbilityWorkspaceTerminal(
