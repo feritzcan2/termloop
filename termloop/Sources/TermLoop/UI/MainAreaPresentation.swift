@@ -351,7 +351,7 @@ extension MainAreaMainPageKind {
 @MainActor
 enum MainAreaNavigationEvent: Equatable {
     case workspaceActivation(UUID)
-    case abilityActivation(String)
+    case projectRuleActivation(String)
     case sidebarTopTabChanged
     case workSubTabChanged
     case projectChanged
@@ -513,7 +513,7 @@ final class MainAreaPresentationCoordinator {
         case .workspaceActivation:
             closeSettingsIfNeeded()
             MainAreaActivation.closeAllMainAreaOverlays()
-        case .abilityActivation:
+        case .projectRuleActivation:
             closeSettingsIfNeeded()
             MarkdownDocumentStore.shared.close()
             GitChangesMainAreaStore.shared.close()
@@ -746,8 +746,8 @@ private extension MainAreaNavigationEvent {
         switch self {
         case .workspaceActivation:
             return "workspaceActivation"
-        case .abilityActivation:
-            return "abilityActivation"
+        case .projectRuleActivation:
+            return "projectRuleActivation"
         case .sidebarTopTabChanged:
             return "sidebarTopTabChanged"
         case .workSubTabChanged:

@@ -264,14 +264,35 @@ struct QuickActionView: View {
                 || ProjectStore.shared.activeProjectId != nil,
             onOpenAdvancedPreview: { viewModel.openAdvanced() },
             onEditAbility: { ability in
-                let sourceURL = ability.payloadBlocks.first?.fileURL ?? ability.metadataFilePath
-                MarkdownDocumentStore.shared.open(
-                    fileURL: sourceURL,
-                    folderName: String(localized: "abilities.section.title",
-                                       defaultValue: "ABILITIES",
-                                       table: "TermLoop"),
-                    displayTitle: ability.name
-                )
+                do {
+                    let sourceURL = try ProjectSkillWriter.ensureCanonicalSkill(
+                        for: ability,
+                        projectFolderPath: viewModel.resolvedProjectFolderForPreview()
+                    )
+                    ProjectSkillMaterializer.materialize(
+                        projectFolderPath: viewModel.resolvedProjectFolderForPreview(),
+                        skillIds: ability.requiredSkillIDs.isEmpty
+                            ? [ProjectSkillWriter.primarySkillId(for: ability)]
+                            : ability.requiredSkillIDs
+                    )
+                    MarkdownDocumentStore.shared.open(
+                        fileURL: sourceURL,
+                        folderName: String(localized: "abilities.section.title",
+                                           defaultValue: "SKILLS",
+                                           table: "TermLoop"),
+                        displayTitle: ability.name,
+                        mode: .edit
+                    )
+                } catch {
+                    let sourceURL = ability.payloadBlocks.first?.fileURL ?? ability.metadataFilePath
+                    MarkdownDocumentStore.shared.open(
+                        fileURL: sourceURL,
+                        folderName: String(localized: "abilities.section.title",
+                                           defaultValue: "SKILLS",
+                                           table: "TermLoop"),
+                        displayTitle: ability.name
+                    )
+                }
             },
             onRevealAbility: { ability in
                 let sourceURL = ability.payloadBlocks.first?.fileURL ?? ability.metadataFilePath

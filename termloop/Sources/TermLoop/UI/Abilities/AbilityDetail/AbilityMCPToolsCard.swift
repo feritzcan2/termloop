@@ -15,10 +15,10 @@ struct AbilityMCPToolsCard: View {
 
     var body: some View {
         AbilityDetailCard(
-            title: "MCP tools",
+            title: "TermLoop MCP tools",
             subtitle: ability.mcpTools.isEmpty
-                ? "This ability does not provide any TermLoop MCP tools."
-                : "TermLoop MCP tools surfaced to the agent when this ability is active. Toggle off to hide one without uninstalling the ability."
+                ? "This project rule does not provide any TermLoop MCP tools."
+                : "TermLoop MCP tools surfaced to the agent when this project rule is active. Toggle off to hide one without removing the rule."
         ) {
             if ability.mcpTools.isEmpty {
                 EmptyView()

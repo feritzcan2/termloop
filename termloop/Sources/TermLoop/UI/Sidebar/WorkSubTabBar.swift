@@ -29,7 +29,7 @@ enum WorkSubTab: String, CaseIterable, Identifiable {
                           table: "TermLoop")
         case .agents:
             return String(localized: "sidebar.workSubTab.abilities",
-                          defaultValue: "Abilities",
+                          defaultValue: "Rules",
                           table: "TermLoop")
         }
     }
