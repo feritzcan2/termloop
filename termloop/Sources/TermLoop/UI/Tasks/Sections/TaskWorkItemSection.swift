@@ -67,31 +67,40 @@ struct TaskWorkItemSection: View {
     private func unwrappedWorkItemRow(_ snapshot: TaskWorkItemSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 9) {
-                Image(systemName: iconName(for: snapshot.reference.provider))
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(tint(for: snapshot.reference.provider))
-                    .frame(width: 16, height: 18)
+                HStack(alignment: .top, spacing: 9) {
+                    Image(systemName: iconName(for: snapshot.reference.provider))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(tint(for: snapshot.reference.provider))
+                        .frame(width: 16, height: 18)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text(snapshot.key)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.primary)
-                            .lineLimit(1)
-                        if let status = snapshot.statusLabel {
-                            statusPill(status)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text(snapshot.key)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Color.primary)
+                                .lineLimit(1)
+                            if let status = snapshot.statusLabel {
+                                statusPill(status)
+                            }
+                            Spacer(minLength: 0)
                         }
-                        Spacer(minLength: 0)
+                        if let title = snapshot.title, title != snapshot.key {
+                            Text(title)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.primary.opacity(0.76))
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
-                    if let title = snapshot.title, title != snapshot.key {
-                        Text(title)
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.primary.opacity(0.76))
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    open(snapshot)
+                }
+                .help(snapshot.url?.absoluteString ?? snapshot.compactLabel)
+
                 rowMenu(snapshot)
             }
         }
@@ -353,14 +362,11 @@ struct TaskSpecSection: View {
 
     private var innerRow: some View {
         HStack(alignment: .top, spacing: 9) {
-            Image(systemName: "doc.text")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 16, height: 18)
+            fileIcon
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(fileLabel)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -421,6 +427,28 @@ struct TaskSpecSection: View {
         .help(openHelp)
     }
 
+    private var fileIcon: some View {
+        ZStack(alignment: .bottomTrailing) {
+            Image(systemName: taskFilePath == nil ? "doc.badge.plus" : "doc.text.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 24, height: 26)
+
+            if taskFilePath != nil {
+                Image(systemName: "pencil")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(Color(nsColor: .controlBackgroundColor))
+                    .frame(width: 10, height: 10)
+                    .background(Color.accentColor)
+                    .clipShape(Circle())
+                    .offset(x: 2, y: 1)
+            }
+        }
+        .frame(width: 24, height: 26)
+        .padding(.top, -2)
+    }
+
     private func copyFullPath(_ path: String) {
         let fullPath = URL(fileURLWithPath: path, isDirectory: false).standardizedFileURL.path
         NSPasteboard.general.clearContents()
@@ -432,8 +460,7 @@ struct TaskSpecSection: View {
             return "task.md"
         }
         let url = URL(fileURLWithPath: path, isDirectory: false)
-        let parent = url.deletingLastPathComponent().lastPathComponent
-        return parent.isEmpty ? url.lastPathComponent : "\(parent)/\(url.lastPathComponent)"
+        return url.lastPathComponent
     }
 
     private var summary: String {

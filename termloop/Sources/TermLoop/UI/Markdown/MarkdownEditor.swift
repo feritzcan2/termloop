@@ -76,7 +76,7 @@ private struct MarkdownTextView: NSViewRepresentable {
         let textView = scrollView.documentView as! MarkdownPlainTextView
         textView.delegate = context.coordinator
         textView.onEscape = { context.coordinator.parent.onEscape?() }
-        textView.widthTracksTextView = true
+        configureWrappedLineLayout(for: textView, in: scrollView)
         textView.highlightSelectedLine = false
         textView.allowsDocumentBackgroundColorChange = false
         textView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
@@ -99,6 +99,7 @@ private struct MarkdownTextView: NSViewRepresentable {
         textView.onEscape = { context.coordinator.parent.onEscape?() }
 
         let incoming = String(text.characters)
+        configureWrappedLineLayout(for: textView, in: scrollView)
         applyBackground(to: textView, in: scrollView)
 
         // Crucial guard: if the content hasn't actually changed, do nothing.
@@ -143,6 +144,11 @@ private struct MarkdownTextView: NSViewRepresentable {
         scrollView.backgroundColor = background
         scrollView.contentView.drawsBackground = true
         scrollView.contentView.backgroundColor = background
+    }
+
+    private func configureWrappedLineLayout(for textView: STTextView, in scrollView: NSScrollView) {
+        scrollView.hasHorizontalScroller = false
+        textView.isHorizontallyResizable = false
     }
 
     @MainActor

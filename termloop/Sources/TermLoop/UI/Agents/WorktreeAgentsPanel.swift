@@ -1372,6 +1372,12 @@ struct WorktreeAgentsPanel: View {
         let entries: [Entry]
     }
 
+    private struct WorktreeHeadSignatureInput: Sendable {
+        let workspaceId: UUID
+        let path: String
+        let expectedBranch: String
+    }
+
     private final class RenderMemo {
         private var signature: RenderSignature?
         private var snapshot: RenderSnapshot?
@@ -1387,6 +1393,14 @@ struct WorktreeAgentsPanel: View {
             self.signature = signature
             self.snapshot = next
             return next
+        }
+    }
+
+    private final class WorktreeHeadSignatureRunner {
+        var task: Task<Void, Never>?
+
+        deinit {
+            task?.cancel()
         }
     }
 
@@ -1439,6 +1453,7 @@ struct WorktreeAgentsPanel: View {
     @State private var subscribedTaskProjectId: UUID?
     @State private var subscribedWorkspaceIds: [UUID] = []
     @State private var observedWorktreeHeadSignature: String?
+    @State private var worktreeHeadSignatureRunner = WorktreeHeadSignatureRunner()
     @State private var didApplyInitialBranchAutoExpand: Bool = false
     @State private var showsAllOpenPullRequests: Bool = false
     @State private var showsAllMergedPullRequests: Bool = false
@@ -1624,13 +1639,19 @@ struct WorktreeAgentsPanel: View {
             refreshWorktreeHeadProjectionIfChanged(for: scopedTabs, reason: "headBaseline", marksProjection: false)
             refreshWorktreePullRequests(renderSnapshot.pullRequestLookupInputs, reason: "appear")
         }
+        .onDisappear {
+            worktreeHeadSignatureRunner.task?.cancel()
+            worktreeHeadSignatureRunner.task = nil
+        }
         .onChange(of: scopedTabs.map(\.id)) { _ in
             refreshWorktreeProjection(for: scopedTabs, reason: "tabsChanged")
             observedWorktreeHeadSignature = nil
+            refreshWorktreeHeadProjectionIfChanged(for: scopedTabs, reason: "tabsChanged", marksProjection: false)
         }
         .onChange(of: projectStore.activeProjectId) { _ in
             refreshWorktreeProjection(for: scopedTabs, reason: "activeProjectChanged")
             observedWorktreeHeadSignature = nil
+            refreshWorktreeHeadProjectionIfChanged(for: scopedTabs, reason: "activeProjectChanged", marksProjection: false)
             subscribeToActiveTaskBoardStore()
         }
         .onChange(of: renderSnapshot.pullRequestLookupInputs) { inputs in
@@ -1640,13 +1661,25 @@ struct WorktreeAgentsPanel: View {
         .onReceive(WorktreeBranchPullRequestStore.shared.$version.removeDuplicates()) { _ in
             refreshPullRequestLookupSignature(inputs: renderSnapshot.pullRequestLookupInputs)
         }
-        .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
+        .onReceive(Timer.publish(every: 15, on: .main, in: .common).autoconnect()) { _ in
+            guard shouldRefreshWorktreeHeadsOnTimer else { return }
             // External `git switch` / rebase / bisect edits `.git/HEAD`
             // without touching TermLoop metadata. Poll the cheap HEAD files,
             // but only invalidate SwiftUI when the observed ref actually moves.
             refreshWorktreeHeadProjectionIfChanged(for: scopedTabs, reason: "headChanged")
+        }
+        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+            guard shouldRefreshPullRequestsOnTimer else { return }
             refreshWorktreePullRequests(renderSnapshot.pullRequestLookupInputs, reason: "timer")
         }
+    }
+
+    private var shouldRefreshWorktreeHeadsOnTimer: Bool {
+        !isHidden && !(isCollapsed && isOpenPullRequestsCollapsed && isMergedPullRequestsCollapsed)
+    }
+
+    private var shouldRefreshPullRequestsOnTimer: Bool {
+        !isHidden && !(isCollapsed && isOpenPullRequestsCollapsed && isMergedPullRequestsCollapsed)
     }
 
     private func refreshPullRequestLookupSignature(
@@ -1684,7 +1717,21 @@ struct WorktreeAgentsPanel: View {
         reason: String,
         marksProjection: Bool = true
     ) {
-        let signature = worktreeHeadSignature(for: workspaces)
+        let inputs = worktreeHeadSignatureInputs(for: workspaces)
+        worktreeHeadSignatureRunner.task?.cancel()
+        let task = Task { @MainActor in
+            let signature = await Self.worktreeHeadSignature(for: inputs)
+            guard !Task.isCancelled else { return }
+            applyWorktreeHeadSignature(signature, reason: reason, marksProjection: marksProjection)
+        }
+        worktreeHeadSignatureRunner.task = task
+    }
+
+    private func applyWorktreeHeadSignature(
+        _ signature: String,
+        reason: String,
+        marksProjection: Bool
+    ) {
         guard observedWorktreeHeadSignature != nil else {
             observedWorktreeHeadSignature = signature
             return
@@ -1696,8 +1743,8 @@ struct WorktreeAgentsPanel: View {
         }
     }
 
-    private func worktreeHeadSignature(for workspaces: [Workspace]) -> String {
-        workspaces.compactMap { workspace -> String? in
+    private func worktreeHeadSignatureInputs(for workspaces: [Workspace]) -> [WorktreeHeadSignatureInput] {
+        workspaces.compactMap { workspace -> WorktreeHeadSignatureInput? in
             let expectedBranch = WorkspaceMetadataStore.shared.branch(for: workspace)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             guard !expectedBranch.isEmpty else { return nil }
@@ -1705,13 +1752,27 @@ struct WorktreeAgentsPanel: View {
                 WorkspaceMetadataStore.shared.worktreePath(forWorkspaceId: workspace.id)
             ) ?? WorktreeResolver.normalizePath(workspace.termLoopPresentationCwd())
             guard let path else { return nil }
-            let observed = TermLoopWorktreeHeadReader
-                .currentObservedRefWithoutGit(checkoutPath: path)?
-                .displayName ?? "unknown"
-            return "\(workspace.id.uuidString)|\(path)|\(expectedBranch)|\(observed)"
+            return WorktreeHeadSignatureInput(
+                workspaceId: workspace.id,
+                path: path,
+                expectedBranch: expectedBranch
+            )
         }
-        .sorted()
-        .joined(separator: "\n")
+    }
+
+    nonisolated private static func worktreeHeadSignature(
+        for inputs: [WorktreeHeadSignatureInput]
+    ) async -> String {
+        await Task.detached(priority: .utility) {
+            inputs.map { input in
+                let observed = TermLoopWorktreeHeadReader
+                    .currentObservedRefWithoutGit(checkoutPath: input.path)?
+                    .displayName ?? "unknown"
+                return "\(input.workspaceId.uuidString)|\(input.path)|\(input.expectedBranch)|\(observed)"
+            }
+            .sorted()
+            .joined(separator: "\n")
+        }.value
     }
 
     private func groupSummaryKey(
@@ -2472,11 +2533,14 @@ struct WorktreeAgentsPanel: View {
                 runTargets: runTargets,
                 remoteItemBadges: remoteItemBadges
             )
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .clipped()
             WorktreeGroupGitSummaryView(
                 group: group,
                 preferredWorkspace: preferredWorkspace,
                 openPullRequests: openPullRequests
             )
+            .layoutPriority(1)
         }
     }
 
@@ -2487,42 +2551,20 @@ struct WorktreeAgentsPanel: View {
         runTargets: [RunTargetStore.RunTarget],
         remoteItemBadges: [WorktreeGroupRemoteItemBadgeSnapshot]
     ) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .center, spacing: 4) {
-                pullRequestBadge(
-                    summary: pullRequestSummary,
-                    allPullRequests: allPullRequests,
-                    group: group
-                )
-                worktreeGroupSupplementalBadges(
-                    group: group,
-                    runTargets: runTargets,
-                    remoteItemBadges: remoteItemBadges
-                )
-            }
-
-            VStack(alignment: .trailing, spacing: 2) {
-                pullRequestBadge(
-                    summary: pullRequestSummary,
-                    allPullRequests: allPullRequests,
-                    group: group
-                )
-                worktreeGroupSupplementalBadges(
-                    group: group,
-                    runTargets: runTargets,
-                    remoteItemBadges: remoteItemBadges
-                )
-            }
-
+        HStack(alignment: .center, spacing: 4) {
+            pullRequestBadge(
+                summary: pullRequestSummary,
+                allPullRequests: allPullRequests,
+                group: group
+            )
             worktreeGroupSupplementalBadges(
                 group: group,
                 runTargets: runTargets,
                 remoteItemBadges: remoteItemBadges
             )
-
-            Color.clear
-                .frame(width: 0, height: 0)
         }
+        .lineLimit(1)
+        .truncationMode(.tail)
     }
 
     private func worktreeGroupSupplementalBadges(

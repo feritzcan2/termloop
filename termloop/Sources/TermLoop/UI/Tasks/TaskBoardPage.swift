@@ -76,6 +76,12 @@ struct TaskBoardPage<TerminalContent: View>: View {
             syncSelectionValidity()
             syncInlineTerminalForSelectedTask(focusWorkspace: true)
         }
+        .disabled(remoteSync.isSyncing)
+        .overlay {
+            if remoteSync.isSyncing {
+                TaskBoardRemoteSyncOverlay()
+            }
+        }
         .background(renameSelectedTaskCommand)
     }
 
@@ -166,7 +172,8 @@ struct TaskBoardPage<TerminalContent: View>: View {
     }
 
     private func presentRenameSelectedTask() {
-        guard let coordinator,
+        guard !remoteSync.isSyncing,
+              let coordinator,
               let taskId = selection.selectedTaskId,
               let task = store.fileSnapshot().tasks.first(where: { $0.id == taskId && $0.archivedAt == nil }),
               let title = TaskRenameDialog.promptTitle(currentTitle: task.title) else {
@@ -180,6 +187,33 @@ struct TaskBoardPage<TerminalContent: View>: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.black.opacity(0.2))
             .clipped()
+    }
+}
+
+private struct TaskBoardRemoteSyncOverlay: View {
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.18)
+            VStack(spacing: 10) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(String(localized: "tasks.board.remoteSync.waiting",
+                            defaultValue: "Updating remote status...",
+                            table: "TermLoop"))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+            }
+            .padding(.vertical, 16)
+            .padding(.horizontal, 20)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
+            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(true)
     }
 }
 
@@ -252,9 +286,10 @@ private struct TaskBoardCanvas: View {
                             onMove: coordinator.map { c in
                                 { taskId, target in
                                     _Concurrency.Task { @MainActor in
+                                        guard !remoteSync.isSyncing else { return }
                                         do {
                                             try await c.moveColumn(taskId: taskId, to: target)
-                                            remoteSync.maybePromptRemoteStatusSync(taskId: taskId, to: target)
+                                            await remoteSync.maybePromptRemoteStatusSync(taskId: taskId, to: target)
                                         } catch {
                                             #if DEBUG
                                             print("TaskBoardCanvas move failed: \(error)")
