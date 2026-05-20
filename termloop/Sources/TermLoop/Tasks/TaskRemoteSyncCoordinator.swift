@@ -886,9 +886,10 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
     }
 
-    public func maybePromptRemoteStatusSync(taskId: UUID, to columnId: TaskColumnId) {
+    public func maybePromptRemoteStatusSync(taskId: UUID, to columnId: TaskColumnId) async {
         let syncSettings = store.settingsSnapshot
         guard syncSettings.remoteSync.isEnabled else { return }
+        guard !isSyncing else { return }
         guard let targetStatus = syncSettings.columns
             .first(where: { $0.columnId == columnId })?
             .remoteStatusLabel?
@@ -932,90 +933,79 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         isSyncing = true
         lastMessage = nil
         let remoteSettings = syncSettings.remoteSync
-        syncTask?.cancel()
-        syncTask = Task(priority: .utility) { [weak self] in
-            do {
-                let service = Self.makeRemoteWorkItemService(settings: remoteSettings)
-                let option: RemoteWorkItemStatusOption?
-                if let immediateOption {
-                    option = immediateOption
-                } else {
-                    let options = try await service.availableStatuses(reference)
-                    option = Self.matchingStatusOption(
-                        in: options,
-                        targetStatus: targetStatus
-                    )
-                }
-                guard let option else {
-                    await MainActor.run {
-                        guard let self else { return }
-                        let message = String(
-                            localized: "tasks.remoteSync.status.noMatchingStatus",
-                            defaultValue: "Could not find a matching remote status for \(targetStatus). Refresh remote statuses and try again.",
-                            table: "TermLoop"
-                        )
-                        self.isSyncing = false
-                        self.lastMessage = message
-                        self.presentSyncResultAlert(
-                            title: String(localized: "tasks.remoteSync.status.updateFailedTitle",
-                                          defaultValue: "Remote Status Update Failed",
-                                          table: "TermLoop"),
-                            message: message,
-                            style: .warning
-                        )
-                    }
-                    return
-                }
-                let snapshot = try await service.updateStatus(
-                    reference,
-                    to: option,
-                    projectRoot: nil
+        do {
+            let service = Self.makeRemoteWorkItemService(settings: remoteSettings)
+            let option: RemoteWorkItemStatusOption?
+            if let immediateOption {
+                option = immediateOption
+            } else {
+                let options = try await service.availableStatuses(reference)
+                option = Self.matchingStatusOption(
+                    in: options,
+                    targetStatus: targetStatus
                 )
-                try Task.checkCancellation()
-                await MainActor.run {
-                    guard let self else { return }
-                    guard self.applyLinkedSnapshot(snapshot, taskId: taskId) else {
-                        self.presentSyncResultAlert(
-                            title: String(localized: "tasks.remoteSync.status.updatedLocalFailedTitle",
-                                          defaultValue: "Remote Status Updated, Local Sync Failed",
-                                          table: "TermLoop"),
-                            message: self.lastMessage ?? String(
-                                localized: "tasks.remoteSync.status.updatedLocalFailedBody",
-                                defaultValue: "\(reference.key) was updated remotely, but the local task could not be refreshed.",
-                                table: "TermLoop"
-                            ),
-                            style: .warning
-                        )
-                        return
-                    }
-                    let status = snapshot.statusLabel?
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                        .nilIfEmpty ?? option.label
-                    let message = String(localized: "tasks.remoteSync.status.updatedBody",
-                                         defaultValue: "\(reference.key) is now \(status).",
-                                         table: "TermLoop")
-                    self.finishSync(message: message)
-                    self.presentSyncResultAlert(
-                        title: String(localized: "tasks.remoteSync.status.updatedTitle",
-                                      defaultValue: "Remote Status Updated",
-                                      table: "TermLoop"),
-                        message: message
-                    )
-                }
-            } catch {
-                await MainActor.run {
-                    guard let self else { return }
-                    self.finishSync(error: error)
-                    guard !(error is CancellationError) else { return }
-                    self.presentSyncResultAlert(
-                        title: String(localized: "tasks.remoteSync.status.updateFailedTitle",
-                                      defaultValue: "Remote Status Update Failed",
-                                      table: "TermLoop"),
-                        message: Self.humanError(error),
-                        style: .warning
-                    )
-                }
             }
+            guard let option else {
+                let message = String(
+                    localized: "tasks.remoteSync.status.noMatchingStatus",
+                    defaultValue: "Could not find a matching remote status for \(targetStatus). Refresh remote statuses and try again.",
+                    table: "TermLoop"
+                )
+                isSyncing = false
+                lastMessage = message
+                presentSyncResultAlert(
+                    title: String(localized: "tasks.remoteSync.status.updateFailedTitle",
+                                  defaultValue: "Remote Status Update Failed",
+                                  table: "TermLoop"),
+                    message: message,
+                    style: .warning
+                )
+                return
+            }
+            let snapshot = try await service.updateStatus(
+                reference,
+                to: option,
+                projectRoot: nil
+            )
+            try Task.checkCancellation()
+            guard applyLinkedSnapshot(snapshot, taskId: taskId) else {
+                isSyncing = false
+                presentSyncResultAlert(
+                    title: String(localized: "tasks.remoteSync.status.updatedLocalFailedTitle",
+                                  defaultValue: "Remote Status Updated, Local Sync Failed",
+                                  table: "TermLoop"),
+                    message: lastMessage ?? String(
+                        localized: "tasks.remoteSync.status.updatedLocalFailedBody",
+                        defaultValue: "\(reference.key) was updated remotely, but the local task could not be refreshed.",
+                        table: "TermLoop"
+                    ),
+                    style: .warning
+                )
+                return
+            }
+            let status = snapshot.statusLabel?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .nilIfEmpty ?? option.label
+            let message = String(localized: "tasks.remoteSync.status.updatedBody",
+                                 defaultValue: "\(reference.key) is now \(status).",
+                                 table: "TermLoop")
+            finishSync(message: message)
+            presentSyncResultAlert(
+                title: String(localized: "tasks.remoteSync.status.updatedTitle",
+                              defaultValue: "Remote Status Updated",
+                              table: "TermLoop"),
+                message: message
+            )
+        } catch {
+            finishSync(error: error)
+            guard !(error is CancellationError) else { return }
+            presentSyncResultAlert(
+                title: String(localized: "tasks.remoteSync.status.updateFailedTitle",
+                              defaultValue: "Remote Status Update Failed",
+                              table: "TermLoop"),
+                message: Self.humanError(error),
+                style: .warning
+            )
         }
     }
 
