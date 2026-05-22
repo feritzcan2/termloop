@@ -272,8 +272,11 @@ private struct TaskBoardCanvas: View {
             let columnCount = max(store.columnSnapshots.count, 1)
             let available = proxy.size.width - (horizontalPadding * 2) - (spacing * CGFloat(max(columnCount - 1, 0)))
             let columnWidth = max(236, floor(available / CGFloat(columnCount)))
+            let contentWidth = (horizontalPadding * 2)
+                + (columnWidth * CGFloat(columnCount))
+                + (spacing * CGFloat(max(columnCount - 1, 0)))
 
-            ScrollView(.horizontal) {
+            TaskBoardHorizontalScrollView(contentWidth: max(proxy.size.width, contentWidth)) {
                 HStack(alignment: .top, spacing: spacing) {
                     ForEach(store.columnSnapshots) { snapshot in
                         TaskBoardColumnView(
@@ -325,9 +328,81 @@ private struct TaskBoardCanvas: View {
                 }
                 .padding(.horizontal, horizontalPadding)
                 .padding(.vertical, 10)
+                .frame(width: max(proxy.size.width, contentWidth), alignment: .leading)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color(nsColor: .windowBackgroundColor))
         }
         .onExitCommand { selection.select(nil) }
+    }
+}
+
+private struct TaskBoardHorizontalScrollView<Content: View>: NSViewRepresentable {
+    let contentWidth: CGFloat
+    @ViewBuilder let content: () -> Content
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> TaskBoardHorizontalNSScrollView {
+        let scrollView = TaskBoardHorizontalNSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasHorizontalScroller = true
+        scrollView.hasVerticalScroller = false
+        scrollView.autohidesScrollers = false
+        scrollView.scrollerStyle = .legacy
+
+        let hostingView = NSHostingView(rootView: content())
+        hostingView.translatesAutoresizingMaskIntoConstraints = true
+        hostingView.autoresizingMask = []
+        scrollView.documentView = hostingView
+        scrollView.documentMinWidth = contentWidth
+        context.coordinator.hostingView = hostingView
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: TaskBoardHorizontalNSScrollView, context: Context) {
+        scrollView.drawsBackground = false
+        scrollView.hasHorizontalScroller = true
+        scrollView.hasVerticalScroller = false
+        scrollView.autohidesScrollers = false
+        scrollView.scrollerStyle = .legacy
+        scrollView.documentMinWidth = contentWidth
+        context.coordinator.hostingView?.rootView = content()
+        scrollView.needsLayout = true
+    }
+
+    final class Coordinator {
+        var hostingView: NSHostingView<Content>?
+    }
+}
+
+private final class TaskBoardHorizontalNSScrollView: NSScrollView {
+    var documentMinWidth: CGFloat = 0 {
+        didSet {
+            guard oldValue != documentMinWidth else { return }
+            needsLayout = true
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        guard let documentView else { return }
+
+        let visibleSize = contentView.bounds.size
+        let resolvedWidth = max(documentMinWidth, visibleSize.width)
+        let resolvedHeight = max(0, visibleSize.height)
+        let resolvedSize = NSSize(width: resolvedWidth, height: resolvedHeight)
+        if documentView.frame.size != resolvedSize {
+            documentView.frame = NSRect(origin: .zero, size: resolvedSize)
+        }
+
+        let maxX = max(0, resolvedWidth - visibleSize.width)
+        let currentOrigin = contentView.bounds.origin
+        if currentOrigin.x > maxX || currentOrigin.y != 0 {
+            contentView.setBoundsOrigin(NSPoint(x: min(currentOrigin.x, maxX), y: 0))
+        }
     }
 }

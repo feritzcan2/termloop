@@ -61,6 +61,32 @@ public struct RemoteWorkItemReference: Codable, Hashable, Sendable {
     var storageKey: String {
         [provider.rawValue, host?.lowercased() ?? "", stableId].joined(separator: ":")
     }
+
+    func representsSameRemoteItem(as other: RemoteWorkItemReference) -> Bool {
+        guard provider == other.provider else { return false }
+        switch provider {
+        case .jira:
+            guard stableId == other.stableId else { return false }
+            let lhsHost = Self.normalizedHost(host)
+            let rhsHost = Self.normalizedHost(other.host)
+            return lhsHost == nil || rhsHost == nil || lhsHost == rhsHost
+        case .github, .gitlab:
+            return storageKey == other.storageKey
+        }
+    }
+
+    private static func normalizedHost(_ value: String?) -> String? {
+        var host = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if let url = URL(string: host), let parsed = url.host {
+            host = parsed
+        }
+        host = host
+            .replacingOccurrences(of: "https://", with: "")
+            .replacingOccurrences(of: "http://", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            .lowercased()
+        return host.isEmpty ? nil : host
+    }
 }
 
 struct RemoteWorkItemSnapshot: Codable, Equatable, Sendable {

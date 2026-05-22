@@ -782,6 +782,19 @@ private enum CLISocketPathResolver {
         return requestedPath
     }
 
+    static func mcpCandidatePaths(
+        requestedPath: String,
+        source: CLISocketPathSource,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [String] {
+        switch source {
+        case .explicitFlag, .environment:
+            return dedupe([requestedPath])
+        case .implicitDefault:
+            return dedupe(candidatePaths(requestedPath: requestedPath, environment: environment))
+        }
+    }
+
     private static func candidatePaths(requestedPath: String, environment: [String: String]) -> [String] {
         var candidates: [String] = []
 
@@ -915,6 +928,184 @@ private enum CLISocketPathResolver {
             }
         }
         return ordered
+    }
+}
+
+private struct TermLoopMCPLaunchContext {
+    let socketPath: String
+    let processEnv: [String: String]
+}
+
+private enum TermLoopMCPLaunchContextResolver {
+    private struct WorkspaceMatch {
+        let socketPath: String
+        let workspaceId: String
+        let basis: String
+    }
+
+    private static let traceURL = URL(fileURLWithPath: "/tmp/termloop-bridge-trace.log")
+
+    static func resolve(
+        requestedSocketPath: String,
+        source: CLISocketPathSource,
+        resolvedSocketPath: String,
+        environment: [String: String]
+    ) -> TermLoopMCPLaunchContext {
+        var env = environment
+        env["TERMLOOP_SOCKET_PATH"] = resolvedSocketPath
+        env["TERMLOOP_SOCKET"] = resolvedSocketPath
+
+        if let workspaceId = normalized(environment["TERMLOOP_WORKSPACE_ID"]) {
+            trace("mcp.launch explicit-workspace socket=\(resolvedSocketPath) ws=\(short(workspaceId))")
+            return TermLoopMCPLaunchContext(socketPath: resolvedSocketPath, processEnv: env)
+        }
+
+        let cwd = FileManager.default.currentDirectoryPath
+        let canonicalCwd = canonicalPath(cwd)
+        guard !canonicalCwd.isEmpty else {
+            trace("mcp.launch no-cwd socket=\(resolvedSocketPath)")
+            return TermLoopMCPLaunchContext(socketPath: resolvedSocketPath, processEnv: env)
+        }
+
+        let candidates = CLISocketPathResolver.mcpCandidatePaths(
+            requestedPath: requestedSocketPath,
+            source: source,
+            environment: environment
+        )
+        let matches = candidates.flatMap { socketPath in
+            workspaceMatches(socketPath: socketPath, canonicalCwd: canonicalCwd)
+        }
+        let uniqueMatches = dedupeMatches(matches)
+
+        if uniqueMatches.count == 1, let match = uniqueMatches.first {
+            env["TERMLOOP_SOCKET_PATH"] = match.socketPath
+            env["TERMLOOP_SOCKET"] = match.socketPath
+            env["TERMLOOP_WORKSPACE_ID"] = match.workspaceId
+            trace("mcp.launch resolved socket=\(match.socketPath) ws=\(short(match.workspaceId)) cwd=\(cwd) basis=\(match.basis)")
+            return TermLoopMCPLaunchContext(socketPath: match.socketPath, processEnv: env)
+        }
+
+        if uniqueMatches.isEmpty {
+            trace("mcp.launch unresolved socket=\(resolvedSocketPath) cwd=\(cwd) candidates=\(candidates.count)")
+        } else {
+            let ids = uniqueMatches
+                .map { "\($0.socketPath):\(short($0.workspaceId))" }
+                .joined(separator: ",")
+            trace("mcp.launch ambiguous cwd=\(cwd) matches=\(ids)")
+        }
+        return TermLoopMCPLaunchContext(socketPath: resolvedSocketPath, processEnv: env)
+    }
+
+    private static func workspaceMatches(socketPath: String, canonicalCwd: String) -> [WorkspaceMatch] {
+        guard let client = authenticatedClient(socketPath: socketPath) else { return [] }
+        defer { client.close() }
+
+        var workspaces = workspaceList(client: client, params: [:])
+        if let payload = try? client.sendV2(method: "window.list"),
+           let windows = payload["windows"] as? [[String: Any]] {
+            for window in windows {
+                guard let windowId = normalized(window["id"] as? String) else { continue }
+                workspaces.append(contentsOf: workspaceList(client: client, params: ["window_id": windowId]))
+            }
+        }
+
+        return dedupeWorkspaces(workspaces).compactMap { workspace in
+            guard let workspaceId = normalized(workspace["id"] as? String) else { return nil }
+            for key in ["worktree_path", "current_directory", "claude_cwd"] {
+                guard let rawPath = normalized(workspace[key] as? String) else { continue }
+                let canonicalWorkspacePath = canonicalPath(rawPath)
+                guard path(canonicalWorkspacePath, owns: canonicalCwd) else {
+                    continue
+                }
+                return WorkspaceMatch(socketPath: socketPath, workspaceId: workspaceId, basis: key)
+            }
+            return nil
+        }
+    }
+
+    private static func workspaceList(client: SocketClient, params: [String: Any]) -> [[String: Any]] {
+        guard let payload = try? client.sendV2(method: "workspace.list", params: params) else {
+            return []
+        }
+        return payload["workspaces"] as? [[String: Any]] ?? []
+    }
+
+    private static func authenticatedClient(socketPath: String) -> SocketClient? {
+        let client = SocketClient(path: socketPath)
+        do {
+            try client.connect()
+            if let socketPassword = SocketPasswordResolver.resolve(explicit: nil, socketPath: socketPath) {
+                let authResponse = try client.send(command: "auth \(socketPassword)")
+                if authResponse.hasPrefix("ERROR:"),
+                   !authResponse.contains("Unknown command 'auth'") {
+                    throw CLIError(message: authResponse)
+                }
+            }
+            return client
+        } catch {
+            client.close()
+            return nil
+        }
+    }
+
+    private static func dedupeMatches(_ matches: [WorkspaceMatch]) -> [WorkspaceMatch] {
+        var seen = Set<String>()
+        var result: [WorkspaceMatch] = []
+        for match in matches {
+            let key = "\(match.socketPath)|\(match.workspaceId)"
+            guard seen.insert(key).inserted else { continue }
+            result.append(match)
+        }
+        return result
+    }
+
+    private static func dedupeWorkspaces(_ workspaces: [[String: Any]]) -> [[String: Any]] {
+        var seen = Set<String>()
+        var result: [[String: Any]] = []
+        for workspace in workspaces {
+            guard let id = normalized(workspace["id"] as? String) else { continue }
+            guard seen.insert(id).inserted else { continue }
+            result.append(workspace)
+        }
+        return result
+    }
+
+    private static func path(_ parent: String, owns child: String) -> Bool {
+        guard !parent.isEmpty, !child.isEmpty else { return false }
+        return child == parent || child.hasPrefix(parent + "/")
+    }
+
+    private static func canonicalPath(_ path: String) -> String {
+        URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL.path
+    }
+
+    private static func normalized(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func short(_ value: String) -> String {
+        String(value.prefix(8))
+    }
+
+    private static func trace(_ message: String) {
+        let line = "\(isoTimestamp()) \(message)\n"
+        guard let data = line.data(using: .utf8) else { return }
+        if FileManager.default.fileExists(atPath: traceURL.path),
+           let handle = try? FileHandle(forWritingTo: traceURL) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: data)
+        } else {
+            try? data.write(to: traceURL, options: .atomic)
+        }
+    }
+
+    private static func isoTimestamp() -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: Date())
     }
 }
 
@@ -1815,10 +2006,16 @@ struct TermLoopCLI {
             return
         }
 
-        if command == "termloop-mcp" || command == "termloop-mcp" {
+        if command == "termloop-mcp" {
+            let launchContext = TermLoopMCPLaunchContextResolver.resolve(
+                requestedSocketPath: socketPath,
+                source: socketPathSource,
+                resolvedSocketPath: resolvedSocketPath,
+                environment: processEnv
+            )
             try TermLoopMCPServer.run(
-                processEnv: processEnv,
-                socketPath: resolvedSocketPath
+                processEnv: launchContext.processEnv,
+                socketPath: launchContext.socketPath
             )
             return
         }

@@ -48,7 +48,15 @@ Work through these steps in order. Ask one question at a time and wait for the u
    - What setup does this workflow assume? Capture required MCP servers, CLIs, optional docs, and fallback behavior in `ability.json` items.
    - What should agents avoid?
    - Which activation mode fits? Default to `listed` unless the evidence supports `worktree` or `always`.
-4. Draft. Propose the full project rule: compact `ability.json`, the complete `SKILL.md`, and any optional payload block. Keep payload small; put durable behavior in `SKILL.md`.
+3a. Trigger examples. Draft 3 positive and 3 negative examples yourself first, based on the explore findings, then ask the user to confirm or correct them:
+    - Positive: real task sentences (as a user would phrase them) where this skill *should* fire.
+    - Negative: sentences that share keywords but are a different job — where this skill must *not* fire.
+    Keep the confirmed list. It will live in `SKILL.md` under a short `## When this triggers` section and will be the test set for the description.
+4. Draft. Propose the full project rule: compact `ability.json`, the complete `SKILL.md` (including the `## When this triggers` section with the confirmed examples), and any optional payload block. Keep payload small; put durable behavior in `SKILL.md`.
+
+   Before showing the draft, run the description quality gate against the trigger examples:
+   - Does the “Use when ...” sentence cover all 3 positives? If not, broaden it.
+   - Does it touch any of the 3 negatives? If yes, narrow it with a concrete signal (file path, command name, domain term). Do not ship a description that fails either check.
 5. Confirm and write. Once the user approves, compute the slug as kebab-case of the name. Write:
    - `.termloop/abilities/<slug>/ability.json`
    - `.termloop/skills/<slug>/SKILL.md`
@@ -84,6 +92,7 @@ If `ability.json` opts into TermLoop MCP tools, include a short skill section th
 - Link to repo-relative paths. Cite commit SHAs only when useful.
 - Keep the skill focused. 150–500 words is usually enough.
 - Setup requirements belong in `ability.json`; operational behavior belongs in `SKILL.md`.
+- Every command, constraint, or “do/don’t” must carry a short reason. Write “Use `pnpm test --filter X` because the root run takes ~4m” instead of bare commands. Reasons let the next agent judge edge cases and tell when the rule has gone stale.
 - No emoji. No marketing language.
 
 Begin by greeting the user and asking step 1.

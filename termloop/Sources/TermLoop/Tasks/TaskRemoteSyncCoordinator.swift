@@ -968,6 +968,43 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 projectRoot: nil
             )
             try Task.checkCancellation()
+            guard Self.remoteStatusLabel(
+                snapshot.statusLabel,
+                matches: option,
+                targetStatus: targetStatus
+            ) else {
+                RemoteWorkItemSnapshotStore.shared.upsert(snapshot)
+                let actual = snapshot.statusLabel?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .nilIfEmpty ?? String(localized: "common.unknown",
+                                          defaultValue: "unknown",
+                                          table: "TermLoop")
+                let expected = (option.targetState ?? option.label)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .nilIfEmpty ?? targetStatus
+                let message = String(
+                    localized: "tasks.remoteSync.status.mismatch",
+                    defaultValue: "\(reference.key) did not change to \(expected). Remote still reports \(actual).",
+                    table: "TermLoop"
+                )
+                isSyncing = false
+                lastMessage = message
+                do {
+                    try store.updateSettings { settings in
+                        settings.remoteSync.lastError = message
+                    }
+                } catch {
+                    lastMessage = String(describing: error)
+                }
+                presentSyncResultAlert(
+                    title: String(localized: "tasks.remoteSync.status.updateFailedTitle",
+                                  defaultValue: "Remote Status Update Failed",
+                                  table: "TermLoop"),
+                    message: message,
+                    style: .warning
+                )
+                return
+            }
             guard applyLinkedSnapshot(snapshot, taskId: taskId) else {
                 isSyncing = false
                 presentSyncResultAlert(
@@ -1075,24 +1112,28 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
             }
 
             for snapshot in snapshots {
-                let storageKey = snapshot.reference.storageKey
                 let targetColumn = targetColumn(for: snapshot)
-                if let idx = file.tasks.firstIndex(where: { task in
-                    task.archivedAt == nil && task.remoteWorkItem?.storageKey == storageKey
-                }) {
-                    let old = file.tasks[idx]
-                    update(&file.tasks[idx], with: snapshot, syncedAt: now)
-                    if shouldSyncColumnsFromRemote, file.tasks[idx].columnId != targetColumn {
-                        touchedColumns.insert(file.tasks[idx].columnId)
-                        file.tasks[idx].columnId = targetColumn
-                        file.tasks[idx].rank = nextRank(in: targetColumn)
-                        touchedColumns.insert(targetColumn)
+                let matchingIndexes = file.tasks.indices.filter { idx in
+                    let task = file.tasks[idx]
+                    return task.archivedAt == nil
+                        && task.remoteWorkItem?.representsSameRemoteItem(as: snapshot.reference) == true
+                }
+                if !matchingIndexes.isEmpty {
+                    for idx in matchingIndexes {
+                        let old = file.tasks[idx]
+                        update(&file.tasks[idx], with: snapshot, syncedAt: now)
+                        if shouldSyncColumnsFromRemote, file.tasks[idx].columnId != targetColumn {
+                            touchedColumns.insert(file.tasks[idx].columnId)
+                            file.tasks[idx].columnId = targetColumn
+                            file.tasks[idx].rank = nextRank(in: targetColumn)
+                            touchedColumns.insert(targetColumn)
+                        }
+                        if file.tasks[idx] != old {
+                            updatedCount += 1
+                            didChange = true
+                        }
+                        materializeInputs.append((file.tasks[idx].id, snapshot))
                     }
-                    if file.tasks[idx] != old {
-                        updatedCount += 1
-                        didChange = true
-                    }
-                    materializeInputs.append((file.tasks[idx].id, snapshot))
                 } else {
                     let rank = nextRank(in: targetColumn)
                     let task = TaskRecord(
@@ -1157,7 +1198,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
     private func applyCreatedRemoteSnapshot(_ snapshot: RemoteWorkItemSnapshot) -> UUID? {
         RemoteWorkItemSnapshotStore.shared.upsert(snapshot)
         let now = Date()
-        var materializeInput: (taskId: UUID, snapshot: RemoteWorkItemSnapshot)?
+        var materializeInputs: [(taskId: UUID, snapshot: RemoteWorkItemSnapshot)] = []
         var taskId: UUID?
         var createdNewTask = false
 
@@ -1194,22 +1235,26 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                     return next
                 }
 
-                let storageKey = snapshot.reference.storageKey
                 let targetColumn = targetColumn(for: snapshot)
-                if let idx = file.tasks.firstIndex(where: { task in
-                    task.archivedAt == nil && task.remoteWorkItem?.storageKey == storageKey
-                }) {
-                    let old = file.tasks[idx]
-                    update(&file.tasks[idx], with: snapshot, syncedAt: now)
-                    if shouldSyncColumnsFromRemote, file.tasks[idx].columnId != targetColumn {
-                        touchedColumns.insert(file.tasks[idx].columnId)
-                        file.tasks[idx].columnId = targetColumn
-                        file.tasks[idx].rank = nextRank(in: targetColumn)
-                        touchedColumns.insert(targetColumn)
+                let matchingIndexes = file.tasks.indices.filter { idx in
+                    let task = file.tasks[idx]
+                    return task.archivedAt == nil
+                        && task.remoteWorkItem?.representsSameRemoteItem(as: snapshot.reference) == true
+                }
+                if !matchingIndexes.isEmpty {
+                    for idx in matchingIndexes {
+                        let old = file.tasks[idx]
+                        update(&file.tasks[idx], with: snapshot, syncedAt: now)
+                        if shouldSyncColumnsFromRemote, file.tasks[idx].columnId != targetColumn {
+                            touchedColumns.insert(file.tasks[idx].columnId)
+                            file.tasks[idx].columnId = targetColumn
+                            file.tasks[idx].rank = nextRank(in: targetColumn)
+                            touchedColumns.insert(targetColumn)
+                        }
+                        taskId = taskId ?? file.tasks[idx].id
+                        materializeInputs.append((file.tasks[idx].id, snapshot))
+                        didChange = didChange || file.tasks[idx] != old
                     }
-                    taskId = file.tasks[idx].id
-                    materializeInput = (file.tasks[idx].id, snapshot)
-                    didChange = didChange || file.tasks[idx] != old
                 } else {
                     let rank = nextRank(in: targetColumn)
                     let task = TaskRecord(
@@ -1226,7 +1271,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                     file.tasks.append(task)
                     touchedColumns.insert(targetColumn)
                     taskId = task.id
-                    materializeInput = (task.id, snapshot)
+                    materializeInputs.append((task.id, snapshot))
                     createdNewTask = true
                     didChange = true
                 }
@@ -1238,10 +1283,8 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 return didChange || hadLastError
             }
 
-            if let materializeInput {
-                materialize([materializeInput])
-            }
-            if changed || materializeInput != nil {
+            materialize(materializeInputs)
+            if changed || !materializeInputs.isEmpty {
                 try store.saveNow()
             }
             let message = createdNewTask
@@ -1264,17 +1307,73 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         RemoteWorkItemSnapshotStore.shared.upsert(snapshot)
         let now = Date()
         var foundTask = false
-        var shouldMaterialize = false
+        var materializeInputs: [(taskId: UUID, snapshot: RemoteWorkItemSnapshot)] = []
         do {
             store.mutate { file in
-                guard let idx = file.tasks.firstIndex(where: { $0.id == taskId }) else { return false }
+                guard file.tasks.contains(where: { $0.id == taskId }) else { return false }
                 foundTask = true
-                let old = file.tasks[idx]
                 let hadLastError = file.settings.remoteSync.lastError != nil
-                update(&file.tasks[idx], with: snapshot, syncedAt: now)
+                let shouldSyncColumnsFromRemote = file.settings.remoteSync.isAssignedSyncEnabled
+                var columnByRemoteStatus = Self.remoteStatusColumnLookup(file.settings.columns)
+                var rankCursorByColumn = Self.lastRankByColumn(file.tasks)
+                var touchedColumns = Set<TaskColumnId>()
+                var didChange = false
+
+                func targetColumn(for snapshot: RemoteWorkItemSnapshot) -> TaskColumnId? {
+                    guard shouldSyncColumnsFromRemote,
+                          let status = snapshot.statusLabel?
+                              .trimmingCharacters(in: .whitespacesAndNewlines)
+                              .nilIfEmpty,
+                          let statusKey = Self.remoteStatusLookupKey(status) else {
+                        return nil
+                    }
+                    if columnByRemoteStatus[statusKey] == nil {
+                        Self.ensureRemoteStatusColumn(status, in: &file.settings.columns)
+                        columnByRemoteStatus = Self.remoteStatusColumnLookup(file.settings.columns)
+                        didChange = true
+                    }
+                    return columnByRemoteStatus[statusKey]
+                }
+
+                func nextRank(in columnId: TaskColumnId) -> String {
+                    let next = rankCursorByColumn[columnId]
+                        .map(TaskRanking.after)
+                        ?? TaskRanking.initial()
+                    rankCursorByColumn[columnId] = next
+                    return next
+                }
+
+                let targetColumn = targetColumn(for: snapshot)
+                let matchingIndexes = file.tasks.indices.filter { candidateIdx in
+                    let task = file.tasks[candidateIdx]
+                    return task.id == taskId
+                        || (
+                            task.archivedAt == nil
+                                && task.remoteWorkItem?.representsSameRemoteItem(as: snapshot.reference) == true
+                        )
+                }
+
+                for idx in matchingIndexes {
+                    let old = file.tasks[idx]
+                    update(&file.tasks[idx], with: snapshot, syncedAt: now)
+                    if let targetColumn, file.tasks[idx].columnId != targetColumn {
+                        touchedColumns.insert(file.tasks[idx].columnId)
+                        file.tasks[idx].columnId = targetColumn
+                        file.tasks[idx].rank = nextRank(in: targetColumn)
+                        touchedColumns.insert(targetColumn)
+                    }
+                    if file.tasks[idx] != old {
+                        didChange = true
+                    }
+                    materializeInputs.append((file.tasks[idx].id, snapshot))
+                }
+
+                for columnId in touchedColumns {
+                    didChange = TaskBoardStore.rebalanceColumnIfNeeded(columnId, in: &file) || didChange
+                }
+
                 file.settings.remoteSync.lastError = nil
-                shouldMaterialize = true
-                return file.tasks[idx] != old || hadLastError
+                return didChange || hadLastError
             }
             guard foundTask else {
                 finishSync(message: String(localized: "tasks.remoteSync.localTaskMissing",
@@ -1282,9 +1381,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                                            table: "TermLoop"))
                 return false
             }
-            if shouldMaterialize {
-                materialize([(taskId, snapshot)])
-            }
+            materialize(materializeInputs)
             try store.saveNow()
             finishSync(message: String(localized: "tasks.remoteSync.linked",
                                        defaultValue: "Linked work item.",
@@ -1743,6 +1840,28 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
             [option.label, option.targetState]
                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .contains { $0.compare(target, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
+        }
+    }
+
+    private static func remoteStatusLabel(
+        _ actualStatus: String?,
+        matches option: RemoteWorkItemStatusOption,
+        targetStatus: String
+    ) -> Bool {
+        guard let actual = actualStatus?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty else {
+            return false
+        }
+        return [
+            targetStatus,
+            option.label,
+            option.targetState,
+            option.providerPayload["targetStatusLabel"]
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
+        .contains { expected in
+            actual.compare(expected, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
         }
     }
 
