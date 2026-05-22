@@ -99,7 +99,7 @@ struct TaskWorkItemSection: View {
                 .onTapGesture {
                     open(snapshot)
                 }
-                .help(snapshot.url?.absoluteString ?? snapshot.compactLabel)
+                .help(openURL(for: snapshot)?.absoluteString ?? snapshot.compactLabel)
 
                 rowMenu(snapshot)
             }
@@ -108,7 +108,7 @@ struct TaskWorkItemSection: View {
 
     private func rowMenu(_ snapshot: TaskWorkItemSnapshot) -> some View {
         Menu {
-            if snapshot.url != nil {
+            if openURL(for: snapshot) != nil {
                 Button(action: { open(snapshot) }) {
                     Label(String(localized: "tasks.sidebar.section.workItem.open",
                                  defaultValue: "Open \(snapshot.reference.provider.displayLabel)",
@@ -122,7 +122,7 @@ struct TaskWorkItemSection: View {
                              table: "TermLoop"),
                       systemImage: "arrow.clockwise")
             }
-            Button(action: { presentTaskLinkPrompt(prior: snapshot.url?.absoluteString ?? snapshot.key) }) {
+            Button(action: { presentTaskLinkPrompt(prior: openURL(for: snapshot)?.absoluteString ?? snapshot.key) }) {
                 Label(String(localized: "tasks.sidebar.section.workItem.relink",
                              defaultValue: "Relink",
                              table: "TermLoop"),
@@ -168,7 +168,7 @@ struct TaskWorkItemSection: View {
                     }
                 }
 
-                if snapshot.url != nil {
+                if openURL(for: snapshot) != nil {
                     Image(systemName: "arrow.up.right")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Color.secondary)
@@ -183,7 +183,7 @@ struct TaskWorkItemSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.56))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .help(snapshot.url?.absoluteString ?? snapshot.compactLabel)
+        .help(openURL(for: snapshot)?.absoluteString ?? snapshot.compactLabel)
     }
 
     private func statusPill(_ status: String) -> some View {
@@ -199,7 +199,7 @@ struct TaskWorkItemSection: View {
 
     private func actionBar(_ snapshot: TaskWorkItemSnapshot) -> some View {
         HStack(spacing: 6) {
-            if snapshot.url != nil {
+            if openURL(for: snapshot) != nil {
                 Button {
                     open(snapshot)
                 } label: {
@@ -228,7 +228,7 @@ struct TaskWorkItemSection: View {
                       systemImage: "arrow.clockwise")
             }
             Button {
-                presentTaskLinkPrompt(prior: snapshot.url?.absoluteString ?? snapshot.key)
+                presentTaskLinkPrompt(prior: openURL(for: snapshot)?.absoluteString ?? snapshot.key)
             } label: {
                 Label(String(localized: "tasks.sidebar.section.workItem.relink",
                              defaultValue: "Relink",
@@ -259,12 +259,55 @@ struct TaskWorkItemSection: View {
     }
 
     private func open(_ snapshot: TaskWorkItemSnapshot) {
-        guard let url = snapshot.url else { return }
+        guard let url = openURL(for: snapshot) else { return }
         WorktreeURLRouter.open(
             url,
             workspaceIds: snapshot.workspaceId.map { [$0] } ?? [],
             preferredWorkspaceId: snapshot.workspaceId
         )
+    }
+
+    private func openURL(for snapshot: TaskWorkItemSnapshot) -> URL? {
+        if let url = snapshot.url { return url }
+        switch snapshot.reference.provider {
+        case .jira:
+            return jiraURL(for: snapshot.reference)
+        case .github, .gitlab:
+            return remoteIssueURL(for: snapshot.reference)
+        }
+    }
+
+    private func jiraURL(for reference: RemoteWorkItemReference) -> URL? {
+        let site = (reference.host ?? remoteSync.settings.jiraSite ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !site.isEmpty else { return nil }
+        let base = site.hasPrefix("http://") || site.hasPrefix("https://")
+            ? site
+            : "https://\(site)"
+        return URL(string: "\(base)/browse/\(reference.key.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? reference.key)")
+    }
+
+    private func remoteIssueURL(for reference: RemoteWorkItemReference) -> URL? {
+        guard let host = reference.host,
+              let namespace = reference.namespace,
+              let repository = reference.repository,
+              let number = reference.number else {
+            return nil
+        }
+        let encodedNamespace = namespace
+            .split(separator: "/")
+            .map { String($0).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0) }
+            .joined(separator: "/")
+        let encodedRepo = repository.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? repository
+        switch reference.provider {
+        case .github:
+            return URL(string: "https://\(host)/\(encodedNamespace)/\(encodedRepo)/issues/\(number)")
+        case .gitlab:
+            return URL(string: "https://\(host)/\(encodedNamespace)/\(encodedRepo)/-/issues/\(number)")
+        case .jira:
+            return nil
+        }
     }
 
     private func refresh(_ snapshot: TaskWorkItemSnapshot) {

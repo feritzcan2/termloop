@@ -515,7 +515,7 @@ extension TaskLifecycleCoordinator {
                 activeIndexes.first { file.tasks[$0].workspaceId == workspaceId }
             }
             let remoteIndex = activeIndexes.first { idx in
-                file.tasks[idx].remoteWorkItem?.storageKey == effectiveReference.storageKey
+                file.tasks[idx].remoteWorkItem?.representsSameRemoteItem(as: effectiveReference) == true
             }
 
             if let idx = pathIndex ?? workspaceIndex ?? remoteIndex {
@@ -606,13 +606,13 @@ extension TaskLifecycleCoordinator {
         let priorWorkspaceId = task.workspaceId
         let priorWorktreePath = task.worktreePath
         let priorBranch = task.branch
-        let priorReferenceKey = task.remoteWorkItem?.storageKey
+        let priorReference = task.remoteWorkItem
 
         if let snapshotTitle = snapshot?.title
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .nonEmptyTaskLifecycleString {
             task.title = snapshotTitle
-        } else if priorReferenceKey != reference.storageKey || task.remoteWorkItem == nil {
+        } else if priorReference?.representsSameRemoteItem(as: reference) != true {
             task.title = reference.key
         }
 
@@ -623,7 +623,7 @@ extension TaskLifecycleCoordinator {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .nonEmptyTaskLifecycleString
             task.lastRemoteSyncAt = snapshot.fetchedAt
-        } else if priorReferenceKey != reference.storageKey {
+        } else if priorReference?.representsSameRemoteItem(as: reference) != true {
             task.remoteStatusLabel = nil
             task.lastRemoteSyncAt = nil
         }

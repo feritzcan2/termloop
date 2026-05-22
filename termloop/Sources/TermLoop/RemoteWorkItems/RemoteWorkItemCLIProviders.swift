@@ -568,7 +568,15 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
             ?? (object?["issueKey"] as? String)
             ?? RemoteWorkItemParser.extractJiraKey(from: output)
             ?? output
-        let ref = RemoteWorkItemReference(provider: .jira, key: key, url: nil, host: nil, namespace: nil, repository: nil, number: nil)
+        let ref = RemoteWorkItemReference(
+            provider: .jira,
+            key: key,
+            url: jiraWebURL(for: key),
+            host: site,
+            namespace: nil,
+            repository: nil,
+            number: nil
+        )
         return try await fetch(ref)
     }
 
@@ -923,7 +931,11 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
         let status = ((fields?["status"] as? [String: Any])?["name"] as? String) ?? (json["status"] as? String)
         let title = (fields?["summary"] as? String) ?? (json["summary"] as? String) ?? (json["key"] as? String) ?? reference.key
         return RemoteWorkItemSnapshot(
-            reference: normalizedReference(reference, url: json["url"] as? String),
+            reference: normalizedReference(
+                reference,
+                url: (json["url"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                    ?? jiraWebURL(for: reference.key)
+            ),
             title: title,
             bodyMarkdown: jiraDescription(from: fields?["description"] ?? json["description"]),
             statusLabel: status,
@@ -941,12 +953,21 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
         return RemoteWorkItemReference(
             provider: .jira,
             key: key,
-            url: json["url"] as? String,
-            host: nil,
+            url: (json["url"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                ?? jiraWebURL(for: key),
+            host: site,
             namespace: nil,
             repository: nil,
             number: nil
         )
+    }
+
+    private func jiraWebURL(for key: String) -> String? {
+        guard let site else { return nil }
+        let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKey.isEmpty else { return nil }
+        let encodedKey = trimmedKey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? trimmedKey
+        return "https://\(site)/browse/\(encodedKey)"
     }
 
     private func jiraSearchItems(from text: String) throws -> [[String: Any]] {
