@@ -75,13 +75,13 @@ jobs:
           echo "sha256=$SHA256" >> $GITHUB_OUTPUT
           echo "DMG SHA256: $SHA256"
 
-      - name: Checkout homebrew-cmux
+      - name: Checkout Homebrew tap
         if: steps.version.outputs.skip != 'true'
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          repository: manaflow-ai/homebrew-cmux
+          repository: feritzcan2/homebrew-termloop
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          path: homebrew-cmux
+          path: homebrew-termloop
 
       - name: Update cask formula
         if: steps.version.outputs.skip != 'true'
@@ -89,14 +89,15 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           SHA256: ${{ steps.sha.outputs.sha256 }}
         run: |
-          cat > homebrew-cmux/Casks/termloop.rb << CASKEOF
+          cat > homebrew-termloop/Casks/termloop.rb << CASKEOF
           cask "termloop" do
             version "${VERSION}"
             sha256 "${SHA256}"
 
-            url "https://github.com/feritzcan2/termloop/releases/download/v#{version}/termloop-macos.dmg"
+            url "https://github.com/feritzcan2/termloop/releases/download/v#{version}/termloop-macos.dmg",
+                verified: "github.com/feritzcan2/termloop/"
             name "TermLoop"
-            desc "Lightweight native macOS terminal with vertical tabs for AI coding agents"
+            desc "Native macOS terminal for AI coding agents"
             homepage "https://termloop.ai"
 
             livecheck do
@@ -117,12 +118,12 @@ jobs:
           end
           CASKEOF
           # Remove leading whitespace from heredoc
-          sed -i 's/^          //' homebrew-cmux/Casks/termloop.rb
+          sed -i 's/^          //' homebrew-termloop/Casks/termloop.rb
 
       - name: Verify cask SHA matches DMG
         if: steps.version.outputs.skip != 'true'
         run: |
-          CASK_SHA=$(grep 'sha256' homebrew-cmux/Casks/termloop.rb | sed 's/.*"\(.*\)".*/\1/')
+          CASK_SHA=$(grep 'sha256' homebrew-termloop/Casks/termloop.rb | sed 's/.*"\(.*\)".*/\1/')
           ACTUAL_SHA=$(shasum -a 256 termloop-macos.dmg | cut -d' ' -f1)
           if [ "$CASK_SHA" != "$ACTUAL_SHA" ]; then
             echo "SHA mismatch! Cask: $CASK_SHA, Actual: $ACTUAL_SHA" >&2
@@ -135,7 +136,7 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          cd homebrew-cmux
+          cd homebrew-termloop
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Casks/termloop.rb
