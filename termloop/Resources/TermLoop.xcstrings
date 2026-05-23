@@ -3824,6 +3824,28 @@
         }
       }
     },
+    "worktreeAgents.devServerBadge.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dev server: %1$@ · %2$@\n%3$@\n⌘/⌥-click to open in TermLoop browser"
+          }
+        }
+      }
+    },
+    "worktreeAgents.devServerBadge.multiple.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running dev server URLs"
+          }
+        }
+      }
+    },
     "sidebar.workSubTab.abilities": {
       "extractionState": "manual",
       "localizations": {
@@ -4076,7 +4098,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open URL. Command-click forces TermLoop Browser."
+            "value": "Open URL in your default browser. Command-click opens in TermLoop."
           }
         }
       }
