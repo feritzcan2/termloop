@@ -11,9 +11,11 @@ struct TaskGitChangesSection: View {
     let workspaceId: UUID?
     let worktreePath: String?
     let branch: String?
+    let projectId: UUID?
 
     @EnvironmentObject private var tabManager: TabManager
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
+    @ObservedObject private var worktreeProjectionStore = WorktreeProjectionStore.shared
     @State private var files: [SidebarGitChangeItem] = []
 
     private var filesPublisher: AnyPublisher<[SidebarGitChangeItem], Never> {
@@ -24,23 +26,56 @@ struct TaskGitChangesSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            TaskSidebarSectionTitle(
-                String(localized: "tasks.sidebar.section.gitChanges",
-                       defaultValue: "Git Changes", table: "TermLoop")
-            )
+        Group {
             if normalizedWorktreePath == nil {
-                TaskSidebarEmptyText(
-                    String(localized: "tasks.sidebar.section.gitChanges.unbound",
-                           defaultValue: "No worktree path attached.", table: "TermLoop")
+                compactInlineRow(
+                    icon: "exclamationmark.circle",
+                    text: String(localized: "tasks.sidebar.section.gitChanges.unbound",
+                                 defaultValue: "Git: no worktree", table: "TermLoop"),
+                    tint: .secondary
+                )
+            } else if files.isEmpty {
+                compactInlineRow(
+                    icon: "checkmark.circle",
+                    text: String(localized: "tasks.sidebar.section.gitChanges.clean",
+                                 defaultValue: "Git: clean", table: "TermLoop"),
+                    tint: .secondary
                 )
             } else {
-                summaryButton
+                VStack(alignment: .leading, spacing: 6) {
+                    TaskSidebarSectionTitle(
+                        String(localized: "tasks.sidebar.section.gitChanges",
+                               defaultValue: "Git Changes", table: "TermLoop")
+                    )
+                    summaryButton
+                }
             }
         }
         .onReceive(filesPublisher) { files = $0 }
         .onAppear { refreshFiles() }
         .onChange(of: normalizedWorktreePath) { _, _ in refreshFiles() }
+    }
+
+    @ViewBuilder
+    private func compactInlineRow(icon: String, text: String, tint: Color) -> some View {
+        Button(action: { if canOpenDiffPage { openDiffPage() } }) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(text)
+                    .font(.system(size: 11, weight: .medium))
+                Spacer(minLength: 0)
+                if canOpenDiffPage {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .foregroundStyle(tint)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!canOpenDiffPage)
     }
 
     private var summaryButton: some View {
@@ -100,6 +135,7 @@ struct TaskGitChangesSection: View {
     }
 
     private var resolvedWorkspaceId: UUID? {
+        _ = worktreeProjectionStore.version
         if let liveWorkspaceId = liveWorkspaceIdMatchingPath {
             return liveWorkspaceId
         }
@@ -107,6 +143,11 @@ struct TaskGitChangesSection: View {
             return workspaceId
         }
         guard let path = normalizedWorktreePath else { return workspaceId }
+        if let projectId,
+           let projection = WorktreeProjectionStore.shared.snapshot(projectId: projectId),
+           let id = projection.workspaceIds(forWorktreePath: path).first {
+            return id
+        }
         return metadataStore.workspaceIds(withWorktreePath: path).first ?? workspaceId
     }
 

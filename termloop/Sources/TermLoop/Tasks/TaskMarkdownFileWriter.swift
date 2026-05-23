@@ -25,6 +25,55 @@ enum TaskMarkdownFileWriter {
         return url.path
     }
 
+    static func ensureTaskSpec(
+        task: TaskRecord,
+        columnTitle: String,
+        projectRoot: URL
+    ) throws -> String {
+        let url = taskFileURL(taskId: task.id, projectRoot: projectRoot)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        if !FileManager.default.fileExists(atPath: url.path) {
+            try defaultTaskSpec(task: task, columnTitle: columnTitle)
+                .write(to: url, atomically: true, encoding: .utf8)
+        }
+        return url.path
+    }
+
+    private static func taskFileURL(taskId: UUID, projectRoot: URL) -> URL {
+        projectRoot
+            .appendingPathComponent(".termloop", isDirectory: true)
+            .appendingPathComponent("tasks", isDirectory: true)
+            .appendingPathComponent(taskId.uuidString.lowercased(), isDirectory: true)
+            .appendingPathComponent("task.md", isDirectory: false)
+    }
+
+    private static func defaultTaskSpec(task: TaskRecord, columnTitle: String) -> String {
+        var lines: [String] = []
+        lines.append("# \(task.title)")
+        lines.append("")
+        lines.append("## Task")
+        lines.append("")
+        lines.append(trimmed(task.brief) ?? "_Describe the implementation target._")
+        lines.append("")
+        lines.append("## Workflow")
+        lines.append("")
+        lines.append("- Board column: \(columnTitle)")
+        if let branch = trimmed(task.branch) { lines.append("- Branch: \(branch)") }
+        if let path = trimmed(task.worktreePath) { lines.append("- Worktree: \(path)") }
+        lines.append("")
+        lines.append("## Acceptance Criteria")
+        lines.append("")
+        lines.append("- [ ] ")
+        lines.append("")
+        lines.append("## Implementation Notes")
+        lines.append("")
+        lines.append("")
+        return lines.joined(separator: "\n")
+    }
+
     private static func remoteMarkdown(for snapshot: RemoteWorkItemSnapshot) -> String {
         var lines: [String] = []
         lines.append(remoteStart)

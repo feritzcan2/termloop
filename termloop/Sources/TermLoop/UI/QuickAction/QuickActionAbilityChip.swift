@@ -44,10 +44,10 @@ struct QuickActionAbilityChip: View {
         .help(tooltip)
         .contextMenu {
             Button(String(localized: "quickAction.chip.edit",
-                          defaultValue: "Edit ability…",
+                          defaultValue: "Edit skill…",
                           table: "TermLoop")) { onEdit() }
             Button(String(localized: "quickAction.chip.reveal",
-                          defaultValue: "Reveal in Abilities sidebar",
+                          defaultValue: "Reveal in Project Rules",
                           table: "TermLoop")) { onRevealInFile() }
             Divider()
             if chip.ability.activation == .listed {

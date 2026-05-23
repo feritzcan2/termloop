@@ -164,6 +164,22 @@ final class WorkspaceRenameShortcutDefaultsTests: XCTestCase {
         XCTAssertTrue(prevShortcut.eventModifiers.contains(.control))
     }
 
+    func testProjectAndWorkspaceNumberShortcutDefaultsDoNotCollide() {
+        let projectShortcut = KeyboardShortcutSettings.Action.selectProjectByNumber.defaultShortcut
+        XCTAssertEqual(projectShortcut.key, "1")
+        XCTAssertTrue(projectShortcut.command)
+        XCTAssertFalse(projectShortcut.shift)
+        XCTAssertFalse(projectShortcut.option)
+        XCTAssertFalse(projectShortcut.control)
+
+        let workspaceShortcut = KeyboardShortcutSettings.Action.selectWorkspaceByNumber.defaultShortcut
+        XCTAssertEqual(workspaceShortcut.key, "1")
+        XCTAssertTrue(workspaceShortcut.command)
+        XCTAssertFalse(workspaceShortcut.shift)
+        XCTAssertTrue(workspaceShortcut.option)
+        XCTAssertFalse(workspaceShortcut.control)
+    }
+
     func testToggleTerminalCopyModeShortcutDefaultsAndMetadata() {
         XCTAssertEqual(KeyboardShortcutSettings.Action.toggleTerminalCopyMode.label, "Toggle Terminal Copy Mode")
         XCTAssertEqual(

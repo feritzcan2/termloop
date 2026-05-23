@@ -7,11 +7,18 @@ public struct TaskWorktreeProvisionResult: Equatable, Sendable {
     public let workspaceId: UUID
     public let branch: String
     public let worktreePath: String
+    public let createdWorktree: Bool
 
-    public init(workspaceId: UUID, branch: String, worktreePath: String) {
+    public init(
+        workspaceId: UUID,
+        branch: String,
+        worktreePath: String,
+        createdWorktree: Bool = false
+    ) {
         self.workspaceId = workspaceId
         self.branch = branch
         self.worktreePath = worktreePath
+        self.createdWorktree = createdWorktree
     }
 }
 
@@ -24,17 +31,48 @@ public protocol TaskBoundWorkspaceMetadataStoring: AnyObject {
 
 @MainActor
 public protocol TaskBoundWorktreeProvisioning: AnyObject {
-    func provision(projectRoot: URL, branchHint: String?) async throws
+    func provision(projectRoot: URL, branchHint: String?, allowDirty: Bool) async throws
         -> TaskWorktreeProvisionResult
-    func teardown(workspaceId: UUID, worktreePath: String) async throws
+    func teardown(workspaceId: UUID?, worktreePath: String, projectRoot: URL) async throws
 }
 
-public enum TaskLifecycleError: Error, Equatable {
+public enum TaskLifecycleError: Error, Equatable, LocalizedError {
     case taskNotFound(UUID)
     case alreadyBound(UUID)
     case notBound(UUID)
     case provisionInFlight(UUID)
     case provisionFailed(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .taskNotFound(let id):
+            return String(
+                localized: "tasks.lifecycle.error.taskNotFound",
+                defaultValue: "Task not found: \(id.uuidString)",
+                table: "TermLoop"
+            )
+        case .alreadyBound:
+            return String(
+                localized: "tasks.lifecycle.error.alreadyBound",
+                defaultValue: "Task already has a worktree.",
+                table: "TermLoop"
+            )
+        case .notBound:
+            return String(
+                localized: "tasks.lifecycle.error.notBound",
+                defaultValue: "Task is not bound to a worktree.",
+                table: "TermLoop"
+            )
+        case .provisionInFlight:
+            return String(
+                localized: "tasks.lifecycle.error.provisionInFlight",
+                defaultValue: "Task worktree provisioning is already in progress.",
+                table: "TermLoop"
+            )
+        case .provisionFailed(let reason):
+            return TaskProvisionFailureReason.localizedDisplayText(for: reason)
+        }
+    }
 }
 
 @MainActor
@@ -75,8 +113,40 @@ public final class TaskLifecycleCoordinator {
     }
 
     public func archiveTask(_ id: UUID) throws {
+        let task = try requireTask(id)
         try mutateTask(id) { $0.archivedAt = Date(); $0.updatedAt = Date() }
         try store.saveNow()
+        DevServerRunCoordinator.shared.stopTaskRunsAndCleanup(
+            projectId: store.projectId,
+            task: task,
+            projectRoot: store.projectRoot,
+            reason: "archive"
+        )
+    }
+
+    public func restoreTask(_ id: UUID) throws {
+        guard try requireTask(id).archivedAt != nil else { return }
+        try mutateTask(id) { task in
+            task.archivedAt = nil
+            task.updatedAt = Date()
+        }
+        try store.saveNow()
+    }
+
+    public func deleteTask(_ id: UUID) throws {
+        let task = try requireTask(id)
+        _ = store.mutate { file in
+            guard file.tasks.contains(where: { $0.id == id }) else { return false }
+            file.tasks.removeAll { $0.id == id }
+            return true
+        }
+        try store.saveNow()
+        DevServerRunCoordinator.shared.stopTaskRunsAndCleanup(
+            projectId: store.projectId,
+            task: task,
+            projectRoot: store.projectRoot,
+            reason: "delete"
+        )
     }
 
     // MARK: - Column move
@@ -113,16 +183,29 @@ public final class TaskLifecycleCoordinator {
 
     // MARK: - Bind (Todo → In Progress)
 
-    public func bindWorktree(taskId: UUID) async throws {
+    public func bindWorktree(
+        taskId: UUID,
+        branchHint: String? = nil,
+        allowDirty: Bool = false
+    ) async throws {
         let task = try requireTask(taskId)
+        guard task.provisionState != .pending else {
+            throw TaskLifecycleError.provisionInFlight(taskId)
+        }
         let priorColumn = task.columnId
         let expectedGeneration = task.bindingGeneration
+        try mutateTask(taskId) { t in
+            t.provisionState = .pending
+            t.updatedAt = Date()
+        }
+        try store.saveNow()
 
         let result: TaskWorktreeProvisionResult
         do {
             result = try await worktrees.provision(
                 projectRoot: store.projectRoot,
-                branchHint: task.branch ?? slugFrom(title: task.title)
+                branchHint: branchHint ?? task.branch ?? slugFrom(title: task.title),
+                allowDirty: allowDirty
             )
         } catch {
             guard try failBindingIfCurrent(
@@ -135,9 +218,11 @@ public final class TaskLifecycleCoordinator {
         }
 
         guard isCurrentBindingAttempt(taskId: taskId, generation: expectedGeneration) else {
+            guard result.createdWorktree else { return }
             try? await worktrees.teardown(
                 workspaceId: result.workspaceId,
-                worktreePath: result.worktreePath
+                worktreePath: result.worktreePath,
+                projectRoot: store.projectRoot
             )
             return
         }
@@ -162,11 +247,92 @@ public final class TaskLifecycleCoordinator {
             t.workspaceId = result.workspaceId
             t.branch = result.branch
             t.worktreePath = result.worktreePath
+            t.ownsWorktree = result.createdWorktree
             t.bindingGeneration += 1
             t.provisionState = .ready
             t.updatedAt = Date()
         }
         try store.saveNow()
+        bindRemoteMetadataIfNeeded(task: task, result: result)
+        if let oldPath = task.worktreePath, oldPath != result.worktreePath {
+            DevServerRunCoordinator.shared.stopTaskRunsAndCleanup(
+                projectId: store.projectId,
+                task: task,
+                projectRoot: store.projectRoot,
+                reason: "worktree_migration"
+            )
+        }
+    }
+
+    public func bindExistingWorktree(
+        taskId: UUID,
+        workspaceId: UUID,
+        branch: String,
+        worktreePath: String,
+        ownsWorktree: Bool
+    ) throws {
+        let current = try requireTask(taskId)
+        guard current.provisionState != .pending else {
+            throw TaskLifecycleError.provisionInFlight(taskId)
+        }
+        guard workspaces.workspaceExists(workspaceId: workspaceId) else {
+            throw TaskLifecycleError.provisionFailed(
+                String(localized: "tasks.provision.failure.workspaceMissing",
+                       defaultValue: "Created workspace is no longer available.",
+                       table: "TermLoop")
+            )
+        }
+
+        try workspaces.setBinding(
+            workspaceId: workspaceId,
+            branch: branch,
+            path: worktreePath
+        )
+        try mutateTask(taskId) { t in
+            t.workspaceId = workspaceId
+            t.branch = branch
+            t.worktreePath = worktreePath
+            t.ownsWorktree = ownsWorktree
+            t.bindingGeneration += 1
+            t.provisionState = .ready
+            t.updatedAt = Date()
+        }
+        try store.saveNow()
+        bindRemoteMetadataIfNeeded(
+            task: current,
+            result: TaskWorktreeProvisionResult(
+                workspaceId: workspaceId,
+                branch: branch,
+                worktreePath: worktreePath,
+                createdWorktree: false
+            )
+        )
+        if let oldPath = current.worktreePath, oldPath != worktreePath {
+            DevServerRunCoordinator.shared.stopTaskRunsAndCleanup(
+                projectId: store.projectId,
+                task: current,
+                projectRoot: store.projectRoot,
+                reason: "worktree_migration"
+            )
+        }
+    }
+
+    @discardableResult
+    public func ensureTaskSpecFile(taskId: UUID) throws -> String {
+        let task = try requireTask(taskId)
+        let path = try TaskMarkdownFileWriter.ensureTaskSpec(
+            task: task,
+            columnTitle: store.columnTitle(for: task.columnId),
+            projectRoot: store.projectRoot
+        )
+        try mutateTask(taskId) { t in
+            if t.taskFilePath != path {
+                t.taskFilePath = path
+                t.updatedAt = Date()
+            }
+        }
+        try store.saveNow()
+        return path
     }
 
     // MARK: - Internals
@@ -236,6 +402,25 @@ public final class TaskLifecycleCoordinator {
         return String(describing: error)
     }
 
+    private func bindRemoteMetadataIfNeeded(
+        task: TaskRecord,
+        result: TaskWorktreeProvisionResult
+    ) {
+        guard let reference = task.remoteWorkItem else { return }
+        WorktreeRemoteItemBindingStore.shared.bind(reference, forPath: result.worktreePath)
+        let snapshot = RemoteWorkItemSnapshotStore.shared.snapshot(for: reference)
+        WorkspaceMetadataStore.shared.setAssignedTicket(
+            WorkspaceMetadataStore.AssignedTicket(
+                providerName: reference.provider.displayLabel,
+                key: reference.key,
+                title: snapshot?.title ?? task.title,
+                status: snapshot?.statusLabel ?? task.remoteStatusLabel,
+                url: snapshot?.reference.url ?? reference.url
+            ),
+            forWorkspaceId: result.workspaceId
+        )
+    }
+
     private func nextRank(in column: TaskColumnId) -> String {
         let existing = store.fileSnapshot().tasks
             .filter { $0.columnId == column && $0.archivedAt == nil }
@@ -276,24 +461,39 @@ extension TaskLifecycleCoordinator {
         }
         rebalanceColumnIfNeeded(.todo)
         try store.saveNow()
+        DevServerRunCoordinator.shared.stopTaskRunsAndCleanup(
+            projectId: store.projectId,
+            task: task,
+            projectRoot: store.projectRoot,
+            reason: "cancel_binding"
+        )
 
-        if let workspaceId = task.workspaceId, let path = task.worktreePath {
-            // Fire-and-forget teardown. Failure leaves a repair banner on next reconcile.
+        if task.workspaceId != nil || (task.ownsWorktree && task.worktreePath != nil) {
+            // Fire-and-forget cleanup. Failure leaves a repair banner on next reconcile.
             _Concurrency.Task { [weak self] in
                 guard let self else { return }
-                do {
-                    try self.workspaces.clearBinding(workspaceId: workspaceId)
-                } catch {
-                    #if DEBUG
-                    print("TaskLifecycleCoordinator.cancelBinding clearBinding failed: \(error)")
-                    #endif
+                if let workspaceId = task.workspaceId {
+                    do {
+                        try self.workspaces.clearBinding(workspaceId: workspaceId)
+                    } catch {
+                        #if DEBUG
+                        print("TaskLifecycleCoordinator.cancelBinding clearBinding failed: \(error)")
+                        #endif
+                    }
                 }
-                do {
-                    try await self.worktrees.teardown(workspaceId: workspaceId, worktreePath: path)
-                } catch {
-                    #if DEBUG
-                    print("TaskLifecycleCoordinator.cancelBinding teardown failed: \(error)")
-                    #endif
+                if task.ownsWorktree,
+                   let path = task.worktreePath {
+                    do {
+                        try await self.worktrees.teardown(
+                            workspaceId: task.workspaceId,
+                            worktreePath: path,
+                            projectRoot: self.store.projectRoot
+                        )
+                    } catch {
+                        #if DEBUG
+                        print("TaskLifecycleCoordinator.cancelBinding teardown failed: \(error)")
+                        #endif
+                    }
                 }
             }
         }
@@ -304,27 +504,307 @@ extension TaskLifecycleCoordinator {
     /// Update brief (or other text fields) — debounced save, last-write-wins
     /// across windows.
     public func updateBrief(taskId: UUID, brief: String?) throws {
-        try mutateTask(taskId) { $0.brief = brief; $0.updatedAt = Date() }
+        let normalized = brief?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nonEmptyTaskLifecycleString
+        guard try requireTask(taskId).brief != normalized else { return }
+        try mutateTask(taskId) { $0.brief = normalized; $0.updatedAt = Date() }
         store.scheduleSave()
     }
 
     public func updateTitle(taskId: UUID, title: String) throws {
-        try mutateTask(taskId) { $0.title = title; $0.updatedAt = Date() }
+        let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return }
+        guard try requireTask(taskId).title != normalized else { return }
+        try mutateTask(taskId) { $0.title = normalized; $0.updatedAt = Date() }
         store.scheduleSave()
     }
 
     /// Unbind without removing the worktree (user used "Unbind" from repair banner).
     public func unbindWorktree(taskId: UUID) throws {
+        let task = try requireTask(taskId)
         try mutateTask(taskId) { t in
             t.workspaceId = nil
             t.worktreePath = nil
             t.branch = nil
+            t.ownsWorktree = false
             t.bindingGeneration += 1
             t.provisionState = .none
             t.updatedAt = Date()
         }
         try store.saveNow()
+        DevServerRunCoordinator.shared.stopTaskRunsAndCleanup(
+            projectId: store.projectId,
+            task: task,
+            projectRoot: store.projectRoot,
+            reason: "unbind"
+        )
     }
+}
+
+extension TaskLifecycleCoordinator {
+    @discardableResult
+    func upsertRemoteItemBinding(
+        reference: RemoteWorkItemReference,
+        snapshot: RemoteWorkItemSnapshot? = nil,
+        workspaceId: UUID?,
+        worktreePath: String,
+        branch: String?,
+        at date: Date = Date()
+    ) throws -> UUID? {
+        guard let resolvedPath = TaskPathNormalization.resolveDisplayAndKey(
+            worktreePath,
+            relativeTo: store.projectRoot
+        ) else {
+            return nil
+        }
+
+        let effectiveReference = snapshot?.reference ?? reference
+        let trimmedBranch = branch?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nonEmptyTaskLifecycleString
+        var affectedTaskId: UUID?
+        var createdInProgressTask = false
+
+        let changed = store.mutate { file in
+            var didChange = false
+            let activeIndexes = file.tasks.indices.filter { file.tasks[$0].archivedAt == nil }
+            let pathIndex = activeIndexes.first { idx in
+                Self.normalizedTaskPathKey(
+                    file.tasks[idx].worktreePath,
+                    relativeTo: store.projectRoot
+                ) == resolvedPath.keyPath
+            }
+            let workspaceIndex = workspaceId.flatMap { workspaceId in
+                activeIndexes.first { file.tasks[$0].workspaceId == workspaceId }
+            }
+            let remoteIndex = activeIndexes.first { idx in
+                file.tasks[idx].remoteWorkItem?.representsSameRemoteItem(as: effectiveReference) == true
+            }
+
+            if let idx = pathIndex ?? workspaceIndex ?? remoteIndex {
+                let old = file.tasks[idx]
+                Self.applyRemoteItemBinding(
+                    to: &file.tasks[idx],
+                    reference: effectiveReference,
+                    snapshot: snapshot,
+                    workspaceId: workspaceId,
+                    resolvedPath: resolvedPath,
+                    branch: trimmedBranch,
+                    date: date
+                )
+                affectedTaskId = file.tasks[idx].id
+                didChange = file.tasks[idx] != old
+            } else {
+                let rank = Self.nextRank(in: .inProgress, file: file)
+                let status = snapshot?.statusLabel?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .nonEmptyTaskLifecycleString
+                let task = TaskRecord(
+                    projectId: store.projectId,
+                    title: Self.remoteBindingTitle(reference: effectiveReference, snapshot: snapshot),
+                    origin: .remote,
+                    remoteWorkItem: effectiveReference,
+                    remoteStatusLabel: status,
+                    lastRemoteSyncAt: snapshot?.fetchedAt,
+                    columnId: .inProgress,
+                    rank: rank,
+                    workspaceId: workspaceId,
+                    worktreePath: resolvedPath.displayPath,
+                    branch: trimmedBranch,
+                    ownsWorktree: false,
+                    bindingGeneration: 1,
+                    provisionState: .ready,
+                    createdAt: date,
+                    updatedAt: date
+                )
+                file.tasks.append(task)
+                affectedTaskId = task.id
+                createdInProgressTask = true
+                didChange = true
+            }
+
+            if createdInProgressTask {
+                didChange = TaskBoardStore.rebalanceColumnIfNeeded(.inProgress, in: &file) || didChange
+            }
+            return didChange
+        }
+
+        if changed {
+            try store.saveNow()
+        }
+
+        if let snapshot, let affectedTaskId {
+            let taskFilePath = try TaskMarkdownFileWriter.writeRemoteSnapshot(
+                snapshot,
+                taskId: affectedTaskId,
+                projectRoot: store.projectRoot
+            )
+            let filePathChanged = store.mutate { file in
+                guard let idx = file.tasks.firstIndex(where: { $0.id == affectedTaskId }),
+                      file.tasks[idx].taskFilePath != taskFilePath else {
+                    return false
+                }
+                file.tasks[idx].taskFilePath = taskFilePath
+                file.tasks[idx].updatedAt = Date()
+                return true
+            }
+            if filePathChanged {
+                try store.saveNow()
+            }
+        }
+
+        return affectedTaskId
+    }
+
+    private static func applyRemoteItemBinding(
+        to task: inout TaskRecord,
+        reference: RemoteWorkItemReference,
+        snapshot: RemoteWorkItemSnapshot?,
+        workspaceId: UUID?,
+        resolvedPath: TaskResolvedWorktreePath,
+        branch: String?,
+        date: Date
+    ) {
+        let original = task
+        let priorWorkspaceId = task.workspaceId
+        let priorWorktreePath = task.worktreePath
+        let priorBranch = task.branch
+        let priorReference = task.remoteWorkItem
+
+        if let snapshotTitle = snapshot?.title
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nonEmptyTaskLifecycleString {
+            task.title = snapshotTitle
+        } else if priorReference?.representsSameRemoteItem(as: reference) != true {
+            task.title = reference.key
+        }
+
+        task.origin = .remote
+        task.remoteWorkItem = reference
+        if let snapshot {
+            task.remoteStatusLabel = snapshot.statusLabel?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .nonEmptyTaskLifecycleString
+            task.lastRemoteSyncAt = snapshot.fetchedAt
+        } else if priorReference?.representsSameRemoteItem(as: reference) != true {
+            task.remoteStatusLabel = nil
+            task.lastRemoteSyncAt = nil
+        }
+
+        task.workspaceId = workspaceId ?? task.workspaceId
+        task.worktreePath = resolvedPath.displayPath
+        task.branch = branch ?? task.branch
+        if task.provisionState != .pending {
+            task.provisionState = .ready
+        }
+
+        if task.workspaceId != priorWorkspaceId
+            || task.worktreePath != priorWorktreePath
+            || task.branch != priorBranch {
+            task.bindingGeneration += 1
+        }
+        if task != original {
+            task.updatedAt = date
+        }
+    }
+
+    private static func remoteBindingTitle(
+        reference: RemoteWorkItemReference,
+        snapshot: RemoteWorkItemSnapshot?
+    ) -> String {
+        snapshot?.title
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nonEmptyTaskLifecycleString
+            ?? reference.key
+    }
+
+    private static func nextRank(in columnId: TaskColumnId, file: TaskBoardFile) -> String {
+        let existing = file.tasks
+            .filter { $0.columnId == columnId && $0.archivedAt == nil }
+            .map(\.rank)
+            .sorted()
+        guard let last = existing.last else { return TaskRanking.initial() }
+        return TaskRanking.after(last)
+    }
+
+    private static func normalizedTaskPathKey(_ path: String?, relativeTo projectRoot: URL) -> String? {
+        TaskPathNormalization.resolveDisplayAndKey(path, relativeTo: projectRoot)?.keyPath
+    }
+}
+
+@MainActor
+enum TaskWorktreeRemoteItemMaterializer {
+    @discardableResult
+    static func materialize(
+        reference: RemoteWorkItemReference,
+        snapshot: RemoteWorkItemSnapshot? = nil,
+        workspaceIds: [UUID],
+        worktreePath: String,
+        reason: String
+    ) -> UUID? {
+        guard let projectId = resolveProjectId(workspaceIds: workspaceIds, worktreePath: worktreePath),
+              let store = TaskBoardStoreProvider.shared.store(for: projectId) else {
+            return nil
+        }
+
+        let metadata = WorkspaceMetadataStore.shared
+        let resolvedPath = TaskPathNormalization
+            .resolveDisplayAndKey(worktreePath, relativeTo: store.projectRoot)?
+            .displayPath ?? worktreePath
+        let workspaceId = preferredWorkspaceId(
+            workspaceIds: workspaceIds,
+            projectId: projectId,
+            worktreePath: resolvedPath
+        )
+        let branch = workspaceId.flatMap { metadata.branch(forWorkspaceId: $0) }
+
+        do {
+            let taskId = try TaskLifecycleCoordinator.makeForProject(store: store)
+                .upsertRemoteItemBinding(
+                    reference: reference,
+                    snapshot: snapshot,
+                    workspaceId: workspaceId,
+                    worktreePath: resolvedPath,
+                    branch: branch
+                )
+            TaskBoardReconcileScheduler.shared.request(projectId: projectId, reason: reason)
+            return taskId
+        } catch {
+            NSLog("[Tasks] remote item task materialize failed key=\(reference.key) reason=\(reason) error=\(String(describing: error))")
+            return nil
+        }
+    }
+
+    private static func resolveProjectId(workspaceIds: [UUID], worktreePath: String) -> UUID? {
+        let metadata = WorkspaceMetadataStore.shared
+        if let projectId = workspaceIds.compactMap({ metadata.projectId(forWorkspaceId: $0) }).first {
+            return projectId
+        }
+        if let project = ProjectStore.shared.project(containingPath: worktreePath) {
+            return project.id
+        }
+        return ProjectStore.shared.activeProjectId
+    }
+
+    private static func preferredWorkspaceId(
+        workspaceIds: [UUID],
+        projectId: UUID,
+        worktreePath: String
+    ) -> UUID? {
+        let metadata = WorkspaceMetadataStore.shared
+        if let workspaceId = workspaceIds.first(where: { metadata.projectId(forWorkspaceId: $0) == projectId }) {
+            return workspaceId
+        }
+        if let workspaceId = workspaceIds.first {
+            return workspaceId
+        }
+        return metadata.workspaceIds(withWorktreePath: worktreePath, projectId: projectId).first
+    }
+}
+
+private extension String {
+    var nonEmptyTaskLifecycleString: String? { isEmpty ? nil : self }
 }
 
 extension TaskLifecycleCoordinator {
@@ -333,6 +813,7 @@ extension TaskLifecycleCoordinator {
         projectRoot: URL,
         snapshot: TaskWorkspaceListingSnapshot
     ) throws -> TaskBoardReconcileSummary {
+        let beforeTasks = store.fileSnapshot().tasks
         let descriptors = snapshot.descriptors
         // Use bucketed dictionaries. Duplicate metadata rows are corruption;
         // first wins so reconcile keeps running and leaves repair to the UI.
@@ -364,7 +845,7 @@ extension TaskLifecycleCoordinator {
 
             let beforePrune = file.tasks.count
             file.tasks.removeAll { task in
-                isExternalPathOnlyAutoImport(
+                shouldPruneImplicitWorktreeImport(
                     task,
                     projectRoot: projectRoot,
                     descriptorByKey: descriptorByKey
@@ -462,6 +943,7 @@ extension TaskLifecycleCoordinator {
             }
 
             for (key, d) in descriptorByKey where !existingKeys.contains(key) {
+                guard d.canImportTask else { continue }
                 let title = d.branch ?? URL(fileURLWithPath: d.worktreePath).lastPathComponent
                 let inProgressRanks = file.tasks
                     .filter { $0.columnId == .inProgress && $0.archivedAt == nil }
@@ -493,6 +975,7 @@ extension TaskLifecycleCoordinator {
 
         if changed {
             try store.saveNow()
+            cleanupDevServerRunsForReconciledTasks(beforeTasks: beforeTasks, reason: "reconcile")
         }
         return TaskBoardReconcileSummary(
             projectId: store.projectId,
@@ -509,6 +992,28 @@ extension TaskLifecycleCoordinator {
         )
     }
 
+    private func cleanupDevServerRunsForReconciledTasks(beforeTasks: [TaskRecord], reason: String) {
+        let afterById = Dictionary(uniqueKeysWithValues: store.fileSnapshot().tasks.map { ($0.id, $0) })
+        var cleaned = Set<UUID>()
+        for before in beforeTasks {
+            guard cleaned.insert(before.id).inserted,
+                  before.archivedAt == nil,
+                  before.worktreePath?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else { continue }
+            let after = afterById[before.id]
+            let shouldCleanup = after == nil
+                || after?.archivedAt != nil
+                || after?.worktreePath != before.worktreePath
+                || (after?.worktreePath == nil && before.worktreePath != nil)
+            guard shouldCleanup else { continue }
+            DevServerRunCoordinator.shared.stopTaskRunsAndCleanup(
+                projectId: store.projectId,
+                task: before,
+                projectRoot: store.projectRoot,
+                reason: reason
+            )
+        }
+    }
+
     private func shouldMarkReadyAfterDescriptorMatch(_ state: TaskProvisionState) -> Bool {
         switch state {
         case .ready:
@@ -523,36 +1028,40 @@ extension TaskLifecycleCoordinator {
     }
 
     private func shouldArchiveMissingWorktreeTask(_ task: TaskRecord) -> Bool {
-        task.origin == .worktree && task.remoteWorkItem == nil
+        task.remoteWorkItem == nil
     }
 
     private func shouldDetachMissingWorktreeTask(_ task: TaskRecord) -> Bool {
-        task.remoteWorkItem != nil || task.origin == .manual
+        task.remoteWorkItem != nil
     }
 
-    private func isExternalPathOnlyAutoImport(
+    private func shouldPruneImplicitWorktreeImport(
         _ task: TaskRecord,
         projectRoot: URL,
         descriptorByKey: [TaskWorkspaceReconcileKey: TaskWorkspaceDescriptor]
     ) -> Bool {
         guard task.archivedAt == nil,
-              task.workspaceId == nil,
+              task.origin == .worktree,
+              task.remoteWorkItem == nil,
               task.bindingGeneration == 1,
               case .ready = task.provisionState,
-              let worktreePath = task.worktreePath,
-              WorktreeResolver.worktreeRoot(
-                  containing: worktreePath,
-                  projectFolder: projectRoot.path
-              ) == nil else {
+              let worktreePath = task.worktreePath else {
             return false
         }
         guard let resolved = TaskPathNormalization.resolveDisplayAndKey(worktreePath, relativeTo: projectRoot) else {
             return false
         }
         let key = TaskWorkspaceReconcileKey(projectId: store.projectId, normalizedPath: resolved.keyPath)
-        guard descriptorByKey[key] == nil else { return false }
         let importedTitle = task.branch ?? URL(fileURLWithPath: worktreePath).lastPathComponent
-        return task.title == importedTitle
+        guard task.title == importedTitle else { return false }
+        if descriptorByKey[key]?.canImportTask == false {
+            return true
+        }
+        guard descriptorByKey[key] == nil else { return false }
+        return WorktreeResolver.worktreeRoot(
+            containing: worktreePath,
+            projectFolder: projectRoot.path
+        ) == nil
     }
 }
 

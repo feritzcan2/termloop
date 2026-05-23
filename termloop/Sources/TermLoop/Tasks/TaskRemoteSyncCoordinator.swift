@@ -50,6 +50,41 @@ public struct TaskRemoteCLIStatus: Equatable, Sendable {
     }
 }
 
+struct TaskRemoteWorkItemCreateError: LocalizedError, Sendable {
+    let message: String
+
+    init(_ message: String) {
+        self.message = message
+    }
+
+    var errorDescription: String? { message }
+}
+
+private final class TaskRemoteCreateContinuation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<UUID, Error>?
+
+    init(_ continuation: CheckedContinuation<UUID, Error>) {
+        self.continuation = continuation
+    }
+
+    func resume(returning value: UUID) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(returning: value)
+    }
+
+    func resume(throwing error: Error) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(throwing: error)
+    }
+}
+
 private struct TaskRemoteMetadataCacheEntry<Value: Codable & Sendable>: Codable, Sendable {
     var value: Value
     var updatedAt: Date
@@ -59,6 +94,36 @@ private struct TaskRemoteMetadataCacheFile: Codable, Sendable {
     var jiraAccounts: TaskRemoteMetadataCacheEntry<[TaskRemoteJiraAccountOption]>?
     var containers: [String: TaskRemoteMetadataCacheEntry<[TaskRemoteContainerOption]>] = [:]
     var statuses: [String: TaskRemoteMetadataCacheEntry<[String]>] = [:]
+    var issueTypes: [String: TaskRemoteMetadataCacheEntry<[TaskRemoteIssueTypeOption]>] = [:]
+
+    init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case jiraAccounts
+        case containers
+        case statuses
+        case issueTypes
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        jiraAccounts = try container.decodeIfPresent(
+            TaskRemoteMetadataCacheEntry<[TaskRemoteJiraAccountOption]>.self,
+            forKey: .jiraAccounts
+        )
+        containers = try container.decodeIfPresent(
+            [String: TaskRemoteMetadataCacheEntry<[TaskRemoteContainerOption]>].self,
+            forKey: .containers
+        ) ?? [:]
+        statuses = try container.decodeIfPresent(
+            [String: TaskRemoteMetadataCacheEntry<[String]>].self,
+            forKey: .statuses
+        ) ?? [:]
+        issueTypes = try container.decodeIfPresent(
+            [String: TaskRemoteMetadataCacheEntry<[TaskRemoteIssueTypeOption]>].self,
+            forKey: .issueTypes
+        ) ?? [:]
+    }
 }
 
 private struct LinkedRemoteTaskForStatusSync: Sendable {
@@ -81,9 +146,12 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
     @Published public private(set) var isLoadingJiraAccounts: Bool = false
     @Published public private(set) var isLoadingContainers: Bool = false
     @Published public private(set) var isLoadingStatuses: Bool = false
+    @Published public private(set) var isLoadingIssueTypes: Bool = false
     @Published public private(set) var jiraAccountOptions: [TaskRemoteJiraAccountOption] = []
     @Published public private(set) var containerOptions: [TaskRemoteContainerOption] = []
     @Published public private(set) var remoteStatusOptions: [TaskRemoteStatusOption] = []
+    @Published public private(set) var issueTypeOptions: [TaskRemoteIssueTypeOption] = []
+    @Published public private(set) var issueTypeOptionsMessage: String?
     @Published public private(set) var cliStatuses: [RemoteWorkItemProviderId: TaskRemoteCLIStatus] = [:]
     @Published public private(set) var jiraAccountsCachedAt: Date?
     @Published public private(set) var containerOptionsCachedAt: Date?
@@ -150,6 +218,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
     }
 
     public func prepareRemoteSettings() {
+        guard settings.isEnabled else { return }
         hydrateRemoteMetadataFromCache()
         loadCLIStatusesIfNeeded()
         if jiraAccountOptions.isEmpty {
@@ -161,6 +230,38 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
             }
         }
         syncIfEnabledOnAppear()
+    }
+
+    public func setRemoteItemsEnabled(_ enabled: Bool) {
+        guard settings.remoteItemsEnabled != enabled else { return }
+        do {
+            try store.updateSettings { settings in
+                settings.remoteSync.remoteItemsEnabled = enabled
+                if !enabled {
+                    settings.remoteSync.syncAssignedToMe = false
+                }
+                settings.remoteSync.lastError = nil
+            }
+            lastMessage = nil
+            if enabled {
+                prepareRemoteSettings()
+            } else {
+                syncTask?.cancel()
+                isSyncing = false
+                isLoadingStatuses = false
+                isLoadingIssueTypes = false
+                syncColumnsAfterLoadingStatuses = false
+                showRemoteStatusSyncAlertOnCompletion = false
+                cliStatusTask?.cancel()
+                isLoadingJiraAccounts = false
+                isLoadingContainers = false
+                issueTypeOptions = []
+                issueTypeOptionsMessage = nil
+                cliStatuses = [:]
+            }
+        } catch {
+            lastMessage = String(describing: error)
+        }
     }
 
     public func cliStatus(for provider: RemoteWorkItemProviderId) -> TaskRemoteCLIStatus {
@@ -213,6 +314,9 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
     public func setSyncAssignedToMe(_ enabled: Bool) {
         do {
             try store.updateSettings { settings in
+                if enabled {
+                    settings.remoteSync.remoteItemsEnabled = true
+                }
                 settings.remoteSync.syncAssignedToMe = enabled
                 if enabled {
                     settings.remoteSync.lastError = nil
@@ -223,6 +327,18 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
         if enabled {
             syncAssignedToMe(reason: "tasks.settings.toggle")
+        }
+    }
+
+    public func setAssignedSyncLimit(_ limit: Int) {
+        do {
+            try store.updateSettings { settings in
+                settings.remoteSync.limit = max(1, min(limit, 500))
+                settings.remoteSync.lastError = nil
+            }
+            lastMessage = nil
+        } catch {
+            lastMessage = String(describing: error)
         }
     }
 
@@ -280,16 +396,6 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 settings.remoteSync.lastError = nil
             }
             hydrateRemoteMetadataFromCache()
-        } catch {
-            lastMessage = String(describing: error)
-        }
-    }
-
-    public func setSyncColumnMovesToRemote(_ enabled: Bool) {
-        do {
-            try store.updateSettings { settings in
-                settings.remoteSync.syncColumnMovesToRemote = enabled
-            }
         } catch {
             lastMessage = String(describing: error)
         }
@@ -390,6 +496,12 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
     }
 
     public func syncRemoteStatusesToColumns() {
+        guard settings.isAssignedSyncEnabled else {
+            lastMessage = String(localized: "tasks.settings.columns.assignedSyncRequired",
+                                 defaultValue: "Turn on Sync assigned to me before syncing remote statuses to columns.",
+                                 table: "TermLoop")
+            return
+        }
         let snapshot = store.fileSnapshot()
         Self.debugLog(
             "syncRemoteStatusesToColumns requested projectId=\(store.projectId.uuidString) root=\(store.projectRoot.path) " +
@@ -403,7 +515,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
     }
 
     public func syncIfEnabledOnAppear() {
-        guard settings.syncAssignedToMe else { return }
+        guard settings.isAssignedSyncEnabled else { return }
         if let last = settings.lastSyncedAt, Date().timeIntervalSince(last) < 600 {
             return
         }
@@ -411,6 +523,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
     }
 
     public func loadJiraAccountOptionsIfNeeded() {
+        guard settings.isEnabled else { return }
         guard jiraAccountOptions.isEmpty else { return }
         if let cached = readMetadataCache().jiraAccounts?.value, !cached.isEmpty {
             jiraAccountOptions = cached
@@ -424,30 +537,45 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
     }
 
     public func loadJiraAccountOptions() {
+        guard settings.isEnabled else { return }
         guard !isLoadingJiraAccounts else { return }
         isLoadingJiraAccounts = true
         Task(priority: .utility) { [weak self] in
             let options = await JiraRemoteWorkItemProvider.discoverAccounts()
             await MainActor.run {
-                self?.jiraAccountOptions = options
-                self?.isLoadingJiraAccounts = false
-                self?.applyDefaultJiraAccountIfNeeded(options)
-                self?.persistJiraAccountsToCache(options)
+                guard let self else { return }
+                self.isLoadingJiraAccounts = false
+                guard self.settings.isEnabled else { return }
+                self.jiraAccountOptions = options
+                self.applyDefaultJiraAccountIfNeeded(options)
+                self.persistJiraAccountsToCache(options)
             }
         }
     }
 
     public func loadContainerOptionsIfNeeded() {
+        guard settings.isEnabled else { return }
         guard containerOptions.isEmpty else { return }
         hydrateRemoteMetadataFromCache()
     }
 
     public func loadRemoteStatusOptionsIfNeeded() {
+        guard settings.isAssignedSyncEnabled else { return }
         guard remoteStatusOptions.isEmpty else { return }
         hydrateRemoteMetadataFromCache()
     }
 
+    public func loadIssueTypeOptionsIfNeeded() {
+        guard settings.isEnabled, settings.provider == .jira else { return }
+        guard issueTypeOptions.isEmpty else { return }
+        hydrateRemoteMetadataFromCache()
+        if issueTypeOptions.isEmpty {
+            loadIssueTypeOptions()
+        }
+    }
+
     public func loadContainerOptions() {
+        guard settings.isEnabled else { return }
         guard !isLoadingContainers else { return }
         isLoadingContainers = true
         let syncSettings = settings
@@ -455,21 +583,77 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
             do {
                 let options = try await Self.fetchContainerOptions(settings: syncSettings)
                 await MainActor.run {
-                    self?.containerOptions = options
-                    self?.isLoadingContainers = false
-                    self?.persistContainerOptionsToCache(options, settings: syncSettings)
+                    guard let self else { return }
+                    self.isLoadingContainers = false
+                    guard self.settings.isEnabled else { return }
+                    self.persistContainerOptionsToCache(options, settings: syncSettings)
+                    guard Self.containerCacheKey(syncSettings) == Self.containerCacheKey(self.settings) else { return }
+                    self.containerOptions = options
                 }
             } catch {
                 await MainActor.run {
-                    self?.containerOptions = []
-                    self?.isLoadingContainers = false
-                    self?.lastMessage = Self.humanError(error)
+                    guard let self else { return }
+                    self.isLoadingContainers = false
+                    guard self.settings.isEnabled,
+                          Self.containerCacheKey(syncSettings) == Self.containerCacheKey(self.settings) else { return }
+                    self.containerOptions = []
+                    self.lastMessage = Self.humanError(error)
+                }
+            }
+        }
+    }
+
+    public func loadIssueTypeOptions() {
+        guard settings.isEnabled, settings.provider == .jira else {
+            issueTypeOptions = []
+            issueTypeOptionsMessage = nil
+            return
+        }
+        guard !isLoadingIssueTypes else { return }
+        guard settings.container?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty != nil else {
+            issueTypeOptions = []
+            issueTypeOptionsMessage = Self.missingContainerMessage(for: .jira)
+            return
+        }
+        isLoadingIssueTypes = true
+        issueTypeOptionsMessage = nil
+        let syncSettings = settings
+        Task(priority: .utility) { [weak self] in
+            do {
+                let options = try await Self.fetchIssueTypeOptions(settings: syncSettings)
+                await MainActor.run {
+                    guard let self else { return }
+                    self.isLoadingIssueTypes = false
+                    self.persistIssueTypeOptionsToCache(options, settings: syncSettings)
+                    guard self.settings.isEnabled,
+                          Self.issueTypeCacheKey(syncSettings) == Self.issueTypeCacheKey(self.settings) else { return }
+                    self.issueTypeOptions = options
+                    self.issueTypeOptionsMessage = options.isEmpty
+                        ? String(localized: "tasks.remoteCreate.issueType.empty",
+                                 defaultValue: "No Jira issue types were returned for this project. Type one manually.",
+                                 table: "TermLoop")
+                        : nil
+                }
+            } catch {
+                await MainActor.run {
+                    guard let self else { return }
+                    self.isLoadingIssueTypes = false
+                    guard self.settings.isEnabled,
+                          Self.issueTypeCacheKey(syncSettings) == Self.issueTypeCacheKey(self.settings) else { return }
+                    self.issueTypeOptions = []
+                    self.issueTypeOptionsMessage = Self.humanError(error)
                 }
             }
         }
     }
 
     public func loadRemoteStatusOptions() {
+        guard settings.isAssignedSyncEnabled else {
+            lastMessage = String(localized: "tasks.settings.columns.assignedSyncRequired",
+                                 defaultValue: "Turn on Sync assigned to me before loading remote statuses.",
+                                 table: "TermLoop")
+            return
+        }
         guard !isLoadingStatuses else {
             Self.debugLog("loadRemoteStatusOptions reused in-flight request applyColumns=\(syncColumnsAfterLoadingStatuses)")
             return
@@ -486,22 +670,32 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 let labels = try await Self.fetchRemoteStatusLabels(settings: syncSettings)
                 Self.debugLog("loadRemoteStatusOptions fetched count=\(labels.count) labels=\(labels.joined(separator: " | "))")
                 await MainActor.run {
-                    self?.remoteStatusOptions = labels.map(TaskRemoteStatusOption.init)
-                    self?.isLoadingStatuses = false
-                    self?.persistStatusLabelsToCache(labels, settings: syncSettings)
-                    self?.syncPendingColumnsIfNeeded(labels)
+                    guard let self else { return }
+                    self.isLoadingStatuses = false
+                    self.persistStatusLabelsToCache(labels, settings: syncSettings)
+                    guard self.settings.isAssignedSyncEnabled,
+                          Self.statusCacheKey(syncSettings) == Self.statusCacheKey(self.settings) else {
+                        self.syncColumnsAfterLoadingStatuses = false
+                        self.showRemoteStatusSyncAlertOnCompletion = false
+                        return
+                    }
+                    self.remoteStatusOptions = labels.map(TaskRemoteStatusOption.init)
+                    self.syncPendingColumnsIfNeeded(labels)
                 }
             } catch {
                 Self.debugLog("loadRemoteStatusOptions failed error=\(Self.humanError(error))")
                 await MainActor.run {
-                    let shouldAlert = self?.showRemoteStatusSyncAlertOnCompletion == true
+                    guard let self else { return }
+                    let shouldAlert = self.showRemoteStatusSyncAlertOnCompletion
                     let message = Self.humanError(error)
-                    self?.isLoadingStatuses = false
-                    self?.lastMessage = message
-                    self?.syncColumnsAfterLoadingStatuses = false
-                    self?.showRemoteStatusSyncAlertOnCompletion = false
+                    self.isLoadingStatuses = false
+                    self.syncColumnsAfterLoadingStatuses = false
+                    self.showRemoteStatusSyncAlertOnCompletion = false
+                    guard self.settings.isAssignedSyncEnabled,
+                          Self.statusCacheKey(syncSettings) == Self.statusCacheKey(self.settings) else { return }
+                    self.lastMessage = message
                     if shouldAlert {
-                        self?.presentSyncResultAlert(
+                        self.presentSyncResultAlert(
                             title: String(localized: "tasks.remoteSync.status.alert.failedTitle",
                                           defaultValue: "Remote Status Sync Failed",
                                           table: "TermLoop"),
@@ -514,6 +708,12 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
     }
 
     public func syncAssignedToMe(reason: String = "tasks.settings.syncNow") {
+        guard settings.isAssignedSyncEnabled else {
+            lastMessage = String(localized: "tasks.settings.remote.assignedSyncRequired",
+                                 defaultValue: "Turn on Sync assigned to me before syncing assigned work items.",
+                                 table: "TermLoop")
+            return
+        }
         guard !isSyncing else { return }
         let syncSettings = settings
         let request = RemoteWorkItemListRequest(
@@ -531,9 +731,16 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 let snapshots = try await service.listAssignedToMe(request)
                 try Task.checkCancellation()
                 await MainActor.run {
-                    self?.applyAssignedSnapshots(
+                    guard let self else { return }
+                    guard self.settings.isAssignedSyncEnabled,
+                          Self.remoteWorkItemContextKey(syncSettings) == Self.remoteWorkItemContextKey(self.settings) else {
+                        self.isSyncing = false
+                        return
+                    }
+                    self.applyAssignedSnapshots(
                         snapshots,
                         reason: reason,
+                        requestLimit: request.limit,
                         showCompletionAlert: reason != "tasks.settings.appear"
                     )
                 }
@@ -545,7 +752,207 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
     }
 
+    public func createRemoteWorkItem(
+        title rawTitle: String,
+        bodyMarkdown rawBodyMarkdown: String? = nil,
+        issueType rawIssueType: String? = nil,
+        onRemoteCreated: (@MainActor @Sendable (RemoteWorkItemReference) -> Void)? = nil,
+        onCreated: (@MainActor @Sendable (UUID) -> Void)? = nil,
+        onFailed: (@MainActor @Sendable (String) -> Void)? = nil
+    ) {
+        func fail(_ message: String) {
+            lastMessage = message
+            onFailed?(message)
+        }
+
+        guard !isSyncing else {
+            fail(String(localized: "tasks.remoteSync.create.busy",
+                        defaultValue: "A remote item operation is already running.",
+                        table: "TermLoop"))
+            return
+        }
+        guard settings.isEnabled else {
+            fail(String(localized: "tasks.remoteSync.create.disabled",
+                        defaultValue: "Enable remote work items before creating remote work items.",
+                        table: "TermLoop"))
+            return
+        }
+        let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else {
+            fail(String(localized: "tasks.remoteSync.create.emptyTitle",
+                        defaultValue: "Enter a title before creating a remote work item.",
+                        table: "TermLoop"))
+            return
+        }
+        guard let container = settings.container?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty else {
+            fail(Self.missingContainerMessage(for: settings.provider))
+            return
+        }
+
+        let syncSettings = settings
+        let bodyMarkdown = rawBodyMarkdown?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty
+        let issueType = rawIssueType?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty
+        let request = RemoteWorkItemCreateRequest(
+            provider: syncSettings.provider,
+            title: title,
+            bodyMarkdown: bodyMarkdown,
+            container: container,
+            issueType: issueType
+        )
+
+        isSyncing = true
+        lastMessage = nil
+        syncTask?.cancel()
+        syncTask = Task(priority: .utility) { [weak self, onRemoteCreated, onCreated, onFailed] in
+            do {
+                let service = Self.makeRemoteWorkItemService(settings: syncSettings)
+                let snapshot = try await service.create(request, projectRoot: nil)
+                try Task.checkCancellation()
+                await MainActor.run {
+                    onRemoteCreated?(snapshot.reference)
+                    guard let self else { return }
+                    guard self.settings.isEnabled,
+                          Self.remoteWorkItemContextKey(syncSettings) == Self.remoteWorkItemContextKey(self.settings) else {
+                        let message = String(
+                            localized: "tasks.remoteSync.create.contextChanged",
+                            defaultValue: "Created remote work item \(snapshot.reference.key), but remote settings changed before it could be linked locally.",
+                            table: "TermLoop"
+                        )
+                        self.isSyncing = false
+                        self.lastMessage = message
+                        onFailed?(message)
+                        return
+                    }
+                    if let taskId = self.applyCreatedRemoteSnapshot(snapshot) {
+                        onCreated?(taskId)
+                    } else {
+                        onFailed?(self.lastMessage ?? String(
+                            localized: "tasks.remoteSync.create.localFailed",
+                            defaultValue: "Created the remote work item, but could not create the local task.",
+                            table: "TermLoop"
+                        ))
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    guard let self else { return }
+                    if error is CancellationError {
+                        let message = String(
+                            localized: "tasks.remoteSync.create.cancelled",
+                            defaultValue: "Remote item creation was cancelled.",
+                            table: "TermLoop"
+                        )
+                        self.isSyncing = false
+                        self.lastMessage = message
+                        onFailed?(message)
+                    } else {
+                        let message = Self.humanError(error)
+                        self.finishSync(error: error)
+                        onFailed?(message)
+                    }
+                }
+            }
+        }
+    }
+
+    func createRemoteWorkItemAsync(
+        title: String,
+        bodyMarkdown: String? = nil,
+        issueType: String? = nil,
+        onRemoteCreated: (@MainActor @Sendable (RemoteWorkItemReference) -> Void)? = nil
+    ) async throws -> UUID {
+        try await withCheckedThrowingContinuation { continuation in
+            let box = TaskRemoteCreateContinuation(continuation)
+            createRemoteWorkItem(
+                title: title,
+                bodyMarkdown: bodyMarkdown,
+                issueType: issueType,
+                onRemoteCreated: onRemoteCreated,
+                onCreated: { taskId in
+                    box.resume(returning: taskId)
+                },
+                onFailed: { message in
+                    box.resume(throwing: TaskRemoteWorkItemCreateError(message))
+                }
+            )
+        }
+    }
+
+    func materializeRemoteWorkItemAsync(reference: RemoteWorkItemReference) async throws -> UUID {
+        try await withCheckedThrowingContinuation { continuation in
+            let box = TaskRemoteCreateContinuation(continuation)
+            guard !isSyncing else {
+                box.resume(throwing: TaskRemoteWorkItemCreateError(String(
+                    localized: "tasks.remoteSync.create.busy",
+                    defaultValue: "A remote item operation is already running.",
+                    table: "TermLoop"
+                )))
+                return
+            }
+            guard settings.isEnabled else {
+                box.resume(throwing: TaskRemoteWorkItemCreateError(String(
+                    localized: "tasks.remoteSync.create.disabled",
+                    defaultValue: "Enable remote work items before creating remote work items.",
+                    table: "TermLoop"
+                )))
+                return
+            }
+            let syncSettings = settings
+            isSyncing = true
+            lastMessage = nil
+            syncTask?.cancel()
+            syncTask = Task(priority: .utility) { [weak self] in
+                do {
+                    let service = Self.makeRemoteWorkItemService(settings: syncSettings)
+                    let snapshot = try await service.fetch(reference)
+                    try Task.checkCancellation()
+                    await MainActor.run {
+                        guard let self else { return }
+                        if let taskId = self.applyCreatedRemoteSnapshot(snapshot) {
+                            box.resume(returning: taskId)
+                        } else {
+                            box.resume(throwing: TaskRemoteWorkItemCreateError(self.lastMessage ?? String(
+                                localized: "tasks.remoteSync.create.localFailed",
+                                defaultValue: "Created the remote work item, but could not create the local task.",
+                                table: "TermLoop"
+                            )))
+                        }
+                    }
+                } catch {
+                    await MainActor.run {
+                        guard let self else { return }
+                        if error is CancellationError {
+                            let message = String(
+                                localized: "tasks.remoteSync.create.cancelled",
+                                defaultValue: "Remote item creation was cancelled.",
+                                table: "TermLoop"
+                            )
+                            self.isSyncing = false
+                            self.lastMessage = message
+                            box.resume(throwing: TaskRemoteWorkItemCreateError(message))
+                        } else {
+                            self.finishSync(error: error)
+                            box.resume(throwing: error)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     public func link(taskId: UUID, rawInput: String) {
+        guard settings.isEnabled else {
+            lastMessage = String(localized: "tasks.remoteSync.disabled",
+                                 defaultValue: "Enable remote work items before linking.",
+                                 table: "TermLoop")
+            return
+        }
         let input = rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !input.isEmpty else { return }
         guard let reference = RemoteWorkItemParser.parse(input) else {
@@ -565,7 +972,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 let snapshot = try await service.fetch(reference)
                 try Task.checkCancellation()
                 await MainActor.run {
-                    self?.applyLinkedSnapshot(snapshot, taskId: taskId)
+                    _ = self?.applyLinkedSnapshot(snapshot, taskId: taskId)
                 }
             } catch {
                 await MainActor.run {
@@ -576,6 +983,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
     }
 
     public func refresh(taskId: UUID) {
+        guard settings.isEnabled else { return }
         guard let task = store.fileSnapshot().tasks.first(where: { $0.id == taskId }),
               let reference = task.remoteWorkItem else {
             return
@@ -590,7 +998,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 let snapshot = try await service.fetch(reference)
                 try Task.checkCancellation()
                 await MainActor.run {
-                    self?.applyLinkedSnapshot(snapshot, taskId: taskId)
+                    _ = self?.applyLinkedSnapshot(snapshot, taskId: taskId)
                 }
             } catch {
                 await MainActor.run {
@@ -600,9 +1008,10 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
     }
 
-    public func maybePromptRemoteStatusSync(taskId: UUID, to columnId: TaskColumnId) {
+    public func maybePromptRemoteStatusSync(taskId: UUID, to columnId: TaskColumnId) async {
         let syncSettings = store.settingsSnapshot
-        guard syncSettings.remoteSync.syncColumnMovesToRemote else { return }
+        guard syncSettings.remoteSync.isEnabled else { return }
+        guard !isSyncing else { return }
         guard let targetStatus = syncSettings.columns
             .first(where: { $0.columnId == columnId })?
             .remoteStatusLabel?
@@ -646,45 +1055,116 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         isSyncing = true
         lastMessage = nil
         let remoteSettings = syncSettings.remoteSync
-        syncTask?.cancel()
-        syncTask = Task(priority: .utility) { [weak self] in
-            do {
-                let service = Self.makeRemoteWorkItemService(settings: remoteSettings)
-                let option: RemoteWorkItemStatusOption?
-                if let immediateOption {
-                    option = immediateOption
-                } else {
-                    let options = try await service.availableStatuses(reference)
-                    option = Self.matchingStatusOption(
-                        in: options,
-                        targetStatus: targetStatus
-                    )
-                }
-                guard let option else {
-                    await MainActor.run {
-                        self?.isSyncing = false
-                        self?.lastMessage = String(
-                            localized: "tasks.remoteSync.status.noMatchingStatus",
-                            defaultValue: "Could not find a matching remote status for \(targetStatus). Refresh remote statuses and try again.",
-                            table: "TermLoop"
-                        )
-                    }
-                    return
-                }
-                let snapshot = try await service.updateStatus(
-                    reference,
-                    to: option,
-                    projectRoot: nil
+        do {
+            let service = Self.makeRemoteWorkItemService(settings: remoteSettings)
+            let option: RemoteWorkItemStatusOption?
+            if let immediateOption {
+                option = immediateOption
+            } else {
+                let options = try await service.availableStatuses(reference)
+                option = Self.matchingStatusOption(
+                    in: options,
+                    targetStatus: targetStatus
                 )
-                try Task.checkCancellation()
-                await MainActor.run {
-                    self?.applyLinkedSnapshot(snapshot, taskId: taskId)
-                }
-            } catch {
-                await MainActor.run {
-                    self?.finishSync(error: error)
-                }
             }
+            guard let option else {
+                let message = String(
+                    localized: "tasks.remoteSync.status.noMatchingStatus",
+                    defaultValue: "Could not find a matching remote status for \(targetStatus). Refresh remote statuses and try again.",
+                    table: "TermLoop"
+                )
+                isSyncing = false
+                lastMessage = message
+                presentSyncResultAlert(
+                    title: String(localized: "tasks.remoteSync.status.updateFailedTitle",
+                                  defaultValue: "Remote Status Update Failed",
+                                  table: "TermLoop"),
+                    message: message,
+                    style: .warning
+                )
+                return
+            }
+            let snapshot = try await service.updateStatus(
+                reference,
+                to: option,
+                projectRoot: nil
+            )
+            try Task.checkCancellation()
+            guard Self.remoteStatusLabel(
+                snapshot.statusLabel,
+                matches: option,
+                targetStatus: targetStatus
+            ) else {
+                RemoteWorkItemSnapshotStore.shared.upsert(snapshot)
+                let actual = snapshot.statusLabel?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .nilIfEmpty ?? String(localized: "common.unknown",
+                                          defaultValue: "unknown",
+                                          table: "TermLoop")
+                let expected = (option.targetState ?? option.label)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .nilIfEmpty ?? targetStatus
+                let message = String(
+                    localized: "tasks.remoteSync.status.mismatch",
+                    defaultValue: "\(reference.key) did not change to \(expected). Remote still reports \(actual).",
+                    table: "TermLoop"
+                )
+                isSyncing = false
+                lastMessage = message
+                do {
+                    try store.updateSettings { settings in
+                        settings.remoteSync.lastError = message
+                    }
+                } catch {
+                    lastMessage = String(describing: error)
+                }
+                presentSyncResultAlert(
+                    title: String(localized: "tasks.remoteSync.status.updateFailedTitle",
+                                  defaultValue: "Remote Status Update Failed",
+                                  table: "TermLoop"),
+                    message: message,
+                    style: .warning
+                )
+                return
+            }
+            guard applyLinkedSnapshot(snapshot, taskId: taskId) else {
+                isSyncing = false
+                presentSyncResultAlert(
+                    title: String(localized: "tasks.remoteSync.status.updatedLocalFailedTitle",
+                                  defaultValue: "Remote Status Updated, Local Sync Failed",
+                                  table: "TermLoop"),
+                    message: lastMessage ?? String(
+                        localized: "tasks.remoteSync.status.updatedLocalFailedBody",
+                        defaultValue: "\(reference.key) was updated remotely, but the local task could not be refreshed.",
+                        table: "TermLoop"
+                    ),
+                    style: .warning
+                )
+                return
+            }
+            let status = snapshot.statusLabel?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .nilIfEmpty ?? option.label
+            let message = String(localized: "tasks.remoteSync.status.updatedBody",
+                                 defaultValue: "\(reference.key) is now \(status).",
+                                 table: "TermLoop")
+            finishSync(message: message)
+            presentSyncResultAlert(
+                title: String(localized: "tasks.remoteSync.status.updatedTitle",
+                              defaultValue: "Remote Status Updated",
+                              table: "TermLoop"),
+                message: message
+            )
+        } catch {
+            finishSync(error: error)
+            guard !(error is CancellationError) else { return }
+            presentSyncResultAlert(
+                title: String(localized: "tasks.remoteSync.status.updateFailedTitle",
+                              defaultValue: "Remote Status Update Failed",
+                              table: "TermLoop"),
+                message: Self.humanError(error),
+                style: .warning
+            )
         }
     }
 
@@ -709,8 +1189,10 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
     private func applyAssignedSnapshots(
         _ snapshots: [RemoteWorkItemSnapshot],
         reason: String,
+        requestLimit: Int,
         showCompletionAlert: Bool
     ) {
+        RemoteWorkItemSnapshotStore.shared.upsert(snapshots)
         let now = Date()
         var materializeInputs: [(taskId: UUID, snapshot: RemoteWorkItemSnapshot)] = []
         var createdCount = 0
@@ -719,32 +1201,63 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         let changed = store.mutate { file in
             var didChange = false
             let oldSettings = file.settings.remoteSync
-            var rankCursor = file.tasks
-                .filter { $0.columnId == .backlog && $0.archivedAt == nil }
-                .map(\.rank)
-                .sorted()
-                .last ?? TaskRanking.initial()
+            let shouldSyncColumnsFromRemote = file.settings.remoteSync.isAssignedSyncEnabled
+            if shouldSyncColumnsFromRemote {
+                for snapshot in snapshots {
+                    guard let status = snapshot.statusLabel?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
+                        continue
+                    }
+                    let before = file.settings.columns
+                    Self.ensureRemoteStatusColumn(status, in: &file.settings.columns)
+                    didChange = didChange || before != file.settings.columns
+                }
+            }
+            let columnByRemoteStatus = Self.remoteStatusColumnLookup(file.settings.columns)
+            var rankCursorByColumn = Self.lastRankByColumn(file.tasks)
+            var touchedColumns = Set<TaskColumnId>()
+
+            func targetColumn(for snapshot: RemoteWorkItemSnapshot) -> TaskColumnId {
+                guard shouldSyncColumnsFromRemote,
+                      let statusKey = Self.remoteStatusLookupKey(snapshot.statusLabel),
+                      let columnId = columnByRemoteStatus[statusKey] else {
+                    return .backlog
+                }
+                return columnId
+            }
+
+            func nextRank(in columnId: TaskColumnId) -> String {
+                let next = rankCursorByColumn[columnId]
+                    .map(TaskRanking.after)
+                    ?? TaskRanking.initial()
+                rankCursorByColumn[columnId] = next
+                return next
+            }
 
             for snapshot in snapshots {
-                let storageKey = snapshot.reference.storageKey
-                if let idx = file.tasks.firstIndex(where: { task in
-                    task.archivedAt == nil && task.remoteWorkItem?.storageKey == storageKey
-                }) {
-                    let old = file.tasks[idx]
-                    update(&file.tasks[idx], with: snapshot, syncedAt: now)
-                    if file.tasks[idx] != old {
-                        updatedCount += 1
-                        didChange = true
+                let targetColumn = targetColumn(for: snapshot)
+                let matchingIndexes = file.tasks.indices.filter { idx in
+                    let task = file.tasks[idx]
+                    return task.archivedAt == nil
+                        && task.remoteWorkItem?.representsSameRemoteItem(as: snapshot.reference) == true
+                }
+                if !matchingIndexes.isEmpty {
+                    for idx in matchingIndexes {
+                        let old = file.tasks[idx]
+                        update(&file.tasks[idx], with: snapshot, syncedAt: now)
+                        if shouldSyncColumnsFromRemote, file.tasks[idx].columnId != targetColumn {
+                            touchedColumns.insert(file.tasks[idx].columnId)
+                            file.tasks[idx].columnId = targetColumn
+                            file.tasks[idx].rank = nextRank(in: targetColumn)
+                            touchedColumns.insert(targetColumn)
+                        }
+                        if file.tasks[idx] != old {
+                            updatedCount += 1
+                            didChange = true
+                        }
+                        materializeInputs.append((file.tasks[idx].id, snapshot))
                     }
-                    materializeInputs.append((file.tasks[idx].id, snapshot))
                 } else {
-                    let rank: String
-                    if file.tasks.contains(where: { $0.columnId == .backlog && $0.archivedAt == nil }) {
-                        rank = TaskRanking.after(rankCursor)
-                    } else {
-                        rank = rankCursor
-                    }
-                    rankCursor = rank
+                    let rank = nextRank(in: targetColumn)
                     let task = TaskRecord(
                         projectId: store.projectId,
                         title: snapshot.title,
@@ -753,10 +1266,11 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                         remoteWorkItem: snapshot.reference,
                         remoteStatusLabel: snapshot.statusLabel,
                         lastRemoteSyncAt: now,
-                        columnId: .backlog,
+                        columnId: targetColumn,
                         rank: rank
                     )
                     file.tasks.append(task)
+                    touchedColumns.insert(targetColumn)
                     materializeInputs.append((task.id, snapshot))
                     createdCount += 1
                     didChange = true
@@ -764,7 +1278,9 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
             }
 
             if didChange {
-                _ = TaskBoardStore.rebalanceColumnIfNeeded(.backlog, in: &file)
+                for columnId in touchedColumns {
+                    _ = TaskBoardStore.rebalanceColumnIfNeeded(columnId, in: &file)
+                }
             }
             file.settings.remoteSync.lastSyncedAt = now
             file.settings.remoteSync.lastError = nil
@@ -775,11 +1291,19 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         if changed || !materializeInputs.isEmpty {
             do { try store.saveNow() } catch { lastMessage = String(describing: error) }
         }
-        let message = String(
+        let reachedLimit = snapshots.count >= requestLimit
+        let baseMessage = String(
             localized: "tasks.remoteSync.synced",
-            defaultValue: "Synced \(snapshots.count) assigned work items. Added \(createdCount), updated \(updatedCount).",
+            defaultValue: "Synced \(snapshots.count) latest assigned work items. Added \(createdCount), updated \(updatedCount).",
             table: "TermLoop"
         )
+        let message = reachedLimit
+            ? String(
+                localized: "tasks.remoteSync.synced.truncated",
+                defaultValue: "\(baseMessage) Limit \(requestLimit) was reached, so more assigned items may exist. Raise the limit or narrow the project/repo if needed.",
+                table: "TermLoop"
+            )
+            : baseMessage
         finishSync(message: message)
         if showCompletionAlert {
             presentSyncResultAlert(
@@ -792,28 +1316,202 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         NSLog("[Tasks] assigned-to-me sync applied count=\(snapshots.count) reason=\(reason)")
     }
 
-    private func applyLinkedSnapshot(_ snapshot: RemoteWorkItemSnapshot, taskId: UUID) {
+    @discardableResult
+    private func applyCreatedRemoteSnapshot(_ snapshot: RemoteWorkItemSnapshot) -> UUID? {
+        RemoteWorkItemSnapshotStore.shared.upsert(snapshot)
         let now = Date()
-        var shouldMaterialize = false
+        var materializeInputs: [(taskId: UUID, snapshot: RemoteWorkItemSnapshot)] = []
+        var taskId: UUID?
+        var createdNewTask = false
+
+        do {
+            let changed = store.mutate { file in
+                var didChange = false
+                let hadLastError = file.settings.remoteSync.lastError != nil
+                let shouldSyncColumnsFromRemote = file.settings.remoteSync.isAssignedSyncEnabled
+                var columnByRemoteStatus = Self.remoteStatusColumnLookup(file.settings.columns)
+                var rankCursorByColumn = Self.lastRankByColumn(file.tasks)
+                var touchedColumns = Set<TaskColumnId>()
+
+                func targetColumn(for snapshot: RemoteWorkItemSnapshot) -> TaskColumnId {
+                    guard shouldSyncColumnsFromRemote,
+                          let status = snapshot.statusLabel?
+                              .trimmingCharacters(in: .whitespacesAndNewlines)
+                              .nilIfEmpty,
+                          let statusKey = Self.remoteStatusLookupKey(status) else {
+                        return .backlog
+                    }
+                    if columnByRemoteStatus[statusKey] == nil {
+                        Self.ensureRemoteStatusColumn(status, in: &file.settings.columns)
+                        columnByRemoteStatus = Self.remoteStatusColumnLookup(file.settings.columns)
+                        didChange = true
+                    }
+                    return columnByRemoteStatus[statusKey] ?? .backlog
+                }
+
+                func nextRank(in columnId: TaskColumnId) -> String {
+                    let next = rankCursorByColumn[columnId]
+                        .map(TaskRanking.after)
+                        ?? TaskRanking.initial()
+                    rankCursorByColumn[columnId] = next
+                    return next
+                }
+
+                let targetColumn = targetColumn(for: snapshot)
+                let matchingIndexes = file.tasks.indices.filter { idx in
+                    let task = file.tasks[idx]
+                    return task.archivedAt == nil
+                        && task.remoteWorkItem?.representsSameRemoteItem(as: snapshot.reference) == true
+                }
+                if !matchingIndexes.isEmpty {
+                    for idx in matchingIndexes {
+                        let old = file.tasks[idx]
+                        update(&file.tasks[idx], with: snapshot, syncedAt: now)
+                        if shouldSyncColumnsFromRemote, file.tasks[idx].columnId != targetColumn {
+                            touchedColumns.insert(file.tasks[idx].columnId)
+                            file.tasks[idx].columnId = targetColumn
+                            file.tasks[idx].rank = nextRank(in: targetColumn)
+                            touchedColumns.insert(targetColumn)
+                        }
+                        taskId = taskId ?? file.tasks[idx].id
+                        materializeInputs.append((file.tasks[idx].id, snapshot))
+                        didChange = didChange || file.tasks[idx] != old
+                    }
+                } else {
+                    let rank = nextRank(in: targetColumn)
+                    let task = TaskRecord(
+                        projectId: store.projectId,
+                        title: snapshot.title,
+                        brief: nil,
+                        origin: .remote,
+                        remoteWorkItem: snapshot.reference,
+                        remoteStatusLabel: snapshot.statusLabel,
+                        lastRemoteSyncAt: now,
+                        columnId: targetColumn,
+                        rank: rank
+                    )
+                    file.tasks.append(task)
+                    touchedColumns.insert(targetColumn)
+                    taskId = task.id
+                    materializeInputs.append((task.id, snapshot))
+                    createdNewTask = true
+                    didChange = true
+                }
+
+                for columnId in touchedColumns {
+                    didChange = TaskBoardStore.rebalanceColumnIfNeeded(columnId, in: &file) || didChange
+                }
+                file.settings.remoteSync.lastError = nil
+                return didChange || hadLastError
+            }
+
+            materialize(materializeInputs)
+            if changed || !materializeInputs.isEmpty {
+                try store.saveNow()
+            }
+            let message = createdNewTask
+                ? String(localized: "tasks.remoteSync.created",
+                         defaultValue: "Created remote work item \(snapshot.reference.key).",
+                         table: "TermLoop")
+                : String(localized: "tasks.remoteSync.created.existing",
+                         defaultValue: "Remote work item \(snapshot.reference.key) already existed locally. Updated it.",
+                         table: "TermLoop")
+            finishSync(message: message)
+            return taskId
+        } catch {
+            finishSync(error: error)
+            return nil
+        }
+    }
+
+    @discardableResult
+    private func applyLinkedSnapshot(_ snapshot: RemoteWorkItemSnapshot, taskId: UUID) -> Bool {
+        RemoteWorkItemSnapshotStore.shared.upsert(snapshot)
+        let now = Date()
+        var foundTask = false
+        var materializeInputs: [(taskId: UUID, snapshot: RemoteWorkItemSnapshot)] = []
         do {
             store.mutate { file in
-                guard let idx = file.tasks.firstIndex(where: { $0.id == taskId }) else { return false }
-                let old = file.tasks[idx]
+                guard file.tasks.contains(where: { $0.id == taskId }) else { return false }
+                foundTask = true
                 let hadLastError = file.settings.remoteSync.lastError != nil
-                update(&file.tasks[idx], with: snapshot, syncedAt: now)
+                let shouldSyncColumnsFromRemote = file.settings.remoteSync.isAssignedSyncEnabled
+                var columnByRemoteStatus = Self.remoteStatusColumnLookup(file.settings.columns)
+                var rankCursorByColumn = Self.lastRankByColumn(file.tasks)
+                var touchedColumns = Set<TaskColumnId>()
+                var didChange = false
+
+                func targetColumn(for snapshot: RemoteWorkItemSnapshot) -> TaskColumnId? {
+                    guard shouldSyncColumnsFromRemote,
+                          let status = snapshot.statusLabel?
+                              .trimmingCharacters(in: .whitespacesAndNewlines)
+                              .nilIfEmpty,
+                          let statusKey = Self.remoteStatusLookupKey(status) else {
+                        return nil
+                    }
+                    if columnByRemoteStatus[statusKey] == nil {
+                        Self.ensureRemoteStatusColumn(status, in: &file.settings.columns)
+                        columnByRemoteStatus = Self.remoteStatusColumnLookup(file.settings.columns)
+                        didChange = true
+                    }
+                    return columnByRemoteStatus[statusKey]
+                }
+
+                func nextRank(in columnId: TaskColumnId) -> String {
+                    let next = rankCursorByColumn[columnId]
+                        .map(TaskRanking.after)
+                        ?? TaskRanking.initial()
+                    rankCursorByColumn[columnId] = next
+                    return next
+                }
+
+                let targetColumn = targetColumn(for: snapshot)
+                let matchingIndexes = file.tasks.indices.filter { candidateIdx in
+                    let task = file.tasks[candidateIdx]
+                    return task.id == taskId
+                        || (
+                            task.archivedAt == nil
+                                && task.remoteWorkItem?.representsSameRemoteItem(as: snapshot.reference) == true
+                        )
+                }
+
+                for idx in matchingIndexes {
+                    let old = file.tasks[idx]
+                    update(&file.tasks[idx], with: snapshot, syncedAt: now)
+                    if let targetColumn, file.tasks[idx].columnId != targetColumn {
+                        touchedColumns.insert(file.tasks[idx].columnId)
+                        file.tasks[idx].columnId = targetColumn
+                        file.tasks[idx].rank = nextRank(in: targetColumn)
+                        touchedColumns.insert(targetColumn)
+                    }
+                    if file.tasks[idx] != old {
+                        didChange = true
+                    }
+                    materializeInputs.append((file.tasks[idx].id, snapshot))
+                }
+
+                for columnId in touchedColumns {
+                    didChange = TaskBoardStore.rebalanceColumnIfNeeded(columnId, in: &file) || didChange
+                }
+
                 file.settings.remoteSync.lastError = nil
-                shouldMaterialize = true
-                return file.tasks[idx] != old || hadLastError
+                return didChange || hadLastError
             }
-            if shouldMaterialize {
-                materialize([(taskId, snapshot)])
+            guard foundTask else {
+                finishSync(message: String(localized: "tasks.remoteSync.localTaskMissing",
+                                           defaultValue: "Remote item was fetched, but the local task no longer exists.",
+                                           table: "TermLoop"))
+                return false
             }
+            materialize(materializeInputs)
             try store.saveNow()
             finishSync(message: String(localized: "tasks.remoteSync.linked",
                                        defaultValue: "Linked work item.",
                                        table: "TermLoop"))
+            return true
         } catch {
             finishSync(error: error)
+            return false
         }
     }
 
@@ -860,7 +1558,9 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
 
     private func finishSync(error: Error) {
         isSyncing = false
-        let message = String(describing: error)
+        if error is CancellationError { return }
+        guard settings.isEnabled else { return }
+        let message = Self.humanError(error)
         lastMessage = message
         do {
             try store.updateSettings { settings in
@@ -1023,7 +1723,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                     source: "task.remoteWorkItem"
                 )
             }
-            guard let snapshot = TaskWorkItemProjectionBuilder.snapshot(for: task) else {
+            guard let snapshot = TaskWorkItemProjectionBuilder.snapshot(for: task, projectId: store.projectId) else {
                 return nil
             }
             return LinkedRemoteTaskForStatusSync(
@@ -1061,6 +1761,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         projectedFallbackCount: Int,
         showCompletionAlert: Bool
     ) {
+        RemoteWorkItemSnapshotStore.shared.upsert(snapshots.map(\.snapshot))
         let now = Date()
         var updatedCount = 0
         var movedCount = 0
@@ -1184,7 +1885,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
     }
 
-    private static func remoteStatusColumnLookup(_ columns: [TaskColumnSettings]) -> [String: TaskColumnId] {
+    nonisolated private static func remoteStatusColumnLookup(_ columns: [TaskColumnSettings]) -> [String: TaskColumnId] {
         var lookup: [String: TaskColumnId] = [:]
         for column in TaskBoardSettings.normalizedColumns(columns) {
             guard let key = remoteStatusLookupKey(column.remoteStatusLabel) else { continue }
@@ -1193,7 +1894,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         return lookup
     }
 
-    private static func ensureRemoteStatusColumn(_ status: String, in columns: inout [TaskColumnSettings]) {
+    nonisolated private static func ensureRemoteStatusColumn(_ status: String, in columns: inout [TaskColumnSettings]) {
         let trimmed = status.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let columnId = TaskColumnId.fromRemoteStatus(trimmed)
@@ -1216,7 +1917,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         columns = TaskBoardSettings.normalizedColumns(normalized)
     }
 
-    private static func remoteStatusLookupKey(_ value: String?) -> String? {
+    nonisolated private static func remoteStatusLookupKey(_ value: String?) -> String? {
         value?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .nilIfEmpty?
@@ -1224,7 +1925,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
             .lowercased()
     }
 
-    private static func lastRankByColumn(_ tasks: [TaskRecord]) -> [TaskColumnId: String] {
+    nonisolated private static func lastRankByColumn(_ tasks: [TaskRecord]) -> [TaskColumnId: String] {
         var result: [TaskColumnId: String] = [:]
         for task in tasks where task.archivedAt == nil {
             if let existing = result[task.columnId] {
@@ -1264,6 +1965,28 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
     }
 
+    private static func remoteStatusLabel(
+        _ actualStatus: String?,
+        matches option: RemoteWorkItemStatusOption,
+        targetStatus: String
+    ) -> Bool {
+        guard let actual = actualStatus?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty else {
+            return false
+        }
+        return [
+            targetStatus,
+            option.label,
+            option.targetState,
+            option.providerPayload["targetStatusLabel"]
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
+        .contains { expected in
+            actual.compare(expected, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }
+    }
+
     private static func fallbackJiraStatusOption(
         reference: RemoteWorkItemReference,
         targetStatus: String
@@ -1288,6 +2011,13 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         let containerEntry = cache.containers[Self.containerCacheKey(settings)]
         containerOptions = containerEntry?.value ?? []
         containerOptionsCachedAt = containerEntry?.updatedAt
+        if let issueTypeEntry = cache.issueTypes[Self.issueTypeCacheKey(settings)] {
+            issueTypeOptions = issueTypeEntry.value
+            issueTypeOptionsMessage = nil
+        } else {
+            issueTypeOptions = []
+            issueTypeOptionsMessage = nil
+        }
         if let statusEntry = cache.statuses[Self.statusCacheKey(settings)] {
             remoteStatusOptions = statusEntry.value.map(TaskRemoteStatusOption.init)
             remoteStatusOptionsCachedAt = statusEntry.updatedAt
@@ -1316,6 +2046,13 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         if Self.containerCacheKey(settings) == Self.containerCacheKey(self.settings) {
             containerOptionsCachedAt = now
         }
+    }
+
+    private func persistIssueTypeOptionsToCache(_ options: [TaskRemoteIssueTypeOption], settings: TaskRemoteSyncSettings) {
+        var cache = readMetadataCache()
+        let now = Date()
+        cache.issueTypes[Self.issueTypeCacheKey(settings)] = TaskRemoteMetadataCacheEntry(value: options, updatedAt: now)
+        writeMetadataCache(cache)
     }
 
     private func persistStatusLabelsToCache(_ labels: [String], settings: TaskRemoteSyncSettings) {
@@ -1381,8 +2118,16 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
             .joined(separator: "|")
     }
 
+    private static func remoteWorkItemContextKey(_ settings: TaskRemoteSyncSettings) -> String {
+        [containerCacheKey(settings), settings.container ?? ""].joined(separator: "|")
+    }
+
     private static func statusCacheKey(_ settings: TaskRemoteSyncSettings) -> String {
-        [containerCacheKey(settings), settings.container ?? "", "status-v2"].joined(separator: "|")
+        [remoteWorkItemContextKey(settings), "status-v2"].joined(separator: "|")
+    }
+
+    private static func issueTypeCacheKey(_ settings: TaskRemoteSyncSettings) -> String {
+        [remoteWorkItemContextKey(settings), "issue-types-v1"].joined(separator: "|")
     }
 
     public func loadCLIStatusesIfNeeded() {
@@ -1391,6 +2136,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
     }
 
     public func loadCLIStatuses() {
+        guard settings.isEnabled else { return }
         cliStatusTask?.cancel()
         for provider in RemoteWorkItemProviderId.allCases {
             cliStatuses[provider] = TaskRemoteCLIStatus(
@@ -1407,15 +2153,109 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
         cliStatusTask = Task(priority: .utility) { [weak self] in
             for provider in RemoteWorkItemProviderId.allCases {
+                if Task.isCancelled { return }
                 let status = await Self.probeCLIStatus(provider)
+                if Task.isCancelled { return }
                 await MainActor.run {
-                    self?.cliStatuses[provider] = status
+                    guard let self, self.settings.isEnabled else { return }
+                    self.cliStatuses[provider] = status
                 }
             }
         }
     }
 
+    func refreshCLIStatus(for provider: RemoteWorkItemProviderId) async -> TaskRemoteCLIStatus {
+        let status = await Self.probeCLIStatus(provider)
+        cliStatuses[provider] = status
+        return status
+    }
+
+    func refreshCLIStatusSynchronously(
+        for provider: RemoteWorkItemProviderId,
+        timeout: TimeInterval = 4
+    ) -> TaskRemoteCLIStatus {
+        let status = Self.probeCLIStatusSynchronously(provider, timeout: timeout)
+        cliStatuses[provider] = status
+        return status
+    }
+
     private static func probeCLIStatus(_ provider: RemoteWorkItemProviderId) async -> TaskRemoteCLIStatus {
+        await probeCLIStatusNow(provider)
+    }
+
+    private nonisolated static func probeCLIStatusSynchronously(
+        _ provider: RemoteWorkItemProviderId,
+        timeout: TimeInterval
+    ) -> TaskRemoteCLIStatus {
+        let executable = cliExecutable(for: provider)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [executable, "--version"]
+        process.environment = RemoteWorkItemCommandRunner.sanitizedEnvironment(ProcessInfo.processInfo.environment)
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        let semaphore = DispatchSemaphore(value: 0)
+        do {
+            process.terminationHandler = { _ in semaphore.signal() }
+            try process.run()
+        } catch {
+            return TaskRemoteCLIStatus(
+                provider: provider,
+                executable: executable,
+                isAvailable: false,
+                summary: "\(executable) not found",
+                detail: humanError(error),
+                checkedAt: Date()
+            )
+        }
+
+        let timedOut = semaphore.wait(timeout: .now() + timeout) == .timedOut
+        if timedOut, process.isRunning {
+            process.terminate()
+            process.waitUntilExit()
+        }
+        let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let result = RemoteWorkItemCommandResult(
+            executable: executable,
+            arguments: ["--version"],
+            cwd: nil,
+            exitStatus: timedOut ? 124 : process.terminationStatus,
+            stdout: stdout,
+            stderr: stderr,
+            timedOut: timedOut,
+            terminatedBySignal: process.terminationReason == .uncaughtSignal
+        )
+        let output = (stdout + "\n" + stderr)
+            .split(separator: "\n")
+            .map(String.init)
+            .first?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard result.exitStatus == 0, !result.timedOut else {
+            return TaskRemoteCLIStatus(
+                provider: provider,
+                executable: executable,
+                isAvailable: false,
+                summary: "\(executable) unavailable",
+                detail: commandFailureMessage(result, fallback: "Version check failed."),
+                checkedAt: Date()
+            )
+        }
+        return TaskRemoteCLIStatus(
+            provider: provider,
+            executable: executable,
+            isAvailable: true,
+            summary: "\(executable) ready",
+            detail: output,
+            checkedAt: Date()
+        )
+    }
+
+    private nonisolated static func probeCLIStatusNow(_ provider: RemoteWorkItemProviderId) async -> TaskRemoteCLIStatus {
         let executable = cliExecutable(for: provider)
         do {
             let result = try await RemoteWorkItemCommandRunner.shared.run(
@@ -1459,7 +2299,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
     }
 
-    private static func cliExecutable(for provider: RemoteWorkItemProviderId) -> String {
+    private nonisolated static func cliExecutable(for provider: RemoteWorkItemProviderId) -> String {
         switch provider {
         case .jira: return "acli"
         case .github: return "gh"
@@ -1513,6 +2353,18 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
     }
 
+    private static func fetchIssueTypeOptions(settings: TaskRemoteSyncSettings) async throws -> [TaskRemoteIssueTypeOption] {
+        guard settings.provider == .jira else { return [] }
+        guard let projectKey = settings.container?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
+            throw RemoteWorkItemError.unsupportedReference("Jira issue type lookup requires a project key")
+        }
+        return try await JiraRemoteWorkItemProvider(
+            site: settings.jiraSite,
+            email: settings.jiraEmail
+        )
+        .issueTypeOptions(projectKey: projectKey)
+    }
+
     private static func fetchRemoteStatusLabels(settings: TaskRemoteSyncSettings) async throws -> [String] {
         switch settings.provider {
         case .jira:
@@ -1541,6 +2393,23 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
             return ["open", "closed"]
         case .gitlab:
             return ["opened", "closed"]
+        }
+    }
+
+    private static func missingContainerMessage(for provider: RemoteWorkItemProviderId) -> String {
+        switch provider {
+        case .jira:
+            return String(localized: "tasks.remoteSync.create.missingJiraProject",
+                          defaultValue: "Select a Jira project before creating a remote work item.",
+                          table: "TermLoop")
+        case .github:
+            return String(localized: "tasks.remoteSync.create.missingGitHubRepo",
+                          defaultValue: "Select a GitHub repository before creating a remote work item.",
+                          table: "TermLoop")
+        case .gitlab:
+            return String(localized: "tasks.remoteSync.create.missingGitLabProject",
+                          defaultValue: "Select a GitLab project before creating a remote work item.",
+                          table: "TermLoop")
         }
     }
 
@@ -1585,7 +2454,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
-    private static func humanError(_ error: Error) -> String {
+    private nonisolated static func humanError(_ error: Error) -> String {
         if let remoteError = error as? RemoteWorkItemError {
             switch remoteError {
             case .commandFailed(let message), .parseFailed(let message), .unsupportedReference(let message):
@@ -1599,16 +2468,11 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         return text.isEmpty ? String(localized: "common.unknownError", defaultValue: "Unknown error", table: "TermLoop") : text
     }
 
-    private static func commandFailureMessage(
+    private nonisolated static func commandFailureMessage(
         _ result: RemoteWorkItemCommandResult,
         fallback: String
     ) -> String {
-        let stderr = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-        let stdout = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !stderr.isEmpty { return stderr }
-        if !stdout.isEmpty { return stdout }
-        if result.timedOut { return "Command timed out." }
-        return fallback
+        return remoteCommandFailureMessage(result, fallback: fallback)
     }
 
     private static func parseRepositoryOptions(_ text: String) throws -> [TaskRemoteContainerOption] {
@@ -1652,11 +2516,38 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
     }
 
-    private func presentSyncResultAlert(title: String, message: String) {
+    private func presentSyncResultAlert(
+        title: String,
+        message: String,
+        style: NSAlert.Style = .informational
+    ) {
         let alert = NSAlert()
         alert.messageText = title
-        alert.informativeText = message
-        alert.alertStyle = .informational
+        alert.alertStyle = style
+        if message.count > 240 || message.contains("\n") {
+            alert.informativeText = String(localized: "tasks.remoteSync.alert.details",
+                                           defaultValue: "Details:",
+                                           table: "TermLoop")
+            let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 560, height: 180))
+            scrollView.hasVerticalScroller = true
+            scrollView.hasHorizontalScroller = true
+            scrollView.borderType = .bezelBorder
+
+            let textView = NSTextView(frame: scrollView.bounds)
+            textView.isEditable = false
+            textView.isSelectable = true
+            textView.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+            textView.string = message
+            textView.textContainer?.containerSize = NSSize(
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+            textView.textContainer?.widthTracksTextView = false
+            scrollView.documentView = textView
+            alert.accessoryView = scrollView
+        } else {
+            alert.informativeText = message
+        }
         alert.addButton(withTitle: String(localized: "common.ok",
                                           defaultValue: "OK",
                                           table: "TermLoop"))

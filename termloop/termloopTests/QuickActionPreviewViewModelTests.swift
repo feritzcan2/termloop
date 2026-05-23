@@ -249,6 +249,7 @@ final class QuickActionPreviewViewModelTests: XCTestCase {
     }
 
     func testComposerAppliesLinkedPayloadBlockOverrides() throws {
+        let abilityId = TermLoopBuiltInMCP.runningYourApplicationAbilityId
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
@@ -267,12 +268,12 @@ final class QuickActionPreviewViewModelTests: XCTestCase {
 
         try writeProjectAbility(
             projectRoot: tmp,
-            id: TermLoopBuiltInMCP.jiraAbilityId,
-            name: "Working With Jira",
+            id: abilityId,
+            name: "Running Your Application",
             activation: .always,
-            body: "Use the Jira workflow.",
+            body: "Track run targets.",
             payloadBlocks: { bundleURL in
-                self.jiraTelemetryPayloadBlocks(bundleURL: bundleURL)
+                self.runTargetTelemetryPayloadBlocks(bundleURL: bundleURL)
             }
         )
         let project = Project(name: "Repo", folderPath: tmp.path)
@@ -289,8 +290,8 @@ final class QuickActionPreviewViewModelTests: XCTestCase {
             source: .quickAction
         )
         let disabledSet = InstructionRunOverrides.GeneratedPartKind.toolLinkedPayload(
-            abilityId: TermLoopBuiltInMCP.jiraAbilityId,
-            toolName: TermLoopBuiltInMCP.setJiraTicketToolName
+            abilityId: abilityId,
+            toolName: TermLoopBuiltInMCP.setRunTargetsToolName
         )
 
         let plan = try AgentInvocationComposer.compose(
@@ -298,13 +299,13 @@ final class QuickActionPreviewViewModelTests: XCTestCase {
             overrides: InstructionRunOverrides(disabledGenerated: [disabledSet])
         )
 
-        XCTAssertFalse(plan.resolvedSystemInstructions?.contains("mcp__termloop__set_jira_ticket") == true)
-        XCTAssertTrue(plan.resolvedSystemInstructions?.contains("mcp__termloop__get_jira_ticket") == true)
+        XCTAssertFalse(plan.resolvedSystemInstructions?.contains("mcp__termloop__set_run_targets") == true)
+        XCTAssertTrue(plan.resolvedSystemInstructions?.contains("mcp__termloop__get_run_targets") == true)
         let disabledPart = AgentInputQueries.instructionParts(from: plan).first {
             $0.kind == .abilityPayloadBlock(
-                abilityId: TermLoopBuiltInMCP.jiraAbilityId,
-                blockId: "030-update-ticket-chip",
-                mcpToolName: TermLoopBuiltInMCP.setJiraTicketToolName
+                abilityId: abilityId,
+                blockId: "030-update-run-targets",
+                mcpToolName: TermLoopBuiltInMCP.setRunTargetsToolName
             )
         }
         XCTAssertEqual(disabledPart?.enabled, false)
@@ -313,20 +314,28 @@ final class QuickActionPreviewViewModelTests: XCTestCase {
     }
 
     func testInstructionPartsExposePayloadBlocks() {
-        var ability = ab(TermLoopBuiltInMCP.jiraAbilityId, .always)
-        ability.name = "Working With Jira"
-        ability.payloadBlocks = jiraPayloadBlocks()
+        let abilityId = "workflow"
+        var ability = ab(abilityId, .always)
+        ability.name = "Workflow"
+        ability.payloadBlocks = [
+            payloadBlock(
+                abilityId: abilityId,
+                id: "010-use-workflow",
+                title: "Use the workflow",
+                body: "Use the workflow."
+            )
+        ]
 
         let composedPlan = plan(all: [ability], isWorktree: false, overrides: .none)
         let parts = AgentInputQueries.instructionParts(from: composedPlan)
 
         XCTAssertTrue(parts.contains {
             $0.kind == .abilityPayloadBlock(
-                abilityId: TermLoopBuiltInMCP.jiraAbilityId,
-                blockId: "010-use-jira-skill",
+                abilityId: abilityId,
+                blockId: "010-use-workflow",
                 mcpToolName: nil
             )
-                && $0.body == "Use the Jira workflow."
+                && $0.body == "Use the workflow."
         })
     }
 
@@ -378,7 +387,7 @@ final class QuickActionPreviewViewModelTests: XCTestCase {
 
         XCTAssertEqual(
             list?.editability,
-            .notEditable("Toggle the ability's activation in the Abilities panel.")
+            .notEditable("Toggle the project rule's activation in the Rules panel.")
         )
     }
 
@@ -388,7 +397,7 @@ final class QuickActionPreviewViewModelTests: XCTestCase {
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        let skillId = "jira-skill"
+        let skillId = "run-skill"
         let canonicalSkillDirectory = tmp
             .appendingPathComponent(".termloop", isDirectory: true)
             .appendingPathComponent("skills", isDirectory: true)
@@ -397,7 +406,7 @@ final class QuickActionPreviewViewModelTests: XCTestCase {
             at: canonicalSkillDirectory,
             withIntermediateDirectories: true
         )
-        try "# Jira Skill\n".write(
+        try "# Run Skill\n".write(
             to: canonicalSkillDirectory.appendingPathComponent("SKILL.md"),
             atomically: true,
             encoding: .utf8
@@ -406,13 +415,13 @@ final class QuickActionPreviewViewModelTests: XCTestCase {
         let abilityDirectory = tmp
             .appendingPathComponent(".termloop", isDirectory: true)
             .appendingPathComponent("abilities", isDirectory: true)
-            .appendingPathComponent(TermLoopBuiltInMCP.jiraAbilityId, isDirectory: true)
+            .appendingPathComponent(TermLoopBuiltInMCP.runningYourApplicationAbilityId, isDirectory: true)
         let ability = Ability(
-            id: TermLoopBuiltInMCP.jiraAbilityId,
-            name: "Working With Jira",
-            description: "Jira workflow",
+            id: TermLoopBuiltInMCP.runningYourApplicationAbilityId,
+            name: "Running Your Application",
+            description: "Run target workflow",
             activation: .always,
-            payloadBlocks: jiraTelemetryPayloadBlocks(),
+            payloadBlocks: runTargetTelemetryPayloadBlocks(),
             items: [.requiredSkill(skillId)],
             metadataFilePath: abilityDirectory.appendingPathComponent("ability.json")
         )
@@ -428,8 +437,8 @@ final class QuickActionPreviewViewModelTests: XCTestCase {
             .appendingPathComponent(skillId, isDirectory: true)
             .appendingPathComponent("SKILL.md")
         let materialized = try String(contentsOf: nativeSkill, encoding: .utf8)
-        XCTAssertTrue(materialized.contains("mcp__termloop__set_jira_ticket"))
-        XCTAssertTrue(materialized.contains("mcp__termloop__get_jira_ticket"))
+        XCTAssertTrue(materialized.contains("mcp__termloop__set_run_targets"))
+        XCTAssertTrue(materialized.contains("mcp__termloop__get_run_targets"))
 
         let nativeSkillRoot = tmp
             .appendingPathComponent(".claude", isDirectory: true)
@@ -441,14 +450,14 @@ final class QuickActionPreviewViewModelTests: XCTestCase {
             abilities: [ability],
             disabledGenerated: [
                 .toolLinkedPayload(
-                    abilityId: TermLoopBuiltInMCP.jiraAbilityId,
-                    toolName: TermLoopBuiltInMCP.setJiraTicketToolName
+                    abilityId: TermLoopBuiltInMCP.runningYourApplicationAbilityId,
+                    toolName: TermLoopBuiltInMCP.setRunTargetsToolName
                 )
             ]
         )
         let materializedWithOverride = try String(contentsOf: nativeSkill, encoding: .utf8)
-        XCTAssertFalse(materializedWithOverride.contains("mcp__termloop__set_jira_ticket"))
-        XCTAssertTrue(materializedWithOverride.contains("mcp__termloop__get_jira_ticket"))
+        XCTAssertFalse(materializedWithOverride.contains("mcp__termloop__set_run_targets"))
+        XCTAssertTrue(materializedWithOverride.contains("mcp__termloop__get_run_targets"))
     }
 
     private func writeProjectAbility(
@@ -476,58 +485,36 @@ final class QuickActionPreviewViewModelTests: XCTestCase {
     }
 
     private func defaultPayloadBlocks(abilityId: String, body: String, bundleURL: URL) -> [AbilityPayloadBlock] {
-        guard abilityId == TermLoopBuiltInMCP.jiraAbilityId else {
-            return [
-                payloadBlock(
-                    abilityId: abilityId,
-                    id: "010-rules",
-                    title: "Rules",
-                    body: body,
-                    bundleURL: bundleURL
-                )
-            ]
-        }
         return [
             payloadBlock(
                 abilityId: abilityId,
-                id: "010-use-jira-skill",
-                title: "Use the Jira skill",
+                id: "010-rules",
+                title: "Rules",
                 body: body,
                 bundleURL: bundleURL
             )
         ]
     }
 
-    private func jiraPayloadBlocks(bundleURL: URL? = nil) -> [AbilityPayloadBlock] {
-        [
+    private func runTargetTelemetryPayloadBlocks(bundleURL: URL? = nil) -> [AbilityPayloadBlock] {
+        let abilityId = TermLoopBuiltInMCP.runningYourApplicationAbilityId
+        return [
             payloadBlock(
-                abilityId: TermLoopBuiltInMCP.jiraAbilityId,
-                id: "010-use-jira-skill",
-                title: "Use the Jira skill",
-                body: "Use the Jira workflow.",
-                bundleURL: bundleURL
-            )
-        ]
-    }
-
-    private func jiraTelemetryPayloadBlocks(bundleURL: URL? = nil) -> [AbilityPayloadBlock] {
-        jiraPayloadBlocks(bundleURL: bundleURL) + [
-            payloadBlock(
-                abilityId: TermLoopBuiltInMCP.jiraAbilityId,
-                id: "020-resume-bound-ticket",
-                title: "Resume bound ticket",
-                body: "When resuming, call `mcp__termloop__get_jira_ticket`.",
+                abilityId: abilityId,
+                id: "020-resume-run-targets",
+                title: "Resume run targets",
+                body: "When resuming, call `mcp__termloop__get_run_targets`.",
                 bundleURL: bundleURL,
-                mcpToolName: TermLoopBuiltInMCP.getJiraTicketToolName,
+                mcpToolName: TermLoopBuiltInMCP.getRunTargetsToolName,
                 includeInSkillFooter: true
             ),
             payloadBlock(
-                abilityId: TermLoopBuiltInMCP.jiraAbilityId,
-                id: "030-update-ticket-chip",
-                title: "Update ticket chip",
-                body: "Telemetry: call `mcp__termloop__set_jira_ticket`.",
+                abilityId: abilityId,
+                id: "030-update-run-targets",
+                title: "Update run targets",
+                body: "Telemetry: call `mcp__termloop__set_run_targets`.",
                 bundleURL: bundleURL,
-                mcpToolName: TermLoopBuiltInMCP.setJiraTicketToolName,
+                mcpToolName: TermLoopBuiltInMCP.setRunTargetsToolName,
                 includeInSkillFooter: true
             )
         ]

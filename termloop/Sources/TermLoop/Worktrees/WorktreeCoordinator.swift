@@ -523,7 +523,11 @@ final class WorktreeCoordinator: ObservableObject {
         }
 
         for workspace in workspaces {
-            _ = try detach(workspace: workspace, prune: .keep)
+            _ = try detach(
+                workspace: workspace,
+                prune: .keep,
+                resumeTrackedConversation: true
+            )
         }
         #if DEBUG
         Self.debugLog(
@@ -969,12 +973,14 @@ final class WorktreeCoordinator: ObservableObject {
 
     func detach(
         workspace: Workspace,
-        prune: PrunePolicy = .auto
+        prune: PrunePolicy = .auto,
+        resumeTrackedConversation: Bool = false
     ) throws -> DetachResult {
         let project = try resolveProject(for: workspace)
         #if DEBUG
         Self.debugLog(
-            "detach.begin ws=\(workspace.id.uuidString.prefix(8)) project=\(project.name)[\(project.id.uuidString.prefix(8))] prune=\(prune.rawValue) branch=\(metadata.branch(for: workspace) ?? "nil")"
+            "detach.begin ws=\(workspace.id.uuidString.prefix(8)) project=\(project.name)[\(project.id.uuidString.prefix(8))] " +
+            "prune=\(prune.rawValue) resumeTracked=\(resumeTrackedConversation) branch=\(metadata.branch(for: workspace) ?? "nil")"
         )
         #endif
         guard let branch = metadata.branch(for: workspace) else {
@@ -986,12 +992,24 @@ final class WorktreeCoordinator: ObservableObject {
             )
         }
 
-        let migrated = try migrateRunningAgent(
-            workspace: workspace,
-            project: project,
-            toPath: project.folderPath,
-            force: false
-        )
+        let migrated: Bool
+        if resumeTrackedConversation,
+           let reference = WorkspaceSessionReferenceResolver.resolve(for: workspace),
+           TerminalAgentRunner.supportsResume(agentId: reference.agentId) {
+            migrated = try migrateTrackedConversationAgent(
+                workspace: workspace,
+                project: project,
+                toPath: project.folderPath,
+                sessionReference: reference
+            )
+        } else {
+            migrated = try migrateRunningAgent(
+                workspace: workspace,
+                project: project,
+                toPath: project.folderPath,
+                force: false
+            )
+        }
         migratePersistedAgentSession(
             workspace: workspace,
             project: project,

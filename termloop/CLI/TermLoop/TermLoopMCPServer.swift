@@ -10,21 +10,17 @@ enum TermLoopMCPServer {
         "2024-11-05",
     ]
     /// Comma-separated names of optional built-in tools the active project's
-    /// abilities have opted into. Optional tools (set_jira_ticket, ...) are
-    /// only surfaced when listed.
+    /// abilities have opted into. Optional tools are only surfaced when listed.
     private static let enabledToolsEnvKey = "TERMLOOP_ENABLED_MCP_TOOLS"
+    private static let socketPathEnvKey = "TERMLOOP_SOCKET_PATH"
+    private static let askToRequestIdEnvKey = "TERMLOOP_ASK_TO_REQUEST_ID"
+    private static let askToReplyTokenEnvKey = "TERMLOOP_ASK_TO_REPLY_TOKEN"
 
-    /// CLI-side copy of the Jira ticket reporter tool name. The app side keeps
-    /// a matching `TermLoopBuiltInMCP.setJiraTicketToolName`; the two cannot
-    /// share a constant because the CLI target does not link app sources.
-    private static let setJiraTicketToolName = "set_jira_ticket"
-    private static let getJiraTicketToolName = "get_jira_ticket"
-    private static let jiraAbilityId = "working-with-jira"
-    private static let jiraBindingId = "ticket"
     private static let askToToolName = "ask_to"
     private static let replyToRequestToolName = "reply_to_request"
     private static let contextBankProposeToolName = "context_bank_propose_suggestion"
     private static let contextBankFinalizeToolName = "context_bank_finalize_run"
+    private static let proposeRemoteTaskToolName = "propose_remote_task"
 
     /// CLI-side mirror of the Run Targets tool names. App side keeps its own
     /// copy in `TermLoopBuiltInMCP`; the two cannot share a constant because
@@ -43,6 +39,9 @@ enum TermLoopMCPServer {
         /// `true` → always present in tools/list, regardless of ability state.
         /// `false` → only present when ability opts in via env var.
         let alwaysOn: Bool
+        /// Ask-To reply is a callback, not an ambient TermLoop capability. It
+        /// only appears inside helper launches carrying a reply credential.
+        let requiresAskToReplyContext: Bool
         let handler: (
             _ id: Any,
             _ arguments: [String: Any],
@@ -55,39 +54,26 @@ enum TermLoopMCPServer {
     /// entries here; ability bundles only need to opt-in by listing the name.
     private static let builtInTools: [BuiltInTool] = [
         BuiltInTool(
-            name: setJiraTicketToolName,
-            description: "Tell TermLoop which Jira ticket the current workspace is working on. PURE TELEMETRY — does NOT touch Jira. Updates the sidebar chip and the per-workspace ticket binding. Call when the active ticket changes OR when its status/url changes (e.g. after a transition from In Progress to In Review or Done). Skip duplicate calls when nothing changed.",
+            name: proposeRemoteTaskToolName,
+            description: "Open a TermLoop confirmation draft to create a configured remote task and continue in a new task worktree. Creates nothing remote until the user confirms in TermLoop. Only available when the calling workspace has remote work items enabled, a provider/container configured, and the provider CLI is ready.",
             inputSchema: [
                 "type": "object",
                 "properties": [
-                    "key": [
+                    "title": [
                         "type": "string",
-                        "description": "Jira issue key (e.g. \"PROJ-123\"). Required."
+                        "description": "Short title for the remote task draft."
                     ],
-                    "status": [
+                    "description": [
                         "type": "string",
-                        "description": "Optional Jira status (e.g. \"In Progress\", \"In Review\") appended after \" · \" in the chip."
-                    ],
-                    "url": [
-                        "type": "string",
-                        "description": "Optional Jira browse URL so the chip becomes a link."
+                        "description": "Markdown description of the finding and relevant context for the remote task draft."
                     ]
                 ],
-                "required": ["key"]
-            ],
-            alwaysOn: false,
-            handler: runSetJiraTicket
-        ),
-        BuiltInTool(
-            name: getJiraTicketToolName,
-            description: "Read the Jira ticket previously set for this workspace via set_jira_ticket. Returns `set: false` when no ticket is bound. Use this instead of guessing from the branch name when picking up an in-progress workspace.",
-            inputSchema: [
-                "type": "object",
-                "properties": [:],
+                "required": ["title", "description"],
                 "additionalProperties": false
             ],
             alwaysOn: false,
-            handler: runGetJiraTicket
+            requiresAskToReplyContext: false,
+            handler: runProposeRemoteTask
         ),
         BuiltInTool(
             name: setRunTargetsToolName,
@@ -125,6 +111,7 @@ enum TermLoopMCPServer {
                 "required": ["targets"]
             ],
             alwaysOn: false,
+            requiresAskToReplyContext: false,
             handler: runSetRunTargets
         ),
         BuiltInTool(
@@ -136,6 +123,7 @@ enum TermLoopMCPServer {
                 "additionalProperties": false
             ],
             alwaysOn: false,
+            requiresAskToReplyContext: false,
             handler: runGetRunTargets
         ),
         BuiltInTool(
@@ -169,6 +157,7 @@ enum TermLoopMCPServer {
                 "required": ["message"]
             ],
             alwaysOn: true,
+            requiresAskToReplyContext: false,
             handler: runAskTo
         ),
         BuiltInTool(
@@ -189,6 +178,7 @@ enum TermLoopMCPServer {
                 "required": ["request_id", "message"]
             ],
             alwaysOn: true,
+            requiresAskToReplyContext: true,
             handler: runReplyToRequest
         ),
         BuiltInTool(
@@ -241,6 +231,7 @@ enum TermLoopMCPServer {
                 "required": ["action", "target_path", "reasoning", "confidence"]
             ],
             alwaysOn: true,
+            requiresAskToReplyContext: false,
             handler: runContextBankPropose
         ),
         BuiltInTool(
@@ -256,6 +247,7 @@ enum TermLoopMCPServer {
                 ]
             ],
             alwaysOn: true,
+            requiresAskToReplyContext: false,
             handler: runContextBankFinalize
         )
     ]
@@ -329,7 +321,7 @@ enum TermLoopMCPServer {
         case "tools/list":
             let enabled = enabledToolNameSet(env: processEnv)
             let visible = builtInTools.filter { tool in
-                tool.alwaysOn || enabled.contains(tool.name)
+                isToolVisible(tool, enabled: enabled, env: processEnv, socketPath: socketPath)
             }
             let toolList: [[String: Any]] = visible.map { tool in
                 [
@@ -350,13 +342,19 @@ enum TermLoopMCPServer {
             let requestedTool = (params["name"] as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let enabled = enabledToolNameSet(env: processEnv)
-            guard let tool = builtInTools.first(where: { $0.name == requestedTool }),
-                  tool.alwaysOn || enabled.contains(tool.name) else {
+            guard let tool = builtInTools.first(where: { $0.name == requestedTool }) else {
                 return error(
                     id: id,
                     code: -32601,
                     message: "Unknown tool: \(requestedTool)"
                 )
+            }
+            guard tool.name == proposeRemoteTaskToolName
+                || isToolVisible(tool, enabled: enabled, env: processEnv, socketPath: socketPath) else {
+                let message = tool.requiresAskToReplyContext
+                    ? "Ask-To reply context missing; reply_to_request is only available inside an Ask-To helper launch."
+                    : "Unknown tool: \(requestedTool)"
+                return error(id: id, code: -32601, message: message)
             }
             let arguments = params["arguments"] as? [String: Any] ?? [:]
             return tool.handler(id, arguments, processEnv, socketPath)
@@ -368,6 +366,55 @@ enum TermLoopMCPServer {
                 message: "Method not found: \(method ?? "unknown")"
             )
         }
+    }
+
+    private static func isToolVisible(
+        _ tool: BuiltInTool,
+        enabled: Set<String>,
+        env: [String: String],
+        socketPath: String
+    ) -> Bool {
+        if tool.name == proposeRemoteTaskToolName {
+            return remoteTaskPromotionAvailable(env: env, socketPath: socketPath)
+        }
+        guard tool.alwaysOn || enabled.contains(tool.name) else {
+            return false
+        }
+        guard !tool.requiresAskToReplyContext else {
+            return hasAskToReplyContext(env)
+        }
+        return true
+    }
+
+    private static func remoteTaskPromotionAvailable(
+        env: [String: String],
+        socketPath: String
+    ) -> Bool {
+        let params = workspaceTargetParams(env: env)
+        guard !params.isEmpty else { return false }
+        do {
+            let client = try authenticatedDaemonClient(socketPath: socketPath)
+            defer { client.close() }
+            let result = try client.sendV2(method: "tasks.remote_capabilities", params: params)
+            return (result["enabled"] as? Bool) == true
+                || (result["can_create"] as? Bool) == true
+        } catch {
+            return false
+        }
+    }
+
+    private static func hasAskToReplyContext(_ env: [String: String]) -> Bool {
+        nonEmptyEnv(env, socketPathEnvKey) != nil
+            && nonEmptyEnv(env, askToRequestIdEnvKey) != nil
+            && nonEmptyEnv(env, askToReplyTokenEnvKey) != nil
+    }
+
+    private static func nonEmptyEnv(_ env: [String: String], _ key: String) -> String? {
+        guard let value = env[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else {
+            return nil
+        }
+        return value
     }
 
     /// Resolves the opt-in tool set. Prefers a fresh on-disk read of the
@@ -404,12 +451,6 @@ enum TermLoopMCPServer {
     /// owning ability is not turned off. Tolerant of legacy bare-string
     /// entries. Returns nil (not empty set) when the directory is missing so
     /// the caller can distinguish "no abilities" from "can't see abilities".
-    ///
-    /// Mirrors `TerminalAgentRunner.enabledAbilityMCPToolNames`: the
-    /// `working-with-jira` ability auto-opts into `set_jira_ticket` whenever
-    /// it is active, so a bindings-only ability discovered via the disk
-    /// fallback (e.g., MCP server invoked outside the runner-launched env)
-    /// still sees the tool and the chip pipeline keeps working.
     private static func enabledToolNamesFromCWDIfAvailable() -> Set<String>? {
         guard let abilitiesDir = abilitiesDirectoryFromCWD() else {
             return nil
@@ -426,18 +467,16 @@ enum TermLoopMCPServer {
             if (json["activation"] as? String) == abilityActivationOffToken { continue }
             if let tools = json["termLoopMCPTools"] as? [Any] {
                 for tool in tools {
-                    if let name = tool as? String {
+                    if let name = tool as? String,
+                       !isDeprecatedJiraToolName(name) {
                         names.insert(name)
                     } else if let obj = tool as? [String: Any],
                               let name = obj["name"] as? String,
-                              (obj["enabled"] as? Bool) ?? true {
+                              (obj["enabled"] as? Bool) ?? true,
+                              !isDeprecatedJiraToolName(name) {
                         names.insert(name)
                     }
                 }
-            }
-            if (json["id"] as? String) == jiraAbilityId {
-                names.insert(setJiraTicketToolName)
-                names.insert(getJiraTicketToolName)
             }
             if (json["id"] as? String) == runningYourApplicationAbilityId {
                 names.insert(setRunTargetsToolName)
@@ -445,6 +484,10 @@ enum TermLoopMCPServer {
             }
         }
         return names
+    }
+
+    private static func isDeprecatedJiraToolName(_ name: String) -> Bool {
+        name == "get_jira_ticket" || name == "set_jira_ticket"
     }
 
     private static func abilitiesDirectoryFromCWD() -> String? {
@@ -469,111 +512,6 @@ enum TermLoopMCPServer {
     }
 
     // MARK: Built-in tool handlers
-
-    /// Jira ticket telemetry. Maps `(key, status?, url?)` onto the underlying
-    /// V2 binding wire format with hardcoded ability/binding ids — keeps the
-    /// app-side storage and chip rendering pipeline unchanged.
-    private static func runSetJiraTicket(
-        id: Any,
-        arguments: [String: Any],
-        processEnv: [String: String],
-        socketPath: String
-    ) -> [String: Any] {
-        let key = ((arguments["key"] as? String) ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else {
-            return toolResult(id: id,
-                              text: "Missing required argument: key",
-                              isError: true)
-        }
-        let status = (arguments["status"] as? String)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let url = (arguments["url"] as? String)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let workspaceParams = workspaceTargetParams(env: processEnv)
-        guard !workspaceParams.isEmpty else {
-            return toolResult(id: id,
-                              text: "TermLoop daemon target unknown: TERMLOOP_WORKSPACE_ID env var is unset and current working directory is empty.",
-                              isError: true)
-        }
-
-        var params: [String: Any] = [
-            "ability_id": jiraAbilityId,
-            "binding_id": jiraBindingId,
-            "label": key,
-            "status": status as Any? ?? NSNull(),
-            "url": url as Any? ?? NSNull()
-        ]
-        for (k, v) in workspaceParams { params[k] = v }
-
-        do {
-            let client = try authenticatedDaemonClient(socketPath: socketPath)
-            defer { client.close() }
-            let response = try client.sendV2(
-                method: "workspace.report_agent_binding",
-                params: params
-            )
-            if let errorText = extractErrorMessage(response) {
-                return toolResult(id: id, text: errorText, isError: true)
-            }
-            let suffix = (status?.isEmpty == false) ? " · \(status!)" : ""
-            return toolResult(id: id,
-                              text: "Reported Jira ticket \(key)\(suffix)",
-                              isError: false)
-        } catch {
-            return toolResult(id: id,
-                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(mcpErrorDescription(error))",
-                              isError: true)
-        }
-    }
-
-    /// Read-side counterpart to `runSetJiraTicket`. Returns the previously
-    /// reported Jira ticket for this workspace, or "no ticket set yet".
-    private static func runGetJiraTicket(
-        id: Any,
-        arguments: [String: Any],
-        processEnv: [String: String],
-        socketPath: String
-    ) -> [String: Any] {
-        let workspaceParams = workspaceTargetParams(env: processEnv)
-        guard !workspaceParams.isEmpty else {
-            return toolResult(id: id,
-                              text: "TermLoop daemon target unknown: TERMLOOP_WORKSPACE_ID env var is unset and current working directory is empty.",
-                              isError: true)
-        }
-        do {
-            let client = try authenticatedDaemonClient(socketPath: socketPath)
-            defer { client.close() }
-            let response = try client.sendV2(
-                method: "workspace.get_jira_ticket",
-                params: workspaceParams
-            )
-            if let errorText = extractErrorMessage(response) {
-                return toolResult(id: id, text: errorText, isError: true)
-            }
-            guard let result = (response["result"] as? [String: Any]) else {
-                return toolResult(id: id,
-                                  text: "TermLoop daemon returned no result for workspace.get_jira_ticket — daemon may not be running. Restart TermLoop and try again.",
-                                  isError: true)
-            }
-            let isSet = (result["set"] as? Bool) ?? false
-            guard isSet, let key = result["key"] as? String else {
-                return toolResult(id: id,
-                                  text: "No Jira ticket set for this workspace yet.",
-                                  isError: false)
-            }
-            let status = (result["status"] as? String).map { " · \($0)" } ?? ""
-            let url = (result["url"] as? String).map { " (\($0))" } ?? ""
-            return toolResult(id: id,
-                              text: "\(key)\(status)\(url)",
-                              isError: false)
-        } catch {
-            return toolResult(id: id,
-                              text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(mcpErrorDescription(error))",
-                              isError: true)
-        }
-    }
 
     /// Run targets telemetry. Maps `(targets: [{label, url?, path?, status?}])`
     /// onto the `workspace.set_run_targets` V2 method, which atomically
@@ -669,6 +607,75 @@ enum TermLoopMCPServer {
         } catch {
             return toolResult(id: id,
                               text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(mcpErrorDescription(error))",
+                              isError: true)
+        }
+    }
+
+    /// `propose_remote_task` — side-effect-safe remote task promotion entry.
+    /// The daemon persists a user-visible draft and returns immediately; the
+    /// remote item/worktree/agent launch happens only after in-app
+    /// confirmation.
+    private static func runProposeRemoteTask(
+        id: Any,
+        arguments: [String: Any],
+        processEnv: [String: String],
+        socketPath: String
+    ) -> [String: Any] {
+        let allowedArguments: Set<String> = ["title", "description"]
+        let unexpectedArguments = Set(arguments.keys).subtracting(allowedArguments)
+        guard unexpectedArguments.isEmpty else {
+            let names = unexpectedArguments.sorted().joined(separator: ", ")
+            return toolResult(
+                id: id,
+                text: "Invalid argument(s) for propose_remote_task: \(names). Only title and description are accepted; issue type is chosen by the user in TermLoop.",
+                isError: true
+            )
+        }
+        let title = ((arguments["title"] as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else {
+            return toolResult(id: id,
+                              text: "Missing required argument: title",
+                              isError: true)
+        }
+        let description = ((arguments["description"] as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !description.isEmpty else {
+            return toolResult(id: id,
+                              text: "Missing required argument: description",
+                              isError: true)
+        }
+        let workspaceParams = workspaceTargetParams(env: processEnv)
+        guard !workspaceParams.isEmpty else {
+            return toolResult(id: id,
+                              text: "TermLoop daemon target unknown: no workspace env, cwd, or MCP process identity is available. propose_remote_task requires a workspace-bound MCP session.",
+                              isError: true)
+        }
+
+        var params: [String: Any] = [
+            "title": title,
+            "description": description
+        ]
+        for (key, value) in workspaceParams {
+            params[key] = value
+        }
+
+        do {
+            let client = try authenticatedDaemonClient(socketPath: socketPath)
+            defer { client.close() }
+            let result = try client.sendV2(method: "tasks.promote_from_agent", params: params)
+            let promotionId = (result["promotion_id"] as? String) ?? "?"
+            let status = (result["status"] as? String) ?? "awaiting_confirmation"
+            let provider = (result["provider"] as? String) ?? "remote"
+            let container = (result["container"] as? String) ?? "configured project"
+            return toolResult(
+                id: id,
+                text: "Opened TermLoop remote task draft. promotion_id=\(promotionId), status=\(status), provider=\(provider), container=\(container). Nothing has been created remotely yet; wait for the user to confirm in TermLoop.",
+                isError: false
+            )
+        } catch {
+            return toolResult(id: id,
+                              text: "propose_remote_task failed: \(mcpErrorDescription(error))",
                               isError: true)
         }
     }
@@ -769,6 +776,13 @@ enum TermLoopMCPServer {
         processEnv: [String: String],
         socketPath: String
     ) -> [String: Any] {
+        guard hasAskToReplyContext(processEnv) else {
+            return toolResult(
+                id: id,
+                text: "Ask-To reply context missing; reply_to_request is only available inside an Ask-To helper launch.",
+                isError: true
+            )
+        }
         let requestId = ((arguments["request_id"] as? String) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard UUID(uuidString: requestId) != nil else {

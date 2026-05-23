@@ -18,6 +18,6 @@ if [ ! -S "$SOCKET" ]; then
 fi
 
 # 2-second timeout, silent on failure. The trailing newline is required
-# by cmux's NDJSON framing — command substitution above strips it.
+# by termloop's NDJSON framing — command substitution above strips it.
 printf '%s\n' "$FRAME" | /usr/bin/nc -U -w 2 "$SOCKET" > /dev/null 2>&1 || true
 exit 0

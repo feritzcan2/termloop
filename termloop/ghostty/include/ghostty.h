@@ -1165,6 +1165,21 @@ GHOSTTY_API bool ghostty_surface_read_text_vt(ghostty_surface_t,
                                                  ghostty_text_s*);
 GHOSTTY_API void ghostty_surface_free_text(ghostty_surface_t, ghostty_text_s*);
 
+// cmux fork: raw-PTY tap callback. Fires on Ghostty's IO thread immediately
+// before the terminal stream parser consumes each chunk of bytes. Used by
+// cmux to fan out the byte stream to remote (mobile) mirror clients.
+//
+// The callback MUST be cheap, non-blocking, and allocation-free in the steady
+// state. It may be invoked from any thread; specifically, it runs on the IO
+// thread that owns the PTY read loop.
+//
+// Pass `fn = NULL` to clear the tap. Pass non-NULL to install. Only one tap
+// per surface; setting overwrites any previous tap.
+typedef void (*ghostty_pty_tap_fn)(void* user_data, const uint8_t* bytes, size_t len);
+GHOSTTY_API void ghostty_surface_set_pty_tap(ghostty_surface_t,
+                                             ghostty_pty_tap_fn,
+                                             void* user_data);
+
 #ifdef __APPLE__
 GHOSTTY_API void ghostty_surface_set_display_id(ghostty_surface_t, uint32_t);
 GHOSTTY_API void* ghostty_surface_quicklook_font(ghostty_surface_t);

@@ -9,7 +9,6 @@ import Bonsplit
 enum PanelRenderID: String {
     case activeAgents = "active-agents"
     case worktreeAgents = "worktree-agents"
-    case ticketWorktrees = "ticket-worktrees"
 }
 
 /// Render counter + duration sampler for sidebar panel snapshot builders. In

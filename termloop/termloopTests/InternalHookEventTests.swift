@@ -268,6 +268,103 @@ final class InternalHookEventTests: XCTestCase {
         )
     }
 
+    func testReportAgentActivityDoesNotReplaceDifferentPersistedAgent() {
+        let store = WorkspaceMetadataStore.shared
+        let activityStore = TerminalAgentActivityStore.shared
+        let wsId = UUID()
+        let cwd = "/tmp/termloop-hermes"
+        defer {
+            store.setTerminalAgentId(nil, for: wsId)
+            store.clearPersistedAgentSession(for: wsId)
+            activityStore.clear(workspaceId: wsId)
+        }
+
+        store.setTerminalAgentId("codex", for: wsId)
+        store.setPersistedAgentSession(
+            agentId: "codex",
+            sessionId: "codex-session",
+            cwd: cwd,
+            for: wsId
+        )
+        activityStore.upsert(
+            workspaceId: wsId,
+            agentId: "codex",
+            phase: .waiting,
+            attentionKind: .completion,
+            preview: "Codex completed",
+            waitingSince: 1,
+            sessionId: "codex-session",
+            cwd: cwd,
+            pid: nil
+        )
+
+        let result = TermLoopSocketCommands.workspaceReportAgentActivity([
+            "workspace_id": wsId.uuidString,
+            "agent_id": "claude",
+            "phase": "ready",
+            "session_id": "claude-helper-session",
+            "cwd": cwd
+        ])
+
+        guard case .ok(let payload) = result else {
+            XCTFail("Expected .ok result, got \(result)")
+            return
+        }
+
+        XCTAssertEqual(payload["ignored"] as? Bool, true)
+        XCTAssertEqual(payload["reason"] as? String, "persisted_agent_mismatch")
+        XCTAssertEqual(store.terminalAgentId(for: wsId), "codex")
+        XCTAssertEqual(store.persistedAgentSession(for: wsId)?.agentId, "codex")
+        XCTAssertEqual(store.persistedAgentSession(for: wsId)?.sessionId, "codex-session")
+        XCTAssertEqual(activityStore.state(forWorkspaceId: wsId)?.agentId, "codex")
+        XCTAssertEqual(activityStore.state(forWorkspaceId: wsId)?.sessionId, "codex-session")
+    }
+
+    func testReportAgentActivityDoesNotReplaceDifferentLiveAgent() {
+        let store = WorkspaceMetadataStore.shared
+        let activityStore = TerminalAgentActivityStore.shared
+        let wsId = UUID()
+        let cwd = "/tmp/termloop-hermes"
+        defer {
+            store.setTerminalAgentId(nil, for: wsId)
+            store.clearPersistedAgentSession(for: wsId)
+            activityStore.clear(workspaceId: wsId)
+        }
+
+        store.setTerminalAgentId("codex", for: wsId)
+        activityStore.upsert(
+            workspaceId: wsId,
+            agentId: "codex",
+            phase: .running,
+            attentionKind: nil,
+            preview: nil,
+            waitingSince: nil,
+            sessionId: "codex-live-session",
+            cwd: cwd,
+            pid: nil
+        )
+
+        let result = TermLoopSocketCommands.workspaceReportAgentActivity([
+            "workspace_id": wsId.uuidString,
+            "agent_id": "claude",
+            "phase": "ready",
+            "session_id": "claude-helper-session",
+            "cwd": cwd
+        ])
+
+        guard case .ok(let payload) = result else {
+            XCTFail("Expected .ok result, got \(result)")
+            return
+        }
+
+        XCTAssertEqual(payload["ignored"] as? Bool, true)
+        XCTAssertEqual(payload["reason"] as? String, "live_agent_mismatch")
+        XCTAssertEqual(store.terminalAgentId(for: wsId), "codex")
+        XCTAssertNil(store.persistedAgentSession(for: wsId))
+        XCTAssertEqual(activityStore.state(forWorkspaceId: wsId)?.agentId, "codex")
+        XCTAssertEqual(activityStore.state(forWorkspaceId: wsId)?.sessionId, "codex-live-session")
+    }
+
     func testDeferredClaudeReadyActivityDoesNotPersistMissingTranscriptSession() {
         let store = WorkspaceMetadataStore.shared
         let wsId = UUID()
@@ -863,6 +960,9 @@ final class InternalHookEventTests: XCTestCase {
 
 @MainActor
 final class PushDispatcherTests: XCTestCase {
+    private let awayIdle: TimeInterval = 120  // > 60s threshold = "away"
+    private let activeIdle: TimeInterval = 5  // < 60s threshold = "at Mac"
+
     func testPushSuppressedForFocusedWorkspace() {
         let workspaceId = UUID()
 
@@ -870,21 +970,110 @@ final class PushDispatcherTests: XCTestCase {
             PushDispatcher.shouldSuppressPushDelivery(
                 workspaceId: workspaceId,
                 isAppFocused: true,
-                selectedWorkspaceId: workspaceId
+                selectedWorkspaceId: workspaceId,
+                userIdleSeconds: awayIdle,
+                isScreenLocked: false,
+                attentionKind: .completion
             )
         )
         XCTAssertFalse(
             PushDispatcher.shouldSuppressPushDelivery(
                 workspaceId: workspaceId,
                 isAppFocused: false,
-                selectedWorkspaceId: workspaceId
+                selectedWorkspaceId: workspaceId,
+                userIdleSeconds: awayIdle,
+                isScreenLocked: false,
+                attentionKind: .completion
             )
         )
         XCTAssertFalse(
             PushDispatcher.shouldSuppressPushDelivery(
                 workspaceId: workspaceId,
                 isAppFocused: true,
-                selectedWorkspaceId: UUID()
+                selectedWorkspaceId: UUID(),
+                userIdleSeconds: awayIdle,
+                isScreenLocked: false,
+                attentionKind: .completion
+            )
+        )
+    }
+
+    func testPushSuppressedWhenUserActiveAtMac() {
+        let workspaceId = UUID()
+
+        XCTAssertTrue(
+            PushDispatcher.shouldSuppressPushDelivery(
+                workspaceId: workspaceId,
+                isAppFocused: false,
+                selectedWorkspaceId: nil,
+                userIdleSeconds: activeIdle,
+                isScreenLocked: false,
+                attentionKind: .completion
+            )
+        )
+        XCTAssertTrue(
+            PushDispatcher.shouldSuppressPushDelivery(
+                workspaceId: workspaceId,
+                isAppFocused: false,
+                selectedWorkspaceId: nil,
+                userIdleSeconds: activeIdle,
+                isScreenLocked: false,
+                attentionKind: .notification
+            )
+        )
+    }
+
+    func testPushDeliveredWhenUserActiveButAttentionUrgent() {
+        let workspaceId = UUID()
+
+        XCTAssertFalse(
+            PushDispatcher.shouldSuppressPushDelivery(
+                workspaceId: workspaceId,
+                isAppFocused: false,
+                selectedWorkspaceId: nil,
+                userIdleSeconds: activeIdle,
+                isScreenLocked: false,
+                attentionKind: .permission
+            )
+        )
+        XCTAssertFalse(
+            PushDispatcher.shouldSuppressPushDelivery(
+                workspaceId: workspaceId,
+                isAppFocused: false,
+                selectedWorkspaceId: nil,
+                userIdleSeconds: activeIdle,
+                isScreenLocked: false,
+                attentionKind: .error
+            )
+        )
+    }
+
+    func testPushDeliveredWhenScreenLockedRegardlessOfIdle() {
+        let workspaceId = UUID()
+
+        XCTAssertFalse(
+            PushDispatcher.shouldSuppressPushDelivery(
+                workspaceId: workspaceId,
+                isAppFocused: true,
+                selectedWorkspaceId: workspaceId,
+                userIdleSeconds: activeIdle,
+                isScreenLocked: true,
+                attentionKind: .completion
+            )
+        )
+    }
+
+    func testPushDeliveredWhenUserIdleBeyondThreshold() {
+        let workspaceId = UUID()
+
+        XCTAssertFalse(
+            PushDispatcher.shouldSuppressPushDelivery(
+                workspaceId: workspaceId,
+                isAppFocused: false,
+                selectedWorkspaceId: nil,
+                userIdleSeconds: awayIdle,
+                isScreenLocked: false,
+                attentionKind: .completion
             )
         )
     }

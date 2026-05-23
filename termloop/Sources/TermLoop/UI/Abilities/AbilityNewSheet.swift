@@ -3,9 +3,9 @@
 
 import SwiftUI
 
-/// Mini "+ New Ability" sheet. Collects name + one-line description, derives
+/// Mini "+ New Project Rule" sheet. Collects name + one-line description, derives
 /// a kebab-case slug, writes a skeleton bundle, and hands off to the detail
-/// page. The Customize-with-agent flow on the detail page then fills the
+/// page. The Improve-with-agent flow on the detail page can then fill the
 /// instructions body.
 @MainActor
 struct AbilityNewSheet: View {
@@ -31,7 +31,7 @@ struct AbilityNewSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("New ability")
+            Text("New project rule")
                 .font(.system(size: 18, weight: .semibold, design: .monospaced))
 
             VStack(alignment: .leading, spacing: 4) {

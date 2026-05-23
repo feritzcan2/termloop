@@ -32,7 +32,7 @@ final class TaskBoardPageRenderingTests: XCTestCase {
         try store.loadOrCreate()
         // Empty store still emits 5 columns so the board renders skeletons.
         XCTAssertEqual(store.columnSnapshots.count, 5)
-        XCTAssertEqual(store.columnSnapshots.map(\.id), TaskColumnId.allCases)
+        XCTAssertEqual(store.columnSnapshots.map(\.id), TaskColumnId.defaults)
     }
 
     func testEmptyStoreHasNoDerivedDetail() throws {

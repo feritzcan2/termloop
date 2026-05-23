@@ -98,7 +98,17 @@ struct GitWorktreeService {
         var args = ["worktree", "remove"]
         if force { args.append("--force") }
         args.append(path)
-        _ = try run(args, in: folder)
+        do {
+            _ = try run(args, in: folder)
+        } catch {
+            if try recoverPartiallyRemovedWorktree(folder: folder, path: path, after: error) {
+                #if DEBUG
+                Self.debugLog("remove.recovered folder=\(folder) path=\(path) force=\(force)")
+                #endif
+                return
+            }
+            throw error
+        }
         #if DEBUG
         Self.debugLog("remove.result folder=\(folder) path=\(path) force=\(force)")
         #endif
@@ -396,6 +406,59 @@ struct GitWorktreeService {
         try FileManager.default.createDirectory(
             atPath: parent, withIntermediateDirectories: true
         )
+    }
+
+    private func recoverPartiallyRemovedWorktree(
+        folder: String,
+        path: String,
+        after error: Error
+    ) throws -> Bool {
+        guard Self.isFilesystemDeleteFailure(error) else { return false }
+
+        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        let normalizedFolder = URL(fileURLWithPath: folder).standardizedFileURL.path
+        guard normalizedPath != normalizedFolder else { return false }
+
+        let entries: [ListEntry]
+        do {
+            entries = try list(in: folder)
+        } catch {
+            return false
+        }
+
+        let stillRegistered = entries.contains {
+            URL(fileURLWithPath: $0.path).standardizedFileURL.path == normalizedPath
+        }
+        guard !stillRegistered else { return false }
+
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: normalizedPath) {
+            do {
+                try fileManager.removeItem(atPath: normalizedPath)
+            } catch {
+                throw WorktreeError.invalidParams(
+                    reason: "Git unregistered the worktree, but TermLoop could not delete leftover files at \(normalizedPath): \(error.localizedDescription)"
+                )
+            }
+        }
+
+        GitPresentationInvalidationCenter.invalidate(
+            [.project(folder), .worktree(normalizedPath), .directory(normalizedPath)],
+            reason: "worktreeRemoveRecovered",
+            source: "GitWorktreeService"
+        )
+        return true
+    }
+
+    private static func isFilesystemDeleteFailure(_ error: Error) -> Bool {
+        guard case WorktreeError.gitCommandFailed(_, let stderr, _) = error else {
+            return false
+        }
+        let lower = stderr.lowercased()
+        return lower.contains("failed to delete")
+            || lower.contains("directory not empty")
+            || lower.contains("could not remove")
+            || lower.contains("unable to rmdir")
     }
 
     private func run(

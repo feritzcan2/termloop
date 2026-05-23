@@ -18,6 +18,7 @@ struct MarkdownEditor: View {
     @Binding var text: AttributedString
     var autosaveDebounce: Duration?
     var onCommit: ((String) -> Void)?
+    var onEscape: (() -> Void)?
     var placeholder: String?
 
     @State private var saveTask: Task<Void, Never>?
@@ -25,7 +26,7 @@ struct MarkdownEditor: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            MarkdownTextView(text: $text)
+            MarkdownTextView(text: $text, onEscape: onEscape)
                 .background(MarkdownTheme.editorBg)
                 .onAppear { isLoaded = true }
                 .onChange(of: text) { newValue in
@@ -66,20 +67,21 @@ struct MarkdownEditor: View {
 
 private struct MarkdownTextView: NSViewRepresentable {
     @Binding var text: AttributedString
+    var onEscape: (() -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = STTextView.scrollableTextView()
-        let textView = scrollView.documentView as! STTextView
+        let scrollView = MarkdownPlainTextView.scrollableTextView()
+        let textView = scrollView.documentView as! MarkdownPlainTextView
         textView.delegate = context.coordinator
-        textView.widthTracksTextView = true
+        textView.onEscape = { context.coordinator.parent.onEscape?() }
+        configureWrappedLineLayout(for: textView, in: scrollView)
         textView.highlightSelectedLine = false
+        textView.allowsDocumentBackgroundColorChange = false
         textView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
         textView.textColor = .labelColor
-        textView.backgroundColor = MarkdownTheme.nsEditorBackground
-        scrollView.drawsBackground = true
-        scrollView.backgroundColor = MarkdownTheme.nsEditorBackground
+        applyBackground(to: textView, in: scrollView)
 
         context.coordinator.isApplyingExternal = true
         textView.setAttributedString(NSAttributedString(string: String(text.characters),
@@ -93,11 +95,12 @@ private struct MarkdownTextView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
-        let textView = scrollView.documentView as! STTextView
+        let textView = scrollView.documentView as! MarkdownPlainTextView
+        textView.onEscape = { context.coordinator.parent.onEscape?() }
 
         let incoming = String(text.characters)
-        textView.backgroundColor = MarkdownTheme.nsEditorBackground
-        scrollView.backgroundColor = MarkdownTheme.nsEditorBackground
+        configureWrappedLineLayout(for: textView, in: scrollView)
+        applyBackground(to: textView, in: scrollView)
 
         // Crucial guard: if the content hasn't actually changed, do nothing.
         // This prevents SwiftUI re-renders (driven by agent terminal ticks,
@@ -132,6 +135,20 @@ private struct MarkdownTextView: NSViewRepresentable {
             .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
             .foregroundColor: NSColor.labelColor,
         ]
+    }
+
+    private func applyBackground(to textView: STTextView, in scrollView: NSScrollView) {
+        let background = MarkdownTheme.nsEditorBackground
+        textView.backgroundColor = background
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = background
+        scrollView.contentView.drawsBackground = true
+        scrollView.contentView.backgroundColor = background
+    }
+
+    private func configureWrappedLineLayout(for textView: STTextView, in scrollView: NSScrollView) {
+        scrollView.hasHorizontalScroller = false
+        textView.isHorizontallyResizable = false
     }
 
     @MainActor
@@ -174,11 +191,32 @@ private struct MarkdownTextView: NSViewRepresentable {
     }
 }
 
+private final class MarkdownPlainTextView: STTextView {
+    var onEscape: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        if ShortcutStroke.isEscapeCancelEvent(event),
+           !hasMarkedText(),
+           let onEscape {
+            onEscape()
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    override func paste(_ sender: Any?) {
+        pasteAsPlainText(sender)
+    }
+
+    override func pasteAsRichText(_ sender: Any?) {
+        pasteAsPlainText(sender)
+    }
+}
+
 // MARK: - Syntax highlighter
 
-/// Lightweight, regex-based markdown highlighter. Operates by adding
-/// attributes to the text view's existing storage (no replace), so it never
-/// disturbs the caret or scroll position.
+/// Lightweight, regex-based markdown highlighter. Resets rich paste attributes
+/// back to editor defaults, then applies markdown-specific styling in place.
 private enum MarkdownSyntaxHighlighter {
     static func apply(to textView: STTextView) {
         let full = textView.string as NSString
@@ -186,7 +224,7 @@ private enum MarkdownSyntaxHighlighter {
         guard range.length > 0 else { return }
 
         // Reset to base style first.
-        textView.addAttributes([
+        textView.setAttributes([
             .foregroundColor: NSColor.labelColor,
             .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
         ], range: range)

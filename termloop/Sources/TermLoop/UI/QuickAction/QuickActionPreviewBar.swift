@@ -25,7 +25,7 @@ struct QuickActionPreviewBar: View {
                     .foregroundStyle(.secondary)
             } else if preview.visibleChips.isEmpty {
                 Text(String(localized: "quickAction.preview.noAbilities",
-                            defaultValue: "No project abilities · ",
+                            defaultValue: "No project rules · ",
                             table: "TermLoop"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)

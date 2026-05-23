@@ -3,16 +3,14 @@
 
 import Foundation
 
-/// Read-only Tasks projection over the existing worktree-scoped work item
-/// binding. Tasks do not own remote issue state; they render whatever is
-/// attached to the task's worktree through `AgentReportedStateStore`.
+/// Read-only Tasks projection over user/app-owned remote item bindings.
 struct TaskWorkItemSnapshot: Equatable, Identifiable {
     let reference: RemoteWorkItemReference
     let title: String?
     let statusLabel: String?
+    let urlString: String?
     let taskFilePath: String?
-    let binding: AgentReportedStateStore.AgentReportedBinding?
-    let reportedStatePath: String?
+    let worktreePath: String?
     let workspaceId: UUID?
 
     var id: String { reference.storageKey }
@@ -20,7 +18,7 @@ struct TaskWorkItemSnapshot: Equatable, Identifiable {
     var key: String { reference.key }
 
     var url: URL? {
-        reference.url.flatMap(URL.init(string:)) ?? binding?.destinationURL
+        urlString.flatMap(URL.init(string:))
     }
 
     var compactLabel: String {
@@ -31,99 +29,137 @@ struct TaskWorkItemSnapshot: Equatable, Identifiable {
 
 @MainActor
 enum TaskWorkItemProjectionBuilder {
-    static func snapshots(for tasks: [TaskRecord]) -> [UUID: TaskWorkItemSnapshot] {
-        Dictionary(uniqueKeysWithValues: tasks.compactMap { task in
+    static func snapshots(for tasks: [TaskRecord], projectId: UUID? = nil) -> [UUID: TaskWorkItemSnapshot] {
+        let resolvedProjection = worktreeProjection(projectId: projectId, existing: nil)
+        return Dictionary(uniqueKeysWithValues: tasks.compactMap { task in
             guard task.archivedAt == nil,
-                  let snapshot = snapshot(for: task) else {
+                  let snapshot = snapshot(for: task, projectId: projectId, projection: resolvedProjection) else {
                 return nil
             }
             return (task.id, snapshot)
         })
     }
 
-    static func snapshot(for task: TaskRecord) -> TaskWorkItemSnapshot? {
+    static func snapshot(
+        for task: TaskRecord,
+        projectId: UUID? = nil,
+        projection: WorktreeProjectionSnapshot? = nil
+    ) -> TaskWorkItemSnapshot? {
+        let resolvedProjection = worktreeProjection(projectId: projectId, existing: projection)
         if let reference = task.remoteWorkItem {
+            let cached = RemoteWorkItemSnapshotStore.shared.snapshot(for: reference)
             return remoteSnapshot(
                 reference: reference,
-                title: task.title,
-                statusLabel: task.remoteStatusLabel,
+                title: cached?.title ?? task.title,
+                statusLabel: cached?.statusLabel ?? task.remoteStatusLabel,
+                urlString: cached?.reference.url ?? reference.url,
                 taskFilePath: task.taskFilePath,
                 workspaceId: task.workspaceId,
-                worktreePath: task.worktreePath
+                worktreePath: task.worktreePath,
+                projectId: projectId,
+                projection: resolvedProjection
             )
         }
-        return snapshot(workspaceId: task.workspaceId, worktreePath: task.worktreePath)
+        return snapshot(
+            workspaceId: task.workspaceId,
+            worktreePath: task.worktreePath,
+            projectId: projectId,
+            projection: resolvedProjection
+        )
     }
 
     static func remoteSnapshot(
         reference: RemoteWorkItemReference,
         title: String?,
         statusLabel: String?,
+        urlString: String?,
         taskFilePath: String?,
         workspaceId: UUID?,
-        worktreePath: String?
+        worktreePath: String?,
+        projectId: UUID? = nil,
+        projection: WorktreeProjectionSnapshot? = nil
     ) -> TaskWorkItemSnapshot {
-        TaskWorkItemSnapshot(
+        let resolvedProjection = worktreeProjection(projectId: projectId, existing: projection)
+        return TaskWorkItemSnapshot(
             reference: reference,
             title: title?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
             statusLabel: statusLabel?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+            urlString: urlString?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
             taskFilePath: taskFilePath?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
-            binding: nil,
-            reportedStatePath: nil,
+            worktreePath: worktreePath,
             workspaceId: workspaceId ?? preferredWorkspaceId(
                 workspaceId: workspaceId,
-                worktreePath: worktreePath
+                worktreePath: worktreePath,
+                projectId: projectId,
+                projection: resolvedProjection
             )
         )
     }
 
     static func snapshot(
         workspaceId: UUID?,
-        worktreePath: String?
+        worktreePath: String?,
+        projectId: UUID? = nil,
+        projection: WorktreeProjectionSnapshot? = nil
     ) -> TaskWorkItemSnapshot? {
-        let paths = reportedStatePaths(workspaceId: workspaceId, worktreePath: worktreePath)
+        let resolvedProjection = worktreeProjection(projectId: projectId, existing: projection)
+        let paths = worktreePaths(
+            workspaceId: workspaceId,
+            worktreePath: worktreePath,
+            projectId: projectId,
+            projection: resolvedProjection
+        )
         for candidate in paths {
-            guard let binding = AgentReportedStateStore.shared.binding(
-                abilityId: TermLoopBuiltInMCP.jiraAbilityId,
-                bindingId: JiraTicketBindingPrompt.bindingId,
-                forPath: candidate.path
-            ),
-                  var reference = reference(from: binding) else {
+            guard let binding = WorktreeRemoteItemBindingStore.shared.binding(forPath: candidate.path) else {
                 continue
             }
-            if reference.url == nil {
-                reference.url = binding.url?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-            }
+            let cached = RemoteWorkItemSnapshotStore.shared.snapshot(for: binding.reference)
             return TaskWorkItemSnapshot(
-                reference: reference,
-                title: nil,
-                statusLabel: binding.status?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+                reference: cached?.reference ?? binding.reference,
+                title: cached?.title.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+                statusLabel: cached?.statusLabel?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+                urlString: (cached?.reference.url ?? binding.reference.url)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .nilIfEmpty,
                 taskFilePath: nil,
-                binding: binding,
-                reportedStatePath: candidate.path,
+                worktreePath: candidate.path,
                 workspaceId: candidate.workspaceId ?? preferredWorkspaceId(
                     workspaceId: workspaceId,
-                    worktreePath: worktreePath
+                    worktreePath: worktreePath,
+                    projectId: projectId,
+                    projection: resolvedProjection
                 )
             )
         }
         return nil
     }
 
-    static func preferredWorkspaceId(workspaceId: UUID?, worktreePath: String?) -> UUID? {
+    static func preferredWorkspaceId(
+        workspaceId: UUID?,
+        worktreePath: String?,
+        projectId: UUID? = nil,
+        projection: WorktreeProjectionSnapshot? = nil
+    ) -> UUID? {
         if let workspaceId { return workspaceId }
         guard let path = TaskPathNormalization.resolveDisplayAndKey(worktreePath)?.displayPath else {
             return nil
         }
+        let resolvedProjection = worktreeProjection(projectId: projectId, existing: projection)
+        if let id = resolvedProjection?.workspaceIds(forWorktreePath: path).first {
+            return id
+        }
         return WorkspaceMetadataStore.shared.workspaceIds(withWorktreePath: path).first
     }
 
-    private static func reportedStatePaths(
+    private static func worktreePaths(
         workspaceId: UUID?,
-        worktreePath: String?
+        worktreePath: String?,
+        projectId: UUID? = nil,
+        projection: WorktreeProjectionSnapshot? = nil
     ) -> [(path: String, workspaceId: UUID?)] {
         let metadata = WorkspaceMetadataStore.shared
         let normalizedPath = TaskPathNormalization.resolveDisplayAndKey(worktreePath)?.displayPath
+        let resolvedProjection = worktreeProjection(projectId: projectId, existing: projection)
         var result: [(String, UUID?)] = []
         var seen = Set<String>()
 
@@ -145,7 +181,13 @@ enum TaskWorkItemProjectionBuilder {
         }
 
         if let normalizedPath {
-            for id in metadata.workspaceIds(withWorktreePath: normalizedPath) {
+            let workspaceIds: [UUID]
+            if let resolvedProjection {
+                workspaceIds = resolvedProjection.workspaceIds(forWorktreePath: normalizedPath)
+            } else {
+                workspaceIds = metadata.workspaceIds(withWorktreePath: normalizedPath)
+            }
+            for id in workspaceIds {
                 append(
                     metadata.reportedStatePath(forWorkspaceId: id, fallbackPath: normalizedPath),
                     workspaceId: id
@@ -158,18 +200,15 @@ enum TaskWorkItemProjectionBuilder {
         return result
     }
 
-    private static func reference(
-        from binding: AgentReportedStateStore.AgentReportedBinding
-    ) -> RemoteWorkItemReference? {
-        [
-            binding.url?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
-            binding.label.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-        ]
-        .compactMap { $0 }
-        .lazy
-        .compactMap(RemoteWorkItemParser.parse)
-        .first
+    private static func worktreeProjection(
+        projectId: UUID?,
+        existing: WorktreeProjectionSnapshot?
+    ) -> WorktreeProjectionSnapshot? {
+        if let existing { return existing }
+        guard let projectId else { return nil }
+        return WorktreeProjectionStore.shared.snapshot(projectId: projectId)
     }
+
 }
 
 private extension String {

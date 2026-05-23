@@ -3209,7 +3209,7 @@ class GhosttyApp {
                 #endif
                 return false
             }
-            if !BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowser() {
+            if !BrowserLinkOpenSettings.openTerminalLinksInTermLoopBrowser() {
                 #if DEBUG
                 dlog("link.openURL cmuxBrowser=disabled, opening externally url=\(target.url)")
                 #endif

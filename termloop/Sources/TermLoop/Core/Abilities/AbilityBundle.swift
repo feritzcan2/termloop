@@ -1,5 +1,17 @@
 import Foundation
 
+// Older working-with-jira ability bundles may still name these removed tools.
+// Strip them on load/save so they do not reappear in UI or launch context.
+private let deprecatedTermLoopJiraMCPToolNames: Set<String> = [
+    "get_jira_ticket",
+    "set_jira_ticket"
+]
+
+private func isDeprecatedTermLoopJiraMCPTool(_ name: String?) -> Bool {
+    guard let name else { return false }
+    return deprecatedTermLoopJiraMCPToolNames.contains(name)
+}
+
 struct AbilityBundleManifest: Codable {
     var id: String
     var name: String
@@ -8,13 +20,12 @@ struct AbilityBundleManifest: Codable {
     var tags: [String]
     var items: [AbilityItem]
     var termLoopMCPTools: [AbilityMCPToolBinding]
-    var bindings: [AbilityBinding]
 
     static let customizerPromptFile = "prompt-customizer.md"
     static let payloadDirectoryName = "payload"
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, description, activation, tags, items, termLoopMCPTools, bindings
+        case id, name, description, activation, tags, items, termLoopMCPTools
     }
 
     init(
@@ -24,8 +35,7 @@ struct AbilityBundleManifest: Codable {
         activation: AbilityActivation,
         tags: [String],
         items: [AbilityItem],
-        termLoopMCPTools: [AbilityMCPToolBinding] = [],
-        bindings: [AbilityBinding] = []
+        termLoopMCPTools: [AbilityMCPToolBinding] = []
     ) {
         self.id = id
         self.name = name
@@ -34,7 +44,6 @@ struct AbilityBundleManifest: Codable {
         self.tags = tags
         self.items = items
         self.termLoopMCPTools = termLoopMCPTools
-        self.bindings = bindings
     }
 
     init(from decoder: Decoder) throws {
@@ -44,11 +53,10 @@ struct AbilityBundleManifest: Codable {
         self.description = try c.decode(String.self, forKey: .description)
         self.activation = try c.decode(AbilityActivation.self, forKey: .activation)
         self.tags = try c.decodeIfPresent([String].self, forKey: .tags) ?? []
-        self.termLoopMCPTools = try c.decodeIfPresent(
+        self.termLoopMCPTools = (try c.decodeIfPresent(
             [AbilityMCPToolBinding].self,
             forKey: .termLoopMCPTools
-        ) ?? []
-        self.bindings = try c.decodeIfPresent([AbilityBinding].self, forKey: .bindings) ?? []
+        ) ?? []).filter { !isDeprecatedTermLoopJiraMCPTool($0.name) }
 
         if c.contains(.items) {
             var items: [AbilityItem] = []
@@ -120,7 +128,6 @@ enum AbilityBundleStore {
             tags: manifest.tags,
             items: manifest.items,
             mcpTools: manifest.termLoopMCPTools,
-            bindings: manifest.bindings,
             metadataFilePath: manifestURL
         )
     }
@@ -146,6 +153,9 @@ enum AbilityBundleStore {
         let frontmatter = parsed?.frontmatter ?? [:]
         let fallbackTitle = humanizedPayloadTitle(fileURL.deletingPathExtension().lastPathComponent)
         let mcpToolName = stringValue(frontmatter["mcpTool"])?.nilIfBlank()
+        if isDeprecatedTermLoopJiraMCPTool(mcpToolName) {
+            return nil
+        }
         return AbilityPayloadBlock(
             id: fileURL.deletingPathExtension().lastPathComponent,
             title: stringValue(frontmatter["title"])?.nilIfBlank() ?? fallbackTitle,
@@ -175,8 +185,7 @@ enum AbilityBundleStore {
             activation: ability.activation,
             tags: ability.tags,
             items: ability.items,
-            termLoopMCPTools: ability.mcpTools,
-            bindings: ability.bindings
+            termLoopMCPTools: ability.mcpTools.filter { !isDeprecatedTermLoopJiraMCPTool($0.name) }
         )
 
         let encoder = JSONEncoder()
@@ -188,7 +197,7 @@ enum AbilityBundleStore {
             content: ability.customizerPromptBody,
             at: bundleURL.appendingPathComponent(AbilityBundleManifest.customizerPromptFile)
         )
-        for block in ability.payloadBlocks {
+        for block in ability.payloadBlocks where !isDeprecatedTermLoopJiraMCPTool(block.mcpToolName) {
             try writePayloadBlock(block)
         }
     }
@@ -297,6 +306,139 @@ enum AbilityBundleStore {
             .replacingOccurrences(of: "_", with: " ")
         guard !words.isEmpty else { return "Payload block" }
         return String(words.prefix(1)).uppercased() + String(words.dropFirst())
+    }
+}
+
+enum ProjectSkillWriter {
+    enum WriterError: LocalizedError {
+        case missingProject
+        case invalidSkillId(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .missingProject:
+                return "No active project folder is available."
+            case .invalidSkillId(let id):
+                return "Invalid project skill id: \(id)"
+            }
+        }
+    }
+
+    static func primarySkillId(for ability: Ability) -> String {
+        ability.requiredSkillIDs.first ?? ability.id
+    }
+
+    static func canonicalSkillFileURL(
+        projectFolderPath: String?,
+        skillId: String
+    ) throws -> URL {
+        guard let projectFolderPath,
+              !projectFolderPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw WriterError.missingProject
+        }
+        let safeId = try validatedSkillId(skillId)
+        return URL(fileURLWithPath: projectFolderPath, isDirectory: true)
+            .appendingPathComponent(".termloop", isDirectory: true)
+            .appendingPathComponent("skills", isDirectory: true)
+            .appendingPathComponent(safeId, isDirectory: true)
+            .appendingPathComponent("SKILL.md", isDirectory: false)
+    }
+
+    @discardableResult
+    static func ensureCanonicalSkill(
+        for ability: Ability,
+        projectFolderPath: String?
+    ) throws -> URL {
+        try ensureCanonicalSkill(
+            skillId: primarySkillId(for: ability),
+            title: ability.name,
+            description: ability.description,
+            projectFolderPath: projectFolderPath
+        )
+    }
+
+    @discardableResult
+    static func ensureCanonicalSkill(
+        skillId: String,
+        title: String,
+        description: String,
+        projectFolderPath: String?
+    ) throws -> URL {
+        let fileURL = try canonicalSkillFileURL(
+            projectFolderPath: projectFolderPath,
+            skillId: skillId
+        )
+        if FileManager.default.fileExists(atPath: fileURL.path) {
+            return fileURL
+        }
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try skeletonSkillBody(
+            skillId: skillId,
+            title: title,
+            description: description
+        ).write(to: fileURL, atomically: true, encoding: .utf8)
+        return fileURL
+    }
+
+    private static func validatedSkillId(_ value: String) throws -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              trimmed.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]*$"#, options: .regularExpression) != nil,
+              !trimmed.contains("..") else {
+            throw WriterError.invalidSkillId(value)
+        }
+        return trimmed
+    }
+
+    private static func skeletonSkillBody(
+        skillId: String,
+        title: String,
+        description: String
+    ) -> String {
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let heading = normalizedTitle.isEmpty ? humanizedTitle(skillId) : normalizedTitle
+        let normalizedDescription = description
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\n", with: " ")
+        let frontmatterDescription = normalizedDescription.isEmpty
+            ? "Use when this project skill applies."
+            : normalizedDescription
+        return """
+        ---
+        name: \(yamlScalar(skillId))
+        description: \(yamlScalar(frontmatterDescription))
+        ---
+
+        # \(heading)
+
+        Add the project-specific skill instructions agents should follow for \(heading). Keep this file short, concrete, and update it whenever the team's workflow changes.
+
+        """
+    }
+
+    private static func yamlScalar(_ value: String) -> String {
+        let escaped = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
+    }
+
+    private static func humanizedTitle(_ id: String) -> String {
+        id
+            .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "_", with: " ")
+            .split(separator: " ")
+            .map { token in
+                let lower = token.lowercased()
+                if ["git", "pr", "jira"].contains(lower) {
+                    return lower.uppercased()
+                }
+                return lower.prefix(1).uppercased() + lower.dropFirst()
+            }
+            .joined(separator: " ")
     }
 }
 

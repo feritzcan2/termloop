@@ -8,82 +8,156 @@ import SwiftUI
 /// repair actions, and projection sections.
 struct TaskSidebarDrillInView: View {
     let detailSnapshot: TaskDetailSnapshot
+    let projectId: UUID
     @ObservedObject var selection: TaskSelectionStore
     @ObservedObject var remoteSync: TaskRemoteSyncCoordinator
     var columnTitle: (TaskColumnId) -> String = { $0.defaultTitle }
     var onRebind: ((UUID) -> Void)?
+    var onOpenTaskSpec: ((UUID) -> Void)?
+    var onRefineTaskSpec: ((UUID) -> Void)?
+    var onExecuteTaskSpec: ((UUID) -> Void)?
+    var onUpdateTitle: ((UUID, String) -> Void)?
+    var onUpdateBrief: ((UUID, String?) -> Void)?
+    var onCreateWorktree: ((UUID) -> Void)?
+    var onLinkWorktree: ((UUID) -> Void)?
+    var onStartAgent: ((UUID) -> Void)?
     var onOpenSettings: () -> Void = {}
 
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
+    @ObservedObject private var worktreeProjectionStore = WorktreeProjectionStore.shared
+    @ObservedObject private var devServerRunStore = DevServerRunStore.shared
     @EnvironmentObject private var tabManager: TabManager
+    @State private var isDevServersExpanded = false
     var onUnbind: ((UUID) -> Void)?
     var onArchive: ((UUID) -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 14) {
                     breadcrumb
                     header(detailSnapshot)
-                    quickActions(detailSnapshot)
-                    if case .failed = detailSnapshot.provisionState {
-                        TaskRepairBanner(
-                            reason: detailSnapshot.provisionState.failureDisplayText ?? "",
-                            onRebind: { onRebind?(detailSnapshot.id) },
-                            onUnbind: { onUnbind?(detailSnapshot.id) },
-                            onArchive: { onArchive?(detailSnapshot.id); selection.select(nil) }
-                        )
-                    }
                     flatSection {
-                        TaskWorkItemSection(
-                            taskId: detailSnapshot.id,
-                            taskWorkItem: workItemSnapshot(for: detailSnapshot),
-                            workspaceId: detailSnapshot.workspaceId,
+                        mergedTaskCard(detailSnapshot)
+                    }
+                    Divider().opacity(0.6)
+                    flatSection {
+                        TaskBranchesSection(
+                            branch: detailSnapshot.branch,
                             worktreePath: detailSnapshot.worktreePath,
-                            remoteSync: remoteSync
+                            projectId: projectId,
+                            taskWorkspaceId: detailSnapshot.workspaceId,
+                            provisionState: detailSnapshot.provisionState,
+                            selectedAgentWorkspaceId: selection.inlineTerminalWorkspaceId,
+                            onOpenWorktree: {
+                                TaskQuickActions.openWorktree(
+                                    workspaceId: detailSnapshot.workspaceId,
+                                    worktreePath: detailSnapshot.worktreePath
+                                )
+                            },
+                            onStartAgent: {
+                                onStartAgent?(detailSnapshot.id)
+                            },
+                            onCreateWorktree: {
+                                onCreateWorktree?(detailSnapshot.id)
+                            },
+                            onLinkWorktree: onLinkWorktree.map { link in
+                                { link(detailSnapshot.id) }
+                            },
+                            onClearWorktreeError: {
+                                onUnbind?(detailSnapshot.id)
+                            },
+                            onRebind: {
+                                onRebind?(detailSnapshot.id)
+                            },
+                            onUnbind: {
+                                onUnbind?(detailSnapshot.id)
+                            },
+                            onArchive: {
+                                onArchive?(detailSnapshot.id)
+                                selection.select(nil)
+                            },
+                            onOpenAgentTerminal: { workspaceId in
+                                selection.openInlineTerminal(workspaceId: workspaceId)
+                                TaskQuickActions.showWorkspaceInline(workspaceId: workspaceId)
+                            }
                         )
                     }
                     if hasWorktreeProjections(detailSnapshot) {
-                        Divider().opacity(0.6)
-                        flatSection {
+                        // Compact footer for git/PR status — both render as
+                        // single-line summaries when empty, full sections when
+                        // there is something to show.
+                        VStack(alignment: .leading, spacing: 8) {
                             TaskGitChangesSection(
                                 workspaceId: detailSnapshot.workspaceId,
                                 worktreePath: detailSnapshot.worktreePath,
-                                branch: detailSnapshot.branch
+                                branch: detailSnapshot.branch,
+                                projectId: projectId
                             )
-                        }
-                        Divider().opacity(0.6)
-                        flatSection {
+                            Divider().opacity(0.6)
                             TaskOpenPRsSection(
                                 workspaceId: detailSnapshot.workspaceId,
                                 worktreePath: detailSnapshot.worktreePath,
                                 branch: detailSnapshot.branch
                             )
                         }
-                        Divider().opacity(0.6)
-                        flatSection {
-                            TaskBranchesSection(
-                                branch: detailSnapshot.branch,
-                                worktreePath: detailSnapshot.worktreePath,
-                                taskWorkspaceId: detailSnapshot.workspaceId,
-                                selectedAgentWorkspaceId: selection.inlineTerminalWorkspaceId,
-                                onOpenAgentTerminal: { workspaceId in
-                                    selection.openInlineTerminal(workspaceId: workspaceId)
-                                    TaskQuickActions.showWorkspaceInline(workspaceId: workspaceId)
-                                }
-                            )
-                        }
+                        .padding(.top, 4)
+                    }
+                    flatSection {
+                        devServersSection
                     }
                 }
                 .padding(10)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .onAppear { DevServerBrowserRouter.install() }
+    }
 
-            TaskSidebarSettingsButton(action: onOpenSettings)
-                .padding(10)
-                .padding(.top, 1)
-                .background(Color(nsColor: .windowBackgroundColor))
+    /// Single merged card containing the work-item link (Jira/GitHub/GitLab)
+    /// and the task.md spec row. Two rows, one card, one shared title — fixes
+    /// the prior "Task Spec / Work Item" duplication where the title and
+    /// `task.md` reference appeared in both sections.
+    @ViewBuilder
+    private func mergedTaskCard(_ snap: TaskDetailSnapshot) -> some View {
+        let showsWorkItem = shouldShowWorkItemSection(snap)
+        VStack(alignment: .leading, spacing: 6) {
+            TaskSidebarSectionTitle(
+                String(localized: "tasks.sidebar.section.task",
+                       defaultValue: "Task",
+                       table: "TermLoop")
+            )
+            VStack(alignment: .leading, spacing: 8) {
+                if showsWorkItem {
+                    TaskWorkItemSection(
+                        taskId: snap.id,
+                        taskWorkItem: workItemSnapshot(for: snap),
+                        workspaceId: snap.workspaceId,
+                        worktreePath: snap.worktreePath,
+                        projectId: projectId,
+                        remoteSync: remoteSync,
+                        unwrapped: true
+                    )
+                    Divider().opacity(0.35)
+                }
+                TaskSpecSection(
+                    snapshot: snap,
+                    onOpen: { onOpenTaskSpec?(snap.id) },
+                    onRefineWithAgent: onRefineTaskSpec.map { refine in
+                        { refine(snap.id) }
+                    },
+                    onExecuteWithAgent: onExecuteTaskSpec.map { execute in
+                        { execute(snap.id) }
+                    },
+                    unwrapped: true
+                )
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.56))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
     }
 
@@ -97,17 +171,151 @@ struct TaskSidebarDrillInView: View {
         return !trimmedPath.isEmpty
     }
 
-    private var breadcrumb: some View {
-        Button(action: { selection.select(nil) }) {
-            HStack(spacing: 4) {
-                Image(systemName: "chevron.left")
-                Text(String(localized: "tasks.sidebar.allTasks",
-                            defaultValue: "All tasks", table: "TermLoop"))
+    private var devServersSection: some View {
+        let activeRuns = devServersActiveRuns
+        let activeCount = activeRuns.count
+        let visibleURLRun = activeRuns.first { $0.latestURL != nil }
+        let runningColor = Color(red: 0.30, green: 0.78, blue: 0.36)
+        return VStack(alignment: .leading, spacing: 8) {
+            Divider().opacity(0.35)
+
+            Button {
+                isDevServersExpanded.toggle()
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "server.rack")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(activeCount > 0 ? runningColor : Color.secondary)
+                        .frame(width: 14)
+                    Text(devServersCollapsedTitle)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    if activeCount > 0 {
+                        Text(devServersRunningSummary(activeCount))
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(runningColor)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(runningColor.opacity(0.14))
+                            .clipShape(Capsule())
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: isDevServersExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.secondary.opacity(0.85))
+                        .frame(width: 10)
+                }
+                .padding(.vertical, 5)
+                .padding(.horizontal, 7)
+                .background(isDevServersExpanded ? Color(nsColor: .controlBackgroundColor).opacity(0.35) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .contentShape(Rectangle())
             }
-            .font(.system(size: 12, weight: .medium))
-            .foregroundColor(.accentColor)
+            .buttonStyle(.plain)
+            .accessibilityLabel(devServersTitle)
+
+            if let visibleURLRun, let latestURL = visibleURLRun.latestURL {
+                devServerFooterURLButton(run: visibleURLRun, url: latestURL, accent: runningColor)
+            }
+
+            if isDevServersExpanded {
+                DevServerTaskSection(
+                    snapshot: detailSnapshot,
+                    projectId: projectId
+                )
+                .padding(.top, 6)
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private var devServersTitle: String {
+        String(localized: "devservers.sidebar.title",
+               defaultValue: "Dev Servers",
+               table: "TermLoop")
+    }
+
+    private var devServersCollapsedTitle: String {
+        String(localized: "devservers.sidebar.runProfiles",
+               defaultValue: "Run profiles",
+               table: "TermLoop")
+    }
+
+    private var devServersActiveRuns: [DevServerRunSnapshot] {
+        _ = devServerRunStore.version
+        return devServerRunStore.snapshots(projectId: projectId, taskId: detailSnapshot.id)
+            .filter(\.isActive)
+            .sorted { lhs, rhs in lhs.updatedAt > rhs.updatedAt }
+    }
+
+    private func devServersRunningSummary(_ activeCount: Int) -> String {
+        String(localized: "devservers.sidebar.runningCount",
+               defaultValue: "\(activeCount) running",
+               table: "TermLoop")
+    }
+
+    private func devServerFooterURLButton(run: DevServerRunSnapshot, url: String, accent: Color) -> some View {
+        Button {
+            openDevServerURL(run: run, rawURL: url)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "safari")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(url)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.up.forward")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(accent.opacity(0.85))
+            }
+            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+            .background(accent.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .buttonStyle(.plain)
+        .foregroundStyle(accent)
+        .help(String(localized: "devservers.sidebar.openURL.help", defaultValue: "Open URL. Command-click forces TermLoop Browser.", table: "TermLoop"))
+    }
+
+    private func openDevServerURL(run: DevServerRunSnapshot, rawURL: String) {
+        DevServerBrowserRouter.openFromUserClick(snapshot: run, rawURL: rawURL, focus: true)
+    }
+
+    private func shouldShowWorkItemSection(_ snap: TaskDetailSnapshot) -> Bool {
+        guard remoteSync.settings.isEnabled else { return false }
+        return snap.remoteWorkItem != nil || snap.workspaceId != nil || hasWorktreeProjections(snap)
+    }
+
+    private var breadcrumb: some View {
+        HStack(spacing: 8) {
+            Button(action: { selection.select(nil) }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                    Text(String(localized: "tasks.sidebar.allTasks",
+                                defaultValue: "All tasks", table: "TermLoop"))
+                }
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.accentColor)
+            }
+            .buttonStyle(.plain)
+
+            Spacer(minLength: 0)
+
+            Button(action: onOpenSettings) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(String(localized: "tasks.sidebar.settings.open",
+                         defaultValue: "Task Settings",
+                         table: "TermLoop"))
+        }
     }
 
     private func header(_ snap: TaskDetailSnapshot) -> some View {
@@ -115,34 +323,82 @@ struct TaskSidebarDrillInView: View {
             provisionState: snap.provisionState,
             agentStatus: agentStatus(for: snap)
         )
-        return HStack(alignment: .top, spacing: 10) {
-            Circle()
-                .fill(statusPresentation.color)
-                .frame(width: 9, height: 9)
-                .padding(.top, 7)
-            VStack(alignment: .leading, spacing: 5) {
-                Text(snap.title)
-                    .font(.system(size: 16, weight: .semibold))
-                    .lineLimit(2)
-                HStack(spacing: 6) {
-                    Text(columnTitle(snap.columnId))
-                        .foregroundStyle(.secondary)
-                    Text("·")
-                        .foregroundStyle(.tertiary)
-                    Text(worktreeSummary(for: snap))
-                        .foregroundStyle(.secondary)
-                    Text("·")
-                        .foregroundStyle(.tertiary)
-                    Text(statusPresentation.text)
-                        .foregroundStyle(statusPresentation.color)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                Circle()
+                    .fill(statusPresentation.color)
+                    .frame(width: 9, height: 9)
+                    .padding(.top, 8)
+                VStack(alignment: .leading, spacing: 4) {
+                    TaskSidebarTitleField(
+                        taskId: snap.id,
+                        title: snap.title,
+                        onUpdateTitle: onUpdateTitle
+                    )
+                    TaskSidebarBriefField(
+                        taskId: snap.id,
+                        brief: snap.brief,
+                        onUpdateBrief: onUpdateBrief
+                    )
                 }
-                .font(.system(size: 12))
-                .lineLimit(1)
-                .truncationMode(.middle)
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+
+            // Single condensed meta line. Provision/agent state already lives
+            // in the colored dot above and the Worktree Agents section below —
+            // the header keeps just task identity (board column, remote
+            // status, optional out-of-sync hint).
+            headerMetaLine(snap, statusPresentation: statusPresentation)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func headerMetaLine(
+        _ snap: TaskDetailSnapshot,
+        statusPresentation: TaskStatusPresentation
+    ) -> some View {
+        let remoteStatus = remoteSync.settings.isEnabled
+            ? snap.remoteStatusLabel?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .nonEmptyTaskSidebarString
+            : nil
+        let columnText = columnTitle(snap.columnId)
+        let mismatch = remoteStatus.map { isStatusMismatch(boardStatus: columnText, remoteStatus: $0) } ?? false
+
+        FlowPillRow(spacing: 6) {
+            TaskSidebarPill(
+                icon: "rectangle.3.group",
+                text: columnText,
+                tint: .secondary
+            )
+            if let remoteStatus {
+                TaskSidebarPill(
+                    icon: "checklist",
+                    text: "\(remoteProviderLabel(for: snap)) · \(remoteStatus)",
+                    tint: .blue
+                )
+            }
+            if mismatch {
+                TaskSidebarPill(
+                    icon: "arrow.triangle.2.circlepath",
+                    text: String(localized: "tasks.sidebar.header.statusMismatch",
+                                 defaultValue: "Out of sync",
+                                 table: "TermLoop"),
+                    tint: .orange
+                )
+            }
+            // Surface provision failures (failed/pending) in the header so the
+            // dot's red/orange is not silent. Agent "running" status is
+            // intentionally NOT mirrored here — it lives in Worktree Agents.
+            if statusPresentation.shouldShowInHeader {
+                TaskSidebarPill(
+                    icon: statusPresentation.iconName,
+                    text: statusPresentation.text,
+                    tint: statusPresentation.color
+                )
+            }
+        }
     }
 
     private func agentStatus(for snap: TaskDetailSnapshot) -> TaskAgentStatusSummary? {
@@ -150,60 +406,64 @@ struct TaskSidebarDrillInView: View {
         // status while Tasks remains a projection-only consumer.
         _ = metadataStore
         _ = activityStore
+        _ = worktreeProjectionStore.version
         return TaskAgentProjectionBuilder.statusSummary(
             worktreePath: snap.worktreePath,
             taskWorkspaceId: snap.workspaceId,
+            projectId: projectId,
             openWorkspaceIds: Set(tabManager.tabs.map(\.id))
         )
     }
 
     private func workItemSnapshot(for snap: TaskDetailSnapshot) -> TaskWorkItemSnapshot? {
+        _ = worktreeProjectionStore.version
         if let reference = snap.remoteWorkItem {
             return TaskWorkItemProjectionBuilder.remoteSnapshot(
                 reference: reference,
                 title: snap.title,
                 statusLabel: snap.remoteStatusLabel,
+                urlString: reference.url,
                 taskFilePath: snap.taskFilePath,
                 workspaceId: snap.workspaceId,
-                worktreePath: snap.worktreePath
+                worktreePath: snap.worktreePath,
+                projectId: projectId
             )
         }
         return TaskWorkItemProjectionBuilder.snapshot(
             workspaceId: snap.workspaceId,
-            worktreePath: snap.worktreePath
+            worktreePath: snap.worktreePath,
+            projectId: projectId
         )
     }
 
-    private func worktreeSummary(for snap: TaskDetailSnapshot) -> String {
-        if let branch = snap.branch?.trimmingCharacters(in: .whitespacesAndNewlines), !branch.isEmpty {
-            return branch
-        }
-        if let leaf = TaskAgentProjectionBuilder.pathLeaf(snap.worktreePath) {
-            return leaf
-        }
-        return String(localized: "tasks.sidebar.header.manualTask",
-                      defaultValue: "Manual task", table: "TermLoop")
+    private func isStatusMismatch(boardStatus: String, remoteStatus: String) -> Bool {
+        normalizedStatus(boardStatus) != normalizedStatus(remoteStatus)
     }
 
-    private func quickActions(_ snap: TaskDetailSnapshot) -> some View {
-        HStack(spacing: 14) {
-            Button(String(localized: "tasks.sidebar.action.open",
-                          defaultValue: "Open", table: "TermLoop")) {
-                TaskQuickActions.openWorktree(workspaceId: snap.workspaceId, worktreePath: snap.worktreePath)
-            }
-            .disabled(snap.workspaceId == nil && snap.worktreePath == nil)
-
-            Button(String(localized: "tasks.sidebar.action.agent",
-                          defaultValue: "+ Agent", table: "TermLoop")) {
-                if let workspaceId = snap.workspaceId {
-                    TaskQuickActions.addAgentRun(workspaceId: workspaceId)
-                }
-            }
-            .disabled(snap.workspaceId == nil)
-            Spacer(minLength: 0)
+    private func remoteProviderLabel(for snap: TaskDetailSnapshot) -> String {
+        switch snap.remoteWorkItem?.provider {
+        case .jira:
+            return "Jira"
+        case .github:
+            return "GitHub"
+        case .gitlab:
+            return "GitLab"
+        case nil:
+            return String(localized: "tasks.sidebar.header.remoteProvider",
+                          defaultValue: "Remote",
+                          table: "TermLoop")
         }
-        .buttonStyle(.link)
-        .font(.system(size: 12, weight: .medium))
+    }
+
+    private func normalizedStatus(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .split(separator: " ")
+            .joined(separator: " ")
     }
 
     private func flatSection<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -211,4 +471,192 @@ struct TaskSidebarDrillInView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+}
+
+private extension String {
+    var nonEmptyTaskSidebarString: String? { isEmpty ? nil : self }
+}
+
+private struct TaskSidebarTitleField: View {
+    let taskId: UUID
+    let title: String
+    var onUpdateTitle: ((UUID, String) -> Void)?
+
+    @State private var draft: String
+    @FocusState private var isFocused: Bool
+
+    init(
+        taskId: UUID,
+        title: String,
+        onUpdateTitle: ((UUID, String) -> Void)?
+    ) {
+        self.taskId = taskId
+        self.title = title
+        self.onUpdateTitle = onUpdateTitle
+        _draft = State(initialValue: title)
+    }
+
+    var body: some View {
+        TextField(
+            String(localized: "tasks.sidebar.title.placeholder",
+                   defaultValue: "Task title",
+                   table: "TermLoop"),
+            text: $draft,
+            axis: .vertical
+        )
+        .textFieldStyle(.plain)
+        .font(.system(size: 17, weight: .semibold))
+        .foregroundStyle(.primary)
+        .lineLimit(1...3)
+        .padding(.vertical, 3)
+        .padding(.horizontal, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isFocused ? Color.accentColor.opacity(0.10) : Color.primary.opacity(0.035))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(isFocused ? Color.accentColor.opacity(0.45) : Color.primary.opacity(0.08), lineWidth: 1)
+        )
+        .focused($isFocused)
+        .disabled(onUpdateTitle == nil)
+        .onSubmit(commit)
+        .onChange(of: isFocused) { _, focused in
+            if !focused { commit() }
+        }
+        .onChange(of: taskId) { _, _ in
+            draft = title
+        }
+        .onChange(of: title) { _, newValue in
+            if !isFocused { draft = newValue }
+        }
+        .onDisappear(perform: commit)
+        .help(String(localized: "tasks.sidebar.title.help",
+                     defaultValue: "Edit task title",
+                     table: "TermLoop"))
+    }
+
+    private func commit() {
+        let normalized = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else {
+            draft = title
+            return
+        }
+        guard normalized != title else {
+            draft = normalized
+            return
+        }
+        onUpdateTitle?(taskId, normalized)
+        draft = normalized
+    }
+}
+
+private struct TaskSidebarBriefField: View {
+    let taskId: UUID
+    let brief: String?
+    var onUpdateBrief: ((UUID, String?) -> Void)?
+
+    @State private var draft: String
+    @FocusState private var isFocused: Bool
+
+    init(
+        taskId: UUID,
+        brief: String?,
+        onUpdateBrief: ((UUID, String?) -> Void)?
+    ) {
+        self.taskId = taskId
+        self.brief = brief
+        self.onUpdateBrief = onUpdateBrief
+        _draft = State(initialValue: brief ?? "")
+    }
+
+    var body: some View {
+        TextField(
+            String(localized: "tasks.sidebar.brief.placeholder",
+                   defaultValue: "Add brief…",
+                   table: "TermLoop"),
+            text: $draft,
+            axis: .vertical
+        )
+        .textFieldStyle(.plain)
+        .font(.system(size: 12, weight: .medium))
+        .foregroundColor(draft.isEmpty ? Color.secondary : Color.primary.opacity(0.82))
+        .lineLimit(1...4)
+        .padding(.vertical, 3)
+        .padding(.horizontal, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isFocused ? Color.accentColor.opacity(0.08) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(isFocused ? Color.accentColor.opacity(0.35) : Color.primary.opacity(0.06), lineWidth: 1)
+        )
+        .focused($isFocused)
+        .disabled(onUpdateBrief == nil)
+        .onSubmit(commit)
+        .onChange(of: isFocused) { _, focused in
+            if !focused { commit() }
+        }
+        .onChange(of: taskId) { _, _ in
+            draft = brief ?? ""
+        }
+        .onChange(of: brief) { _, newValue in
+            if !isFocused { draft = newValue ?? "" }
+        }
+        .onDisappear(perform: commit)
+        .help(String(localized: "tasks.sidebar.brief.help",
+                     defaultValue: "Edit task brief",
+                     table: "TermLoop"))
+    }
+
+    private func commit() {
+        let normalized = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = normalized.isEmpty ? nil : normalized
+        guard value != brief else {
+            draft = normalized
+            return
+        }
+        onUpdateBrief?(taskId, value)
+        draft = normalized
+    }
+}
+
+private struct TaskSidebarPill: View {
+    let icon: String
+    let text: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .semibold))
+            Text(text)
+                .lineLimit(1)
+        }
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(tint)
+        .padding(.vertical, 3)
+        .padding(.horizontal, 7)
+        .background(tint.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+}
+
+private struct FlowPillRow<Content: View>: View {
+    let spacing: CGFloat
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: spacing) {
+                content()
+            }
+            VStack(alignment: .leading, spacing: spacing) {
+                content()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .lineLimit(1)
+    }
 }

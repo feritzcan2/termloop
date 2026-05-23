@@ -1,13 +1,13 @@
-# Jira Ability Customizer
+# Jira Skill Customizer
 
-You are customizing the **Working With Jira** ability for the repository the user is currently in.
+You are customizing the **Working With Jira** project rule for the repository the user is currently in.
 
 Your job is to generate a short, practical, project-specific skill at:
 
 `.termloop/skills/working-with-jira/SKILL.md`
 
 Keep the final skill 200–450 words. Do not mention any external project unless the repository evidence explicitly shows that name.
-The ability's Agent payload only tells agents to use this skill; durable Jira behavior belongs in the skill body.
+The project rule's agent payload only tells agents to use this skill; durable Jira behavior belongs in the skill body.
 
 Do not write the skill until the user explicitly approves the draft.
 
@@ -91,13 +91,13 @@ After approval, write `.termloop/skills/working-with-jira/SKILL.md` with:
 - a project-specific context section
 - ticket identification rules
 - TermLoop workspace context rules:
-  - when resuming an in-progress workspace, call `mcp__termloop__get_jira_ticket` before guessing from the branch name
-  - after parsing a Jira key, or when status/URL changes, call `mcp__termloop__set_jira_ticket` with `{ key, status, url }`
+  - remote item bindings are user/app-owned; do not try to report or mutate the sidebar chip from the agent
 - pre-transition checks
 - transition rules
 - PR ↔ ticket linking rules
 - common pitfalls for this repo
 
 Keep the body concrete, short, and aligned with the repo's actual evidence.
+If `.termloop/skills/working-with-jira/SKILL.md` already exists, show a concise replace-vs-merge diff and ask for a second explicit approval before overwriting.
 After writing, tell the user that TermLoop will sync the native skill files
-and enable this ability for worktrees automatically.
+and enable this rule for worktrees automatically.

@@ -189,6 +189,7 @@ struct WorktreeAgentsGroup: Identifiable {
     let branch: String
     let workspaces: [Workspace]
     let worktreePath: String?
+    let projectId: UUID?
 
     let statusKind: WorktreeStatus.Kind?
     let observedRef: WorktreeObservedRef?
@@ -200,6 +201,7 @@ struct WorktreeAgentsGroup: Identifiable {
         branch: String,
         workspaces: [Workspace],
         worktreePath: String?,
+        projectId: UUID? = nil,
         statusKind: WorktreeStatus.Kind? = nil,
         observedRef: WorktreeObservedRef? = nil,
         expectedBranches: [String]? = nil,
@@ -209,10 +211,547 @@ struct WorktreeAgentsGroup: Identifiable {
         self.branch = branch
         self.workspaces = workspaces
         self.worktreePath = worktreePath
+        self.projectId = projectId
         self.statusKind = statusKind
         self.observedRef = observedRef
         self.expectedBranches = expectedBranches ?? [branch]
         self.needsAttention = needsAttention
+    }
+}
+
+@MainActor
+struct WorktreeGroupContextMenu: View {
+    let group: WorktreeAgentsGroup
+    let sourceWorkspace: Workspace?
+    let tabManager: TabManager
+    var onChanged: (() -> Void)? = nil
+    var onDeleted: (() -> Void)? = nil
+
+    var body: some View {
+        Button {
+            WorktreeRepairCoordinator.shared.refreshStatus(
+                group: group,
+                sourceWorkspace: sourceWorkspace,
+                onRefresh: { onChanged?() }
+            )
+        } label: {
+            Label(
+                String(
+                    localized: "worktreeAgents.group.refreshStatus",
+                    defaultValue: "Refresh Git Worktree Status",
+                    table: "TermLoop"
+                ),
+                systemImage: "arrow.clockwise"
+            )
+        }
+
+        LocalSetupWorktreeMenuItems(projectId: projectId, worktreePath: group.worktreePath)
+
+        if let worktreePath = group.worktreePath {
+            let openTarget = projectId.flatMap { ProjectStore.shared.project(id: $0)?.worktreeOpenTarget }
+            Menu {
+                Button {
+                    WorktreeRepairCoordinator.shared.openFolder(path: worktreePath)
+                } label: {
+                    Label(
+                        String(
+                            localized: "worktreeAgents.group.openFolder",
+                            defaultValue: "Open Folder",
+                            table: "TermLoop"
+                        ),
+                        systemImage: "folder"
+                    )
+                }
+
+                Button {
+                    WorktreeRepairCoordinator.shared.openConfiguredTarget(
+                        projectId: projectId,
+                        worktreePath: worktreePath
+                    )
+                } label: {
+                    Label(openTargetLabel(for: openTarget), systemImage: "arrow.up.right.square")
+                }
+
+                Button {
+                    WorktreeRepairCoordinator.shared.configureOpenTarget(
+                        projectId: projectId,
+                        worktreePath: worktreePath
+                    )
+                } label: {
+                    Label(
+                        String(
+                            localized: "worktreeAgents.group.configureOpenTarget",
+                            defaultValue: "Configure Open Target…",
+                            table: "TermLoop"
+                        ),
+                        systemImage: "slider.horizontal.3"
+                    )
+                }
+
+                if openTarget != nil {
+                    Button {
+                        WorktreeRepairCoordinator.shared.clearOpenTarget(projectId: projectId)
+                    } label: {
+                        Label(
+                            String(
+                                localized: "worktreeAgents.group.clearOpenTarget",
+                                defaultValue: "Clear Open Target",
+                                table: "TermLoop"
+                            ),
+                            systemImage: "xmark.circle"
+                        )
+                    }
+                }
+
+                Divider()
+
+                Button {
+                    WorktreeRepairCoordinator.shared.reveal(path: worktreePath)
+                } label: {
+                    Label(
+                        String(
+                            localized: "worktreeAgents.group.revealWorktree",
+                            defaultValue: "Reveal in Finder",
+                            table: "TermLoop"
+                        ),
+                        systemImage: "magnifyingglass"
+                    )
+                }
+
+                Button {
+                    WorktreeRepairCoordinator.shared.copyPath(worktreePath)
+                } label: {
+                    Label(
+                        String(
+                            localized: "worktreeAgents.group.copyPath",
+                            defaultValue: "Copy Path",
+                            table: "TermLoop"
+                        ),
+                        systemImage: "doc.on.doc"
+                    )
+                }
+            } label: {
+                Label(
+                    String(
+                        localized: "worktreeAgents.group.openWorktreeMenu",
+                        defaultValue: "Open Worktree",
+                        table: "TermLoop"
+                    ),
+                    systemImage: "arrow.up.right.square"
+                )
+            }
+        }
+
+        if group.statusKind == .branchDrift,
+           canPerformBranchActions,
+           group.worktreePath != nil {
+            Button {
+                WorktreeRepairCoordinator.shared.switchToExpectedBranch(
+                    group: group,
+                    sourceWorkspace: sourceWorkspace,
+                    onRefresh: { onChanged?() }
+                )
+            } label: {
+                Label(
+                    String(
+                        localized: "worktreeAgents.group.switchToExpectedBranch",
+                        defaultValue: "Switch Git Back to Expected Branch…",
+                        table: "TermLoop"
+                    ),
+                    systemImage: "arrow.triangle.2.circlepath"
+                )
+            }
+        }
+
+        if group.statusKind == .branchDrift,
+           group.observedRef?.branchName != nil,
+           group.worktreePath != nil {
+            Button {
+                WorktreeRepairCoordinator.shared.acceptObservedBranch(
+                    group: group,
+                    onRefresh: { onChanged?() }
+                )
+            } label: {
+                Label(
+                    String(
+                        localized: "worktreeAgents.group.acceptObservedBranch",
+                        defaultValue: "Use Current Git Branch as Expected…",
+                        table: "TermLoop"
+                    ),
+                    systemImage: "checkmark.circle"
+                )
+            }
+        }
+
+        if group.statusKind == .missingRegistration, group.worktreePath != nil {
+            Button {
+                WorktreeRepairCoordinator.shared.repairRegistration(
+                    group: group,
+                    sourceWorkspace: sourceWorkspace,
+                    onRefresh: { onChanged?() }
+                )
+            } label: {
+                Label(
+                    String(
+                        localized: "worktreeAgents.group.repairRegistration",
+                        defaultValue: "Repair Git Registration…",
+                        table: "TermLoop"
+                    ),
+                    systemImage: "wrench.and.screwdriver"
+                )
+            }
+        }
+
+        if group.statusKind == .prunable {
+            Button {
+                WorktreeRepairCoordinator.shared.pruneStaleRegistrations(
+                    group: group,
+                    sourceWorkspace: sourceWorkspace,
+                    onRefresh: { onChanged?() }
+                )
+            } label: {
+                Label(
+                    String(
+                        localized: "worktreeAgents.group.pruneRegistrations",
+                        defaultValue: "Prune Stale Registrations…",
+                        table: "TermLoop"
+                    ),
+                    systemImage: "scissors"
+                )
+            }
+        }
+
+        Divider()
+
+        if group.needsAttention {
+            Button {
+                WorktreeRepairCoordinator.shared.detachGroupFromWorktree(
+                    group: group,
+                    onRefresh: { onChanged?() }
+                )
+            } label: {
+                Label(
+                    String(
+                        localized: "worktreeAgents.group.detachFromWorktree",
+                        defaultValue: "Detach from Worktree…",
+                        table: "TermLoop"
+                    ),
+                    systemImage: "rectangle.portrait.and.arrow.right"
+                )
+            }
+        }
+
+        if !group.workspaces.isEmpty {
+            Button {
+                _ = WorkspaceHideCoordinator.confirmAndCollapse(
+                    workspaces: group.workspaces,
+                    tabManager: tabManager,
+                    targetName: group.branch
+                )
+            } label: {
+                Label(
+                    String(
+                        localized: "worktreeAgents.group.collapse",
+                        defaultValue: "Collapse Worktree…",
+                        table: "TermLoop"
+                    ),
+                    systemImage: "archivebox"
+                )
+            }
+        }
+
+        if canPerformBranchActions, !group.workspaces.isEmpty {
+            Button {
+                moveGroupToCurrentLocalBranch()
+            } label: {
+                Label(
+                    String(
+                        localized: "worktreeAgents.group.moveToCurrentLocalBranch",
+                        defaultValue: "Move to current local branch…",
+                        table: "TermLoop"
+                    ),
+                    systemImage: "arrow.turn.up.left"
+                )
+            }
+        }
+
+        Divider()
+
+        Button {
+            if let worktreePath = group.worktreePath {
+                RemoteItemBindingPrompt.present(
+                    forWorktreePath: worktreePath,
+                    workspaceIds: group.workspaces.map(\.id)
+                )
+            } else {
+                RemoteItemBindingPrompt.present(forGroupWorkspaces: group.workspaces)
+            }
+        } label: {
+            Label(
+                String(
+                    localized: "worktreeAgents.group.setRemoteItem",
+                    defaultValue: "Set Remote Item…",
+                    table: "TermLoop"
+                ),
+                systemImage: "link"
+            )
+        }
+
+        Divider()
+
+        if canDeleteGroup {
+            Button {
+                WorktreeDeletionCoordinator.shared.confirmAndDelete(
+                    branch: singleExpectedBranch,
+                    worktreePath: canDeletePhysicalWorktree ? group.worktreePath : nil,
+                    projectId: projectId,
+                    fallbackWorkspaceIds: group.workspaces.map(\.id),
+                    onDeleted: { onDeleted?() }
+                )
+            } label: {
+                Label(
+                    deleteLabel,
+                    systemImage: "trash.fill"
+                )
+            }
+        }
+    }
+
+    private var projectId: UUID? {
+        sourceWorkspace?.projectId ?? group.projectId ?? group.workspaces.first?.projectId
+    }
+
+    private var canPerformBranchActions: Bool {
+        group.expectedBranches.count == 1
+    }
+
+    private var singleExpectedBranch: String? {
+        canPerformBranchActions ? group.expectedBranches.first : nil
+    }
+
+    private var canDeletePhysicalWorktree: Bool {
+        guard group.worktreePath != nil else { return false }
+        switch group.statusKind {
+        case .missingRegistration, .missingPath, .unknown, .prunable:
+            return false
+        default:
+            return true
+        }
+    }
+
+    private var canDeleteGroup: Bool {
+        canDeletePhysicalWorktree || canPerformBranchActions
+    }
+
+    private var deleteLabel: String {
+        if canDeletePhysicalWorktree {
+            return String(
+                localized: "worktreeAgents.group.deleteWorktree",
+                defaultValue: "Delete Worktree…",
+                table: "TermLoop"
+            )
+        }
+        return String(
+            localized: "worktreeAgents.group.deleteBranch",
+            defaultValue: "Delete Branch…",
+            table: "TermLoop"
+        )
+    }
+
+    private func openTargetLabel(for target: WorktreeOpenTarget?) -> String {
+        guard let target else {
+            return String(
+                localized: "worktreeAgents.group.openTarget.configureFirst",
+                defaultValue: "Open Target…",
+                table: "TermLoop"
+            )
+        }
+        let rawRelative = target.relativePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let relative = rawRelative.isEmpty ? "." : rawRelative
+        if let appName = target.applicationDisplayName?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !appName.isEmpty {
+            return String(
+                localized: "worktreeAgents.group.openTarget.withApp",
+                defaultValue: "Open \(relative) in \(appName)",
+                table: "TermLoop"
+            )
+        }
+        return String(
+            localized: "worktreeAgents.group.openTarget.default",
+            defaultValue: "Open \(relative)",
+            table: "TermLoop"
+        )
+    }
+
+    private func moveGroupToCurrentLocalBranch() {
+        do {
+            let inspection = try WorktreeCoordinator.shared.inspectDetachToCurrentLocalBranch(
+                workspaces: group.workspaces,
+                worktreePath: group.worktreePath
+            )
+
+            guard inspection.runningWorkspaceIds.isEmpty else {
+                presentGroupMoveError(
+                    String(
+                        localized: "worktreeAgents.group.move.runningError",
+                        defaultValue: "Stop running agents in this worktree before moving it back to \(inspection.currentLocalBranch).",
+                        table: "TermLoop"
+                    )
+                )
+                return
+            }
+
+            guard !inspection.hasUnmergedCommits else {
+                presentGroupMoveError(
+                    String(
+                        localized: "worktreeAgents.group.move.unmergedError",
+                        defaultValue: "Branch \(inspection.worktreeBranch) has commits that are not merged into \(inspection.currentLocalBranch). Merge them first.",
+                        table: "TermLoop"
+                    )
+                )
+                return
+            }
+
+            let policy: WorktreeCoordinator.LocalChangesPolicy
+            if inspection.hasLocalChanges {
+                guard let selected = selectLocalChangesPolicy(
+                    for: inspection,
+                    workspaceCount: group.workspaces.count
+                ) else { return }
+                policy = selected
+            } else {
+                guard confirmCleanGroupMove(
+                    inspection: inspection,
+                    workspaceCount: group.workspaces.count
+                ) else { return }
+                policy = .discardAll
+            }
+
+            let result = try WorktreeCoordinator.shared.detachToCurrentLocalBranch(
+                workspaces: group.workspaces,
+                worktreePath: group.worktreePath,
+                localChangesPolicy: policy
+            )
+            onChanged?()
+            if !result.worktreeRemoved {
+                presentGroupMoveInfo(
+                    String(
+                        localized: "worktreeAgents.group.move.leftOnDisk",
+                        defaultValue: "Detached \(result.workspaceCount) workspace(s) to \(result.currentLocalBranch). Local changes were left in the worktree at \(result.worktreePath).",
+                        table: "TermLoop"
+                    )
+                )
+            }
+        } catch {
+            presentGroupMoveError((error as? LocalizedError)?.errorDescription ?? "\(error)")
+        }
+    }
+
+    private func confirmCleanGroupMove(
+        inspection: WorktreeCoordinator.DetachToCurrentLocalBranchInspection,
+        workspaceCount: Int
+    ) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = String(
+            localized: "worktreeAgents.group.move.cleanTitle",
+            defaultValue: "Move to \(inspection.currentLocalBranch)?",
+            table: "TermLoop"
+        )
+        alert.informativeText = String(
+            localized: "worktreeAgents.group.move.cleanBody",
+            defaultValue: "This detaches \(workspaceCount) workspace(s) from \(inspection.worktreeBranch) and removes the clean worktree at \(inspection.worktreePath).",
+            table: "TermLoop"
+        )
+        alert.addButton(withTitle: String(
+            localized: "worktreeAgents.group.move.confirm",
+            defaultValue: "Move",
+            table: "TermLoop"
+        ))
+        alert.addButton(withTitle: String(
+            localized: "common.cancel",
+            defaultValue: "Cancel",
+            table: "TermLoop"
+        ))
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func selectLocalChangesPolicy(
+        for inspection: WorktreeCoordinator.DetachToCurrentLocalBranchInspection,
+        workspaceCount: Int
+    ) -> WorktreeCoordinator.LocalChangesPolicy? {
+        let alert = NSAlert()
+        alert.messageText = String(
+            localized: "worktreeAgents.group.move.localChangesTitle",
+            defaultValue: "Local changes in worktree",
+            table: "TermLoop"
+        )
+        alert.informativeText = String(
+            localized: "worktreeAgents.group.move.localChangesBody",
+            defaultValue: "TermLoop will move \(workspaceCount) workspace(s) from “\(inspection.worktreeBranch)” back to “\(inspection.currentLocalBranch)”. This worktree has local changes that may only exist in:\n\(inspection.worktreePath)\n\nChoose how to handle those changes.",
+            table: "TermLoop"
+        )
+        alert.addButton(withTitle: String(
+            localized: "worktreeAgents.group.move.optionLeave.short",
+            defaultValue: "Keep Worktree",
+            table: "TermLoop"
+        ))
+
+        if inspection.rootHasLocalChanges {
+            alert.informativeText += "\n\n" + String(
+                localized: "worktreeAgents.group.move.rootDirtyNote",
+                defaultValue: "The current local branch already has local changes, so bringing worktree changes over is disabled until that checkout is clean.",
+                table: "TermLoop"
+            )
+        } else {
+            alert.addButton(withTitle: String(
+                localized: "worktreeAgents.group.move.optionBring.short",
+                defaultValue: "Bring Changes",
+                table: "TermLoop"
+            ))
+        }
+        alert.addButton(withTitle: String(
+            localized: "worktreeAgents.group.move.optionDiscard.short",
+            defaultValue: "Discard Changes",
+            table: "TermLoop"
+        ))
+        alert.addButton(withTitle: String(
+            localized: "common.cancel",
+            defaultValue: "Cancel",
+            table: "TermLoop"
+        ))
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return .leaveInWorktree
+        case .alertSecondButtonReturn where !inspection.rootHasLocalChanges:
+            return .moveToCurrentBranch
+        case .alertSecondButtonReturn:
+            return .discardAll
+        case .alertThirdButtonReturn where !inspection.rootHasLocalChanges:
+            return .discardAll
+        default:
+            return nil
+        }
+    }
+
+    private func presentGroupMoveError(_ message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(
+            localized: "worktreeAgents.group.move.errorTitle",
+            defaultValue: "Worktree move failed",
+            table: "TermLoop"
+        )
+        alert.informativeText = message
+        alert.runModal()
+    }
+
+    private func presentGroupMoveInfo(_ message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = message
+        alert.runModal()
     }
 }
 
@@ -231,6 +770,8 @@ final class WorktreeDeletionCoordinator {
         let requestedBranch: String?
         let registeredBranch: String?
         let worktreePath: String?
+        let worktreeEntryExists: Bool
+        let localBranchExists: Bool
         let workspaceIds: [UUID]
         let liveWorkspaces: [Workspace]
         let hasLocalChanges: Bool
@@ -238,11 +779,21 @@ final class WorktreeDeletionCoordinator {
         let assignedTicketKeys: [String]
 
         var branchToDelete: String? {
+            guard localBranchExists else { return nil }
             if worktreePath != nil {
                 guard registeredBranch == requestedBranch else { return nil }
                 return registeredBranch
             }
             return requestedBranch
+        }
+
+        var isTermLoopOnlyCleanup: Bool {
+            guard !workspaceIds.isEmpty else { return false }
+            let worktreeMissing = worktreePath != nil && !worktreeEntryExists
+            let branchMissing = requestedBranch != nil
+                && registeredBranch == nil
+                && !localBranchExists
+            return worktreeMissing || branchMissing
         }
     }
 
@@ -254,7 +805,8 @@ final class WorktreeDeletionCoordinator {
         branch: String?,
         worktreePath: String?,
         projectId: UUID?,
-        fallbackWorkspaceIds: [UUID]
+        fallbackWorkspaceIds: [UUID],
+        onDeleted: (() -> Void)? = nil
     ) {
         #if DEBUG
         dlog("worktree.delete.confirm.begin branch=\(branch ?? "nil") worktreePath=\(worktreePath ?? "nil") projectId=\(projectId?.uuidString.prefix(8) ?? "nil") fallbackIds=\(fallbackWorkspaceIds.map { $0.uuidString.prefix(8) }.joined(separator: ","))")
@@ -269,11 +821,12 @@ final class WorktreeDeletionCoordinator {
 
             guard let mode = confirmDeleteMode(target: target) else { return }
 
-            // Branch-only deletion keeps the worktree open, so we still
-            // require any active agents to stop first. If the user chose
-            // "Delete Branch + Worktree" or "Delete Worktree", workspaces are closed as part
-            // of the delete flow, so running agents are allowed to proceed.
-            if mode == .branchOnly, !target.runningWorkspaceIds.isEmpty {
+            // Branch-only deletion normally keeps a checkout open, so require
+            // active agents to stop first. Cleanup-only deletion is already
+            // for missing Git targets and closes TermLoop's stale workspaces.
+            if mode == .branchOnly,
+               !target.isTermLoopOnlyCleanup,
+               !target.runningWorkspaceIds.isEmpty {
                 presentError(
                     String(
                         localized: "worktreeDeletion.error.runningAgents",
@@ -285,6 +838,7 @@ final class WorktreeDeletionCoordinator {
             }
 
             try performDelete(target: target, mode: mode)
+            onDeleted?()
         } catch {
             presentError((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
         }
@@ -324,9 +878,6 @@ final class WorktreeDeletionCoordinator {
         } else {
             entry = nil
         }
-        if let normalizedWorktreePath, entry == nil {
-            throw WorktreeError.notFound(what: "registered Git worktree at \(normalizedWorktreePath)")
-        }
 
         let liveWorkspaceIds: [UUID]
         if let normalizedWorktreePath {
@@ -340,6 +891,23 @@ final class WorktreeDeletionCoordinator {
                 .workspaceIds(withBranch: requestedBranch, projectId: project.id)
         } else {
             liveWorkspaceIds = fallbackWorkspaceIds
+        }
+        if let normalizedWorktreePath, entry == nil, liveWorkspaceIds.isEmpty {
+            throw WorktreeError.notFound(what: "registered Git worktree at \(normalizedWorktreePath)")
+        }
+        let branchDeleteCandidate: String? = {
+            if normalizedWorktreePath != nil {
+                guard entry?.branch == requestedBranch else { return nil }
+                return entry?.branch
+            }
+            return requestedBranch
+        }()
+        let localBranchExists: Bool
+        if let branchDeleteCandidate {
+            let branches = try worktreeService.branches(in: project.folderPath)
+            localBranchExists = branches.contains { $0.name == branchDeleteCandidate }
+        } else {
+            localBranchExists = false
         }
         let liveWorkspaces = liveWorkspaceIds.compactMap { AppDelegate.shared?.workspaceFor(tabId: $0) }
         let hasLocalChanges = try entry.map { try !worktreeService.isClean(worktreePath: $0.path) } ?? false
@@ -359,7 +927,9 @@ final class WorktreeDeletionCoordinator {
             project: project,
             requestedBranch: requestedBranch,
             registeredBranch: entry?.branch,
-            worktreePath: entry?.path,
+            worktreePath: entry?.path ?? normalizedWorktreePath,
+            worktreeEntryExists: entry != nil,
+            localBranchExists: localBranchExists,
             workspaceIds: liveWorkspaceIds,
             liveWorkspaces: liveWorkspaces,
             hasLocalChanges: hasLocalChanges,
@@ -372,7 +942,13 @@ final class WorktreeDeletionCoordinator {
         let branchToDelete = target.branchToDelete
         let alert = NSAlert()
         alert.alertStyle = .warning
-        if target.worktreePath != nil {
+        if target.isTermLoopOnlyCleanup {
+            alert.messageText = String(
+                localized: "worktreeDeletion.confirm.cleanupOnly.title",
+                defaultValue: "Remove missing worktree from TermLoop?",
+                table: "TermLoop"
+            )
+        } else if target.worktreePath != nil {
             alert.messageText = String(
                 localized: "worktreeDeletion.confirm.worktree.title",
                 defaultValue: "Delete this Git worktree?",
@@ -401,7 +977,13 @@ final class WorktreeDeletionCoordinator {
             )
             : ""
         let deleteLine: String
-        if let branchToDelete {
+        if target.isTermLoopOnlyCleanup {
+            deleteLine = String(
+                localized: "worktreeDeletion.confirm.cleanupOnly.body",
+                defaultValue: "Git no longer reports this branch or worktree. TermLoop will remove its local workspace binding only.",
+                table: "TermLoop"
+            )
+        } else if let branchToDelete {
             deleteLine = String(
                 localized: "worktreeDeletion.confirm.branch.body",
                 defaultValue: "The local Git branch “\(branchToDelete)” will be deleted.",
@@ -463,7 +1045,13 @@ final class WorktreeDeletionCoordinator {
             .filter { !$0.isEmpty }
             .joined(separator: "\n\n")
 
-        if target.worktreePath != nil, branchToDelete != nil {
+        if target.isTermLoopOnlyCleanup {
+            alert.addButton(withTitle: String(
+                localized: "worktreeDeletion.confirm.cleanupOnly.button",
+                defaultValue: "Remove from TermLoop",
+                table: "TermLoop"
+            ))
+        } else if target.worktreePath != nil, branchToDelete != nil {
             alert.addButton(withTitle: String(
                 localized: "worktreeDeletion.confirm.deleteBranchAndWorktree",
                 defaultValue: "Delete Branch + Worktree",
@@ -494,6 +1082,9 @@ final class WorktreeDeletionCoordinator {
         ))
 
         let response = alert.runModal()
+        if target.isTermLoopOnlyCleanup {
+            return response == .alertFirstButtonReturn ? .branchOnly : nil
+        }
         if target.worktreePath != nil, branchToDelete != nil {
             switch response {
             case .alertFirstButtonReturn:
@@ -515,48 +1106,103 @@ final class WorktreeDeletionCoordinator {
         #if DEBUG
         dlog("worktree.delete.perform.begin requestedBranch=\(target.requestedBranch ?? "nil") registeredBranch=\(target.registeredBranch ?? "nil") mode=\(mode) project=\(target.project.name)[\(target.project.id.uuidString.prefix(8))] worktreePath=\(target.worktreePath ?? "nil") localChanges=\(target.hasLocalChanges ? 1 : 0) live=\(target.liveWorkspaces.count)")
         #endif
-        if mode == .branchAndWorktree || mode == .worktreeOnly {
-            primeClosableWindows(for: target.liveWorkspaces)
+        let removedWorktree = try removeWorktreeIfNeeded(target: target, mode: mode)
 
-            for workspaceId in target.workspaceIds {
-                if mode == .worktreeOnly {
-                    WorkspaceMetadataStore.shared.setWorktreePath(nil, forWorkspaceId: workspaceId)
-                } else {
-                    WorkspaceMetadataStore.shared.setBranch(nil, forWorkspaceId: workspaceId)
-                }
-            }
-
-            for workspace in target.liveWorkspaces {
-                AppDelegate.shared?.tabManagerFor(tabId: workspace.id)?.closeWorkspace(workspace)
-            }
-
-            if let worktreePath = target.worktreePath {
-                try worktreeService.remove(
-                    folder: target.project.folderPath,
-                    path: worktreePath,
-                    force: target.hasLocalChanges
+        do {
+            _ = try deleteBranchIfNeeded(target: target, mode: mode)
+        } catch {
+            if removedWorktree {
+                closeDeletedWorktreeWorkspaces(target: target, mode: .worktreeOnly)
+                persistDeleteSideEffects(target: target)
+                let detail = (error as? LocalizedError)?.errorDescription
+                    ?? error.localizedDescription
+                throw WorktreeError.invalidParams(
+                    reason: "The worktree folder was deleted, but deleting the branch failed: \(detail)"
                 )
             }
+            throw error
         }
 
-        if mode == .branchAndWorktree || mode == .branchOnly {
-            guard let branchToDelete = target.branchToDelete else {
-                throw WorktreeError.invalidParams(reason: "No safe branch deletion target.")
-            }
-            _ = try GitCommandRunner.runMutation(
-                ["branch", "-D", branchToDelete],
-                in: target.project.folderPath,
-                kind: .mutation,
-                caller: "WorktreeDeletionCoordinator.branchDelete",
-                invalidates: [.project(target.project.folderPath)]
-            )
+        if removedWorktree || mode == .branchOnly || target.isTermLoopOnlyCleanup {
+            closeDeletedWorktreeWorkspaces(target: target, mode: mode)
         }
-
-        AppDelegate.shared?.saveSessionSnapshot(includeScrollback: false, forceSync: true)
-        TaskBoardReconcileScheduler.shared.request(projectId: target.project.id, reason: "worktreeDeleted")
+        persistDeleteSideEffects(target: target)
         #if DEBUG
         dlog("worktree.delete.perform.result branch=\(target.branchToDelete ?? "nil") mode=\(mode) project=\(target.project.name)[\(target.project.id.uuidString.prefix(8))]")
         #endif
+    }
+
+    private func removeWorktreeIfNeeded(target: Target, mode: DeletionMode) throws -> Bool {
+        guard mode == .branchAndWorktree || mode == .worktreeOnly else { return false }
+        guard let worktreePath = target.worktreePath else { return false }
+        guard target.worktreeEntryExists else {
+            GitPresentationInvalidationCenter.invalidate(
+                [.project(target.project.folderPath), .worktree(worktreePath), .directory(worktreePath)],
+                reason: "worktreeDeleteMissingCleanup",
+                source: "WorktreeDeletionCoordinator"
+            )
+            return true
+        }
+        try worktreeService.remove(
+            folder: target.project.folderPath,
+            path: worktreePath,
+            force: true
+        )
+        return true
+    }
+
+    private func deleteBranchIfNeeded(target: Target, mode: DeletionMode) throws -> Bool {
+        guard mode == .branchAndWorktree || mode == .branchOnly else { return false }
+        guard let branchToDelete = target.branchToDelete else {
+            return false
+        }
+        guard target.localBranchExists else { return false }
+        _ = try GitCommandRunner.runMutation(
+            ["branch", "-D", branchToDelete],
+            in: target.project.folderPath,
+            kind: .mutation,
+            caller: "WorktreeDeletionCoordinator.branchDelete",
+            invalidates: [.project(target.project.folderPath)]
+        )
+        return true
+    }
+
+    private func closeDeletedWorktreeWorkspaces(target: Target, mode: DeletionMode) {
+        primeClosableWindows(for: target.liveWorkspaces)
+
+        for workspaceId in target.workspaceIds {
+            if mode == .worktreeOnly {
+                WorkspaceMetadataStore.shared.setWorktreePath(nil, forWorkspaceId: workspaceId)
+            } else {
+                WorkspaceMetadataStore.shared.setBranch(nil, forWorkspaceId: workspaceId)
+            }
+        }
+
+        for workspace in target.liveWorkspaces {
+            AppDelegate.shared?.tabManagerFor(tabId: workspace.id)?.closeWorkspace(workspace)
+        }
+    }
+
+    private func persistDeleteSideEffects(target: Target) {
+        AppDelegate.shared?.saveSessionSnapshot(includeScrollback: false, forceSync: true)
+        refreshWorktreeRegistryAfterDeletion(projectFolder: target.project.folderPath)
+        TaskBoardReconcileScheduler.shared.request(projectId: target.project.id, reason: "worktreeDeleted")
+    }
+
+    private func refreshWorktreeRegistryAfterDeletion(projectFolder: String) {
+        GitPresentationInvalidationCenter.invalidate(
+            [.project(projectFolder)],
+            reason: "worktreeDeleted",
+            source: "WorktreeDeletionCoordinator"
+        )
+
+        do {
+            let entries = try worktreeService.list(in: projectFolder)
+            WorktreeRegistry.shared.record(projectFolder: projectFolder, entries: entries)
+            WorktreeProjectionStore.shared.markChanged(reason: "worktreeDeleted")
+        } catch {
+            WorktreeProjectionStore.shared.refresh(projectFolder: projectFolder, reason: "worktreeDeleted")
+        }
     }
 
     private func primeClosableWindows(for workspaces: [Workspace]) {
@@ -724,23 +1370,35 @@ struct WorktreeAgentsPanel: View {
         let contextMenuSnapshot: ActiveAgentWorkspaceContextMenuSnapshot?
     }
 
-    fileprivate struct WorktreeGroupBindingBadgeSnapshot: Equatable, Hashable, Identifiable {
+    fileprivate struct WorktreeGroupRemoteItemBadgeSnapshot: Equatable, Hashable, Identifiable {
         let id: String
         let label: String
-        let isJira: Bool
+        let provider: RemoteWorkItemProviderId
         let destinationURL: URL?
         let tooltip: String
 
-        init(binding: AgentReportedStateStore.AgentReportedBinding) {
-            self.id = "\(binding.abilityId).\(binding.bindingId)"
-            self.label = binding.displayLabel
-            self.isJira = binding.abilityId == TermLoopBuiltInMCP.jiraAbilityId
-            self.destinationURL = binding.destinationURL
-            var parts = ["\(binding.abilityId) · \(binding.bindingId)", binding.label]
-            if let status = binding.status, !status.isEmpty {
+        init(
+            binding: WorktreeRemoteItemBindingStore.Binding,
+            snapshot: RemoteWorkItemSnapshot?
+        ) {
+            let status = snapshot?.statusLabel
+            let url = snapshot?.reference.url ?? binding.reference.url
+            self.id = binding.reference.storageKey
+            self.provider = binding.reference.provider
+            if let status, !status.isEmpty {
+                self.label = "\(binding.reference.key) · \(status)"
+            } else {
+                self.label = binding.reference.key
+            }
+            self.destinationURL = url.flatMap(URL.init(string:))
+            var parts = [binding.reference.provider.displayLabel, binding.reference.key]
+            if let title = snapshot?.title, !title.isEmpty {
+                parts.append(title)
+            }
+            if let status, !status.isEmpty {
                 parts.append("status: \(status)")
             }
-            if let url = binding.url, !url.isEmpty {
+            if let url, !url.isEmpty {
                 parts.append(url)
             }
             self.tooltip = parts.joined(separator: "\n")
@@ -750,13 +1408,34 @@ struct WorktreeAgentsPanel: View {
     private struct RenderSignature: Equatable {
         let workspaceFingerprint: [WorkspaceIdentity]
         let branchTick: Int
-        let worktreeRegistryTick: UInt64
+        let worktreeProjectionVersion: UInt64
         let pullRequestTick: UInt64
-        let worktreePullRequestLookupTick: UInt64
+        let worktreePullRequestLookupSignature: PullRequestLookupSignature
+        let activeProjectId: UUID?
         let agentSessionTick: Int
         let projectScopeTick: Int
         let activityTick: Int
-        let bindingsTick: Int
+        let taskBoardTick: UInt64
+        let remoteItemTick: Int
+        let remoteSnapshotTick: Int
+        let runTargetTick: Int
+    }
+
+    private struct PullRequestLookupSignature: Equatable {
+        struct Entry: Equatable {
+            let input: WorktreeBranchPullRequestStore.LookupInput
+            let pullRequests: [SidebarPullRequestState]
+        }
+
+        static let empty = PullRequestLookupSignature(entries: [])
+
+        let entries: [Entry]
+    }
+
+    private struct WorktreeHeadSignatureInput: Sendable {
+        let workspaceId: UUID
+        let path: String
+        let expectedBranch: String
     }
 
     private final class RenderMemo {
@@ -777,6 +1456,14 @@ struct WorktreeAgentsPanel: View {
         }
     }
 
+    private final class WorktreeHeadSignatureRunner {
+        var task: Task<Void, Never>?
+
+        deinit {
+            task?.cancel()
+        }
+    }
+
     private struct RenderSnapshot {
         let orderedSections: WorktreeAgentsSectionPartition.Sections
         let groupSummaryByKey: [String: WorktreeAgentsPullRequestSummary.Summary]
@@ -792,16 +1479,14 @@ struct WorktreeAgentsPanel: View {
         /// carries the section's status bucket (open XOR merged), so the
         /// badge popover would otherwise miss the other-status PRs.
         let allPullRequestsByBranch: [String: [SidebarPullRequestState]]
-        /// Ability-driven bindings published by agents in each worktree
-        /// group. Keyed by branch label, deduped by ability+binding id with
-        /// the latest `reportedAt` winning. Renders as chips in the group
-        /// header.
-        let bindingsByBranch: [String: [AgentReportedStateStore.AgentReportedBinding]]
-        let bindingBadgeSnapshotsByBranch: [String: [WorktreeGroupBindingBadgeSnapshot]]
+        let runTargetsByBranch: [String: [RunTargetStore.RunTarget]]
+        let remoteItemBadgeSnapshotsByBranch: [String: [WorktreeGroupRemoteItemBadgeSnapshot]]
     }
 
     @EnvironmentObject private var tabManager: TabManager
-    @ObservedObject private var worktreePullRequestStore = WorktreeBranchPullRequestStore.shared
+    @ObservedObject private var projectStore = ProjectStore.shared
+    private let worktreeProjectionStore = WorktreeProjectionStore.shared
+    private let worktreePullRequestStore = WorktreeBranchPullRequestStore.shared
 
     /// Narrow subscription — matches `ActiveAgentsPanel`'s rationale: the
     /// metadata store fires `objectWillChange` on every report_* telemetry
@@ -809,11 +1494,25 @@ struct WorktreeAgentsPanel: View {
     @State private var agentSessionTick: Int = 0
     @State private var projectScopeTick: Int = 0
     @State private var branchTick: Int = 0
-    @State private var worktreeRegistryTick: UInt64 = 0
     @State private var pullRequestTick: UInt64 = 0
+    @State private var pullRequestLookupSignature: PullRequestLookupSignature = .empty
     @State private var activityTick: Int = 0
+    @State private var taskBoardTick: UInt64 = 0
+    @State private var worktreeProjectionVersion: UInt64 = WorktreeProjectionStore.shared.version
+    @State private var pendingAgentSessionTick: Int?
+    @State private var pendingProjectScopeTick: Int?
+    @State private var pendingBranchTick: Int?
+    @State private var pendingPullRequestTick = false
+    @State private var pendingPullRequestSignatureRefresh = false
     @State private var hasDeferredActivityTick = false
-    @State private var bindingsTick: Int = 0
+    @State private var pendingTaskBoardTick = false
+    @State private var pendingRemoteItemTick: Int?
+    @State private var pendingRemoteSnapshotTick: Int?
+    @State private var pendingRunTargetTick: Int?
+    @State private var pendingWorktreeProjectionVersion: UInt64?
+    @State private var remoteItemTick: Int = 0
+    @State private var remoteSnapshotTick: Int = 0
+    @State private var runTargetTick: Int = 0
     @State private var hoveredBranch: String?
     @State private var renderMemo = RenderMemo()
     /// Stable Combine subscription keyed on `subscribedWorkspaceIds`. Without
@@ -821,7 +1520,11 @@ struct WorktreeAgentsPanel: View {
     /// N per-workspace publishers on every tick.
     @State private var pullRequestSubscription: AnyCancellable?
     @State private var activitySubscription: AnyCancellable?
+    @State private var taskBoardSubscription: AnyCancellable?
+    @State private var subscribedTaskProjectId: UUID?
     @State private var subscribedWorkspaceIds: [UUID] = []
+    @State private var observedWorktreeHeadSignature: String?
+    @State private var worktreeHeadSignatureRunner = WorktreeHeadSignatureRunner()
     @State private var didApplyInitialBranchAutoExpand: Bool = false
     @State private var showsAllOpenPullRequests: Bool = false
     @State private var showsAllMergedPullRequests: Bool = false
@@ -846,7 +1549,9 @@ struct WorktreeAgentsPanel: View {
         let _ = branchTick
         let _ = pullRequestTick
         let _ = activityTick
-        let _ = bindingsTick
+        let _ = remoteItemTick
+        let _ = remoteSnapshotTick
+        let _ = runTargetTick
         let collapsedBranchSet = branchSet(from: collapsedBranchesRaw)
         let fingerprint = scopedTabs.map {
             WorkspaceIdentity(id: $0.id, title: $0.title, customTitle: $0.customTitle)
@@ -855,13 +1560,17 @@ struct WorktreeAgentsPanel: View {
             for: RenderSignature(
                 workspaceFingerprint: fingerprint,
                 branchTick: branchTick,
-                worktreeRegistryTick: worktreeRegistryTick,
+                worktreeProjectionVersion: worktreeProjectionVersion,
                 pullRequestTick: pullRequestTick,
-                worktreePullRequestLookupTick: worktreePullRequestStore.version,
+                worktreePullRequestLookupSignature: pullRequestLookupSignature,
+                activeProjectId: projectStore.activeProjectId,
                 agentSessionTick: agentSessionTick,
                 projectScopeTick: projectScopeTick,
                 activityTick: activityTick,
-                bindingsTick: bindingsTick
+                taskBoardTick: taskBoardTick,
+                remoteItemTick: remoteItemTick,
+                remoteSnapshotTick: remoteSnapshotTick,
+                runTargetTick: runTargetTick
             )
         ) {
             makeRenderSnapshot()
@@ -889,8 +1598,7 @@ struct WorktreeAgentsPanel: View {
                             showsAllGroups: $showsAllOpenPullRequests,
                             pullRequestStatuses: [.open],
                             renderSnapshot: renderSnapshot,
-                            collapsedBranchSet: collapsedBranchSet,
-                            pullRequestLookupTick: worktreePullRequestStore.version
+                            collapsedBranchSet: collapsedBranchSet
                         )
                     }
                     if showsEmptySections || !renderSnapshot.orderedSections.mergedPullRequests.isEmpty {
@@ -913,8 +1621,7 @@ struct WorktreeAgentsPanel: View {
                             showsAllGroups: $showsAllMergedPullRequests,
                             pullRequestStatuses: [.merged],
                             renderSnapshot: renderSnapshot,
-                            collapsedBranchSet: collapsedBranchSet,
-                            pullRequestLookupTick: worktreePullRequestStore.version
+                            collapsedBranchSet: collapsedBranchSet
                         )
                     }
                     if showsEmptySections || !renderSnapshot.orderedSections.worktrees.isEmpty {
@@ -938,7 +1645,6 @@ struct WorktreeAgentsPanel: View {
                             pullRequestStatuses: nil,
                             renderSnapshot: renderSnapshot,
                             collapsedBranchSet: collapsedBranchSet,
-                            pullRequestLookupTick: worktreePullRequestStore.version,
                             addWorktreeAction: {
                                 QuickActionController.shared.present(initialSurface: .worktree)
                             }
@@ -950,19 +1656,59 @@ struct WorktreeAgentsPanel: View {
         .frame(maxWidth: .infinity)
         .onReceive(WorkspaceMetadataStore.shared.$agentSessionVersion) { newValue in
             guard newValue != agentSessionTick else { return }
-            agentSessionTick = newValue
+            if AppMenuTrackingGate.shared.isTrackingMenu {
+                pendingAgentSessionTick = newValue
+            } else {
+                agentSessionTick = newValue
+            }
         }
         .onReceive(WorkspaceMetadataStore.shared.$projectScopeVersion) { newValue in
             guard newValue != projectScopeTick else { return }
-            projectScopeTick = newValue
+            if AppMenuTrackingGate.shared.isTrackingMenu {
+                pendingProjectScopeTick = newValue
+            } else {
+                projectScopeTick = newValue
+            }
         }
         .onReceive(WorkspaceMetadataStore.shared.$branchVersion) { newValue in
             guard newValue != branchTick else { return }
-            branchTick = newValue
+            if AppMenuTrackingGate.shared.isTrackingMenu {
+                pendingBranchTick = newValue
+            } else {
+                branchTick = newValue
+            }
         }
-        .onReceive(WorkspaceMetadataStore.shared.$reportedBindingsVersion) { newValue in
-            guard newValue != bindingsTick else { return }
-            bindingsTick = newValue
+        .onReceive(WorktreeRemoteItemBindingStore.shared.$version) { newValue in
+            guard newValue != remoteItemTick else { return }
+            if AppMenuTrackingGate.shared.isTrackingMenu {
+                pendingRemoteItemTick = newValue
+            } else {
+                remoteItemTick = newValue
+            }
+        }
+        .onReceive(RemoteWorkItemSnapshotStore.shared.$version) { newValue in
+            guard newValue != remoteSnapshotTick else { return }
+            if AppMenuTrackingGate.shared.isTrackingMenu {
+                pendingRemoteSnapshotTick = newValue
+            } else {
+                remoteSnapshotTick = newValue
+            }
+        }
+        .onReceive(RunTargetStore.shared.$version) { newValue in
+            guard newValue != runTargetTick else { return }
+            if AppMenuTrackingGate.shared.isTrackingMenu {
+                pendingRunTargetTick = newValue
+            } else {
+                runTargetTick = newValue
+            }
+        }
+        .onReceive(WorktreeProjectionStore.shared.$version.removeDuplicates()) { newValue in
+            guard newValue != worktreeProjectionVersion else { return }
+            if AppMenuTrackingGate.shared.isTrackingMenu {
+                pendingWorktreeProjectionVersion = newValue
+            } else {
+                worktreeProjectionVersion = newValue
+            }
         }
         .onChange(of: renderSnapshot.allWorkspaceIds) { newIds in
             guard newIds != subscribedWorkspaceIds else { return }
@@ -970,7 +1716,13 @@ struct WorktreeAgentsPanel: View {
             let idSet = Set(newIds)
             let workspaces = tabManager.tabs.filter { idSet.contains($0.id) }
             pullRequestSubscription = pullRequestRefreshPublisher(for: workspaces)
-                .sink { _ in pullRequestTick &+= 1 }
+                .sink { _ in
+                    if AppMenuTrackingGate.shared.isTrackingMenu {
+                        pendingPullRequestTick = true
+                    } else {
+                        pullRequestTick &+= 1
+                    }
+                }
             activitySubscription = TerminalAgentActivityStore.shared.workspacePresentationDidChange
                 .filter { idSet.contains($0) }
                 .sink { _ in
@@ -982,41 +1734,217 @@ struct WorktreeAgentsPanel: View {
                 }
         }
         .onReceive(AppMenuTrackingGate.shared.trackingEnded) { _ in
-            guard hasDeferredActivityTick else { return }
-            hasDeferredActivityTick = false
-            activityTick &+= 1
+            applyDeferredMenuTicks(renderSnapshot: renderSnapshot)
         }
         .onAppear {
             if !didApplyInitialBranchAutoExpand {
                 autoExpandActiveBranches(renderSnapshot.branchesNeedingInitialExpansion)
                 didApplyInitialBranchAutoExpand = true
             }
-            refreshWorktreeRegistry(for: scopedTabs, reason: "appear")
+            refreshWorktreeProjection(for: scopedTabs, reason: "appear")
+            subscribeToActiveTaskBoardStore()
+            refreshWorktreeHeadProjectionIfChanged(for: scopedTabs, reason: "headBaseline", marksProjection: false)
             refreshWorktreePullRequests(renderSnapshot.pullRequestLookupInputs, reason: "appear")
         }
+        .onDisappear {
+            worktreeHeadSignatureRunner.task?.cancel()
+            worktreeHeadSignatureRunner.task = nil
+        }
         .onChange(of: scopedTabs.map(\.id)) { _ in
-            refreshWorktreeRegistry(for: scopedTabs, reason: "tabsChanged")
+            refreshWorktreeProjection(for: scopedTabs, reason: "tabsChanged")
+            observedWorktreeHeadSignature = nil
+            refreshWorktreeHeadProjectionIfChanged(for: scopedTabs, reason: "tabsChanged", marksProjection: false)
+        }
+        .onChange(of: projectStore.activeProjectId) { _ in
+            refreshWorktreeProjection(for: scopedTabs, reason: "activeProjectChanged")
+            observedWorktreeHeadSignature = nil
+            refreshWorktreeHeadProjectionIfChanged(for: scopedTabs, reason: "activeProjectChanged", marksProjection: false)
+            subscribeToActiveTaskBoardStore()
         }
         .onChange(of: renderSnapshot.pullRequestLookupInputs) { inputs in
+            refreshPullRequestLookupSignature(inputs: inputs)
             refreshWorktreePullRequests(inputs, reason: "inputsChanged")
         }
-        .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
-            if hasAttachedWorktree(in: scopedTabs) {
-                // External `git switch` / rebase / bisect edits `.git/HEAD`
-                // without touching TermLoop metadata. Tick presentation so
-                // the disk-only HEAD overlay in `termLoopCachedWorktreeStatus`
-                // can surface drift without waiting for a registry refresh or
-                // app restart.
-                worktreeRegistryTick &+= 1
+        .onReceive(WorktreeBranchPullRequestStore.shared.$version.removeDuplicates()) { _ in
+            if AppMenuTrackingGate.shared.isTrackingMenu {
+                pendingPullRequestSignatureRefresh = true
+            } else {
+                refreshPullRequestLookupSignature(inputs: renderSnapshot.pullRequestLookupInputs)
             }
+        }
+        .onReceive(Timer.publish(every: 15, on: .main, in: .common).autoconnect()) { _ in
+            guard shouldRefreshWorktreeHeadsOnTimer else { return }
+            // External `git switch` / rebase / bisect edits `.git/HEAD`
+            // without touching TermLoop metadata. Poll the cheap HEAD files,
+            // but only invalidate SwiftUI when the observed ref actually moves.
+            refreshWorktreeHeadProjectionIfChanged(for: scopedTabs, reason: "headChanged")
+        }
+        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+            guard shouldRefreshPullRequestsOnTimer else { return }
             refreshWorktreePullRequests(renderSnapshot.pullRequestLookupInputs, reason: "timer")
         }
     }
 
-    private func hasAttachedWorktree(in workspaces: [Workspace]) -> Bool {
-        workspaces.contains { workspace in
-            WorkspaceMetadataStore.shared.branch(for: workspace) != nil
+    private var shouldRefreshWorktreeHeadsOnTimer: Bool {
+        !AppMenuTrackingGate.shared.isTrackingMenu
+            && !isHidden
+            && !(isCollapsed && isOpenPullRequestsCollapsed && isMergedPullRequestsCollapsed)
+    }
+
+    private var shouldRefreshPullRequestsOnTimer: Bool {
+        !AppMenuTrackingGate.shared.isTrackingMenu
+            && !isHidden
+            && !(isCollapsed && isOpenPullRequestsCollapsed && isMergedPullRequestsCollapsed)
+    }
+
+    private func applyDeferredMenuTicks(renderSnapshot: RenderSnapshot) {
+        if let pending = pendingAgentSessionTick, pending != agentSessionTick {
+            agentSessionTick = pending
         }
+        pendingAgentSessionTick = nil
+
+        if let pending = pendingProjectScopeTick, pending != projectScopeTick {
+            projectScopeTick = pending
+        }
+        pendingProjectScopeTick = nil
+
+        if let pending = pendingBranchTick, pending != branchTick {
+            branchTick = pending
+        }
+        pendingBranchTick = nil
+
+        if pendingPullRequestTick {
+            pullRequestTick &+= 1
+        }
+        pendingPullRequestTick = false
+
+        if pendingPullRequestSignatureRefresh {
+            refreshPullRequestLookupSignature(inputs: renderSnapshot.pullRequestLookupInputs)
+        }
+        pendingPullRequestSignatureRefresh = false
+
+        if hasDeferredActivityTick {
+            activityTick &+= 1
+        }
+        hasDeferredActivityTick = false
+
+        if pendingTaskBoardTick {
+            taskBoardTick &+= 1
+        }
+        pendingTaskBoardTick = false
+
+        if let pending = pendingRemoteItemTick, pending != remoteItemTick {
+            remoteItemTick = pending
+        }
+        pendingRemoteItemTick = nil
+
+        if let pending = pendingRemoteSnapshotTick, pending != remoteSnapshotTick {
+            remoteSnapshotTick = pending
+        }
+        pendingRemoteSnapshotTick = nil
+
+        if let pending = pendingRunTargetTick, pending != runTargetTick {
+            runTargetTick = pending
+        }
+        pendingRunTargetTick = nil
+
+        if let pending = pendingWorktreeProjectionVersion, pending != worktreeProjectionVersion {
+            worktreeProjectionVersion = pending
+        }
+        pendingWorktreeProjectionVersion = nil
+    }
+
+    private func refreshPullRequestLookupSignature(
+        inputs: [WorktreeBranchPullRequestStore.LookupInput]
+    ) {
+        let next = makePullRequestLookupSignature(inputs: inputs)
+        guard next != pullRequestLookupSignature else { return }
+        pullRequestLookupSignature = next
+    }
+
+    private func makePullRequestLookupSignature(
+        inputs: [WorktreeBranchPullRequestStore.LookupInput]
+    ) -> PullRequestLookupSignature {
+        let entries = inputs
+            .sorted {
+                if $0.directory != $1.directory {
+                    return $0.directory < $1.directory
+                }
+                return $0.branch < $1.branch
+            }
+            .map { input in
+                PullRequestLookupSignature.Entry(
+                    input: input,
+                    pullRequests: worktreePullRequestStore.cachedPullRequests(
+                        directory: input.directory,
+                        branch: input.branch
+                    )
+                )
+            }
+        return PullRequestLookupSignature(entries: entries)
+    }
+
+    private func refreshWorktreeHeadProjectionIfChanged(
+        for workspaces: [Workspace],
+        reason: String,
+        marksProjection: Bool = true
+    ) {
+        let inputs = worktreeHeadSignatureInputs(for: workspaces)
+        worktreeHeadSignatureRunner.task?.cancel()
+        let task = Task { @MainActor in
+            let signature = await Self.worktreeHeadSignature(for: inputs)
+            guard !Task.isCancelled else { return }
+            applyWorktreeHeadSignature(signature, reason: reason, marksProjection: marksProjection)
+        }
+        worktreeHeadSignatureRunner.task = task
+    }
+
+    private func applyWorktreeHeadSignature(
+        _ signature: String,
+        reason: String,
+        marksProjection: Bool
+    ) {
+        guard observedWorktreeHeadSignature != nil else {
+            observedWorktreeHeadSignature = signature
+            return
+        }
+        guard signature != observedWorktreeHeadSignature else { return }
+        observedWorktreeHeadSignature = signature
+        if marksProjection {
+            worktreeProjectionStore.markChanged(reason: "panel.\(reason)")
+        }
+    }
+
+    private func worktreeHeadSignatureInputs(for workspaces: [Workspace]) -> [WorktreeHeadSignatureInput] {
+        workspaces.compactMap { workspace -> WorktreeHeadSignatureInput? in
+            let expectedBranch = WorkspaceMetadataStore.shared.branch(for: workspace)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !expectedBranch.isEmpty else { return nil }
+            let path = WorktreeResolver.normalizePath(
+                WorkspaceMetadataStore.shared.worktreePath(forWorkspaceId: workspace.id)
+            ) ?? WorktreeResolver.normalizePath(workspace.termLoopPresentationCwd())
+            guard let path else { return nil }
+            return WorktreeHeadSignatureInput(
+                workspaceId: workspace.id,
+                path: path,
+                expectedBranch: expectedBranch
+            )
+        }
+    }
+
+    nonisolated private static func worktreeHeadSignature(
+        for inputs: [WorktreeHeadSignatureInput]
+    ) async -> String {
+        await Task.detached(priority: .utility) {
+            inputs.map { input in
+                let observed = TermLoopWorktreeHeadReader
+                    .currentObservedRefWithoutGit(checkoutPath: input.path)?
+                    .displayName ?? "unknown"
+                return "\(input.workspaceId.uuidString)|\(input.path)|\(input.expectedBranch)|\(observed)"
+            }
+            .sorted()
+            .joined(separator: "\n")
+        }.value
     }
 
     private func groupSummaryKey(
@@ -1056,24 +1984,6 @@ struct WorktreeAgentsPanel: View {
             open: WorktreeAgentsPullRequestSummary.summary(for: pullRequests, statuses: [.open]),
             merged: WorktreeAgentsPullRequestSummary.summary(for: pullRequests, statuses: [.merged])
         )
-    }
-
-    private func partitionRunTargetBindings(
-        _ bindings: [AgentReportedStateStore.AgentReportedBinding]
-    ) -> (
-        runTargets: [AgentReportedStateStore.AgentReportedBinding],
-        otherBindings: [AgentReportedStateStore.AgentReportedBinding]
-    ) {
-        var runTargets: [AgentReportedStateStore.AgentReportedBinding] = []
-        var otherBindings: [AgentReportedStateStore.AgentReportedBinding] = []
-        for binding in bindings {
-            if binding.abilityId == TermLoopBuiltInMCP.runningYourApplicationAbilityId {
-                runTargets.append(binding)
-            } else {
-                otherBindings.append(binding)
-            }
-        }
-        return (runTargets, otherBindings)
     }
 
     private func makeRenderSnapshot() -> RenderSnapshot {
@@ -1121,6 +2031,15 @@ struct WorktreeAgentsPanel: View {
             let projectKey = workspace.projectId?.uuidString ?? "unknown-project"
             return "branch:\(projectKey):\(branch)"
         }
+        func pathKey(_ rawPath: String?, relativeTo projectRoot: URL?) -> String? {
+            TaskPathNormalization
+                .resolveDisplayAndKey(rawPath, relativeTo: projectRoot)?
+                .keyPath
+        }
+        func groupProjectId(workspaces: [Workspace], worktreePath: String?) -> UUID? {
+            workspaces.compactMap(\.projectId).first
+                ?? worktreePath.flatMap { projectStore.project(containingPath: $0)?.id }
+        }
 
         var buckets: [String: [Workspace]] = [:]
         var order: [String] = []
@@ -1133,7 +2052,7 @@ struct WorktreeAgentsPanel: View {
             }
             buckets[key, default: []].append(workspace)
         }
-        let groups = order.map { key in
+        var groups = order.map { key in
             let workspaces = buckets[key] ?? []
             let expectedBranches = Array(Set(workspaces.compactMap { workspaceBranchById[$0.id] })).sorted()
             let displayBranch: String
@@ -1157,11 +2076,50 @@ struct WorktreeAgentsPanel: View {
                 branch: displayBranch,
                 workspaces: workspaces,
                 worktreePath: worktreePath,
+                projectId: groupProjectId(workspaces: workspaces, worktreePath: worktreePath),
                 statusKind: representativeStatus?.kind,
                 observedRef: representativeStatus?.observedRef,
                 expectedBranches: expectedBranches,
                 needsAttention: statuses.contains(where: { $0.needsUserAttention })
             )
+        }
+        if let activeProject = projectStore.activeProject {
+            let projectRoot = URL(fileURLWithPath: activeProject.folderPath, isDirectory: true)
+            let projection = worktreeProjectionStore.snapshot(
+                project: activeProject,
+                workspaces: scopedTabs,
+                maximumAge: 60
+            )
+            var seenPathKeys = Set(groups.compactMap {
+                pathKey($0.worktreePath, relativeTo: projectRoot)
+            })
+            for entry in projection.entries where entry.isPhysical && !entry.isMain {
+                guard !entry.hasTaskBinding,
+                      seenPathKeys.insert(entry.pathKey).inserted else {
+                    continue
+                }
+                let trimmedBranch = entry.branch?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let displayBranch = trimmedBranch.isEmpty
+                    ? URL(fileURLWithPath: entry.path).lastPathComponent
+                    : trimmedBranch
+                let expectedBranches = trimmedBranch.isEmpty ? [] : [trimmedBranch]
+                let statusKind: WorktreeStatus.Kind? = {
+                    if entry.isLocked { return .locked }
+                    if entry.isPrunable { return .prunable }
+                    return nil
+                }()
+                groups.append(WorktreeAgentsGroup(
+                    id: "path:\(WorktreeResolver.normalizePath(entry.path) ?? entry.path)",
+                    branch: displayBranch,
+                    workspaces: [],
+                    worktreePath: entry.path,
+                    projectId: activeProject.id,
+                    statusKind: statusKind,
+                    expectedBranches: expectedBranches,
+                    needsAttention: statusKind != nil
+                ))
+            }
         }
         let allWorkspaces = groups.flatMap(\.workspaces)
         let directPullRequestsByBranch: [String: [SidebarPullRequestState]] = Dictionary(
@@ -1305,41 +2263,53 @@ struct WorktreeAgentsPanel: View {
         )
         #endif
 
-        // Gather all bindings published under any worktree path in each
-        // group; dedupe by ability+binding id keeping the most recent report
-        // so split-panel sessions don't double-render. One path per group is
-        // enough since every workspace in a group shares the same worktree
-        // root, but enumerate via Set so identical paths only resolve once.
-        var bindingsByBranch: [String: [AgentReportedStateStore.AgentReportedBinding]] = [:]
-        var bindingBadgeSnapshotsByBranch: [String: [WorktreeGroupBindingBadgeSnapshot]] = [:]
+        var runTargetsByBranch: [String: [RunTargetStore.RunTarget]] = [:]
+        var remoteItemBadgeSnapshotsByBranch: [String: [WorktreeGroupRemoteItemBadgeSnapshot]] = [:]
         for group in groups {
             var seenPaths = Set<String>()
-            var byKey: [String: AgentReportedStateStore.AgentReportedBinding] = [:]
-            for workspace in group.workspaces {
-                guard let path = WorkspaceMetadataStore.shared.reportedStatePath(
+            var runTargetsById: [String: RunTargetStore.RunTarget] = [:]
+            var remoteItemsById: [String: WorktreeRemoteItemBindingStore.Binding] = [:]
+            var paths: [String] = []
+            if let path = group.worktreePath {
+                paths.append(path)
+            }
+            paths.append(contentsOf: group.workspaces.compactMap { workspace in
+                WorkspaceMetadataStore.shared.reportedStatePath(
                     forWorkspaceId: workspace.id,
                     fallbackPath: workspace.termLoopPresentationCwd()
-                ),
-                      seenPaths.insert(path).inserted else { continue }
-                for binding in AgentReportedStateStore.shared.bindings(forPath: path) {
-                    let key = AgentReportedStateStore.bindingKey(
-                        abilityId: binding.abilityId,
-                        bindingId: binding.bindingId
-                    )
-                    if let existing = byKey[key], existing.reportedAt >= binding.reportedAt { continue }
-                    byKey[key] = binding
+                )
+            })
+            for path in paths {
+                guard seenPaths.insert(path).inserted else { continue }
+                for target in RunTargetStore.shared.targets(forPath: path) {
+                    if let existing = runTargetsById[target.id],
+                       existing.reportedAt >= target.reportedAt {
+                        continue
+                    }
+                    runTargetsById[target.id] = target
+                }
+                if let binding = WorktreeRemoteItemBindingStore.shared.binding(forPath: path) {
+                    let key = binding.reference.storageKey
+                    if let existing = remoteItemsById[key],
+                       existing.updatedAt >= binding.updatedAt {
+                        continue
+                    }
+                    remoteItemsById[key] = binding
                 }
             }
-            if !byKey.isEmpty {
-                let sortedBindings = Array(byKey.values)
-                    .sorted { ($0.abilityId, $0.bindingId) < ($1.abilityId, $1.bindingId) }
-                bindingsByBranch[group.id] = sortedBindings
-                let badgeSnapshots = sortedBindings
-                    .filter { $0.abilityId != TermLoopBuiltInMCP.runningYourApplicationAbilityId }
-                    .map(WorktreeGroupBindingBadgeSnapshot.init(binding:))
-                if !badgeSnapshots.isEmpty {
-                    bindingBadgeSnapshotsByBranch[group.id] = badgeSnapshots
-                }
+            if !runTargetsById.isEmpty {
+                runTargetsByBranch[group.id] = Array(runTargetsById.values)
+                    .sorted { $0.id < $1.id }
+            }
+            if !remoteItemsById.isEmpty {
+                remoteItemBadgeSnapshotsByBranch[group.id] = Array(remoteItemsById.values)
+                    .sorted { $0.reference.storageKey < $1.reference.storageKey }
+                    .map { binding in
+                        WorktreeGroupRemoteItemBadgeSnapshot(
+                            binding: binding,
+                            snapshot: RemoteWorkItemSnapshotStore.shared.snapshot(for: binding.reference)
+                        )
+                    }
             }
         }
 
@@ -1353,7 +2323,8 @@ struct WorktreeAgentsPanel: View {
             branchAttributedStringByBranch: branchAttributedStringByBranch,
             allWorkspaceIds: allWorkspaces.map(\.id),
             pullRequestLookupInputs: groups.compactMap { group in
-                guard let directory = group.worktreePath else { return nil }
+                guard let directory = group.worktreePath,
+                      group.expectedBranches.count == 1 else { return nil }
                 return WorktreeBranchPullRequestStore.LookupInput(
                     directory: directory,
                     branch: group.branch
@@ -1361,8 +2332,8 @@ struct WorktreeAgentsPanel: View {
             },
             branchesNeedingInitialExpansion: branchesNeedingInitialExpansion,
             allPullRequestsByBranch: allPullRequestsByBranch,
-            bindingsByBranch: bindingsByBranch,
-            bindingBadgeSnapshotsByBranch: bindingBadgeSnapshotsByBranch
+            runTargetsByBranch: runTargetsByBranch,
+            remoteItemBadgeSnapshotsByBranch: remoteItemBadgeSnapshotsByBranch
         )
     }
 
@@ -1380,7 +2351,8 @@ struct WorktreeAgentsPanel: View {
         isCollapsed: Binding<Bool>,
         storageKey: String,
         mediumHeight: CGFloat,
-        addWorktreeAction: (() -> Void)? = nil
+        addWorktreeAction: (() -> Void)? = nil,
+        localSetupGroups: [WorktreeAgentsGroup]? = nil
     ) -> some View {
         let hideTooltip = String(
             localized: "worktreeAgents.panel.hide.help",
@@ -1423,6 +2395,9 @@ struct WorktreeAgentsPanel: View {
                     table: "TermLoop"
                 ))
             }
+            if let localSetupGroups {
+                worktreeAgentsSectionMenu(groups: localSetupGroups)
+            }
             Text(verbatim: sectionCountLabel(
                 groupCount: groupCount,
                 workspaceCount: workspaceCount,
@@ -1454,6 +2429,52 @@ struct WorktreeAgentsPanel: View {
         ))
     }
 
+    private func worktreeAgentsSectionMenu(groups: [WorktreeAgentsGroup]) -> some View {
+        let projectId = projectStore.activeProjectId ?? groups.compactMap(\.projectId).first
+        let runTargets = groups.compactMap { group -> LocalSetupMenuRunTarget? in
+            guard let worktreePath = group.worktreePath,
+                  (group.projectId ?? projectId) != nil else { return nil }
+            return LocalSetupMenuRunTarget(
+                projectId: group.projectId ?? projectId,
+                worktreePath: worktreePath,
+                label: worktreeMenuLabel(for: group)
+            )
+        }
+        return Menu {
+            LocalSetupMenuItems(projectId: projectId, runTargets: runTargets)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(TermLoopSidebarTheme.dim)
+                .frame(width: 14, height: 14)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(String(
+            localized: "worktreeAgents.panel.moreActions.tooltip",
+            defaultValue: "More worktree actions",
+            table: "TermLoop"
+        ))
+        .accessibilityLabel(String(
+            localized: "worktreeAgents.panel.moreActions.accessibilityLabel",
+            defaultValue: "More worktree actions",
+            table: "TermLoop"
+        ))
+    }
+
+    private func worktreeMenuLabel(for group: WorktreeAgentsGroup) -> String {
+        if let worktreePath = group.worktreePath {
+            let leaf = URL(fileURLWithPath: worktreePath).lastPathComponent
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !leaf.isEmpty, leaf != group.branch {
+                return "\(group.branch) · \(leaf)"
+            }
+        }
+        return group.branch
+    }
+
     private func sectionCountLabel(groupCount: Int, workspaceCount: Int, short: Bool = false) -> String {
         if short {
             // Light mode: keep just the agent count — the group/agent split
@@ -1477,7 +2498,6 @@ struct WorktreeAgentsPanel: View {
         pullRequestStatuses: Set<SidebarPullRequestStatus>?,
         renderSnapshot: RenderSnapshot,
         collapsedBranchSet: Set<String>,
-        pullRequestLookupTick: UInt64,
         addWorktreeAction: (() -> Void)? = nil
     ) -> some View {
         let visibleLimit = sectionKind.initialVisibleLimit
@@ -1494,7 +2514,8 @@ struct WorktreeAgentsPanel: View {
                 isCollapsed: isCollapsed,
                 storageKey: storageKey,
                 mediumHeight: 180,
-                addWorktreeAction: addWorktreeAction
+                addWorktreeAction: addWorktreeAction,
+                localSetupGroups: sectionKind == .worktrees ? orderedGroups : nil
             )
             .padding(.horizontal, TermLoopSidebarTheme.rowInsetH)
             .padding(.top, 6)
@@ -1515,15 +2536,14 @@ struct WorktreeAgentsPanel: View {
                         mediumHeight: 180,
                         minHeight: 72
                     ) {
-                        LazyVStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: 4) {
                             ForEach(visibleGroups) { group in
                                 worktreeGroupView(
                                     group,
                                     sectionKind: sectionKind,
                                     pullRequestStatuses: pullRequestStatuses,
                                     renderSnapshot: renderSnapshot,
-                                    collapsedBranchSet: collapsedBranchSet,
-                                    pullRequestLookupTick: pullRequestLookupTick
+                                    collapsedBranchSet: collapsedBranchSet
                                 )
                             }
                             if orderedGroups.count > visibleLimit {
@@ -1577,19 +2597,38 @@ struct WorktreeAgentsPanel: View {
         }
     }
 
-    private func refreshWorktreeRegistry(for workspaces: [Workspace], reason: String) {
+    private func refreshWorktreeProjection(for workspaces: [Workspace], reason: String) {
         guard !isHidden else { return }
-        let projectFolders = Set(workspaces.compactMap { workspace -> String? in
+        var projectIds = Set(workspaces.compactMap { workspace -> UUID? in
             guard let projectId = workspace.projectId,
-                  let project = ProjectStore.shared.project(id: projectId) else { return nil }
-            return project.folderPath
+                  ProjectStore.shared.project(id: projectId) != nil else { return nil }
+            return projectId
         })
-        guard !projectFolders.isEmpty else { return }
-        for projectFolder in projectFolders {
-            WorktreeRegistry.shared.refresh(projectFolder: projectFolder, reason: "panel.\(reason)") { _ in
-                worktreeRegistryTick &+= 1
-            }
+        if let activeProject = projectStore.activeProject {
+            projectIds.insert(activeProject.id)
         }
+        guard !projectIds.isEmpty else { return }
+        for projectId in projectIds {
+            worktreeProjectionStore.refresh(projectId: projectId, reason: "panel.\(reason)")
+        }
+    }
+
+    private func subscribeToActiveTaskBoardStore() {
+        let projectId = projectStore.activeProjectId
+        guard projectId != subscribedTaskProjectId else { return }
+        subscribedTaskProjectId = projectId
+        taskBoardSubscription = nil
+        guard let projectId,
+              let store = TaskBoardStoreProvider.shared.store(for: projectId) else { return }
+        taskBoardSubscription = store.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { _ in
+                if AppMenuTrackingGate.shared.isTrackingMenu {
+                    pendingTaskBoardTick = true
+                } else {
+                    taskBoardTick &+= 1
+                }
+            }
     }
 
     private func branchSet(from raw: String) -> Set<String> {
@@ -1655,8 +2694,96 @@ struct WorktreeAgentsPanel: View {
         .equatable()
     }
 
+    private func worktreeGroupMetadataRow(
+        group: WorktreeAgentsGroup,
+        pullRequestSummary: WorktreeAgentsPullRequestSummary.Summary?,
+        allPullRequests: [SidebarPullRequestState],
+        runTargets: [RunTargetStore.RunTarget],
+        remoteItemBadges: [WorktreeGroupRemoteItemBadgeSnapshot]
+    ) -> some View {
+        let preferredWorkspace = sourceWorkspace(for: group)
+        let openPullRequests = pullRequestSummary?.pullRequests.filter { $0.status == .open } ?? []
+        return HStack(alignment: .center, spacing: 4) {
+            worktreeGroupMetadataBadges(
+                group: group,
+                pullRequestSummary: pullRequestSummary,
+                allPullRequests: allPullRequests,
+                runTargets: runTargets,
+                remoteItemBadges: remoteItemBadges
+            )
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .clipped()
+            WorktreeGroupGitSummaryView(
+                group: group,
+                preferredWorkspace: preferredWorkspace,
+                openPullRequests: openPullRequests
+            )
+            .layoutPriority(1)
+        }
+    }
+
+    private func worktreeGroupMetadataBadges(
+        group: WorktreeAgentsGroup,
+        pullRequestSummary: WorktreeAgentsPullRequestSummary.Summary?,
+        allPullRequests: [SidebarPullRequestState],
+        runTargets: [RunTargetStore.RunTarget],
+        remoteItemBadges: [WorktreeGroupRemoteItemBadgeSnapshot]
+    ) -> some View {
+        HStack(alignment: .center, spacing: 4) {
+            pullRequestBadge(
+                summary: pullRequestSummary,
+                allPullRequests: allPullRequests,
+                group: group
+            )
+            worktreeGroupSupplementalBadges(
+                group: group,
+                runTargets: runTargets,
+                remoteItemBadges: remoteItemBadges
+            )
+        }
+        .lineLimit(1)
+        .truncationMode(.tail)
+    }
+
+    private func worktreeGroupSupplementalBadges(
+        group: WorktreeAgentsGroup,
+        runTargets: [RunTargetStore.RunTarget],
+        remoteItemBadges: [WorktreeGroupRemoteItemBadgeSnapshot]
+    ) -> some View {
+        HStack(alignment: .center, spacing: 4) {
+            if !runTargets.isEmpty {
+                WorktreeGroupRunTargetsBadge(
+                    targets: runTargets,
+                    workspaceIds: group.workspaces.map(\.id),
+                    worktreePath: group.worktreePath
+                )
+            }
+            ForEach(remoteItemBadges) { snapshot in
+                WorktreeGroupRemoteItemBadge(snapshot: snapshot)
+                    .equatable()
+            }
+        }
+    }
+
     private func addAgent(to group: WorktreeAgentsGroup, agent: TerminalAgent) {
-        guard let source = sourceWorkspace(for: group) else { return }
+        guard let source = sourceWorkspace(for: group) else {
+            guard let projectId = group.projectId,
+                  let branch = group.expectedBranches.first,
+                  !branch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return
+            }
+            QuickActionController.shared.present(
+                prefill: QuickActionPresentationRequest(
+                    initialSurface: .worktree,
+                    worktreeIntent: .createWorkspace,
+                    advancedTerminalAgentId: agent.id,
+                    reasonTag: "quickAction.worktreePanelAddAgent",
+                    projectId: projectId,
+                    suggestedBranchName: branch
+                )
+            )
+            return
+        }
         // "+" on a worktree row creates a NEW fresh sibling workspace in the
         // same worktree — never a fork/resume. `preferredForkLaunchSource`
         // would route to claude --resume when an existing Claude session
@@ -1860,8 +2987,7 @@ struct WorktreeAgentsPanel: View {
         sectionKind: WorktreeAgentsSectionKind,
         pullRequestStatuses: Set<SidebarPullRequestStatus>?,
         renderSnapshot: RenderSnapshot,
-        collapsedBranchSet: Set<String>,
-        pullRequestLookupTick: UInt64
+        collapsedBranchSet: Set<String>
     ) -> some View {
         let expanded = !collapsedBranchSet.contains(group.id)
         let path = group.worktreePath.map {
@@ -1883,218 +3009,148 @@ struct WorktreeAgentsPanel: View {
             }
         }()
         let canDeleteGroup = canDeletePhysicalWorktree || canPerformBranchActions
-        let showsAddAction = hoveredBranch == group.id && !availableAgents.isEmpty
+        let showsAddAction = hoveredBranch == group.id
+            && !availableAgents.isEmpty
+            && (sourceWorkspace(for: group) != nil || group.projectId != nil)
+            && group.expectedBranches.count == 1
         let showsCollapseAction = !group.workspaces.isEmpty
         let showsDeleteAction = hoveredBranch == group.id && canDeleteGroup
         let isArchivedSection = sectionKind.isArchived
         let orderedWorkspaces = renderSnapshot.orderedWorkspacesByBranch[group.id] ?? group.workspaces
-        let groupBindings = renderSnapshot.bindingsByBranch[group.id] ?? []
-        let groupBindingBadges = renderSnapshot.bindingBadgeSnapshotsByBranch[group.id] ?? []
-        let partitionedBindings = partitionRunTargetBindings(groupBindings)
+        let runTargets = renderSnapshot.runTargetsByBranch[group.id] ?? []
+        let remoteItemBadges = renderSnapshot.remoteItemBadgeSnapshotsByBranch[group.id] ?? []
+        let pullRequestSummary = renderSnapshot.groupSummaryByKey[
+            groupSummaryKey(groupId: group.id, statuses: pullRequestStatuses)
+        ]
+        let allBranchPullRequests = renderSnapshot.allPullRequestsByBranch[group.id] ?? []
         VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .top, spacing: 6) {
-                Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(TermLoopSidebarTheme.dim)
-                    .frame(width: 10)
-                    .padding(.top, 2)
-                Image(systemName: "shippingbox.fill")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(isArchivedSection ? TermLoopSidebarTheme.dimmer : TermLoopSidebarTheme.dim)
-                    .frame(width: 10, height: 10)
-                    .padding(.top, 2)
-                // Branch name only — the shippingbox icon already says
-                // "branch", and the path was rendered as broken middle-truncated
-                // text on every row. Path lives in the help() tooltip below
-                // for the rare time you actually need it.
-                //
-                // Common Git Flow / GitHub Flow prefixes (`feature/`, `bugfix/`,
-                // `hotfix/`, `chore/`, `refactor/`, `release/`) are rendered
-                // dim so the meaningful tail (ticket ID / topic) gets visual
-                // weight. Renders as a single attributed Text so truncation
-                // still works as one unit.
-                Text(renderSnapshot.branchAttributedStringByBranch[group.id] ?? Self.branchAttributedString(group.branch))
-                    .font(WorktreeAgentsPanelTypography.branchValue)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(path ?? group.branch)
-                if let pathLeaf, !pathLeaf.isEmpty {
-                    Text(verbatim: "· \(pathLeaf)")
-                        .font(TermLoopSidebarTheme.tinyMono)
-                        .foregroundStyle(TermLoopSidebarTheme.dimmer)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .center, spacing: 6) {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(TermLoopSidebarTheme.dim)
+                        .frame(width: 10)
+                    Image(systemName: "shippingbox.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(isArchivedSection ? TermLoopSidebarTheme.dimmer : TermLoopSidebarTheme.dim)
+                        .frame(width: 10, height: 10)
+                    Text(renderSnapshot.branchAttributedStringByBranch[group.id] ?? Self.branchAttributedString(group.branch))
+                        .font(WorktreeAgentsPanelTypography.branchValue)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .help(path ?? pathLeaf)
-                }
-                if let statusLabel = worktreeStatusLabel(for: group) {
-                    TermLoopSidebarToken(
-                        label: statusLabel,
-                        iconSystemName: "exclamationmark.triangle.fill",
-                        tone: .warning,
-                        emphasized: true
-                    )
-                    .help(worktreeStatusTooltip(for: group))
-                }
-                Spacer()
-                SidebarActionSlot(isVisible: showsCollapseAction, width: 14, height: 14) {
-                    Button {
-                        _ = WorkspaceHideCoordinator.confirmAndCollapse(
-                            workspaces: group.workspaces,
-                            tabManager: tabManager,
-                            targetName: group.branch
-                        )
-                    } label: {
-                        Image(systemName: "archivebox")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(TermLoopSidebarTheme.dim)
-                            .frame(width: 14, height: 14)
-                            .contentShape(Rectangle())
+                        .layoutPriority(1)
+                        .help(path ?? group.branch)
+                    if let pathLeaf, !pathLeaf.isEmpty {
+                        Text(verbatim: "· \(pathLeaf)")
+                            .font(TermLoopSidebarTheme.tinyMono)
+                            .foregroundStyle(TermLoopSidebarTheme.dimmer)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .layoutPriority(0)
+                            .help(path ?? pathLeaf)
                     }
-                    .buttonStyle(.plain)
-                    .help(String(
-                        localized: "worktreeAgents.group.collapse.tooltip",
-                        defaultValue: "Collapse this worktree and stop its agents",
-                        table: "TermLoop"
-                    ))
-                }
-                SidebarActionSlot(isVisible: showsAddAction, width: 14, height: 14) {
-                    Menu {
-                        ForEach(availableAgents, id: \.id) { agent in
-                            Button {
-                                addAgent(to: group, agent: agent)
-                            } label: {
-                                Label(addAgentLabel(for: agent), systemImage: agent.icon)
-                            }
-                        }
-                    } label: {
-                        Text(verbatim: "+")
-                            .font(TermLoopSidebarTheme.bodyMonoStrong)
-                            .foregroundStyle(TermLoopSidebarTheme.dim)
-                            .frame(width: 14, height: 14)
-                            .contentShape(Rectangle())
+                    if let statusLabel = worktreeStatusLabel(for: group) {
+                        TermLoopSidebarToken(
+                            label: statusLabel,
+                            iconSystemName: "exclamationmark.triangle.fill",
+                            tone: .warning,
+                            emphasized: true
+                        )
+                        .help(worktreeStatusTooltip(for: group))
                     }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .help(String(
-                        localized: "worktreeAgents.group.hoverAdd.tooltip",
-                        defaultValue: "Add agent on this branch",
-                        table: "TermLoop"
-                    ))
-                }
-                SidebarActionSlot(isVisible: showsDeleteAction, width: 14, height: 14) {
-                    let deleteTooltip = canDeletePhysicalWorktree
-                        ? String(
-                            localized: "worktreeAgents.group.hoverDelete.worktreeTooltip",
-                            defaultValue: "Delete this worktree",
-                            table: "TermLoop"
-                        )
-                        : String(
-                            localized: "worktreeAgents.group.hoverDelete.branchTooltip",
-                            defaultValue: "Delete this branch",
-                            table: "TermLoop"
-                        )
-                    Button {
-                        WorktreeDeletionCoordinator.shared.confirmAndDelete(
-                            branch: singleExpectedBranch,
-                            worktreePath: canDeletePhysicalWorktree ? group.worktreePath : nil,
-                            projectId: sourceWorkspace(for: group)?.projectId,
-                            fallbackWorkspaceIds: group.workspaces.map(\.id)
-                        )
-                    } label: {
-                        Image(systemName: "trash")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(TermLoopSidebarTheme.dim)
-                            .frame(width: 14, height: 14)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(deleteTooltip)
-                }
-                Text(verbatim: "\(group.workspaces.count)")
-                    .font(TermLoopSidebarTheme.tinyMono)
-                    .foregroundStyle(isArchivedSection ? TermLoopSidebarTheme.dimmer : TermLoopSidebarTheme.dim)
-                    .monospacedDigit()
-                    .padding(.top, 2)
-                let pullRequestSummary = renderSnapshot.groupSummaryByKey[
-                    groupSummaryKey(groupId: group.id, statuses: pullRequestStatuses)
-                ]
-                let allBranchPullRequests = renderSnapshot.allPullRequestsByBranch[group.id] ?? []
-                // Headline pills run on a single horizontal line so MERGED
-                // PRs / OPEN PRs / WORKTREE branch headers are one row tall
-                // instead of stacking PR pill + commit pill + binding badges
-                // vertically. Bindings (when present) flow after the PR pill;
-                // git summary (commits/changes) sits at the trailing end.
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .center, spacing: 4) {
-                        pullRequestBadge(
-                            summary: pullRequestSummary,
-                            allPullRequests: allBranchPullRequests,
-                            group: group
-                        )
-                        if !groupBindings.isEmpty {
-                            if !partitionedBindings.runTargets.isEmpty {
-                                WorktreeGroupRunTargetsBadge(
-                                    bindings: partitionedBindings.runTargets,
-                                    workspaceIds: group.workspaces.map(\.id),
-                                    reportedStatePath: group.worktreePath
-                                )
-                            }
-                            ForEach(groupBindingBadges) { snapshot in
-                                WorktreeGroupBindingBadge(snapshot: snapshot)
-                                    .equatable()
-                            }
-                        }
-                        WorktreeGroupGitSummaryView(
-                            group: group,
-                            preferredWorkspace: sourceWorkspace(for: group),
-                            openPullRequests: pullRequestSummary?.pullRequests.filter { $0.status == .open } ?? [],
-                            pullRequestLookupTick: pullRequestLookupTick
-                        )
-                    }
-                    // Compact fallbacks for narrow sidebars: keep every
-                    // agent-reported badge visible, then drop git metadata
-                    // instead of crushing branch titles/count tokens.
-                    HStack(alignment: .center, spacing: 4) {
-                        pullRequestBadge(
-                            summary: pullRequestSummary,
-                            allPullRequests: allBranchPullRequests,
-                            group: group
-                        )
-                        if !partitionedBindings.runTargets.isEmpty {
-                            WorktreeGroupRunTargetsBadge(
-                                bindings: partitionedBindings.runTargets,
-                                workspaceIds: group.workspaces.map(\.id),
-                                reportedStatePath: group.worktreePath
+                    Spacer()
+                    SidebarActionSlot(isVisible: showsCollapseAction, width: 14, height: 14) {
+                        Button {
+                            _ = WorkspaceHideCoordinator.confirmAndCollapse(
+                                workspaces: group.workspaces,
+                                tabManager: tabManager,
+                                targetName: group.branch
                             )
+                        } label: {
+                            Image(systemName: "archivebox")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(TermLoopSidebarTheme.dim)
+                                .frame(width: 14, height: 14)
+                                .contentShape(Rectangle())
                         }
-                        ForEach(groupBindingBadges) { snapshot in
-                            WorktreeGroupBindingBadge(snapshot: snapshot)
-                                .equatable()
-                        }
+                        .buttonStyle(.plain)
+                        .help(String(
+                            localized: "worktreeAgents.group.collapse.tooltip",
+                            defaultValue: "Collapse this worktree and stop its agents",
+                            table: "TermLoop"
+                        ))
                     }
-                    VStack(alignment: .trailing, spacing: 2) {
-                        pullRequestBadge(
-                            summary: pullRequestSummary,
-                            allPullRequests: allBranchPullRequests,
-                            group: group
-                        )
-                        HStack(alignment: .center, spacing: 4) {
-                            if !partitionedBindings.runTargets.isEmpty {
-                                WorktreeGroupRunTargetsBadge(
-                                    bindings: partitionedBindings.runTargets,
-                                    workspaceIds: group.workspaces.map(\.id),
-                                    reportedStatePath: group.worktreePath
-                                )
+                    SidebarActionSlot(isVisible: showsAddAction, width: 14, height: 14) {
+                        Menu {
+                            ForEach(availableAgents, id: \.id) { agent in
+                                Button {
+                                    addAgent(to: group, agent: agent)
+                                } label: {
+                                    Label(addAgentLabel(for: agent), systemImage: agent.icon)
+                                }
                             }
-                            ForEach(groupBindingBadges) { snapshot in
-                                WorktreeGroupBindingBadge(snapshot: snapshot)
-                                    .equatable()
-                            }
+                        } label: {
+                            Text(verbatim: "+")
+                                .font(TermLoopSidebarTheme.bodyMonoStrong)
+                                .foregroundStyle(TermLoopSidebarTheme.dim)
+                                .frame(width: 14, height: 14)
+                                .contentShape(Rectangle())
                         }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .help(String(
+                            localized: "worktreeAgents.group.hoverAdd.tooltip",
+                            defaultValue: "Add agent on this branch",
+                            table: "TermLoop"
+                        ))
                     }
+                    SidebarActionSlot(isVisible: showsDeleteAction, width: 14, height: 14) {
+                        let deleteTooltip = canDeletePhysicalWorktree
+                            ? String(
+                                localized: "worktreeAgents.group.hoverDelete.worktreeTooltip",
+                                defaultValue: "Delete this worktree",
+                                table: "TermLoop"
+                            )
+                            : String(
+                                localized: "worktreeAgents.group.hoverDelete.branchTooltip",
+                                defaultValue: "Delete this branch",
+                                table: "TermLoop"
+                            )
+                        Button {
+                            WorktreeDeletionCoordinator.shared.confirmAndDelete(
+                                branch: singleExpectedBranch,
+                                worktreePath: canDeletePhysicalWorktree ? group.worktreePath : nil,
+                                projectId: sourceWorkspace(for: group)?.projectId ?? group.projectId,
+                                fallbackWorkspaceIds: group.workspaces.map(\.id),
+                                onDeleted: { worktreeProjectionStore.markChanged(reason: "panel.delete") }
+                            )
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(TermLoopSidebarTheme.dim)
+                                .frame(width: 14, height: 14)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help(deleteTooltip)
+                    }
+                    Text(verbatim: "\(group.workspaces.count)")
+                        .font(TermLoopSidebarTheme.tinyMono)
+                        .foregroundStyle(isArchivedSection ? TermLoopSidebarTheme.dimmer : TermLoopSidebarTheme.dim)
+                        .monospacedDigit()
                 }
-                .padding(.top, 1)
+                worktreeGroupMetadataRow(
+                    group: group,
+                    pullRequestSummary: pullRequestSummary,
+                    allPullRequests: allBranchPullRequests,
+                    runTargets: runTargets,
+                    remoteItemBadges: remoteItemBadges
+                )
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.leading, 32)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 1)
             .padding(.horizontal, 4)
             .padding(.vertical, 2)
             .background(
@@ -2113,7 +3169,7 @@ struct WorktreeAgentsPanel: View {
                         group: group,
                         sourceWorkspace: sourceWorkspace(for: group)
                     ) {
-                        worktreeRegistryTick &+= 1
+                        worktreeProjectionStore.markChanged(reason: "panel.action")
                     }
                 } label: {
                     Label(
@@ -2128,7 +3184,10 @@ struct WorktreeAgentsPanel: View {
 
                 if let worktreePath = group.worktreePath {
                     let projectId = sourceWorkspace(for: group)?.projectId
+                        ?? group.projectId
                         ?? group.workspaces.first?.projectId
+                    LocalSetupWorktreeMenuItems(projectId: projectId, worktreePath: worktreePath)
+
                     let openTarget = projectId
                         .flatMap { ProjectStore.shared.project(id: $0)?.worktreeOpenTarget }
                     Menu {
@@ -2235,7 +3294,7 @@ struct WorktreeAgentsPanel: View {
                             group: group,
                             sourceWorkspace: sourceWorkspace(for: group)
                         ) {
-                            worktreeRegistryTick &+= 1
+                            worktreeProjectionStore.markChanged(reason: "panel.action")
                         }
                     } label: {
                         Label(
@@ -2256,7 +3315,7 @@ struct WorktreeAgentsPanel: View {
                         WorktreeRepairCoordinator.shared.acceptObservedBranch(
                             group: group
                         ) {
-                            worktreeRegistryTick &+= 1
+                            worktreeProjectionStore.markChanged(reason: "panel.action")
                         }
                     } label: {
                         Label(
@@ -2276,7 +3335,7 @@ struct WorktreeAgentsPanel: View {
                             group: group,
                             sourceWorkspace: sourceWorkspace(for: group)
                         ) {
-                            worktreeRegistryTick &+= 1
+                            worktreeProjectionStore.markChanged(reason: "panel.action")
                         }
                     } label: {
                         Label(
@@ -2296,7 +3355,7 @@ struct WorktreeAgentsPanel: View {
                             group: group,
                             sourceWorkspace: sourceWorkspace(for: group)
                         ) {
-                            worktreeRegistryTick &+= 1
+                            worktreeProjectionStore.markChanged(reason: "panel.action")
                         }
                     } label: {
                         Label(
@@ -2317,7 +3376,7 @@ struct WorktreeAgentsPanel: View {
                         WorktreeRepairCoordinator.shared.detachGroupFromWorktree(
                             group: group
                         ) {
-                            worktreeRegistryTick &+= 1
+                            worktreeProjectionStore.markChanged(reason: "panel.action")
                         }
                     } label: {
                         Label(
@@ -2331,24 +3390,26 @@ struct WorktreeAgentsPanel: View {
                     }
                 }
 
-                Button {
-                    _ = WorkspaceHideCoordinator.confirmAndCollapse(
-                        workspaces: group.workspaces,
-                        tabManager: tabManager,
-                        targetName: group.branch
-                    )
-                } label: {
-                    Label(
-                        String(
-                            localized: "worktreeAgents.group.collapse",
-                            defaultValue: "Collapse Worktree…",
-                            table: "TermLoop"
-                        ),
-                        systemImage: "archivebox"
-                    )
+                if !group.workspaces.isEmpty {
+                    Button {
+                        _ = WorkspaceHideCoordinator.confirmAndCollapse(
+                            workspaces: group.workspaces,
+                            tabManager: tabManager,
+                            targetName: group.branch
+                        )
+                    } label: {
+                        Label(
+                            String(
+                                localized: "worktreeAgents.group.collapse",
+                                defaultValue: "Collapse Worktree…",
+                                table: "TermLoop"
+                            ),
+                            systemImage: "archivebox"
+                        )
+                    }
                 }
 
-                if canPerformBranchActions {
+                if canPerformBranchActions, !group.workspaces.isEmpty {
                     Button {
                         moveGroupToCurrentLocalBranch(group)
                     } label: {
@@ -2363,20 +3424,25 @@ struct WorktreeAgentsPanel: View {
                     }
                 }
 
-                if JiraTicketBindingPrompt.isJiraAbilityActive(forGroupWorkspaces: group.workspaces) {
-                    Divider()
-                    Button {
-                        JiraTicketBindingPrompt.present(forGroupWorkspaces: group.workspaces)
-                    } label: {
-                        Label(
-                            String(
-                                localized: "worktreeAgents.group.setJiraTicket",
-                                defaultValue: "Set Jira Ticket URL…",
-                                table: "TermLoop"
-                            ),
-                            systemImage: "link"
+                Divider()
+                Button {
+                    if let worktreePath = group.worktreePath {
+                        RemoteItemBindingPrompt.present(
+                            forWorktreePath: worktreePath,
+                            workspaceIds: group.workspaces.map(\.id)
                         )
+                    } else {
+                        RemoteItemBindingPrompt.present(forGroupWorkspaces: group.workspaces)
                     }
+                } label: {
+                    Label(
+                        String(
+                            localized: "worktreeAgents.group.setRemoteItem",
+                            defaultValue: "Set Remote Item…",
+                            table: "TermLoop"
+                        ),
+                        systemImage: "link"
+                    )
                 }
 
                 Divider()
@@ -2397,8 +3463,9 @@ struct WorktreeAgentsPanel: View {
                         WorktreeDeletionCoordinator.shared.confirmAndDelete(
                             branch: singleExpectedBranch,
                             worktreePath: canDeletePhysicalWorktree ? group.worktreePath : nil,
-                            projectId: sourceWorkspace(for: group)?.projectId,
-                            fallbackWorkspaceIds: group.workspaces.map(\.id)
+                            projectId: sourceWorkspace(for: group)?.projectId ?? group.projectId,
+                            fallbackWorkspaceIds: group.workspaces.map(\.id),
+                            onDeleted: { worktreeProjectionStore.markChanged(reason: "panel.delete") }
                         )
                     } label: {
                         Label(
@@ -2414,7 +3481,20 @@ struct WorktreeAgentsPanel: View {
             .onTapGesture { toggleExpanded(branch: group.id) }
 
             if expanded {
-                LazyVStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 1) {
+                    if orderedWorkspaces.isEmpty {
+                        Text(
+                            String(
+                                localized: "worktreeAgents.group.noAgents",
+                                defaultValue: "No agents attached.",
+                                table: "TermLoop"
+                            )
+                        )
+                        .font(TermLoopSidebarTheme.tinyMono)
+                        .foregroundStyle(TermLoopSidebarTheme.dimmer)
+                        .lineLimit(1)
+                        .padding(.vertical, 3)
+                    }
                     ForEach(orderedWorkspaces, id: \.id) { ws in
                         VStack(alignment: .leading, spacing: 0) {
                             if let rowSnapshot = renderSnapshot.rowSnapshotsByWorkspaceId[ws.id] {
@@ -2745,6 +3825,7 @@ struct WorktreeChangesSheet: View {
     /// commit patches are immutable enough to cache safely.
     @State private var commitDiffCache: [String: String] = [:]
     @State private var refreshNonce: UInt64 = 0
+    @FocusState private var isFileNavigationFocused: Bool
 
     private var effectiveDirectory: String {
         worktreePath ?? workspace.termLoopPresentationCwd() ?? workspace.currentDirectory
@@ -2830,6 +3911,28 @@ struct WorktreeChangesSheet: View {
         return count == 1 ? "1 change" : "\(count) changes"
     }
 
+    private var specialSources: [WorktreeChangesSource] {
+        availableSources.filter {
+            switch $0 {
+            case .local, .baseComparison:
+                return true
+            case .commit:
+                return false
+            }
+        }
+    }
+
+    private var commitSources: [WorktreeChangesSource] {
+        availableSources.filter {
+            switch $0 {
+            case .commit:
+                return true
+            case .local, .baseComparison:
+                return false
+            }
+        }
+    }
+
     private var currentSourceLabel: String {
         switch currentSource {
         case .local:
@@ -2863,28 +3966,22 @@ struct WorktreeChangesSheet: View {
         }
     }
 
+    private func closeSheet() {
+        if let onClose { onClose() } else { dismiss() }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(workspace.title)
+                    Text(String(
+                        localized: "worktreeChanges.title",
+                        defaultValue: "Worktree changes",
+                        table: "TermLoop"
+                    ))
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(Color.primary)
-                    if let branch, !branch.isEmpty {
-                        Text(branch)
-                            .font(TermLoopSidebarTheme.tinyMono)
-                            .foregroundStyle(TermLoopSidebarTheme.dim)
-                    }
-                    if let worktreePath, !worktreePath.isEmpty {
-                        Text((worktreePath as NSString).abbreviatingWithTildeInPath)
-                            .font(TermLoopSidebarTheme.tinyMono)
-                            .foregroundStyle(TermLoopSidebarTheme.dimmer)
-                            .textSelection(.enabled)
-                    }
-                    Text(sourceContextLine)
-                        .font(TermLoopSidebarTheme.tinyMono)
-                        .foregroundStyle(TermLoopSidebarTheme.dim)
-                        .textSelection(.enabled)
+                    worktreeMetaLine
                 }
                 Spacer()
                 Text(changeCountLabel)
@@ -2895,31 +3992,44 @@ struct WorktreeChangesSheet: View {
                     defaultValue: "Done",
                     table: "TermLoop"
                 )) {
-                    if let onClose { onClose() } else { dismiss() }
+                    closeSheet()
                 }
                 .buttonStyle(.borderless)
+                .keyboardShortcut(.cancelAction)
             }
 
             Divider()
             sourceToolbar
 
             HSplitView {
-                sourceList
-                    .frame(minWidth: 220, idealWidth: 300)
                 filePane
-                    .frame(minWidth: 220, idealWidth: 320)
+                    .frame(minWidth: 260, idealWidth: 340)
                 diffPane
-                    .frame(minWidth: 320)
+                    .frame(minWidth: 480)
             }
         }
         .padding(18)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .frame(minWidth: onClose == nil ? 1080 : nil, minHeight: onClose == nil ? 620 : nil)
+        .frame(minWidth: onClose == nil ? 940 : nil, minHeight: onClose == nil ? 620 : nil)
         // Without an explicit window background the overlay let the host
         // chrome (terminal portal / dark default) bleed through, so the
         // sheet rendered dark even in light mode. `.windowBackgroundColor`
         // adapts to system appearance — matches `AgentsCatalogMainAreaView`.
         .background(Color(nsColor: .windowBackgroundColor))
+        .focusable()
+        .focused($isFileNavigationFocused)
+        .onAppear {
+            isFileNavigationFocused = true
+        }
+        .onKeyPress(.upArrow) {
+            moveFileSelection(offset: -1) ? .handled : .ignored
+        }
+        .onKeyPress(.downArrow) {
+            moveFileSelection(offset: 1) ? .handled : .ignored
+        }
+        .onExitCommand {
+            closeSheet()
+        }
         .task(id: refreshKey) {
             await refreshComparisonState()
         }
@@ -2929,8 +4039,9 @@ struct WorktreeChangesSheet: View {
         .task(id: diffTaskKey) {
             await loadDiff()
         }
-        .onChange(of: selectedSourceID) { _ in
+        .onChange(of: selectedSourceID) { _, _ in
             syncSelectedPath()
+            isFileNavigationFocused = true
         }
         .onReceive(
             Publishers.MergeMany([
@@ -2941,6 +4052,26 @@ struct WorktreeChangesSheet: View {
             .debounce(for: .milliseconds(150), scheduler: RunLoop.main)
         ) { _ in
             refreshNonce &+= 1
+        }
+    }
+
+    @ViewBuilder
+    private var worktreeMetaLine: some View {
+        HStack(spacing: 8) {
+            if let branch, !branch.isEmpty {
+                Label(branch, systemImage: "arrow.triangle.branch")
+                    .font(TermLoopSidebarTheme.tinyMono)
+                    .foregroundStyle(TermLoopSidebarTheme.dim)
+                    .lineLimit(1)
+            }
+            if let worktreePath, !worktreePath.isEmpty {
+                Text((worktreePath as NSString).abbreviatingWithTildeInPath)
+                    .font(TermLoopSidebarTheme.tinyMono)
+                    .foregroundStyle(TermLoopSidebarTheme.dimmer)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
         }
     }
 
@@ -2957,119 +4088,138 @@ struct WorktreeChangesSheet: View {
 
     @ViewBuilder
     private var sourceToolbar: some View {
-        HStack(spacing: 10) {
-            Button { moveToSource(offset: -1) } label: {
-                Label("Previous", systemImage: "chevron.left")
-            }
-            .buttonStyle(.borderless)
-            .disabled(!canMoveSource(offset: -1))
-
-            Button { moveToSource(offset: 1) } label: {
-                Label("Next", systemImage: "chevron.right")
-            }
-            .buttonStyle(.borderless)
-            .disabled(!canMoveSource(offset: 1))
-
-            Divider()
-                .frame(height: 14)
-
-            Text(currentSourceLabel)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.primary)
-
-            Spacer()
-
-            if case .baseComparison(let target) = currentSource {
-                TermLoopSidebarToken(
-                    label: "vs \(target.branch)",
-                    tone: .accent,
-                    emphasized: true
-                )
-            }
-        }
-        .padding(.horizontal, 2)
-    }
-
-    @ViewBuilder
-    private var sourceList: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 8) {
-                let specialSources = availableSources.filter {
-                    switch $0 {
-                    case .local, .baseComparison:
-                        return true
-                    case .commit:
-                        return false
-                    }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Button { moveToSource(offset: -1) } label: {
+                    Label(
+                        String(localized: "worktreeChanges.previous", defaultValue: "Previous", table: "TermLoop"),
+                        systemImage: "chevron.left"
+                    )
                 }
-                let commitSources = availableSources.filter {
-                    switch $0 {
-                    case .commit:
-                        return true
-                    case .local, .baseComparison:
-                        return false
-                    }
+                .buttonStyle(.borderless)
+                .disabled(!canMoveSource(offset: -1))
+
+                Button { moveToSource(offset: 1) } label: {
+                    Label(
+                        String(localized: "worktreeChanges.next", defaultValue: "Next", table: "TermLoop"),
+                        systemImage: "chevron.right"
+                    )
+                }
+                .buttonStyle(.borderless)
+                .disabled(!canMoveSource(offset: 1))
+
+                Divider()
+                    .frame(height: 14)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(currentSourceLabel)
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.primary)
+                        .lineLimit(1)
+                    Text(sourceContextLine)
+                        .font(TermLoopSidebarTheme.tinyMono)
+                        .foregroundStyle(TermLoopSidebarTheme.dim)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .textSelection(.enabled)
                 }
 
-                if !specialSources.isEmpty {
-                    sectionHeader("Views")
+                Spacer()
+
+                if case .baseComparison(let target) = currentSource {
+                    TermLoopSidebarToken(
+                        label: "vs \(target.branch)",
+                        tone: .accent,
+                        emphasized: true
+                    )
+                }
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
                     ForEach(Array(specialSources.enumerated()), id: \.element.id) { index, source in
                         Button {
                             selectedSourceID = source.id
                         } label: {
-                            sourceRow(source: source, index: index, isSpecial: true)
+                            sourceChip(source: source, index: index, isSpecial: true)
                         }
                         .buttonStyle(.plain)
                     }
-                }
 
-                if !commitSources.isEmpty {
-                    sectionHeader("Commits")
+                    if !specialSources.isEmpty, !commitSources.isEmpty {
+                        Divider()
+                            .frame(height: 34)
+                            .padding(.horizontal, 2)
+                    }
+
                     ForEach(Array(commitSources.enumerated()), id: \.element.id) { index, source in
                         Button {
                             selectedSourceID = source.id
                         } label: {
-                            sourceRow(source: source, index: index, isSpecial: false)
+                            sourceChip(source: source, index: index, isSpecial: false)
                         }
                         .buttonStyle(.plain)
                     }
                 }
+                .padding(.vertical, 1)
             }
-            .padding(.vertical, 4)
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.035))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+        )
     }
 
     @ViewBuilder
     private var fileList: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 6) {
-                sectionHeader("Files")
-                ForEach(changes, id: \.path) { file in
-                    Button {
-                        selectedPath = file.path
-                    } label: {
-                        HStack(spacing: 10) {
-                            statusBadge(for: file.status)
-                            Text(file.path)
-                                .font(TermLoopSidebarTheme.tinyMono)
-                                .foregroundStyle(Color.primary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Spacer(minLength: 0)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    sectionHeader("Files")
+                    ForEach(changes, id: \.path) { file in
+                        Button {
+                            selectedPath = file.path
+                            isFileNavigationFocused = true
+                        } label: {
+                            HStack(spacing: 10) {
+                                statusBadge(for: file.status)
+                                Text(file.path)
+                                    .font(TermLoopSidebarTheme.tinyMono)
+                                    .foregroundStyle(Color.primary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Spacer(minLength: 0)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 5)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(selectedPath == file.path ? Color.accentColor.opacity(0.16) : Color.clear)
+                            )
+                            .contentShape(Rectangle())
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 5)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(selectedPath == file.path ? Color.accentColor.opacity(0.16) : Color.clear)
-                        )
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
+                        .id(file.path)
                     }
-                    .buttonStyle(.plain)
                 }
+                .padding(.vertical, 4)
             }
-            .padding(.vertical, 4)
+            .onAppear {
+                scrollSelectedPath(into: proxy, animated: false)
+            }
+            .onChange(of: selectedPath) { _, _ in
+                scrollSelectedPath(into: proxy, animated: true)
+            }
+            .onChange(of: changes) { _, _ in
+                scrollSelectedPath(into: proxy, animated: false)
+            }
         }
     }
 
@@ -3161,7 +4311,7 @@ struct WorktreeChangesSheet: View {
                                 .foregroundStyle(TermLoopSidebarTheme.dim)
                                 .frame(maxWidth: .infinity, alignment: .topLeading)
                         } else {
-                            LazyVStack(alignment: .leading, spacing: 0) {
+                            VStack(alignment: .leading, spacing: 0) {
                                 ForEach(Array(diffLines.enumerated()), id: \.offset) { _, line in
                                     diffLineView(line)
                                 }
@@ -3387,6 +4537,33 @@ struct WorktreeChangesSheet: View {
     }
 
     @MainActor
+    private func moveFileSelection(offset: Int) -> Bool {
+        guard !changes.isEmpty else { return false }
+
+        let currentIndex = selectedPath.flatMap { path in
+            changes.firstIndex { $0.path == path }
+        } ?? 0
+        let nextIndex = min(max(currentIndex + offset, changes.startIndex), changes.index(before: changes.endIndex))
+        selectedPath = changes[nextIndex].path
+        isFileNavigationFocused = true
+        return true
+    }
+
+    @MainActor
+    private func scrollSelectedPath(into proxy: ScrollViewProxy, animated: Bool) {
+        guard let selectedPath,
+              changes.contains(where: { $0.path == selectedPath }) else { return }
+
+        if animated {
+            withAnimation(.easeInOut(duration: 0.12)) {
+                proxy.scrollTo(selectedPath, anchor: .center)
+            }
+        } else {
+            proxy.scrollTo(selectedPath, anchor: .center)
+        }
+    }
+
+    @MainActor
     private func candidateSeedsFromMainActor() -> (
         candidates: [String],
         currentBranch: String?,
@@ -3523,10 +4700,14 @@ private struct WorktreeGroupGitSummaryView: View {
     let group: WorktreeAgentsGroup
     let preferredWorkspace: Workspace?
     let openPullRequests: [SidebarPullRequestState]
-    let pullRequestLookupTick: UInt64
 
     @State private var snapshot: WorktreeGroupGitSummarySnapshot?
     @State private var refreshNonce: UInt64 = 0
+    @State private var observedLocalChangesPath: String?
+    @State private var observedLocalChanges: [SidebarGitChangeItem] = []
+    @State private var hasObservedLocalChanges = false
+    @State private var localChangesSubscription: AnyCancellable?
+    @State private var subscribedLocalChangesPath: String?
     /// Stable subscription keyed on `subscribedWorkspaceIds` — rebuilding
     /// `Publishers.MergeMany(...)` inside `body` re-subscribed per render.
     @State private var refreshSubscription: AnyCancellable?
@@ -3537,10 +4718,12 @@ private struct WorktreeGroupGitSummaryView: View {
         let path: String
         let baselineHeads: [String]
         let unmergedBaseBranches: [String]
+        let openPullRequestIdentity: String
         let refreshNonce: UInt64
     }
 
     var body: some View {
+        let path = resolvedWorktreePath
         Group {
             if let snapshot, snapshot.hasVisibleContent {
                 HStack(spacing: 4) {
@@ -3597,9 +4780,17 @@ private struct WorktreeGroupGitSummaryView: View {
         }
         .onAppear {
             ensureRefreshSubscription()
+            ensureLocalChangesSubscription(path: path)
         }
         .onChange(of: group.workspaces.map(\.id)) { _ in
             ensureRefreshSubscription()
+        }
+        .onChange(of: path) { _, newPath in
+            observedLocalChangesPath = newPath
+            observedLocalChanges = []
+            hasObservedLocalChanges = false
+            ensureLocalChangesSubscription(path: newPath)
+            refreshNonce &+= 1
         }
     }
 
@@ -3618,9 +4809,61 @@ private struct WorktreeGroupGitSummaryView: View {
             .sink { _ in refreshNonce &+= 1 }
     }
 
+    private func ensureLocalChangesSubscription(path: String?) {
+        guard path != subscribedLocalChangesPath else { return }
+        subscribedLocalChangesPath = path
+        localChangesSubscription = nil
+        guard let path else {
+            handleObservedLocalChanges([], path: nil)
+            return
+        }
+        localChangesSubscription = localChangesPublisher(for: path)
+            .sink { files in
+                handleObservedLocalChanges(files, path: path)
+            }
+    }
+
+    private func localChangesPublisher(for path: String) -> AnyPublisher<[SidebarGitChangeItem], Never> {
+        GitWorktreePresentationStore.shared.filesPublisher(for: path)
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .eraseToAnyPublisher()
+    }
+
+    private func handleObservedLocalChanges(_ files: [SidebarGitChangeItem], path: String?) {
+        if observedLocalChangesPath != path {
+            observedLocalChangesPath = path
+            observedLocalChanges = files
+            hasObservedLocalChanges = true
+            return
+        }
+        defer {
+            observedLocalChanges = files
+            hasObservedLocalChanges = true
+        }
+        guard hasObservedLocalChanges, files != observedLocalChanges else { return }
+        refreshNonce &+= 1
+    }
+
     private var refreshTaskKey: String {
         let baseKey = openPullRequestBaseBranches.joined(separator: ",")
-        return "\(group.branch)|\(resolvedWorktreePath ?? "none")|\(baseKey)|\(pullRequestLookupTick)|\(refreshNonce)"
+        return "\(group.branch)|\(resolvedWorktreePath ?? "none")|\(baseKey)|\(openPullRequestIdentityKey)|\(refreshNonce)"
+    }
+
+    private var openPullRequestIdentityKey: String {
+        openPullRequests.map { state in
+            [
+                state.label,
+                String(state.number),
+                state.url.absoluteString,
+                state.status.rawValue,
+                state.statusDetail ?? "",
+                state.branch ?? "",
+                state.baseBranch ?? "",
+                state.isStale ? "stale" : "fresh"
+            ].joined(separator: "|")
+        }
+        .joined(separator: "\n")
     }
 
     private var openPullRequestBaseBranches: [String] {
@@ -3681,6 +4924,7 @@ private struct WorktreeGroupGitSummaryView: View {
             path: path,
             baselineHeads: baselineHeads,
             unmergedBaseBranches: openPullRequestBaseBranches,
+            openPullRequestIdentity: openPullRequestIdentityKey,
             refreshNonce: refreshNonce
         )
     }
@@ -3963,14 +5207,10 @@ private struct WorktreeGroupPullRequestBadge: View, Equatable {
     }
 }
 
-/// Ability-driven binding chip. Schema-flat: agents publish
-/// (label, status, url) under (abilityId, bindingId). Tooltip shows
-/// which ability+binding produced the chip so users can trace it back.
-/// Jira gets a brand-tinted variant so the worktree's bound ticket is
-/// instantly recognizable; other abilities fall back to the generic
-/// accent token.
-private struct WorktreeGroupBindingBadge: View, Equatable {
-    let snapshot: WorktreeAgentsPanel.WorktreeGroupBindingBadgeSnapshot
+/// User/app-owned remote item chip for the worktree. Agents can read this
+/// binding through MCP, but cannot write it.
+private struct WorktreeGroupRemoteItemBadge: View, Equatable {
+    let snapshot: WorktreeAgentsPanel.WorktreeGroupRemoteItemBadgeSnapshot
 
     var body: some View {
         let chip = chipContent.help(snapshot.tooltip)
@@ -3988,7 +5228,7 @@ private struct WorktreeGroupBindingBadge: View, Equatable {
 
     @ViewBuilder
     private var chipContent: some View {
-        if snapshot.isJira {
+        if snapshot.provider == .jira {
             jiraChip
         } else {
             TermLoopSidebarToken(

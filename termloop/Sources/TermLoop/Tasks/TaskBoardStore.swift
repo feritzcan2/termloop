@@ -237,6 +237,7 @@ public final class TaskBoardStore: ObservableObject {
         TaskCardSummary(
             id: task.id,
             title: task.title,
+            brief: task.brief,
             provisionState: task.provisionState,
             workspaceId: task.workspaceId,
             branch: task.branch,

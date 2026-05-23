@@ -4,13 +4,6 @@
     "set_run_targets",
     "get_run_targets"
   ],
-  "bindings" : [
-    {
-      "displayAs" : "chip",
-      "id" : "run-targets",
-      "title" : "Running"
-    }
-  ],
   "description" : "Use when verifying that a change actually runs — building, launching, hot-reloading, or showing the result of a worktree's work to the user.",
   "id" : "running-your-application",
   "items" : [

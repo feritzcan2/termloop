@@ -106,7 +106,6 @@ enum AgentSidebarPanelLayoutState {
     static let worktreeAgentsHeightKey = "termloop.sidebar.loop.worktreeAgentsHeight.v4"
     static let activeLoopHeightKey = "termloop.sidebar.loop.activeAgentsPanelHeight.v4"
     static let abilitiesHeightKey = "termloop.sidebar.agents.abilitiesPanelHeight.v4"
-    static let ticketHeightKey = "termloop.sidebar.ticketWorktrees.panelHeight.v4"
 }
 
 @MainActor

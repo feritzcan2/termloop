@@ -232,6 +232,10 @@ final class TerminalAgentLifecycle {
         )
         beforeDispatch?(workspace)
         TerminalAgentRunner.dispatchFallbackLaunchIfNeeded(launch.plan, to: workspace)
+        TerminalAgentRunner.scheduleCodexHookReviewProbeIfNeeded(
+            agent: launch.agent,
+            in: workspace
+        )
         TermLoopHooks.schedulePersistedAgentSessionRecoveryIfNeeded(
             agentId: launch.agent.id
         )
@@ -885,6 +889,10 @@ final class TerminalAgentLifecycle {
         )
         beforeDispatch?(ws)
         TerminalAgentRunner.dispatchFallbackLaunchIfNeeded(plan, to: ws)
+        TerminalAgentRunner.scheduleCodexHookReviewProbeIfNeeded(
+            agent: agent,
+            in: ws
+        )
         TermLoopHooks.schedulePersistedAgentSessionRecoveryIfNeeded(agentId: agent.id)
         return ws
     }

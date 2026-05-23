@@ -1332,6 +1332,9 @@ pub const ReadThread = struct {
                 if (n == 0) break;
 
                 // log.info("DATA: {d}", .{n});
+                // cmux fork: tap raw PTY bytes for remote mirroring before the
+                // terminal stream parser consumes them. See Termio.pty_tap docs.
+                if (io.pty_tap) |fn_ptr| fn_ptr(io.pty_tap_userdata, buf[0..n].ptr, n);
                 @call(.always_inline, termio.Termio.processOutput, .{ io, buf[0..n] });
             }
 
@@ -1384,6 +1387,8 @@ pub const ReadThread = struct {
                     }
                 }
 
+                // cmux fork: same tap as POSIX path. See Termio.pty_tap docs.
+                if (io.pty_tap) |fn_ptr| fn_ptr(io.pty_tap_userdata, buf[0..n].ptr, n);
                 @call(.always_inline, termio.Termio.processOutput, .{ io, buf[0..n] });
             }
 
