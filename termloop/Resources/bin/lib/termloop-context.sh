@@ -39,7 +39,7 @@ termloop_context_resolve_cli() {
 termloop_context_socket_alive() {
     local cli="${1:-}"
     [[ -n "$cli" && -x "$cli" ]] || return 1
-    local socket="${TERMLOOP_SOCKET:-${CMUX_SOCKET:-}}"
+    local socket="${TERMLOOP_SOCKET_PATH:-${TERMLOOP_SOCKET:-}}"
     [[ -n "$socket" && -S "$socket" ]] || return 1
     TERMLOOP_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
         "$cli" --socket "$socket" ping >/dev/null 2>&1
@@ -75,26 +75,13 @@ termloop_context_fetch() {
     # CLI default socket discovery doesn't honor TERMLOOP_SOCKET env —
     # always pass the tag-specific socket explicitly so the wrapper hits the
     # same instance it was launched from (not the user's main/production).
-    local socket="${TERMLOOP_SOCKET:-${CMUX_SOCKET:-}}"
+    local socket="${TERMLOOP_SOCKET_PATH:-${TERMLOOP_SOCKET:-}}"
     local -a socket_args=()
     [[ -n "$socket" ]] && socket_args=(--socket "$socket")
-    # Backwards-compat: the legacy `claude-system-prompt` CLI verb hits the
-    # legacy `workspace.claude_system_prompt` socket method and exists on
-    # every TermLoop build that has ever shipped Claude support. The new
-    # `agent-system-prompt` verb only exists on builds that include this
-    # change. Route Claude through the legacy path so a wrapper from a new
-    # bundle still works against an older running instance (e.g. the user's
-    # production app socket); other agents need the new verb regardless.
-    if [[ "$agent_id" == "claude" ]]; then
-        "$cli" "${socket_args[@]}" claude-system-prompt \
-            --workspace "$TERMLOOP_WORKSPACE_ID" \
-            --cwd "$PWD" 2>/dev/null || true
-    else
-        "$cli" "${socket_args[@]}" agent-system-prompt \
-            --agent "$agent_id" \
-            --workspace "$TERMLOOP_WORKSPACE_ID" \
-            --cwd "$PWD" 2>/dev/null || true
-    fi
+    "$cli" "${socket_args[@]}" agent-system-prompt \
+        --agent "$agent_id" \
+        --workspace "$TERMLOOP_WORKSPACE_ID" \
+        --cwd "$PWD" 2>/dev/null || true
 }
 
 # Write content to a tempfile, echo the path. Caller owns cleanup if needed

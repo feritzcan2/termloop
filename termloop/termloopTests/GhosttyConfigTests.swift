@@ -2805,7 +2805,7 @@ final class SidebarBackgroundConfigTests: XCTestCase {
 
 final class ZshShellIntegrationHandoffTests: XCTestCase {
     func testGhosttyPromptHooksLoadWhenCmuxRequestsZshIntegration() throws {
-        let output = try runInteractiveZsh(cmuxLoadGhosttyIntegration: true)
+        let output = try runInteractiveZsh(termloopLoadGhosttyIntegration: true)
 
         XCTAssertTrue(output.contains("PRECMD=1"), output)
         XCTAssertTrue(output.contains("PREEXEC=1"), output)
@@ -2813,7 +2813,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
     }
 
     func testGhosttyPromptHooksDoNotLoadWithoutCmuxHandoffFlag() throws {
-        let output = try runInteractiveZsh(cmuxLoadGhosttyIntegration: false)
+        let output = try runInteractiveZsh(termloopLoadGhosttyIntegration: false)
 
         XCTAssertTrue(output.contains("PRECMD=0"), output)
         XCTAssertTrue(output.contains("PREEXEC=0"), output)
@@ -2821,12 +2821,12 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
 
     func testGhosttySemanticPatchRetriesAfterDeferredInitCreatesLiveHooks() throws {
         let output = try runInteractiveZsh(
-            cmuxLoadGhosttyIntegration: true,
-            cmuxLoadShellIntegration: true,
+            termloopLoadGhosttyIntegration: true,
+            termloopLoadShellIntegration: true,
             command: """
-            _cmux_patch_ghostty_semantic_redraw
+            _termloop_patch_ghostty_semantic_redraw
             (( $+functions[_ghostty_deferred_init] )) && _ghostty_deferred_init >/dev/null 2>&1
-            _cmux_patch_ghostty_semantic_redraw
+            _termloop_patch_ghostty_semantic_redraw
             print -r -- "PRECMD_BODY=${functions[_ghostty_precmd]}"
             print -r -- "PREEXEC_BODY=${functions[_ghostty_preexec]}"
             """
@@ -2839,8 +2839,8 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
 
     func testShellIntegrationWinchGuardDoesNotPrintSpacerLineOnResize() throws {
         let output = try runInteractiveZsh(
-            cmuxLoadGhosttyIntegration: false,
-            cmuxLoadShellIntegration: true,
+            termloopLoadGhosttyIntegration: false,
+            termloopLoadShellIntegration: true,
             command: """
             print -r -- BEFORE
             TRAPWINCH
@@ -2853,8 +2853,8 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
 
     func testShellIntegrationPreservesStartupTermForThemeSelectionBeforeRestoringManagedTerm() throws {
         let output = try runPromptInteractiveZsh(
-            cmuxLoadGhosttyIntegration: false,
-            cmuxLoadShellIntegration: true,
+            termloopLoadGhosttyIntegration: false,
+            termloopLoadShellIntegration: true,
             command: """
             print -r -- "CMD=$TERM|${TERMLOOP_ZSH_RESTORE_TERM-unset}" >> "$TERMLOOP_TEST_OUTPUT"
             """,
@@ -2883,8 +2883,8 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
 
     func testShellIntegrationDoesNotSpoofManagedTermForInteractiveCommandMode() throws {
         let output = try runInteractiveZsh(
-            cmuxLoadGhosttyIntegration: false,
-            cmuxLoadShellIntegration: true,
+            termloopLoadGhosttyIntegration: false,
+            termloopLoadShellIntegration: true,
             command: """
             print -r -- "$TERMLOOP_STARTUP_TERM|$TERM|${TERMLOOP_ZSH_RESTORE_TERM-unset}"
             """,
@@ -2898,8 +2898,8 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
 
     func testShellIntegrationDoesNotSpoofManagedTermWhenIntegrationDisabled() throws {
         let output = try runInteractiveZsh(
-            cmuxLoadGhosttyIntegration: false,
-            cmuxLoadShellIntegration: false,
+            termloopLoadGhosttyIntegration: false,
+            termloopLoadShellIntegration: false,
             command: """
             print -r -- "$TERMLOOP_STARTUP_TERM|$TERM|${TERMLOOP_ZSH_RESTORE_TERM-unset}"
             """,
@@ -2913,8 +2913,8 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
 
     func testShellIntegrationDoesNotSpoofManagedTermWhenUserZshEnvDisablesIntegration() throws {
         let output = try runInteractiveZsh(
-            cmuxLoadGhosttyIntegration: false,
-            cmuxLoadShellIntegration: true,
+            termloopLoadGhosttyIntegration: false,
+            termloopLoadShellIntegration: true,
             command: """
             print -r -- "$TERMLOOP_STARTUP_TERM|$TERM|${TERMLOOP_ZSH_RESTORE_TERM-unset}|${TERMLOOP_SHELL_INTEGRATION:-unset}"
             """,
@@ -2931,8 +2931,8 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
 
     func testShellIntegrationDoesNotRegisterPromptTimeTermRestoreHooks() throws {
         let output = try runInteractiveZsh(
-            cmuxLoadGhosttyIntegration: false,
-            cmuxLoadShellIntegration: true,
+            termloopLoadGhosttyIntegration: false,
+            termloopLoadShellIntegration: true,
             command: """
             print -r -- "${(j:,:)precmd_functions}"
             """
@@ -2940,15 +2940,15 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
 
         XCTAssertEqual(
             output,
-            "_cmux_precmd,_cmux_fix_path",
+            "_termloop_precmd,_termloop_fix_path",
             output
         )
     }
 
     func testShellIntegrationInstallsCodexWrapperFunction() throws {
         let output = try runInteractiveZsh(
-            cmuxLoadGhosttyIntegration: false,
-            cmuxLoadShellIntegration: true,
+            termloopLoadGhosttyIntegration: false,
+            termloopLoadShellIntegration: true,
             command: """
             whence -v codex
             """
@@ -2987,6 +2987,74 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         )
 
         XCTAssertEqual(output.stdout, "resolved-codex:--version")
+        XCTAssertEqual(output.stderr, "")
+    }
+
+    func testBundledCodexWrapperInjectsTermLoopMCPConfigOverrides() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("cmux-codex-mcp-config-\(UUID().uuidString)")
+        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: root) }
+
+        let fakeCodex = root.appendingPathComponent("real-codex")
+        try writeExecutableScript(
+            at: fakeCodex,
+            contents: """
+            #!/bin/sh
+            for arg in "$@"; do
+                printf 'arg:%s\\n' "$arg"
+            done
+            """
+        )
+
+        let mcpConfig = root.appendingPathComponent("mcp-config.json")
+        try """
+        {
+          "mcpServers": {
+            "termloop": {
+              "command": "/bin/sh",
+              "args": [
+                "-lc",
+                "TERMLOOP_ASK_TO_REQUEST_ID='request-id' TERMLOOP_ASK_TO_REPLY_TOKEN='reply-token' exec '/tmp/TermLoop DEV.app/Contents/Resources/bin/termloop' termloop-mcp"
+              ],
+              "env": {
+                "TERMLOOP_ASK_TO_REQUEST_ID": "request-id",
+                "TERMLOOP_ASK_TO_REPLY_TOKEN": "reply-token",
+                "TERMLOOP_SOCKET_PATH": "/tmp/termloop.sock"
+              }
+            }
+          }
+        }
+        """.write(to: mcpConfig, atomically: true, encoding: .utf8)
+
+        let output = try runBundledShellWrapper(
+            at: bundledResourceURL(path: "Resources/bin/codex"),
+            arguments: ["--dangerously-bypass-approvals-and-sandbox", "hello"],
+            environment: [
+                "HOME": root.path,
+                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                "TERMLOOP_REAL_CODEX_PATH": fakeCodex.path,
+                "CODEX_MCP_CONFIG": mcpConfig.path,
+            ]
+        )
+
+        XCTAssertTrue(
+            output.stdout.contains("arg:mcp_servers.termloop.command=\"/bin/sh\""),
+            output.stdout
+        )
+        XCTAssertTrue(
+            output.stdout.contains("arg:mcp_servers.termloop.args=[\"-lc\", \"TERMLOOP_ASK_TO_REQUEST_ID='request-id' TERMLOOP_ASK_TO_REPLY_TOKEN='reply-token' exec '/tmp/TermLoop DEV.app/Contents/Resources/bin/termloop' termloop-mcp\"]"),
+            output.stdout
+        )
+        XCTAssertTrue(
+            output.stdout.contains("TERMLOOP_ASK_TO_REPLY_TOKEN=\"reply-token\""),
+            output.stdout
+        )
+        XCTAssertTrue(
+            output.stdout.hasSuffix("arg:hello"),
+            output.stdout
+        )
         XCTAssertEqual(output.stderr, "")
     }
 
@@ -3062,8 +3130,8 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
 
     func testPromptShellIntegrationReaddsBundledBinWithoutGhosttyBinDir() throws {
         let output = try runPromptInteractiveZsh(
-            cmuxLoadGhosttyIntegration: false,
-            cmuxLoadShellIntegration: true,
+            termloopLoadGhosttyIntegration: false,
+            termloopLoadShellIntegration: true,
             command: """
             print -r -- "$PATH"
             """,
@@ -3084,10 +3152,10 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
 
     func testShellIntegrationRestoresManagedTermDuringPreexec() throws {
         let output = try runInteractiveZsh(
-            cmuxLoadGhosttyIntegration: false,
-            cmuxLoadShellIntegration: true,
+            termloopLoadGhosttyIntegration: false,
+            termloopLoadShellIntegration: true,
             command: """
-            _cmux_preexec 'echo $TERM'
+            _termloop_preexec 'echo $TERM'
             print -r -- "$TERM|${TERMLOOP_ZSH_RESTORE_TERM-unset}"
             """,
             extraEnvironment: [
@@ -3106,7 +3174,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
     func testShellIntegrationPublishesOnlyWorkspaceScopedCmuxEnvironmentToTmuxServerAutomatically() throws {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory
-            .appendingPathComponent("cmux-zsh-tmux-publish-\(UUID().uuidString)")
+            .appendingPathComponent("termloop-zsh-tmux-publish-\(UUID().uuidString)")
         let binDir = root.appendingPathComponent("bin", isDirectory: true)
         let logPath = root.appendingPathComponent("tmux.log", isDirectory: false)
 
@@ -3126,9 +3194,9 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         )
 
         _ = try runInteractiveZsh(
-            cmuxLoadGhosttyIntegration: false,
-            cmuxLoadShellIntegration: true,
-            command: "_cmux_preexec tmux; print -r -- READY",
+            termloopLoadGhosttyIntegration: false,
+            termloopLoadShellIntegration: true,
+            command: "_termloop_preexec tmux; print -r -- READY",
             extraEnvironment: [
                 "PATH": "\(binDir.path):/usr/bin:/bin:/usr/sbin:/sbin",
                 "TERMLOOP_SOCKET_PATH": "/tmp/termloop-current.sock",
@@ -3150,7 +3218,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
     func testShellIntegrationClearsStaleSurfaceScopedTmuxEnvironmentAutomatically() throws {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory
-            .appendingPathComponent("cmux-zsh-tmux-clear-\(UUID().uuidString)")
+            .appendingPathComponent("termloop-zsh-tmux-clear-\(UUID().uuidString)")
         let binDir = root.appendingPathComponent("bin", isDirectory: true)
         let logPath = root.appendingPathComponent("tmux.log", isDirectory: false)
 
@@ -3172,9 +3240,9 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         )
 
         _ = try runInteractiveZsh(
-            cmuxLoadGhosttyIntegration: false,
-            cmuxLoadShellIntegration: true,
-            command: "_cmux_preexec tmux; print -r -- READY",
+            termloopLoadGhosttyIntegration: false,
+            termloopLoadShellIntegration: true,
+            command: "_termloop_preexec tmux; print -r -- READY",
             extraEnvironment: [
                 "PATH": "\(binDir.path):/usr/bin:/bin:/usr/sbin:/sbin",
                 "TERMLOOP_SOCKET_PATH": "/tmp/termloop-current.sock",
@@ -3193,7 +3261,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
     func testShellIntegrationRefreshesWorkspaceScopedCmuxEnvironmentFromTmuxWithoutOverwritingSurfaceScope() throws {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory
-            .appendingPathComponent("cmux-zsh-tmux-refresh-\(UUID().uuidString)")
+            .appendingPathComponent("termloop-zsh-tmux-refresh-\(UUID().uuidString)")
         let binDir = root.appendingPathComponent("bin", isDirectory: true)
 
         try fileManager.createDirectory(at: binDir, withIntermediateDirectories: true)
@@ -3216,9 +3284,9 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         )
 
         let output = try runInteractiveZsh(
-            cmuxLoadGhosttyIntegration: false,
-            cmuxLoadShellIntegration: true,
-            command: "_cmux_precmd; print -r -- \"$TERMLOOP_TAG|$TERMLOOP_SOCKET_PATH|$TERMLOOP_WORKSPACE_ID|$TERMLOOP_SURFACE_ID|$TERMLOOP_PANEL_ID\"",
+            termloopLoadGhosttyIntegration: false,
+            termloopLoadShellIntegration: true,
+            command: "_termloop_precmd; print -r -- \"$TERMLOOP_TAG|$TERMLOOP_SOCKET_PATH|$TERMLOOP_WORKSPACE_ID|$TERMLOOP_SURFACE_ID|$TERMLOOP_PANEL_ID\"",
             extraEnvironment: [
                 "PATH": "\(binDir.path):/usr/bin:/bin:/usr/sbin:/sbin",
                 "TMUX": "/tmp/tmux-stale,123,0",
@@ -3238,11 +3306,11 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
 
     func testShellIntegrationReportsTTYFromTmuxWithoutUsingPanelScope() throws {
         let output = try runInteractiveZsh(
-            cmuxLoadGhosttyIntegration: false,
-            cmuxLoadShellIntegration: true,
+            termloopLoadGhosttyIntegration: false,
+            termloopLoadShellIntegration: true,
             command: """
             _TERMLOOP_TTY_NAME=ttys999
-            print -r -- "$(_cmux_report_tty_payload)"
+            print -r -- "$(_termloop_report_tty_payload)"
             """,
             extraEnvironment: [
                 "TMUX": "/tmp/tmux-current,123,0",
@@ -3257,7 +3325,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
     func testShellIntegrationRelayReportTTYUsesWorkspaceIDInZsh() throws {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory
-            .appendingPathComponent("cmux-zsh-relay-report-tty-\(UUID().uuidString)")
+            .appendingPathComponent("termloop-zsh-relay-report-tty-\(UUID().uuidString)")
         let binDir = root.appendingPathComponent("bin", isDirectory: true)
         let logPath = root.appendingPathComponent("relay.log", isDirectory: false)
 
@@ -3265,7 +3333,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         defer { try? fileManager.removeItem(at: root) }
 
         try writeExecutableScript(
-            at: binDir.appendingPathComponent("cmux", isDirectory: false),
+            at: binDir.appendingPathComponent("termloop", isDirectory: false),
             contents: """
             #!/bin/sh
             printf '%s\\n' "$*" >> "\(logPath.path)"
@@ -3274,12 +3342,12 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         )
 
         let output = try runInteractiveZsh(
-            cmuxLoadGhosttyIntegration: false,
-            cmuxLoadShellIntegration: true,
+            termloopLoadGhosttyIntegration: false,
+            termloopLoadShellIntegration: true,
             command: """
             : > "\(logPath.path)"
             _TERMLOOP_TTY_NAME=ttys777
-            _cmux_report_tty_via_relay
+            _termloop_report_tty_via_relay
             cat "\(logPath.path)"
             """,
             extraEnvironment: [
@@ -3299,7 +3367,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
     func testShellIntegrationRelayPortsKickOmitsSurfaceIDUntilAvailableInZsh() throws {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory
-            .appendingPathComponent("cmux-zsh-relay-kick-\(UUID().uuidString)")
+            .appendingPathComponent("termloop-zsh-relay-kick-\(UUID().uuidString)")
         let binDir = root.appendingPathComponent("bin", isDirectory: true)
         let logPath = root.appendingPathComponent("relay.log", isDirectory: false)
 
@@ -3307,7 +3375,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         defer { try? fileManager.removeItem(at: root) }
 
         try writeExecutableScript(
-            at: binDir.appendingPathComponent("cmux", isDirectory: false),
+            at: binDir.appendingPathComponent("termloop", isDirectory: false),
             contents: """
             #!/bin/sh
             printf '%s\\n' "$*" >> "\(logPath.path)"
@@ -3316,11 +3384,11 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         )
 
         let output = try runInteractiveZsh(
-            cmuxLoadGhosttyIntegration: false,
-            cmuxLoadShellIntegration: true,
+            termloopLoadGhosttyIntegration: false,
+            termloopLoadShellIntegration: true,
             command: """
             : > "\(logPath.path)"
-            _cmux_ports_kick_via_relay refresh
+            _termloop_ports_kick_via_relay refresh
             repeat 20; do
               [[ -s "\(logPath.path)" ]] && break
               sleep 0.05
@@ -3345,7 +3413,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
     func testShellIntegrationRelayPromptRefreshUsesRefreshReasonInZsh() throws {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory
-            .appendingPathComponent("cmux-zsh-relay-precmd-\(UUID().uuidString)")
+            .appendingPathComponent("termloop-zsh-relay-precmd-\(UUID().uuidString)")
         let binDir = root.appendingPathComponent("bin", isDirectory: true)
         let logPath = root.appendingPathComponent("relay.log", isDirectory: false)
 
@@ -3353,7 +3421,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         defer { try? fileManager.removeItem(at: root) }
 
         try writeExecutableScript(
-            at: binDir.appendingPathComponent("cmux", isDirectory: false),
+            at: binDir.appendingPathComponent("termloop", isDirectory: false),
             contents: """
             #!/bin/sh
             printf '%s\\n' "$*" >> "\(logPath.path)"
@@ -3362,13 +3430,13 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         )
 
         let output = try runInteractiveZsh(
-            cmuxLoadGhosttyIntegration: false,
-            cmuxLoadShellIntegration: true,
+            termloopLoadGhosttyIntegration: false,
+            termloopLoadShellIntegration: true,
             command: """
             : > "\(logPath.path)"
             _TERMLOOP_TTY_REPORTED=1
             _TERMLOOP_PORTS_LAST_RUN=-999
-            _cmux_precmd
+            _termloop_precmd
             repeat 20; do
               [[ -s "\(logPath.path)" ]] && break
               sleep 0.05
@@ -3392,7 +3460,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
     func testShellIntegrationRelayReportTTYUsesWorkspaceIDInBash() throws {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory
-            .appendingPathComponent("cmux-bash-relay-report-tty-\(UUID().uuidString)")
+            .appendingPathComponent("termloop-bash-relay-report-tty-\(UUID().uuidString)")
         let binDir = root.appendingPathComponent("bin", isDirectory: true)
         let logPath = root.appendingPathComponent("relay.log", isDirectory: false)
 
@@ -3400,7 +3468,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         defer { try? fileManager.removeItem(at: root) }
 
         try writeExecutableScript(
-            at: binDir.appendingPathComponent("cmux", isDirectory: false),
+            at: binDir.appendingPathComponent("termloop", isDirectory: false),
             contents: """
             #!/bin/sh
             printf '%s\\n' "$*" >> "\(logPath.path)"
@@ -3409,11 +3477,11 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         )
 
         let result = try runInteractiveBash(
-            cmuxLoadShellIntegration: true,
+            termloopLoadShellIntegration: true,
             command: """
             : > "\(logPath.path)"
             _TERMLOOP_TTY_NAME=ttys888
-            _cmux_report_tty_via_relay
+            _termloop_report_tty_via_relay
             cat "\(logPath.path)"
             """,
             extraEnvironment: [
@@ -3433,7 +3501,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
     func testShellIntegrationRelayPreexecWorksBeforeSurfaceIDExistsInBash() throws {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory
-            .appendingPathComponent("cmux-bash-relay-preexec-no-surface-\(UUID().uuidString)")
+            .appendingPathComponent("termloop-bash-relay-preexec-no-surface-\(UUID().uuidString)")
         let binDir = root.appendingPathComponent("bin", isDirectory: true)
         let logPath = root.appendingPathComponent("relay.log", isDirectory: false)
 
@@ -3441,7 +3509,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         defer { try? fileManager.removeItem(at: root) }
 
         try writeExecutableScript(
-            at: binDir.appendingPathComponent("cmux", isDirectory: false),
+            at: binDir.appendingPathComponent("termloop", isDirectory: false),
             contents: """
             #!/bin/sh
             printf '%s\\n' "$*" >> "\(logPath.path)"
@@ -3450,13 +3518,13 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         )
 
         let result = try runInteractiveBash(
-            cmuxLoadShellIntegration: true,
+            termloopLoadShellIntegration: true,
             command: """
             : > "\(logPath.path)"
             _TERMLOOP_TTY_NAME=ttys889
             _TERMLOOP_TTY_REPORTED=0
-            _cmux_preexec_command "python3 -m http.server 8899"
-            for _cmux_i in $(seq 1 20); do
+            _termloop_preexec_command "python3 -m http.server 8899"
+            for _termloop_i in $(seq 1 20); do
               [ -s "\(logPath.path)" ] && break
               sleep 0.05
             done
@@ -3484,7 +3552,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
     func testShellIntegrationRelayPromptRefreshUsesRefreshReasonInBashWithoutPromptNoise() throws {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory
-            .appendingPathComponent("cmux-bash-relay-prompt-\(UUID().uuidString)")
+            .appendingPathComponent("termloop-bash-relay-prompt-\(UUID().uuidString)")
         let binDir = root.appendingPathComponent("bin", isDirectory: true)
         let logPath = root.appendingPathComponent("relay.log", isDirectory: false)
 
@@ -3492,7 +3560,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         defer { try? fileManager.removeItem(at: root) }
 
         try writeExecutableScript(
-            at: binDir.appendingPathComponent("cmux", isDirectory: false),
+            at: binDir.appendingPathComponent("termloop", isDirectory: false),
             contents: """
             #!/bin/sh
             printf '%s\\n' "$*" >> "\(logPath.path)"
@@ -3501,13 +3569,13 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         )
 
         let result = try runInteractiveBash(
-            cmuxLoadShellIntegration: true,
+            termloopLoadShellIntegration: true,
             command: """
             : > "\(logPath.path)"
             _TERMLOOP_TTY_REPORTED=1
             _TERMLOOP_PORTS_LAST_RUN=-999
-            _cmux_prompt_command
-            for _cmux_i in $(seq 1 20); do
+            _termloop_prompt_command
+            for _termloop_i in $(seq 1 20); do
               [ -s "\(logPath.path)" ] && break
               sleep 0.05
             done
@@ -3521,17 +3589,17 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
             ]
         )
 
-        XCTAssertFalse(result.stderr.contains("_cmux_report_tmux_state"), result.stderr)
+        XCTAssertFalse(result.stderr.contains("_termloop_report_tmux_state"), result.stderr)
         XCTAssertTrue(
             result.stdout.contains(#"rpc surface.ports_kick {"workspace_id":"11111111-1111-1111-1111-111111111111","reason":"refresh","surface_id":"22222222-2222-2222-2222-222222222222"}"#),
             result.stdout
         )
     }
 
-    private func runInteractiveZsh(cmuxLoadGhosttyIntegration: Bool) throws -> String {
+    private func runInteractiveZsh(termloopLoadGhosttyIntegration: Bool) throws -> String {
         try runInteractiveZsh(
-            cmuxLoadGhosttyIntegration: cmuxLoadGhosttyIntegration,
-            cmuxLoadShellIntegration: false,
+            termloopLoadGhosttyIntegration: termloopLoadGhosttyIntegration,
+            termloopLoadShellIntegration: false,
             command: "(( $+functions[_ghostty_deferred_init] )) && _ghostty_deferred_init >/dev/null 2>&1; " +
                 "print -r -- \"PRECMD=${+functions[_ghostty_precmd]} " +
                 "PREEXEC=${+functions[_ghostty_preexec]} PRECMDS=${(j:,:)precmd_functions}\""
@@ -3539,8 +3607,8 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
     }
 
     private func runInteractiveZsh(
-        cmuxLoadGhosttyIntegration: Bool,
-        cmuxLoadShellIntegration: Bool,
+        termloopLoadGhosttyIntegration: Bool,
+        termloopLoadShellIntegration: Bool,
         command: String,
         extraEnvironment: [String: String] = [:],
         userZshEnvContents: String? = nil,
@@ -3548,7 +3616,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
     ) throws -> String {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory
-            .appendingPathComponent("cmux-zsh-shell-integration-\(UUID().uuidString)")
+            .appendingPathComponent("termloop-zsh-shell-integration-\(UUID().uuidString)")
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: root) }
 
@@ -3603,10 +3671,10 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
             "TERMLOOP_SHELL_INTEGRATION": "0",
             "GHOSTTY_RESOURCES_DIR": ghosttyResources.path,
         ]
-        if cmuxLoadGhosttyIntegration {
+        if termloopLoadGhosttyIntegration {
             process.environment?["TERMLOOP_LOAD_GHOSTTY_ZSH_INTEGRATION"] = "1"
         }
-        if cmuxLoadShellIntegration {
+        if termloopLoadShellIntegration {
             process.environment?["TERMLOOP_SHELL_INTEGRATION"] = "1"
             process.environment?["TERMLOOP_SHELL_INTEGRATION_DIR"] = cmuxZdotdir.path
             process.environment?["TERMLOOP_SOCKET_PATH"] = root.appendingPathComponent("cmux-test.sock").path
@@ -3641,8 +3709,8 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
     }
 
     private func runPromptInteractiveZsh(
-        cmuxLoadGhosttyIntegration: Bool,
-        cmuxLoadShellIntegration: Bool,
+        termloopLoadGhosttyIntegration: Bool,
+        termloopLoadShellIntegration: Bool,
         command: String,
         extraEnvironment: [String: String] = [:],
         userZshEnvContents: String? = nil,
@@ -3650,7 +3718,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
     ) throws -> String {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory
-            .appendingPathComponent("cmux-zsh-prompt-integration-\(UUID().uuidString)")
+            .appendingPathComponent("termloop-zsh-prompt-integration-\(UUID().uuidString)")
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: root) }
 
@@ -3718,10 +3786,10 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
             "TERMLOOP_TEST_READY": readyPath.path,
             "TERMLOOP_TEST_OUTPUT": outputPath.path,
         ]
-        if cmuxLoadGhosttyIntegration {
+        if termloopLoadGhosttyIntegration {
             process.environment?["TERMLOOP_LOAD_GHOSTTY_ZSH_INTEGRATION"] = "1"
         }
-        if cmuxLoadShellIntegration {
+        if termloopLoadShellIntegration {
             process.environment?["TERMLOOP_SHELL_INTEGRATION"] = "1"
             process.environment?["TERMLOOP_SHELL_INTEGRATION_DIR"] = cmuxZdotdir.path
             process.environment?["TERMLOOP_SOCKET_PATH"] = root.appendingPathComponent("cmux-test.sock").path
@@ -3804,13 +3872,13 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
     }
 
     private func runInteractiveBash(
-        cmuxLoadShellIntegration: Bool,
+        termloopLoadShellIntegration: Bool,
         command: String,
         extraEnvironment: [String: String] = [:]
     ) throws -> (stdout: String, stderr: String) {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory
-            .appendingPathComponent("cmux-bash-shell-integration-\(UUID().uuidString)")
+            .appendingPathComponent("termloop-bash-shell-integration-\(UUID().uuidString)")
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: root) }
 
@@ -3820,7 +3888,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         let integrationPath = repoRoot.appendingPathComponent("Resources/shell-integration/termloop-bash-integration.bash")
         let rcfilePath = root.appendingPathComponent(".bashrc")
         let rcfileContents: String = {
-            guard cmuxLoadShellIntegration else { return ":\n" }
+            guard termloopLoadShellIntegration else { return ":\n" }
             return """
             . "\(integrationPath.path)"
             """
@@ -3841,7 +3909,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
             "SHELL": "/bin/bash",
             "USER": NSUserName(),
         ]
-        if cmuxLoadShellIntegration {
+        if termloopLoadShellIntegration {
             process.environment?["TERMLOOP_SOCKET_PATH"] = root.appendingPathComponent("cmux-test.sock").path
             process.environment?["TERMLOOP_WORKSPACE_ID"] = "workspace-test"
             process.environment?["TERMLOOP_PANEL_ID"] = "panel-test"

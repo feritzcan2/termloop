@@ -1,16 +1,5 @@
 {
-  "activation" : "worktree",
-  "termLoopMCPTools" : [
-    "set_jira_ticket",
-    "get_jira_ticket"
-  ],
-  "bindings" : [
-    {
-      "displayAs" : "chip",
-      "id" : "ticket",
-      "title" : "Jira Ticket"
-    }
-  ],
+  "activation" : "listed",
   "description" : "Use when working on Jira tickets.",
   "id" : "working-with-jira",
   "items" : [

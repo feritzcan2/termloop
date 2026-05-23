@@ -430,7 +430,7 @@ struct cmuxApp: App {
                 // MARK: /termloop-hook
 #if DEBUG
                 // MARK: termloop-hook
-                .background(TermLoopRootTickInstrumentation(tabManager: tabManager, notificationStore: notificationStore, sidebarState: sidebarState, sidebarSelectionState: sidebarSelectionState, fileExplorerState: fileExplorerState, cmuxConfigStore: cmuxConfigStore))
+                .background(TermLoopRootTickInstrumentation(tabManager: tabManager, notificationStore: notificationStore, sidebarState: sidebarState, sidebarSelectionState: sidebarSelectionState, fileExplorerState: fileExplorerState, termloopConfigStore: cmuxConfigStore))
                 // MARK: /termloop-hook
 #endif
         }
@@ -1898,7 +1898,7 @@ private struct DebugWindowControlsView: View {
                         Toggle("Always show shortcut hints", isOn: $alwaysShowShortcutHints)
 
                         hintOffsetSection(
-                            "Sidebar Cmd+1…9",
+                            "Sidebar Cmd+Opt+1…9",
                             x: $sidebarShortcutHintXOffset,
                             y: $sidebarShortcutHintYOffset
                         )
@@ -3101,7 +3101,7 @@ private struct SidebarDebugView: View {
                         Toggle("Always show shortcut hints", isOn: $alwaysShowShortcutHints)
 
                         hintOffsetSection(
-                            "Sidebar Cmd+1…9",
+                            "Sidebar Cmd+Opt+1…9",
                             x: $sidebarShortcutHintXOffset,
                             y: $sidebarShortcutHintYOffset
                         )
@@ -4353,9 +4353,9 @@ struct SettingsView: View {
     @AppStorage(BrowserImportHintSettings.showOnBlankTabsKey) private var showBrowserImportHintOnBlankTabs = BrowserImportHintSettings.defaultShowOnBlankTabs
     @AppStorage(BrowserImportHintSettings.dismissedKey) private var isBrowserImportHintDismissed = BrowserImportHintSettings.defaultDismissed
     @AppStorage(ReactGrabSettings.versionKey) private var reactGrabVersion = ReactGrabSettings.defaultVersion
-    @AppStorage(BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowserKey) private var openTerminalLinksInCmuxBrowser = BrowserLinkOpenSettings.defaultOpenTerminalLinksInCmuxBrowser
-    @AppStorage(BrowserLinkOpenSettings.interceptTerminalOpenCommandInCmuxBrowserKey)
-    private var interceptTerminalOpenCommandInCmuxBrowser = BrowserLinkOpenSettings.initialInterceptTerminalOpenCommandInCmuxBrowserValue()
+    @AppStorage(BrowserLinkOpenSettings.openTerminalLinksInTermLoopBrowserKey) private var openTerminalLinksInTermLoopBrowser = BrowserLinkOpenSettings.defaultOpenTerminalLinksInTermLoopBrowser
+    @AppStorage(BrowserLinkOpenSettings.interceptTerminalOpenCommandInTermLoopBrowserKey)
+    private var interceptTerminalOpenCommandInTermLoopBrowser = BrowserLinkOpenSettings.initialInterceptTerminalOpenCommandInTermLoopBrowserValue()
     @AppStorage(BrowserLinkOpenSettings.browserHostWhitelistKey) private var browserHostWhitelist = BrowserLinkOpenSettings.defaultBrowserHostWhitelist
     @AppStorage(BrowserLinkOpenSettings.browserExternalOpenPatternsKey)
     private var browserExternalOpenPatterns = BrowserLinkOpenSettings.defaultBrowserExternalOpenPatterns
@@ -4392,10 +4392,10 @@ struct SettingsView: View {
     @AppStorage("sidebarNotificationBadgeColorHex") private var sidebarNotificationBadgeColorHex: String?
     @AppStorage("sidebarShowBranchDirectory") private var sidebarShowBranchDirectory = true
     @AppStorage("sidebarShowPullRequest") private var sidebarShowPullRequest = true
-    @AppStorage(BrowserLinkOpenSettings.openSidebarPullRequestLinksInCmuxBrowserKey)
-    private var openSidebarPullRequestLinksInCmuxBrowser = BrowserLinkOpenSettings.defaultOpenSidebarPullRequestLinksInCmuxBrowser
-    @AppStorage(BrowserLinkOpenSettings.openSidebarPortLinksInCmuxBrowserKey)
-    private var openSidebarPortLinksInCmuxBrowser = BrowserLinkOpenSettings.defaultOpenSidebarPortLinksInCmuxBrowser
+    @AppStorage(BrowserLinkOpenSettings.openSidebarPullRequestLinksInTermLoopBrowserKey)
+    private var openSidebarPullRequestLinksInTermLoopBrowser = BrowserLinkOpenSettings.defaultOpenSidebarPullRequestLinksInTermLoopBrowser
+    @AppStorage(BrowserLinkOpenSettings.openSidebarPortLinksInTermLoopBrowserKey)
+    private var openSidebarPortLinksInTermLoopBrowser = BrowserLinkOpenSettings.defaultOpenSidebarPortLinksInTermLoopBrowser
     @AppStorage(ShortcutHintDebugSettings.showHintsOnCommandHoldKey)
     private var showShortcutHintsOnCommandHold = ShortcutHintDebugSettings.defaultShowHintsOnCommandHold
     @AppStorage("sidebarShowSSH") private var sidebarShowSSH = true
@@ -5345,13 +5345,13 @@ struct SettingsView: View {
                         SettingsCardDivider()
 
                         SettingsCardRow(
-                            configurationReview: .json("sidebar.openPullRequestLinksInCmuxBrowser"),
+                            configurationReview: .json("sidebar.openPullRequestLinksInTermLoopBrowser"),
                             String(localized: "settings.app.openSidebarPRLinks", defaultValue: "Open Sidebar PR Links in TermLoop Browser"),
-                            subtitle: openSidebarPullRequestLinksInCmuxBrowser
+                            subtitle: openSidebarPullRequestLinksInTermLoopBrowser
                                 ? String(localized: "settings.app.openSidebarPRLinks.subtitleOn", defaultValue: "Clicks open inside TermLoop Browser.")
                                 : String(localized: "settings.app.openSidebarPRLinks.subtitleOff", defaultValue: "Clicks open in your default browser.")
                         ) {
-                            Toggle("", isOn: $openSidebarPullRequestLinksInCmuxBrowser)
+                            Toggle("", isOn: $openSidebarPullRequestLinksInTermLoopBrowser)
                                 .labelsHidden()
                                 .controlSize(.small)
                         }
@@ -5360,13 +5360,13 @@ struct SettingsView: View {
                         SettingsCardDivider()
 
                         SettingsCardRow(
-                            configurationReview: .json("sidebar.openPortLinksInCmuxBrowser"),
+                            configurationReview: .json("sidebar.openPortLinksInTermLoopBrowser"),
                             String(localized: "settings.app.openSidebarPortLinks", defaultValue: "Open Sidebar Port Links in TermLoop Browser"),
-                            subtitle: openSidebarPortLinksInCmuxBrowser
+                            subtitle: openSidebarPortLinksInTermLoopBrowser
                                 ? String(localized: "settings.app.openSidebarPortLinks.subtitleOn", defaultValue: "Port clicks open inside TermLoop Browser.")
                                 : String(localized: "settings.app.openSidebarPortLinks.subtitleOff", defaultValue: "Port clicks open in your default browser.")
                         ) {
-                            Toggle("", isOn: $openSidebarPortLinksInCmuxBrowser)
+                            Toggle("", isOn: $openSidebarPortLinksInTermLoopBrowser)
                                 .labelsHidden()
                                 .controlSize(.small)
                         }
@@ -5914,11 +5914,11 @@ struct SettingsView: View {
                         SettingsCardDivider()
 
                         SettingsCardRow(
-                            configurationReview: .json("browser.openTerminalLinksInCmuxBrowser"),
+                            configurationReview: .json("browser.openTerminalLinksInTermLoopBrowser"),
                             String(localized: "settings.browser.openTerminalLinks", defaultValue: "Open Terminal Links in TermLoop Browser"),
                             subtitle: String(localized: "settings.browser.openTerminalLinks.subtitle", defaultValue: "When off, links clicked in terminal output open in your default browser.")
                         ) {
-                            Toggle("", isOn: $openTerminalLinksInCmuxBrowser)
+                            Toggle("", isOn: $openTerminalLinksInTermLoopBrowser)
                                 .labelsHidden()
                                 .controlSize(.small)
                         }
@@ -5926,16 +5926,16 @@ struct SettingsView: View {
                         SettingsCardDivider()
 
                         SettingsCardRow(
-                            configurationReview: .json("browser.interceptTerminalOpenCommandInCmuxBrowser"),
+                            configurationReview: .json("browser.interceptTerminalOpenCommandInTermLoopBrowser"),
                             String(localized: "settings.browser.interceptOpen", defaultValue: "Intercept open http(s) in Terminal"),
                             subtitle: String(localized: "settings.browser.interceptOpen.subtitle", defaultValue: "When off, `open https://...` and `open http://...` always use your default browser.")
                         ) {
-                            Toggle("", isOn: $interceptTerminalOpenCommandInCmuxBrowser)
+                            Toggle("", isOn: $interceptTerminalOpenCommandInTermLoopBrowser)
                                 .labelsHidden()
                                 .controlSize(.small)
                         }
 
-                        if openTerminalLinksInCmuxBrowser || interceptTerminalOpenCommandInCmuxBrowser {
+                        if openTerminalLinksInTermLoopBrowser || interceptTerminalOpenCommandInTermLoopBrowser {
                             SettingsCardDivider()
 
                             VStack(alignment: .leading, spacing: 6) {
@@ -6438,8 +6438,8 @@ struct SettingsView: View {
         browserImportHintVariantRaw = BrowserImportHintSettings.defaultVariant.rawValue
         showBrowserImportHintOnBlankTabs = BrowserImportHintSettings.defaultShowOnBlankTabs
         isBrowserImportHintDismissed = BrowserImportHintSettings.defaultDismissed
-        openTerminalLinksInCmuxBrowser = BrowserLinkOpenSettings.defaultOpenTerminalLinksInCmuxBrowser
-        interceptTerminalOpenCommandInCmuxBrowser = BrowserLinkOpenSettings.defaultInterceptTerminalOpenCommandInCmuxBrowser
+        openTerminalLinksInTermLoopBrowser = BrowserLinkOpenSettings.defaultOpenTerminalLinksInTermLoopBrowser
+        interceptTerminalOpenCommandInTermLoopBrowser = BrowserLinkOpenSettings.defaultInterceptTerminalOpenCommandInTermLoopBrowser
         browserHostWhitelist = BrowserLinkOpenSettings.defaultBrowserHostWhitelist
         browserExternalOpenPatterns = BrowserLinkOpenSettings.defaultBrowserExternalOpenPatterns
         browserInsecureHTTPAllowlist = BrowserInsecureHTTPSettings.defaultAllowlistText
@@ -6478,8 +6478,8 @@ struct SettingsView: View {
         sidebarNotificationBadgeColorHex = nil
         sidebarShowBranchDirectory = true
         sidebarShowPullRequest = true
-        openSidebarPullRequestLinksInCmuxBrowser = BrowserLinkOpenSettings.defaultOpenSidebarPullRequestLinksInCmuxBrowser
-        openSidebarPortLinksInCmuxBrowser = BrowserLinkOpenSettings.defaultOpenSidebarPortLinksInCmuxBrowser
+        openSidebarPullRequestLinksInTermLoopBrowser = BrowserLinkOpenSettings.defaultOpenSidebarPullRequestLinksInTermLoopBrowser
+        openSidebarPortLinksInTermLoopBrowser = BrowserLinkOpenSettings.defaultOpenSidebarPortLinksInTermLoopBrowser
         showShortcutHintsOnCommandHold = ShortcutHintDebugSettings.defaultShowHintsOnCommandHold
         sidebarShowSSH = true
         sidebarShowPorts = true

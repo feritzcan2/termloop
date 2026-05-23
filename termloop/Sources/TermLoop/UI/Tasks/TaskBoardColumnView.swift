@@ -14,10 +14,13 @@ struct TaskBoardColumnView: View {
     @ObservedObject var selection: TaskSelectionStore
     let agentStatusesByTaskId: [UUID: TaskAgentStatusSummary]
     let workItemsByTaskId: [UUID: TaskWorkItemSnapshot]
+    let devServerSummariesByTaskId: [UUID: TaskDevServerSummary]
     var onMove: ((_ taskId: UUID, _ to: TaskColumnId) -> Void)?
     var onSelect: ((TaskCardSummary) -> Void)?
     var onCommandClick: ((TaskCardSummary) -> Void)?
+    var onOpenAgentTerminal: ((TaskCardSummary, UUID) -> Void)?
     var onArchive: ((UUID) -> Void)?
+    var onDelete: ((UUID) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -32,10 +35,13 @@ struct TaskBoardColumnView: View {
                                 card: card,
                                 agentStatus: agentStatusesByTaskId[card.id],
                                 workItem: workItemsByTaskId[card.id],
+                                devServerSummary: devServerSummariesByTaskId[card.id],
                                 selection: selection,
                                 onSelect: onSelect,
                                 onCommandClick: onCommandClick,
-                                onArchive: onArchive
+                                onOpenAgentTerminal: onOpenAgentTerminal,
+                                onArchive: onArchive,
+                                onDelete: onDelete
                             )
                         }
                     }

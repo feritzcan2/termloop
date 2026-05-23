@@ -5,6 +5,32 @@ import AppKit
 import Combine
 import SwiftUI
 
+enum QuickActionRunTarget: Equatable {
+    case projectRoot(UUID)
+    case worktree(projectId: UUID, path: String, branch: String?, workspaceId: UUID?)
+    case detached
+
+    var workspaceId: UUID? {
+        switch self {
+        case .worktree(_, _, _, let workspaceId):
+            return workspaceId
+        case .projectRoot, .detached:
+            return nil
+        }
+    }
+
+    var projectId: UUID? {
+        switch self {
+        case .projectRoot(let projectId):
+            return projectId
+        case .worktree(let projectId, _, _, _):
+            return projectId
+        case .detached:
+            return nil
+        }
+    }
+}
+
 @MainActor
 struct QuickActionPresentationRequest {
     var initialSurface: QuickActionSurface = .run
@@ -24,6 +50,8 @@ struct QuickActionPresentationRequest {
     var launchSource: AgentInvocationSource? = nil
     var reasonTag: String? = nil
     var projectId: UUID? = nil
+    var runTarget: QuickActionRunTarget? = nil
+    var sourceSessionId: UUID? = nil
     var placementOverride: NewWorkspacePlacement? = nil
     var suggestedBranchName: String? = nil
     var openAdvanced: Bool = false
@@ -150,7 +178,7 @@ final class QuickActionController {
         case .terminal:
             return String(
                 localized: "quickAction.toast.subtitle.terminal",
-                defaultValue: "Terminal workspace opened",
+                defaultValue: "Agent terminal opened",
                 table: "TermLoop"
             )
         }

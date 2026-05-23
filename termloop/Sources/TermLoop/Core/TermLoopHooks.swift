@@ -41,6 +41,24 @@ enum TermLoopHooks {
         let termLoopRestoreId: UUID?
     }
 
+    private struct MissingWorktreeBranchRestoreCandidate: Sendable {
+        let workspaceId: UUID
+        let projectId: UUID
+        let cwd: String
+    }
+
+    private struct MissingWorktreeBranchRestoreProject: Sendable {
+        let folderPath: String
+        let candidates: [MissingWorktreeBranchRestoreCandidate]
+    }
+
+    private struct MissingWorktreeBranchRestoreBinding: Sendable {
+        let workspaceId: UUID
+        let branch: String
+        let worktreePath: String
+        let baselineHead: String?
+    }
+
     static var restoredTerminalLauncher: (Workspace, TerminalAgent, String?, [String: String]) -> Void = {
         workspace, agent, cwd, env in
         TerminalAgentRunner.dispatchRestoredAgentCommand(in: workspace, agent: agent, cwd: cwd, env: env)
@@ -990,7 +1008,7 @@ enum TermLoopHooks {
             case .healthy, .locked:
                 guard let actualPath = status.path else { continue }
                 if normalizedCurrentPath != actualPath {
-                    WorkspaceMetadataStore.shared.copyReportedBindingsIfNeeded(
+                    WorkspaceMetadataStore.shared.copyWorktreeScopedStateIfNeeded(
                         fromPath: normalizedCurrentPath,
                         toPath: actualPath,
                         forWorkspaceId: binding.workspaceId
@@ -1056,7 +1074,7 @@ enum TermLoopHooks {
             )
 #endif
         }
-        restoreMissingWorktreeBranchBindings(workspaces: workspaces)
+        scheduleRestoreMissingWorktreeBranchBindings(workspaces: workspaces)
 
         let didRecoverBeforeRestore = backfillPersistedAgentSessionsIfNeeded()
 #if DEBUG
@@ -1427,15 +1445,8 @@ enum TermLoopHooks {
     /// Defensive restore-time reconciliation for worktree-bound workspaces.
     /// If positional metadata came back without `branch`, infer it from the
     /// workspace cwd by matching against `git worktree list` paths.
-    private static func restoreMissingWorktreeBranchBindings(workspaces: [Workspace]) {
-        struct Candidate {
-            let workspaceId: UUID
-            let projectId: UUID
-            let cwd: String
-        }
-
-        let service = GitWorktreeService()
-        let candidatesByProject: [UUID: [Candidate]] = Dictionary(grouping: workspaces.compactMap { workspace in
+    private static func scheduleRestoreMissingWorktreeBranchBindings(workspaces: [Workspace]) {
+        let candidatesByProject: [UUID: [MissingWorktreeBranchRestoreCandidate]] = Dictionary(grouping: workspaces.compactMap { workspace in
             let metadata = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: workspace.id)
             let normalizedBranch = metadata.branch?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -1450,13 +1461,40 @@ enum TermLoopHooks {
                 .compactMap { $0 }
                 .first(where: { !$0.isEmpty }) ?? ""
             guard !rawCwd.isEmpty else { return nil }
-            return Candidate(workspaceId: workspace.id, projectId: projectId, cwd: rawCwd)
+            return MissingWorktreeBranchRestoreCandidate(
+                workspaceId: workspace.id,
+                projectId: projectId,
+                cwd: rawCwd
+            )
         }, by: { candidate in
             candidate.projectId
         })
 
-        for (projectId, candidates) in candidatesByProject {
-            guard let project = ProjectStore.shared.project(id: projectId) else { continue }
+        let projects = candidatesByProject.compactMap { projectId, candidates -> MissingWorktreeBranchRestoreProject? in
+            guard let project = ProjectStore.shared.project(id: projectId) else { return nil }
+            return MissingWorktreeBranchRestoreProject(
+                folderPath: project.folderPath,
+                candidates: candidates
+            )
+        }
+        guard !projects.isEmpty else { return }
+
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 1.5) {
+            let bindings = resolveMissingWorktreeBranchBindings(projects: projects)
+            guard !bindings.isEmpty else { return }
+            Task { @MainActor in
+                applyMissingWorktreeBranchBindings(bindings)
+            }
+        }
+    }
+
+    private nonisolated static func resolveMissingWorktreeBranchBindings(
+        projects: [MissingWorktreeBranchRestoreProject]
+    ) -> [MissingWorktreeBranchRestoreBinding] {
+        let service = GitWorktreeService()
+        var bindings: [MissingWorktreeBranchRestoreBinding] = []
+
+        for project in projects {
             guard let worktrees = try? service.list(in: project.folderPath) else { continue }
 
             let indexed = worktrees.compactMap { entry -> (path: String, branch: String)? in
@@ -1470,27 +1508,48 @@ enum TermLoopHooks {
 
             guard !indexed.isEmpty else { continue }
 
-            for candidate in candidates {
+            for candidate in project.candidates {
                 let cwd = URL(fileURLWithPath: candidate.cwd).standardizedFileURL.path
                 guard let match = indexed.first(where: { entry in
                     cwd == entry.path || cwd.hasPrefix(entry.path + "/")
                 }) else {
                     continue
                 }
-                WorkspaceMetadataStore.shared.setBranch(
-                    match.branch,
-                    worktreePath: match.path,
-                    forWorkspaceId: candidate.workspaceId
-                )
                 let baseline = try? service.headRevision(worktreePath: match.path)
-                WorkspaceMetadataStore.shared.setWorktreeBaselineHead(
-                    baseline,
-                    forWorkspaceId: candidate.workspaceId
-                )
-                logger.info(
-                    "restore worktree branch recovered ws=\(candidate.workspaceId.uuidString, privacy: .public) branch=\(match.branch, privacy: .public)"
-                )
+                bindings.append(MissingWorktreeBranchRestoreBinding(
+                    workspaceId: candidate.workspaceId,
+                    branch: match.branch,
+                    worktreePath: match.path,
+                    baselineHead: baseline
+                ))
             }
+        }
+
+        return bindings
+    }
+
+    private static func applyMissingWorktreeBranchBindings(
+        _ bindings: [MissingWorktreeBranchRestoreBinding]
+    ) {
+        for binding in bindings {
+            let existingBranch = WorkspaceMetadataStore.shared
+                .metadata(forWorkspaceId: binding.workspaceId)
+                .branch?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard existingBranch.isEmpty else { continue }
+
+            WorkspaceMetadataStore.shared.setBranch(
+                binding.branch,
+                worktreePath: binding.worktreePath,
+                forWorkspaceId: binding.workspaceId
+            )
+            WorkspaceMetadataStore.shared.setWorktreeBaselineHead(
+                binding.baselineHead,
+                forWorkspaceId: binding.workspaceId
+            )
+            logger.info(
+                "restore worktree branch recovered ws=\(binding.workspaceId.uuidString, privacy: .public) branch=\(binding.branch, privacy: .public)"
+            )
         }
     }
 
@@ -1579,10 +1638,12 @@ enum TermLoopHooks {
     }
 
     /// Reserved TermLoop shutdown hook. Terminal agents live inside
-    /// Ghostty panes and are torn down by upstream's own shutdown path,
-    /// so the body is empty — kept as an extension point for future
-    /// async-flush or persistence work.
-    static func applicationWillTerminate() {}
+    /// Ghostty panes and are torn down by upstream's own shutdown path.
+    /// Dev-server runs are plain child processes, so terminate them here
+    /// before the app exits.
+    static func applicationWillTerminate() {
+        DevServerRunCoordinator.shared.stopAllBestEffort()
+    }
 
     /// Called from `Workspace.newTerminalSurface` right after the panel is
     /// registered and its bonsplit tab exists. Seeds `panelDirectories` with
@@ -1647,7 +1708,7 @@ enum TermLoopHooks {
     #endif
 
     /// Conditionally swaps the terminal content for TermLoop-owned overlays.
-    /// A SwiftUI `.overlay` can't visually cover cmux's terminal
+    /// A SwiftUI `.overlay` can't visually cover TermLoop's terminal
     /// surface because Ghostty renders into a window-level AppKit portal
     /// view (`WindowTerminalHostView`) that sits above SwiftUI in the
     /// NSWindow's view tree. Removing the SwiftUI anchor entirely — by
@@ -2123,6 +2184,7 @@ enum TermLoopHooks {
         ensureCodexHooksInstalled()
         ensureGeminiHooksInstalled()
         ensureOpenCodeHooksInstalled()
+        DevServerBrowserRouter.install()
         PushDispatcher.shared.start()
         #if DEBUG
         dlog("bridge.bootstrap v=2 bridges=\(WorkspaceBridgeStore.shared.bridges.count)")
@@ -2144,9 +2206,23 @@ enum TermLoopHooks {
         TaskQuickActionsBridge.requestOpenWorktreePath = { path in
             WorktreeRepairCoordinator.shared.openFolder(path: path)
         }
-        TaskQuickActionsBridge.requestNewAgentPanel = { workspaceId in
-            TermLoopHooks.presentTaskAgentQuickAction(workspaceId: workspaceId)
+        TaskQuickActionsBridge.requestNewAgentPanel = { context, onLaunchedWorkspaceId in
+            TermLoopHooks.presentTaskAgentQuickAction(
+                context: context,
+                onLaunchedWorkspaceId: onLaunchedWorkspaceId
+            )
         }
+        TaskQuickActionsBridge.requestRefineTaskSpecAgent = { request in
+            TermLoopHooks.presentTaskSpecRefinerQuickAction(request)
+        }
+        TaskQuickActionsBridge.requestExecuteTaskSpecAgent = { request in
+            TermLoopHooks.presentTaskSpecExecutionQuickAction(request)
+        }
+    }
+
+    static func handleProjectNumberShortcut(digit: Int?, tabManager: TabManager?) -> Bool {
+        guard let digit else { return false }
+        return ProjectShortcutRouter.selectProject(forDigit: digit, tabManager: tabManager)
     }
 
     /// Silently writes the six teleport hooks into `~/.claude/settings.json`
@@ -2185,6 +2261,7 @@ enum TermLoopHooks {
         do {
             try installAgentHooksViaBundledCLI(agentName: "codex")
             CodexHooksStatus.shared.markDirty()
+            CodexHooksStatus.shared.resetReviewProbeBudget()
             return true
         } catch {
             NSLog("TermLoopHooks: auto-install of Codex hooks failed: \(error)")
@@ -2297,7 +2374,7 @@ enum TermLoopHooks {
 
     private static func openCodePluginSource() -> String {
         #"""
-export const CmuxTermLoop = async ({ $, directory }) => {
+export const TermLoopOpenCode = async ({ $, directory }) => {
   const sessionStatus = new Map()
   const seenUserMessageIds = new Set()
 
@@ -2489,6 +2566,7 @@ export const CmuxTermLoop = async ({ $, directory }) => {
         WorkspaceMetadataStore.shared.forgetObservedWorkspaceTitle(workspaceId: workspaceId)
         WorkspaceMetadataStore.shared.clearAgentSession(forWorkspaceId: workspaceId)
         TaskSelectionStoreProvider.shared.closeInlineTerminals(workspaceId: workspaceId)
+        DevServerRunCoordinator.shared.stopRuns(workspaceId: workspaceId)
         MainAreaPresentationCoordinator.shared.handleNavigationEvent(.workspaceDidClose(workspaceId))
     }
 
@@ -2982,7 +3060,6 @@ extension TermLoopHooks {
     }
 
     static func presentTaskAgentQuickAction(workspaceId: UUID) {
-        _ = focusWorkspace(workspaceId: workspaceId)
         QuickActionController.shared.present(
             prefill: QuickActionPresentationRequest(
                 initialSurface: .run,
@@ -2990,6 +3067,98 @@ extension TermLoopHooks {
                 promptText: nil,
                 launchSource: .quickAction,
                 reasonTag: "quickAction.freePrompt"
+            )
+        )
+    }
+
+
+    static func presentTaskAgentQuickAction(
+        context: TaskAgentLaunchContext,
+        onLaunchedWorkspaceId: ((UUID) -> Void)? = nil
+    ) {
+        QuickActionController.shared.present(
+            prefill: QuickActionPresentationRequest(
+                initialSurface: .run,
+                promptText: nil,
+                launchSource: .quickAction,
+                reasonTag: "quickAction.freePrompt",
+                projectId: context.projectId,
+                runTarget: .worktree(
+                    projectId: context.projectId,
+                    path: context.cwdPath,
+                    branch: context.branchName,
+                    workspaceId: context.targetWorkspaceId
+                ),
+                onLaunchedWorkspace: { workspace in
+                    onLaunchedWorkspaceId?(workspace.id)
+                }
+            )
+        )
+    }
+
+    static func presentTaskSpecRefinerQuickAction(_ request: TaskSpecRefinementRequest) {
+        let templateId = "task-refiner-agent"
+        guard AgentTemplateStore.shared.template(id: templateId) != nil else {
+            #if DEBUG
+            dlog("tasks.refinerQuickAction.missingTemplate id=\(templateId)")
+            #endif
+            return
+        }
+        let trimmedTaskTitle = request.taskTitle
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = trimmedTaskTitle.isEmpty
+            ? String(localized: "tasks.refiner.taskFallbackTitle",
+                     defaultValue: "task.md",
+                     table: "TermLoop")
+            : trimmedTaskTitle
+        let displayTitle = String(localized: "tasks.refiner.agentTitle",
+                                  defaultValue: "Refiner Agent",
+                                  table: "TermLoop")
+        QuickActionController.shared.present(
+            prefill: QuickActionPresentationRequest(
+                initialSurface: .run,
+                targetWorkspaceId: request.workspaceId,
+                composition: .template(id: templateId),
+                advancedTitle: displayTitle,
+                variableValues: [
+                    "task_file_path": request.taskFilePath,
+                    "task_title": title
+                ],
+                launchSource: .quickAction,
+                reasonTag: "tasks.refineTaskSpec",
+                projectId: request.projectId
+            )
+        )
+    }
+
+    static func presentTaskSpecExecutionQuickAction(_ request: TaskSpecExecutionRequest) {
+        let trimmedTaskTitle = request.taskTitle
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayTitle = trimmedTaskTitle.isEmpty
+            ? String(localized: "tasks.executor.agentTitle",
+                     defaultValue: "Task Agent",
+                     table: "TermLoop")
+            : trimmedTaskTitle
+        let runTarget = request.launchContext.map { context in
+            QuickActionRunTarget.worktree(
+                projectId: context.projectId,
+                path: context.cwdPath,
+                branch: context.branchName,
+                workspaceId: context.targetWorkspaceId
+            )
+        }
+        QuickActionController.shared.present(
+            prefill: QuickActionPresentationRequest(
+                initialSurface: .run,
+                targetWorkspaceId: request.workspaceId,
+                promptText: request.promptText,
+                advancedSystemPrompt: "",
+                systemPromptDocumentId: "",
+                advancedTitle: displayTitle,
+                launchSource: .quickAction,
+                reasonTag: "tasks.executeTaskSpec",
+                projectId: request.projectId,
+                runTarget: runTarget
             )
         )
     }
@@ -3011,11 +3180,11 @@ extension TermLoopHooks {
 #if DEBUG
 import Combine
 
-/// Instruments each root-level `@StateObject` publisher in `cmuxApp` with a
+/// Instruments each root-level `@StateObject` publisher in `TermLoopApp` with a
 /// `dlog()` tick so we can count who ticks how often during normal app use.
 /// Enabled only in DEBUG builds; entirely removed in release.
 ///
-/// Usage (in `cmuxApp.swift` body, inside `WindowGroup { ContentView(...) ... }`):
+/// Usage (in `termloopApp.swift` body, inside `WindowGroup { ContentView(...) ... }`):
 /// ```
 /// // MARK: termloop-hook
 /// .background(TermLoopRootTickInstrumentation(
@@ -3024,7 +3193,7 @@ import Combine
 ///     sidebarState: sidebarState,
 ///     sidebarSelectionState: sidebarSelectionState,
 ///     fileExplorerState: fileExplorerState,
-///     cmuxConfigStore: cmuxConfigStore
+///     termloopConfigStore: termloopConfigStore
 /// ))
 /// // MARK: /termloop-hook
 /// ```
@@ -3035,7 +3204,7 @@ struct TermLoopRootTickInstrumentation: View {
     let sidebarState: SidebarState
     let sidebarSelectionState: SidebarSelectionState
     let fileExplorerState: FileExplorerState
-    let cmuxConfigStore: CmuxConfigStore
+    let termloopConfigStore: CmuxConfigStore
 
     var body: some View {
         Color.clear
@@ -3056,8 +3225,8 @@ struct TermLoopRootTickInstrumentation: View {
             .onReceive(fileExplorerState.objectWillChange) { _ in
                 dlog("roottick.fileExplorerState")
             }
-            .onReceive(cmuxConfigStore.objectWillChange) { _ in
-                dlog("roottick.cmuxConfigStore")
+            .onReceive(termloopConfigStore.objectWillChange) { _ in
+                dlog("roottick.termloopConfigStore")
             }
     }
 }
@@ -3417,7 +3586,6 @@ enum TermLoopV2KnownRefsRefreshGate {
              "events.unsubscribe",
              "internal.hook_event",
              "workspace.report_agent_activity",
-             "workspace.report_agent_binding",
              "workspace.get_jira_ticket",
              "workspace.report_claude_session",
              "workspace.clear_agent_activity",
@@ -3426,7 +3594,6 @@ enum TermLoopV2KnownRefsRefreshGate {
              "workspace.kill_claude_session",
              "workspace.prepare_claude_resume",
              "workspace.spawn_claude_session",
-             "workspace.claude_system_prompt",
              "workspace.agent_system_prompt":
             return false
         default:

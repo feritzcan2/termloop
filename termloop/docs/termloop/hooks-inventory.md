@@ -19,6 +19,7 @@ in upstream-owned Swift files. Regenerate with `scripts/generate-hooks-inventory
 | `Sources/AppDelegate.swift` | 4650 | `return TermLoopHooks.shouldSkipSessionSaveDuringStartupRestore(isApplyingStartupSessionRestore: isApplyingStartupSessionRestore, includeScrollback: includeScrollback)` |
 | `Sources/AppDelegate.swift` | 4834 | `TermLoopHooks.removeMirroredSessionSnapshotIfNeeded()` |
 | `Sources/AppDelegate.swift` | 5460 | `/// Walks window contexts in the same sorted order that` |
+| `Sources/AppDelegate.swift` | 11480 | `if TermLoopHooks.handleProjectNumberShortcut(digit: numberedConfiguredShortcutDigit(event: event, action: .selectProjectByNumber), tabManager: tabManager) { return true }` |
 | `Sources/ContentView.swift` | 692 | `termLoopResetForwardingOnExit(sender: sender)` |
 | `Sources/ContentView.swift` | 708 | `if let accepted = termLoopTryPrepareForwardedDrop(sender: sender, shouldCapture: shouldCapture) {` |
 | `Sources/ContentView.swift` | 745 | `if let result = termLoopTryPerformForwardedDrop(sender: sender, shouldCapture: shouldCapture) {` |
@@ -79,7 +80,7 @@ in upstream-owned Swift files. Regenerate with `scripts/generate-hooks-inventory
 | `Sources/TerminalController.swift` | 3579 | `projectId: explicitProjectId ?? termLoopWorkspaceCreateContext.projectId,` |
 | `Sources/TerminalController.swift` | 3584 | `if shouldDeferMobileBlankClaudeSessionPersistence {` |
 | `Sources/TerminalController.swift` | 6058 | `/// Narrow bridge for the mobile streaming backend. The stream registry` |
-| `Sources/TerminalController.swift` | 14913 | `if TerminalAgentRegistry.shared.statusKeys.contains(key) {` |
+| `Sources/TerminalController.swift` | 14915 | `if TerminalAgentRegistry.shared.statusKeys.contains(key) {` |
 | `Sources/Update/UpdateTitlebarAccessory.swift` | 411 | `TermLoopHooks.titlebarSettingsButton(config: config)` |
 | `Sources/Workspace.swift` | 454 | `TermLoopHooks.ensurePanelDirectoryBeforeSnapshot(workspace: self, panelId: panelId)` |
 | `Sources/Workspace.swift` | 7637 | `TermLoopHooks.workspaceTitleDidChange(workspace: self)` |
@@ -100,4 +101,4 @@ in upstream-owned Swift files. Regenerate with `scripts/generate-hooks-inventory
 | `Sources/termloopApp.swift` | 645 | `Button(String(localized: "termloop.deleteAllData.menu.label", defaultValue: "Delete All Data (This Build)…", table: "TermLoop")) { TermLoopHooks.promptDeleteAllBuildData() }` |
 | `Sources/termloopApp.swift` | 1245 | `"cmux.debugEventLog",` |
 
-Total hook blocks: **94**.
+Total hook blocks: **95**.

@@ -52,6 +52,9 @@ struct MarkdownSurface: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(MarkdownTheme.surfaceBg)
+        .onExitCommand {
+            onClose()
+        }
     }
 
     private var toolbar: some View {
@@ -130,6 +133,7 @@ struct MarkdownSurface: View {
                 text: $text,
                 autosaveDebounce: autosaveDebounce,
                 onCommit: onCommit,
+                onEscape: onClose,
                 placeholder: nil
             )
         }

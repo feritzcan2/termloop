@@ -12,35 +12,31 @@ struct TaskCardView: View {
     let card: TaskCardSummary
     let agentStatus: TaskAgentStatusSummary?
     let workItem: TaskWorkItemSnapshot?
+    let devServerSummary: TaskDevServerSummary?
     @ObservedObject var selection: TaskSelectionStore
     var onSelect: ((TaskCardSummary) -> Void)?
     var onCommandClick: ((TaskCardSummary) -> Void)?
+    var onOpenAgentTerminal: ((TaskCardSummary, UUID) -> Void)?
     var onArchive: ((UUID) -> Void)?
+    var onDelete: ((UUID) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 7) {
-                statusDot
-                Text(displayTitle)
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(2)
-                    .foregroundColor(.primary)
-                Spacer(minLength: 0)
-            }
+            cardHeader
+            agentStrip
 
             identityLine
 
             HStack(spacing: 6) {
                 statusChip
-                workItemChip
+                if remoteHeaderKey == nil {
+                    workItemChip
+                } else {
+                    remoteStatusChip
+                }
+                devServerChip
                 sourceChip
                 Spacer(minLength: 0)
-                if displayedAgentCount > 0 {
-                    Label("\(displayedAgentCount)", systemImage: "person.crop.circle")
-                        .labelStyle(.titleAndIcon)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.secondary)
-                }
             }
         }
         .padding(.vertical, 9)
@@ -89,29 +85,148 @@ struct TaskCardView: View {
                           defaultValue: "Archive", table: "TermLoop")) {
                 onArchive?(card.id)
             }
+            Divider()
+            Button(role: .destructive, action: { onDelete?(card.id) }) {
+                Text(String(localized: "tasks.card.menu.delete",
+                            defaultValue: "Delete", table: "TermLoop"))
+            }
         }
     }
 
+    @ViewBuilder
+    private var agentStrip: some View {
+        if !agentBadges.isEmpty {
+            HStack(spacing: 5) {
+                ForEach(Array(agentBadges.prefix(3))) { agent in
+                    Button(action: {
+                        onOpenAgentTerminal?(card, agent.workspaceId)
+                    }) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "terminal")
+                                .font(.system(size: 8.5, weight: .semibold))
+                            Text(agent.label)
+                                .lineLimit(1)
+                        }
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(agentColor(agent.displayState))
+                        .padding(.vertical, 2)
+                        .padding(.horizontal, 6)
+                        .background(agentColor(agent.displayState).opacity(0.12))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(onOpenAgentTerminal == nil)
+                    .help(String(localized: "tasks.card.agent.openTerminal",
+                                 defaultValue: "Open agent terminal",
+                                 table: "TermLoop"))
+                }
+
+                if agentBadges.count > 3 {
+                    Text("+\(agentBadges.count - 3)")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .padding(.vertical, 2)
+                        .padding(.horizontal, 6)
+                        .background(Color.white.opacity(0.045))
+                        .clipShape(Capsule())
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var cardHeader: some View {
+        if let remoteKey = remoteHeaderKey {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .center, spacing: 6) {
+                    statusDot
+                    Text(remoteKey)
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundColor(.blue)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+
+                Text(displayTitle)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(5)
+                    .foregroundColor(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                briefLine
+            }
+        } else {
+            HStack(alignment: .top, spacing: 7) {
+                statusDot
+                    .padding(.top, 4)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(displayTitle)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(4)
+                        .foregroundColor(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    briefLine
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    @ViewBuilder
     private var identityLine: some View {
-        HStack(spacing: 6) {
-            Image(systemName: card.branch == nil ? "doc.text" : "arrow.triangle.branch")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(.secondary.opacity(0.85))
-                .frame(width: 13)
-            Text(identityText)
-                .font(.system(size: 10, design: card.branch == nil && card.worktreePath != nil ? .monospaced : .default))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: 0)
+        if let identityText {
+            HStack(spacing: 6) {
+                Image(systemName: card.branch == nil ? "doc.text" : "arrow.triangle.branch")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.secondary.opacity(0.85))
+                    .frame(width: 13)
+                Text(identityText)
+                    .font(.system(size: 10, design: card.branch == nil && card.worktreePath != nil ? .monospaced : .default))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
+            }
         }
     }
 
     private var isSelected: Bool { selection.selectedTaskId == card.id }
     private var canDrag: Bool { card.provisionState != .pending }
     private var displayTitle: String { workItem?.title ?? card.title }
+    private var briefText: String? { trimmedNonEmpty(card.brief) }
+    private var remoteHeaderKey: String? {
+        let key = workItem?.key ?? card.remoteWorkItem?.key
+        return trimmedNonEmpty(key)
+    }
 
-    private var identityText: String {
+    @ViewBuilder
+    private var briefLine: some View {
+        if let briefText {
+            Text(briefText)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundColor(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var remoteStatusText: String? {
+        let status = workItem?.statusLabel ?? card.remoteStatusLabel
+        return trimmedNonEmpty(status)
+    }
+
+    private var agentBadges: [TaskAgentBadgeSummary] {
+        agentStatus?.agents ?? []
+    }
+
+    @ViewBuilder
+    private var devServerChip: some View {
+        if let devServerSummary {
+            DevServerStatusChip(summary: devServerSummary)
+        }
+    }
+
+    private var identityText: String? {
         if let branch = normalizedBranch {
             return branch
         }
@@ -119,8 +234,7 @@ struct TaskCardView: View {
             return TaskPathNormalization.resolveDisplayAndKey(path)?.leafName
                 ?? URL(fileURLWithPath: path).lastPathComponent
         }
-        return String(localized: "tasks.card.identity.manual",
-                      defaultValue: "Manual task", table: "TermLoop")
+        return nil
     }
 
     private var normalizedBranch: String? {
@@ -163,7 +277,6 @@ struct TaskCardView: View {
         Circle()
             .fill(statusColor)
             .frame(width: 7, height: 7)
-            .padding(.top, 4)
     }
 
     private var statusChip: some View {
@@ -180,40 +293,46 @@ struct TaskCardView: View {
     @ViewBuilder
     private var workItemChip: some View {
         if let workItem {
-            HStack(spacing: 3) {
-                Image(systemName: "checklist")
-                    .font(.system(size: 8.5, weight: .semibold))
-                Text(workItem.compactLabel)
-                    .lineLimit(1)
-            }
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundColor(.blue)
-            .padding(.vertical, 2)
-            .padding(.horizontal, 7)
-            .background(Color.blue.opacity(0.12))
-            .clipShape(Capsule())
-            .help(workItem.url?.absoluteString ?? workItem.compactLabel)
+            workItemPill(label: workItem.compactLabel, help: workItem.url?.absoluteString)
         }
     }
 
+    @ViewBuilder
+    private var remoteStatusChip: some View {
+        if let remoteStatusText {
+            workItemPill(label: remoteStatusText, help: workItem?.url?.absoluteString)
+        }
+    }
+
+    private func workItemPill(label: String, help: String?) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: "checklist")
+                .font(.system(size: 8.5, weight: .semibold))
+            Text(label)
+                .lineLimit(1)
+        }
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundColor(.blue)
+        .padding(.vertical, 2)
+        .padding(.horizontal, 7)
+        .background(Color.blue.opacity(0.12))
+        .clipShape(Capsule())
+        .help(help ?? label)
+    }
+
+    @ViewBuilder
     private var sourceChip: some View {
-        Text(sourceText)
-            .font(.system(size: 10, weight: .medium))
-            .foregroundColor(.secondary)
-            .lineLimit(1)
-            .padding(.vertical, 2)
-            .padding(.horizontal, 7)
-            .background(Color.white.opacity(0.045))
-            .clipShape(Capsule())
-    }
-
-    private var sourceText: String {
-        if card.worktreePath != nil {
-            return String(localized: "tasks.card.source.worktree",
-                          defaultValue: "Worktree", table: "TermLoop")
+        if normalizedWorktreePath != nil {
+            Text(String(localized: "tasks.card.source.worktree",
+                        defaultValue: "Worktree", table: "TermLoop"))
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .padding(.vertical, 2)
+                .padding(.horizontal, 7)
+                .background(Color.white.opacity(0.045))
+                .clipShape(Capsule())
         }
-        return String(localized: "tasks.card.source.manual",
-                      defaultValue: "Manual", table: "TermLoop")
     }
 
     private var cardHelp: String {
@@ -230,8 +349,15 @@ struct TaskCardView: View {
 
     private var statusColor: Color { effectiveStatus.color }
 
-    private var displayedAgentCount: Int {
-        agentStatus?.agentCount ?? 0
+    private func trimmedNonEmpty(_ value: String?) -> String? {
+        guard let text = value?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
+            return nil
+        }
+        return text
+    }
+
+    private func agentColor(_ state: TerminalAgentDisplayState) -> Color {
+        TermLoopSidebarTheme.color(for: state)
     }
 
     private var effectiveStatus: TaskStatusPresentation {
@@ -252,7 +378,7 @@ struct TaskCardView: View {
 
     private func openTaskFile(_ workItem: TaskWorkItemSnapshot) {
         guard let path = workItem.taskFilePath else { return }
-        NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: false))
+        TaskQuickActions.openTaskFile(path: path, displayTitle: workItem.key)
     }
 }
 
@@ -276,16 +402,19 @@ private struct TaskCardDragModifier: ViewModifier {
 struct TaskStatusPresentation {
     let text: String
     let color: Color
+    let iconName: String
     let usesAgentStatus: Bool
 
     init(provisionState: TaskProvisionState, agentStatus: TaskAgentStatusSummary?) {
         if let agentStatus, Self.canShowAgentStatus(over: provisionState) {
             self.text = TerminalAgentDisplayFormatter.stateText(for: agentStatus.dominantState)
             self.color = TermLoopSidebarTheme.color(for: agentStatus.dominantState)
+            self.iconName = TermLoopSidebarTheme.iconName(for: agentStatus.dominantState)
             self.usesAgentStatus = true
         } else {
             self.text = provisionState.taskCompactStatusText
             self.color = provisionState.taskStatusColor
+            self.iconName = provisionState.taskStatusIconName
             self.usesAgentStatus = false
         }
     }
@@ -298,6 +427,16 @@ struct TaskStatusPresentation {
             return true
         }
     }
+
+    /// Whether to surface this status as a pill in the sidebar drill-in
+    /// header. Agent-derived statuses (e.g. "running") are intentionally
+    /// suppressed there — they're already shown in the Worktree Agents
+    /// section, and duplicating them adds noise. Provision-driven statuses
+    /// (failed/pending/ready/none) stay visible because the colored dot is
+    /// the only other signal in the header.
+    var shouldShowInHeader: Bool {
+        !usesAgentStatus
+    }
 }
 
 extension TaskProvisionState {
@@ -307,6 +446,15 @@ extension TaskProvisionState {
         case .failed: return .red
         case .ready: return .green
         case .none: return .secondary
+        }
+    }
+
+    var taskStatusIconName: String {
+        switch self {
+        case .pending: return "clock"
+        case .failed: return "exclamationmark.triangle"
+        case .ready: return "checkmark.circle"
+        case .none: return "circle.fill"
         }
     }
 

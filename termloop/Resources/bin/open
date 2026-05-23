@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# termloop open wrapper - routes HTTP(S) URLs to cmux's in-app browser
+# termloop open wrapper - routes HTTP(S) URLs to termloop's in-app browser
 #
 # When running inside a termloop terminal (TERMLOOP_SOCKET_PATH is set), this wrapper
-# intercepts `open https://...` invocations and opens them in cmux's built-in
+# intercepts `open https://...` invocations and opens them in termloop's built-in
 # browser within the same workspace. All other arguments pass through to
 # /usr/bin/open unchanged.
 
@@ -375,9 +375,9 @@ if [[ $# -eq 0 ]]; then
 fi
 
 # Scan for flags that indicate explicit user intent → pass through.
-# Also collect non-flag arguments and route eligible browser targets to cmux.
+# Also collect non-flag arguments and route eligible browser targets to termloop.
 passthrough=false
-cmux_targets=()
+termloop_targets=()
 passthrough_args=()
 for arg in "$@"; do
     case "$arg" in
@@ -392,10 +392,10 @@ for arg in "$@"; do
             ;;
         *)
             if is_http_url "$arg"; then
-                cmux_targets+=("$arg")
+                termloop_targets+=("$arg")
             elif is_file_url "$arg"; then
                 if file_url_points_to_html "$arg"; then
-                    cmux_targets+=("$arg")
+                    termloop_targets+=("$arg")
                 else
                     passthrough_args+=("$arg")
                 fi
@@ -404,7 +404,7 @@ for arg in "$@"; do
             elif is_html_extension "$arg"; then
                 if is_explicit_local_path "$arg" || [[ -e "$arg" ]]; then
                     if local_file_url="$(path_to_file_url "$arg")"; then
-                        cmux_targets+=("$local_file_url")
+                        termloop_targets+=("$local_file_url")
                     else
                         passthrough_args+=("$arg")
                     fi
@@ -418,18 +418,14 @@ for arg in "$@"; do
     esac
 done
 
-if [[ "$passthrough" == true ]] || [[ ${#cmux_targets[@]} -eq 0 ]]; then
+if [[ "$passthrough" == true ]] || [[ ${#termloop_targets[@]} -eq 0 ]]; then
     system_open "$@"
 fi
 
 # Respect the same settings used for terminal link clicks.
 if [[ -n "$settings_domain" ]]; then
-    open_in_cmux="$("$DEFAULTS_BIN" read "$settings_domain" browserInterceptTerminalOpenCommandInCmuxBrowser 2>/dev/null || true)"
-    if [[ -z "$open_in_cmux" ]]; then
-        # Backward compatibility for installs that predate the dedicated open-wrapper toggle.
-        open_in_cmux="$("$DEFAULTS_BIN" read "$settings_domain" browserOpenTerminalLinksInCmuxBrowser 2>/dev/null || true)"
-    fi
-    if is_false_setting "$open_in_cmux"; then
+    open_in_termloop="$("$DEFAULTS_BIN" read "$settings_domain" browserInterceptTerminalOpenCommandInTermLoopBrowser 2>/dev/null || true)"
+    if is_false_setting "$open_in_termloop"; then
         system_open "$@"
     fi
 
@@ -442,17 +438,17 @@ fi
 
 # Find termloop CLI (same directory as this script).
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
-TERMLOOP_CLI="$SELF_DIR/cmux"
+TERMLOOP_CLI="$SELF_DIR/termloop"
 
 if [[ ! -x "$TERMLOOP_CLI" ]]; then
     system_open "$@"
 fi
 
-# Open each URL in cmux's in-app browser; track failures individually.
+# Open each URL in termloop's in-app browser; track failures individually.
 # External-open pattern rules are evaluated in-app (NSRegularExpression) so
 # terminal link clicks and intercepted `open` commands share one regex dialect.
 failed_urls=()
-for url in "${cmux_targets[@]}"; do
+for url in "${termloop_targets[@]}"; do
     if is_http_url "$url" && ! host_matches_whitelist "$url"; then
         failed_urls+=("$url")
         continue

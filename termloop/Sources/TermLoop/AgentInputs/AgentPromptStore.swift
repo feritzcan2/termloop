@@ -147,10 +147,10 @@ final class AgentPromptStore: ObservableObject {
         case .bridgeSourcePrompt: return "New Bridge Source Prompt"
         case .bridgeTargetPrompt: return "New Bridge Target Prompt"
         case .forkHandoffPrompt: return "New Fork Handoff Prompt"
-        case .abilityCreatorPrompt: return "New Ability Creator Prompt"
-        case .abilityRefinerPrompt: return "New Ability Refiner Prompt"
-        case .systemAbilityDefaultTemplate: return "New System Ability Template"
-        case .systemAbilityCreatorPrompt: return "New System Ability Creator Prompt"
+        case .abilityCreatorPrompt: return "New Project Rule Creator Prompt"
+        case .abilityRefinerPrompt: return "New Project Rule Refiner Prompt"
+        case .systemAbilityDefaultTemplate: return "New System Rule Template"
+        case .systemAbilityCreatorPrompt: return "New System Rule Creator Prompt"
         }
     }
 
@@ -160,10 +160,10 @@ final class AgentPromptStore: ObservableObject {
         case .bridgeSourcePrompt: return "Bridge source-side handoff template."
         case .bridgeTargetPrompt: return "Bridge target-side system instructions template."
         case .forkHandoffPrompt: return "Quick Action fork/handoff template."
-        case .abilityCreatorPrompt: return "Meta-prompt for creating a project ability."
-        case .abilityRefinerPrompt: return "Meta-prompt for refining an existing project ability."
-        case .systemAbilityDefaultTemplate: return "Default body installed for a system ability family."
-        case .systemAbilityCreatorPrompt: return "Meta-prompt for generating a system ability."
+        case .abilityCreatorPrompt: return "Meta-prompt for creating a project rule."
+        case .abilityRefinerPrompt: return "Meta-prompt for refining an existing project rule."
+        case .systemAbilityDefaultTemplate: return "Default body installed for a system rule family."
+        case .systemAbilityCreatorPrompt: return "Meta-prompt for generating a system rule."
         }
     }
 
@@ -172,7 +172,7 @@ final class AgentPromptStore: ObservableObject {
         case .systemPromptTemplate:
             return "Write reusable system instructions here."
         case .bridgeSourcePrompt:
-            return "Write the source-side handoff body. Use placeholders like {{workspace_title}} and {{cwd}}."
+            return "Write the source-side handoff body. Use placeholders like {{cwd}}."
         case .bridgeTargetPrompt:
             return "Write the target-side system instructions. Use placeholders like {{source_agent}}."
         case .forkHandoffPrompt:
@@ -182,9 +182,9 @@ final class AgentPromptStore: ObservableObject {
         case .abilityRefinerPrompt:
             return "Write the refiner meta-prompt here."
         case .systemAbilityDefaultTemplate:
-            return "Write the default installed system ability body here."
+            return "Write the default installed system rule body here."
         case .systemAbilityCreatorPrompt:
-            return "Write the meta-prompt that generates this system ability."
+            return "Write the meta-prompt that generates this system rule."
         }
     }
 
@@ -376,7 +376,7 @@ extension AgentPromptStore {
                 id: forkHandoffDocumentID,
                 title: "Fork handoff default prompt",
                 kind: .forkHandoffPrompt,
-                subtitle: "Prefills Quick Action when a user forks an active workspace into another agent.",
+                subtitle: "Prefills Quick Action when a user forks an active session into another agent.",
                 body: ForkHandoffPromptDefaults.defaultTemplateBody,
                 scope: .builtin,
                 sourceURL: nil,
@@ -389,9 +389,9 @@ extension AgentPromptStore {
         docs.append(
             AgentPromptDocument(
                 id: abilityDocumentID(.creator),
-                title: "Ability creator prompt",
+                title: "Project rule creator prompt",
                 kind: .abilityCreatorPrompt,
-                subtitle: "Generic fallback meta-prompt used when a starter ability has no domain-specific customizer.",
+                subtitle: "Generic fallback meta-prompt used when a starter project rule has no domain-specific customizer.",
                 body: ProjectInstructionStore.builtInPromptBody(.creator),
                 scope: .builtin,
                 sourceURL: nil,
@@ -466,6 +466,123 @@ extension AgentPromptStore {
     // MARK: Built-in template system prompt documents
     private static func builtInTemplateSystemPromptDocuments() -> [AgentPromptDocument] {
         [
+            AgentPromptDocument(
+                id: "system.template.devserver-profile-generator",
+                title: "Run Profile Generator — system instructions",
+                kind: .systemPromptTemplate,
+                subtitle: "Generates project-level .termloop/devservers.json run profiles for worktree tasks.",
+                body: """
+You help configure TermLoop run profiles for {{worktree_path}} on branch "{{branch_name}}".
+
+Goal:
+Inspect the project and help the user create safe entries for `<projectRoot>/.termloop/devservers.json`. Profiles are generic run profiles, not only web dev servers. They can cover app launch/reload commands, local dev servers, test runners, typecheckers, Storybook, workers, docs servers, or other long-running/local project workflows.
+
+Conversation first:
+- Start with a short discovery summary: what project files/scripts you found and what workflows look likely.
+- If the right profiles are not obvious, ask 2–4 concrete questions before editing files. Examples: which app should run, whether to include native app reload/build commands, which package manager to use, and whether setup/cleanup commands are desired.
+- If there is one clearly safe default, propose it first, but still ask before writing.
+- Do not silently create profiles without explaining tradeoffs.
+
+Rules:
+- Do not run install, setup, cleanup, migration, build, test, or server commands unless the user explicitly confirms.
+- Prefer scripts and repo commands already present in the project.
+- Choose the narrowest profile `kind`: `dev_server`, `test_runner`, `worker`, `storybook`, or `typecheck`. Use `worker` for build/reload/native-app commands that do not expose a localhost URL.
+- Use project-level profile config only; never write runtime process truth to `.termloop/tasks.json`.
+- Use commands that run from a task worktree. Set `workingDirectory` relative to the worktree root.
+- If a profile depends on project-wide worktree preparation from `.termloop/worktree-setup.json`, set `requiresLocalSetup: true` instead of duplicating that setup in `setupCommand`.
+- Include `setupCommand` only when it is safe, clearly needed, and confirmed by the user.
+- Include `cleanupCommand` only for reversible cleanup.
+- Use localhost-only URLs in `urlDetection.fallbackUrls`; omit URLs for non-browser workflows.
+- Proactively check multi-worktree hazards before proposing profiles: fixed ports, shared databases/caches, lock files, simulator/device state, and generated output directories. If a fixed localhost port is used, mention the conflict risk and prefer an obvious repo-supported port override. If the override is not obvious, ask before inventing one.
+- Preserve existing profiles if the file already exists.
+
+Output:
+1. Briefly explain what project files/scripts you inspected.
+2. Ask any needed questions, or state the safe assumptions you used.
+3. Show the proposed JSON patch or complete `.termloop/devservers.json`.
+4. If the user confirms writing, update only `.termloop/devservers.json`.
+5. Print any commands the user must approve before running.
+""",
+                scope: .builtin,
+                sourceURL: nil,
+                metadata: [
+                    .init(label: "Template", value: "devserver-profile-generator"),
+                    .init(label: "Source", value: "TermLoop"),
+                    .init(label: "Adapter", value: "TermLoop")
+                ]
+            ),
+            AgentPromptDocument(
+                id: "system.template.local-setup-generator",
+                title: "Local Setup Generator — system instructions",
+                kind: .systemPromptTemplate,
+                subtitle: "Generates project-level .termloop/worktree-setup.json preparation steps for task worktrees.",
+                body: """
+You help configure TermLoop Local setup for {{worktree_path}} on branch "{{branch_name}}".
+
+Goal:
+Inspect the project and help the user create safe entries for `<projectRoot>/.termloop/worktree-setup.json`. Local setup is project-scope preparation that runs once per task worktree before run profiles or test runners that opt into it.
+
+Relationship to run profiles:
+- Local setup is for project-wide worktree preparation: copy ignored local files, create directories, restore/install dependencies, or write small local templates.
+- DevServer `setupCommand` is profile-specific and runs per profile/config. Do not duplicate the same install/setup work in both layers.
+- If a run profile needs Local setup, set `requiresLocalSetup: true` in `.termloop/devservers.json`.
+
+Conversation first:
+- Start with a short discovery summary: relevant package files, scripts, ignored config files, environment examples, and per-worktree hazards.
+- If the needed setup is not obvious, ask 2–4 concrete questions before editing files. Examples: which ignored files should be copied from the main checkout, whether install/restore should run automatically, and whether cleanup is desired on archive/delete.
+- Do not silently create config without explaining tradeoffs.
+
+Rules:
+- Do not run install, setup, cleanup, migration, build, test, or server commands unless the user explicitly confirms.
+- Prefer deterministic `copy`, `mkdir`, and `template` steps. Use `command` only when clearly needed and confirmed.
+- Copy sources must use an explicit source scope. For files copied from the main project checkout, use `from.scope: "project_root"`.
+- Destinations must be relative to the task worktree root; never write outside the worktree.
+- Preserve existing config if `.termloop/worktree-setup.json` already exists.
+- Keep secrets safe: for ignored local config, prefer `ifMissingOnly: true`, `overwrite: false`, and explain that the source file must exist in the main checkout.
+- Include cleanup steps only for reversible local artifacts owned by setup.
+
+Schema:
+```json
+{
+  "schemaVersion": 1,
+  "policy": "once_per_worktree_config",
+  "steps": [
+    {
+      "id": "copy-local-config",
+      "type": "copy",
+      "from": { "scope": "project_root", "path": "path/from/project/root" },
+      "to": "path/inside/worktree",
+      "ifMissingOnly": true,
+      "overwrite": false,
+      "required": true
+    }
+  ],
+  "cleanupSteps": []
+}
+```
+
+Supported step types:
+- `copy`: `from`, `to`, optional `ifMissingOnly`, `overwrite`, `required`.
+- `mkdir`: `to`.
+- `template`: `to`, `content`, optional `ifMissingOnly`, `overwrite`.
+- `command`: `command`, optional `workingDirectory`, `env`, `timeoutSeconds`.
+
+Output:
+1. Briefly explain what project files/scripts/ignored paths you inspected.
+2. Ask any needed questions, or state the safe assumptions you used.
+3. Show the proposed JSON patch or complete `.termloop/worktree-setup.json`.
+4. If useful, show matching `.termloop/devservers.json` changes such as `requiresLocalSetup: true`.
+5. If the user confirms writing, update only `.termloop/worktree-setup.json` and any explicitly confirmed run-profile fields.
+6. Print any commands the user must approve before running.
+""",
+                scope: .builtin,
+                sourceURL: nil,
+                metadata: [
+                    .init(label: "Template", value: "local-setup-generator"),
+                    .init(label: "Source", value: "TermLoop"),
+                    .init(label: "Adapter", value: "TermLoop")
+                ]
+            ),
             ossTemplateSystemDocument(
                 id: "system.template.edge-case-hunter",
                 title: "Edge Case Review — system instructions",
@@ -475,7 +592,7 @@ extension AgentPromptStore {
                 sourceURL: "https://raw.githubusercontent.com/danielmiessler/fabric/main/data/patterns/review_code/system.md",
                 license: "MIT",
                 body: """
-You are running an edge-case focused code review for {{workspace_path}} on branch "{{branch_name}}".
+You are running an edge-case focused code review for {{worktree_path}} on branch "{{branch_name}}".
 
 This template is adapted from Fabric's `review_code` pattern: review the diff systematically, prioritize concrete defects, and explain risks with evidence.
 
@@ -542,7 +659,7 @@ Never force-push. Never invent tests. Do not include marketing language.
                 sourceURL: "https://raw.githubusercontent.com/danielmiessler/fabric/main/data/patterns/review_code/system.md",
                 license: "MIT",
                 body: """
-You are a senior code reviewer for {{workspace_path}} on branch "{{branch_name}}".
+You are a senior code reviewer for {{worktree_path}} on branch "{{branch_name}}".
 
 This template is adapted from Fabric's `review_code` pattern: understand context first, analyze systematically, and return prioritized concrete recommendations.
 
@@ -568,13 +685,13 @@ Each finding must include `file:line` or the closest available diff hunk, the ri
             ossTemplateSystemDocument(
                 id: "system.template.save-agent",
                 title: "Change Summary — system instructions",
-                subtitle: "OSS-derived system instructions for summarizing workspace changes.",
+                subtitle: "OSS-derived system instructions for summarizing worktree changes.",
                 template: "save-agent",
                 sourceName: "Fabric summarize_git_diff",
                 sourceURL: "https://raw.githubusercontent.com/danielmiessler/fabric/main/data/patterns/summarize_git_diff/system.md",
                 license: "MIT",
                 body: """
-You summarize workspace changes in {{workspace_path}} on branch "{{branch_name}}".
+You summarize worktree changes in {{worktree_path}} on branch "{{branch_name}}".
 
 This template is adapted from Fabric's `summarize_git_diff` pattern: produce a concise, human-readable change summary in conventional-commit style.
 
@@ -604,7 +721,7 @@ Print the file path and stop. If there is no diff, write "No local changes found
                 sourceURL: "https://raw.githubusercontent.com/danielmiessler/fabric/main/data/patterns/summarize_git_diff/system.md",
                 license: "MIT",
                 body: """
-You summarize git diffs for {{workspace_path}} on branch "{{branch_name}}".
+You summarize git diffs for {{worktree_path}} on branch "{{branch_name}}".
 
 This template is adapted from Fabric's `summarize_git_diff` pattern: produce a short conventional-commit style title and compact change bullets.
 
@@ -633,7 +750,7 @@ Do not invent intent or tests. If there is no diff, say "No local changes found.
                 sourceURL: "https://raw.githubusercontent.com/danielmiessler/fabric/main/data/patterns/explain_code/system.md",
                 license: "MIT",
                 body: """
-You explain code, configuration, documentation, or terminal output from {{workspace_path}}.
+You explain code, configuration, documentation, or terminal output from {{worktree_path}}.
 
 This template is adapted from Fabric's `explain_code` pattern: classify the input, explain the important behavior, and answer the user's concrete question.
 
@@ -662,7 +779,7 @@ Use only the sections that fit the input. Keep it concise and evidence-based.
                 sourceURL: "https://raw.githubusercontent.com/danielmiessler/fabric/main/data/patterns/create_prd/system.md",
                 license: "MIT",
                 body: """
-You turn a feature idea into a scoped product and implementation plan for {{workspace_path}}.
+You turn a feature idea into a scoped product and implementation plan for {{worktree_path}}.
 
 This template is adapted from Fabric's `create_prd` and `create_design_document` patterns: clarify objectives, users, requirements, architecture, risks, and open questions.
 
@@ -705,10 +822,6 @@ Only questions that block correct implementation.
                 sourceURL: "https://raw.githubusercontent.com/OpenHands/OpenHands/main/openhands/agenthub/codeact_agent/prompts/system_prompt.j2",
                 license: "MIT / Apache-2.0",
                 body: """
-You implement a scoped coding task in {{workspace_path}} on branch "{{branch_name}}".
-
-This template is adapted from OpenHands' coding-agent workflow and Aider's scope discipline: solve the requested technical problem, edit files directly, keep scope tight, and verify the change.
-
 Rules:
 - If the user asks a question, answer it; do not start changing code unless the request implies implementation.
 - Read the relevant files before editing.
@@ -740,7 +853,7 @@ Final output:
                 sourceURL: "https://raw.githubusercontent.com/danielmiessler/fabric/main/data/patterns/analyze_logs/system.md",
                 license: "MIT",
                 body: """
-You triage logs, errors, alerts, or incident notes for {{workspace_path}}.
+You triage logs, errors, alerts, or incident notes for {{worktree_path}}.
 
 This template is adapted from Fabric's `analyze_logs` and `analyze_incident` patterns: extract symptoms, evidence, likely causes, impact, and concrete remediation steps from the provided data.
 
@@ -777,7 +890,7 @@ Longer-term fixes, monitoring, or tests.
                 sourceURL: "https://raw.githubusercontent.com/danielmiessler/fabric/main/data/patterns/explain_docs/system.md",
                 license: "MIT",
                 body: """
-You write or improve project documentation in {{workspace_path}}.
+You write or improve project documentation in {{worktree_path}}.
 
 This template is adapted from Fabric's `explain_docs` and `generate_code_rules` patterns: turn source material into clear usage instructions and concise rules.
 
@@ -804,7 +917,7 @@ Output should include the touched docs and any verification performed.
                 kind: .systemPromptTemplate,
                 subtitle: "Default system instructions for the Scattered Orchestration Finder template.",
                 body: """
-You are the Scattered Orchestration Finder for {{workspace_path}} on branch "{{branch_name}}".
+You are the Scattered Orchestration Finder for {{worktree_path}} on branch "{{branch_name}}".
 
 You are looking for one specific refactor class: write-side operations (state transitions, side-effects, dispatch) whose ordering, policy branching, and paired side-effects have drifted across multiple call sites. The fix is almost always one coordinator/lifecycle layer that owns the decisions and ordering, with pure helpers underneath.
 
@@ -1243,7 +1356,7 @@ When your `<position>` is empty for two consecutive turns, the debate has conver
                 kind: .systemPromptTemplate,
                 subtitle: "Default system instructions for the Project Keywords template.",
                 body: """
-You are the Project Keywords agent running in {{workspace_path}} (project "{{project_name}}").
+You are the Project Keywords agent running in {{worktree_path}} (project "{{project_name}}").
 
 Your job is to maintain a single file at `.termloop/project-keywords.md` that lists the project's important keywords — the kind of terms a user would say when asking someone to work on a part of this codebase (e.g. "worktree sidebar", "TCP bridge", "project layer", "AgentSpawner").
 
@@ -1370,11 +1483,11 @@ Code/commits/PRs: write normal. "stop caveman" or "normal mode": revert. Level p
                 id: "system.template.concise-docs",
                 title: "Concise Docs — system instructions",
                 kind: .systemPromptTemplate,
-                subtitle: "Generic concise documentation style for any artifact-writing task (CLAUDE.md, instructions.md, READMEs, ability docs).",
+                subtitle: "Generic concise documentation style for any artifact-writing task (CLAUDE.md, instructions.md, READMEs, project rule docs).",
                 body: """
 # Concise documentation style
 
-Apply to every artifact you write or edit (CLAUDE.md, instructions.md, README sections, ability docs, design notes) and to chat replies that summarize what you wrote. No "speak vs write" split — same rule both.
+Apply to every artifact you write or edit (CLAUDE.md, instructions.md, README sections, project rule docs, design notes) and to chat replies that summarize what you wrote. No "speak vs write" split — same rule both.
 
 ## Drop
 - Filler: just, really, basically, actually, simply, in order to, that being said.

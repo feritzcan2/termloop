@@ -11,7 +11,7 @@ This folder owns the sidebar/panel UI for active agents, worktree agent groups, 
 | Active Agents sidebar data shaping | `ActiveAgentsPanelData.swift` and parent-built snapshots |
 | Pure row rendering | `ActiveAgentsPanelRows.swift`, `ActiveAgentsSessionRows.swift`, `AgentRowCoreView.swift` |
 | Interactions/context menus | `ActiveAgentsPanelInteractions.swift`, `ActiveAgentWorkspaceContextMenu.swift` |
-| Worktree/ticket sidebar presentation | `WorktreeAgentsPanel*`, `TicketWorktreesPanel*`, `WorktreeChanges*` |
+| Worktree sidebar presentation | `WorktreeAgentsPanel*`, `WorktreeChanges*` |
 | Main-area route/portal visibility | `Sources/TermLoop/UI/MainAreaPresentation.swift` (outside this folder) |
 
 ## Hard rules

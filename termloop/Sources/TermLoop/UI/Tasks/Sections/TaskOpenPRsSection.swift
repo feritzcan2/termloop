@@ -31,33 +31,35 @@ struct TaskOpenPRsSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            TaskSidebarSectionTitle(
-                String(localized: "tasks.sidebar.section.pullRequests",
-                       defaultValue: "Pull Requests", table: "TermLoop")
-            )
-            if normalizedBranch == nil {
-                TaskSidebarEmptyText(
-                    String(localized: "tasks.sidebar.section.openPRs.noBranch",
-                           defaultValue: "No branch attached.", table: "TermLoop")
-                )
-            } else if normalizedWorktreePath == nil {
-                TaskSidebarEmptyText(
-                    String(localized: "tasks.sidebar.section.openPRs.noPath",
-                           defaultValue: "No worktree path attached.", table: "TermLoop")
-                )
-            } else if pullRequests.isEmpty {
-                TaskSidebarEmptyText(
-                    String(localized: "tasks.sidebar.section.pullRequests.empty",
-                           defaultValue: "No PRs found.", table: "TermLoop")
-                )
+        Group {
+            if normalizedBranch == nil || normalizedWorktreePath == nil || pullRequests.isEmpty {
+                compactEmptyRow
             } else {
-                prGroups
+                VStack(alignment: .leading, spacing: 6) {
+                    TaskSidebarSectionTitle(
+                        String(localized: "tasks.sidebar.section.pullRequests",
+                               defaultValue: "Pull Requests", table: "TermLoop")
+                    )
+                    summaryLine
+                    prGroups
+                }
             }
         }
         .onAppear { ensureLookup() }
         .onChange(of: normalizedWorktreePath) { _, _ in ensureLookup() }
         .onChange(of: normalizedBranch) { _, _ in ensureLookup() }
+    }
+
+    private var compactEmptyRow: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "arrow.triangle.pull")
+                .font(.system(size: 11, weight: .semibold))
+            Text(String(localized: "tasks.sidebar.section.pullRequests.compactEmpty",
+                        defaultValue: "No PRs", table: "TermLoop"))
+                .font(.system(size: 11, weight: .medium))
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(Color.secondary)
     }
 
     private var prGroups: some View {
@@ -86,6 +88,53 @@ struct TaskOpenPRsSection: View {
                 )
             }
         }
+    }
+
+    private var summaryLine: some View {
+        HStack(spacing: 6) {
+            summaryChip(
+                count: openPullRequests.count,
+                label: String(localized: "tasks.sidebar.section.pullRequests.summary.open",
+                              defaultValue: "open",
+                              table: "TermLoop"),
+                color: .green
+            )
+            if !mergedPullRequests.isEmpty {
+                summaryChip(
+                    count: mergedPullRequests.count,
+                    label: String(localized: "tasks.sidebar.section.pullRequests.summary.merged",
+                                  defaultValue: "merged",
+                                  table: "TermLoop"),
+                    color: .purple
+                )
+            }
+            if !closedPullRequests.isEmpty {
+                summaryChip(
+                    count: closedPullRequests.count,
+                    label: String(localized: "tasks.sidebar.section.pullRequests.summary.closed",
+                                  defaultValue: "closed",
+                                  table: "TermLoop"),
+                    color: .secondary
+                )
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func summaryChip(count: Int, label: String, color: Color) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+            Text("\(count) \(label)")
+                .lineLimit(1)
+        }
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(color)
+        .padding(.vertical, 2)
+        .padding(.horizontal, 6)
+        .background(color.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
     }
 
     private func prGroup(title: String, pullRequests: [SidebarPullRequestState], emptyText: String) -> some View {

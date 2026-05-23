@@ -1893,6 +1893,19 @@ pub const CAPI = struct {
         surface.preeditCallback(if (len == 0) null else ptr[0..len]);
     }
 
+    /// cmux fork: install a raw-PTY tap callback on the surface. The callback
+    /// fires on Ghostty's IO thread immediately before the terminal stream
+    /// parser consumes each chunk. cmux uses this to fan out the byte stream
+    /// to remote (mobile) mirror clients. Pass `fn_ptr = null` to clear.
+    export fn ghostty_surface_set_pty_tap(
+        surface: *Surface,
+        fn_ptr: ?*const fn (?*anyopaque, [*]const u8, usize) callconv(.c) void,
+        ud: ?*anyopaque,
+    ) void {
+        surface.core_surface.io.pty_tap = fn_ptr;
+        surface.core_surface.io.pty_tap_userdata = ud;
+    }
+
     /// Returns true if the surface currently has mouse capturing
     /// enabled.
     export fn ghostty_surface_mouse_captured(surface: *Surface) bool {

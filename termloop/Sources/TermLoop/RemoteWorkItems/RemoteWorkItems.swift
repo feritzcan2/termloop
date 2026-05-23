@@ -9,6 +9,14 @@ public enum RemoteWorkItemProviderId: String, Codable, CaseIterable, Hashable, S
     case jira
     case github
     case gitlab
+
+    var displayLabel: String {
+        switch self {
+        case .jira: return "Jira"
+        case .github: return "GitHub"
+        case .gitlab: return "GitLab"
+        }
+    }
 }
 
 public struct RemoteWorkItemReference: Codable, Hashable, Sendable {
@@ -52,6 +60,32 @@ public struct RemoteWorkItemReference: Codable, Hashable, Sendable {
 
     var storageKey: String {
         [provider.rawValue, host?.lowercased() ?? "", stableId].joined(separator: ":")
+    }
+
+    func representsSameRemoteItem(as other: RemoteWorkItemReference) -> Bool {
+        guard provider == other.provider else { return false }
+        switch provider {
+        case .jira:
+            guard stableId == other.stableId else { return false }
+            let lhsHost = Self.normalizedHost(host)
+            let rhsHost = Self.normalizedHost(other.host)
+            return lhsHost == nil || rhsHost == nil || lhsHost == rhsHost
+        case .github, .gitlab:
+            return storageKey == other.storageKey
+        }
+    }
+
+    private static func normalizedHost(_ value: String?) -> String? {
+        var host = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if let url = URL(string: host), let parsed = url.host {
+            host = parsed
+        }
+        host = host
+            .replacingOccurrences(of: "https://", with: "")
+            .replacingOccurrences(of: "http://", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            .lowercased()
+        return host.isEmpty ? nil : host
     }
 }
 
@@ -98,7 +132,7 @@ struct RemoteWorkItemListRequest: Codable, Equatable, Sendable {
     var container: String?
     var limit: Int
 
-    init(provider: RemoteWorkItemProviderId, container: String? = nil, limit: Int = 30) {
+    init(provider: RemoteWorkItemProviderId, container: String? = nil, limit: Int = 50) {
         self.provider = provider
         self.container = container
         self.limit = max(1, min(limit, 500))
@@ -154,6 +188,20 @@ public struct TaskRemoteContainerOption: Identifiable, Codable, Equatable, Senda
 
     public var displayLabel: String {
         name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? key : "\(key) — \(name)"
+    }
+}
+
+public struct TaskRemoteIssueTypeOption: Identifiable, Codable, Equatable, Sendable {
+    public let id: String
+    public let name: String
+    public let description: String?
+    public let isSubtask: Bool
+
+    public init(id: String, name: String, description: String?, isSubtask: Bool) {
+        self.id = id
+        self.name = name
+        self.description = description?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.isSubtask = isSubtask
     }
 }
 

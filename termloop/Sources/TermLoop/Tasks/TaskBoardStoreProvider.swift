@@ -30,6 +30,7 @@ public final class TaskBoardStoreProvider: ObservableObject {
     public func remove(projectId: UUID) {
         stores.removeValue(forKey: projectId)
         TaskRemoteSyncCoordinatorProvider.shared.remove(projectId: projectId)
+        RemoteTaskPromotionDraftStoreProvider.shared.remove(projectId: projectId)
         projectRoots.removeValue(forKey: projectId)
         objectWillChange.send()
     }
@@ -37,6 +38,7 @@ public final class TaskBoardStoreProvider: ObservableObject {
     public func removeAll() {
         stores.removeAll()
         TaskRemoteSyncCoordinatorProvider.shared.removeAll()
+        RemoteTaskPromotionDraftStoreProvider.shared.removeAll()
         projectRoots.removeAll()
         objectWillChange.send()
     }

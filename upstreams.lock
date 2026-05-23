@@ -8,9 +8,9 @@ TERMLOOP_PATH=termloop
 
 GHOSTTY_REPO=https://github.com/feritzcan2/ghostty.git
 GHOSTTY_BRANCH=main
-GHOSTTY_COMMIT=3b684a085d40ec79e8a0ae863a4f2b48ed4dba74
+GHOSTTY_COMMIT=08187ef82fa7f5b877f0468257eeabdac8aec74d
 # Git tree key for the exact vendored ghostty source used by GhosttyKit prebuilts.
-GHOSTTY_TREE_KEY=eeb5021516ea6cc4afc867062d889de65ebedc98
+GHOSTTY_TREE_KEY=ba3fc7638dbdf56a752d8bb88719e1d4d9b1e88e
 GHOSTTY_PATH=termloop/ghostty
 
 BONSPLIT_REPO=https://github.com/feritzcan2/bonsplit.git

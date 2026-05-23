@@ -58,16 +58,22 @@ final class ClaudeHookInstallerCommandTests: XCTestCase {
         XCTAssertEqual(result.message, "shell-wrapped hook")
     }
 
-    func test_requiredHooks_noLegacyBundlePaths() {
+    func test_requiredHooks_noDeprecatedBundlePaths() {
         for (_, command) in ClaudeHookInstaller.requiredHooks {
             XCTAssertFalse(
                 command.contains("/TermLoopHooks/"),
-                "Command still references legacy bundle path: \(command)"
+                "Command still references deprecated bundle path: \(command)"
             )
             XCTAssertFalse(
                 command.contains(".sh"),
                 "Command still references .sh script: \(command)"
             )
+            for token in ["c" + "mux", "agent" + "loop", "agent" + "mux"] {
+                XCTAssertFalse(
+                    command.localizedCaseInsensitiveContains(token),
+                    "Command still references deprecated token \(token): \(command)"
+                )
+            }
         }
     }
 
@@ -103,5 +109,15 @@ final class ClaudeHookInstallerCommandTests: XCTestCase {
                 "probeSuffixes suffix '\(suffix)' not found in requiredHooks command for \(event)"
             )
         }
+    }
+
+    @MainActor
+    func test_codexHookReviewOutputDetector_matchesCodexReviewWarning() {
+        XCTAssertTrue(CodexHooksStatus.outputIndicatesReviewRequired(
+            "4 hooks need review before they can run. Open /hooks to review them."
+        ))
+        XCTAssertFalse(CodexHooksStatus.outputIndicatesReviewRequired(
+            "Codex is ready for the next task."
+        ))
     }
 }

@@ -259,18 +259,40 @@ struct QuickActionView: View {
     private var previewBar: some View {
         QuickActionPreviewBar(
             preview: viewModel.preview,
-            hasTarget: viewModel.targetWorkspaceId != nil
+            hasTarget: viewModel.runTarget != .detached
+                || viewModel.sourceSessionId != nil
                 || ProjectStore.shared.activeProjectId != nil,
             onOpenAdvancedPreview: { viewModel.openAdvanced() },
             onEditAbility: { ability in
-                let sourceURL = ability.payloadBlocks.first?.fileURL ?? ability.metadataFilePath
-                MarkdownDocumentStore.shared.open(
-                    fileURL: sourceURL,
-                    folderName: String(localized: "abilities.section.title",
-                                       defaultValue: "ABILITIES",
-                                       table: "TermLoop"),
-                    displayTitle: ability.name
-                )
+                do {
+                    let sourceURL = try ProjectSkillWriter.ensureCanonicalSkill(
+                        for: ability,
+                        projectFolderPath: viewModel.resolvedProjectFolderForPreview()
+                    )
+                    ProjectSkillMaterializer.materialize(
+                        projectFolderPath: viewModel.resolvedProjectFolderForPreview(),
+                        skillIds: ability.requiredSkillIDs.isEmpty
+                            ? [ProjectSkillWriter.primarySkillId(for: ability)]
+                            : ability.requiredSkillIDs
+                    )
+                    MarkdownDocumentStore.shared.open(
+                        fileURL: sourceURL,
+                        folderName: String(localized: "abilities.section.title",
+                                           defaultValue: "SKILLS",
+                                           table: "TermLoop"),
+                        displayTitle: ability.name,
+                        mode: .edit
+                    )
+                } catch {
+                    let sourceURL = ability.payloadBlocks.first?.fileURL ?? ability.metadataFilePath
+                    MarkdownDocumentStore.shared.open(
+                        fileURL: sourceURL,
+                        folderName: String(localized: "abilities.section.title",
+                                           defaultValue: "SKILLS",
+                                           table: "TermLoop"),
+                        displayTitle: ability.name
+                    )
+                }
             },
             onRevealAbility: { ability in
                 let sourceURL = ability.payloadBlocks.first?.fileURL ?? ability.metadataFilePath
@@ -329,6 +351,14 @@ struct QuickActionView: View {
     ) -> QuickActionAutocompleteContext {
         let targetId = viewModel?.targetWorkspaceId
         let projectId: UUID? = {
+            if viewModel?.launchSource.usesSourceWorkspaceLaunch == true,
+               let targetId,
+               let pid = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: targetId).projectId {
+                return pid
+            }
+            if let projectId = viewModel?.runTarget.projectId {
+                return projectId
+            }
             if let targetId,
                let pid = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: targetId).projectId {
                 return pid
@@ -337,6 +367,16 @@ struct QuickActionView: View {
         }()
         let workspacePath: String? = {
             let homePath = FileManager.default.homeDirectoryForCurrentUser.path
+            if viewModel?.launchSource.usesSourceWorkspaceLaunch == true,
+               let targetId,
+               let ws = AppDelegate.shared?.workspaceFor(tabId: targetId),
+               let cwd = ws.termLoopPresentationCwd(),
+               cwd != homePath {
+                return cwd
+            }
+            if let path = viewModel?.resolvedRunCwdForPreview() {
+                return path
+            }
             if let targetId,
                let ws = AppDelegate.shared?.workspaceFor(tabId: targetId) {
                 if let cwd = ws.termLoopPresentationCwd(), cwd != homePath {
@@ -389,7 +429,7 @@ struct QuickActionView: View {
             if viewModel.launchSource.isForkLike {
                 return String(
                     localized: "quickAction.composer.placeholder.fork.freePrompt",
-                    defaultValue: "Tell the forked agent what to read and continue from this workspace.",
+                    defaultValue: "Tell the forked agent what to read and continue from this conversation.",
                     table: "TermLoop"
                 )
             }

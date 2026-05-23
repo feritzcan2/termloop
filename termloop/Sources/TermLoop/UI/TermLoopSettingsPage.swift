@@ -50,5 +50,8 @@ struct TermLoopSettingsPage: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .underPageBackgroundColor))
+        .onExitCommand {
+            onClose()
+        }
     }
 }

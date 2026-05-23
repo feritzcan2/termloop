@@ -35,7 +35,7 @@ final class WorktreeRepairCoordinator {
     ) {
         do {
             let project = try resolveProject(
-                projectId: sourceWorkspace?.projectId,
+                projectId: sourceWorkspace?.projectId ?? group.projectId,
                 fallbackWorkspaceIds: group.workspaces.map(\.id)
             )
             WorktreeRegistry.shared.refresh(
@@ -181,7 +181,7 @@ final class WorktreeRepairCoordinator {
     ) {
         do {
             let project = try resolveProject(
-                projectId: sourceWorkspace?.projectId,
+                projectId: sourceWorkspace?.projectId ?? group.projectId,
                 fallbackWorkspaceIds: group.workspaces.map(\.id)
             )
             let expectedBranch = try singleExpectedBranch(for: group)
@@ -335,7 +335,7 @@ final class WorktreeRepairCoordinator {
         do {
             let path = try requiredWorktreePath(for: group)
             let project = try resolveProject(
-                projectId: sourceWorkspace?.projectId,
+                projectId: sourceWorkspace?.projectId ?? group.projectId,
                 fallbackWorkspaceIds: group.workspaces.map(\.id)
             )
             guard confirmRepair(path: path) else { return }
@@ -388,7 +388,7 @@ final class WorktreeRepairCoordinator {
     ) {
         do {
             let project = try resolveProject(
-                projectId: sourceWorkspace?.projectId,
+                projectId: sourceWorkspace?.projectId ?? group.projectId,
                 fallbackWorkspaceIds: group.workspaces.map(\.id)
             )
             guard confirmPrune(projectName: project.name) else { return }
@@ -781,7 +781,7 @@ final class WorktreeRepairCoordinator {
         )
         alert.informativeText = String(
             localized: "worktreeRepair.acceptObserved.confirmBody",
-            defaultValue: "TermLoop will update this workspace's expected branch to \(observedBranch) for:\n\(path)\n\nJira bindings, agent session state, and worktree path metadata are preserved.",
+            defaultValue: "TermLoop will update this workspace's expected branch to \(observedBranch) for:\n\(path)\n\nRemote item bindings, agent session state, and worktree path metadata are preserved.",
             table: "TermLoop"
         )
         alert.addButton(withTitle: String(

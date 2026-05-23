@@ -385,7 +385,7 @@ enum ProjectInstructionStore {
     /// `Sources/TermLoop/Core/Templates/starters/<slug>/`. Each is a full
     /// ability bundle (`ability.json` + `payload/*.md` + optional
     /// `prompt-customizer.md`) that the user can copy into their project via
-    /// the Abilities panel.
+    /// the Project Rules panel.
     static func loadStarters() -> [AbilityStarter] { startersCache.starters }
 
     static func loadStarterAbility(_ starter: AbilityStarter) -> Ability? {
@@ -853,9 +853,8 @@ enum ProjectSkillMaterializer {
 
     private static func nativeSkillDestinations(skillRoot: URL, skillId: String) -> [NativeSkillDestination] {
         // All three are real managed copies (not symlinks). Necessary so the
-        // materializer can append per-ability tool-hint footers (e.g. the Jira
-        // telemetry "call set_jira_ticket as soon as you parse the key" line)
-        // to the SKILL.md the agent actually reads. Canonical
+        // materializer can append per-ability tool-hint footers to the
+        // SKILL.md the agent actually reads. Canonical
         // `.termloop/skills/<id>/SKILL.md` stays untouched as the user-edit
         // surface; copies refresh on every materialize.
         [

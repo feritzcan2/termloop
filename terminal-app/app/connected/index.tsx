@@ -1,5 +1,5 @@
-import { Stack, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -19,12 +19,12 @@ import {
   getActiveClient,
   getActiveConnectionId,
 } from "../../lib/session";
-import { isTerminalSurfaceStartingError } from "../../lib/errors";
+import { relativeTime } from "../../lib/format";
 import {
   pickTerminalSurface,
   projectSummaryPath,
-  type TermLoopClient,
   surfaceLabel,
+  waitForTerminalSurface,
   workspaceLabel,
   workspaceProjectId,
   type JiraTicketSummary,
@@ -34,13 +34,12 @@ import {
   type WorkspaceSummary,
 } from "../../lib/termloop-client";
 import { colors, monoFont, radii } from "../../lib/theme";
+import { TasksView } from "../../components/tasks-view";
 
 type ProjectState = ProjectSummary | null | "loading";
 type WorkspaceSectionKind = "worktree" | "workspace";
-type WorkspaceViewMode = "active" | "worktrees";
+type WorkspaceViewMode = "active" | "worktrees" | "tasks";
 
-const TERMINAL_SURFACE_READY_ATTEMPTS = 40;
-const TERMINAL_SURFACE_READY_DELAY_MS = 250;
 
 interface WorkspaceRow {
   ws: WorkspaceSummary;
@@ -84,44 +83,17 @@ interface WorkspaceContextSummary {
   runTargets: WorkspaceRunTargetSummary[];
 }
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function waitForTerminalSurface(
-  client: TermLoopClient,
-  workspaceId: string
-) {
-  for (let attempt = 0; attempt < TERMINAL_SURFACE_READY_ATTEMPTS; attempt++) {
-    const surfaces = await client.listSurfaces(workspaceId);
-    const surface = pickTerminalSurface(surfaces);
-    if (surface) {
-      try {
-        await client.readSurface(
-          workspaceId,
-          surface.id,
-          "vt",
-          20
-        );
-        return surface;
-      } catch (err) {
-        if (!isTerminalSurfaceStartingError(err)) throw err;
-      }
-    }
-    if (attempt < TERMINAL_SURFACE_READY_ATTEMPTS - 1) {
-      await delay(TERMINAL_SURFACE_READY_DELAY_MS);
-    }
-  }
-  return null;
-}
-
 export default function ConnectedScreen() {
   const router = useRouter();
+  const { notifWorkspaceId } = useLocalSearchParams<{ notifWorkspaceId?: string }>();
+  const handledNotifRef = useRef<string | null>(null);
   const client = getActiveClient();
   const [current, setCurrent] = useState<ProjectState>("loading");
+  const seededProjectRef = useRef(false);
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[] | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
-  const [switchingId, setSwitchingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
@@ -140,12 +112,18 @@ export default function ConnectedScreen() {
     setRefreshing(true);
     setLoadError(null);
     try {
-      const [cur, ws] = await Promise.all([
-        client.currentProject(),
-        client.listWorkspaces(),
-      ]);
-      setCurrent(cur);
-      setWorkspaces(ws);
+      if (!seededProjectRef.current) {
+        const [cur, ws] = await Promise.all([
+          client.currentProject(),
+          client.listWorkspaces(),
+        ]);
+        setCurrent(cur);
+        setWorkspaces(ws);
+        seededProjectRef.current = true;
+      } else {
+        const ws = await client.listWorkspaces();
+        setWorkspaces(ws);
+      }
       setContextRefreshKey((value) => value + 1);
     } catch (err) {
       const message = String((err as Error).message ?? err);
@@ -186,35 +164,17 @@ export default function ConnectedScreen() {
     }
   };
 
-  const onPickProject = async (p: ProjectSummary) => {
-    if (!client) return;
+  const onPickProject = (p: ProjectSummary) => {
     if (current !== "loading" && current?.id === p.id) {
       setPickerOpen(false);
       return;
     }
-    setSwitchingId(p.id);
-    try {
-      await client.switchProject(p.id);
-      const [cur, ws] = await Promise.all([
-        client.currentProject(),
-        client.listWorkspaces(),
-      ]);
-      setCurrent(cur);
-      setWorkspaces(ws);
-      setContextRefreshKey((value) => value + 1);
-      setProjects(null);
-      setPickerOpen(false);
-    } catch (err) {
-      Alert.alert(
-        "Failed to switch project",
-        String((err as Error).message ?? err)
-      );
-    } finally {
-      setSwitchingId(null);
-    }
+    setCurrent(p);
+    setPickerOpen(false);
+    setContextRefreshKey((value) => value + 1);
   };
 
-  const onOpenWorkspace = async (ws: WorkspaceSummary) => {
+  const onOpenWorkspace = useCallback(async (ws: WorkspaceSummary) => {
     if (!client) return;
     setOpeningId(ws.id);
     try {
@@ -260,7 +220,15 @@ export default function ConnectedScreen() {
     } finally {
       setOpeningId(null);
     }
-  };
+  }, [client, current, router]);
+
+  useEffect(() => {
+    if (!notifWorkspaceId || !workspaces || handledNotifRef.current === notifWorkspaceId) return;
+    const ws = workspaces.find((w) => w.id === notifWorkspaceId);
+    if (!ws) return;
+    handledNotifRef.current = notifWorkspaceId;
+    onOpenWorkspace(ws);
+  }, [notifWorkspaceId, workspaces, onOpenWorkspace]);
 
   const projectFilterId =
     current === "loading" || current === null ? null : current.id;
@@ -595,9 +563,38 @@ export default function ConnectedScreen() {
           </Text>
           <Text style={styles.viewTabCount}>{worktreeCount}</Text>
         </Pressable>
+        <Pressable
+          style={[
+            styles.viewTab,
+            selectedView === "tasks" && styles.viewTabActive,
+          ]}
+          onPress={() => setSelectedView("tasks")}
+        >
+          <Text
+            style={[
+              styles.viewTabText,
+              selectedView === "tasks" && styles.viewTabTextActive,
+            ]}
+          >
+            Tasks
+          </Text>
+        </Pressable>
       </View>
 
-      {visibleWorkspaces === null ? (
+      {selectedView === "tasks" ? (
+        <TasksView
+          client={client}
+          projectId={
+            current !== "loading" && current !== null ? current.id : undefined
+          }
+          onOpenTask={(taskId, taskProjectId) =>
+            router.push({
+              pathname: "/connected/task/[id]",
+              params: { id: taskId, projectId: taskProjectId },
+            })
+          }
+        />
+      ) : visibleWorkspaces === null ? (
         <View style={styles.loadingPane}>
           <ActivityIndicator color={colors.primary} />
           <Text style={styles.loadingText}>Loading sessions…</Text>
@@ -806,13 +803,11 @@ export default function ConnectedScreen() {
                 renderItem={({ item }) => {
                   const isCurrent =
                     current !== "loading" && current?.id === item.id;
-                  const isSwitching = switchingId === item.id;
                   const itemPath = projectSummaryPath(item);
                   return (
                     <Pressable
                       style={styles.projectItem}
                       onPress={() => onPickProject(item)}
-                      disabled={switchingId !== null}
                     >
                       <View style={styles.projectItemText}>
                         <Text style={styles.projectItemName} numberOfLines={1}>
@@ -824,9 +819,7 @@ export default function ConnectedScreen() {
                           </Text>
                         ) : null}
                       </View>
-                      {isSwitching ? (
-                        <ActivityIndicator color={colors.primary} />
-                      ) : isCurrent ? (
+                      {isCurrent ? (
                         <Text style={styles.projectCurrent}>Current</Text>
                       ) : null}
                     </Pressable>
@@ -1133,9 +1126,7 @@ function workspaceActivityLabel(ws: WorkspaceSummary): string | null {
       "updatedAt",
     ]);
   if (value === null) return null;
-  const date = typeof value === "number" ? dateFromNumber(value) : new Date(value);
-  if (!Number.isFinite(date.getTime())) return null;
-  return relativeTime(date);
+  return relativeTime(typeof value === "number" ? value : new Date(value), "active now");
 }
 
 function workspaceChangeLabel(ws: WorkspaceSummary): string | null {
@@ -1169,22 +1160,6 @@ function firstWorkspaceNumber(
     if (typeof value === "number" && Number.isFinite(value)) return value;
   }
   return null;
-}
-
-function relativeTime(date: Date): string {
-  const diffMs = Date.now() - date.getTime();
-  if (diffMs < 60_000) return "active now";
-  const mins = Math.floor(diffMs / 60_000);
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function dateFromNumber(value: number): Date {
-  return new Date(value < 10_000_000_000 ? value * 1000 : value);
 }
 
 function basename(path: string | null): string | null {

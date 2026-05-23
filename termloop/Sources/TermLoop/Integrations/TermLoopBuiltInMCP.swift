@@ -7,17 +7,7 @@ enum TermLoopBuiltInMCP {
     static let serverName = "termloop"
     static let askToToolName = "ask_to"
     static let replyToRequestToolName = "reply_to_request"
-
-    /// Tool names that other modules need to spell. Keep them as named
-    /// constants so refactors and grep stay aligned across the runner, the
-    /// auto-include rules, and the in-app tool registration. The CLI's
-    /// `TermLoopMCPServer` owns its own copy because the CLI target does
-    /// not link app sources.
-    static let setJiraTicketToolName = "set_jira_ticket"
-    static let getJiraTicketToolName = "get_jira_ticket"
-    /// Owning ability for the Jira ticket binding. Used by the runner to
-    /// auto-include the Jira ticket tools whenever the jira ability is active.
-    static let jiraAbilityId = "working-with-jira"
+    static let proposeRemoteTaskToolName = "propose_remote_task"
 
     static let setRunTargetsToolName = "set_run_targets"
     static let getRunTargetsToolName = "get_run_targets"
@@ -39,8 +29,7 @@ enum TermLoopBuiltInMCP {
             capabilities: [
                 "ask_to",
                 "reply_to_request",
-                "set_jira_ticket",
-                "get_jira_ticket",
+                "propose_remote_task",
                 "set_run_targets",
                 "get_run_targets",
                 "context_bank_propose_suggestion",
@@ -77,16 +66,26 @@ enum TermLoopBuiltInMCP {
            !workspaceId.isEmpty {
             env["TERMLOOP_WORKSPACE_ID"] = workspaceId
         }
+        let command = shellCommand(cliPath: bundledCLIPath, env: env)
 
         let entry: [String: Any] = [
             "command": "/bin/sh",
             "args": [
                 "-lc",
-                "exec \"${TERMLOOP_BUNDLED_CLI_PATH:-$(command -v termloop)}\" termloop-mcp"
+                command
             ],
             "env": env
         ]
         return entry
+    }
+
+    private static func shellCommand(cliPath: String, env: [String: String]) -> String {
+        let assignments = env
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\(TermLoopShell.quoteSingle($0.value))" }
+            .joined(separator: " ")
+        let execCommand = "exec \(TermLoopShell.quoteSingle(cliPath)) termloop-mcp"
+        return assignments.isEmpty ? execCommand : "\(assignments) \(execCommand)"
     }
 }
 
@@ -110,6 +109,28 @@ struct TermLoopBuiltInToolMeta {
     }
 
     static let all: [TermLoopBuiltInToolMeta] = [
+        TermLoopBuiltInToolMeta(
+            name: TermLoopBuiltInMCP.proposeRemoteTaskToolName,
+            description: "Open a TermLoop confirmation draft to create a configured remote task and continue in a new task worktree. Creates nothing remote until the user confirms in TermLoop. Only available when the calling workspace has remote work items enabled, a provider/container configured, and the provider CLI is ready.",
+            inputSchemaJSON: """
+            {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "description": "Short title for the remote task draft."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Markdown description of the finding and relevant context for the remote task draft."
+                }
+              },
+              "required": ["title", "description"],
+              "additionalProperties": false
+            }
+            """,
+            alwaysOn: false
+        ),
         TermLoopBuiltInToolMeta(
             name: TermLoopBuiltInMCP.askToToolName,
             description: "MCP Ask-To / bridge.ask_to: ask, consult, or hand off to a helper agent (codex / claude / gemini). Use this when the user says to ask Claude/Codex/Gemini, consult another agent, review with another agent, use Ask-To, use ask_to, or says Turkish phrases like \"MCP ile Claude'a sor\" / \"Claude'a danış\". Returns a single-use request_id plus a reusable conversation_id/bridge_id for follow-ups to the same helper.",
@@ -159,43 +180,6 @@ struct TermLoopBuiltInToolMeta {
             }
             """,
             alwaysOn: true
-        ),
-        TermLoopBuiltInToolMeta(
-            name: TermLoopBuiltInMCP.getJiraTicketToolName,
-            description: "Read the Jira ticket previously set for this workspace via set_jira_ticket. Returns `set: false` when no ticket is bound. Use this instead of guessing from the branch name when picking up an in-progress workspace.",
-            inputSchemaJSON: """
-            {
-              "type": "object",
-              "properties": {},
-              "additionalProperties": false
-            }
-            """,
-            alwaysOn: false
-        ),
-        TermLoopBuiltInToolMeta(
-            name: TermLoopBuiltInMCP.setJiraTicketToolName,
-            description: "Tell TermLoop which Jira ticket the current workspace is working on. PURE TELEMETRY — does NOT touch Jira. Updates the sidebar chip and the per-workspace ticket binding. Call when the active ticket changes OR when its status/url changes (e.g. after a transition from In Progress to In Review or Done). Skip duplicate calls when nothing changed.",
-            inputSchemaJSON: """
-            {
-              "type": "object",
-              "properties": {
-                "key": {
-                  "type": "string",
-                  "description": "Jira issue key (e.g. \\"PROJ-123\\"). Required."
-                },
-                "status": {
-                  "type": "string",
-                  "description": "Optional Jira status (e.g. \\"In Progress\\", \\"In Review\\") appended after \\" · \\" in the chip."
-                },
-                "url": {
-                  "type": "string",
-                  "description": "Optional Jira browse URL so the chip becomes a link."
-                }
-              },
-              "required": ["key"]
-            }
-            """,
-            alwaysOn: false
         ),
         TermLoopBuiltInToolMeta(
             name: TermLoopBuiltInMCP.getRunTargetsToolName,

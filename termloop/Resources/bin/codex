@@ -178,24 +178,7 @@ inject_codex_context() {
     # Unknown flags fall through to the bare `-*` skip; if a future Codex
     # release adds a value-taking flag we don't list, the worst case is
     # the same false-negative this whole block was already tolerating.
-    local subcmd=""
-    local skip_next=0
-    for arg in "$@"; do
-        if (( skip_next )); then
-            skip_next=0
-            continue
-        fi
-        case "$arg" in
-            -*=*) continue ;;
-            -c|--config|-m|--model|-p|--profile|-s|--sandbox|-C|--cd|-a|--ask-for-approval|-i|--image|--local-provider|--add-dir|--enable|--disable|--remote|--remote-auth-token-env|--approval-policy)
-                skip_next=1
-                continue
-                ;;
-            -*) continue ;;
-            *) subcmd="$arg"; break ;;
-        esac
-    done
-    case "$subcmd" in
+    case "$(codex_first_positional_arg "$@")" in
         login|logout|mcp|plugin|completion|debug|app-server|mcp-server)
             return 0
             ;;
@@ -246,6 +229,111 @@ inject_codex_context() {
     CODEX_ARGS+=("-c" "model_instructions_file=\"$merged_path\"")
 }
 
+codex_first_positional_arg() {
+    local skip_next=0
+    local arg=""
+    for arg in "$@"; do
+        if (( skip_next )); then
+            skip_next=0
+            continue
+        fi
+        case "$arg" in
+            -*=*) continue ;;
+            -c|--config|-m|--model|-p|--profile|-s|--sandbox|-C|--cd|-a|--ask-for-approval|-i|--image|--local-provider|--add-dir|--enable|--disable|--remote|--remote-auth-token-env|--approval-policy)
+                skip_next=1
+                continue
+                ;;
+            -*) continue ;;
+            *) printf '%s\n' "$arg"; return 0 ;;
+        esac
+    done
+    return 0
+}
+
+codex_mcp_config_overrides() {
+    local config="${CODEX_MCP_CONFIG:-}"
+    [[ -n "$config" && -f "$config" ]] || return 0
+    [[ -x /usr/bin/python3 ]] || return 0
+
+    /usr/bin/python3 - "$config" <<'PY' 2>/dev/null || true
+import json
+import sys
+
+path = sys.argv[1]
+try:
+    with open(path, "r", encoding="utf-8") as f:
+        root = json.load(f)
+except Exception:
+    sys.exit(0)
+
+servers = root.get("mcpServers")
+if not isinstance(servers, dict):
+    sys.exit(0)
+entry = servers.get("termloop")
+if not isinstance(entry, dict):
+    sys.exit(0)
+
+def toml_string(value):
+    value = str(value)
+    return '"' + (
+        value
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    ) + '"'
+
+def toml_array(values):
+    return "[" + ", ".join(toml_string(v) for v in values) + "]"
+
+def toml_inline_table(values):
+    pairs = []
+    for key in sorted(values):
+        if not isinstance(key, str):
+            continue
+        value = values[key]
+        if value is None:
+            continue
+        pairs.append(f"{key}={toml_string(value)}")
+    return "{" + ", ".join(pairs) + "}"
+
+command = entry.get("command")
+if isinstance(command, str) and command:
+    print("mcp_servers.termloop.command=" + toml_string(command))
+
+args = entry.get("args")
+if isinstance(args, list) and all(isinstance(arg, str) for arg in args):
+    print("mcp_servers.termloop.args=" + toml_array(args))
+
+env = entry.get("env")
+if isinstance(env, dict):
+    print("mcp_servers.termloop.env=" + toml_inline_table(env))
+PY
+}
+
+inject_codex_mcp_config() {
+    case "$(codex_first_positional_arg "$@")" in
+        login|logout|mcp|plugin|completion|debug|app-server|mcp-server|features|help)
+            return 0
+            ;;
+    esac
+
+    local raw_overrides
+    raw_overrides="$(codex_mcp_config_overrides)"
+    [[ -n "$raw_overrides" ]] || return 0
+
+    local overrides=()
+    local line=""
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        overrides+=("-c" "$line")
+    done <<< "$raw_overrides"
+
+    [[ ${#overrides[@]} -gt 0 ]] || return 0
+    CODEX_ARGS=("${overrides[@]}" "${CODEX_ARGS[@]}")
+}
+
 # Detect user-supplied -c model_instructions_file=... — if the user is
 # explicitly setting their own instructions file, don't override.
 USER_INSTRUCTIONS_OVERRIDE=false
@@ -266,6 +354,7 @@ for arg in "$@"; do
 done
 
 CODEX_ARGS=("$@")
+inject_codex_mcp_config "$@"
 if [[ "$USER_INSTRUCTIONS_OVERRIDE" != true ]]; then
     inject_codex_context "$@"
 fi

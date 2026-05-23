@@ -41,6 +41,7 @@ enum KeyboardShortcutSettings {
         case selectSurfaceByNumber
         case nextSidebarTab
         case prevSidebarTab
+        case selectProjectByNumber
         case selectWorkspaceByNumber
         case renameTab
         case renameWorkspace
@@ -109,6 +110,7 @@ enum KeyboardShortcutSettings {
             case .selectSurfaceByNumber: return String(localized: "shortcut.selectSurfaceByNumber.label", defaultValue: "Select Surface 1…9")
             case .nextSidebarTab: return String(localized: "shortcut.nextWorkspace.label", defaultValue: "Next Workspace")
             case .prevSidebarTab: return String(localized: "shortcut.previousWorkspace.label", defaultValue: "Previous Workspace")
+            case .selectProjectByNumber: return String(localized: "shortcut.selectProjectByNumber.label", defaultValue: "Select Project 1…9", table: "TermLoop")
             case .selectWorkspaceByNumber: return String(localized: "shortcut.selectWorkspaceByNumber.label", defaultValue: "Select Workspace 1…9")
             case .renameTab: return String(localized: "shortcut.renameTab.label", defaultValue: "Rename Tab")
             case .renameWorkspace: return String(localized: "shortcut.renameWorkspace.label", defaultValue: "Rename Workspace")
@@ -234,8 +236,10 @@ enum KeyboardShortcutSettings {
                 return StoredShortcut(key: "t", command: true, shift: false, option: false, control: false)
             case .toggleTerminalCopyMode:
                 return StoredShortcut(key: "m", command: true, shift: true, option: false, control: false)
-            case .selectWorkspaceByNumber:
+            case .selectProjectByNumber:
                 return StoredShortcut(key: "1", command: true, shift: false, option: false, control: false)
+            case .selectWorkspaceByNumber:
+                return StoredShortcut(key: "1", command: true, shift: false, option: true, control: false)
             case .toggleFileExplorer:
                 return StoredShortcut(key: "b", command: true, shift: false, option: true, control: false)
             case .openBrowser:
@@ -281,7 +285,7 @@ enum KeyboardShortcutSettings {
 
         var usesNumberedDigitMatching: Bool {
             switch self {
-            case .selectSurfaceByNumber, .selectWorkspaceByNumber:
+            case .selectProjectByNumber, .selectSurfaceByNumber, .selectWorkspaceByNumber:
                 return true
             default:
                 return false
@@ -299,7 +303,7 @@ enum KeyboardShortcutSettings {
             switch self {
             case .showHideAllWindows:
                 return KeyboardShortcutSettings.normalizedSystemWideHotkeyShortcut(shortcut)
-            case .selectSurfaceByNumber, .selectWorkspaceByNumber:
+            case .selectProjectByNumber, .selectSurfaceByNumber, .selectWorkspaceByNumber:
                 let digitSource = shortcut.secondStroke ?? shortcut.firstStroke
                 guard let digit = Int(digitSource.key), (1...9).contains(digit) else {
                     return nil

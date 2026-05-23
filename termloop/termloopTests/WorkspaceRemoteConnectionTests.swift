@@ -2370,6 +2370,114 @@ final class CLINotifyProcessIntegrationTests: XCTestCase {
     }
 
     @MainActor
+    func testClaudeHookNotificationCorrectsStaleSurfaceAfterCallerTTYWorkspaceCorrection() throws {
+        let cliPath = try bundledCLIPath()
+        let socketPath = makeSocketPath("clhook")
+        let listenerFD = try bindUnixSocket(at: socketPath)
+        let state = MockSocketServerState()
+        let callerTTY = "/dev/ttys777"
+        let workspaceId = "11111111-1111-1111-1111-111111111111"
+        let callerSurface = "22222222-2222-2222-2222-222222222222"
+        let staleWorkspace = "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"
+        let staleSurface = "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
+        let expectedNotification = "notify_target \(workspaceId) \(callerSurface) Claude Code|Waiting|Claude is waiting for your input"
+
+        defer {
+            Darwin.close(listenerFD)
+            unlink(socketPath)
+        }
+
+        let serverHandled = startMockServer(listenerFD: listenerFD, state: state) { line in
+            if line == expectedNotification {
+                return "OK"
+            }
+
+            guard let data = line.data(using: .utf8),
+                  let payload = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+                  let id = payload["id"] as? String,
+                  let method = payload["method"] as? String else {
+                return "ERROR: Unexpected command \(line)"
+            }
+
+            let params = payload["params"] as? [String: Any] ?? [:]
+            switch method {
+            case "debug.terminals":
+                return self.v2Response(
+                    id: id,
+                    ok: true,
+                    result: [
+                        "count": 1,
+                        "terminals": [
+                            [
+                                "workspace_id": workspaceId,
+                                "surface_id": callerSurface,
+                                "tty": callerTTY
+                            ]
+                        ]
+                    ]
+                )
+            case "surface.list":
+                let requestedWorkspace = params["workspace_id"] as? String
+                if requestedWorkspace == workspaceId {
+                    return self.v2Response(
+                        id: id,
+                        ok: true,
+                        result: [
+                            "surfaces": [
+                                [
+                                    "id": callerSurface,
+                                    "ref": "surface:1",
+                                    "index": 0,
+                                    "focused": true
+                                ]
+                            ]
+                        ]
+                    )
+                }
+            case "workspace.report_agent_activity":
+                return self.v2Response(id: id, ok: true, result: [:])
+            default:
+                break
+            }
+
+            return self.v2Response(
+                id: id,
+                ok: false,
+                error: ["code": "unexpected", "message": "Unexpected method \(method)"]
+            )
+        }
+
+        var environment = ProcessInfo.processInfo.environment
+        environment["TERMLOOP_SOCKET_PATH"] = socketPath
+        environment["TERMLOOP_WORKSPACE_ID"] = staleWorkspace
+        environment["TERMLOOP_SURFACE_ID"] = staleSurface
+        environment["TERMLOOP_CLI_TTY_NAME"] = callerTTY
+        environment["TERMLOOP_CLI_SENTRY_DISABLED"] = "1"
+        environment["TERMLOOP_CLAUDE_HOOK_SENTRY_DISABLED"] = "1"
+
+        let result = runProcess(
+            executablePath: cliPath,
+            arguments: ["claude-hook", "notification"],
+            environment: environment,
+            timeout: 5
+        )
+
+        wait(for: [serverHandled], timeout: 5)
+        XCTAssertFalse(result.timedOut, result.stderr)
+        XCTAssertEqual(result.status, 0, result.stderr)
+        XCTAssertEqual(result.stdout, "OK\n")
+        XCTAssertTrue(result.stderr.isEmpty, result.stderr)
+        XCTAssertTrue(
+            state.commands.contains(expectedNotification),
+            "Expected Claude hook notification to use caller tty surface after workspace correction, saw \(state.commands)"
+        )
+        XCTAssertFalse(
+            state.commands.contains("notify_target \(workspaceId) \(staleSurface) Claude Code|Waiting|Claude is waiting for your input"),
+            "Stale surface should not be reused after workspace correction, saw \(state.commands)"
+        )
+    }
+
+    @MainActor
     func testNotifyInTmuxPrefersCallerTTYOverStaleValidSurfaceID() throws {
         let cliPath = try bundledCLIPath()
         let socketPath = makeSocketPath("notify-tmux-tty")

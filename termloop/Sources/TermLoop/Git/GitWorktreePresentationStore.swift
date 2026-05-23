@@ -15,6 +15,14 @@ struct GitWorktreePresentationSnapshot: Equatable {
 
     var dirtyCount: Int { files.count }
     var isDirty: Bool { !files.isEmpty }
+
+    func isPresentationEqual(to other: GitWorktreePresentationSnapshot) -> Bool {
+        worktreeRoot == other.worktreeRoot &&
+            projectKey == other.projectKey &&
+            branch == other.branch &&
+            headSHA == other.headSHA &&
+            files == other.files
+    }
 }
 
 /// Worktree-level git presentation truth. Branch, HEAD and dirty files are
@@ -69,13 +77,20 @@ final class GitWorktreePresentationStore {
             return nil
         }
         lock.lock()
+        let previousSnapshot = cache[normalizedDirectory]?.snapshot
         cache[normalizedDirectory] = Entry(snapshot: snapshot, fetchedAt: now)
         pruneCacheLocked(maxEntries: maxCacheEntries)
         lock.unlock()
 #if DEBUG
         Self.logger.debug("worktree.snapshot.fetched dir=\(normalizedDirectory, privacy: .public) branch=\(snapshot.branch ?? "nil", privacy: .public) head=\(snapshot.headSHA.map { String($0.prefix(12)) } ?? "nil", privacy: .public) files=\(snapshot.files.count)")
 #endif
-        publish(snapshot: snapshot, for: normalizedDirectory)
+        if previousSnapshot?.isPresentationEqual(to: snapshot) != true {
+            publish(snapshot: snapshot, for: normalizedDirectory)
+        } else {
+#if DEBUG
+            Self.logger.debug("worktree.snapshot.unchanged dir=\(normalizedDirectory, privacy: .public)")
+#endif
+        }
         return snapshot
     }
 
@@ -231,12 +246,10 @@ final class GitWorktreePresentationStore {
             return
         }
         if !force, let entry = cache[directory], Date().timeIntervalSince(entry.fetchedAt) < activeTTL {
-            let snapshot = entry.snapshot
             lock.unlock()
 #if DEBUG
-            Self.logger.debug("worktree.refetch.publishCached dir=\(directory, privacy: .public) branch=\(snapshot.branch ?? "nil", privacy: .public) files=\(snapshot.files.count)")
+            Self.logger.debug("worktree.refetch.cacheFresh dir=\(directory, privacy: .public) branch=\(entry.snapshot.branch ?? "nil", privacy: .public) files=\(entry.snapshot.files.count)")
 #endif
-            publish(snapshot: snapshot, for: directory)
             return
         }
         refetchingDirectories.insert(directory)
@@ -267,9 +280,18 @@ final class GitWorktreePresentationStore {
 #if DEBUG
         Self.logger.debug("worktree.publish dir=\(directory, privacy: .public) branch=\(snapshot.branch ?? "nil", privacy: .public) files=\(snapshot.files.count)")
 #endif
-        snapshotSubject?.send(snapshot)
-        branchSubject?.send(snapshot.branch)
-        fileSubject?.send(snapshot.files)
+        if let snapshotSubject,
+           snapshotSubject.value?.isPresentationEqual(to: snapshot) != true {
+            snapshotSubject.send(snapshot)
+        }
+        if let branchSubject,
+           branchSubject.value != snapshot.branch {
+            branchSubject.send(snapshot.branch)
+        }
+        if let fileSubject,
+           fileSubject.value != snapshot.files {
+            fileSubject.send(snapshot.files)
+        }
     }
 
     private func pruneCacheLocked(maxEntries: Int) {

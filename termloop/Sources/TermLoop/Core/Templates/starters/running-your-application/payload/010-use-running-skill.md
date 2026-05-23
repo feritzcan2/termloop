@@ -1,6 +1,6 @@
 ---
 title: "Use the running skill"
-description: "Baseline rule for when this ability should affect an agent run."
+description: "Baseline payload for when this project rule should affect an agent run."
 enabled: true
 ---
 

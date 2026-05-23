@@ -134,7 +134,7 @@ struct SidebarAgentHooksWarning: View {
     private var subtitleText: String {
         String(
             localized: "sidebar.hooksWarning.subtitle",
-            defaultValue: "Install hooks so The Loop can track agent sessions and requests.",
+            defaultValue: "Install TermLoop hooks so The Loop can track agent sessions and requests.",
             table: "TermLoop"
         )
     }
@@ -148,7 +148,7 @@ struct SidebarAgentHooksWarning: View {
     private var installHelpText: String {
         String(
             localized: "sidebar.hooksWarning.install.help",
-            defaultValue: "Install the missing TermLoop Claude and Codex hooks",
+            defaultValue: "Install the missing TermLoop Claude and Codex hooks. Codex may ask for one-time hook review after install or update.",
             table: "TermLoop"
         )
     }

@@ -17,8 +17,9 @@ enum TermLoopSocketCommands {
     /// by TermLoop (upstream should handle it).
     ///
     /// `isTcpClient` is set when the connection arrived via the mobile TCP
-    /// bridge. TCP callers are limited to a read-only subset of `agent.*`
-    /// methods — mutating calls receive a `forbidden` error.
+    /// bridge. TCP callers are limited per command family; dev-server profile
+    /// mutation remains Unix-socket-only while run/status/log/open commands are
+    /// available to remote clients.
     static func handle(method: String, params: [String: Any],
                        isTcpClient: Bool = false,
                        socketFd: Int32 = -1) -> TerminalController.V2CallResult? {
@@ -37,6 +38,20 @@ enum TermLoopSocketCommands {
         ) {
             return response
         }
+        if method.hasPrefix("devservers.") {
+            if let response = TermLoopDevServerSocketCommands.handle(
+                method: method,
+                params: params,
+                isTcpClient: isTcpClient
+            ) {
+                return response
+            }
+        }
+        if method.hasPrefix("tasks.") {
+            if let response = TermLoopTaskSocketCommands.handle(method: method, params: params) {
+                return response
+            }
+        }
         switch method {
         case "project.list":           return projectList(params)
         case "project.current":        return projectCurrent(params)
@@ -50,7 +65,6 @@ enum TermLoopSocketCommands {
         case "workspace.kill_claude_session":   return workspaceKillClaudeSession(params)
         case "workspace.prepare_claude_resume": return workspacePrepareClaudeResume(params)
         case "workspace.spawn_claude_session":  return workspaceSpawnClaudeSession(params)
-        case "workspace.claude_system_prompt":  return workspaceAgentSystemPrompt(params, defaultAgentId: TerminalAgent.claudeId)
         case "workspace.agent_system_prompt":   return workspaceAgentSystemPrompt(params, defaultAgentId: TerminalAgent.claudeId)
         case "worktree.list":     return worktreeList(params)
         case "worktree.attach":   return worktreeAttach(params)
@@ -63,7 +77,6 @@ enum TermLoopSocketCommands {
         case "events.subscribe":   return eventsSubscribe(params, socketFd: socketFd)
         case "events.unsubscribe": return eventsUnsubscribe(params, socketFd: socketFd)
         case "workspace.report_agent_activity": return workspaceReportAgentActivity(params)
-        case "workspace.report_agent_binding": return workspaceReportAgentBinding(params)
         case "workspace.get_jira_ticket": return workspaceGetJiraTicket(params)
         case "workspace.set_run_targets": return workspaceSetRunTargets(params)
         case "workspace.get_run_targets": return workspaceGetRunTargets(params)
@@ -370,6 +383,19 @@ enum TermLoopSocketCommands {
                 "pid": pid.map { Int($0) as Any } ?? NSNull(),
                 "ignored": true,
                 "reason": "workspace_not_live"
+            ])
+        }
+        if let mismatchReason = observedAgentBindingMismatchReason(
+            workspaceId: workspaceId,
+            observedAgentId: TerminalAgent.claudeId
+        ) {
+            return .ok([
+                "workspace_id": workspaceIdStr,
+                "session_id": sessionId,
+                "cwd": orNull(cwd),
+                "pid": pid.map { Int($0) as Any } ?? NSNull(),
+                "ignored": true,
+                "reason": mismatchReason
             ])
         }
         guard let acceptedSessionId = WorkspaceMetadataStore.shared.acceptedObservedSessionId(

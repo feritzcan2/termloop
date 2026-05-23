@@ -25,17 +25,64 @@ final class TaskBoardStorePersistenceTests: XCTestCase {
         try store.loadOrCreate()
         XCTAssertEqual(store.fileSnapshot().tasks, [])
         XCTAssertEqual(store.fileSnapshot().schemaVersion, TaskBoardFile.currentSchemaVersion)
+        XCTAssertFalse(store.fileSnapshot().settings.remoteSync.remoteItemsEnabled)
+        XCTAssertFalse(store.fileSnapshot().settings.remoteSync.isEnabled)
+        XCTAssertFalse(store.fileSnapshot().settings.remoteSync.syncAssignedToMe)
+        XCTAssertEqual(store.fileSnapshot().settings.remoteSync.limit, 50)
+    }
+
+    func testRemoteSyncAssignedFlagControlsBoardSyncBehavior() throws {
+        let enabled = TaskRemoteSyncSettings(
+            remoteItemsEnabled: true,
+            syncAssignedToMe: true
+        )
+        XCTAssertTrue(enabled.remoteItemsEnabled)
+        XCTAssertTrue(enabled.syncAssignedToMe)
+        XCTAssertTrue(enabled.isAssignedSyncEnabled)
+
+        let assignedSync = TaskRemoteSyncSettings(
+            remoteItemsEnabled: true,
+            syncAssignedToMe: true
+        )
+        let decoded = try JSONDecoder.tasks.decode(
+            TaskRemoteSyncSettings.self,
+            from: JSONEncoder.tasks.encode(assignedSync)
+        )
+        let encodedText = String(data: try JSONEncoder.tasks.encode(assignedSync), encoding: .utf8) ?? ""
+        XCTAssertFalse(encodedText.contains("\"mode\""))
+        XCTAssertTrue(encodedText.contains("\"remoteItemsEnabled\""))
+        XCTAssertTrue(decoded.remoteItemsEnabled)
+        XCTAssertTrue(decoded.syncAssignedToMe)
+        XCTAssertTrue(decoded.isAssignedSyncEnabled)
+    }
+
+    func testDisabledRemoteWorkItemsStripSyncFlags() throws {
+        let payload = """
+        {
+          "remoteItemsEnabled": false,
+          "syncAssignedToMe": true,
+          "provider": "jira",
+          "limit": 30
+        }
+        """
+        let decoded = try JSONDecoder.tasks.decode(TaskRemoteSyncSettings.self, from: Data(payload.utf8))
+        XCTAssertFalse(decoded.remoteItemsEnabled)
+        XCTAssertFalse(decoded.isEnabled)
+        XCTAssertFalse(decoded.syncAssignedToMe)
     }
 
     func testRoundTripPreservesTasks() throws {
         let projectId = UUID()
         let store = TaskBoardStore(projectRoot: tempRoot, projectId: projectId)
         try store.loadOrCreate()
+        let timestamp = Date(timeIntervalSince1970: 1_778_219_200)
         let task = TaskRecord(
             projectId: projectId,
             title: "first",
             columnId: .backlog,
-            rank: TaskRanking.initial()
+            rank: TaskRanking.initial(),
+            createdAt: timestamp,
+            updatedAt: timestamp
         )
         try store.appendForTesting(task)
         try store.saveNow()
@@ -43,6 +90,44 @@ final class TaskBoardStorePersistenceTests: XCTestCase {
         let store2 = TaskBoardStore(projectRoot: tempRoot, projectId: projectId)
         try store2.loadOrCreate()
         XCTAssertEqual(store2.fileSnapshot().tasks, [task])
+    }
+
+    func testLoadInfersOriginWhenStoredTaskDoesNotHaveOrigin() throws {
+        let projectId = UUID()
+        let taskId = UUID()
+        let dir = tempRoot.appendingPathComponent(".termloop")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let path = dir.appendingPathComponent("tasks.json")
+        let payload = """
+        {
+          "schemaVersion": 2,
+          "settings": {},
+          "tasks": [
+            {
+              "bindingGeneration": 1,
+              "branch": "feature/local",
+              "columnId": "in_progress",
+              "createdAt": "2026-05-06T13:39:59Z",
+              "id": "\(taskId.uuidString)",
+              "projectId": "\(projectId.uuidString)",
+              "provisionState": { "ready": {} },
+              "rank": "U",
+              "title": "feature/local",
+              "updatedAt": "2026-05-07T07:16:23Z",
+              "worktreePath": "/tmp/feature-local"
+            }
+          ],
+          "updatedAt": "2026-05-07T07:16:23Z"
+        }
+        """
+        try payload.write(to: path, atomically: true, encoding: .utf8)
+
+        let store = TaskBoardStore(projectRoot: tempRoot, projectId: projectId)
+        try store.loadOrCreate()
+
+        let task = try XCTUnwrap(store.fileSnapshot().tasks.first)
+        XCTAssertEqual(task.origin, .worktree)
+        XCTAssertEqual(task.worktreePath, "/tmp/feature-local")
     }
 
     func testFutureSchemaVersionThrowsAndPreservesFile() throws {

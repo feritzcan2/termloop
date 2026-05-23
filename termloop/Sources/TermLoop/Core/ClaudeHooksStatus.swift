@@ -38,7 +38,6 @@ final class ClaudeHooksStatus: ObservableObject {
         return command.contains("TERMLOOP_WORKSPACE_ID")
             || command.contains("TERMLOOP_SURFACE_ID")
             || command.contains("TERMLOOP_BUNDLED_CLI_PATH")
-            || command.contains("/TermLoopHooks/claude/")
     }
 
     func refreshIfStale() {
@@ -88,10 +87,24 @@ final class CodexHooksStatus: ObservableObject {
     static let shared = CodexHooksStatus()
 
     @Published private(set) var installed: Bool = false
+    @Published private(set) var reviewRequired: Bool
+    @Published private(set) var reviewWorkspaceId: UUID?
     private var lastCheck: Date = .distantPast
     private let cacheInterval: TimeInterval = 5.0
 
+    private static let reviewProbeDefaultSessionBudget = 5
+    private static let reviewProbeRemainingSessionsKey = "termloop.codexHooks.reviewProbeRemainingSessions"
+    private static let reviewRequiredKey = "termloop.codexHooks.reviewRequired"
+    private static let reviewWorkspaceIdKey = "termloop.codexHooks.reviewWorkspaceId"
+
     private init() {
+        let defaults = UserDefaults.standard
+        self.reviewRequired = defaults.bool(forKey: Self.reviewRequiredKey)
+        if let rawWorkspaceId = defaults.string(forKey: Self.reviewWorkspaceIdKey) {
+            self.reviewWorkspaceId = UUID(uuidString: rawWorkspaceId)
+        } else {
+            self.reviewWorkspaceId = nil
+        }
         refreshIfStale()
     }
 
@@ -112,6 +125,56 @@ final class CodexHooksStatus: ObservableObject {
     func markDirty() {
         lastCheck = .distantPast
         refreshIfStale()
+    }
+
+    func resetReviewProbeBudget() {
+        UserDefaults.standard.set(Self.reviewProbeDefaultSessionBudget, forKey: Self.reviewProbeRemainingSessionsKey)
+    }
+
+    func claimReviewProbeSession(workspaceId: UUID) -> Bool {
+        guard installed, !reviewRequired else { return false }
+        let defaults = UserDefaults.standard
+        let remaining: Int
+        if defaults.object(forKey: Self.reviewProbeRemainingSessionsKey) == nil {
+            remaining = Self.reviewProbeDefaultSessionBudget
+        } else {
+            remaining = defaults.integer(forKey: Self.reviewProbeRemainingSessionsKey)
+        }
+        guard remaining > 0 else { return false }
+        defaults.set(remaining - 1, forKey: Self.reviewProbeRemainingSessionsKey)
+        reviewWorkspaceId = workspaceId
+        defaults.set(workspaceId.uuidString, forKey: Self.reviewWorkspaceIdKey)
+        return true
+    }
+
+    func markReviewRequired(workspaceId: UUID?) {
+        reviewRequired = true
+        if let workspaceId {
+            reviewWorkspaceId = workspaceId
+            UserDefaults.standard.set(workspaceId.uuidString, forKey: Self.reviewWorkspaceIdKey)
+        }
+        UserDefaults.standard.set(true, forKey: Self.reviewRequiredKey)
+    }
+
+    func markCodexHookObserved() {
+        guard reviewRequired || reviewWorkspaceId != nil else {
+            UserDefaults.standard.set(0, forKey: Self.reviewProbeRemainingSessionsKey)
+            return
+        }
+        reviewRequired = false
+        reviewWorkspaceId = nil
+        let defaults = UserDefaults.standard
+        defaults.set(false, forKey: Self.reviewRequiredKey)
+        defaults.removeObject(forKey: Self.reviewWorkspaceIdKey)
+        defaults.set(0, forKey: Self.reviewProbeRemainingSessionsKey)
+    }
+
+    static func outputIndicatesReviewRequired(_ text: String) -> Bool {
+        let lowercased = text.lowercased()
+        return lowercased.contains("hooks need review before they can run")
+            || lowercased.contains("hook needs review before it can run")
+            || lowercased.contains("open /hooks to review")
+            || lowercased.contains("open /hooks")
     }
 
     static func probe() -> Bool {
@@ -238,7 +301,7 @@ final class OpenCodeHooksStatus: ObservableObject {
         refreshIfStale()
     }
 
-    private static let hookMarker = "cmux opencode-hook"
+    private static let hookMarker = "termloop opencode-hook"
 
     func refreshIfStale() {
         if Date().timeIntervalSince(lastCheck) >= cacheInterval {
@@ -268,6 +331,6 @@ final class OpenCodeHooksStatus: ObservableObject {
     }
 
     static func pluginPath() -> String {
-        (pluginsDirectoryPath() as NSString).appendingPathComponent("cmux-termloop.js")
+        (pluginsDirectoryPath() as NSString).appendingPathComponent("termloop-opencode.js")
     }
 }

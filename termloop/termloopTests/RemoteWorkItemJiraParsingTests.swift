@@ -7,6 +7,52 @@ import XCTest
 #endif
 
 final class RemoteWorkItemJiraParsingTests: XCTestCase {
+    func testJiraCommandGateSerializesAuthSwitchWithCommand() async throws {
+        let runner = RecordingRemoteWorkItemCommandRunner()
+
+        async let first = JiraCommandGate.shared.run(
+            site: "first.atlassian.net",
+            email: "first@example.com",
+            arguments: ["jira", "workitem", "search", "--jql", "project = ONE"],
+            timeout: 1,
+            runner: runner
+        )
+        async let second = JiraCommandGate.shared.run(
+            site: "second.atlassian.net",
+            email: "second@example.com",
+            arguments: ["jira", "workitem", "search", "--jql", "project = TWO"],
+            timeout: 1,
+            runner: runner
+        )
+
+        _ = try await [first, second]
+        let calls = await runner.callsSnapshot()
+
+        XCTAssertEqual(calls.count, 4)
+        XCTAssertTrue(calls[0].starts(with: ["jira", "auth", "switch"]))
+        XCTAssertTrue(calls[1].starts(with: ["jira", "workitem", "search"]))
+        XCTAssertTrue(calls[2].starts(with: ["jira", "auth", "switch"]))
+        XCTAssertTrue(calls[3].starts(with: ["jira", "workitem", "search"]))
+        XCTAssertEqual(
+            Set([calls[0].siteArgument, calls[2].siteArgument].compactMap { $0 }),
+            Set(["first.atlassian.net", "second.atlassian.net"])
+        )
+    }
+
+    func testCommandRunnerDrainsLargeStdoutBeforeProcessExit() async throws {
+        let result = try await RemoteWorkItemCommandRunner.shared.run(
+            executable: "awk",
+            arguments: ["BEGIN { for (i = 0; i < 200000; i++) printf \"x\" }"],
+            cwd: nil,
+            timeout: 5
+        )
+
+        XCTAssertEqual(result.exitStatus, 0)
+        XCTAssertFalse(result.timedOut)
+        XCTAssertEqual(result.stdout.count, 200_000)
+        XCTAssertEqual(result.stderr, "")
+    }
+
     func testCSVStatusParserUsesStatusColumnAndSkipsRepeatedHeaders() {
         let labels = remoteParseStatusLabelsCSV(
             """
@@ -59,5 +105,40 @@ final class RemoteWorkItemJiraParsingTests: XCTestCase {
 
         XCTAssertEqual(projects.map(\.key), ["KAN", "UKIE"])
         XCTAssertEqual(projects.first?.displayLabel, "KAN — Kanban")
+    }
+}
+
+private actor RecordingRemoteWorkItemCommandRunner: RemoteWorkItemCommandRunning {
+    private var calls: [[String]] = []
+
+    func run(
+        executable: String,
+        arguments: [String],
+        cwd: String?,
+        timeout: TimeInterval
+    ) async throws -> RemoteWorkItemCommandResult {
+        calls.append(arguments)
+        if arguments.starts(with: ["jira", "auth", "switch"]) {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        return RemoteWorkItemCommandResult(
+            exitStatus: 0,
+            stdout: "[]",
+            stderr: "",
+            timedOut: false
+        )
+    }
+
+    func callsSnapshot() -> [[String]] {
+        calls
+    }
+}
+
+private extension Array where Element == String {
+    var siteArgument: String? {
+        guard let index = firstIndex(of: "--site") else { return nil }
+        let next = self.index(after: index)
+        guard indices.contains(next) else { return nil }
+        return self[next]
     }
 }
