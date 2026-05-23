@@ -18,6 +18,8 @@ enum TermLoopTaskSocketCommands {
         case "tasks.move":        return tasksMove(params)
         case "tasks.archive":     return tasksArchive(params)
         case "tasks.start_agent": return tasksStartAgent(params)
+        case "tasks.remote_capabilities": return tasksRemoteCapabilities(params)
+        case "tasks.promote_from_agent":  return tasksPromoteFromAgent(params)
         default:                  return nil
         }
     }
@@ -258,10 +260,101 @@ enum TermLoopTaskSocketCommands {
         ])
     }
 
+    private static func tasksRemoteCapabilities(_ params: [String: Any]) -> TerminalController.V2CallResult {
+        switch resolvePromotionContext(params, commandName: "tasks.remote_capabilities") {
+        case .success(let context):
+            return .ok(remotePromotionCapabilityPayload(context: context))
+        case .failure(let error):
+            return .ok([
+                "enabled": false,
+                "can_create": false,
+                "reason": errorMessage(error),
+                "error": errorPayload(error)
+            ])
+        }
+    }
+
+    private static func tasksPromoteFromAgent(_ params: [String: Any]) -> TerminalController.V2CallResult {
+        guard let title = nonEmptyParam(params, "title") else {
+            return .err(code: "invalid_params", message: "Missing or empty title", data: nil)
+        }
+        guard let description = nonEmptyParam(params, "description") else {
+            return .err(code: "invalid_params", message: "Missing or empty description", data: nil)
+        }
+
+        let context: PromotionContext
+        switch resolvePromotionContext(params, commandName: "tasks.promote_from_agent") {
+        case .success(let resolved):
+            context = resolved
+        case .failure(let error):
+            return error
+        }
+
+        guard let capability = remotePromotionCapability(context: context) else {
+            return .err(
+                code: "remote_task_promotion_unavailable",
+                message: "Remote task promotion is not available for this workspace.",
+                data: remotePromotionCapabilityPayload(context: context)
+            )
+        }
+
+        let promotionId = uuidParam(params, "promotion_id") ?? UUID()
+        let draftStore = RemoteTaskPromotionDraftStoreProvider.shared.store(
+            projectId: context.store.projectId,
+            projectRoot: context.store.projectRoot
+        )
+        if let existing = draftStore.draft(id: promotionId) {
+            return .ok(promotionPayload(existing))
+        }
+
+        let draft = RemoteTaskPromotionDraft(
+            id: promotionId,
+            projectId: context.store.projectId,
+            sourceWorkspaceId: context.workspaceId,
+            title: title,
+            descriptionMarkdown: description,
+            provider: context.settings.provider,
+            container: capability.container,
+            status: .awaitingConfirmation
+        )
+        do {
+            let saved = try draftStore.upsert(draft)
+            guard RemoteTaskPromotionConfirmationPresenter.present(
+                draft: saved,
+                store: draftStore
+            ) else {
+                return .err(
+                    code: "confirmation_unavailable",
+                    message: "Could not show the remote task confirmation sheet.",
+                    data: promotionPayload(draftStore.draft(id: saved.id) ?? saved)
+                )
+            }
+            return .ok(promotionPayload(saved))
+        } catch {
+            return .err(code: "draft_persist_failed", message: error.localizedDescription, data: nil)
+        }
+    }
+
     // MARK: - Helpers
+
+    private struct PromotionContext {
+        let workspaceId: UUID
+        let store: TaskBoardStore
+        let remoteSync: TaskRemoteSyncCoordinator
+        let settings: TaskRemoteSyncSettings
+    }
+
+    private struct RemotePromotionCapability {
+        let container: String
+    }
 
     private enum StoreResolution {
         case success(TaskBoardStore)
+        case failure(TerminalController.V2CallResult)
+    }
+
+    private enum PromotionContextResolution {
+        case success(PromotionContext)
         case failure(TerminalController.V2CallResult)
     }
 
@@ -280,6 +373,151 @@ enum TermLoopTaskSocketCommands {
                                  data: nil))
         }
         return .success(store)
+    }
+
+    private static func resolvePromotionContext(
+        _ params: [String: Any],
+        commandName: String
+    ) -> PromotionContextResolution {
+        let workspaceId: UUID
+        switch TermLoopSocketCommands.resolveAgentToolWorkspaceId(from: params, commandName: commandName) {
+        case .found(let id, _):
+            workspaceId = id
+        case .missing(let error):
+            return .failure(error)
+        }
+
+        let metadata = WorkspaceMetadataStore.shared
+        let projectId = metadata.projectId(forWorkspaceId: workspaceId)
+            ?? AppDelegate.shared?
+                .workspaceFor(tabId: workspaceId)
+                .flatMap { ProjectStore.shared.project(containingPath: $0.currentDirectory)?.id }
+        guard let projectId else {
+            return .failure(.err(
+                code: "project_unresolved",
+                message: "Could not resolve a project from the calling workspace. Remote task promotion does not use active-project fallback.",
+                data: ["workspace_id": workspaceId.uuidString]
+            ))
+        }
+        guard let store = TaskBoardStoreProvider.shared.store(for: projectId) else {
+            return .failure(.err(
+                code: "store_unavailable",
+                message: "Could not load task board for the calling workspace project.",
+                data: ["workspace_id": workspaceId.uuidString, "project_id": projectId.uuidString]
+            ))
+        }
+        let remoteSync = TaskRemoteSyncCoordinatorProvider.shared.coordinator(for: store)
+        return .success(PromotionContext(
+            workspaceId: workspaceId,
+            store: store,
+            remoteSync: remoteSync,
+            settings: remoteSync.settings
+        ))
+    }
+
+    private static func remotePromotionCapability(
+        context: PromotionContext
+    ) -> RemotePromotionCapability? {
+        guard context.settings.isEnabled else {
+            return nil
+        }
+        guard let container = context.settings.container?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !container.isEmpty else {
+            return nil
+        }
+        let cliStatus = remotePromotionCLIStatus(context: context)
+        guard cliStatus.isAvailable else {
+            return nil
+        }
+        return RemotePromotionCapability(
+            container: container
+        )
+    }
+
+    private static func remotePromotionCapabilityPayload(context: PromotionContext) -> [String: Any] {
+        let settings = context.settings
+        let container = settings.container?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let cliStatus = settings.isEnabled && !container.isEmpty
+            ? remotePromotionCLIStatus(context: context)
+            : context.remoteSync.cliStatus(for: settings.provider)
+        let enabled = settings.isEnabled && !container.isEmpty && cliStatus.isAvailable
+        let reason: String? = {
+            if !settings.isEnabled { return "remote_items_disabled" }
+            if container.isEmpty { return "remote_container_missing" }
+            if !cliStatus.isAvailable { return "provider_cli_unavailable" }
+            return nil
+        }()
+        return [
+            "enabled": enabled,
+            "can_create": enabled,
+            "project_id": context.store.projectId.uuidString,
+            "workspace_id": context.workspaceId.uuidString,
+            "provider": settings.provider.rawValue,
+            "container": container.isEmpty ? NSNull() : container,
+            "cli_available": cliStatus.isAvailable,
+            "cli_executable": cliStatus.executable,
+            "cli_checking": cliStatus.isChecking,
+            "cli_checked_at": cliStatus.checkedAt.map { ISO8601DateFormatter().string(from: $0) } as Any? ?? NSNull(),
+            "cli_summary": cliStatus.summary,
+            "cli_setup_hint": context.remoteSync.cliSetupHint(for: settings.provider),
+            "reason": reason as Any? ?? NSNull()
+        ]
+    }
+
+    private static func remotePromotionCLIStatus(
+        context: PromotionContext
+    ) -> TaskRemoteCLIStatus {
+        let cached = context.remoteSync.cliStatus(for: context.settings.provider)
+        guard cached.checkedAt == nil || cached.isChecking else {
+            return cached
+        }
+        return context.remoteSync.refreshCLIStatusSynchronously(for: context.settings.provider)
+    }
+
+    private static func promotionPayload(_ draft: RemoteTaskPromotionDraft) -> [String: Any] {
+        var payload: [String: Any] = [
+            "promotion_id": draft.id.uuidString,
+            "project_id": draft.projectId.uuidString,
+            "source_workspace_id": draft.sourceWorkspaceId.uuidString,
+            "title": draft.title,
+            "description": draft.descriptionMarkdown,
+            "issue_type": draft.issueType as Any? ?? NSNull(),
+            "provider": draft.provider.rawValue,
+            "container": draft.container,
+            "status": draft.status.rawValue,
+            "task_id": draft.taskId?.uuidString as Any? ?? NSNull(),
+            "target_workspace_id": draft.targetWorkspaceId?.uuidString as Any? ?? NSNull(),
+            "worktree_path": draft.worktreePath as Any? ?? NSNull(),
+            "error_message": draft.errorMessage as Any? ?? NSNull(),
+            "created_at": draft.createdAt.timeIntervalSince1970,
+            "updated_at": draft.updatedAt.timeIntervalSince1970
+        ]
+        if let remote = draft.remoteWorkItem {
+            payload["remote_provider"] = remote.provider.rawValue
+            payload["remote_key"] = remote.key
+            payload["remote_url"] = remote.url as Any? ?? NSNull()
+        } else {
+            payload["remote_provider"] = NSNull()
+            payload["remote_key"] = NSNull()
+            payload["remote_url"] = NSNull()
+        }
+        return payload
+    }
+
+    private static func errorMessage(_ result: TerminalController.V2CallResult) -> String {
+        guard case .err(let code, let message, _) = result else { return "unavailable" }
+        return "\(code): \(message)"
+    }
+
+    private static func errorPayload(_ result: TerminalController.V2CallResult) -> Any {
+        guard case .err(let code, let message, let data) = result else { return NSNull() }
+        return [
+            "code": code,
+            "message": message,
+            "data": data ?? NSNull()
+        ]
     }
 
     private static func taskPayload(_ task: TaskRecord, columnTitle: String) -> [String: Any] {

@@ -36,12 +36,43 @@ public protocol TaskBoundWorktreeProvisioning: AnyObject {
     func teardown(workspaceId: UUID?, worktreePath: String, projectRoot: URL) async throws
 }
 
-public enum TaskLifecycleError: Error, Equatable {
+public enum TaskLifecycleError: Error, Equatable, LocalizedError {
     case taskNotFound(UUID)
     case alreadyBound(UUID)
     case notBound(UUID)
     case provisionInFlight(UUID)
     case provisionFailed(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .taskNotFound(let id):
+            return String(
+                localized: "tasks.lifecycle.error.taskNotFound",
+                defaultValue: "Task not found: \(id.uuidString)",
+                table: "TermLoop"
+            )
+        case .alreadyBound:
+            return String(
+                localized: "tasks.lifecycle.error.alreadyBound",
+                defaultValue: "Task already has a worktree.",
+                table: "TermLoop"
+            )
+        case .notBound:
+            return String(
+                localized: "tasks.lifecycle.error.notBound",
+                defaultValue: "Task is not bound to a worktree.",
+                table: "TermLoop"
+            )
+        case .provisionInFlight:
+            return String(
+                localized: "tasks.lifecycle.error.provisionInFlight",
+                defaultValue: "Task worktree provisioning is already in progress.",
+                table: "TermLoop"
+            )
+        case .provisionFailed(let reason):
+            return TaskProvisionFailureReason.localizedDisplayText(for: reason)
+        }
+    }
 }
 
 @MainActor
@@ -152,7 +183,11 @@ public final class TaskLifecycleCoordinator {
 
     // MARK: - Bind (Todo → In Progress)
 
-    public func bindWorktree(taskId: UUID, allowDirty: Bool = false) async throws {
+    public func bindWorktree(
+        taskId: UUID,
+        branchHint: String? = nil,
+        allowDirty: Bool = false
+    ) async throws {
         let task = try requireTask(taskId)
         guard task.provisionState != .pending else {
             throw TaskLifecycleError.provisionInFlight(taskId)
@@ -169,7 +204,7 @@ public final class TaskLifecycleCoordinator {
         do {
             result = try await worktrees.provision(
                 projectRoot: store.projectRoot,
-                branchHint: task.branch ?? slugFrom(title: task.title),
+                branchHint: branchHint ?? task.branch ?? slugFrom(title: task.title),
                 allowDirty: allowDirty
             )
         } catch {
@@ -218,6 +253,7 @@ public final class TaskLifecycleCoordinator {
             t.updatedAt = Date()
         }
         try store.saveNow()
+        bindRemoteMetadataIfNeeded(task: task, result: result)
         if let oldPath = task.worktreePath, oldPath != result.worktreePath {
             DevServerRunCoordinator.shared.stopTaskRunsAndCleanup(
                 projectId: store.projectId,
@@ -262,6 +298,15 @@ public final class TaskLifecycleCoordinator {
             t.updatedAt = Date()
         }
         try store.saveNow()
+        bindRemoteMetadataIfNeeded(
+            task: current,
+            result: TaskWorktreeProvisionResult(
+                workspaceId: workspaceId,
+                branch: branch,
+                worktreePath: worktreePath,
+                createdWorktree: false
+            )
+        )
         if let oldPath = current.worktreePath, oldPath != worktreePath {
             DevServerRunCoordinator.shared.stopTaskRunsAndCleanup(
                 projectId: store.projectId,
@@ -355,6 +400,25 @@ public final class TaskLifecycleCoordinator {
             return reason
         }
         return String(describing: error)
+    }
+
+    private func bindRemoteMetadataIfNeeded(
+        task: TaskRecord,
+        result: TaskWorktreeProvisionResult
+    ) {
+        guard let reference = task.remoteWorkItem else { return }
+        WorktreeRemoteItemBindingStore.shared.bind(reference, forPath: result.worktreePath)
+        let snapshot = RemoteWorkItemSnapshotStore.shared.snapshot(for: reference)
+        WorkspaceMetadataStore.shared.setAssignedTicket(
+            WorkspaceMetadataStore.AssignedTicket(
+                providerName: reference.provider.displayLabel,
+                key: reference.key,
+                title: snapshot?.title ?? task.title,
+                status: snapshot?.statusLabel ?? task.remoteStatusLabel,
+                url: snapshot?.reference.url ?? reference.url
+            ),
+            forWorkspaceId: result.workspaceId
+        )
     }
 
     private func nextRank(in column: TaskColumnId) -> String {

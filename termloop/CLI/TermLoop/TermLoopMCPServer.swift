@@ -20,6 +20,7 @@ enum TermLoopMCPServer {
     private static let replyToRequestToolName = "reply_to_request"
     private static let contextBankProposeToolName = "context_bank_propose_suggestion"
     private static let contextBankFinalizeToolName = "context_bank_finalize_run"
+    private static let proposeRemoteTaskToolName = "propose_remote_task"
 
     /// CLI-side mirror of the Run Targets tool names. App side keeps its own
     /// copy in `TermLoopBuiltInMCP`; the two cannot share a constant because
@@ -52,6 +53,28 @@ enum TermLoopMCPServer {
     /// Single source of truth for TermLoop's built-in MCP tools. Add new
     /// entries here; ability bundles only need to opt-in by listing the name.
     private static let builtInTools: [BuiltInTool] = [
+        BuiltInTool(
+            name: proposeRemoteTaskToolName,
+            description: "Open a TermLoop confirmation draft to create a configured remote task and continue in a new task worktree. Creates nothing remote until the user confirms in TermLoop. Only available when the calling workspace has remote work items enabled, a provider/container configured, and the provider CLI is ready.",
+            inputSchema: [
+                "type": "object",
+                "properties": [
+                    "title": [
+                        "type": "string",
+                        "description": "Short title for the remote task draft."
+                    ],
+                    "description": [
+                        "type": "string",
+                        "description": "Markdown description of the finding and relevant context for the remote task draft."
+                    ]
+                ],
+                "required": ["title", "description"],
+                "additionalProperties": false
+            ],
+            alwaysOn: false,
+            requiresAskToReplyContext: false,
+            handler: runProposeRemoteTask
+        ),
         BuiltInTool(
             name: setRunTargetsToolName,
             description: "Tell TermLoop what's running for this workspace right now (dev server URL, app bundle path, dashboard, log file). PURE TELEMETRY — does NOT start or stop anything. FULL REPLACE: send the complete set on every call; anything dropped from the array disappears from the sidebar chip. Each entry is one chip row in the worktree's Running popover. Call after starting/stopping the app or when status changes; skip duplicate calls when nothing changed.",
@@ -298,7 +321,7 @@ enum TermLoopMCPServer {
         case "tools/list":
             let enabled = enabledToolNameSet(env: processEnv)
             let visible = builtInTools.filter { tool in
-                isToolVisible(tool, enabled: enabled, env: processEnv)
+                isToolVisible(tool, enabled: enabled, env: processEnv, socketPath: socketPath)
             }
             let toolList: [[String: Any]] = visible.map { tool in
                 [
@@ -326,7 +349,8 @@ enum TermLoopMCPServer {
                     message: "Unknown tool: \(requestedTool)"
                 )
             }
-            guard isToolVisible(tool, enabled: enabled, env: processEnv) else {
+            guard tool.name == proposeRemoteTaskToolName
+                || isToolVisible(tool, enabled: enabled, env: processEnv, socketPath: socketPath) else {
                 let message = tool.requiresAskToReplyContext
                     ? "Ask-To reply context missing; reply_to_request is only available inside an Ask-To helper launch."
                     : "Unknown tool: \(requestedTool)"
@@ -347,8 +371,12 @@ enum TermLoopMCPServer {
     private static func isToolVisible(
         _ tool: BuiltInTool,
         enabled: Set<String>,
-        env: [String: String]
+        env: [String: String],
+        socketPath: String
     ) -> Bool {
+        if tool.name == proposeRemoteTaskToolName {
+            return remoteTaskPromotionAvailable(env: env, socketPath: socketPath)
+        }
         guard tool.alwaysOn || enabled.contains(tool.name) else {
             return false
         }
@@ -356,6 +384,23 @@ enum TermLoopMCPServer {
             return hasAskToReplyContext(env)
         }
         return true
+    }
+
+    private static func remoteTaskPromotionAvailable(
+        env: [String: String],
+        socketPath: String
+    ) -> Bool {
+        let params = workspaceTargetParams(env: env)
+        guard !params.isEmpty else { return false }
+        do {
+            let client = try authenticatedDaemonClient(socketPath: socketPath)
+            defer { client.close() }
+            let result = try client.sendV2(method: "tasks.remote_capabilities", params: params)
+            return (result["enabled"] as? Bool) == true
+                || (result["can_create"] as? Bool) == true
+        } catch {
+            return false
+        }
     }
 
     private static func hasAskToReplyContext(_ env: [String: String]) -> Bool {
@@ -562,6 +607,75 @@ enum TermLoopMCPServer {
         } catch {
             return toolResult(id: id,
                               text: "Could not reach TermLoop daemon (socket=\(socketPath)): \(mcpErrorDescription(error))",
+                              isError: true)
+        }
+    }
+
+    /// `propose_remote_task` — side-effect-safe remote task promotion entry.
+    /// The daemon persists a user-visible draft and returns immediately; the
+    /// remote item/worktree/agent launch happens only after in-app
+    /// confirmation.
+    private static func runProposeRemoteTask(
+        id: Any,
+        arguments: [String: Any],
+        processEnv: [String: String],
+        socketPath: String
+    ) -> [String: Any] {
+        let allowedArguments: Set<String> = ["title", "description"]
+        let unexpectedArguments = Set(arguments.keys).subtracting(allowedArguments)
+        guard unexpectedArguments.isEmpty else {
+            let names = unexpectedArguments.sorted().joined(separator: ", ")
+            return toolResult(
+                id: id,
+                text: "Invalid argument(s) for propose_remote_task: \(names). Only title and description are accepted; issue type is chosen by the user in TermLoop.",
+                isError: true
+            )
+        }
+        let title = ((arguments["title"] as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else {
+            return toolResult(id: id,
+                              text: "Missing required argument: title",
+                              isError: true)
+        }
+        let description = ((arguments["description"] as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !description.isEmpty else {
+            return toolResult(id: id,
+                              text: "Missing required argument: description",
+                              isError: true)
+        }
+        let workspaceParams = workspaceTargetParams(env: processEnv)
+        guard !workspaceParams.isEmpty else {
+            return toolResult(id: id,
+                              text: "TermLoop daemon target unknown: no workspace env, cwd, or MCP process identity is available. propose_remote_task requires a workspace-bound MCP session.",
+                              isError: true)
+        }
+
+        var params: [String: Any] = [
+            "title": title,
+            "description": description
+        ]
+        for (key, value) in workspaceParams {
+            params[key] = value
+        }
+
+        do {
+            let client = try authenticatedDaemonClient(socketPath: socketPath)
+            defer { client.close() }
+            let result = try client.sendV2(method: "tasks.promote_from_agent", params: params)
+            let promotionId = (result["promotion_id"] as? String) ?? "?"
+            let status = (result["status"] as? String) ?? "awaiting_confirmation"
+            let provider = (result["provider"] as? String) ?? "remote"
+            let container = (result["container"] as? String) ?? "configured project"
+            return toolResult(
+                id: id,
+                text: "Opened TermLoop remote task draft. promotion_id=\(promotionId), status=\(status), provider=\(provider), container=\(container). Nothing has been created remotely yet; wait for the user to confirm in TermLoop.",
+                isError: false
+            )
+        } catch {
+            return toolResult(id: id,
+                              text: "propose_remote_task failed: \(mcpErrorDescription(error))",
                               isError: true)
         }
     }

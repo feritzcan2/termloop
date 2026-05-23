@@ -496,6 +496,9 @@
 		D0E0F0B2A1B2C3D4E5F60718 /* BrowserOmnibarSuggestionsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E0F0B3A1B2C3D4E5F60718 /* BrowserOmnibarSuggestionsUITests.swift */; };
 		D0TASK000000000000000101 /* TaskMarkdownFileWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0TASK000000000000000102 /* TaskMarkdownFileWriter.swift */; };
 		D0TASK000000000000000111 /* TaskRemoteSyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0TASK000000000000000112 /* TaskRemoteSyncCoordinator.swift */; };
+		D0TASK000000000000000141 /* RemoteTaskPromotionDraftStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0TASK000000000000000142 /* RemoteTaskPromotionDraftStore.swift */; };
+		D0TASK000000000000000151 /* RemoteTaskPromotionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0TASK000000000000000152 /* RemoteTaskPromotionCoordinator.swift */; };
+		D0TASK000000000000000161 /* RemoteTaskPromotionConfirmationPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0TASK000000000000000162 /* RemoteTaskPromotionConfirmationPresenter.swift */; };
 		D0TASK000000000000000121 /* TaskSyncSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0TASK000000000000000122 /* TaskSyncSettingsSection.swift */; };
 		D0TASK000000000000000131 /* TaskBoardReconcileScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0TASK000000000000000132 /* TaskBoardReconcileScheduler.swift */; };
 		D1236FF988EB6887018881D0 /* IntegrationSet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D601FD4A764B0941BC576828 /* IntegrationSet.swift */; };
@@ -1131,6 +1134,9 @@
 		D0E0F0B3A1B2C3D4E5F60718 /* BrowserOmnibarSuggestionsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserOmnibarSuggestionsUITests.swift; sourceTree = "<group>"; };
 		D0TASK000000000000000102 /* TaskMarkdownFileWriter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskMarkdownFileWriter.swift; sourceTree = "<group>"; };
 		D0TASK000000000000000112 /* TaskRemoteSyncCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskRemoteSyncCoordinator.swift; sourceTree = "<group>"; };
+		D0TASK000000000000000142 /* RemoteTaskPromotionDraftStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteTaskPromotionDraftStore.swift; sourceTree = "<group>"; };
+		D0TASK000000000000000152 /* RemoteTaskPromotionCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteTaskPromotionCoordinator.swift; sourceTree = "<group>"; };
+		D0TASK000000000000000162 /* RemoteTaskPromotionConfirmationPresenter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteTaskPromotionConfirmationPresenter.swift; sourceTree = "<group>"; };
 		D0TASK000000000000000122 /* TaskSyncSettingsSection.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskSyncSettingsSection.swift; sourceTree = "<group>"; };
 		D0TASK000000000000000132 /* TaskBoardReconcileScheduler.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskBoardReconcileScheduler.swift; sourceTree = "<group>"; };
 		D1320AA0D1320AA0D1320AA4 /* AppIconDockTilePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconDockTilePlugin.swift; sourceTree = "<group>"; };
@@ -1394,6 +1400,9 @@
 				4F7B3D10ABD86A479BF509A3 /* TaskBoardCoordinatorBridge.swift */,
 				D0TASK000000000000000102 /* TaskMarkdownFileWriter.swift */,
 				D0TASK000000000000000112 /* TaskRemoteSyncCoordinator.swift */,
+				D0TASK000000000000000142 /* RemoteTaskPromotionDraftStore.swift */,
+				D0TASK000000000000000152 /* RemoteTaskPromotionCoordinator.swift */,
+				D0TASK000000000000000162 /* RemoteTaskPromotionConfirmationPresenter.swift */,
 			);
 			name = Tasks;
 			path = Tasks;
@@ -2915,6 +2924,9 @@
 				79B1D68879FE30FAEE214114 /* TaskBoardWorkspaceListingAdapter.swift in Sources */,
 				D0TASK000000000000000101 /* TaskMarkdownFileWriter.swift in Sources */,
 				D0TASK000000000000000111 /* TaskRemoteSyncCoordinator.swift in Sources */,
+				D0TASK000000000000000141 /* RemoteTaskPromotionDraftStore.swift in Sources */,
+				D0TASK000000000000000151 /* RemoteTaskPromotionCoordinator.swift in Sources */,
+				D0TASK000000000000000161 /* RemoteTaskPromotionConfirmationPresenter.swift in Sources */,
 				A89E047095163306E5E859E7 /* TaskBoardCoordinatorBridge.swift in Sources */,
 				A309D02CE1CACBE353F79580 /* DevServerModels.swift in Sources */,
 				F77A9E1EAFB130198090B38B /* DevServerProfileStore.swift in Sources */,

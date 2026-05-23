@@ -7,6 +7,7 @@ enum TermLoopBuiltInMCP {
     static let serverName = "termloop"
     static let askToToolName = "ask_to"
     static let replyToRequestToolName = "reply_to_request"
+    static let proposeRemoteTaskToolName = "propose_remote_task"
 
     static let setRunTargetsToolName = "set_run_targets"
     static let getRunTargetsToolName = "get_run_targets"
@@ -28,6 +29,7 @@ enum TermLoopBuiltInMCP {
             capabilities: [
                 "ask_to",
                 "reply_to_request",
+                "propose_remote_task",
                 "set_run_targets",
                 "get_run_targets",
                 "context_bank_propose_suggestion",
@@ -107,6 +109,28 @@ struct TermLoopBuiltInToolMeta {
     }
 
     static let all: [TermLoopBuiltInToolMeta] = [
+        TermLoopBuiltInToolMeta(
+            name: TermLoopBuiltInMCP.proposeRemoteTaskToolName,
+            description: "Open a TermLoop confirmation draft to create a configured remote task and continue in a new task worktree. Creates nothing remote until the user confirms in TermLoop. Only available when the calling workspace has remote work items enabled, a provider/container configured, and the provider CLI is ready.",
+            inputSchemaJSON: """
+            {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "description": "Short title for the remote task draft."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Markdown description of the finding and relevant context for the remote task draft."
+                }
+              },
+              "required": ["title", "description"],
+              "additionalProperties": false
+            }
+            """,
+            alwaysOn: false
+        ),
         TermLoopBuiltInToolMeta(
             name: TermLoopBuiltInMCP.askToToolName,
             description: "MCP Ask-To / bridge.ask_to: ask, consult, or hand off to a helper agent (codex / claude / gemini). Use this when the user says to ask Claude/Codex/Gemini, consult another agent, review with another agent, use Ask-To, use ask_to, or says Turkish phrases like \"MCP ile Claude'a sor\" / \"Claude'a danış\". Returns a single-use request_id plus a reusable conversation_id/bridge_id for follow-ups to the same helper.",
