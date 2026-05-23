@@ -50,6 +50,41 @@ public struct TaskRemoteCLIStatus: Equatable, Sendable {
     }
 }
 
+struct TaskRemoteWorkItemCreateError: LocalizedError, Sendable {
+    let message: String
+
+    init(_ message: String) {
+        self.message = message
+    }
+
+    var errorDescription: String? { message }
+}
+
+private final class TaskRemoteCreateContinuation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<UUID, Error>?
+
+    init(_ continuation: CheckedContinuation<UUID, Error>) {
+        self.continuation = continuation
+    }
+
+    func resume(returning value: UUID) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(returning: value)
+    }
+
+    func resume(throwing error: Error) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(throwing: error)
+    }
+}
+
 private struct TaskRemoteMetadataCacheEntry<Value: Codable & Sendable>: Codable, Sendable {
     var value: Value
     var updatedAt: Date
@@ -721,6 +756,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         title rawTitle: String,
         bodyMarkdown rawBodyMarkdown: String? = nil,
         issueType rawIssueType: String? = nil,
+        onRemoteCreated: (@MainActor @Sendable (RemoteWorkItemReference) -> Void)? = nil,
         onCreated: (@MainActor @Sendable (UUID) -> Void)? = nil,
         onFailed: (@MainActor @Sendable (String) -> Void)? = nil
     ) {
@@ -773,12 +809,13 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         isSyncing = true
         lastMessage = nil
         syncTask?.cancel()
-        syncTask = Task(priority: .utility) { [weak self, onCreated, onFailed] in
+        syncTask = Task(priority: .utility) { [weak self, onRemoteCreated, onCreated, onFailed] in
             do {
                 let service = Self.makeRemoteWorkItemService(settings: syncSettings)
                 let snapshot = try await service.create(request, projectRoot: nil)
                 try Task.checkCancellation()
                 await MainActor.run {
+                    onRemoteCreated?(snapshot.reference)
                     guard let self else { return }
                     guard self.settings.isEnabled,
                           Self.remoteWorkItemContextKey(syncSettings) == Self.remoteWorkItemContextKey(self.settings) else {
@@ -818,6 +855,91 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                         let message = Self.humanError(error)
                         self.finishSync(error: error)
                         onFailed?(message)
+                    }
+                }
+            }
+        }
+    }
+
+    func createRemoteWorkItemAsync(
+        title: String,
+        bodyMarkdown: String? = nil,
+        issueType: String? = nil,
+        onRemoteCreated: (@MainActor @Sendable (RemoteWorkItemReference) -> Void)? = nil
+    ) async throws -> UUID {
+        try await withCheckedThrowingContinuation { continuation in
+            let box = TaskRemoteCreateContinuation(continuation)
+            createRemoteWorkItem(
+                title: title,
+                bodyMarkdown: bodyMarkdown,
+                issueType: issueType,
+                onRemoteCreated: onRemoteCreated,
+                onCreated: { taskId in
+                    box.resume(returning: taskId)
+                },
+                onFailed: { message in
+                    box.resume(throwing: TaskRemoteWorkItemCreateError(message))
+                }
+            )
+        }
+    }
+
+    func materializeRemoteWorkItemAsync(reference: RemoteWorkItemReference) async throws -> UUID {
+        try await withCheckedThrowingContinuation { continuation in
+            let box = TaskRemoteCreateContinuation(continuation)
+            guard !isSyncing else {
+                box.resume(throwing: TaskRemoteWorkItemCreateError(String(
+                    localized: "tasks.remoteSync.create.busy",
+                    defaultValue: "A remote item operation is already running.",
+                    table: "TermLoop"
+                )))
+                return
+            }
+            guard settings.isEnabled else {
+                box.resume(throwing: TaskRemoteWorkItemCreateError(String(
+                    localized: "tasks.remoteSync.create.disabled",
+                    defaultValue: "Enable remote work items before creating remote work items.",
+                    table: "TermLoop"
+                )))
+                return
+            }
+            let syncSettings = settings
+            isSyncing = true
+            lastMessage = nil
+            syncTask?.cancel()
+            syncTask = Task(priority: .utility) { [weak self] in
+                do {
+                    let service = Self.makeRemoteWorkItemService(settings: syncSettings)
+                    let snapshot = try await service.fetch(reference)
+                    try Task.checkCancellation()
+                    await MainActor.run {
+                        guard let self else { return }
+                        if let taskId = self.applyCreatedRemoteSnapshot(snapshot) {
+                            box.resume(returning: taskId)
+                        } else {
+                            box.resume(throwing: TaskRemoteWorkItemCreateError(self.lastMessage ?? String(
+                                localized: "tasks.remoteSync.create.localFailed",
+                                defaultValue: "Created the remote work item, but could not create the local task.",
+                                table: "TermLoop"
+                            )))
+                        }
+                    }
+                } catch {
+                    await MainActor.run {
+                        guard let self else { return }
+                        if error is CancellationError {
+                            let message = String(
+                                localized: "tasks.remoteSync.create.cancelled",
+                                defaultValue: "Remote item creation was cancelled.",
+                                table: "TermLoop"
+                            )
+                            self.isSyncing = false
+                            self.lastMessage = message
+                            box.resume(throwing: TaskRemoteWorkItemCreateError(message))
+                        } else {
+                            self.finishSync(error: error)
+                            box.resume(throwing: error)
+                        }
                     }
                 }
             }
@@ -2042,7 +2164,98 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
     }
 
+    func refreshCLIStatus(for provider: RemoteWorkItemProviderId) async -> TaskRemoteCLIStatus {
+        let status = await Self.probeCLIStatus(provider)
+        cliStatuses[provider] = status
+        return status
+    }
+
+    func refreshCLIStatusSynchronously(
+        for provider: RemoteWorkItemProviderId,
+        timeout: TimeInterval = 4
+    ) -> TaskRemoteCLIStatus {
+        let status = Self.probeCLIStatusSynchronously(provider, timeout: timeout)
+        cliStatuses[provider] = status
+        return status
+    }
+
     private static func probeCLIStatus(_ provider: RemoteWorkItemProviderId) async -> TaskRemoteCLIStatus {
+        await probeCLIStatusNow(provider)
+    }
+
+    private nonisolated static func probeCLIStatusSynchronously(
+        _ provider: RemoteWorkItemProviderId,
+        timeout: TimeInterval
+    ) -> TaskRemoteCLIStatus {
+        let executable = cliExecutable(for: provider)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [executable, "--version"]
+        process.environment = RemoteWorkItemCommandRunner.sanitizedEnvironment(ProcessInfo.processInfo.environment)
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        let semaphore = DispatchSemaphore(value: 0)
+        do {
+            process.terminationHandler = { _ in semaphore.signal() }
+            try process.run()
+        } catch {
+            return TaskRemoteCLIStatus(
+                provider: provider,
+                executable: executable,
+                isAvailable: false,
+                summary: "\(executable) not found",
+                detail: humanError(error),
+                checkedAt: Date()
+            )
+        }
+
+        let timedOut = semaphore.wait(timeout: .now() + timeout) == .timedOut
+        if timedOut, process.isRunning {
+            process.terminate()
+            process.waitUntilExit()
+        }
+        let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let result = RemoteWorkItemCommandResult(
+            executable: executable,
+            arguments: ["--version"],
+            cwd: nil,
+            exitStatus: timedOut ? 124 : process.terminationStatus,
+            stdout: stdout,
+            stderr: stderr,
+            timedOut: timedOut,
+            terminatedBySignal: process.terminationReason == .uncaughtSignal
+        )
+        let output = (stdout + "\n" + stderr)
+            .split(separator: "\n")
+            .map(String.init)
+            .first?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard result.exitStatus == 0, !result.timedOut else {
+            return TaskRemoteCLIStatus(
+                provider: provider,
+                executable: executable,
+                isAvailable: false,
+                summary: "\(executable) unavailable",
+                detail: commandFailureMessage(result, fallback: "Version check failed."),
+                checkedAt: Date()
+            )
+        }
+        return TaskRemoteCLIStatus(
+            provider: provider,
+            executable: executable,
+            isAvailable: true,
+            summary: "\(executable) ready",
+            detail: output,
+            checkedAt: Date()
+        )
+    }
+
+    private nonisolated static func probeCLIStatusNow(_ provider: RemoteWorkItemProviderId) async -> TaskRemoteCLIStatus {
         let executable = cliExecutable(for: provider)
         do {
             let result = try await RemoteWorkItemCommandRunner.shared.run(
@@ -2086,7 +2299,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
     }
 
-    private static func cliExecutable(for provider: RemoteWorkItemProviderId) -> String {
+    private nonisolated static func cliExecutable(for provider: RemoteWorkItemProviderId) -> String {
         switch provider {
         case .jira: return "acli"
         case .github: return "gh"
@@ -2241,7 +2454,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
-    private static func humanError(_ error: Error) -> String {
+    private nonisolated static func humanError(_ error: Error) -> String {
         if let remoteError = error as? RemoteWorkItemError {
             switch remoteError {
             case .commandFailed(let message), .parseFailed(let message), .unsupportedReference(let message):
@@ -2255,7 +2468,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         return text.isEmpty ? String(localized: "common.unknownError", defaultValue: "Unknown error", table: "TermLoop") : text
     }
 
-    private static func commandFailureMessage(
+    private nonisolated static func commandFailureMessage(
         _ result: RemoteWorkItemCommandResult,
         fallback: String
     ) -> String {

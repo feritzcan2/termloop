@@ -41,7 +41,7 @@ actor RemoteWorkItemCommandRunner: RemoteWorkItemCommandRunning {
         if let cwd, !cwd.isEmpty {
             process.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
         }
-        process.environment = sanitizedEnvironment(ProcessInfo.processInfo.environment)
+        process.environment = Self.sanitizedEnvironment(ProcessInfo.processInfo.environment)
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
@@ -122,7 +122,7 @@ actor RemoteWorkItemCommandRunner: RemoteWorkItemCommandRunning {
         }
     }
 
-    private func sanitizedEnvironment(_ env: [String: String]) -> [String: String] {
+    nonisolated static func sanitizedEnvironment(_ env: [String: String]) -> [String: String] {
         var result: [String: String] = [:]
         for key in ["PATH", "HOME", "LANG", "LC_ALL", "SHELL", "TERM", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"] {
             if let value = env[key] { result[key] = value }
@@ -131,7 +131,7 @@ actor RemoteWorkItemCommandRunner: RemoteWorkItemCommandRunning {
         return result
     }
 
-    private static func cliSearchPath(from existingPath: String?) -> String {
+    private nonisolated static func cliSearchPath(from existingPath: String?) -> String {
         var seen = Set<String>()
         var parts: [String] = []
 
