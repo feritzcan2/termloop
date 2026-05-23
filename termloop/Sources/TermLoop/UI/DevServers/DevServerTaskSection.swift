@@ -316,7 +316,7 @@ private struct DevServerTaskSectionContent: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(Color.accentColor)
-        .help(String(localized: "devservers.sidebar.openURL.help", defaultValue: "Open URL. Command-click forces TermLoop Browser.", table: "TermLoop"))
+        .help(String(localized: "devservers.sidebar.openURL.help", defaultValue: "Open URL in your default browser. Command-click opens in TermLoop.", table: "TermLoop"))
     }
 
     private func deleteConfirmationRow(_ profile: DevServerProfile) -> some View {

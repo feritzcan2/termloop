@@ -277,7 +277,7 @@ struct TaskSidebarDrillInView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(accent)
-        .help(String(localized: "devservers.sidebar.openURL.help", defaultValue: "Open URL. Command-click forces TermLoop Browser.", table: "TermLoop"))
+        .help(String(localized: "devservers.sidebar.openURL.help", defaultValue: "Open URL in your default browser. Command-click opens in TermLoop.", table: "TermLoop"))
     }
 
     private func openDevServerURL(run: DevServerRunSnapshot, rawURL: String) {

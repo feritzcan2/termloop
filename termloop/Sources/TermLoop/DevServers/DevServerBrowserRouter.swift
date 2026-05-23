@@ -33,13 +33,16 @@ enum DevServerBrowserRouter {
 
     @discardableResult
     static func openFromUserClick(snapshot: DevServerRunSnapshot, url: URL, focus: Bool = true) -> Bool {
-        let forceInternalBrowser = NSApp.currentEvent?.modifierFlags
-            .intersection(.deviceIndependentFlagsMask)
-            .contains(.command) == true
+        let modifiers = NSEvent.modifierFlags.intersection([.command, .option])
+        let isWebURL = (url.scheme?.lowercased()).map { $0 == "http" || $0 == "https" } ?? false
+        guard !modifiers.isEmpty, isWebURL else {
+            NSWorkspace.shared.open(url)
+            return true
+        }
+
         if open(snapshot: snapshot, url: url, focus: focus) {
             return true
         }
-        guard !forceInternalBrowser else { return false }
         NSWorkspace.shared.open(url)
         return true
     }
