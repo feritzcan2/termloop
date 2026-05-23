@@ -1419,6 +1419,7 @@ struct WorktreeAgentsPanel: View {
         let remoteItemTick: Int
         let remoteSnapshotTick: Int
         let runTargetTick: Int
+        let devServerRunTick: Int
     }
 
     private struct PullRequestLookupSignature: Equatable {
@@ -1481,6 +1482,7 @@ struct WorktreeAgentsPanel: View {
         let allPullRequestsByBranch: [String: [SidebarPullRequestState]]
         let runTargetsByBranch: [String: [RunTargetStore.RunTarget]]
         let remoteItemBadgeSnapshotsByBranch: [String: [WorktreeGroupRemoteItemBadgeSnapshot]]
+        let devServerRunsByBranch: [String: [DevServerRunSnapshot]]
     }
 
     @EnvironmentObject private var tabManager: TabManager
@@ -1509,10 +1511,12 @@ struct WorktreeAgentsPanel: View {
     @State private var pendingRemoteItemTick: Int?
     @State private var pendingRemoteSnapshotTick: Int?
     @State private var pendingRunTargetTick: Int?
+    @State private var pendingDevServerRunTick: Int?
     @State private var pendingWorktreeProjectionVersion: UInt64?
     @State private var remoteItemTick: Int = 0
     @State private var remoteSnapshotTick: Int = 0
     @State private var runTargetTick: Int = 0
+    @State private var devServerRunTick: Int = 0
     @State private var hoveredBranch: String?
     @State private var renderMemo = RenderMemo()
     /// Stable Combine subscription keyed on `subscribedWorkspaceIds`. Without
@@ -1552,6 +1556,7 @@ struct WorktreeAgentsPanel: View {
         let _ = remoteItemTick
         let _ = remoteSnapshotTick
         let _ = runTargetTick
+        let _ = devServerRunTick
         let collapsedBranchSet = branchSet(from: collapsedBranchesRaw)
         let fingerprint = scopedTabs.map {
             WorkspaceIdentity(id: $0.id, title: $0.title, customTitle: $0.customTitle)
@@ -1570,7 +1575,8 @@ struct WorktreeAgentsPanel: View {
                 taskBoardTick: taskBoardTick,
                 remoteItemTick: remoteItemTick,
                 remoteSnapshotTick: remoteSnapshotTick,
-                runTargetTick: runTargetTick
+                runTargetTick: runTargetTick,
+                devServerRunTick: devServerRunTick
             )
         ) {
             makeRenderSnapshot()
@@ -1700,6 +1706,14 @@ struct WorktreeAgentsPanel: View {
                 pendingRunTargetTick = newValue
             } else {
                 runTargetTick = newValue
+            }
+        }
+        .onReceive(DevServerRunStore.shared.$version) { newValue in
+            guard newValue != devServerRunTick else { return }
+            if AppMenuTrackingGate.shared.isTrackingMenu {
+                pendingDevServerRunTick = newValue
+            } else {
+                devServerRunTick = newValue
             }
         }
         .onReceive(WorktreeProjectionStore.shared.$version.removeDuplicates()) { newValue in
@@ -1847,6 +1861,11 @@ struct WorktreeAgentsPanel: View {
             runTargetTick = pending
         }
         pendingRunTargetTick = nil
+
+        if let pending = pendingDevServerRunTick, pending != devServerRunTick {
+            devServerRunTick = pending
+        }
+        pendingDevServerRunTick = nil
 
         if let pending = pendingWorktreeProjectionVersion, pending != worktreeProjectionVersion {
             worktreeProjectionVersion = pending
@@ -2265,6 +2284,13 @@ struct WorktreeAgentsPanel: View {
 
         var runTargetsByBranch: [String: [RunTargetStore.RunTarget]] = [:]
         var remoteItemBadgeSnapshotsByBranch: [String: [WorktreeGroupRemoteItemBadgeSnapshot]] = [:]
+        var devServerRunsByBranch: [String: [DevServerRunSnapshot]] = [:]
+        let activeDevServerRuns = DevServerRunStore.shared
+            .snapshots(projectId: projectStore.activeProjectId)
+            .filter { run in
+                let latestURL = run.latestURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return run.isActive && !latestURL.isEmpty
+            }
         for group in groups {
             var seenPaths = Set<String>()
             var runTargetsById: [String: RunTargetStore.RunTarget] = [:]
@@ -2311,6 +2337,22 @@ struct WorktreeAgentsPanel: View {
                         )
                     }
             }
+
+            let normalizedPaths = Set(paths.compactMap { WorktreeResolver.normalizePath($0) })
+            if !normalizedPaths.isEmpty {
+                let matchingRuns = activeDevServerRuns.filter { run in
+                    guard let runPath = WorktreeResolver.normalizePath(run.worktreePath) else { return false }
+                    return normalizedPaths.contains(runPath)
+                }
+                .sorted { lhs, rhs in
+                    if lhs.phase == .running, rhs.phase != .running { return true }
+                    if lhs.phase != .running, rhs.phase == .running { return false }
+                    return lhs.updatedAt > rhs.updatedAt
+                }
+                if !matchingRuns.isEmpty {
+                    devServerRunsByBranch[group.id] = matchingRuns
+                }
+            }
         }
 
         return RenderSnapshot(
@@ -2333,7 +2375,8 @@ struct WorktreeAgentsPanel: View {
             branchesNeedingInitialExpansion: branchesNeedingInitialExpansion,
             allPullRequestsByBranch: allPullRequestsByBranch,
             runTargetsByBranch: runTargetsByBranch,
-            remoteItemBadgeSnapshotsByBranch: remoteItemBadgeSnapshotsByBranch
+            remoteItemBadgeSnapshotsByBranch: remoteItemBadgeSnapshotsByBranch,
+            devServerRunsByBranch: devServerRunsByBranch
         )
     }
 
@@ -2699,7 +2742,8 @@ struct WorktreeAgentsPanel: View {
         pullRequestSummary: WorktreeAgentsPullRequestSummary.Summary?,
         allPullRequests: [SidebarPullRequestState],
         runTargets: [RunTargetStore.RunTarget],
-        remoteItemBadges: [WorktreeGroupRemoteItemBadgeSnapshot]
+        remoteItemBadges: [WorktreeGroupRemoteItemBadgeSnapshot],
+        devServerRuns: [DevServerRunSnapshot]
     ) -> some View {
         let preferredWorkspace = sourceWorkspace(for: group)
         let openPullRequests = pullRequestSummary?.pullRequests.filter { $0.status == .open } ?? []
@@ -2709,7 +2753,8 @@ struct WorktreeAgentsPanel: View {
                 pullRequestSummary: pullRequestSummary,
                 allPullRequests: allPullRequests,
                 runTargets: runTargets,
-                remoteItemBadges: remoteItemBadges
+                remoteItemBadges: remoteItemBadges,
+                devServerRuns: devServerRuns
             )
             .frame(maxWidth: .infinity, alignment: .trailing)
             .clipped()
@@ -2727,7 +2772,8 @@ struct WorktreeAgentsPanel: View {
         pullRequestSummary: WorktreeAgentsPullRequestSummary.Summary?,
         allPullRequests: [SidebarPullRequestState],
         runTargets: [RunTargetStore.RunTarget],
-        remoteItemBadges: [WorktreeGroupRemoteItemBadgeSnapshot]
+        remoteItemBadges: [WorktreeGroupRemoteItemBadgeSnapshot],
+        devServerRuns: [DevServerRunSnapshot]
     ) -> some View {
         HStack(alignment: .center, spacing: 4) {
             pullRequestBadge(
@@ -2738,7 +2784,8 @@ struct WorktreeAgentsPanel: View {
             worktreeGroupSupplementalBadges(
                 group: group,
                 runTargets: runTargets,
-                remoteItemBadges: remoteItemBadges
+                remoteItemBadges: remoteItemBadges,
+                devServerRuns: devServerRuns
             )
         }
         .lineLimit(1)
@@ -2748,9 +2795,14 @@ struct WorktreeAgentsPanel: View {
     private func worktreeGroupSupplementalBadges(
         group: WorktreeAgentsGroup,
         runTargets: [RunTargetStore.RunTarget],
-        remoteItemBadges: [WorktreeGroupRemoteItemBadgeSnapshot]
+        remoteItemBadges: [WorktreeGroupRemoteItemBadgeSnapshot],
+        devServerRuns: [DevServerRunSnapshot]
     ) -> some View {
         HStack(alignment: .center, spacing: 4) {
+            if !devServerRuns.isEmpty {
+                WorktreeGroupDevServerBadge(runs: devServerRuns)
+                    .equatable()
+            }
             if !runTargets.isEmpty {
                 WorktreeGroupRunTargetsBadge(
                     targets: runTargets,
@@ -3019,6 +3071,7 @@ struct WorktreeAgentsPanel: View {
         let orderedWorkspaces = renderSnapshot.orderedWorkspacesByBranch[group.id] ?? group.workspaces
         let runTargets = renderSnapshot.runTargetsByBranch[group.id] ?? []
         let remoteItemBadges = renderSnapshot.remoteItemBadgeSnapshotsByBranch[group.id] ?? []
+        let devServerRuns = renderSnapshot.devServerRunsByBranch[group.id] ?? []
         let pullRequestSummary = renderSnapshot.groupSummaryByKey[
             groupSummaryKey(groupId: group.id, statuses: pullRequestStatuses)
         ]
@@ -3144,7 +3197,8 @@ struct WorktreeAgentsPanel: View {
                     pullRequestSummary: pullRequestSummary,
                     allPullRequests: allBranchPullRequests,
                     runTargets: runTargets,
-                    remoteItemBadges: remoteItemBadges
+                    remoteItemBadges: remoteItemBadges,
+                    devServerRuns: devServerRuns
                 )
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.leading, 32)
@@ -5033,6 +5087,175 @@ struct WorktreeAgentsHiddenRow: View {
             }
             .frame(maxWidth: .infinity)
         }
+    }
+}
+
+private struct WorktreeGroupDevServerBadge: View, Equatable {
+    let runs: [DevServerRunSnapshot]
+
+    @State private var popoverShown = false
+
+    static func == (lhs: WorktreeGroupDevServerBadge, rhs: WorktreeGroupDevServerBadge) -> Bool {
+        lhs.runs == rhs.runs
+    }
+
+    private var runsWithURLs: [DevServerRunSnapshot] {
+        runs.filter { run in
+            let latestURL = run.latestURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return !latestURL.isEmpty
+        }
+    }
+
+    var body: some View {
+        let visibleRuns = runsWithURLs
+        if visibleRuns.count == 1, let run = visibleRuns.first, let url = run.latestURL {
+            singleChip(run: run, url: url)
+        } else if visibleRuns.count >= 2 {
+            multiChip(runs: visibleRuns)
+        }
+    }
+
+    private func singleChip(run: DevServerRunSnapshot, url: String) -> some View {
+        Button {
+            open(run: run, rawURL: url)
+        } label: {
+            HStack(spacing: 4) {
+                statusDot(for: run.phase)
+                Text(verbatim: url)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .font(TermLoopSidebarTheme.tinyMono)
+            .foregroundStyle(devServerForeground)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(devServerBackground))
+            .overlay(Capsule().strokeBorder(devServerBorder, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .help(tooltip(run: run, url: url))
+    }
+
+    private func multiChip(runs: [DevServerRunSnapshot]) -> some View {
+        let firstURL = runs.first?.latestURL ?? ""
+        return Button {
+            popoverShown.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                aggregateStatusDot(for: runs)
+                Text(verbatim: firstURL)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(verbatim: "+\(runs.count - 1)")
+                    .lineLimit(1)
+            }
+            .font(TermLoopSidebarTheme.tinyMono)
+            .foregroundStyle(devServerForeground)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(devServerBackground))
+            .overlay(Capsule().strokeBorder(devServerBorder, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $popoverShown, arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(runs, id: \.runId) { run in
+                    if let url = run.latestURL {
+                        devServerRow(run: run, url: url)
+                    }
+                }
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .frame(minWidth: 280, alignment: .leading)
+        }
+        .help(String(
+            localized: "worktreeAgents.devServerBadge.multiple.help",
+            defaultValue: "Running dev server URLs",
+            table: "TermLoop"
+        ))
+    }
+
+    private func devServerRow(run: DevServerRunSnapshot, url: String) -> some View {
+        Button {
+            open(run: run, rawURL: url)
+        } label: {
+            HStack(spacing: 7) {
+                statusDot(for: run.phase)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(verbatim: run.profileName)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.primary)
+                    Text(verbatim: url)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "arrow.up.forward")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(devServerForeground.opacity(0.85))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(tooltip(run: run, url: url))
+    }
+
+    private func open(run: DevServerRunSnapshot, rawURL: String) {
+        _ = DevServerBrowserRouter.openFromUserClick(snapshot: run, rawURL: rawURL, focus: true)
+    }
+
+    private func tooltip(run: DevServerRunSnapshot, url: String) -> String {
+        String(
+            localized: "worktreeAgents.devServerBadge.help",
+            defaultValue: "Dev server: \(run.profileName) · \(run.phase.localizedLabel)\n\(url)\n⌘/⌥-click to open in TermLoop browser",
+            table: "TermLoop"
+        )
+    }
+
+    private func statusDot(for phase: DevServerRunPhase) -> some View {
+        Circle()
+            .fill(color(for: phase))
+            .frame(width: 6, height: 6)
+    }
+
+    private func aggregateStatusDot(for runs: [DevServerRunSnapshot]) -> some View {
+        Circle()
+            .fill(aggregateStatusColor(for: runs))
+            .frame(width: 6, height: 6)
+    }
+
+    private func aggregateStatusColor(for runs: [DevServerRunSnapshot]) -> Color {
+        let phases = runs.map(\.phase)
+        if phases.contains(.failed) { return color(for: .failed) }
+        if phases.contains(.running) { return color(for: .running) }
+        if phases.contains(.settingUp) { return color(for: .settingUp) }
+        if phases.contains(.starting) { return color(for: .starting) }
+        if phases.contains(.stopping) { return color(for: .stopping) }
+        return .secondary
+    }
+
+    private func color(for phase: DevServerRunPhase) -> Color {
+        switch phase {
+        case .running: return devServerForeground
+        case .starting, .settingUp, .stopping: return .orange
+        case .failed: return Color(red: 0.92, green: 0.36, blue: 0.31)
+        case .exited, .idle: return .secondary
+        }
+    }
+
+    private var devServerForeground: Color {
+        Color(red: 0.30, green: 0.78, blue: 0.36)
+    }
+
+    private var devServerBackground: Color {
+        devServerForeground.opacity(0.14)
+    }
+
+    private var devServerBorder: Color {
+        devServerForeground.opacity(0.45)
     }
 }
 
