@@ -1,15 +1,15 @@
 name: Update Homebrew Cask
 
 on:
-  # Trigger after the release workflow completes (not on release:published,
-  # which fires before assets finish uploading — causing SHA mismatch).
+  # Run after the signed DMG release workflow completes so the asset exists
+  # before calculating the cask SHA256.
   workflow_run:
-    workflows: ["Release macOS app"]
+    workflows: ["Release TermLoop app"]
     types: [completed]
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version (e.g., 0.58.0 or v0.58.0)'
+        description: "Version to publish, with or without v prefix (for example, 1.0.11)"
         required: true
 
 permissions:
@@ -18,7 +18,6 @@ permissions:
 jobs:
   update-cask:
     runs-on: ubuntu-latest
-    # Only run if the release workflow succeeded (or manual trigger)
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
@@ -26,10 +25,10 @@ jobs:
       - name: Get version
         id: version
         run: |
+          set -euo pipefail
           if [ -n "${{ github.event.inputs.version }}" ]; then
             VERSION="${{ github.event.inputs.version }}"
           else
-            # workflow_run: extract tag from the triggering workflow's head branch
             VERSION="${{ github.event.workflow_run.head_branch }}"
           fi
           VERSION="${VERSION#v}"
@@ -42,22 +41,23 @@ jobs:
               echo "Invalid version: ${VERSION}" >&2
               exit 1
             fi
-            echo "Skipping homebrew cask update for non-release ref: ${VERSION}"
-            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Skipping Homebrew cask update for non-release ref: ${VERSION}"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "skip=false" >> $GITHUB_OUTPUT
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Updating homebrew cask to version $VERSION"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Updating Homebrew cask to version $VERSION"
 
       - name: Download DMG and get SHA256
         id: sha
         if: steps.version.outputs.skip != 'true'
         run: |
+          set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
           URL="https://github.com/feritzcan2/termloop/releases/download/v${VERSION}/termloop-macos.dmg"
           MAX_RETRIES=5
-          for i in $(seq 1 $MAX_RETRIES); do
+          for i in $(seq 1 "$MAX_RETRIES"); do
             HTTP_CODE=$(curl -sL -w '%{http_code}' "$URL" -o termloop-macos.dmg)
             FILE_SIZE=$(stat --printf="%s" termloop-macos.dmg 2>/dev/null || stat -f%z termloop-macos.dmg)
             if [ "$HTTP_CODE" = "200" ] && [ "$FILE_SIZE" -gt 1000000 ]; then
@@ -72,7 +72,7 @@ jobs:
             sleep 30
           done
           SHA256=$(shasum -a 256 termloop-macos.dmg | cut -d' ' -f1)
-          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
           echo "DMG SHA256: $SHA256"
 
       - name: Checkout Homebrew tap
@@ -89,6 +89,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           SHA256: ${{ steps.sha.outputs.sha256 }}
         run: |
+          set -euo pipefail
           cat > homebrew-termloop/Casks/termloop.rb << CASKEOF
           cask "termloop" do
             version "${VERSION}"
@@ -117,12 +118,12 @@ jobs:
             ]
           end
           CASKEOF
-          # Remove leading whitespace from heredoc
           sed -i 's/^          //' homebrew-termloop/Casks/termloop.rb
 
       - name: Verify cask SHA matches DMG
         if: steps.version.outputs.skip != 'true'
         run: |
+          set -euo pipefail
           CASK_SHA=$(grep 'sha256' homebrew-termloop/Casks/termloop.rb | sed 's/.*"\(.*\)".*/\1/')
           ACTUAL_SHA=$(shasum -a 256 termloop-macos.dmg | cut -d' ' -f1)
           if [ "$CASK_SHA" != "$ACTUAL_SHA" ]; then
@@ -136,6 +137,7 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
+          set -euo pipefail
           cd homebrew-termloop
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
