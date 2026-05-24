@@ -65,4 +65,32 @@ final class CodexConfigTomlTests: XCTestCase {
         let twice = TermLoopCodexHooks.applyToTomlContentForTesting(once)
         XCTAssertEqual(once, twice)
     }
+
+    func test_preservesCodexHookTrustStateWhenInsertedBeforeManagedEndMarker() throws {
+        let input = """
+        codex_hooks = true
+
+        # TermLoop-managed: BEGIN
+        [mcp_servers.termloop]
+        command = "/bin/sh"
+        args = ["-lc", "exec \\"${TERMLOOP_BUNDLED_CLI_PATH:-$(command -v termloop)}\\" termloop-mcp"]
+
+        [hooks.state]
+
+        [hooks.state."/Users/example/.codex/hooks.json:stop:0:0"]
+        trusted_hash = "sha256:keep-me"
+        # TermLoop-managed: END
+        """
+
+        let output = TermLoopCodexHooks.applyToTomlContentForTesting(input)
+        XCTAssertTrue(output.contains("trusted_hash = \"sha256:keep-me\""),
+                      "Codex hook review trust hashes must survive TermLoop MCP block refresh")
+        XCTAssertEqual(output.components(separatedBy: "# TermLoop-managed: END").count - 1, 1,
+                       "Misplaced END marker should be repaired instead of duplicated")
+
+        let managedEnd = try XCTUnwrap(output.range(of: "# TermLoop-managed: END")?.upperBound)
+        let hookState = try XCTUnwrap(output.range(of: "[hooks.state]")?.lowerBound)
+        XCTAssertLessThan(managedEnd, hookState,
+                          "Codex hook trust state must live outside the TermLoop-managed block")
+    }
 }

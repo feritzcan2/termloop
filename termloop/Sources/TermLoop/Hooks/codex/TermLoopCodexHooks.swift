@@ -79,7 +79,7 @@ enum TermLoopCodexHooks {
         let canonical = canonicalMCPBlock()
         if let managedRange = managedBlockRange(in: updated) {
             updated.replaceSubrange(managedRange, with: canonical)
-            return updated
+            return stripStrayManagedEndMarkers(updated)
         }
         let prefix = updated.isEmpty || updated.hasSuffix("\n") ? "" : "\n"
         return updated + "\(prefix)\n\(canonical)"
@@ -133,15 +133,78 @@ enum TermLoopCodexHooks {
     }
 
     private static func managedBlockRange(in content: String) -> Range<String.Index>? {
-        guard let beginRange = content.range(of: managedBlockBegin),
-              let endRange = content.range(of: managedBlockEnd, range: beginRange.upperBound..<content.endIndex)
-        else { return nil }
-        // Extend to include trailing newline of the END marker if present.
-        var end = endRange.upperBound
+        guard let beginRange = content.range(of: managedBlockBegin) else { return nil }
+        let afterBegin = beginRange.upperBound..<content.endIndex
+        let endRange = content.range(of: managedBlockEnd, range: afterBegin)
+
+        guard let header = content.range(of: "[mcp_servers.termloop]", range: afterBegin) else {
+            guard let endRange else { return nil }
+            return beginRange.lowerBound..<endOfLine(after: endRange, in: content)
+        }
+
+        let nextSectionStart = content.range(
+            of: #"(?m)^\[[^\]]+\]"#,
+            options: .regularExpression,
+            range: header.upperBound..<content.endIndex
+        )?.lowerBound
+
+        if let nextSectionStart,
+           let endRange,
+           nextSectionStart < endRange.lowerBound {
+            // Codex's TOML writer can insert hook trust tables before a
+            // trailing END comment; keep those tables outside our rewrite.
+            return beginRange.lowerBound..<nextSectionStart
+        }
+
+        if let endRange {
+            return beginRange.lowerBound..<endOfLine(after: endRange, in: content)
+        }
+
+        return beginRange.lowerBound..<(nextSectionStart ?? content.endIndex)
+    }
+
+    private static func stripStrayManagedEndMarkers(_ content: String) -> String {
+        guard managedBlockRange(in: content) != nil else { return content }
+        var updated = content
+        var searchStart = updated.startIndex
+
+        while let marker = updated.range(of: managedBlockEnd, range: searchStart..<updated.endIndex) {
+            if let managed = managedBlockRange(in: updated), managed.contains(marker.lowerBound) {
+                searchStart = marker.upperBound
+                continue
+            }
+            let line = lineRange(containing: marker, in: updated)
+            updated.removeSubrange(line)
+            searchStart = line.lowerBound
+        }
+
+        return updated
+    }
+
+    private static func endOfLine(after range: Range<String.Index>, in content: String) -> String.Index {
+        var end = range.upperBound
         if end < content.endIndex, content[end] == "\n" {
             end = content.index(after: end)
         }
-        return beginRange.lowerBound..<end
+        return end
+    }
+
+    private static func lineRange(containing range: Range<String.Index>, in content: String) -> Range<String.Index> {
+        var start = range.lowerBound
+        while start > content.startIndex {
+            let previous = content.index(before: start)
+            if content[previous] == "\n" { break }
+            start = previous
+        }
+
+        var end = range.upperBound
+        while end < content.endIndex {
+            let current = content[end]
+            end = content.index(after: end)
+            if current == "\n" { break }
+        }
+
+        return start..<end
     }
 
     #if DEBUG

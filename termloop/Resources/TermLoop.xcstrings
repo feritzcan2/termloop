@@ -5098,6 +5098,72 @@
           }
         }
       }
+    },
+    "devservers.menu.configure": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure Run Profiles…"
+          }
+        }
+      }
+    },
+    "devservers.menu.generate": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generate Run Profiles with Agent…"
+          }
+        }
+      }
+    },
+    "devservers.menu.noProfiles": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No run profiles configured"
+          }
+        }
+      }
+    },
+    "devservers.menu.noTaskBinding": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No task bound to this worktree"
+          }
+        }
+      }
+    },
+    "devservers.menu.noWorktree": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No worktree selected"
+          }
+        }
+      }
+    },
+    "devservers.menu.runProfiles": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dev Servers"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
