@@ -187,9 +187,7 @@ final class CodexHooksStatus: ObservableObject {
               let root = try? JSONSerialization.jsonObject(with: hooksData) as? [String: Any],
               let hooks = root["hooks"] as? [String: Any],
               let config = try? String(contentsOfFile: configPath, encoding: .utf8),
-              config.contains("codex_hooks = true"),
-              config.contains("[mcp_servers.termloop]"),
-              config.contains("termloop-mcp") else {
+              !CodexConfigToml.installTransform(config).changed else {
             return false
         }
 
