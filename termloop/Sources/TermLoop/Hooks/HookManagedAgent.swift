@@ -19,7 +19,13 @@ enum HookManagedAgent: String, CaseIterable {
         let home = NSHomeDirectory() as NSString
         switch self {
         case .claude: return home.appendingPathComponent(".claude/settings.json")
-        case .codex:  return home.appendingPathComponent(".codex/hooks.json")
+        case .codex:
+            if let override = ProcessInfo.processInfo.environment["CODEX_HOME"],
+               !override.isEmpty {
+                return (NSString(string: override).expandingTildeInPath as NSString)
+                    .appendingPathComponent("hooks.json")
+            }
+            return home.appendingPathComponent(".codex/hooks.json")
         case .gemini: return home.appendingPathComponent(".gemini/settings.json")
         }
     }
