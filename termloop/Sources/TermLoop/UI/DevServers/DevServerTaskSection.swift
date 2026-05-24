@@ -1239,13 +1239,13 @@ struct DevServerWorktreeMenuItems: View {
                 ),
                 systemImage: "server.rack"
             )
-        } else if let task = boundTask, let store = profileStore {
+        } else if let target = runTarget, let store = profileStore {
             if store.profiles.count == 1, let profile = store.profiles.first {
-                singleProfileActions(profile: profile, task: task, store: store)
+                singleProfileActions(profile: profile, target: target, store: store)
             } else {
                 Menu {
                     ForEach(store.profiles) { profile in
-                        profileMenuEntry(profile: profile, task: task, store: store)
+                        profileMenuEntry(profile: profile, target: target, store: store)
                     }
                 } label: {
                     Label(
@@ -1258,15 +1258,6 @@ struct DevServerWorktreeMenuItems: View {
                     )
                 }
             }
-        } else {
-            disabledItem(
-                String(
-                    localized: "devservers.menu.noTaskBinding",
-                    defaultValue: "No task bound to this worktree",
-                    table: "TermLoop"
-                ),
-                systemImage: "rectangle.3.group"
-            )
         }
     }
 
@@ -1297,13 +1288,22 @@ struct DevServerWorktreeMenuItems: View {
             .first
     }
 
+    private var runTarget: WorktreeRunTarget? {
+        guard let projectId,
+              let worktreePath = worktreePath?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !worktreePath.isEmpty else {
+            return nil
+        }
+        return WorktreeRunTarget(projectId: projectId, worktreePath: worktreePath, task: boundTask)
+    }
+
     @ViewBuilder
     private func singleProfileActions(
         profile: DevServerProfile,
-        task: TaskRecord,
+        target: WorktreeRunTarget,
         store: DevServerProfileStore
     ) -> some View {
-        if let current = activeRun(profile: profile, task: task) {
+        if let current = activeRun(profile: profile, target: target) {
             if let url = current.latestURL {
                 Button {
                     DevServerMenuActions.openURL(run: current, rawURL: url)
@@ -1323,7 +1323,7 @@ struct DevServerWorktreeMenuItems: View {
                 )
             }
             Button {
-                DevServerMenuActions.restart(profile: profile, task: task, store: store)
+                DevServerMenuActions.restart(profile: profile, target: target, store: store)
             } label: {
                 Label(
                     String(localized: "devservers.sidebar.restart", defaultValue: "Restart", table: "TermLoop"),
@@ -1332,7 +1332,7 @@ struct DevServerWorktreeMenuItems: View {
             }
         } else {
             Button {
-                DevServerMenuActions.start(profile: profile, task: task, store: store)
+                DevServerMenuActions.start(profile: profile, target: target, store: store)
             } label: {
                 Label(
                     String(localized: "devservers.sidebar.start", defaultValue: "Start", table: "TermLoop"),
@@ -1345,10 +1345,10 @@ struct DevServerWorktreeMenuItems: View {
     @ViewBuilder
     private func profileMenuEntry(
         profile: DevServerProfile,
-        task: TaskRecord,
+        target: WorktreeRunTarget,
         store: DevServerProfileStore
     ) -> some View {
-        if let current = activeRun(profile: profile, task: task) {
+        if let current = activeRun(profile: profile, target: target) {
             Menu {
                 if let url = current.latestURL {
                     Button {
@@ -1366,7 +1366,7 @@ struct DevServerWorktreeMenuItems: View {
                     )
                 }
                 Button {
-                    DevServerMenuActions.restart(profile: profile, task: task, store: store)
+                    DevServerMenuActions.restart(profile: profile, target: target, store: store)
                 } label: {
                     Label(
                         String(localized: "devservers.sidebar.restart", defaultValue: "Restart", table: "TermLoop"),
@@ -1381,20 +1381,16 @@ struct DevServerWorktreeMenuItems: View {
             }
         } else {
             Button {
-                DevServerMenuActions.start(profile: profile, task: task, store: store)
+                DevServerMenuActions.start(profile: profile, target: target, store: store)
             } label: {
                 Label(profile.name, systemImage: "play.fill")
             }
         }
     }
 
-    private func activeRun(profile: DevServerProfile, task: TaskRecord) -> DevServerRunSnapshot? {
+    private func activeRun(profile: DevServerProfile, target: WorktreeRunTarget) -> DevServerRunSnapshot? {
         DevServerRunStore.shared.activeSnapshot(
-            for: DevServerRunKey(
-                projectId: task.projectId,
-                taskId: task.id,
-                profileId: profile.id
-            )
+            for: target.runKey(profileId: profile.id)
         )
     }
 
@@ -1403,6 +1399,21 @@ struct DevServerWorktreeMenuItems: View {
             Label(text, systemImage: systemImage)
         }
         .disabled(true)
+    }
+}
+
+private struct WorktreeRunTarget {
+    let projectId: UUID
+    let worktreePath: String
+    let task: TaskRecord?
+
+    func runKey(profileId: String) -> DevServerRunKey {
+        DevServerRunKey(
+            projectId: projectId,
+            taskId: task?.id,
+            worktreePath: worktreePath,
+            profileId: profileId
+        )
     }
 }
 
@@ -1454,11 +1465,11 @@ private enum DevServerMenuActions {
         }
     }
 
-    static func start(profile: DevServerProfile, task: TaskRecord, store: DevServerProfileStore) {
+    static func start(profile: DevServerProfile, target: WorktreeRunTarget, store: DevServerProfileStore) {
         do {
             _ = try DevServerRunCoordinator.shared.start(
-                projectId: task.projectId,
-                taskId: task.id,
+                projectId: target.projectId,
+                worktreePath: target.worktreePath,
                 profileId: profile.id,
                 openOnURL: profile.presentation.autoOpenFirstUrl ?? store.defaults.autoOpenFirstUrl
             )
@@ -1467,11 +1478,11 @@ private enum DevServerMenuActions {
         }
     }
 
-    static func restart(profile: DevServerProfile, task: TaskRecord, store: DevServerProfileStore) {
+    static func restart(profile: DevServerProfile, target: WorktreeRunTarget, store: DevServerProfileStore) {
         do {
             _ = try DevServerRunCoordinator.shared.restart(
-                projectId: task.projectId,
-                taskId: task.id,
+                projectId: target.projectId,
+                worktreePath: target.worktreePath,
                 profileId: profile.id,
                 openOnURL: profile.presentation.autoOpenFirstUrl ?? store.defaults.autoOpenFirstUrl
             )
