@@ -73,10 +73,12 @@ public enum RemoteTaskPromotionCoordinator {
         guard var draft = draftStore.draft(id: promotionId) else {
             throw PromotionError.draftNotFound(promotionId)
         }
-        var sourceWorkspace = try sourceWorkspaceReadyForMigration(
-            draft.sourceWorkspaceId,
-            expectedProjectId: draft.projectId
-        )
+        if draft.shouldCreateWorktreeAndAttachAgent {
+            _ = try sourceWorkspaceReadyForMigration(
+                draft.sourceWorkspaceId,
+                expectedProjectId: draft.projectId
+            )
+        }
 
         let remoteSync = TaskRemoteSyncCoordinatorProvider.shared.coordinator(for: store)
         let settings = remoteSync.settings
@@ -124,10 +126,12 @@ public enum RemoteTaskPromotionCoordinator {
         } else {
             let taskId: UUID
             do {
-                sourceWorkspace = try sourceWorkspaceReadyForMigration(
-                    draft.sourceWorkspaceId,
-                    expectedProjectId: draft.projectId
-                )
+                if draft.shouldCreateWorktreeAndAttachAgent {
+                    _ = try sourceWorkspaceReadyForMigration(
+                        draft.sourceWorkspaceId,
+                        expectedProjectId: draft.projectId
+                    )
+                }
                 taskId = try await remoteSync.createRemoteWorkItemAsync(
                     title: draft.title,
                     bodyMarkdown: bodyMarkdown(for: draft),
@@ -182,8 +186,25 @@ public enum RemoteTaskPromotionCoordinator {
             $0.errorMessage = nil
         }
 
+        guard draft.shouldCreateWorktreeAndAttachAgent else {
+            try draftStore.update(id: draft.id) {
+                $0.status = .ready
+                $0.taskId = taskAndReference.task.id
+                $0.remoteWorkItem = taskAndReference.reference
+                $0.targetWorkspaceId = nil
+                $0.worktreePath = nil
+                $0.errorMessage = nil
+            }
+            progress?(.ready, String(
+                localized: "tasks.remotePromotion.progress.readyTaskOnly",
+                defaultValue: "Ready. Remote and local tasks were created.",
+                table: "TermLoop"
+            ))
+            return draftStore.draft(id: draft.id) ?? draft
+        }
+
         do {
-            sourceWorkspace = try sourceWorkspaceReadyForMigration(
+            let workspace = try sourceWorkspaceReadyForMigration(
                 draft.sourceWorkspaceId,
                 expectedProjectId: draft.projectId
             )
@@ -200,7 +221,7 @@ public enum RemoteTaskPromotionCoordinator {
                 draft: draft,
                 task: taskAndReference.task,
                 reference: taskAndReference.reference,
-                sourceWorkspace: sourceWorkspace,
+                sourceWorkspace: workspace,
                 store: store,
                 progress: progress
             )
