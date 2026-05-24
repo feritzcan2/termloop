@@ -15026,7 +15026,7 @@ func codexUpsertManagedMCPBlock(_ content: String) -> String {
     let canonical = codexCanonicalMCPBlock()
     if let managedRange = codexManagedBlockRange(in: updated) {
         updated.replaceSubrange(managedRange, with: canonical)
-        return updated
+        return codexStripStrayManagedEndMarkers(updated)
     }
     let prefix = updated.isEmpty || updated.hasSuffix("\n") ? "" : "\n"
     return updated + "\(prefix)\n\(canonical)"
@@ -15081,14 +15081,78 @@ private func codexCanonicalMCPBlock() -> String {
 }
 
 private func codexManagedBlockRange(in content: String) -> Range<String.Index>? {
-    guard let beginRange = content.range(of: _codexManagedBlockBegin),
-          let endRange = content.range(of: _codexManagedBlockEnd, range: beginRange.upperBound..<content.endIndex)
-    else { return nil }
-    var end = endRange.upperBound
+    guard let beginRange = content.range(of: _codexManagedBlockBegin) else { return nil }
+    let afterBegin = beginRange.upperBound..<content.endIndex
+    let endRange = content.range(of: _codexManagedBlockEnd, range: afterBegin)
+
+    guard let header = content.range(of: "[mcp_servers.termloop]", range: afterBegin) else {
+        guard let endRange else { return nil }
+        return beginRange.lowerBound..<codexEndOfLine(after: endRange, in: content)
+    }
+
+    let nextSectionStart = content.range(
+        of: #"(?m)^\[[^\]]+\]"#,
+        options: .regularExpression,
+        range: header.upperBound..<content.endIndex
+    )?.lowerBound
+
+    if let nextSectionStart,
+       let endRange,
+       nextSectionStart < endRange.lowerBound {
+        // Codex's TOML writer can insert hook trust tables before a
+        // trailing END comment; keep those tables outside our rewrite.
+        return beginRange.lowerBound..<nextSectionStart
+    }
+
+    if let endRange {
+        return beginRange.lowerBound..<codexEndOfLine(after: endRange, in: content)
+    }
+
+    return beginRange.lowerBound..<(nextSectionStart ?? content.endIndex)
+}
+
+private func codexStripStrayManagedEndMarkers(_ content: String) -> String {
+    guard codexManagedBlockRange(in: content) != nil else { return content }
+    var updated = content
+    var searchStart = updated.startIndex
+
+    while let marker = updated.range(of: _codexManagedBlockEnd, range: searchStart..<updated.endIndex) {
+        if let managed = codexManagedBlockRange(in: updated), managed.contains(marker.lowerBound) {
+            searchStart = marker.upperBound
+            continue
+        }
+        let line = codexLineRange(containing: marker, in: updated)
+        updated.removeSubrange(line)
+        searchStart = line.lowerBound
+    }
+
+    return updated
+}
+
+private func codexEndOfLine(after range: Range<String.Index>, in content: String) -> String.Index {
+    var end = range.upperBound
     if end < content.endIndex, content[end] == "\n" {
         end = content.index(after: end)
     }
-    return beginRange.lowerBound..<end
+    return end
+}
+
+private func codexLineRange(containing range: Range<String.Index>, in content: String) -> Range<String.Index> {
+    var start = range.lowerBound
+    while start > content.startIndex {
+        let previous = content.index(before: start)
+        if content[previous] == "\n" { break }
+        start = previous
+    }
+
+    var end = range.upperBound
+    while end < content.endIndex {
+        let current = content[end]
+        end = content.index(after: end)
+        if current == "\n" { break }
+    }
+
+    return start..<end
 }
 
 
