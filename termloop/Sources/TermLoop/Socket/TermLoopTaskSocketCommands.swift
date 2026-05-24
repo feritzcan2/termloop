@@ -484,6 +484,7 @@ enum TermLoopTaskSocketCommands {
             "title": draft.title,
             "description": draft.descriptionMarkdown,
             "issue_type": draft.issueType as Any? ?? NSNull(),
+            "create_worktree_and_attach_agent": draft.shouldCreateWorktreeAndAttachAgent,
             "provider": draft.provider.rawValue,
             "container": draft.container,
             "status": draft.status.rawValue,

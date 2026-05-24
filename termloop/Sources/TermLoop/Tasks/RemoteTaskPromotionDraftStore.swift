@@ -23,6 +23,7 @@ public struct RemoteTaskPromotionDraft: Codable, Identifiable, Equatable, Sendab
     public var title: String
     public var descriptionMarkdown: String
     public var issueType: String?
+    public var shouldCreateWorktreeAndAttachAgent: Bool
     public var provider: RemoteWorkItemProviderId
     public var container: String
     public var status: RemoteTaskPromotionStatus
@@ -41,6 +42,7 @@ public struct RemoteTaskPromotionDraft: Codable, Identifiable, Equatable, Sendab
         title: String,
         descriptionMarkdown: String,
         issueType: String? = nil,
+        shouldCreateWorktreeAndAttachAgent: Bool = true,
         provider: RemoteWorkItemProviderId,
         container: String,
         status: RemoteTaskPromotionStatus = .awaitingConfirmation,
@@ -59,6 +61,7 @@ public struct RemoteTaskPromotionDraft: Codable, Identifiable, Equatable, Sendab
         self.descriptionMarkdown = descriptionMarkdown
         let trimmedIssueType = issueType?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         self.issueType = trimmedIssueType.isEmpty ? nil : trimmedIssueType
+        self.shouldCreateWorktreeAndAttachAgent = shouldCreateWorktreeAndAttachAgent
         self.provider = provider
         self.container = container
         self.status = status
@@ -69,6 +72,52 @@ public struct RemoteTaskPromotionDraft: Codable, Identifiable, Equatable, Sendab
         self.errorMessage = errorMessage
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case projectId
+        case sourceWorkspaceId
+        case title
+        case descriptionMarkdown
+        case issueType
+        case shouldCreateWorktreeAndAttachAgent
+        case provider
+        case container
+        case status
+        case remoteWorkItem
+        case taskId
+        case targetWorkspaceId
+        case worktreePath
+        case errorMessage
+        case createdAt
+        case updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try values.decode(UUID.self, forKey: .id)
+        self.projectId = try values.decode(UUID.self, forKey: .projectId)
+        self.sourceWorkspaceId = try values.decode(UUID.self, forKey: .sourceWorkspaceId)
+        self.title = try values.decode(String.self, forKey: .title)
+        self.descriptionMarkdown = try values.decode(String.self, forKey: .descriptionMarkdown)
+        let trimmedIssueType = try values.decodeIfPresent(String.self, forKey: .issueType)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        self.issueType = trimmedIssueType.isEmpty ? nil : trimmedIssueType
+        self.shouldCreateWorktreeAndAttachAgent = try values.decodeIfPresent(
+            Bool.self,
+            forKey: .shouldCreateWorktreeAndAttachAgent
+        ) ?? true
+        self.provider = try values.decode(RemoteWorkItemProviderId.self, forKey: .provider)
+        self.container = try values.decode(String.self, forKey: .container)
+        self.status = try values.decode(RemoteTaskPromotionStatus.self, forKey: .status)
+        self.remoteWorkItem = try values.decodeIfPresent(RemoteWorkItemReference.self, forKey: .remoteWorkItem)
+        self.taskId = try values.decodeIfPresent(UUID.self, forKey: .taskId)
+        self.targetWorkspaceId = try values.decodeIfPresent(UUID.self, forKey: .targetWorkspaceId)
+        self.worktreePath = try values.decodeIfPresent(String.self, forKey: .worktreePath)
+        self.errorMessage = try values.decodeIfPresent(String.self, forKey: .errorMessage)
+        self.createdAt = try values.decode(Date.self, forKey: .createdAt)
+        self.updatedAt = try values.decode(Date.self, forKey: .updatedAt)
     }
 }
 
