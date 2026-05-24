@@ -34,7 +34,44 @@ public final class DevServerRunCoordinator {
         openOnURL: Bool = false
     ) throws -> DevServerRunSnapshot {
         let resolved = try resolve(projectId: explicitProjectId, taskId: taskId, profileId: profileId)
-        let key = DevServerRunKey(projectId: resolved.projectId, taskId: taskId, profileId: profileId)
+        return try startResolved(
+            resolved: resolved,
+            profileId: profileId,
+            restart: restart,
+            openOnURL: openOnURL
+        )
+    }
+
+    @discardableResult
+    public func start(
+        projectId explicitProjectId: UUID?,
+        worktreePath: String,
+        profileId: String,
+        restart: Bool = false,
+        openOnURL: Bool = false
+    ) throws -> DevServerRunSnapshot {
+        let resolved = try resolve(projectId: explicitProjectId, worktreePath: worktreePath, profileId: profileId)
+        return try startResolved(
+            resolved: resolved,
+            profileId: profileId,
+            restart: restart,
+            openOnURL: openOnURL
+        )
+    }
+
+    @discardableResult
+    private func startResolved(
+        resolved: ResolvedStartContext,
+        profileId: String,
+        restart: Bool,
+        openOnURL: Bool
+    ) throws -> DevServerRunSnapshot {
+        let key = DevServerRunKey(
+            projectId: resolved.projectId,
+            taskId: resolved.task?.id,
+            worktreePath: resolved.worktreeRoot.path,
+            profileId: profileId
+        )
         let delayLaunchForRestart: Bool
         if restart {
             delayLaunchForRestart = stopImmediately(key: key)
@@ -48,7 +85,7 @@ public final class DevServerRunCoordinator {
         let run = runStore.start(
             key: key,
             profileName: resolved.profile.name,
-            workspaceId: resolved.task.workspaceId,
+            workspaceId: resolved.workspaceId,
             worktreePath: resolved.worktreeRoot.path,
             cwd: resolved.cwd.path,
             command: resolved.profile.command,
@@ -59,6 +96,7 @@ public final class DevServerRunCoordinator {
         let env = launchEnvironment(
             projectId: resolved.projectId,
             task: resolved.task,
+            workspaceId: resolved.workspaceId,
             profileId: resolved.profile.id,
             runId: run.runId,
             worktreePath: resolved.worktreeRoot.path,
@@ -157,7 +195,7 @@ public final class DevServerRunCoordinator {
         )
         let started = try WorktreeSetupCoordinator.shared.start(
             projectId: resolved.projectId,
-            taskId: resolved.task.id,
+            taskId: resolved.task?.id,
             projectRoot: resolved.projectRoot,
             worktreePath: resolved.worktreeRoot.path,
             force: status?.phase == .failed,
@@ -336,6 +374,21 @@ public final class DevServerRunCoordinator {
         )
     }
 
+    public func restart(
+        projectId explicitProjectId: UUID?,
+        worktreePath: String,
+        profileId: String,
+        openOnURL: Bool = false
+    ) throws -> DevServerRunSnapshot {
+        try start(
+            projectId: explicitProjectId,
+            worktreePath: worktreePath,
+            profileId: profileId,
+            restart: true,
+            openOnURL: openOnURL
+        )
+    }
+
     public func stopAllBestEffort() {
         for process in processes.values {
             process.stopImmediately()
@@ -366,6 +419,12 @@ public final class DevServerRunCoordinator {
 
     public func stopTaskRuns(projectId: UUID, taskId: UUID) {
         for snapshot in runStore.snapshots(projectId: projectId, taskId: taskId) where snapshot.isActive {
+            _ = try? stop(runId: snapshot.runId)
+        }
+    }
+
+    public func stopWorktreeRuns(projectId: UUID, worktreePath: String) {
+        for snapshot in runStore.snapshots(projectId: projectId, worktreePath: worktreePath) where snapshot.isActive {
             _ = try? stop(runId: snapshot.runId)
         }
     }
@@ -417,6 +476,9 @@ public final class DevServerRunCoordinator {
                 projectRoot: taskStore.projectRoot,
                 reason: reason
             )
+        }
+        for snapshot in runStore.snapshots(projectId: projectId) where snapshot.isActive {
+            _ = try? stop(runId: snapshot.runId)
         }
         setupStateStores.removeValue(forKey: projectId)
     }
@@ -538,18 +600,69 @@ public final class DevServerRunCoordinator {
               let profileStore = DevServerProfileStoreProvider.shared.store(for: projectId) else {
             throw DevServerRunError.storeUnavailable
         }
-        if let loadError = profileStore.loadError {
-            throw DevServerRunError.profileStoreLoadFailed(loadError.localizedDescription)
-        }
-        guard let profile = profileStore.profile(id: profileId) else {
-            throw DevServerRunError.profileNotFound(profileId)
-        }
         guard let task = taskStore.fileSnapshot().tasks.first(where: { $0.id == taskId && $0.archivedAt == nil }) else {
             throw DevServerRunError.taskNotFound(taskId)
         }
         guard let rawWorktreePath = task.worktreePath?.trimmingCharacters(in: .whitespacesAndNewlines),
               !rawWorktreePath.isEmpty else {
             throw DevServerRunError.taskNotBound(taskId)
+        }
+        return try resolve(
+            projectId: projectId,
+            profileStore: profileStore,
+            profileId: profileId,
+            rawWorktreePath: rawWorktreePath,
+            task: task,
+            workspaceId: task.workspaceId
+        )
+    }
+
+    private func resolve(
+        projectId explicitProjectId: UUID?,
+        worktreePath: String,
+        profileId: String
+    ) throws -> ResolvedStartContext {
+        let projectId: UUID
+        if let explicitProjectId {
+            projectId = explicitProjectId
+        } else if let active = ProjectStore.shared.activeProjectId {
+            projectId = active
+        } else {
+            throw DevServerRunError.noProject
+        }
+        guard let profileStore = DevServerProfileStoreProvider.shared.store(for: projectId) else {
+            throw DevServerRunError.storeUnavailable
+        }
+        let worktreeRootPath = WorktreeResolver.worktreeRoot(
+            containing: worktreePath,
+            projectFolder: profileStore.projectRoot.path
+        ) ?? worktreePath
+        let task = taskBoundToWorktree(projectId: projectId, projectRoot: profileStore.projectRoot, worktreePath: worktreeRootPath)
+        let workspaceId = task?.workspaceId
+            ?? WorkspaceMetadataStore.shared.workspaceIds(withWorktreePath: worktreeRootPath, projectId: projectId).first
+        return try resolve(
+            projectId: projectId,
+            profileStore: profileStore,
+            profileId: profileId,
+            rawWorktreePath: worktreeRootPath,
+            task: task,
+            workspaceId: workspaceId
+        )
+    }
+
+    private func resolve(
+        projectId: UUID,
+        profileStore: DevServerProfileStore,
+        profileId: String,
+        rawWorktreePath: String,
+        task: TaskRecord?,
+        workspaceId: UUID?
+    ) throws -> ResolvedStartContext {
+        if let loadError = profileStore.loadError {
+            throw DevServerRunError.profileStoreLoadFailed(loadError.localizedDescription)
+        }
+        guard let profile = profileStore.profile(id: profileId) else {
+            throw DevServerRunError.profileNotFound(profileId)
         }
         let worktreeRoot = URL(fileURLWithPath: rawWorktreePath).resolvingSymlinksInPath()
         var isDirectory: ObjCBool = false
@@ -563,13 +676,34 @@ public final class DevServerRunCoordinator {
         }
         return ResolvedStartContext(
             projectId: projectId,
-            projectRoot: taskStore.projectRoot,
+            projectRoot: profileStore.projectRoot,
             task: task,
+            workspaceId: workspaceId,
             profileFile: profileStore.file,
             profile: profile,
             worktreeRoot: worktreeRoot,
             cwd: cwd
         )
+    }
+
+    private func taskBoundToWorktree(projectId: UUID, projectRoot: URL, worktreePath: String) -> TaskRecord? {
+        guard let taskStore = TaskBoardStoreProvider.shared.store(for: projectId),
+              let targetKey = TaskPathNormalization.resolveDisplayAndKey(
+                worktreePath,
+                relativeTo: projectRoot
+              )?.keyPath else {
+            return nil
+        }
+        return taskStore.fileSnapshot().tasks
+            .filter { $0.archivedAt == nil }
+            .filter { task in
+                TaskPathNormalization.resolveDisplayAndKey(
+                    task.worktreePath,
+                    relativeTo: projectRoot
+                )?.keyPath == targetKey
+            }
+            .sorted { lhs, rhs in lhs.updatedAt > rhs.updatedAt }
+            .first
     }
 
     private func materializeFallbackURLs(runId: UUID, profile: DevServerProfile) {
@@ -611,7 +745,12 @@ public final class DevServerRunCoordinator {
             return
         }
         let cwd = (try? resolveWorkingDirectory(profile.workingDirectory, worktreeRoot: worktreeRoot)) ?? worktreeRoot
-        let key = DevServerRunKey(projectId: projectId, taskId: task.id, profileId: "\(profile.id).cleanup")
+        let key = DevServerRunKey(
+            projectId: projectId,
+            taskId: task.id,
+            worktreePath: worktreeRoot.path,
+            profileId: "\(profile.id).cleanup"
+        )
         guard runStore.activeSnapshot(for: key) == nil else { return }
         let run = runStore.start(
             key: key,
@@ -634,6 +773,7 @@ public final class DevServerRunCoordinator {
         let env = launchEnvironment(
             projectId: projectId,
             task: task,
+            workspaceId: task.workspaceId,
             profileId: profile.id,
             runId: run.runId,
             worktreePath: worktreeRoot.path,
@@ -739,7 +879,8 @@ public final class DevServerRunCoordinator {
 
     private func launchEnvironment(
         projectId: UUID,
-        task: TaskRecord,
+        task: TaskRecord?,
+        workspaceId: UUID?,
         profileId: String,
         runId: UUID,
         worktreePath: String,
@@ -747,8 +888,8 @@ public final class DevServerRunCoordinator {
     ) -> [String: String] {
         var env = profileEnv
         env["TERMLOOP_PROJECT_ID"] = projectId.uuidString
-        env["TERMLOOP_TASK_ID"] = task.id.uuidString
-        env["TERMLOOP_WORKSPACE_ID"] = task.workspaceId?.uuidString
+        env["TERMLOOP_TASK_ID"] = task?.id.uuidString
+        env["TERMLOOP_WORKSPACE_ID"] = workspaceId?.uuidString
         env["TERMLOOP_WORKTREE_PATH"] = worktreePath
         env["TERMLOOP_DEVSERVER_PROFILE_ID"] = profileId
         env["TERMLOOP_DEVSERVER_RUN_ID"] = runId.uuidString
@@ -758,7 +899,8 @@ public final class DevServerRunCoordinator {
     private struct ResolvedStartContext {
         let projectId: UUID
         let projectRoot: URL
-        let task: TaskRecord
+        let task: TaskRecord?
+        let workspaceId: UUID?
         let profileFile: DevServerProfileFile
         let profile: DevServerProfile
         let worktreeRoot: URL
