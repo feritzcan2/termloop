@@ -242,6 +242,50 @@ function createSessionClient(session: ActiveSession): TermLoopClient {
         (client) => client.startTaskAgent(params),
         "prewrite"
       ),
+    getTaskRemoteContext: (params) =>
+      withReconnect(session, (client) => client.getTaskRemoteContext(params)),
+    getRemoteOperation: (operationId) =>
+      withReconnect(session, (client) => client.getRemoteOperation(operationId)),
+    waitRemoteOperation: (operationId, timeoutMs) =>
+      withReconnect(session, (client) =>
+        client.waitRemoteOperation(operationId, timeoutMs)
+      ),
+    createRemoteTask: (params) =>
+      withReconnect(
+        session,
+        (client) => client.createRemoteTask(params),
+        "prewrite"
+      ),
+    linkTaskRemoteItem: (params) =>
+      withReconnect(
+        session,
+        (client) => client.linkTaskRemoteItem(params),
+        "prewrite"
+      ),
+    unlinkTaskRemoteItem: (params) =>
+      withReconnect(
+        session,
+        (client) => client.unlinkTaskRemoteItem(params),
+        "prewrite"
+      ),
+    refreshTaskRemoteItem: (params) =>
+      withReconnect(
+        session,
+        (client) => client.refreshTaskRemoteItem(params),
+        "prewrite"
+      ),
+    syncAssignedRemoteTasks: (params) =>
+      withReconnect(
+        session,
+        (client) => client.syncAssignedRemoteTasks(params),
+        "prewrite"
+      ),
+    updateTaskRemoteStatus: (params) =>
+      withReconnect(
+        session,
+        (client) => client.updateTaskRemoteStatus(params),
+        "prewrite"
+      ),
     close: async () => {
       if (active === session) {
         await closeSession();

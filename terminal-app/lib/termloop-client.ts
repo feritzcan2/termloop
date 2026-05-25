@@ -145,6 +145,7 @@ export type TaskProvisionState = "none" | "pending" | "ready" | "failed";
 export interface TaskColumnSummary {
   id: TaskColumnId;
   title: string;
+  remote_status_label?: string | null;
 }
 
 export interface TaskRecord {
@@ -194,6 +195,50 @@ export interface UpdateTaskParams {
    */
   brief?: string | null;
   projectId?: string;
+}
+
+export interface TaskRemoteContext {
+  project_id: string;
+  enabled: boolean;
+  provider: "jira" | "github" | "gitlab" | string;
+  provider_label?: string;
+  container?: string | null;
+  sync_assigned_enabled: boolean;
+  limit: number;
+  last_synced_at?: number | null;
+  last_error?: string | null;
+  is_syncing: boolean;
+  last_message?: string | null;
+  can_create: boolean;
+  can_sync_assigned: boolean;
+  cli_available: boolean;
+  cli_checking?: boolean;
+  cli_executable?: string;
+  cli_summary?: string;
+  cli_detail?: string | null;
+  cli_setup_hint?: string;
+  columns?: TaskColumnSummary[];
+}
+
+export type RemoteOperationStatus = "running" | "succeeded" | "failed" | string;
+
+export interface RemoteOperation<R = unknown> {
+  operation_id: string;
+  kind: string;
+  status: RemoteOperationStatus;
+  project_id?: string;
+  task_id?: string | null;
+  created_at?: number;
+  updated_at?: number;
+  result?: R | null;
+  error_message?: string | null;
+}
+
+export interface RemoteTaskResult {
+  task?: TaskRecord;
+  context?: TaskRemoteContext;
+  tasks?: TaskRecord[];
+  message?: string;
 }
 
 export interface StartTaskAgentResult {
@@ -420,6 +465,39 @@ export interface TermLoopClient {
     projectId?: string;
     allowDirty?: boolean;
   }): Promise<StartTaskAgentResult>;
+  getTaskRemoteContext(params?: { projectId?: string }): Promise<TaskRemoteContext>;
+  getRemoteOperation(operationId: string): Promise<RemoteOperation<RemoteTaskResult>>;
+  waitRemoteOperation(
+    operationId: string,
+    timeoutMs?: number
+  ): Promise<RemoteOperation<RemoteTaskResult>>;
+  createRemoteTask(params: {
+    title: string;
+    bodyMarkdown?: string;
+    issueType?: string;
+    projectId?: string;
+  }): Promise<RemoteOperation<RemoteTaskResult>>;
+  linkTaskRemoteItem(params: {
+    taskId: string;
+    input: string;
+    projectId?: string;
+  }): Promise<RemoteOperation<RemoteTaskResult>>;
+  unlinkTaskRemoteItem(params: {
+    taskId: string;
+    projectId?: string;
+  }): Promise<RemoteTaskResult>;
+  refreshTaskRemoteItem(params: {
+    taskId: string;
+    projectId?: string;
+  }): Promise<RemoteOperation<RemoteTaskResult>>;
+  syncAssignedRemoteTasks(params?: {
+    projectId?: string;
+  }): Promise<RemoteOperation<RemoteTaskResult>>;
+  updateTaskRemoteStatus(params: {
+    taskId: string;
+    columnId: TaskColumnId;
+    projectId?: string;
+  }): Promise<RemoteOperation<RemoteTaskResult>>;
 
   close(): Promise<void>;
 }
@@ -464,6 +542,16 @@ export function createTermLoopClient(opts: {
   const call = async <R>(method: string, params?: unknown): Promise<R> => {
     const resp = await transport.send<R>({ id: newId(), method, params });
     return unwrap(resp);
+  };
+  const callRemoteOperation = async (
+    method: string,
+    params?: unknown
+  ): Promise<RemoteOperation<RemoteTaskResult>> => {
+    const out = await call<{ operation: RemoteOperation<RemoteTaskResult> }>(
+      method,
+      params
+    );
+    return out.operation;
   };
 
   const listeners = new Map<string, (e: SurfaceEvent) => void>();
@@ -713,6 +801,84 @@ export function createTermLoopClient(opts: {
         ...(params.projectId ? { project_id: params.projectId } : {}),
         ...(params.allowDirty ? { allow_dirty: true } : {}),
       });
+    },
+    async getTaskRemoteContext(params) {
+      return call<TaskRemoteContext>("tasks.remote_context", {
+        ...(params?.projectId ? { project_id: params.projectId } : {}),
+      });
+    },
+    async getRemoteOperation(operationId) {
+      return callRemoteOperation("tasks.remote_operation", {
+        operation_id: operationId,
+      });
+    },
+    async waitRemoteOperation(operationId, timeoutMs = 45_000) {
+      const start = Date.now();
+      while (Date.now() - start < timeoutMs) {
+        const op = await callRemoteOperation("tasks.remote_operation", {
+          operation_id: operationId,
+        });
+        if (op.status === "succeeded") return op;
+        if (op.status === "failed") {
+          throw new Error(op.error_message || "Remote operation failed");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 900));
+      }
+      throw new Error("Timed out waiting for remote operation");
+    },
+    async createRemoteTask(params) {
+      return callRemoteOperation(
+        "tasks.remote_create",
+        {
+          title: params.title,
+          ...(params.bodyMarkdown ? { body_markdown: params.bodyMarkdown } : {}),
+          ...(params.issueType ? { issue_type: params.issueType } : {}),
+          ...(params.projectId ? { project_id: params.projectId } : {}),
+        }
+      );
+    },
+    async linkTaskRemoteItem(params) {
+      return callRemoteOperation(
+        "tasks.remote_link",
+        {
+          task_id: params.taskId,
+          input: params.input,
+          ...(params.projectId ? { project_id: params.projectId } : {}),
+        }
+      );
+    },
+    async unlinkTaskRemoteItem(params) {
+      return call<RemoteTaskResult>("tasks.remote_unlink", {
+        task_id: params.taskId,
+        ...(params.projectId ? { project_id: params.projectId } : {}),
+      });
+    },
+    async refreshTaskRemoteItem(params) {
+      return callRemoteOperation(
+        "tasks.remote_refresh",
+        {
+          task_id: params.taskId,
+          ...(params.projectId ? { project_id: params.projectId } : {}),
+        }
+      );
+    },
+    async syncAssignedRemoteTasks(params) {
+      return callRemoteOperation(
+        "tasks.remote_sync_assigned",
+        {
+          ...(params?.projectId ? { project_id: params.projectId } : {}),
+        }
+      );
+    },
+    async updateTaskRemoteStatus(params) {
+      return callRemoteOperation(
+        "tasks.remote_update_status",
+        {
+          task_id: params.taskId,
+          column_id: params.columnId,
+          ...(params.projectId ? { project_id: params.projectId } : {}),
+        }
+      );
     },
     async subscribeSurface(workspaceId, surfaceId, listener, format, historyLines) {
       const out = await call<{ subscription_id: string }>(
