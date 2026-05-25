@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   type ListRenderItem,
@@ -16,6 +17,7 @@ import {
 import {
   type TaskColumnSummary,
   type TaskRecord,
+  type TaskRemoteContext,
   type TermLoopClient,
 } from "../lib/termloop-client";
 import { relativeTime } from "../lib/format";
@@ -44,14 +46,24 @@ export function TasksView({
   const [filter, setFilter] = useState<ColumnFilter>(ALL_FILTER);
   const [search, setSearch] = useState("");
   const [creatorOpen, setCreatorOpen] = useState(false);
+  const [remoteContext, setRemoteContext] = useState<TaskRemoteContext | null>(
+    null
+  );
+  const [remoteBusy, setRemoteBusy] = useState(false);
 
   const load = useCallback(async () => {
     setRefreshing(true);
     setError(null);
     try {
-      const out = await client.listTasks({ projectId, includeArchived: false });
+      const [out, context] = await Promise.all([
+        client.listTasks({ projectId, includeArchived: false }),
+        client
+          .getTaskRemoteContext({ projectId })
+          .catch(() => null),
+      ]);
       setTasks(out.tasks);
       setColumns(out.columns);
+      setRemoteContext(context);
     } catch (err) {
       setError(String((err as Error).message ?? err));
     } finally {
@@ -118,9 +130,31 @@ export function TasksView({
     []
   );
 
+  const onSyncAssigned = useCallback(async () => {
+    if (!remoteContext || remoteBusy) return;
+    setRemoteBusy(true);
+    try {
+      const op = await client.syncAssignedRemoteTasks({ projectId });
+      const settled = await client.waitRemoteOperation(op.operation_id, 60_000);
+      const result = settled.result;
+      if (result?.tasks) setTasks(result.tasks);
+      if (result?.context) setRemoteContext(result.context);
+      if (!result?.tasks) await load();
+    } catch (err) {
+      Alert.alert("Remote sync failed", String((err as Error).message ?? err));
+    } finally {
+      setRemoteBusy(false);
+    }
+  }, [client, projectId, remoteContext, remoteBusy, load]);
+
   return (
     <View style={styles.root}>
       <View style={styles.toolbar}>
+        <RemoteSyncBar
+          context={remoteContext}
+          busy={remoteBusy}
+          onSync={onSyncAssigned}
+        />
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -241,6 +275,7 @@ export function TasksView({
         client={client}
         projectId={projectId}
         columns={columns}
+        remoteContext={remoteContext}
         onClose={() => setCreatorOpen(false)}
         onCreated={onCreated}
       />
@@ -277,6 +312,62 @@ function Chip({ label, count, active, onPress, mono }: ChipProps) {
         </Text>
       ) : null}
     </Pressable>
+  );
+}
+
+interface RemoteSyncBarProps {
+  context: TaskRemoteContext | null;
+  busy: boolean;
+  onSync: () => void;
+}
+
+function RemoteSyncBar({ context, busy, onSync }: RemoteSyncBarProps) {
+  if (!context) return null;
+  const provider = context.provider_label || context.provider || "Remote";
+  const enabled = context.enabled;
+  const canSync = context.can_sync_assigned && !busy && !context.is_syncing;
+  const status = !enabled
+    ? "Off on Mac"
+    : context.is_syncing || busy
+      ? "Syncing…"
+      : context.last_error
+        ? "Error"
+        : context.last_synced_at
+          ? `Synced ${relativeTime(context.last_synced_at)}`
+          : context.sync_assigned_enabled
+            ? "Not synced"
+            : "Manual links";
+  return (
+    <View
+      style={[
+        styles.remoteBar,
+        context.last_error && styles.remoteBarError,
+        !enabled && styles.remoteBarDisabled,
+      ]}
+    >
+      <View style={styles.remoteBarText}>
+        <Text style={styles.remoteBarTitle} numberOfLines={1}>
+          {provider}
+          {context.container ? ` · ${context.container}` : ""}
+        </Text>
+        <Text style={styles.remoteBarSub} numberOfLines={1}>
+          {context.last_error || context.last_message || status}
+        </Text>
+      </View>
+      {enabled ? (
+        <Pressable
+          style={[styles.remoteSyncBtn, !canSync && styles.remoteSyncBtnOff]}
+          onPress={onSync}
+          disabled={!canSync}
+        >
+          {busy || context.is_syncing ? (
+            <ActivityIndicator color={colors.primary} size="small" />
+          ) : (
+            <Text style={styles.remoteSyncText}>Sync</Text>
+          )}
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
@@ -360,6 +451,7 @@ interface NewTaskSheetProps {
   client: TermLoopClient;
   projectId?: string;
   columns: TaskColumnSummary[];
+  remoteContext: TaskRemoteContext | null;
   onClose: () => void;
   onCreated: (task: TaskRecord) => void;
 }
@@ -369,12 +461,14 @@ function NewTaskSheet({
   client,
   projectId,
   columns,
+  remoteContext,
   onClose,
   onCreated,
 }: NewTaskSheetProps) {
   const [title, setTitle] = useState("");
   const [brief, setBrief] = useState("");
   const [columnId, setColumnId] = useState("backlog");
+  const [createRemote, setCreateRemote] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -383,6 +477,7 @@ function NewTaskSheet({
       setTitle("");
       setBrief("");
       setColumnId("backlog");
+      setCreateRemote(false);
       setError(null);
       setSubmitting(false);
     }
@@ -396,12 +491,25 @@ function NewTaskSheet({
     setSubmitting(true);
     setError(null);
     try {
-      const created = await client.createTask({
-        title: trimmedTitle,
-        brief: brief.trim() || undefined,
-        columnId,
-        projectId,
-      });
+      let created: TaskRecord;
+      if (createRemote && remoteContext?.can_create) {
+        const op = await client.createRemoteTask({
+          title: trimmedTitle,
+          bodyMarkdown: brief.trim() || undefined,
+          projectId,
+        });
+        const settled = await client.waitRemoteOperation(op.operation_id, 60_000);
+        const task = settled.result?.task;
+        if (!task) throw new Error("Remote item was created but no task returned.");
+        created = task;
+      } else {
+        created = await client.createTask({
+          title: trimmedTitle,
+          brief: brief.trim() || undefined,
+          columnId,
+          projectId,
+        });
+      }
       onCreated(created);
     } catch (err) {
       setError(String((err as Error).message ?? err));
@@ -411,6 +519,7 @@ function NewTaskSheet({
   };
 
   const pickerColumns = columns.length > 0 ? columns : DEFAULT_COLUMN_PICKER;
+  const remoteCreateAvailable = Boolean(remoteContext?.enabled && remoteContext.can_create);
 
   return (
     <Modal
@@ -477,6 +586,42 @@ function NewTaskSheet({
                   );
                 })}
               </View>
+
+              {remoteContext?.enabled ? (
+                <Pressable
+                  style={[
+                    styles.remoteCreateToggle,
+                    createRemote && styles.remoteCreateToggleOn,
+                    !remoteCreateAvailable && styles.remoteCreateToggleOff,
+                  ]}
+                  onPress={() =>
+                    remoteCreateAvailable &&
+                    setCreateRemote((value) => !value)
+                  }
+                  disabled={!remoteCreateAvailable}
+                >
+                  <View
+                    style={[
+                      styles.checkbox,
+                      createRemote && styles.checkboxActive,
+                    ]}
+                  >
+                    {createRemote ? (
+                      <Text style={styles.checkboxMark}>✓</Text>
+                    ) : null}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.remoteCreateTitle}>
+                      Create {remoteContext.provider_label || remoteContext.provider} item too
+                    </Text>
+                    <Text style={styles.remoteCreateHint} numberOfLines={2}>
+                      {remoteCreateAvailable
+                        ? "Creates the remote issue and links it to this task."
+                        : remoteContext.cli_summary || "Remote creation is unavailable on the Mac."}
+                    </Text>
+                  </View>
+                </Pressable>
+              ) : null}
 
               {error ? (
                 <Text style={styles.sheetError} numberOfLines={3}>
@@ -581,6 +726,47 @@ function dotBgStyleFor(columnId: string) {
 const styles = StyleSheet.create({
   root: { flex: 1, position: "relative" },
   toolbar: { paddingTop: 4, gap: 8 },
+  remoteBar: {
+    minHeight: 48,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgElevated,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  remoteBarError: {
+    borderColor: colors.dangerBorder,
+    backgroundColor: colors.dangerDim,
+  },
+  remoteBarDisabled: { opacity: 0.72 },
+  remoteBarText: { flex: 1, minWidth: 0 },
+  remoteBarTitle: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  remoteBarSub: {
+    color: colors.sub,
+    fontSize: 10,
+    marginTop: 2,
+  },
+  remoteSyncBtn: {
+    minWidth: 56,
+    minHeight: 30,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.borderAccent,
+    backgroundColor: colors.primaryDim,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+  remoteSyncBtnOff: { opacity: 0.45 },
+  remoteSyncText: { color: colors.primary, fontSize: 12, fontWeight: "800" },
   chipRow: { gap: 6, paddingHorizontal: 2, paddingBottom: 2 },
   chip: {
     height: 28,
@@ -934,6 +1120,51 @@ const styles = StyleSheet.create({
   colOptText: { color: colors.sub, fontSize: 11, fontWeight: "800" },
   colOptTextActive: { color: colors.primary },
   colDot: { width: 6, height: 6, borderRadius: 999 },
+  remoteCreateToggle: {
+    marginTop: 12,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgRaised,
+    padding: 10,
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "center",
+  },
+  remoteCreateToggleOn: {
+    borderColor: colors.borderAccent,
+    backgroundColor: colors.primaryDim,
+  },
+  remoteCreateToggleOff: { opacity: 0.58 },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkboxActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  checkboxMark: {
+    color: colors.onPrimary,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  remoteCreateTitle: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  remoteCreateHint: {
+    color: colors.sub,
+    fontSize: 10,
+    marginTop: 2,
+    lineHeight: 14,
+  },
 
   sheetError: {
     color: colors.danger,
