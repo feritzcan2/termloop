@@ -87,6 +87,11 @@ export function TasksView({
     return { byColumn: result, total };
   }, [tasks]);
 
+  const hasRemoteTasks = useMemo(
+    () => Boolean(tasks?.some((task) => task.remote_key)),
+    [tasks]
+  );
+
   const filtered = useMemo<TaskRecord[]>(() => {
     if (!tasks) return [];
     const trimmed = search.trim().toLowerCase();
@@ -134,7 +139,9 @@ export function TasksView({
     if (!remoteContext || remoteBusy) return;
     setRemoteBusy(true);
     try {
-      const op = await client.syncAssignedRemoteTasks({ projectId });
+      const op = remoteContext.can_sync_assigned
+        ? await client.syncAssignedRemoteTasks({ projectId })
+        : await client.refreshLinkedRemoteTasks({ projectId });
       const settled = await client.waitRemoteOperation(op.operation_id, 60_000);
       const result = settled.result;
       if (result?.tasks) setTasks(result.tasks);
@@ -152,6 +159,7 @@ export function TasksView({
       <View style={styles.toolbar}>
         <RemoteSyncBar
           context={remoteContext}
+          hasRemoteTasks={hasRemoteTasks}
           busy={remoteBusy}
           onSync={onSyncAssigned}
         />
@@ -317,15 +325,25 @@ function Chip({ label, count, active, onPress, mono }: ChipProps) {
 
 interface RemoteSyncBarProps {
   context: TaskRemoteContext | null;
+  hasRemoteTasks: boolean;
   busy: boolean;
   onSync: () => void;
 }
 
-function RemoteSyncBar({ context, busy, onSync }: RemoteSyncBarProps) {
+function RemoteSyncBar({
+  context,
+  hasRemoteTasks,
+  busy,
+  onSync,
+}: RemoteSyncBarProps) {
   if (!context) return null;
   const provider = context.provider_label || context.provider || "Remote";
   const enabled = context.enabled;
-  const canSync = context.can_sync_assigned && !busy && !context.is_syncing;
+  const canSync =
+    enabled &&
+    !busy &&
+    !context.is_syncing &&
+    (context.can_sync_assigned || hasRemoteTasks);
   const status = !enabled
     ? "Off on Mac"
     : context.is_syncing || busy
@@ -354,7 +372,7 @@ function RemoteSyncBar({ context, busy, onSync }: RemoteSyncBarProps) {
           {context.last_error || context.last_message || status}
         </Text>
       </View>
-      {enabled ? (
+      {context.can_sync_assigned || hasRemoteTasks ? (
         <Pressable
           style={[styles.remoteSyncBtn, !canSync && styles.remoteSyncBtnOff]}
           onPress={onSync}
@@ -363,7 +381,7 @@ function RemoteSyncBar({ context, busy, onSync }: RemoteSyncBarProps) {
           {busy || context.is_syncing ? (
             <ActivityIndicator color={colors.primary} size="small" />
           ) : (
-            <Text style={styles.remoteSyncText}>Sync</Text>
+            <Text style={styles.remoteSyncText}>Sync {provider}</Text>
           )}
         </Pressable>
       ) : null}

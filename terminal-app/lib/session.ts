@@ -280,6 +280,12 @@ function createSessionClient(session: ActiveSession): TermLoopClient {
         (client) => client.syncAssignedRemoteTasks(params),
         "prewrite"
       ),
+    refreshLinkedRemoteTasks: (params) =>
+      withReconnect(
+        session,
+        (client) => client.refreshLinkedRemoteTasks(params),
+        "prewrite"
+      ),
     updateTaskRemoteStatus: (params) =>
       withReconnect(
         session,
