@@ -182,12 +182,17 @@ public final class DevServerRunStore: ObservableObject {
         return snapshot
     }
 
-    public func snapshots(projectId: UUID? = nil, taskId: UUID? = nil) -> [DevServerRunSnapshot] {
-        runsById.values
+    public func snapshots(projectId: UUID? = nil, taskId: UUID? = nil, worktreePath: String? = nil) -> [DevServerRunSnapshot] {
+        let normalizedWorktreePath = worktreePath.flatMap(DevServerRunKey.normalizedWorktreePath)
+        return runsById.values
             .map(\.snapshot)
             .filter { snapshot in
                 if let projectId, snapshot.key.projectId != projectId { return false }
                 if let taskId, snapshot.key.taskId != taskId { return false }
+                if let normalizedWorktreePath,
+                   DevServerRunKey.normalizedWorktreePath(snapshot.worktreePath) != normalizedWorktreePath {
+                    return false
+                }
                 return true
             }
             .sorted { lhs, rhs in lhs.updatedAt > rhs.updatedAt }
@@ -260,7 +265,7 @@ public final class DevServerRunStore: ObservableObject {
         [
             "run_id": snapshot.runId.uuidString,
             "project_id": snapshot.key.projectId.uuidString,
-            "task_id": snapshot.key.taskId.uuidString,
+            "task_id": snapshot.key.taskId?.uuidString as Any? ?? NSNull(),
             "profile_id": snapshot.key.profileId,
             "profile_name": snapshot.profileName,
             "workspace_id": snapshot.workspaceId?.uuidString as Any? ?? NSNull(),

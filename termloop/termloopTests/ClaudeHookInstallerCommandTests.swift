@@ -14,6 +14,10 @@ final class ClaudeHookInstallerCommandTests: XCTestCase {
                 "Command does not use bundled-CLI fallback: \(command)"
             )
             XCTAssertTrue(
+                command.contains(ClaudeSettingsJSON.ownershipMarker),
+                "Command missing stable ownership marker: \(command)"
+            )
+            XCTAssertTrue(
                 command.contains("TERMLOOP_HOOKS_DISABLED"),
                 "Command missing global disable guard: \(command)"
             )
@@ -37,7 +41,7 @@ final class ClaudeHookInstallerCommandTests: XCTestCase {
     }
 
     func test_hookTestRunner_treatsTermLoopInlineShellHooksAsShellWrapped() async {
-        let command = ClaudeHookInstaller.requiredHooks.first { $0.event == "Stop" }?.command
+        let command = ClaudeHookInstaller.requiredHooks["Stop"]
         let result = await HookTestRunner().run(IntegrationItem(
             id: "test",
             kind: .claudeHook,
@@ -78,7 +82,7 @@ final class ClaudeHookInstallerCommandTests: XCTestCase {
     }
 
     func test_requiredHooks_coversAllSixClaudeEvents() {
-        let events = Set(ClaudeHookInstaller.requiredHooks.map(\.event))
+        let events = Set(ClaudeHookInstaller.requiredHooks.keys)
         XCTAssertEqual(events, [
             "SessionStart",
             "PreToolUse",
@@ -91,7 +95,7 @@ final class ClaudeHookInstallerCommandTests: XCTestCase {
 
     func test_statusProbeSuffixes_matchInstallerOutput() {
         for (event, suffix) in ClaudeHooksStatus.requiredHooks {
-            let installerCommand = ClaudeHookInstaller.requiredHooks.first { $0.event == event }?.command
+            let installerCommand = ClaudeHookInstaller.requiredHooks[event]
             XCTAssertNotNil(installerCommand, "Status expects event \(event) but installer does not write it")
             XCTAssertTrue(
                 installerCommand?.contains(suffix) ?? false,
@@ -102,13 +106,135 @@ final class ClaudeHookInstallerCommandTests: XCTestCase {
 
     func test_probeSuffixes_matchRequiredHooks() {
         for (event, suffix) in ClaudeHookInstaller.probeSuffixes {
-            let matching = ClaudeHookInstaller.requiredHooks.first { $0.event == event }
+            let matching = ClaudeHookInstaller.requiredHooks[event]
             XCTAssertNotNil(matching, "probeSuffixes event \(event) has no requiredHooks entry")
             XCTAssertTrue(
-                matching?.command.contains(suffix) ?? false,
+                matching?.contains(suffix) ?? false,
                 "probeSuffixes suffix '\(suffix)' not found in requiredHooks command for \(event)"
             )
         }
+    }
+
+    func test_settingsTransform_healthyConfigProducesNoWrite() throws {
+        let root: [String: Any] = [
+            "permissions": ["allow": ["Read"]],
+            "hooks": ClaudeSettingsJSON.requiredHooks.reduce(into: [String: Any]()) { result, pair in
+                result[pair.key] = [
+                    [
+                        "matcher": "",
+                        "hooks": [
+                            ["type": "command", "command": pair.value]
+                        ]
+                    ] as [String: Any]
+                ]
+            }
+        ]
+        let content = try ClaudeSettingsJSON.serialize(root)
+        let mutation = try ClaudeSettingsJSON.installTransform(content)
+        XCTAssertFalse(mutation.changed)
+        XCTAssertTrue(mutation.unsupportedEvents.isEmpty)
+    }
+
+    func test_settingsTransform_preservesUserHookInsideMixedGroup() throws {
+        let staleCommand = "TERMLOOP_BIN=\"${TERMLOOP_BUNDLED_CLI_PATH:-$(command -v termloop)}\"; termloop claude-hook stop"
+        let root: [String: Any] = [
+            "hooks": [
+                "Stop": [
+                    [
+                        "matcher": "Bash",
+                        "hooks": [
+                            ["type": "command", "command": staleCommand],
+                            ["type": "command", "command": "user-hook.sh"]
+                        ]
+                    ] as [String: Any]
+                ]
+            ]
+        ]
+        let content = try ClaudeSettingsJSON.serialize(root)
+        let mutation = try ClaudeSettingsJSON.installTransform(content)
+        XCTAssertTrue(mutation.changed)
+        XCTAssertEqual(mutation.repairedEvents, ["Stop"])
+
+        let parsed = try ClaudeSettingsJSON.parseRoot(mutation.content)
+        let hooks = parsed["hooks"] as! [String: Any]
+        let stopGroups = hooks["Stop"] as! [[String: Any]]
+        let userGroupHooks = stopGroups[0]["hooks"] as! [[String: Any]]
+        XCTAssertEqual(userGroupHooks.map { $0["command"] as? String }, ["user-hook.sh"])
+        XCTAssertTrue(stopGroups.contains { group in
+            guard let nested = group["hooks"] as? [[String: Any]] else { return false }
+            return nested.contains {
+                ClaudeSettingsJSON.isCanonicalHookEntry(event: "Stop", entry: $0)
+            }
+        })
+    }
+
+    func test_settingsTransform_preservesUnsupportedHookEventShape() throws {
+        let input = """
+        {
+          "hooks": {
+            "Stop": "future-schema"
+          },
+          "model": "sonnet"
+        }
+        """
+
+        let mutation = try ClaudeSettingsJSON.installTransform(input)
+        XCTAssertTrue(mutation.unsupportedEvents.contains("Stop"))
+        let parsed = try ClaudeSettingsJSON.parseRoot(mutation.content)
+        let hooks = parsed["hooks"] as! [String: Any]
+        XCTAssertEqual(hooks["Stop"] as? String, "future-schema")
+        XCTAssertEqual(parsed["model"] as? String, "sonnet")
+    }
+
+    func test_claudeJSONMCPTransform_touchesOnlyActiveProject() throws {
+        let termloopServer: [String: Any] = [
+            "command": "/bin/sh",
+            "args": [
+                "-lc",
+                "exec \"${TERMLOOP_BUNDLED_CLI_PATH:-$(command -v termloop)}\" termloop-mcp"
+            ]
+        ]
+        let inputRoot: [String: Any] = [
+            "projects": [
+                "/active": [
+                    "mcpServers": [
+                        "termloop": termloopServer
+                    ]
+                ],
+                "/other": [
+                    "mcpServers": [
+                        "termloop": [
+                            "command": "keep",
+                            "env": ["TERMLOOP_SOCKET_PATH": "/tmp/stale"]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+        let input = try ClaudeJSONMCPInstaller.serialize(inputRoot)
+        let healthy = try ClaudeJSONMCPInstaller.installTransform(
+            input,
+            workspaceCwd: "/active",
+            mcpServers: ["termloop": termloopServer]
+        )
+        XCTAssertFalse(healthy.changed)
+
+        let mutation = try ClaudeJSONMCPInstaller.installTransform(
+            input,
+            workspaceCwd: "/active",
+            mcpServers: [
+                "termloop": [
+                    "command": "old",
+                    "env": ["TERMLOOP_SOCKET_PATH": "/tmp/current"]
+                ]
+            ]
+        )
+        let parsed = try ClaudeJSONMCPInstaller.parseRoot(mutation.content)
+        let projects = parsed["projects"] as! [String: Any]
+        let other = projects["/other"] as! [String: Any]
+        let otherServers = other["mcpServers"] as! [String: Any]
+        let otherTermLoop = otherServers["termloop"] as! [String: Any]
+        XCTAssertEqual(otherTermLoop["command"] as? String, "keep")
     }
 
     @MainActor

@@ -152,20 +152,43 @@ enum TermLoopDevServerSocketCommands {
     }
 
     private static func start(_ params: [String: Any]) -> TerminalController.V2CallResult {
-        guard let taskId = uuid(params, "task_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid task_id", data: nil)
+        startOrRestart(params, restart: (params["restart"] as? Bool) == true)
+    }
+
+    private static func restart(_ params: [String: Any]) -> TerminalController.V2CallResult {
+        startOrRestart(params, restart: true)
+    }
+
+    private static func startOrRestart(_ params: [String: Any], restart: Bool) -> TerminalController.V2CallResult {
+        let taskId = uuid(params, "task_id")
+        let worktreePath = nonEmptyString(params, "worktree_path", "worktreePath")
+        guard taskId != nil || worktreePath != nil else {
+            return .err(code: "invalid_params", message: "Missing task_id or worktree_path", data: nil)
         }
         guard let profileId = nonEmptyString(params, "profile_id") else {
             return .err(code: "invalid_params", message: "Missing profile_id", data: nil)
         }
         do {
-            let snapshot = try DevServerRunCoordinator.shared.start(
-                projectId: uuid(params, "project_id"),
-                taskId: taskId,
-                profileId: profileId,
-                restart: (params["restart"] as? Bool) == true,
-                openOnURL: (params["open_on_url"] as? Bool) == true
-            )
+            let snapshot: DevServerRunSnapshot
+            if let worktreePath {
+                snapshot = try DevServerRunCoordinator.shared.start(
+                    projectId: uuid(params, "project_id"),
+                    worktreePath: worktreePath,
+                    profileId: profileId,
+                    restart: restart,
+                    openOnURL: (params["open_on_url"] as? Bool) == true
+                )
+            } else if let taskId {
+                snapshot = try DevServerRunCoordinator.shared.start(
+                    projectId: uuid(params, "project_id"),
+                    taskId: taskId,
+                    profileId: profileId,
+                    restart: restart,
+                    openOnURL: (params["open_on_url"] as? Bool) == true
+                )
+            } else {
+                return .err(code: "invalid_params", message: "Missing task_id or worktree_path", data: nil)
+            }
             return .ok(["run": runPayload(snapshot)])
         } catch {
             return runErrorToV2(error)
@@ -184,7 +207,7 @@ enum TermLoopDevServerSocketCommands {
                 guard let key = keyFromParams(params) else {
                     return .err(
                         code: "invalid_params",
-                        message: "Missing run_id or project_id/task_id/profile_id key",
+                        message: "Missing run_id or project_id/task_id/profile_id or project_id/worktree_path/profile_id key",
                         data: nil
                     )
                 }
@@ -199,31 +222,17 @@ enum TermLoopDevServerSocketCommands {
         }
     }
 
-    private static func restart(_ params: [String: Any]) -> TerminalController.V2CallResult {
-        guard let taskId = uuid(params, "task_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid task_id", data: nil)
-        }
-        guard let profileId = nonEmptyString(params, "profile_id") else {
-            return .err(code: "invalid_params", message: "Missing profile_id", data: nil)
-        }
-        do {
-            let snapshot = try DevServerRunCoordinator.shared.restart(
-                projectId: uuid(params, "project_id"),
-                taskId: taskId,
-                profileId: profileId,
-                openOnURL: (params["open_on_url"] as? Bool) == true
-            )
-            return .ok(["run": runPayload(snapshot)])
-        } catch {
-            return runErrorToV2(error)
-        }
-    }
-
     private static func runsList(_ params: [String: Any]) -> TerminalController.V2CallResult {
         let projectId = uuid(params, "project_id")
         let taskId = uuid(params, "task_id")
+        let worktreePath = nonEmptyString(params, "worktree_path", "worktreePath")
+            .map { normalizedRunWorktreePath($0, projectId: projectId ?? ProjectStore.shared.activeProjectId) }
         let includeLogs = (params["include_logs"] as? Bool) == true
-        let runs = DevServerRunStore.shared.snapshots(projectId: projectId, taskId: taskId).map { snapshot in
+        let runs = DevServerRunStore.shared.snapshots(
+            projectId: projectId,
+            taskId: taskId,
+            worktreePath: worktreePath
+        ).map { snapshot in
             var payload = runPayload(snapshot)
             if includeLogs {
                 payload["logs"] = DevServerRunStore.shared.logs(runId: snapshot.runId).map(logPayload(_:))
@@ -317,11 +326,41 @@ enum TermLoopDevServerSocketCommands {
         } else {
             return nil
         }
-        guard let taskId = uuid(params, "task_id"),
-              let profileId = nonEmptyString(params, "profile_id") else {
+        guard let profileId = nonEmptyString(params, "profile_id") else {
             return nil
         }
+        if let worktreePath = nonEmptyString(params, "worktree_path", "worktreePath") {
+            return DevServerRunKey(
+                projectId: projectId,
+                worktreePath: normalizedRunWorktreePath(worktreePath, projectId: projectId),
+                profileId: profileId
+            )
+        }
+        guard let taskId = uuid(params, "task_id") else {
+            return nil
+        }
+        if let taskStore = TaskBoardStoreProvider.shared.store(for: projectId),
+           let task = taskStore.fileSnapshot().tasks.first(where: { $0.id == taskId && $0.archivedAt == nil }),
+           let worktreePath = task.worktreePath?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !worktreePath.isEmpty {
+            return DevServerRunKey(
+                projectId: projectId,
+                taskId: taskId,
+                worktreePath: worktreePath,
+                profileId: profileId
+            )
+        }
         return DevServerRunKey(projectId: projectId, taskId: taskId, profileId: profileId)
+    }
+
+    private static func normalizedRunWorktreePath(_ raw: String, projectId: UUID?) -> String {
+        let projectRoot = projectId
+            .flatMap { DevServerProfileStoreProvider.shared.store(for: $0)?.projectRoot.path }
+        let worktreeRoot = WorktreeResolver.worktreeRoot(
+            containing: raw,
+            projectFolder: projectRoot
+        ) ?? raw
+        return URL(fileURLWithPath: worktreeRoot).resolvingSymlinksInPath().path
     }
 
     private static func decodeProfile(_ raw: [String: Any]) throws -> DevServerProfile {

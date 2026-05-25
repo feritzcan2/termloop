@@ -414,13 +414,53 @@ struct DevServerProfileSchemaHeader: Decodable {
 
 public struct DevServerRunKey: Codable, Equatable, Hashable, Sendable {
     public let projectId: UUID
-    public let taskId: UUID
+    public let taskId: UUID?
+    public let worktreePath: String?
     public let profileId: String
 
     public init(projectId: UUID, taskId: UUID, profileId: String) {
+        self.init(projectId: projectId, taskId: taskId, worktreePath: nil, profileId: profileId)
+    }
+
+    public init(projectId: UUID, worktreePath: String, profileId: String) {
+        self.init(projectId: projectId, taskId: nil, worktreePath: worktreePath, profileId: profileId)
+    }
+
+    public init(projectId: UUID, taskId: UUID?, worktreePath: String?, profileId: String) {
         self.projectId = projectId
         self.taskId = taskId
+        self.worktreePath = DevServerRunKey.normalizedWorktreePath(worktreePath)
         self.profileId = DevServerProfile.normalizedId(profileId)
+    }
+
+    public static func == (lhs: DevServerRunKey, rhs: DevServerRunKey) -> Bool {
+        lhs.projectId == rhs.projectId
+            && lhs.profileId == rhs.profileId
+            && lhs.identity == rhs.identity
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(projectId)
+        hasher.combine(profileId)
+        hasher.combine(identity)
+    }
+
+    private var identity: Identity {
+        if let worktreePath {
+            return .worktree(worktreePath)
+        }
+        return .task(taskId)
+    }
+
+    private enum Identity: Hashable {
+        case task(UUID?)
+        case worktree(String)
+    }
+
+    public static func normalizedWorktreePath(_ raw: String?) -> String? {
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return nil }
+        return URL(fileURLWithPath: trimmed).resolvingSymlinksInPath().standardizedFileURL.path
     }
 }
 
