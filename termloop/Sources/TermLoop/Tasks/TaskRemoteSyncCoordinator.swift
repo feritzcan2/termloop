@@ -752,6 +752,55 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
     }
 
+    public func syncAssignedToMeAsync(reason: String = "tasks.mobile.syncNow") async throws {
+        guard settings.isAssignedSyncEnabled else {
+            let message = String(localized: "tasks.settings.remote.assignedSyncRequired",
+                                 defaultValue: "Turn on Sync assigned to me before syncing assigned work items.",
+                                 table: "TermLoop")
+            lastMessage = message
+            throw TaskRemoteWorkItemCreateError(message)
+        }
+        guard !isSyncing else {
+            throw TaskRemoteWorkItemCreateError(String(
+                localized: "tasks.remoteSync.create.busy",
+                defaultValue: "A remote item operation is already running.",
+                table: "TermLoop"
+            ))
+        }
+        let syncSettings = settings
+        let request = RemoteWorkItemListRequest(
+            provider: syncSettings.provider,
+            container: syncSettings.container,
+            limit: syncSettings.limit
+        )
+
+        isSyncing = true
+        lastMessage = nil
+        do {
+            let service = Self.makeRemoteWorkItemService(settings: syncSettings)
+            let snapshots = try await service.listAssignedToMe(request)
+            try Task.checkCancellation()
+            guard settings.isAssignedSyncEnabled,
+                  Self.remoteWorkItemContextKey(syncSettings) == Self.remoteWorkItemContextKey(settings) else {
+                isSyncing = false
+                throw TaskRemoteWorkItemCreateError(String(
+                    localized: "tasks.remoteSync.create.contextChanged",
+                    defaultValue: "Created remote work item, but remote settings changed before it could be linked locally.",
+                    table: "TermLoop"
+                ))
+            }
+            applyAssignedSnapshots(
+                snapshots,
+                reason: reason,
+                requestLimit: request.limit,
+                showCompletionAlert: false
+            )
+        } catch {
+            finishSync(error: error)
+            throw error
+        }
+    }
+
     public func createRemoteWorkItem(
         title rawTitle: String,
         bodyMarkdown rawBodyMarkdown: String? = nil,
@@ -982,6 +1031,50 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
     }
 
+    public func linkRemoteWorkItemAsync(taskId: UUID, rawInput: String) async throws {
+        guard settings.isEnabled else {
+            let message = String(localized: "tasks.remoteSync.disabled",
+                                 defaultValue: "Enable remote work items before linking.",
+                                 table: "TermLoop")
+            lastMessage = message
+            throw TaskRemoteWorkItemCreateError(message)
+        }
+        guard !isSyncing else {
+            throw TaskRemoteWorkItemCreateError(String(
+                localized: "tasks.remoteSync.create.busy",
+                defaultValue: "A remote item operation is already running.",
+                table: "TermLoop"
+            ))
+        }
+        let input = rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !input.isEmpty, let reference = RemoteWorkItemParser.parse(input) else {
+            let message = String(localized: "tasks.remoteSync.link.invalid",
+                                 defaultValue: "Could not parse work item link.",
+                                 table: "TermLoop")
+            lastMessage = message
+            throw TaskRemoteWorkItemCreateError(message)
+        }
+
+        isSyncing = true
+        lastMessage = nil
+        let syncSettings = settings
+        do {
+            let service = Self.makeRemoteWorkItemService(settings: syncSettings)
+            let snapshot = try await service.fetch(reference)
+            try Task.checkCancellation()
+            guard applyLinkedSnapshot(snapshot, taskId: taskId) else {
+                throw TaskRemoteWorkItemCreateError(lastMessage ?? String(
+                    localized: "tasks.remoteSync.create.localFailed",
+                    defaultValue: "Created the remote work item, but could not create the local task.",
+                    table: "TermLoop"
+                ))
+            }
+        } catch {
+            finishSync(error: error)
+            throw error
+        }
+    }
+
     public func refresh(taskId: UUID) {
         guard settings.isEnabled else { return }
         guard let task = store.fileSnapshot().tasks.first(where: { $0.id == taskId }),
@@ -1006,6 +1099,77 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 }
             }
         }
+    }
+
+    public func refreshRemoteWorkItemAsync(taskId: UUID) async throws {
+        guard settings.isEnabled else {
+            throw TaskRemoteWorkItemCreateError(String(
+                localized: "tasks.remoteSync.disabled",
+                defaultValue: "Enable remote work items before linking.",
+                table: "TermLoop"
+            ))
+        }
+        guard !isSyncing else {
+            throw TaskRemoteWorkItemCreateError(String(
+                localized: "tasks.remoteSync.create.busy",
+                defaultValue: "A remote item operation is already running.",
+                table: "TermLoop"
+            ))
+        }
+        guard let task = store.fileSnapshot().tasks.first(where: { $0.id == taskId }),
+              let reference = task.remoteWorkItem else {
+            throw TaskRemoteWorkItemCreateError(String(
+                localized: "tasks.remoteSync.localTaskMissing",
+                defaultValue: "Remote item was fetched, but the local task no longer exists.",
+                table: "TermLoop"
+            ))
+        }
+
+        isSyncing = true
+        lastMessage = nil
+        let syncSettings = settings
+        do {
+            let service = Self.makeRemoteWorkItemService(settings: syncSettings)
+            let snapshot = try await service.fetch(reference)
+            try Task.checkCancellation()
+            guard applyLinkedSnapshot(snapshot, taskId: taskId) else {
+                throw TaskRemoteWorkItemCreateError(lastMessage ?? String(
+                    localized: "tasks.remoteSync.create.localFailed",
+                    defaultValue: "Created the remote work item, but could not create the local task.",
+                    table: "TermLoop"
+                ))
+            }
+        } catch {
+            finishSync(error: error)
+            throw error
+        }
+    }
+
+    public func unlinkRemoteWorkItem(taskId: UUID) throws {
+        var found = false
+        let changed = store.mutate { file in
+            guard let idx = file.tasks.firstIndex(where: { $0.id == taskId }) else { return false }
+            found = true
+            let old = file.tasks[idx]
+            file.tasks[idx].remoteWorkItem = nil
+            file.tasks[idx].remoteStatusLabel = nil
+            file.tasks[idx].lastRemoteSyncAt = nil
+            file.tasks[idx].updatedAt = Date()
+            return file.tasks[idx] != old
+        }
+        guard found else {
+            throw TaskRemoteWorkItemCreateError(String(
+                localized: "tasks.remoteSync.localTaskMissing",
+                defaultValue: "Remote item was fetched, but the local task no longer exists.",
+                table: "TermLoop"
+            ))
+        }
+        if changed {
+            try store.saveNow()
+        }
+        finishSync(message: String(localized: "tasks.remoteSync.unlinked",
+                                   defaultValue: "Unlinked work item.",
+                                   table: "TermLoop"))
     }
 
     public func maybePromptRemoteStatusSync(taskId: UUID, to columnId: TaskColumnId) async {
@@ -1165,6 +1329,120 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 message: Self.humanError(error),
                 style: .warning
             )
+        }
+    }
+
+    public func updateRemoteStatusAsync(taskId: UUID, to columnId: TaskColumnId) async throws -> String {
+        let syncSettings = store.settingsSnapshot
+        guard syncSettings.remoteSync.isEnabled else {
+            throw TaskRemoteWorkItemCreateError(String(
+                localized: "tasks.remoteSync.disabled",
+                defaultValue: "Enable remote work items before linking.",
+                table: "TermLoop"
+            ))
+        }
+        guard !isSyncing else {
+            throw TaskRemoteWorkItemCreateError(String(
+                localized: "tasks.remoteSync.create.busy",
+                defaultValue: "A remote item operation is already running.",
+                table: "TermLoop"
+            ))
+        }
+        guard let targetStatus = syncSettings.columns
+            .first(where: { $0.columnId == columnId })?
+            .remoteStatusLabel?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !targetStatus.isEmpty else {
+            throw TaskRemoteWorkItemCreateError(String(
+                localized: "tasks.remoteSync.status.noMatchingStatus",
+                defaultValue: "Could not find a matching remote status for \(columnId.defaultTitle). Refresh remote statuses and try again.",
+                table: "TermLoop"
+            ))
+        }
+        guard let task = store.fileSnapshot().tasks.first(where: { $0.id == taskId }),
+              let reference = task.remoteWorkItem else {
+            throw TaskRemoteWorkItemCreateError(String(
+                localized: "tasks.remoteSync.localTaskMissing",
+                defaultValue: "Remote item was fetched, but the local task no longer exists.",
+                table: "TermLoop"
+            ))
+        }
+
+        let cachedOptions = remoteStatusOptions.map { option in
+            RemoteWorkItemStatusOption(
+                id: "cached.\(option.id)",
+                label: option.label,
+                targetState: option.label,
+                providerPayload: reference.provider == .jira ? ["targetStatusLabel": option.label] : [:]
+            )
+        }
+        let cachedOption = Self.matchingStatusOption(in: cachedOptions, targetStatus: targetStatus)
+        let immediateOption = cachedOption ?? Self.fallbackJiraStatusOption(reference: reference, targetStatus: targetStatus)
+
+        isSyncing = true
+        lastMessage = nil
+        let remoteSettings = syncSettings.remoteSync
+        do {
+            let service = Self.makeRemoteWorkItemService(settings: remoteSettings)
+            let option: RemoteWorkItemStatusOption?
+            if let immediateOption {
+                option = immediateOption
+            } else {
+                let options = try await service.availableStatuses(reference)
+                option = Self.matchingStatusOption(in: options, targetStatus: targetStatus)
+            }
+            guard let option else {
+                let message = String(
+                    localized: "tasks.remoteSync.status.noMatchingStatus",
+                    defaultValue: "Could not find a matching remote status for \(targetStatus). Refresh remote statuses and try again.",
+                    table: "TermLoop"
+                )
+                isSyncing = false
+                lastMessage = message
+                throw TaskRemoteWorkItemCreateError(message)
+            }
+            let snapshot = try await service.updateStatus(reference, to: option, projectRoot: nil)
+            try Task.checkCancellation()
+            guard Self.remoteStatusLabel(snapshot.statusLabel, matches: option, targetStatus: targetStatus) else {
+                RemoteWorkItemSnapshotStore.shared.upsert(snapshot)
+                let actual = snapshot.statusLabel?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .nilIfEmpty ?? String(localized: "common.unknown",
+                                          defaultValue: "unknown",
+                                          table: "TermLoop")
+                let expected = (option.targetState ?? option.label)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .nilIfEmpty ?? targetStatus
+                let message = String(
+                    localized: "tasks.remoteSync.status.mismatch",
+                    defaultValue: "\(reference.key) did not change to \(expected). Remote still reports \(actual).",
+                    table: "TermLoop"
+                )
+                isSyncing = false
+                lastMessage = message
+                _ = try? store.updateSettings { settings in
+                    settings.remoteSync.lastError = message
+                }
+                throw TaskRemoteWorkItemCreateError(message)
+            }
+            guard applyLinkedSnapshot(snapshot, taskId: taskId) else {
+                throw TaskRemoteWorkItemCreateError(lastMessage ?? String(
+                    localized: "tasks.remoteSync.status.updatedLocalFailedBody",
+                    defaultValue: "\(reference.key) was updated remotely, but the local task could not be refreshed.",
+                    table: "TermLoop"
+                ))
+            }
+            let status = snapshot.statusLabel?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .nilIfEmpty ?? option.label
+            let message = String(localized: "tasks.remoteSync.status.updatedBody",
+                                 defaultValue: "\(reference.key) is now \(status).",
+                                 table: "TermLoop")
+            finishSync(message: message)
+            return message
+        } catch {
+            finishSync(error: error)
+            throw error
         }
     }
 
