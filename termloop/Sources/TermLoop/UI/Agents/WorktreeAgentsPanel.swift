@@ -246,6 +246,7 @@ struct WorktreeGroupContextMenu: View {
         }
 
         LocalSetupWorktreeMenuItems(projectId: projectId, worktreePath: group.worktreePath)
+        DevServerWorktreeMenuItems(projectId: projectId, worktreePath: group.worktreePath)
 
         if let worktreePath = group.worktreePath {
             let openTarget = projectId.flatMap { ProjectStore.shared.project(id: $0)?.worktreeOpenTarget }
@@ -3241,6 +3242,7 @@ struct WorktreeAgentsPanel: View {
                         ?? group.projectId
                         ?? group.workspaces.first?.projectId
                     LocalSetupWorktreeMenuItems(projectId: projectId, worktreePath: worktreePath)
+                    DevServerWorktreeMenuItems(projectId: projectId, worktreePath: worktreePath)
 
                     let openTarget = projectId
                         .flatMap { ProjectStore.shared.project(id: $0)?.worktreeOpenTarget }

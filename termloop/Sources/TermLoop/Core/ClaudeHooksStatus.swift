@@ -24,21 +24,7 @@ final class ClaudeHooksStatus: ObservableObject {
     /// stable CLI subcommand suffixes written by `ClaudeHookInstaller`.
     /// PreToolUse is included so the probe catches the global installer's
     /// output end-to-end.
-    static let requiredHooks: [String: String] = [
-        "SessionStart":     "claude-hook session-start",
-        "PreToolUse":       "claude-hook pre-tool-use",
-        "UserPromptSubmit": "claude-hook prompt-submit",
-        "Stop":              "claude-hook stop",
-        "SessionEnd":       "claude-hook session-end",
-        "Notification":     "claude-hook notification"
-    ]
-
-    private static func isTermLoopHookCommand(_ command: String, suffix: String) -> Bool {
-        guard command.contains(suffix) else { return false }
-        return command.contains("TERMLOOP_WORKSPACE_ID")
-            || command.contains("TERMLOOP_SURFACE_ID")
-            || command.contains("TERMLOOP_BUNDLED_CLI_PATH")
-    }
+    static let requiredHooks: [String: String] = ClaudeSettingsJSON.probeSuffixes
 
     func refreshIfStale() {
         if Date().timeIntervalSince(lastCheck) >= cacheInterval {
@@ -55,20 +41,11 @@ final class ClaudeHooksStatus: ObservableObject {
 
     static func probe() -> Bool {
         let path = settingsPath()
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let hooks = root["hooks"] as? [String: Any] else {
+        guard let content = try? String(contentsOfFile: path, encoding: .utf8),
+              let mutation = try? ClaudeSettingsJSON.installTransform(content),
+              !mutation.changed,
+              mutation.unsupportedEvents.isEmpty else {
             return false
-        }
-        for (event, expectedCommandSuffix) in requiredHooks {
-            guard let entries = hooks[event] as? [[String: Any]] else { return false }
-            let match = entries.contains { entry in
-                guard let nested = entry["hooks"] as? [[String: Any]] else { return false }
-                return nested.contains {
-                    isTermLoopHookCommand(($0["command"] as? String) ?? "", suffix: expectedCommandSuffix)
-                }
-            }
-            if !match { return false }
         }
         return true
     }
@@ -187,9 +164,7 @@ final class CodexHooksStatus: ObservableObject {
               let root = try? JSONSerialization.jsonObject(with: hooksData) as? [String: Any],
               let hooks = root["hooks"] as? [String: Any],
               let config = try? String(contentsOfFile: configPath, encoding: .utf8),
-              config.contains("codex_hooks = true"),
-              config.contains("[mcp_servers.termloop]"),
-              config.contains("termloop-mcp") else {
+              !CodexConfigToml.installTransform(config).changed else {
             return false
         }
 

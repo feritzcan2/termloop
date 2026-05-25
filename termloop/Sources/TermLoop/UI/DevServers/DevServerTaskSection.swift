@@ -1175,3 +1175,346 @@ private struct DevServerProfileDraftError: LocalizedError {
         self.errorDescription = message
     }
 }
+
+struct DevServerWorktreeMenuItems: View {
+    let projectId: UUID?
+    let worktreePath: String?
+
+    @ObservedObject private var runStore = DevServerRunStore.shared
+
+    var body: some View {
+        Button {
+            DevServerMenuActions.openGenerator(projectId: projectId)
+        } label: {
+            Label(
+                String(
+                    localized: "devservers.menu.generate",
+                    defaultValue: "Generate Run Profiles with Agent…",
+                    table: "TermLoop"
+                ),
+                systemImage: "sparkles"
+            )
+        }
+        .disabled(projectId == nil)
+
+        Button {
+            DevServerMenuActions.openConfig(projectId: projectId)
+        } label: {
+            Label(
+                String(
+                    localized: "devservers.menu.configure",
+                    defaultValue: "Configure Run Profiles…",
+                    table: "TermLoop"
+                ),
+                systemImage: "doc.text"
+            )
+        }
+        .disabled(projectId == nil)
+
+        Divider()
+
+        profileActions
+    }
+
+    @ViewBuilder
+    private var profileActions: some View {
+        let _ = runStore.version
+        if projectId == nil || worktreePath == nil {
+            disabledItem(
+                String(
+                    localized: "devservers.menu.noWorktree",
+                    defaultValue: "No worktree selected",
+                    table: "TermLoop"
+                ),
+                systemImage: "point.3.connected.trianglepath.dotted"
+            )
+        } else if let store = profileStore, let loadError = store.loadError {
+            disabledItem(loadError.localizedDescription, systemImage: "exclamationmark.triangle")
+        } else if let store = profileStore, store.profiles.isEmpty {
+            disabledItem(
+                String(
+                    localized: "devservers.menu.noProfiles",
+                    defaultValue: "No run profiles configured",
+                    table: "TermLoop"
+                ),
+                systemImage: "server.rack"
+            )
+        } else if let target = runTarget, let store = profileStore {
+            if store.profiles.count == 1, let profile = store.profiles.first {
+                singleProfileActions(profile: profile, target: target, store: store)
+            } else {
+                Menu {
+                    ForEach(store.profiles) { profile in
+                        profileMenuEntry(profile: profile, target: target, store: store)
+                    }
+                } label: {
+                    Label(
+                        String(
+                            localized: "devservers.menu.runProfiles",
+                            defaultValue: "Dev Servers",
+                            table: "TermLoop"
+                        ),
+                        systemImage: "server.rack"
+                    )
+                }
+            }
+        }
+    }
+
+    private var profileStore: DevServerProfileStore? {
+        guard let projectId else { return nil }
+        return DevServerProfileStoreProvider.shared.store(for: projectId)
+    }
+
+    private var boundTask: TaskRecord? {
+        guard let projectId,
+              let worktreePath,
+              let taskStore = TaskBoardStoreProvider.shared.store(for: projectId),
+              let targetKey = TaskPathNormalization.resolveDisplayAndKey(
+                worktreePath,
+                relativeTo: taskStore.projectRoot
+              )?.keyPath else {
+            return nil
+        }
+        return taskStore.fileSnapshot().tasks
+            .filter { $0.archivedAt == nil }
+            .filter { task in
+                TaskPathNormalization.resolveDisplayAndKey(
+                    task.worktreePath,
+                    relativeTo: taskStore.projectRoot
+                )?.keyPath == targetKey
+            }
+            .sorted { lhs, rhs in lhs.updatedAt > rhs.updatedAt }
+            .first
+    }
+
+    private var runTarget: WorktreeRunTarget? {
+        guard let projectId,
+              let worktreePath = worktreePath?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !worktreePath.isEmpty else {
+            return nil
+        }
+        return WorktreeRunTarget(projectId: projectId, worktreePath: worktreePath, task: boundTask)
+    }
+
+    @ViewBuilder
+    private func singleProfileActions(
+        profile: DevServerProfile,
+        target: WorktreeRunTarget,
+        store: DevServerProfileStore
+    ) -> some View {
+        if let current = activeRun(profile: profile, target: target) {
+            if let url = current.latestURL {
+                Button {
+                    DevServerMenuActions.openURL(run: current, rawURL: url)
+                } label: {
+                    Label(
+                        String(localized: "devservers.sidebar.openURL", defaultValue: "Open", table: "TermLoop"),
+                        systemImage: "safari"
+                    )
+                }
+            }
+            Button {
+                DevServerMenuActions.stop(run: current)
+            } label: {
+                Label(
+                    String(localized: "devservers.sidebar.stop", defaultValue: "Stop", table: "TermLoop"),
+                    systemImage: "stop.fill"
+                )
+            }
+            Button {
+                DevServerMenuActions.restart(profile: profile, target: target, store: store)
+            } label: {
+                Label(
+                    String(localized: "devservers.sidebar.restart", defaultValue: "Restart", table: "TermLoop"),
+                    systemImage: "arrow.clockwise"
+                )
+            }
+        } else {
+            Button {
+                DevServerMenuActions.start(profile: profile, target: target, store: store)
+            } label: {
+                Label(
+                    String(localized: "devservers.sidebar.start", defaultValue: "Start", table: "TermLoop"),
+                    systemImage: "play.fill"
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func profileMenuEntry(
+        profile: DevServerProfile,
+        target: WorktreeRunTarget,
+        store: DevServerProfileStore
+    ) -> some View {
+        if let current = activeRun(profile: profile, target: target) {
+            Menu {
+                if let url = current.latestURL {
+                    Button {
+                        DevServerMenuActions.openURL(run: current, rawURL: url)
+                    } label: {
+                        Label(url, systemImage: "safari")
+                    }
+                }
+                Button {
+                    DevServerMenuActions.stop(run: current)
+                } label: {
+                    Label(
+                        String(localized: "devservers.sidebar.stop", defaultValue: "Stop", table: "TermLoop"),
+                        systemImage: "stop.fill"
+                    )
+                }
+                Button {
+                    DevServerMenuActions.restart(profile: profile, target: target, store: store)
+                } label: {
+                    Label(
+                        String(localized: "devservers.sidebar.restart", defaultValue: "Restart", table: "TermLoop"),
+                        systemImage: "arrow.clockwise"
+                    )
+                }
+            } label: {
+                Label(
+                    "\(profile.name) · \(current.phase.localizedLabel)",
+                    systemImage: "server.rack"
+                )
+            }
+        } else {
+            Button {
+                DevServerMenuActions.start(profile: profile, target: target, store: store)
+            } label: {
+                Label(profile.name, systemImage: "play.fill")
+            }
+        }
+    }
+
+    private func activeRun(profile: DevServerProfile, target: WorktreeRunTarget) -> DevServerRunSnapshot? {
+        DevServerRunStore.shared.activeSnapshot(
+            for: target.runKey(profileId: profile.id)
+        )
+    }
+
+    private func disabledItem(_ text: String, systemImage: String) -> some View {
+        Button {} label: {
+            Label(text, systemImage: systemImage)
+        }
+        .disabled(true)
+    }
+}
+
+private struct WorktreeRunTarget {
+    let projectId: UUID
+    let worktreePath: String
+    let task: TaskRecord?
+
+    func runKey(profileId: String) -> DevServerRunKey {
+        DevServerRunKey(
+            projectId: projectId,
+            taskId: task?.id,
+            worktreePath: worktreePath,
+            profileId: profileId
+        )
+    }
+}
+
+@MainActor
+private enum DevServerMenuActions {
+    static func openGenerator(projectId: UUID?) {
+        guard let projectId else {
+            NSSound.beep()
+            return
+        }
+        QuickActionController.shared.present(
+            prefill: QuickActionPresentationRequest(
+                initialSurface: .run,
+                composition: .template(id: "devserver-profile-generator"),
+                systemPromptDocumentId: "system.template.devserver-profile-generator",
+                advancedTitle: String(
+                    localized: "devservers.agent.workspaceTitle",
+                    defaultValue: "Generate dev server profile",
+                    table: "TermLoop"
+                ),
+                launchSource: .quickAction,
+                reasonTag: "devservers.profileGenerator",
+                projectId: projectId,
+                runTarget: .projectRoot(projectId),
+                openAdvanced: true,
+                onLaunchedWorkspace: { workspace in
+                    WorkspaceMetadataStore.shared.setProjectId(projectId, forWorkspaceId: workspace.id)
+                    WorkspaceMetadataStore.shared.setLastUserPromptAt(Date(), forWorkspaceId: workspace.id)
+                    TerminalAgentActivityStore.shared.refreshPresentations(forWorkspaceIds: [workspace.id])
+                    TermLoopHooks.saveCriticalAgentRestoreStateSync()
+                }
+            )
+        )
+    }
+
+    static func openConfig(projectId: UUID?) {
+        guard let projectId,
+              let store = DevServerProfileStoreProvider.shared.store(for: projectId) else {
+            NSSound.beep()
+            return
+        }
+        do {
+            if !FileManager.default.fileExists(atPath: store.profileFileURL().path) {
+                try store.saveNow()
+            }
+            NSWorkspace.shared.open(store.profileFileURL())
+        } catch {
+            presentError(error.localizedDescription)
+        }
+    }
+
+    static func start(profile: DevServerProfile, target: WorktreeRunTarget, store: DevServerProfileStore) {
+        do {
+            _ = try DevServerRunCoordinator.shared.start(
+                projectId: target.projectId,
+                worktreePath: target.worktreePath,
+                profileId: profile.id,
+                openOnURL: profile.presentation.autoOpenFirstUrl ?? store.defaults.autoOpenFirstUrl
+            )
+        } catch {
+            presentError(error.localizedDescription)
+        }
+    }
+
+    static func restart(profile: DevServerProfile, target: WorktreeRunTarget, store: DevServerProfileStore) {
+        do {
+            _ = try DevServerRunCoordinator.shared.restart(
+                projectId: target.projectId,
+                worktreePath: target.worktreePath,
+                profileId: profile.id,
+                openOnURL: profile.presentation.autoOpenFirstUrl ?? store.defaults.autoOpenFirstUrl
+            )
+        } catch {
+            presentError(error.localizedDescription)
+        }
+    }
+
+    static func stop(run: DevServerRunSnapshot) {
+        do {
+            _ = try DevServerRunCoordinator.shared.stop(runId: run.runId)
+        } catch {
+            presentError(error.localizedDescription)
+        }
+    }
+
+    static func openURL(run: DevServerRunSnapshot, rawURL: String) {
+        guard DevServerBrowserRouter.openFromUserClick(snapshot: run, rawURL: rawURL, focus: true) else {
+            NSSound.beep()
+            return
+        }
+    }
+
+    private static func presentError(_ message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(
+            localized: "devservers.sidebar.actionFailed",
+            defaultValue: "Dev server action failed",
+            table: "TermLoop"
+        )
+        alert.informativeText = message
+        alert.runModal()
+    }
+}

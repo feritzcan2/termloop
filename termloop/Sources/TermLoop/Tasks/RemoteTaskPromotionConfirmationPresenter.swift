@@ -36,7 +36,7 @@ enum RemoteTaskPromotionConfirmationPresenter {
             table: "TermLoop"
         )
         sheet.isReleasedWhenClosed = false
-        sheet.setContentSize(NSSize(width: 620, height: 640))
+        sheet.setContentSize(NSSize(width: 620, height: 680))
         model.close = { [weak parent, weak sheet] in
             guard let parent, let sheet else { return }
             parent.endSheet(sheet)
@@ -57,6 +57,7 @@ private final class RemoteTaskPromotionSheetModel: ObservableObject {
     @Published var issueTypeMessage: String?
     @Published var selectedIssueType = ""
     @Published var customIssueType = ""
+    @Published var shouldCreateWorktreeAndAttachAgent: Bool
     @Published var status: RemoteTaskPromotionStatus
     @Published var statusText: String
     @Published var isWorking = false
@@ -80,8 +81,12 @@ private final class RemoteTaskPromotionSheetModel: ObservableObject {
         self.title = draft.title
         self.descriptionMarkdown = draft.descriptionMarkdown
         self.customIssueType = draft.issueType ?? ""
+        self.shouldCreateWorktreeAndAttachAgent = draft.shouldCreateWorktreeAndAttachAgent
         self.status = draft.status
-        self.statusText = Self.text(for: draft.status)
+        self.statusText = Self.text(
+            for: draft.status,
+            shouldCreateWorktreeAndAttachAgent: draft.shouldCreateWorktreeAndAttachAgent
+        )
         self.provider = draft.provider
         self.providerLabel = draft.provider.displayLabel
         self.container = draft.container
@@ -170,6 +175,7 @@ private final class RemoteTaskPromotionSheetModel: ObservableObject {
                     $0.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
                     $0.descriptionMarkdown = descriptionMarkdown.trimmingCharacters(in: .whitespacesAndNewlines)
                     $0.issueType = selectedIssueTypeForCreate
+                    $0.shouldCreateWorktreeAndAttachAgent = shouldCreateWorktreeAndAttachAgent
                     $0.errorMessage = nil
                 }
                 _ = try await RemoteTaskPromotionCoordinator.confirm(
@@ -181,10 +187,10 @@ private final class RemoteTaskPromotionSheetModel: ObservableObject {
                         self?.syncDraftStateIntoView()
                     }
                 )
-                syncDraftStateIntoView()
+                syncDraftStateIntoView(updateStatus: true)
                 isWorking = false
             } catch {
-                syncDraftStateIntoView()
+                syncDraftStateIntoView(updateStatus: true)
                 isWorking = false
                 status = .failed
                 statusText = Self.text(for: .failed)
@@ -223,8 +229,15 @@ private final class RemoteTaskPromotionSheetModel: ObservableObject {
         selectedIssueType = defaultIssueTypeName(in: selectableIssueTypes)
     }
 
-    private func syncDraftStateIntoView() {
+    private func syncDraftStateIntoView(updateStatus: Bool = false) {
         guard let draft = store.draft(id: promotionId) else { return }
+        if updateStatus {
+            status = draft.status
+            statusText = Self.text(
+                for: draft.status,
+                shouldCreateWorktreeAndAttachAgent: draft.shouldCreateWorktreeAndAttachAgent
+            )
+        }
         remoteKey = draft.remoteWorkItem?.key
         remoteURL = draft.remoteWorkItem?.url
         if let error = draft.errorMessage, !error.isEmpty {
@@ -242,7 +255,10 @@ private final class RemoteTaskPromotionSheetModel: ObservableObject {
         return issueTypes[0].name
     }
 
-    private static func text(for status: RemoteTaskPromotionStatus) -> String {
+    private static func text(
+        for status: RemoteTaskPromotionStatus,
+        shouldCreateWorktreeAndAttachAgent: Bool = true
+    ) -> String {
         switch status {
         case .drafted, .awaitingConfirmation:
             return String(
@@ -275,6 +291,13 @@ private final class RemoteTaskPromotionSheetModel: ObservableObject {
                 table: "TermLoop"
             )
         case .ready:
+            if !shouldCreateWorktreeAndAttachAgent {
+                return String(
+                    localized: "tasks.remotePromotion.progress.readyTaskOnly",
+                    defaultValue: "Ready. Remote and local tasks were created.",
+                    table: "TermLoop"
+                )
+            }
             return String(
                 localized: "tasks.remotePromotion.progress.ready",
                 defaultValue: "Ready. The source agent was moved into the worktree.",
@@ -307,7 +330,7 @@ private struct RemoteTaskPromotionSheet: View {
             actions
         }
         .padding(24)
-        .frame(width: 620, height: 600, alignment: .topLeading)
+        .frame(width: 620, height: 640, alignment: .topLeading)
         .onAppear { model.onAppear() }
     }
 
@@ -315,7 +338,7 @@ private struct RemoteTaskPromotionSheet: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(String(
                 localized: "tasks.remotePromotion.confirm.title",
-                defaultValue: "Create remote task and worktree?",
+                defaultValue: "Create remote task?",
                 table: "TermLoop"
             ))
             .font(.title2.weight(.semibold))
@@ -338,6 +361,17 @@ private struct RemoteTaskPromotionSheet: View {
             if model.showsIssueTypePicker {
                 issueTypeSection
             }
+
+            Toggle(isOn: $model.shouldCreateWorktreeAndAttachAgent) {
+                Text(String(
+                    localized: "tasks.remotePromotion.confirm.attachWorktree",
+                    defaultValue: "Automatically create worktree and attach current agent.",
+                    table: "TermLoop"
+                ))
+                .font(.callout)
+            }
+            .toggleStyle(.checkbox)
+            .disabled(model.isWorking)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(String(

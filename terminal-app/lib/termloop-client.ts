@@ -106,6 +106,9 @@ export interface CreateWorkspaceParams {
   cwd?: string;
   projectId?: string;
   terminalAgentId?: string;
+  createWorktree?: boolean;
+  worktreeBranch?: string;
+  allowDirty?: boolean;
 }
 
 export interface CreateWorkspaceResult {
@@ -561,6 +564,11 @@ export function createTermLoopClient(opts: {
         ...(params.terminalAgentId
           ? { terminal_agent_id: params.terminalAgentId }
           : {}),
+        ...(params.createWorktree ? { create_worktree: true } : {}),
+        ...(params.worktreeBranch
+          ? { worktree_branch: params.worktreeBranch }
+          : {}),
+        ...(params.allowDirty ? { allow_dirty: true } : {}),
       });
     },
     async listTerminalAgents() {

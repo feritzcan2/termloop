@@ -10,7 +10,10 @@ enum TaskDevServerProjectionBuilder {
         projectId: UUID,
         runStore: DevServerRunStore
     ) -> [UUID: TaskDevServerSummary] {
-        let runsByTask = Dictionary(grouping: runStore.snapshots(projectId: projectId), by: { $0.key.taskId })
+        let runsByTask = Dictionary(
+            grouping: runStore.snapshots(projectId: projectId).filter { $0.key.taskId != nil },
+            by: { $0.key.taskId }
+        )
         return Dictionary(uniqueKeysWithValues: tasks.compactMap { task in
             guard task.archivedAt == nil,
                   let runs = runsByTask[task.id],

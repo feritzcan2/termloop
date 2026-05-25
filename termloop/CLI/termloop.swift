@@ -13977,55 +13977,57 @@ struct TermLoopCLI {
 
         var hooks = existing["hooks"] as? [String: Any] ?? [:]
         let newHooks = buildHooksDict(for: def)
+        let hooksHealthy = agentHooksAlreadyInstalled(hooks: hooks, expectedHooks: newHooks, for: def)
 
-        // Remove existing TermLoop-owned entries
-        for (event, value) in hooks {
-            switch def.format {
-            case .flat:
-                guard var entries = value as? [[String: Any]] else { continue }
-                entries.removeAll { isOwnedHookCommand(($0["command"] as? String) ?? "", for: def) }
-                hooks[event] = entries.isEmpty ? nil : entries
-            case .nested:
-                guard var groups = value as? [[String: Any]] else { continue }
-                groups.removeAll { group in
-                    guard let hookList = group["hooks"] as? [[String: Any]] else { return false }
-                    return hookList.allSatisfy { isOwnedHookCommand(($0["command"] as? String) ?? "", for: def) }
+        if !hooksHealthy {
+            // Remove existing TermLoop-owned entries.
+            for (event, value) in hooks {
+                switch def.format {
+                case .flat:
+                    guard var entries = value as? [[String: Any]] else { continue }
+                    entries.removeAll { isOwnedHookCommand(($0["command"] as? String) ?? "", for: def) }
+                    hooks[event] = entries.isEmpty ? nil : entries
+                case .nested:
+                    guard var groups = value as? [[String: Any]] else { continue }
+                    groups = stripOwnedHooksFromNestedGroups(groups, for: def).groups
+                    hooks[event] = groups.isEmpty ? nil : groups
                 }
-                hooks[event] = groups.isEmpty ? nil : groups
             }
-        }
 
-        // Add new termloop entries
-        for (event, value) in newHooks {
-            switch def.format {
-            case .flat:
-                var entries = hooks[event] as? [[String: Any]] ?? []
-                if let newEntries = value as? [[String: Any]] { entries.append(contentsOf: newEntries) }
-                hooks[event] = entries
-            case .nested:
-                var groups = hooks[event] as? [[String: Any]] ?? []
-                if let newGroups = value as? [[String: Any]] { groups.append(contentsOf: newGroups) }
-                hooks[event] = groups
+            // Add new TermLoop entries only when migration/install is needed.
+            for (event, value) in newHooks {
+                switch def.format {
+                case .flat:
+                    var entries = hooks[event] as? [[String: Any]] ?? []
+                    if let newEntries = value as? [[String: Any]] { entries.append(contentsOf: newEntries) }
+                    hooks[event] = entries
+                case .nested:
+                    var groups = hooks[event] as? [[String: Any]] ?? []
+                    if let newGroups = value as? [[String: Any]] { groups.append(contentsOf: newGroups) }
+                    hooks[event] = groups
+                }
             }
-        }
 
-        existing["hooks"] = hooks
-        if case .flat = def.format { existing["version"] = 1 }
+            existing["hooks"] = hooks
+            if case .flat = def.format { existing["version"] = 1 }
 
-        let newData = try JSONSerialization.data(withJSONObject: existing, options: [.prettyPrinted, .sortedKeys])
+            let newData = try JSONSerialization.data(withJSONObject: existing, options: [.prettyPrinted, .sortedKeys])
 
-        if !skipConfirm {
-            print("Will write to \(filePath):")
-            print(String(data: newData, encoding: .utf8) ?? "{}")
-            print("\nProceed? [y/N] ", terminator: "")
-            guard readLine()?.lowercased().hasPrefix("y") == true else {
-                print("Aborted.")
-                return
+            if !skipConfirm {
+                print("Will write to \(filePath):")
+                print(String(data: newData, encoding: .utf8) ?? "{}")
+                print("\nProceed? [y/N] ", terminator: "")
+                guard readLine()?.lowercased().hasPrefix("y") == true else {
+                    print("Aborted.")
+                    return
+                }
             }
-        }
 
-        try newData.write(to: URL(fileURLWithPath: filePath), options: .atomic)
-        print("\(def.displayName) hooks installed at \(filePath)")
+            try newData.write(to: URL(fileURLWithPath: filePath), options: .atomic)
+            print("\(def.displayName) hooks installed at \(filePath)")
+        } else {
+            print("\(def.displayName) hooks already installed at \(filePath)")
+        }
 
         // Post-install actions
         if let action = def.postInstallAction {
@@ -14035,15 +14037,124 @@ struct TermLoopCLI {
                 let existingContent: String = fm.fileExists(atPath: configPath)
                     ? ((try? String(contentsOfFile: configPath, encoding: .utf8)) ?? "")
                     : ""
-                let newContent = codexUpsertManagedMCPBlock(
-                    codexUpsertFeatureFlag(existingContent)
-                )
-                if newContent != existingContent {
-                    try newContent.write(toFile: configPath, atomically: true, encoding: .utf8)
+                let mutation = CodexConfigToml.installTransform(existingContent)
+                var wroteConfig = false
+                if mutation.changed {
+                    let latestContent = fm.fileExists(atPath: configPath)
+                        ? ((try? String(contentsOfFile: configPath, encoding: .utf8)) ?? "")
+                        : ""
+                    let latestMutation = latestContent == existingContent
+                        ? mutation
+                        : CodexConfigToml.installTransform(latestContent)
+                    if latestMutation.changed {
+                        try latestMutation.content.write(toFile: configPath, atomically: true, encoding: .utf8)
+                        wroteConfig = true
+                    }
+                }
+                if wroteConfig {
                     print("Updated \(configPath) (codex_hooks + managed MCP block)")
                 }
             }
         }
+    }
+
+    private func agentHooksAlreadyInstalled(
+        hooks: [String: Any],
+        expectedHooks: [String: Any],
+        for def: AgentHookDef
+    ) -> Bool {
+        let expectedEvents = Set(expectedHooks.keys)
+
+        for (event, value) in hooks {
+            switch def.format {
+            case .flat:
+                guard let entries = value as? [[String: Any]] else {
+                    if expectedEvents.contains(event) { return false }
+                    continue
+                }
+                let owned = entries.filter { isOwnedHookCommand(($0["command"] as? String) ?? "", for: def) }
+                if expectedEvents.contains(event) {
+                    guard let expectedEntries = expectedHooks[event] as? [[String: Any]],
+                          owned.count == expectedEntries.count,
+                          zip(owned, expectedEntries).allSatisfy({ flatHookEntryEquals($0, $1) }) else {
+                        return false
+                    }
+                } else if !owned.isEmpty {
+                    return false
+                }
+            case .nested:
+                guard let groups = value as? [[String: Any]] else {
+                    if expectedEvents.contains(event) { return false }
+                    continue
+                }
+                let owned = groups.filter { nestedGroupIsEntirelyOwned($0, for: def) }
+                let mixedOwned = groups.contains { group in
+                    nestedGroupContainsOwnedHook(group, for: def)
+                        && !nestedGroupIsEntirelyOwned(group, for: def)
+                }
+                if mixedOwned { return false }
+                if expectedEvents.contains(event) {
+                    guard let expectedGroups = expectedHooks[event] as? [[String: Any]],
+                          owned.count == expectedGroups.count,
+                          zip(owned, expectedGroups).allSatisfy({ nestedHookGroupEquals($0, $1) }) else {
+                        return false
+                    }
+                } else if !owned.isEmpty {
+                    return false
+                }
+            }
+        }
+
+        for event in expectedEvents where hooks[event] == nil {
+            return false
+        }
+
+        return true
+    }
+
+    private func nestedGroupIsEntirelyOwned(_ group: [String: Any], for def: AgentHookDef) -> Bool {
+        guard let hookList = group["hooks"] as? [[String: Any]], !hookList.isEmpty else {
+            return false
+        }
+        return hookList.allSatisfy {
+            isOwnedHookCommand(($0["command"] as? String) ?? "", for: def)
+        }
+    }
+
+    private func nestedGroupContainsOwnedHook(_ group: [String: Any], for def: AgentHookDef) -> Bool {
+        guard let hookList = group["hooks"] as? [[String: Any]] else {
+            return false
+        }
+        return hookList.contains {
+            isOwnedHookCommand(($0["command"] as? String) ?? "", for: def)
+        }
+    }
+
+    private func flatHookEntryEquals(_ lhs: [String: Any], _ rhs: [String: Any]) -> Bool {
+        (lhs["command"] as? String) == (rhs["command"] as? String)
+    }
+
+    private func nestedHookGroupEquals(_ lhs: [String: Any], _ rhs: [String: Any]) -> Bool {
+        guard let lhsHooks = lhs["hooks"] as? [[String: Any]],
+              let rhsHooks = rhs["hooks"] as? [[String: Any]],
+              lhsHooks.count == rhsHooks.count else {
+            return false
+        }
+        return zip(lhsHooks, rhsHooks).allSatisfy { hookEntryEquals($0, $1) }
+    }
+
+    private func hookEntryEquals(_ lhs: [String: Any], _ rhs: [String: Any]) -> Bool {
+        guard (lhs["type"] as? String) == (rhs["type"] as? String),
+              (lhs["command"] as? String) == (rhs["command"] as? String) else {
+            return false
+        }
+        return intValue(lhs["timeout"]) == intValue(rhs["timeout"])
+    }
+
+    private func intValue(_ value: Any?) -> Int? {
+        if let int = value as? Int { return int }
+        if let number = value as? NSNumber { return number.intValue }
+        return nil
     }
 
     private func uninstallAgentHooks(_ def: AgentHookDef) throws {
@@ -14070,20 +14181,21 @@ struct TermLoopCLI {
                 hooks[event] = entries.isEmpty ? nil : entries
             case .nested:
                 guard var groups = value as? [[String: Any]] else { continue }
-                let before = groups.count
-                groups.removeAll { group in
-                    guard let hookList = group["hooks"] as? [[String: Any]] else { return false }
-                    return hookList.allSatisfy { isOwnedHookCommand(($0["command"] as? String) ?? "", for: def) }
-                }
-                removed += before - groups.count
+                let stripped = stripOwnedHooksFromNestedGroups(groups, for: def)
+                groups = stripped.groups
+                removed += stripped.removed
                 hooks[event] = groups.isEmpty ? nil : groups
             }
         }
 
-        json["hooks"] = hooks
-        let newData = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
-        try newData.write(to: URL(fileURLWithPath: filePath), options: .atomic)
-        print("Removed \(removed) termloop hook(s) from \(filePath)")
+        if removed == 0 {
+            print("Removed 0 termloop hook(s) from \(filePath)")
+        } else {
+            json["hooks"] = hooks
+            let newData = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
+            try newData.write(to: URL(fileURLWithPath: filePath), options: .atomic)
+            print("Removed \(removed) termloop hook(s) from \(filePath)")
+        }
 
         // Post-uninstall actions
         if let action = def.postInstallAction {
@@ -14093,18 +14205,40 @@ struct TermLoopCLI {
                 guard fm.fileExists(atPath: configPath),
                       let content = try? String(contentsOfFile: configPath, encoding: .utf8),
                       !content.isEmpty else { return }
-                var updated = content.replacingOccurrences(
-                    of: "\\n?codex_hooks\\s*=\\s*\\w+",
-                    with: "",
-                    options: .regularExpression
-                )
-                updated = codexStripManagedMCPBlock(updated)
-                if updated != content {
-                    try updated.write(toFile: configPath, atomically: true, encoding: .utf8)
-                    print("Removed codex_hooks + managed MCP block from \(configPath)")
+                let mutation = CodexConfigToml.uninstallTransform(content)
+                if mutation.changed {
+                    try mutation.content.write(toFile: configPath, atomically: true, encoding: .utf8)
+                    print("Removed managed MCP block from \(configPath)")
                 }
             }
         }
+    }
+
+    private func stripOwnedHooksFromNestedGroups(
+        _ groups: [[String: Any]],
+        for def: AgentHookDef
+    ) -> (groups: [[String: Any]], removed: Int) {
+        var removed = 0
+        var updatedGroups: [[String: Any]] = []
+
+        for group in groups {
+            guard let hookList = group["hooks"] as? [[String: Any]] else {
+                updatedGroups.append(group)
+                continue
+            }
+
+            let filtered = hookList.filter {
+                !isOwnedHookCommand(($0["command"] as? String) ?? "", for: def)
+            }
+            removed += hookList.count - filtered.count
+
+            guard !filtered.isEmpty else { continue }
+            var updatedGroup = group
+            updatedGroup["hooks"] = filtered
+            updatedGroups.append(updatedGroup)
+        }
+
+        return (updatedGroups, removed)
     }
 
     // MARK: Generic hook handler
@@ -15006,91 +15140,6 @@ struct TermLoopCLI {
     }
 #endif
 }
-
-// MARK: - Codex config.toml marker-block helpers (CLI-local copies of TermLoopCodexHooks)
-// These mirror the app-side helpers so the CLI install/uninstall path uses identical logic.
-
-private let _codexManagedBlockBegin = "# TermLoop-managed: BEGIN"
-private let _codexManagedBlockEnd   = "# TermLoop-managed: END"
-
-func codexUpsertFeatureFlag(_ content: String) -> String {
-    if content.range(of: #"(?m)^codex_hooks\s*=\s*true\b"#, options: .regularExpression) != nil {
-        return content
-    }
-    let suffix = content.isEmpty ? "" : (content.hasPrefix("\n") ? "" : "\n")
-    return "codex_hooks = true\n\(suffix)\(content)"
-}
-
-func codexUpsertManagedMCPBlock(_ content: String) -> String {
-    var updated = codexStripUnmarkedTermLoopSections(content)
-    let canonical = codexCanonicalMCPBlock()
-    if let managedRange = codexManagedBlockRange(in: updated) {
-        updated.replaceSubrange(managedRange, with: canonical)
-        return updated
-    }
-    let prefix = updated.isEmpty || updated.hasSuffix("\n") ? "" : "\n"
-    return updated + "\(prefix)\n\(canonical)"
-}
-
-private func codexStripUnmarkedTermLoopSections(_ content: String) -> String {
-    var updated = content
-    while let section = codexNextUnmarkedTermLoopSection(in: updated) {
-        updated.removeSubrange(section)
-    }
-    return updated
-}
-
-private func codexNextUnmarkedTermLoopSection(in content: String) -> Range<String.Index>? {
-    let managed = codexManagedBlockRange(in: content)
-    var searchStart = content.startIndex
-    while searchStart < content.endIndex {
-        guard let header = content.range(of: "[mcp_servers.termloop]", range: searchStart..<content.endIndex) else {
-            return nil
-        }
-        if let managed, managed.contains(header.lowerBound) {
-            searchStart = managed.upperBound
-            continue
-        }
-        let afterHeader = header.upperBound
-        let nextSection = content.range(
-            of: #"(?m)^\[[^\]]+\]"#,
-            options: .regularExpression,
-            range: afterHeader..<content.endIndex
-        )?.lowerBound ?? content.endIndex
-        return header.lowerBound..<nextSection
-    }
-    return nil
-}
-
-func codexStripManagedMCPBlock(_ content: String) -> String {
-    guard let range = codexManagedBlockRange(in: content) else { return content }
-    var updated = content
-    updated.removeSubrange(range)
-    return updated
-}
-
-private func codexCanonicalMCPBlock() -> String {
-    """
-    \(_codexManagedBlockBegin)
-    [mcp_servers.termloop]
-    command = "/bin/sh"
-    args = ["-lc", "exec \\"${TERMLOOP_BUNDLED_CLI_PATH:-$(command -v termloop)}\\" termloop-mcp"]
-    \(_codexManagedBlockEnd)
-
-    """
-}
-
-private func codexManagedBlockRange(in content: String) -> Range<String.Index>? {
-    guard let beginRange = content.range(of: _codexManagedBlockBegin),
-          let endRange = content.range(of: _codexManagedBlockEnd, range: beginRange.upperBound..<content.endIndex)
-    else { return nil }
-    var end = endRange.upperBound
-    if end < content.endIndex, content[end] == "\n" {
-        end = content.index(after: end)
-    }
-    return beginRange.lowerBound..<end
-}
-
 
 @main
 struct TermLoopTermMain {
