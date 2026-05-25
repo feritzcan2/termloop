@@ -56,7 +56,9 @@ export default function TaskDetailScreen() {
   const [archiving, setArchiving] = useState(false);
   const [starting, setStarting] = useState(false);
   const [opening, setOpening] = useState(false);
-  const [editing, setEditing] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftBrief, setDraftBrief] = useState("");
   const [remoteBusy, setRemoteBusy] = useState(false);
   const [remoteLinkOpen, setRemoteLinkOpen] = useState(false);
   const [remoteContext, setRemoteContext] = useState<TaskRemoteContext | null>(
@@ -100,6 +102,12 @@ export default function TaskDetailScreen() {
     }
     refresh();
   }, [client, refresh, router]);
+
+  useEffect(() => {
+    if (!task) return;
+    setDraftTitle(task.title);
+    setDraftBrief(task.brief ?? "");
+  }, [task?.id, task?.title, task?.brief]);
 
   if (!client) return null;
 
@@ -289,8 +297,14 @@ export default function TaskDetailScreen() {
     }
   };
 
-  const onApplyEdit = async (nextTitle: string, nextBrief: string | null) => {
-    setEditing(false);
+  const onApplyEdit = async () => {
+    const nextTitle = draftTitle.trim();
+    if (!nextTitle) {
+      Alert.alert("Title required", "Enter a title before saving.");
+      return;
+    }
+    const nextBrief = draftBrief.trim() || null;
+    setSavingEdit(true);
     try {
       const updated = await client.updateTask({
         taskId: task.id,
@@ -301,6 +315,8 @@ export default function TaskDetailScreen() {
       setTask(updated);
     } catch (err) {
       Alert.alert("Update failed", String((err as Error).message ?? err));
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -390,6 +406,13 @@ export default function TaskDetailScreen() {
   const agentLabel = task.workspace_id ? "Bound agent" : null;
   const provisioning = task.provision_state === "pending";
   const provisionFailed = task.provision_state === "failed";
+  const providerName =
+    remoteContext?.provider_label ||
+    task.remote_provider?.replace(/^\w/, (c) => c.toUpperCase()) ||
+    "Remote";
+  const titleDirty = draftTitle.trim() !== task.title;
+  const briefDirty = (draftBrief.trim() || null) !== (task.brief ?? null);
+  const canSaveEdit = (titleDirty || briefDirty) && draftTitle.trim().length > 0 && !savingEdit;
 
   return (
     <SafeAreaView style={styles.root} edges={["bottom"]}>
@@ -418,10 +441,6 @@ export default function TaskDetailScreen() {
       />
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.title} numberOfLines={4}>
-          {task.title}
-        </Text>
-
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -452,6 +471,44 @@ export default function TaskDetailScreen() {
           ) : null}
           {ago ? <Text style={styles.chipAgo}>{ago}</Text> : null}
         </ScrollView>
+
+        <View style={styles.editorCard}>
+          <Text style={styles.fieldLabel}>Title</Text>
+          <TextInput
+            style={[styles.field, styles.inlineTitleInput]}
+            value={draftTitle}
+            onChangeText={setDraftTitle}
+            placeholder="Task title"
+            placeholderTextColor={colors.placeholder}
+            multiline
+          />
+          <Text style={styles.fieldLabel}>Description</Text>
+          <TextInput
+            style={[styles.field, styles.inlineBriefInput]}
+            value={draftBrief}
+            onChangeText={setDraftBrief}
+            placeholder="Context, acceptance criteria, implementation notes…"
+            placeholderTextColor={colors.placeholder}
+            multiline
+          />
+          <View style={styles.inlineSaveRow}>
+            <Text style={styles.inlineSaveHint}>
+              {canSaveEdit ? "Unsaved changes" : "Changes save to the task board."}
+            </Text>
+            <Pressable
+              style={[styles.inlineSaveBtn, !canSaveEdit && styles.btnBusy]}
+              disabled={!canSaveEdit}
+              onPress={onApplyEdit}
+            >
+              {savingEdit ? (
+                <ActivityIndicator color={colors.onPrimary} size="small" />
+              ) : null}
+              <Text style={styles.inlineSaveText}>
+                {savingEdit ? "Saving…" : "Save"}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
 
         <ScrollView
           horizontal
@@ -486,22 +543,6 @@ export default function TaskDetailScreen() {
           })}
         </ScrollView>
 
-        <Text style={styles.sectionLabel}>Brief</Text>
-        {task.brief ? (
-          <Pressable style={styles.briefBox} onPress={() => setEditing(true)}>
-            <Text style={styles.briefText}>{task.brief}</Text>
-          </Pressable>
-        ) : (
-          <Pressable
-            style={[styles.briefBox, styles.briefEmpty]}
-            onPress={() => setEditing(true)}
-          >
-            <Text style={styles.briefPlaceholder}>
-              Tap to add context the agent will read…
-            </Text>
-          </Pressable>
-        )}
-
         <Text style={styles.sectionLabel}>Work item</Text>
         {task.remote_key ? (
           <View style={styles.workItemBox}>
@@ -523,7 +564,7 @@ export default function TaskDetailScreen() {
                     : ""}
                 </Text>
                 <Text style={styles.workItemSub} numberOfLines={2}>
-                  {remoteUrl || "Linked remote item"}
+                  {remoteUrl || `Linked ${providerName} item`}
                 </Text>
               </View>
             </Pressable>
@@ -542,7 +583,7 @@ export default function TaskDetailScreen() {
                 disabled={remoteBusy}
               >
                 <Text style={styles.smallBtnText}>
-                  {remoteBusy ? "Working…" : "Refresh"}
+                  {remoteBusy ? "Working…" : `Sync ${providerName}`}
                 </Text>
               </Pressable>
               <Pressable
@@ -575,7 +616,7 @@ export default function TaskDetailScreen() {
           >
             <Text style={styles.briefPlaceholder}>
               {remoteContext?.enabled
-                ? "Tap to link a Jira key, GitHub issue URL, or owner/repo#number."
+                ? `Tap to link a ${providerName} key/URL or owner/repo#number.`
                 : "Remote work items are not enabled for this project on the Mac."}
             </Text>
           </Pressable>
@@ -623,23 +664,8 @@ export default function TaskDetailScreen() {
               </Text>
             </Pressable>
           )}
-
-          <Pressable
-            style={[styles.btn, styles.btnGhost]}
-            onPress={() => setEditing(true)}
-          >
-            <Text style={styles.btnGhostText}>Edit title &amp; brief</Text>
-          </Pressable>
         </View>
       </ScrollView>
-
-      <EditTaskSheet
-        visible={editing}
-        initialTitle={task.title}
-        initialBrief={task.brief ?? ""}
-        onClose={() => setEditing(false)}
-        onApply={onApplyEdit}
-      />
 
       <RemoteLinkSheet
         visible={remoteLinkOpen}
@@ -681,75 +707,6 @@ function KvRow({ k, v, mono }: KvRowProps) {
         {v}
       </Text>
     </View>
-  );
-}
-
-interface EditSheetProps {
-  visible: boolean;
-  initialTitle: string;
-  initialBrief: string;
-  onClose: () => void;
-  onApply: (title: string, brief: string | null) => void;
-}
-function EditTaskSheet({
-  visible,
-  initialTitle,
-  initialBrief,
-  onClose,
-  onApply,
-}: EditSheetProps) {
-  const [title, setTitle] = useState(initialTitle);
-  const [brief, setBrief] = useState(initialBrief);
-  useEffect(() => {
-    if (visible) {
-      setTitle(initialTitle);
-      setBrief(initialBrief);
-    }
-  }, [visible, initialTitle, initialBrief]);
-
-  const submit = () => {
-    const t = title.trim();
-    if (!t) return;
-    onApply(t, brief.trim() || null);
-  };
-
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <Pressable style={styles.sheetBackdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={() => {}}>
-          <View style={styles.handle} />
-          <Text style={styles.sheetTitle}>Edit task</Text>
-          <Text style={styles.fieldLabel}>Title</Text>
-          <TextInput
-            style={styles.field}
-            value={title}
-            onChangeText={setTitle}
-            autoFocus
-          />
-          <Text style={styles.fieldLabel}>Brief</Text>
-          <TextInput
-            style={[styles.field, styles.textarea]}
-            value={brief}
-            onChangeText={setBrief}
-            multiline
-          />
-          <Pressable
-            style={[styles.btn, styles.btnPrimary, { marginTop: 14 }]}
-            onPress={submit}
-          >
-            <Text style={styles.btnPrimaryText}>Save</Text>
-          </Pressable>
-          <Pressable style={styles.cancel} onPress={onClose}>
-            <Text style={styles.cancelText}>Cancel</Text>
-          </Pressable>
-        </Pressable>
-      </Pressable>
-    </Modal>
   );
 }
 
@@ -1035,13 +992,6 @@ const styles = StyleSheet.create({
   archiveBtn: { paddingHorizontal: 8 },
   archiveText: { color: colors.danger, fontSize: 13, fontWeight: "800" },
 
-  title: {
-    color: colors.text,
-    fontSize: 20,
-    fontWeight: "700",
-    lineHeight: 26,
-    marginBottom: 8,
-  },
   chipLine: {
     marginBottom: 14,
     flexGrow: 0,
@@ -1083,6 +1033,53 @@ const styles = StyleSheet.create({
     borderColor: colors.dangerBorder,
   },
   chipAgo: { color: colors.hint, fontSize: 11, fontWeight: "700" },
+
+  editorCard: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgElevated,
+    padding: 12,
+    marginBottom: 12,
+  },
+  inlineTitleInput: {
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "800",
+    minHeight: 48,
+  },
+  inlineBriefInput: {
+    minHeight: 108,
+    textAlignVertical: "top",
+    lineHeight: 19,
+  },
+  inlineSaveRow: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  inlineSaveHint: {
+    flex: 1,
+    color: colors.sub,
+    fontSize: 11,
+  },
+  inlineSaveBtn: {
+    minHeight: 34,
+    minWidth: 74,
+    paddingHorizontal: 12,
+    borderRadius: radii.sm,
+    backgroundColor: colors.primary,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  inlineSaveText: {
+    color: colors.onPrimary,
+    fontSize: 12,
+    fontWeight: "900",
+  },
 
   statusBar: {
     marginBottom: 16,
@@ -1154,11 +1151,6 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   briefEmpty: { backgroundColor: colors.bgElevated },
-  briefText: {
-    color: colors.text,
-    fontSize: 13,
-    lineHeight: 18,
-  },
   briefPlaceholder: {
     color: colors.placeholder,
     fontSize: 13,
@@ -1268,12 +1260,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "800",
   },
-  btnGhost: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.bgElevated,
-  },
-  btnGhostText: { color: colors.text, fontSize: 14, fontWeight: "700" },
 
   // Sheet
   sheetBackdrop: {

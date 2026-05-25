@@ -25,6 +25,7 @@ enum TermLoopTaskSocketCommands {
         case "tasks.remote_unlink": return tasksRemoteUnlink(params)
         case "tasks.remote_refresh": return tasksRemoteRefresh(params)
         case "tasks.remote_sync_assigned": return tasksRemoteSyncAssigned(params)
+        case "tasks.remote_refresh_linked": return tasksRemoteRefreshLinked(params)
         case "tasks.remote_update_status": return tasksRemoteUpdateStatus(params)
         case "tasks.remote_capabilities": return tasksRemoteCapabilities(params)
         case "tasks.promote_from_agent":  return tasksPromoteFromAgent(params)
@@ -444,6 +445,55 @@ enum TermLoopTaskSocketCommands {
             } catch {
                 RemoteMobileOperationRegistry.fail(opId, error: error)
             }
+        }
+        return .ok(["operation": RemoteMobileOperationRegistry.payload(opId) ?? [:]])
+    }
+
+    private static func tasksRemoteRefreshLinked(_ params: [String: Any]) -> TerminalController.V2CallResult {
+        let storeResult = resolveStore(params)
+        guard case .success(let store) = storeResult else {
+            if case .failure(let err) = storeResult { return err }
+            return .err(code: "internal_error", message: "Could not resolve store", data: nil)
+        }
+        let remoteSync = TaskRemoteSyncCoordinatorProvider.shared.coordinator(for: store)
+        let taskIds = store.fileSnapshot().tasks.compactMap { task -> UUID? in
+            guard task.archivedAt == nil, task.remoteWorkItem != nil else { return nil }
+            return task.id
+        }
+        guard !taskIds.isEmpty else {
+            return .err(code: "not_found", message: "No linked remote tasks to refresh", data: nil)
+        }
+        let opId = RemoteMobileOperationRegistry.begin(kind: "remote_refresh_linked", projectId: store.projectId)
+        Task { @MainActor in
+            var failures: [String] = []
+            for taskId in taskIds {
+                do {
+                    try await remoteSync.refreshRemoteWorkItemAsync(taskId: taskId)
+                } catch {
+                    failures.append(error.localizedDescription)
+                }
+            }
+            if failures.count == taskIds.count {
+                RemoteMobileOperationRegistry.fail(
+                    opId,
+                    error: TaskRemoteWorkItemCreateError(failures.first ?? "Remote refresh failed.")
+                )
+                return
+            }
+            let snapshots = store.columnSnapshots
+            let titlesByColumn = columnTitlesMap(store: store, snapshots: snapshots)
+            let tasks = store.fileSnapshot().tasks
+                .filter { $0.archivedAt == nil }
+                .map { taskPayload($0, columnTitle: titlesByColumn[$0.columnId] ?? store.columnTitle(for: $0.columnId)) }
+            RemoteMobileOperationRegistry.succeed(
+                opId,
+                result: [
+                    "tasks": tasks,
+                    "refreshed_count": taskIds.count - failures.count,
+                    "failed_count": failures.count,
+                    "context": remoteContextPayload(store: store, remoteSync: remoteSync)
+                ]
+            )
         }
         return .ok(["operation": RemoteMobileOperationRegistry.payload(opId) ?? [:]])
     }
