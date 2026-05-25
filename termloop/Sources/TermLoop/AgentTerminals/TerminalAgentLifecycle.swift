@@ -152,7 +152,8 @@ final class TerminalAgentLifecycle {
         systemPrompt: String? = nil,
         model: AgentModelOption? = nil,
         reasoning: AgentReasoningOption? = nil,
-        launchProvidedFullContext: Bool = false
+        launchProvidedFullContext: Bool = false,
+        select: Bool = true
     ) throws -> Workspace {
         let (plan, hasInitialPrompt) = try TerminalAgentRunner.prepareLaunch(
             agent: agent,
@@ -176,7 +177,8 @@ final class TerminalAgentLifecycle {
             worktreeExpectation: worktreeExpectation,
             projectId: projectId,
             placementOverride: placementOverride,
-            baselineHead: baselineHead
+            baselineHead: baselineHead,
+            select: select
         )
     }
 
