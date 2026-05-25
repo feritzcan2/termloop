@@ -451,6 +451,9 @@
 		C1D2E3F40A0B0C0D0FA00010 /* SidebarAgentHooksWarning.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D2E3F40A0B0C0D0FA00011 /* SidebarAgentHooksWarning.swift */; };
 		C1D2E3F40A0B0C0D0FA00012 /* SidebarProjectRefreshCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D2E3F40A0B0C0D0FA00013 /* SidebarProjectRefreshCoordinator.swift */; };
 		C1HOOK001A6EAC0DE00000001 /* TermLoopClaudeHooks.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1HOOK001A6EAC0DE00000002 /* TermLoopClaudeHooks.swift */; };
+		C1HOOK002A6EAC0DE00000001 /* ClaudeSettingsJSON.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1HOOK002A6EAC0DE00000003 /* ClaudeSettingsJSON.swift */; };
+		C1HOOK002A6EAC0DE00000002 /* ClaudeSettingsJSON.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1HOOK002A6EAC0DE00000003 /* ClaudeSettingsJSON.swift */; };
+		C1HOOK003A6EAC0DE00000001 /* ClaudeJSONMCPInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1HOOK003A6EAC0DE00000002 /* ClaudeJSONMCPInstaller.swift */; };
 		C2577000A1B2C3D4E5F60718 /* TerminalCmdClickUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2577001A1B2C3D4E5F60718 /* TerminalCmdClickUITests.swift */; };
 		C2CFG001A6EAC0DE00000001 /* CodexConfigToml.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2CFG001A6EAC0DE00000003 /* CodexConfigToml.swift */; };
 		C2CFG001A6EAC0DE00000002 /* CodexConfigToml.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2CFG001A6EAC0DE00000003 /* CodexConfigToml.swift */; };
@@ -1089,6 +1092,8 @@
 		C1D2E3F40A0B0C0D0FA00011 /* SidebarAgentHooksWarning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/Sidebar/SidebarAgentHooksWarning.swift; sourceTree = "<group>"; };
 		C1D2E3F40A0B0C0D0FA00013 /* SidebarProjectRefreshCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/Sidebar/SidebarProjectRefreshCoordinator.swift; sourceTree = "<group>"; };
 		C1HOOK001A6EAC0DE00000002 /* TermLoopClaudeHooks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Hooks/claude/TermLoopClaudeHooks.swift; sourceTree = "<group>"; };
+		C1HOOK002A6EAC0DE00000003 /* ClaudeSettingsJSON.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Hooks/claude/ClaudeSettingsJSON.swift; sourceTree = "<group>"; };
+		C1HOOK003A6EAC0DE00000002 /* ClaudeJSONMCPInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Hooks/claude/ClaudeJSONMCPInstaller.swift; sourceTree = "<group>"; };
 		C2577001A1B2C3D4E5F60718 /* TerminalCmdClickUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalCmdClickUITests.swift; sourceTree = "<group>"; };
 		C2CFG001A6EAC0DE00000003 /* CodexConfigToml.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Hooks/codex/CodexConfigToml.swift; sourceTree = "<group>"; };
 		C2HOOK001A6EAC0DE00000002 /* TermLoopCodexHooks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Hooks/codex/TermLoopCodexHooks.swift; sourceTree = "<group>"; };
@@ -1942,6 +1947,8 @@
 				A9E7001CA6EAC0DE00000002 /* SessionResumeButton.swift */,
 				A9E70007A6EAC0DE00000002 /* SocketControlSettings+TermLoop.swift */,
 				C1HOOK001A6EAC0DE00000002 /* TermLoopClaudeHooks.swift */,
+				C1HOOK002A6EAC0DE00000003 /* ClaudeSettingsJSON.swift */,
+				C1HOOK003A6EAC0DE00000002 /* ClaudeJSONMCPInstaller.swift */,
 				C2CFG001A6EAC0DE00000003 /* CodexConfigToml.swift */,
 				C2HOOK001A6EAC0DE00000002 /* TermLoopCodexHooks.swift */,
 				C3USERHOOK001A6EAC0DE0002 /* UserScopeHookSync.swift */,
@@ -2721,6 +2728,8 @@
 				A9E70032A6EAC0DE00000001 /* SubmoduleInitContentView.swift in Sources */,
 				A9E70011A6EAC0DE00000001 /* ClaudeHooksStatus.swift in Sources */,
 				C1HOOK001A6EAC0DE00000001 /* TermLoopClaudeHooks.swift in Sources */,
+				C1HOOK002A6EAC0DE00000001 /* ClaudeSettingsJSON.swift in Sources */,
+				C1HOOK003A6EAC0DE00000001 /* ClaudeJSONMCPInstaller.swift in Sources */,
 				C2CFG001A6EAC0DE00000001 /* CodexConfigToml.swift in Sources */,
 				C2HOOK001A6EAC0DE00000001 /* TermLoopCodexHooks.swift in Sources */,
 				C4HKMGD001A6EAC0DE000001 /* HookManagedAgent.swift in Sources */,
@@ -2963,6 +2972,7 @@
 			files = (
 				B9000002A1B2C3D4E5F60719 /* termloop.swift in Sources */,
 				C2CFG001A6EAC0DE00000002 /* CodexConfigToml.swift in Sources */,
+				C1HOOK002A6EAC0DE00000002 /* ClaudeSettingsJSON.swift in Sources */,
 				B9000027A1B2C3D4E5F60719 /* RemoteRelayZshBootstrap.swift in Sources */,
 				A9E70005A6EAC0DE00000011 /* TermLoopCLICommands.swift in Sources */,
 				C9A10001A6EAC0DE00000001 /* TermLoopMCPServer.swift in Sources */,

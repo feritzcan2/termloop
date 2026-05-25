@@ -52,6 +52,9 @@ enum TermLoopSocketCommands {
                 return response
             }
         }
+        if method == "workspace.create", wantsNewWorktreeWorkspace(params) {
+            return workspaceCreateInNewWorktree(params, isTcpClient: isTcpClient)
+        }
         switch method {
         case "project.list":           return projectList(params)
         case "project.current":        return projectCurrent(params)
@@ -986,6 +989,232 @@ enum TermLoopSocketCommands {
             ]
         }
         return .ok(["agents": agents])
+    }
+
+    private struct PreparedMobileWorktree {
+        let branch: String
+        let path: String
+        let baselineHead: String?
+        let createdWorktree: Bool
+    }
+
+    private static func wantsNewWorktreeWorkspace(_ params: [String: Any]) -> Bool {
+        if (params["create_worktree"] as? Bool) == true { return true }
+        if let worktree = params["worktree"] as? [String: Any] {
+            return (worktree["create"] as? Bool) == true
+        }
+        return false
+    }
+
+    private static func workspaceCreateInNewWorktree(
+        _ params: [String: Any],
+        isTcpClient: Bool
+    ) -> TerminalController.V2CallResult {
+        guard let tabManager = AppDelegate.shared?.tabManager else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+        guard let agentId = nonEmptyString(params, "terminal_agent_id") else {
+            return .err(code: "invalid_params",
+                        message: "create_worktree requires terminal_agent_id",
+                        data: nil)
+        }
+        guard let agent = TerminalAgentRegistry.shared.agent(id: agentId) else {
+            return .err(code: "invalid_params",
+                        message: "Unknown terminal_agent_id: \(agentId)",
+                        data: ["terminal_agent_id": agentId])
+        }
+        guard let project = projectForWorkspaceCreate(params) else {
+            return .err(code: "invalid_params",
+                        message: "create_worktree requires a valid project_id or active project",
+                        data: nil)
+        }
+
+        let branch = requestedWorktreeBranch(params)
+            ?? generatedMobileWorktreeBranch(agentId: agent.id)
+        let baseRef = nonEmptyString(params, "base_ref") ?? "HEAD"
+        let allowDirty = (params["allow_dirty"] as? Bool) == true
+        let title = nonEmptyString(params, "title") ?? branch
+        let service = GitWorktreeService()
+        let prepared: PreparedMobileWorktree
+
+        do {
+            prepared = try prepareMobileWorktree(
+                projectFolder: project.folderPath,
+                branch: branch,
+                baseRef: baseRef,
+                allowDirty: allowDirty,
+                service: service
+            )
+        } catch let error as WorktreeError {
+            return worktreeErrorToV2(error)
+        } catch MobileWorktreeCreateError.dirtySourceCheckout {
+            return .err(
+                code: "dirty_source_checkout",
+                message: "The project checkout has uncommitted changes. Commit, stash, clean, or allow dirty source checkout before creating a worktree.",
+                data: nil
+            )
+        } catch MobileWorktreeCreateError.invalidBranch {
+            return .err(code: "invalid_params", message: "Missing or invalid worktree branch", data: nil)
+        } catch MobileWorktreeCreateError.pathResolutionFailed {
+            return .err(code: "invalid_params", message: "Could not resolve worktree path", data: nil)
+        } catch MobileWorktreeCreateError.branchMatchesMainCheckout(let branch) {
+            return .err(code: "conflict",
+                        message: "Branch \(branch) is already checked out in the main project checkout",
+                        data: ["branch": branch])
+        } catch MobileWorktreeCreateError.pathOccupiedByOtherWorktree(let path, let branch) {
+            return .err(code: "conflict",
+                        message: "Worktree path is already used by another checkout",
+                        data: ["path": path, "branch": orNull(branch)])
+        } catch {
+            return .err(code: "git_command_failed", message: "\(error)", data: nil)
+        }
+
+        do {
+            let workspace = try TerminalAgentLifecycle.createFreshWorkspace(
+                tabManager: tabManager,
+                agent: agent,
+                title: title,
+                cwd: prepared.path,
+                worktreeExpectation: TermLoopWorktreeExpectation(
+                    path: prepared.path,
+                    branch: prepared.branch
+                ),
+                baselineHead: prepared.baselineHead,
+                initialPrompt: "",
+                projectId: project.id,
+                select: !isTcpClient
+            )
+            WorktreeProjectionStore.shared.refresh(
+                projectFolder: project.folderPath,
+                reason: "mobile.workspace.create_worktree"
+            )
+            AppDelegate.shared?.saveSessionSnapshot(includeScrollback: false, forceSync: true)
+            if prepared.createdWorktree
+                || SubmoduleInitService.hasUninitializedSubmodules(worktreePath: prepared.path) {
+                SubmoduleInitService.startInBackground(
+                    worktreePath: prepared.path,
+                    displayLabel: prepared.branch,
+                    branch: prepared.branch,
+                    workspaceId: workspace.id
+                )
+            }
+            return .ok([
+                "window_id": NSNull(),
+                "workspace_id": workspace.id.uuidString,
+                "workspace_ref": [
+                    "kind": "workspace",
+                    "id": workspace.id.uuidString
+                ],
+                "project_id": project.id.uuidString,
+                "branch": prepared.branch,
+                "worktree_path": prepared.path,
+                "created_worktree": prepared.createdWorktree
+            ])
+        } catch {
+            if prepared.createdWorktree {
+                try? service.remove(folder: project.folderPath, path: prepared.path)
+            }
+            return .err(code: "internal_error",
+                        message: "Failed to launch agent in new worktree: \(error.localizedDescription)",
+                        data: nil)
+        }
+    }
+
+    private enum MobileWorktreeCreateError: Error {
+        case invalidBranch
+        case pathResolutionFailed
+        case branchMatchesMainCheckout(String)
+        case pathOccupiedByOtherWorktree(path: String, branch: String?)
+        case dirtySourceCheckout
+    }
+
+    private static func prepareMobileWorktree(
+        projectFolder: String,
+        branch rawBranch: String,
+        baseRef: String,
+        allowDirty: Bool,
+        service: GitWorktreeService
+    ) throws -> PreparedMobileWorktree {
+        let branch = rawBranch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !branch.isEmpty else { throw MobileWorktreeCreateError.invalidBranch }
+        guard let path = WorktreeResolver.path(projectFolder: projectFolder, branch: branch) else {
+            throw MobileWorktreeCreateError.pathResolutionFailed
+        }
+
+        let entries = try service.list(in: projectFolder)
+        if let main = entries.first(where: { $0.isMain }),
+           main.branch == branch {
+            throw MobileWorktreeCreateError.branchMatchesMainCheckout(branch)
+        }
+        if let existing = entries.first(where: { $0.branch == branch }) {
+            return PreparedMobileWorktree(
+                branch: branch,
+                path: existing.path,
+                baselineHead: try? service.headRevision(worktreePath: existing.path),
+                createdWorktree: false
+            )
+        }
+
+        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        if let collision = entries.first(where: {
+            URL(fileURLWithPath: $0.path).standardizedFileURL.path == normalizedPath
+        }) {
+            throw MobileWorktreeCreateError.pathOccupiedByOtherWorktree(
+                path: collision.path,
+                branch: collision.branch
+            )
+        }
+        if !allowDirty, try service.isClean(worktreePath: projectFolder) == false {
+            throw MobileWorktreeCreateError.dirtySourceCheckout
+        }
+        let branchExists = try service.branches(in: projectFolder)
+            .contains { $0.name == branch }
+        if branchExists {
+            try service.add(folder: projectFolder, path: path, branch: branch)
+        } else {
+            try service.addCreatingBranch(
+                folder: projectFolder,
+                path: path,
+                branch: branch,
+                baseRef: baseRef.isEmpty ? "HEAD" : baseRef
+            )
+        }
+        return PreparedMobileWorktree(
+            branch: branch,
+            path: path,
+            baselineHead: try? service.headRevision(worktreePath: path),
+            createdWorktree: true
+        )
+    }
+
+    private static func projectForWorkspaceCreate(_ params: [String: Any]) -> Project? {
+        let store = ProjectStore.shared
+        if let projectId = uuid(params, "project_id") {
+            return store.project(id: projectId)
+        }
+        if let cwd = nonEmptyString(params, "cwd") ?? nonEmptyString(params, "working_directory"),
+           let project = store.project(containingPath: cwd) {
+            return project
+        }
+        return store.activeProjectId.flatMap { store.project(id: $0) }
+    }
+
+    private static func requestedWorktreeBranch(_ params: [String: Any]) -> String? {
+        if let branch = nonEmptyString(params, "worktree_branch") {
+            return branch
+        }
+        if let worktree = params["worktree"] as? [String: Any],
+           let branch = nonEmptyString(worktree, "branch") {
+            return branch
+        }
+        return nil
+    }
+
+    private static func generatedMobileWorktreeBranch(agentId: String) -> String {
+        let slug = WorktreeResolver.sanitize(agentId)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "._-"))
+        let name = slug.isEmpty ? "agent" : slug
+        return "mobile/\(name)-\(UUID().uuidString.prefix(6).lowercased())"
     }
 
     private static func listWorkspacePanes(_ params: [String: Any]) -> TerminalController.V2CallResult {

@@ -95,6 +95,9 @@ enum ProjectScopeHookCleaner {
 
     /// True if the command is TermLoop-owned for the given agent.
     static func isTermLoopOwnedCommand(_ command: String, agent: HookManagedAgent) -> Bool {
+        if agent == .claude {
+            return ClaudeSettingsJSON.isTermLoopOwnedCommand(command)
+        }
         let lowercase = command.lowercased()
         let marker = agent.stableCommandMarker
         guard lowercase.contains(marker) else { return false }

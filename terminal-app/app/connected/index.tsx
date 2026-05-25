@@ -10,6 +10,7 @@ import {
   SectionList,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -38,6 +39,7 @@ import { TasksView } from "../../components/tasks-view";
 
 type ProjectState = ProjectSummary | null | "loading";
 type WorkspaceSectionKind = "worktree" | "workspace";
+type AgentTargetKind = WorkspaceSectionKind | "new_worktree";
 type WorkspaceViewMode = "active" | "worktrees" | "tasks";
 
 
@@ -64,7 +66,7 @@ interface WorkspaceSection {
 
 interface AgentTarget {
   key: string;
-  kind: WorkspaceSectionKind;
+  kind: AgentTargetKind;
   label: string;
   detail: string;
   cwd?: string;
@@ -100,6 +102,8 @@ export default function ConnectedScreen() {
   const [agents, setAgents] = useState<TerminalAgentSummary[] | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedTargetKey, setSelectedTargetKey] = useState("project");
+  const [worktreeBranchName, setWorktreeBranchName] = useState("");
+  const [allowDirtyWorktree, setAllowDirtyWorktree] = useState(false);
   const [startingAgent, setStartingAgent] = useState(false);
   const [workspaceContexts, setWorkspaceContexts] = useState<
     Record<string, WorkspaceContextState>
@@ -364,6 +368,17 @@ export default function ConnectedScreen() {
         projectId: activeProject?.id,
       },
     ];
+    if (activeProject?.id) {
+      targets.push({
+        key: "new_worktree",
+        kind: "new_worktree",
+        label: activeProject.name,
+        detail: activeProjectPath
+          ? `Branch from HEAD · ${activeProjectPath}`
+          : "Branch from current project HEAD",
+        projectId: activeProject.id,
+      });
+    }
     for (const section of sections) {
       if (section.kind !== "worktree") continue;
       const first = section.data[0];
@@ -378,6 +393,12 @@ export default function ConnectedScreen() {
     }
     return targets;
   }, [current, sections]);
+  const selectedAgentTarget = useMemo(
+    () =>
+      agentTargets.find((target) => target.key === selectedTargetKey) ??
+      agentTargets[0],
+    [agentTargets, selectedTargetKey]
+  );
 
   if (!client) return null;
 
@@ -414,17 +435,26 @@ export default function ConnectedScreen() {
   const startAgent = async () => {
     if (!client || !selectedAgentId) return;
     const agent = agents?.find((item) => item.id === selectedAgentId);
-    const target =
-      agentTargets.find((item) => item.key === selectedTargetKey) ??
-      agentTargets[0];
+    const target = selectedAgentTarget;
     if (!agent || !target) return;
+    const startsNewWorktree = target.kind === "new_worktree";
+    const trimmedBranch = worktreeBranchName.trim();
+    if (startsNewWorktree && !target.projectId) {
+      Alert.alert("No project", "Select a project before creating a worktree.");
+      return;
+    }
     setStartingAgent(true);
     try {
       const created = await client.createWorkspace({
-        title: agent.display_name,
-        cwd: target.cwd,
+        title: startsNewWorktree
+          ? trimmedBranch || agent.display_name
+          : agent.display_name,
+        cwd: startsNewWorktree ? undefined : target.cwd,
         projectId: target.projectId,
         terminalAgentId: agent.id,
+        createWorktree: startsNewWorktree,
+        worktreeBranch: startsNewWorktree && trimmedBranch ? trimmedBranch : undefined,
+        allowDirty: startsNewWorktree && allowDirtyWorktree,
       });
       await loadOverview();
       setOpeningId(created.workspace_id);
@@ -589,7 +619,7 @@ export default function ConnectedScreen() {
           }
           onOpenTask={(taskId, taskProjectId) =>
             router.push({
-              pathname: "/connected/task/[id]",
+              pathname: "/connected/task/[id]" as never,
               params: { id: taskId, projectId: taskProjectId },
             })
           }
@@ -859,7 +889,7 @@ export default function ConnectedScreen() {
                   >
                     <View style={styles.optionText}>
                       <Text style={styles.optionTitle} numberOfLines={1}>
-                        {target.kind === "worktree" ? "Worktree" : "Project"} · {target.label}
+                        {agentTargetKindLabel(target.kind)} · {target.label}
                       </Text>
                       <Text style={styles.optionSub} numberOfLines={1}>
                         {target.detail}
@@ -869,6 +899,46 @@ export default function ConnectedScreen() {
                   </Pressable>
                 );
               })}
+              {selectedAgentTarget?.kind === "new_worktree" ? (
+                <View style={styles.worktreeCreatePanel}>
+                  <Text style={styles.fieldLabel}>Branch</Text>
+                  <TextInput
+                    style={styles.branchInput}
+                    value={worktreeBranchName}
+                    onChangeText={setWorktreeBranchName}
+                    placeholder="mobile/agent-task"
+                    placeholderTextColor={colors.placeholder}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <Pressable
+                    style={[
+                      styles.toggleRow,
+                      allowDirtyWorktree && styles.toggleRowActive,
+                    ]}
+                    onPress={() => setAllowDirtyWorktree((value) => !value)}
+                  >
+                    <View
+                      style={[
+                        styles.checkbox,
+                        allowDirtyWorktree && styles.checkboxActive,
+                      ]}
+                    >
+                      {allowDirtyWorktree ? (
+                        <Text style={styles.checkboxMark}>✓</Text>
+                      ) : null}
+                    </View>
+                    <View style={styles.toggleText}>
+                      <Text style={styles.toggleTitle}>
+                        Start without taking uncommitted changes
+                      </Text>
+                      <Text style={styles.toggleHint} numberOfLines={2}>
+                        Worktree branches off HEAD; edits stay in source.
+                      </Text>
+                    </View>
+                  </Pressable>
+                </View>
+              ) : null}
 
               <Text style={styles.sheetLabel}>Agent</Text>
               {agents === null ? (
@@ -1173,6 +1243,17 @@ function worktreeSectionSubtitle(section: WorkspaceSection): string {
   const unit = count === 1 ? "session" : "sessions";
   const path = section.data.find((row) => row.worktreePath)?.worktreePath;
   return path ? `Worktree · ${count} ${unit} · ${path}` : `Worktree · ${count} ${unit}`;
+}
+
+function agentTargetKindLabel(kind: AgentTargetKind): string {
+  switch (kind) {
+    case "new_worktree":
+      return "New worktree";
+    case "worktree":
+      return "Worktree";
+    case "workspace":
+      return "Project";
+  }
 }
 
 const styles = StyleSheet.create({
@@ -1563,6 +1644,75 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0,
     marginTop: 6,
+  },
+  fieldLabel: {
+    color: colors.label,
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0,
+  },
+  worktreeCreatePanel: {
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceBg,
+  },
+  branchInput: {
+    minHeight: 40,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.inputBg,
+    color: colors.text,
+    paddingHorizontal: 10,
+    fontSize: 13,
+    fontFamily: monoFont,
+  },
+  toggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  toggleRowActive: {
+    borderColor: colors.borderAccent,
+    backgroundColor: colors.primaryDim,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkboxActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  checkboxMark: {
+    color: colors.onPrimary,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 16,
+  },
+  toggleText: { flex: 1, minWidth: 0 },
+  toggleTitle: { color: colors.text, fontSize: 12, fontWeight: "700" },
+  toggleHint: {
+    color: colors.sub,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
   },
   optionRow: {
     flexDirection: "row",
