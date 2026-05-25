@@ -22,6 +22,7 @@ import {
   surfaceLabel,
   type TaskColumnSummary,
   type TaskRecord,
+  type TaskRemoteContext,
   type TerminalAgentSummary,
   type TermLoopClient,
   waitForTerminalSurface,
@@ -56,6 +57,11 @@ export default function TaskDetailScreen() {
   const [starting, setStarting] = useState(false);
   const [opening, setOpening] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [remoteBusy, setRemoteBusy] = useState(false);
+  const [remoteLinkOpen, setRemoteLinkOpen] = useState(false);
+  const [remoteContext, setRemoteContext] = useState<TaskRemoteContext | null>(
+    null
+  );
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [agents, setAgents] = useState<TerminalAgentSummary[] | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -70,6 +76,10 @@ export default function TaskDetailScreen() {
       });
       setTask(result.task);
       setColumns(result.columns.length > 0 ? result.columns : COLUMN_FALLBACK);
+      client
+        .getTaskRemoteContext({ projectId: result.task.project_id })
+        .then(setRemoteContext)
+        .catch(() => setRemoteContext(null));
       setError(null);
     } catch (err) {
       const code = (err as { code?: string }).code;
@@ -133,7 +143,29 @@ export default function TaskDetailScreen() {
         columnId,
         projectId: taskProjectId,
       });
-      setTask({ ...task, column_id: columnId });
+      const nextColumn = columns.find((column) => column.id === columnId);
+      const nextTask = {
+        ...task,
+        column_id: columnId,
+        column_title: nextColumn?.title ?? task.column_title,
+      };
+      setTask(nextTask);
+      const remoteStatus = nextColumn?.remote_status_label;
+      if (task.remote_key && remoteContext?.enabled && remoteStatus) {
+        Alert.alert(
+          "Update remote status?",
+          `Also move ${task.remote_key} to ${remoteStatus}?`,
+          [
+            { text: "Not now", style: "cancel" },
+            {
+              text: "Update",
+              onPress: () => {
+                updateRemoteStatus(nextTask);
+              },
+            },
+          ]
+        );
+      }
     } catch (err) {
       Alert.alert("Move failed", String((err as Error).message ?? err));
     } finally {
@@ -272,6 +304,87 @@ export default function TaskDetailScreen() {
     }
   };
 
+  const applyRemoteTaskResult = (result: {
+    task?: TaskRecord;
+    context?: TaskRemoteContext;
+  }) => {
+    if (result.task) setTask(result.task);
+    if (result.context) setRemoteContext(result.context);
+  };
+
+  const waitForRemoteTask = async (operationId: string) => {
+    const settled = await client.waitRemoteOperation(operationId, 60_000);
+    applyRemoteTaskResult(settled.result ?? {});
+    return settled.result;
+  };
+
+  const refreshRemote = async () => {
+    if (!task.remote_key || remoteBusy) return;
+    setRemoteBusy(true);
+    try {
+      const op = await client.refreshTaskRemoteItem({
+        taskId: task.id,
+        projectId: taskProjectId,
+      });
+      await waitForRemoteTask(op.operation_id);
+    } catch (err) {
+      Alert.alert("Refresh failed", String((err as Error).message ?? err));
+    } finally {
+      setRemoteBusy(false);
+    }
+  };
+
+  const linkRemote = async (input: string) => {
+    if (remoteBusy) return;
+    setRemoteBusy(true);
+    try {
+      const op = await client.linkTaskRemoteItem({
+        taskId: task.id,
+        input,
+        projectId: taskProjectId,
+      });
+      await waitForRemoteTask(op.operation_id);
+      setRemoteLinkOpen(false);
+    } catch (err) {
+      Alert.alert("Link failed", String((err as Error).message ?? err));
+    } finally {
+      setRemoteBusy(false);
+    }
+  };
+
+  const unlinkRemote = async () => {
+    if (!task.remote_key || remoteBusy) return;
+    setRemoteBusy(true);
+    try {
+      const result = await client.unlinkTaskRemoteItem({
+        taskId: task.id,
+        projectId: taskProjectId,
+      });
+      applyRemoteTaskResult(result);
+    } catch (err) {
+      Alert.alert("Unlink failed", String((err as Error).message ?? err));
+    } finally {
+      setRemoteBusy(false);
+    }
+  };
+
+  const updateRemoteStatus = async (sourceTask: TaskRecord = task) => {
+    if (!sourceTask.remote_key || remoteBusy) return;
+    setRemoteBusy(true);
+    try {
+      const op = await client.updateTaskRemoteStatus({
+        taskId: sourceTask.id,
+        columnId: sourceTask.column_id,
+        projectId: sourceTask.project_id,
+      });
+      await waitForRemoteTask(op.operation_id);
+    } catch (err) {
+      Alert.alert("Remote update failed", String((err as Error).message ?? err));
+    } finally {
+      setRemoteBusy(false);
+    }
+  };
+
   const remoteUrl = task.remote_url ?? null;
   const ago = relativeTime(task.updated_at);
   const agentLabel = task.workspace_id ? "Bound agent" : null;
@@ -389,6 +502,85 @@ export default function TaskDetailScreen() {
           </Pressable>
         )}
 
+        <Text style={styles.sectionLabel}>Work item</Text>
+        {task.remote_key ? (
+          <View style={styles.workItemBox}>
+            <Pressable
+              style={styles.workItemMain}
+              onPress={() => remoteUrl && Linking.openURL(remoteUrl)}
+              disabled={!remoteUrl}
+            >
+              <View style={styles.workItemIcon}>
+                <Text style={styles.workItemIconText}>
+                  {(task.remote_provider || "R").slice(0, 2).toUpperCase()}
+                </Text>
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.workItemKey} numberOfLines={1}>
+                  {task.remote_key}
+                  {task.remote_status_label
+                    ? ` · ${task.remote_status_label}`
+                    : ""}
+                </Text>
+                <Text style={styles.workItemSub} numberOfLines={2}>
+                  {remoteUrl || "Linked remote item"}
+                </Text>
+              </View>
+            </Pressable>
+            <View style={styles.workItemActions}>
+              {remoteUrl ? (
+                <Pressable
+                  style={styles.smallBtn}
+                  onPress={() => Linking.openURL(remoteUrl)}
+                >
+                  <Text style={styles.smallBtnText}>Open</Text>
+                </Pressable>
+              ) : null}
+              <Pressable
+                style={[styles.smallBtn, remoteBusy && styles.btnBusy]}
+                onPress={refreshRemote}
+                disabled={remoteBusy}
+              >
+                <Text style={styles.smallBtnText}>
+                  {remoteBusy ? "Working…" : "Refresh"}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={styles.smallBtn}
+                onPress={() => setRemoteLinkOpen(true)}
+                disabled={remoteBusy}
+              >
+                <Text style={styles.smallBtnText}>Relink</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.smallBtn, styles.smallBtnDanger]}
+                onPress={() =>
+                  Alert.alert("Unlink work item?", task.remote_key ?? "", [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Unlink", style: "destructive", onPress: unlinkRemote },
+                  ])
+                }
+                disabled={remoteBusy}
+              >
+                <Text style={[styles.smallBtnText, styles.smallBtnDangerText]}>
+                  Unlink
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : (
+          <Pressable
+            style={[styles.briefBox, styles.briefEmpty]}
+            onPress={() => setRemoteLinkOpen(true)}
+          >
+            <Text style={styles.briefPlaceholder}>
+              {remoteContext?.enabled
+                ? "Tap to link a Jira key, GitHub issue URL, or owner/repo#number."
+                : "Remote work items are not enabled for this project on the Mac."}
+            </Text>
+          </Pressable>
+        )}
+
         <Text style={styles.sectionLabel}>Workspace</Text>
         <View style={styles.kv}>
           <KvRow k="Branch" v={task.branch ?? "—"} mono />
@@ -447,6 +639,16 @@ export default function TaskDetailScreen() {
         initialBrief={task.brief ?? ""}
         onClose={() => setEditing(false)}
         onApply={onApplyEdit}
+      />
+
+      <RemoteLinkSheet
+        visible={remoteLinkOpen}
+        initialValue={task.remote_url ?? task.remote_key ?? ""}
+        busy={remoteBusy}
+        onClose={() => {
+          if (!remoteBusy) setRemoteLinkOpen(false);
+        }}
+        onApply={linkRemote}
       />
 
       <AgentPickerSheet
@@ -543,6 +745,77 @@ function EditTaskSheet({
             <Text style={styles.btnPrimaryText}>Save</Text>
           </Pressable>
           <Pressable style={styles.cancel} onPress={onClose}>
+            <Text style={styles.cancelText}>Cancel</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+interface RemoteLinkSheetProps {
+  visible: boolean;
+  initialValue: string;
+  busy: boolean;
+  onClose: () => void;
+  onApply: (input: string) => void;
+}
+function RemoteLinkSheet({
+  visible,
+  initialValue,
+  busy,
+  onClose,
+  onApply,
+}: RemoteLinkSheetProps) {
+  const [value, setValue] = useState(initialValue);
+  useEffect(() => {
+    if (visible) setValue(initialValue);
+  }, [visible, initialValue]);
+
+  const trimmed = value.trim();
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.sheetBackdrop} onPress={onClose}>
+        <Pressable style={styles.sheet} onPress={() => {}}>
+          <View style={styles.handle} />
+          <Text style={styles.sheetTitle}>Link work item</Text>
+          <Text style={styles.sheetSub}>
+            Paste a Jira key/URL, GitHub issue URL, or owner/repo#number.
+          </Text>
+          <Text style={styles.fieldLabel}>Remote item</Text>
+          <TextInput
+            style={styles.field}
+            value={value}
+            onChangeText={setValue}
+            autoFocus
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder="KAN-123 or owner/repo#42"
+            placeholderTextColor={colors.placeholder}
+          />
+          <Pressable
+            style={[
+              styles.btn,
+              styles.btnPrimary,
+              { marginTop: 14 },
+              (!trimmed || busy) && styles.btnBusy,
+            ]}
+            disabled={!trimmed || busy}
+            onPress={() => onApply(trimmed)}
+          >
+            {busy ? (
+              <ActivityIndicator color={colors.onPrimary} size="small" />
+            ) : null}
+            <Text style={styles.btnPrimaryText}>
+              {busy ? "Linking…" : "Link work item"}
+            </Text>
+          </Pressable>
+          <Pressable style={[styles.cancel, busy && styles.btnBusy]} onPress={onClose} disabled={busy}>
             <Text style={styles.cancelText}>Cancel</Text>
           </Pressable>
         </Pressable>
@@ -891,6 +1164,70 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontStyle: "italic",
   },
+  workItemBox: {
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgElevated,
+    padding: 10,
+    gap: 10,
+  },
+  workItemMain: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  workItemIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: radii.sm,
+    backgroundColor: colors.primaryDim,
+    borderWidth: 1,
+    borderColor: colors.borderAccent,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  workItemIconText: {
+    color: colors.primary,
+    fontSize: 11,
+    fontWeight: "900",
+    fontFamily: monoFont,
+  },
+  workItemKey: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  workItemSub: {
+    color: colors.sub,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  workItemActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  smallBtn: {
+    minHeight: 30,
+    paddingHorizontal: 10,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgRaised,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  smallBtnText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  smallBtnDanger: {
+    borderColor: colors.dangerBorder,
+    backgroundColor: colors.dangerDim,
+  },
+  smallBtnDangerText: { color: colors.danger },
 
   kv: {
     borderRadius: radii.sm,

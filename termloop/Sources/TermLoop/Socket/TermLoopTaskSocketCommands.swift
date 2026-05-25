@@ -18,6 +18,14 @@ enum TermLoopTaskSocketCommands {
         case "tasks.move":        return tasksMove(params)
         case "tasks.archive":     return tasksArchive(params)
         case "tasks.start_agent": return tasksStartAgent(params)
+        case "tasks.remote_context": return tasksRemoteContext(params)
+        case "tasks.remote_operation": return tasksRemoteOperation(params)
+        case "tasks.remote_create": return tasksRemoteCreate(params)
+        case "tasks.remote_link": return tasksRemoteLink(params)
+        case "tasks.remote_unlink": return tasksRemoteUnlink(params)
+        case "tasks.remote_refresh": return tasksRemoteRefresh(params)
+        case "tasks.remote_sync_assigned": return tasksRemoteSyncAssigned(params)
+        case "tasks.remote_update_status": return tasksRemoteUpdateStatus(params)
         case "tasks.remote_capabilities": return tasksRemoteCapabilities(params)
         case "tasks.promote_from_agent":  return tasksPromoteFromAgent(params)
         default:                  return nil
@@ -38,9 +46,11 @@ enum TermLoopTaskSocketCommands {
         let snapshots = store.columnSnapshots
         let titlesByColumn = columnTitlesMap(store: store, snapshots: snapshots)
         let columns: [[String: Any]] = snapshots.map { snapshot in
-            [
+            let settings = store.columnSettings(for: snapshot.id)
+            return [
                 "id": snapshot.id.rawValue,
-                "title": titlesByColumn[snapshot.id] ?? snapshot.id.defaultTitle
+                "title": titlesByColumn[snapshot.id] ?? snapshot.id.defaultTitle,
+                "remote_status_label": orNull(settings.remoteStatusLabel)
             ]
         }
 
@@ -73,9 +83,11 @@ enum TermLoopTaskSocketCommands {
         let snapshots = store.columnSnapshots
         let titlesByColumn = columnTitlesMap(store: store, snapshots: snapshots)
         let columns: [[String: Any]] = snapshots.map { snapshot in
-            [
+            let settings = store.columnSettings(for: snapshot.id)
+            return [
                 "id": snapshot.id.rawValue,
-                "title": titlesByColumn[snapshot.id] ?? snapshot.id.defaultTitle
+                "title": titlesByColumn[snapshot.id] ?? snapshot.id.defaultTitle,
+                "remote_status_label": orNull(settings.remoteStatusLabel)
             ]
         }
         let columnTitle = titlesByColumn[task.columnId] ?? store.columnTitle(for: task.columnId)
@@ -258,6 +270,218 @@ enum TermLoopTaskSocketCommands {
             "task_id": taskId.uuidString,
             "status": "provisioning"
         ])
+    }
+
+    private static func tasksRemoteContext(_ params: [String: Any]) -> TerminalController.V2CallResult {
+        let storeResult = resolveStore(params)
+        guard case .success(let store) = storeResult else {
+            if case .failure(let err) = storeResult { return err }
+            return .err(code: "internal_error", message: "Could not resolve store", data: nil)
+        }
+        let remoteSync = TaskRemoteSyncCoordinatorProvider.shared.coordinator(for: store)
+        return .ok(remoteContextPayload(store: store, remoteSync: remoteSync))
+    }
+
+    private static func tasksRemoteOperation(_ params: [String: Any]) -> TerminalController.V2CallResult {
+        guard let operationId = uuidParam(params, "operation_id") else {
+            return .err(code: "invalid_params", message: "Missing or invalid operation_id", data: nil)
+        }
+        guard let payload = RemoteMobileOperationRegistry.payload(operationId) else {
+            return .err(code: "not_found", message: "Remote operation not found", data: nil)
+        }
+        return .ok(["operation": payload])
+    }
+
+    private static func tasksRemoteCreate(_ params: [String: Any]) -> TerminalController.V2CallResult {
+        let storeResult = resolveStore(params)
+        guard case .success(let store) = storeResult else {
+            if case .failure(let err) = storeResult { return err }
+            return .err(code: "internal_error", message: "Could not resolve store", data: nil)
+        }
+        guard let title = nonEmptyParam(params, "title") else {
+            return .err(code: "invalid_params", message: "Missing or empty title", data: nil)
+        }
+        let body = nonEmptyParam(params, "body_markdown") ?? nonEmptyParam(params, "brief")
+        let issueType = nonEmptyParam(params, "issue_type")
+        let remoteSync = TaskRemoteSyncCoordinatorProvider.shared.coordinator(for: store)
+        let opId = RemoteMobileOperationRegistry.begin(kind: "remote_create", projectId: store.projectId)
+        Task { @MainActor in
+            do {
+                let taskId = try await remoteSync.createRemoteWorkItemAsync(
+                    title: title,
+                    bodyMarkdown: body,
+                    issueType: issueType
+                )
+                guard let task = store.fileSnapshot().tasks.first(where: { $0.id == taskId }) else {
+                    throw TaskRemoteWorkItemCreateError("Created remote item, but local task is missing.")
+                }
+                RemoteMobileOperationRegistry.succeed(
+                    opId,
+                    result: [
+                        "task": taskPayload(task, columnTitle: store.columnTitle(for: task.columnId)),
+                        "context": remoteContextPayload(store: store, remoteSync: remoteSync)
+                    ]
+                )
+            } catch {
+                RemoteMobileOperationRegistry.fail(opId, error: error)
+            }
+        }
+        return .ok(["operation": RemoteMobileOperationRegistry.payload(opId) ?? [:]])
+    }
+
+    private static func tasksRemoteLink(_ params: [String: Any]) -> TerminalController.V2CallResult {
+        let storeResult = resolveStore(params)
+        guard case .success(let store) = storeResult else {
+            if case .failure(let err) = storeResult { return err }
+            return .err(code: "internal_error", message: "Could not resolve store", data: nil)
+        }
+        guard let taskId = uuidParam(params, "task_id") else {
+            return .err(code: "invalid_params", message: "Missing or invalid task_id", data: nil)
+        }
+        guard let input = nonEmptyParam(params, "input") else {
+            return .err(code: "invalid_params", message: "Missing remote item key or URL", data: nil)
+        }
+        let remoteSync = TaskRemoteSyncCoordinatorProvider.shared.coordinator(for: store)
+        let opId = RemoteMobileOperationRegistry.begin(kind: "remote_link", projectId: store.projectId, taskId: taskId)
+        Task { @MainActor in
+            do {
+                try await remoteSync.linkRemoteWorkItemAsync(taskId: taskId, rawInput: input)
+                guard let task = store.fileSnapshot().tasks.first(where: { $0.id == taskId }) else {
+                    throw TaskRemoteWorkItemCreateError("Linked remote item, but local task is missing.")
+                }
+                RemoteMobileOperationRegistry.succeed(
+                    opId,
+                    result: [
+                        "task": taskPayload(task, columnTitle: store.columnTitle(for: task.columnId)),
+                        "context": remoteContextPayload(store: store, remoteSync: remoteSync)
+                    ]
+                )
+            } catch {
+                RemoteMobileOperationRegistry.fail(opId, error: error)
+            }
+        }
+        return .ok(["operation": RemoteMobileOperationRegistry.payload(opId) ?? [:]])
+    }
+
+    private static func tasksRemoteUnlink(_ params: [String: Any]) -> TerminalController.V2CallResult {
+        let storeResult = resolveStore(params)
+        guard case .success(let store) = storeResult else {
+            if case .failure(let err) = storeResult { return err }
+            return .err(code: "internal_error", message: "Could not resolve store", data: nil)
+        }
+        guard let taskId = uuidParam(params, "task_id") else {
+            return .err(code: "invalid_params", message: "Missing or invalid task_id", data: nil)
+        }
+        let remoteSync = TaskRemoteSyncCoordinatorProvider.shared.coordinator(for: store)
+        do {
+            try remoteSync.unlinkRemoteWorkItem(taskId: taskId)
+            guard let task = store.fileSnapshot().tasks.first(where: { $0.id == taskId }) else {
+                return .err(code: "not_found", message: "Task not found", data: nil)
+            }
+            return .ok([
+                "task": taskPayload(task, columnTitle: store.columnTitle(for: task.columnId)),
+                "context": remoteContextPayload(store: store, remoteSync: remoteSync)
+            ])
+        } catch {
+            return .err(code: "remote_operation_failed", message: error.localizedDescription, data: nil)
+        }
+    }
+
+    private static func tasksRemoteRefresh(_ params: [String: Any]) -> TerminalController.V2CallResult {
+        let storeResult = resolveStore(params)
+        guard case .success(let store) = storeResult else {
+            if case .failure(let err) = storeResult { return err }
+            return .err(code: "internal_error", message: "Could not resolve store", data: nil)
+        }
+        guard let taskId = uuidParam(params, "task_id") else {
+            return .err(code: "invalid_params", message: "Missing or invalid task_id", data: nil)
+        }
+        let remoteSync = TaskRemoteSyncCoordinatorProvider.shared.coordinator(for: store)
+        let opId = RemoteMobileOperationRegistry.begin(kind: "remote_refresh", projectId: store.projectId, taskId: taskId)
+        Task { @MainActor in
+            do {
+                try await remoteSync.refreshRemoteWorkItemAsync(taskId: taskId)
+                guard let task = store.fileSnapshot().tasks.first(where: { $0.id == taskId }) else {
+                    throw TaskRemoteWorkItemCreateError("Refreshed remote item, but local task is missing.")
+                }
+                RemoteMobileOperationRegistry.succeed(
+                    opId,
+                    result: [
+                        "task": taskPayload(task, columnTitle: store.columnTitle(for: task.columnId)),
+                        "context": remoteContextPayload(store: store, remoteSync: remoteSync)
+                    ]
+                )
+            } catch {
+                RemoteMobileOperationRegistry.fail(opId, error: error)
+            }
+        }
+        return .ok(["operation": RemoteMobileOperationRegistry.payload(opId) ?? [:]])
+    }
+
+    private static func tasksRemoteSyncAssigned(_ params: [String: Any]) -> TerminalController.V2CallResult {
+        let storeResult = resolveStore(params)
+        guard case .success(let store) = storeResult else {
+            if case .failure(let err) = storeResult { return err }
+            return .err(code: "internal_error", message: "Could not resolve store", data: nil)
+        }
+        let remoteSync = TaskRemoteSyncCoordinatorProvider.shared.coordinator(for: store)
+        let opId = RemoteMobileOperationRegistry.begin(kind: "remote_sync_assigned", projectId: store.projectId)
+        Task { @MainActor in
+            do {
+                try await remoteSync.syncAssignedToMeAsync(reason: "tasks.mobile.syncAssigned")
+                let snapshots = store.columnSnapshots
+                let titlesByColumn = columnTitlesMap(store: store, snapshots: snapshots)
+                let tasks = store.fileSnapshot().tasks
+                    .filter { $0.archivedAt == nil }
+                    .map { taskPayload($0, columnTitle: titlesByColumn[$0.columnId] ?? store.columnTitle(for: $0.columnId)) }
+                RemoteMobileOperationRegistry.succeed(
+                    opId,
+                    result: [
+                        "tasks": tasks,
+                        "context": remoteContextPayload(store: store, remoteSync: remoteSync)
+                    ]
+                )
+            } catch {
+                RemoteMobileOperationRegistry.fail(opId, error: error)
+            }
+        }
+        return .ok(["operation": RemoteMobileOperationRegistry.payload(opId) ?? [:]])
+    }
+
+    private static func tasksRemoteUpdateStatus(_ params: [String: Any]) -> TerminalController.V2CallResult {
+        let storeResult = resolveStore(params)
+        guard case .success(let store) = storeResult else {
+            if case .failure(let err) = storeResult { return err }
+            return .err(code: "internal_error", message: "Could not resolve store", data: nil)
+        }
+        guard let taskId = uuidParam(params, "task_id") else {
+            return .err(code: "invalid_params", message: "Missing or invalid task_id", data: nil)
+        }
+        guard let columnRaw = nonEmptyParam(params, "column_id") else {
+            return .err(code: "invalid_params", message: "Missing column_id", data: nil)
+        }
+        let column = TaskColumnId(rawValue: columnRaw)
+        let remoteSync = TaskRemoteSyncCoordinatorProvider.shared.coordinator(for: store)
+        let opId = RemoteMobileOperationRegistry.begin(kind: "remote_update_status", projectId: store.projectId, taskId: taskId)
+        Task { @MainActor in
+            do {
+                let message = try await remoteSync.updateRemoteStatusAsync(taskId: taskId, to: column)
+                guard let task = store.fileSnapshot().tasks.first(where: { $0.id == taskId }) else {
+                    throw TaskRemoteWorkItemCreateError("Updated remote status, but local task is missing.")
+                }
+                RemoteMobileOperationRegistry.succeed(
+                    opId,
+                    result: [
+                        "message": message,
+                        "task": taskPayload(task, columnTitle: store.columnTitle(for: task.columnId)),
+                        "context": remoteContextPayload(store: store, remoteSync: remoteSync)
+                    ]
+                )
+            } catch {
+                RemoteMobileOperationRegistry.fail(opId, error: error)
+            }
+        }
+        return .ok(["operation": RemoteMobileOperationRegistry.payload(opId) ?? [:]])
     }
 
     private static func tasksRemoteCapabilities(_ params: [String: Any]) -> TerminalController.V2CallResult {
@@ -574,6 +798,108 @@ enum TermLoopTaskSocketCommands {
             out[snapshot.id] = store.columnTitle(for: snapshot.id)
         }
         return out
+    }
+
+    private static func remoteContextPayload(
+        store: TaskBoardStore,
+        remoteSync: TaskRemoteSyncCoordinator
+    ) -> [String: Any] {
+        let settings = remoteSync.settings
+        let container = settings.container?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let cachedCLIStatus = remoteSync.cliStatus(for: settings.provider)
+        let cliStatus = settings.isEnabled && !container.isEmpty && cachedCLIStatus.checkedAt == nil && !cachedCLIStatus.isChecking
+            ? remoteSync.refreshCLIStatusSynchronously(for: settings.provider)
+            : cachedCLIStatus
+        let columns = store.settingsSnapshot.columns.map { column in
+            [
+                "id": column.columnId.rawValue,
+                "title": column.title,
+                "remote_status_label": orNull(column.remoteStatusLabel)
+            ] as [String: Any]
+        }
+        let canCreate = settings.isEnabled && !container.isEmpty && cliStatus.isAvailable
+        return [
+            "project_id": store.projectId.uuidString,
+            "enabled": settings.isEnabled,
+            "provider": settings.provider.rawValue,
+            "provider_label": settings.provider.displayLabel,
+            "container": orNull(settings.container),
+            "sync_assigned_enabled": settings.isAssignedSyncEnabled,
+            "limit": settings.limit,
+            "last_synced_at": settings.lastSyncedAt.map { $0.timeIntervalSince1970 as Any } ?? NSNull(),
+            "last_error": orNull(settings.lastError),
+            "is_syncing": remoteSync.isSyncing,
+            "last_message": orNull(remoteSync.lastMessage),
+            "can_create": canCreate,
+            "can_sync_assigned": settings.isAssignedSyncEnabled && cliStatus.isAvailable,
+            "cli_available": cliStatus.isAvailable,
+            "cli_checking": cliStatus.isChecking,
+            "cli_executable": cliStatus.executable,
+            "cli_summary": cliStatus.summary,
+            "cli_detail": orNull(cliStatus.detail),
+            "cli_setup_hint": remoteSync.cliSetupHint(for: settings.provider),
+            "columns": columns
+        ]
+    }
+
+    @MainActor
+    private enum RemoteMobileOperationRegistry {
+        private static var operations: [UUID: [String: Any]] = [:]
+        private static let maxOperations = 80
+
+        static func begin(kind: String, projectId: UUID, taskId: UUID? = nil) -> UUID {
+            let id = UUID()
+            trimIfNeeded()
+            operations[id] = [
+                "operation_id": id.uuidString,
+                "kind": kind,
+                "status": "running",
+                "project_id": projectId.uuidString,
+                "task_id": taskId?.uuidString as Any? ?? NSNull(),
+                "created_at": Date().timeIntervalSince1970,
+                "updated_at": Date().timeIntervalSince1970,
+                "result": NSNull(),
+                "error_message": NSNull()
+            ]
+            return id
+        }
+
+        static func payload(_ id: UUID) -> [String: Any]? {
+            operations[id]
+        }
+
+        static func succeed(_ id: UUID, result: [String: Any]) {
+            update(id) { payload in
+                payload["status"] = "succeeded"
+                payload["result"] = result
+                payload["error_message"] = NSNull()
+            }
+        }
+
+        static func fail(_ id: UUID, error: Error) {
+            update(id) { payload in
+                payload["status"] = "failed"
+                payload["error_message"] = error.localizedDescription
+                payload["result"] = NSNull()
+            }
+        }
+
+        private static func update(_ id: UUID, _ mutate: (inout [String: Any]) -> Void) {
+            guard var payload = operations[id] else { return }
+            mutate(&payload)
+            payload["updated_at"] = Date().timeIntervalSince1970
+            operations[id] = payload
+        }
+
+        private static func trimIfNeeded() {
+            guard operations.count >= maxOperations else { return }
+            let sorted = operations
+                .map { ($0.key, (($0.value["updated_at"] as? TimeInterval) ?? 0)) }
+                .sorted { $0.1 < $1.1 }
+            for (key, _) in sorted.prefix(max(1, operations.count - maxOperations + 1)) {
+                operations.removeValue(forKey: key)
+            }
+        }
     }
 
     // MARK: - Param helpers (local mirrors)
