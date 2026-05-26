@@ -334,6 +334,7 @@ struct GitHubRemoteWorkItemProvider: RemoteWorkItemProvider {
         var args = ["issue", "create", "--repo", request.container, "--title", request.title]
         if let body = request.bodyMarkdown, !body.isEmpty { args += ["--body", body] }
         if !request.labels.isEmpty { args += ["--label", request.labels.joined(separator: ",")] }
+        if request.assignToMe { args += ["--assignee", "@me"] }
         let result = try await runner.run(executable: "gh", arguments: args, cwd: nil, timeout: 20)
         try remoteValidate(result)
         let output = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -443,6 +444,9 @@ struct GitLabRemoteWorkItemProvider: RemoteWorkItemProvider {
         var args = ["issue", "create", "--repo", request.container, "--title", request.title]
         if let body = request.bodyMarkdown, !body.isEmpty { args += ["--description", body] }
         if !request.labels.isEmpty { args += ["--label", request.labels.joined(separator: ",")] }
+        if request.assignToMe {
+            args += ["--assignee", try await currentUsername()]
+        }
         let result = try await runner.run(executable: "glab", arguments: args, cwd: nil, timeout: 20)
         try remoteValidate(result)
         let output = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -487,6 +491,21 @@ struct GitLabRemoteWorkItemProvider: RemoteWorkItemProvider {
         let result = try await runner.run(executable: "glab", arguments: ["issue", subcommand, issueNumber(reference), "--repo", repo(reference)], cwd: nil, timeout: 20)
         try remoteValidate(result)
         return try await fetch(reference)
+    }
+
+    private func currentUsername() async throws -> String {
+        let result = try await runner.run(
+            executable: "glab",
+            arguments: ["api", "user", "--jq", ".username"],
+            cwd: nil,
+            timeout: 12
+        )
+        try remoteValidate(result)
+        let username = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !username.isEmpty else {
+            throw RemoteWorkItemError.parseFailed("GitLab username lookup returned an empty response.")
+        }
+        return username
     }
 
     private func issueView(_ reference: RemoteWorkItemReference) async throws -> [String: Any] {
@@ -560,6 +579,7 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
         ]
         if let body = request.bodyMarkdown, !body.isEmpty { args += ["--description", body] }
         if !request.labels.isEmpty { args += ["--label", request.labels.joined(separator: ",")] }
+        if request.assignToMe { args += ["--assignee", "@me"] }
         let result = try await runAcli(args, timeout: 20)
         try remoteValidate(result)
         let output = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
