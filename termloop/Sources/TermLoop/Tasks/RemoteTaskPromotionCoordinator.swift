@@ -136,6 +136,7 @@ public enum RemoteTaskPromotionCoordinator {
                     title: draft.title,
                     bodyMarkdown: bodyMarkdown(for: draft),
                     issueType: draft.issueType,
+                    assignToMe: draft.assignToMe,
                     onRemoteCreated: { reference in
                         try? draftStore.update(id: draft.id) {
                             $0.remoteWorkItem = reference
@@ -280,7 +281,7 @@ public enum RemoteTaskPromotionCoordinator {
     ) async throws -> TaskWorktreeProvisionResult {
         let prepared = try prepareWorktree(
             projectRoot: store.projectRoot,
-            branch: branchHint(reference: reference, title: task.title)
+            branch: branchName(for: draft, reference: reference, title: task.title)
         )
         progress?(.launchingAgent, String(
             localized: "tasks.remotePromotion.progress.movingAgent",
@@ -374,10 +375,23 @@ public enum RemoteTaskPromotionCoordinator {
         return workspace
     }
 
-    private static func bodyMarkdown(for draft: RemoteTaskPromotionDraft) -> String {
-        let marker = "<!-- termloop-promotion-id: \(draft.id.uuidString) -->"
-        let description = draft.descriptionMarkdown.trimmingCharacters(in: .whitespacesAndNewlines)
-        return [description, "", marker].joined(separator: "\n")
+    static func bodyMarkdown(for draft: RemoteTaskPromotionDraft) -> String {
+        draft.descriptionMarkdown.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func suggestedBranchName(title: String) -> String {
+        let slug = titleSlug(title)
+        return slug.isEmpty ? "task/\(UUID().uuidString.prefix(4))" : "task/\(slug)"
+    }
+
+    static func branchName(
+        for draft: RemoteTaskPromotionDraft,
+        reference: RemoteWorkItemReference,
+        title: String
+    ) -> String {
+        let configured = draft.branchName?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return configured.isEmpty ? branchHint(reference: reference, title: title) : configured
     }
 
     private static func branchHint(reference: RemoteWorkItemReference, title: String) -> String {

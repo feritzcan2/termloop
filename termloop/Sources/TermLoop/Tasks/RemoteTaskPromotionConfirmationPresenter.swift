@@ -36,7 +36,7 @@ enum RemoteTaskPromotionConfirmationPresenter {
             table: "TermLoop"
         )
         sheet.isReleasedWhenClosed = false
-        sheet.setContentSize(NSSize(width: 620, height: 680))
+        sheet.setContentSize(NSSize(width: 620, height: 760))
         model.close = { [weak parent, weak sheet] in
             guard let parent, let sheet else { return }
             parent.endSheet(sheet)
@@ -52,6 +52,8 @@ private final class RemoteTaskPromotionSheetModel: ObservableObject {
 
     @Published var title: String
     @Published var descriptionMarkdown: String
+    @Published var branchName: String
+    @Published var assignToMe: Bool
     @Published var issueTypeOptions: [TaskRemoteIssueTypeOption] = []
     @Published var isLoadingIssueTypes = false
     @Published var issueTypeMessage: String?
@@ -70,16 +72,21 @@ private final class RemoteTaskPromotionSheetModel: ObservableObject {
     let promotionId: UUID
     let projectId: UUID
     let provider: RemoteWorkItemProviderId
+    let projectRoot: URL
 
     var close: (() -> Void)?
 
     private let store: RemoteTaskPromotionDraftStore
     private let remoteSync: TaskRemoteSyncCoordinator?
     private var remoteSyncCancellable: AnyCancellable?
+    private var hasCustomizedBranchName = false
 
     init(draft: RemoteTaskPromotionDraft, store: RemoteTaskPromotionDraftStore) {
         self.title = draft.title
         self.descriptionMarkdown = draft.descriptionMarkdown
+        self.branchName = draft.branchName
+            ?? RemoteTaskPromotionCoordinator.suggestedBranchName(title: draft.title)
+        self.assignToMe = draft.assignToMe
         self.customIssueType = draft.issueType ?? ""
         self.shouldCreateWorktreeAndAttachAgent = draft.shouldCreateWorktreeAndAttachAgent
         self.status = draft.status
@@ -92,10 +99,12 @@ private final class RemoteTaskPromotionSheetModel: ObservableObject {
         self.container = draft.container
         self.promotionId = draft.id
         self.projectId = draft.projectId
+        self.projectRoot = store.projectRoot
         self.errorMessage = draft.errorMessage
         self.remoteKey = draft.remoteWorkItem?.key
         self.remoteURL = draft.remoteWorkItem?.url
         self.store = store
+        self.hasCustomizedBranchName = draft.branchName != nil
         if let taskStore = TaskBoardStoreProvider.shared.store(for: draft.projectId) {
             let coordinator = TaskRemoteSyncCoordinatorProvider.shared.coordinator(for: taskStore)
             self.remoteSync = coordinator
@@ -117,11 +126,22 @@ private final class RemoteTaskPromotionSheetModel: ObservableObject {
               !descriptionMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return false
         }
+        if shouldCreateWorktreeAndAttachAgent,
+           branchName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return false
+        }
         guard provider == .jira else { return true }
         return selectedIssueTypeForCreate != nil
     }
 
     var showsIssueTypePicker: Bool { provider == .jira }
+
+    var sanitizedWorktreePath: String? {
+        guard shouldCreateWorktreeAndAttachAgent else { return nil }
+        let branch = branchName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !branch.isEmpty else { return nil }
+        return WorktreeResolver.path(projectFolder: projectRoot.path, branch: branch)
+    }
 
     var selectableIssueTypes: [TaskRemoteIssueTypeOption] {
         let nonSubtaskTypes = issueTypeOptions.filter { !$0.isSubtask }
@@ -143,6 +163,17 @@ private final class RemoteTaskPromotionSheetModel: ObservableObject {
     }
 
     var customIssueTypeTag: String { Self.customIssueTypeTag }
+
+    func setTitle(_ value: String) {
+        title = value
+        guard !hasCustomizedBranchName else { return }
+        branchName = RemoteTaskPromotionCoordinator.suggestedBranchName(title: value)
+    }
+
+    func setBranchName(_ value: String) {
+        branchName = value
+        hasCustomizedBranchName = true
+    }
 
     func onAppear() {
         guard provider == .jira else { return }
@@ -175,6 +206,8 @@ private final class RemoteTaskPromotionSheetModel: ObservableObject {
                     $0.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
                     $0.descriptionMarkdown = descriptionMarkdown.trimmingCharacters(in: .whitespacesAndNewlines)
                     $0.issueType = selectedIssueTypeForCreate
+                    $0.branchName = branchName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    $0.assignToMe = assignToMe
                     $0.shouldCreateWorktreeAndAttachAgent = shouldCreateWorktreeAndAttachAgent
                     $0.errorMessage = nil
                 }
@@ -330,7 +363,7 @@ private struct RemoteTaskPromotionSheet: View {
             actions
         }
         .padding(24)
-        .frame(width: 620, height: 640, alignment: .topLeading)
+        .frame(width: 620, height: 720, alignment: .topLeading)
         .onAppear { model.onAppear() }
     }
 
@@ -354,7 +387,10 @@ private struct RemoteTaskPromotionSheet: View {
                 localized: "tasks.remotePromotion.confirm.titlePlaceholder",
                 defaultValue: "Title",
                 table: "TermLoop"
-            ), text: $model.title)
+            ), text: Binding(
+                get: { model.title },
+                set: { model.setTitle($0) }
+            ))
             .textFieldStyle(.roundedBorder)
             .disabled(model.isWorking)
 
@@ -373,6 +409,46 @@ private struct RemoteTaskPromotionSheet: View {
             .toggleStyle(.checkbox)
             .disabled(model.isWorking)
 
+            if model.shouldCreateWorktreeAndAttachAgent {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(String(
+                        localized: "tasks.remotePromotion.confirm.branch",
+                        defaultValue: "Branch",
+                        table: "TermLoop"
+                    ))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    TextField(String(
+                        localized: "tasks.remotePromotion.confirm.branchPlaceholder",
+                        defaultValue: "task/fix-terminal",
+                        table: "TermLoop"
+                    ), text: Binding(
+                        get: { model.branchName },
+                        set: { model.setBranchName($0) }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(model.isWorking)
+                    if let path = model.sanitizedWorktreePath {
+                        Text("\(String(localized: "tasks.remotePromotion.confirm.worktreePathPrefix", defaultValue: "Worktree:", table: "TermLoop")) \(path)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    }
+                }
+            }
+
+            Toggle(isOn: $model.assignToMe) {
+                Text(String(
+                    localized: "tasks.remotePromotion.confirm.assignToMe",
+                    defaultValue: "Assign to me",
+                    table: "TermLoop"
+                ))
+                .font(.callout)
+            }
+            .toggleStyle(.checkbox)
+            .disabled(model.isWorking)
+
             VStack(alignment: .leading, spacing: 6) {
                 Text(String(
                     localized: "tasks.remotePromotion.confirm.description",
@@ -383,7 +459,7 @@ private struct RemoteTaskPromotionSheet: View {
                 .foregroundStyle(.secondary)
                 TextEditor(text: $model.descriptionMarkdown)
                     .font(.body)
-                    .frame(height: 180)
+                    .frame(height: 150)
                     .scrollContentBackground(.hidden)
                     .background(Color(nsColor: .textBackgroundColor))
                     .overlay(

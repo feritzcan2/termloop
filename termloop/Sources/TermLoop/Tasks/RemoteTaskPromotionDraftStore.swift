@@ -23,6 +23,8 @@ public struct RemoteTaskPromotionDraft: Codable, Identifiable, Equatable, Sendab
     public var title: String
     public var descriptionMarkdown: String
     public var issueType: String?
+    public var branchName: String?
+    public var assignToMe: Bool
     public var shouldCreateWorktreeAndAttachAgent: Bool
     public var provider: RemoteWorkItemProviderId
     public var container: String
@@ -42,6 +44,8 @@ public struct RemoteTaskPromotionDraft: Codable, Identifiable, Equatable, Sendab
         title: String,
         descriptionMarkdown: String,
         issueType: String? = nil,
+        branchName: String? = nil,
+        assignToMe: Bool = false,
         shouldCreateWorktreeAndAttachAgent: Bool = true,
         provider: RemoteWorkItemProviderId,
         container: String,
@@ -61,6 +65,9 @@ public struct RemoteTaskPromotionDraft: Codable, Identifiable, Equatable, Sendab
         self.descriptionMarkdown = descriptionMarkdown
         let trimmedIssueType = issueType?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         self.issueType = trimmedIssueType.isEmpty ? nil : trimmedIssueType
+        let trimmedBranchName = branchName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        self.branchName = trimmedBranchName.isEmpty ? nil : trimmedBranchName
+        self.assignToMe = assignToMe
         self.shouldCreateWorktreeAndAttachAgent = shouldCreateWorktreeAndAttachAgent
         self.provider = provider
         self.container = container
@@ -81,6 +88,8 @@ public struct RemoteTaskPromotionDraft: Codable, Identifiable, Equatable, Sendab
         case title
         case descriptionMarkdown
         case issueType
+        case branchName
+        case assignToMe
         case shouldCreateWorktreeAndAttachAgent
         case provider
         case container
@@ -104,6 +113,10 @@ public struct RemoteTaskPromotionDraft: Codable, Identifiable, Equatable, Sendab
         let trimmedIssueType = try values.decodeIfPresent(String.self, forKey: .issueType)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         self.issueType = trimmedIssueType.isEmpty ? nil : trimmedIssueType
+        let trimmedBranchName = try values.decodeIfPresent(String.self, forKey: .branchName)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        self.branchName = trimmedBranchName.isEmpty ? nil : trimmedBranchName
+        self.assignToMe = try values.decodeIfPresent(Bool.self, forKey: .assignToMe) ?? false
         self.shouldCreateWorktreeAndAttachAgent = try values.decodeIfPresent(
             Bool.self,
             forKey: .shouldCreateWorktreeAndAttachAgent

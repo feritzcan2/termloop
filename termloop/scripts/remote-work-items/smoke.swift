@@ -32,7 +32,7 @@ struct FakeRemoteWorkItemProvider: RemoteWorkItemProvider {
             title: request.title,
             bodyMarkdown: request.bodyMarkdown,
             statusLabel: "open",
-            assignees: [],
+            assignees: request.assignToMe ? ["@me"] : [],
             labels: request.labels,
             providerUpdatedAt: nil,
             fetchedAt: Date()
@@ -111,7 +111,7 @@ struct FakeJiraRemoteWorkItemProvider: RemoteWorkItemProvider {
             title: request.title,
             bodyMarkdown: request.bodyMarkdown,
             statusLabel: "To Do",
-            assignees: [],
+            assignees: request.assignToMe ? ["@me"] : [],
             labels: request.labels,
             providerUpdatedAt: nil,
             fetchedAt: Date()
@@ -327,8 +327,8 @@ struct SmokeMain {
 
         let created = try await service.create(RemoteWorkItemCreateRequest(
             provider: .github,
-            title: "TermLoop remote work item live smoke \(ISO8601DateFormatter().string(from: Date()))",
-            bodyMarkdown: "Created by TermLoop RemoteWorkItemService live smoke. Safe to close/delete.",
+            title: "Remote work item live smoke \(ISO8601DateFormatter().string(from: Date()))",
+            bodyMarkdown: "Live smoke issue. Safe to close/delete.",
             container: repo,
             labels: []
         ), projectRoot: root)
@@ -385,11 +385,11 @@ struct SmokeMain {
 
         let created = try await service.create(RemoteWorkItemCreateRequest(
             provider: .jira,
-            title: "TermLoop remote work item Jira live smoke \(ISO8601DateFormatter().string(from: Date()))",
-            bodyMarkdown: "Created by TermLoop RemoteWorkItemService Jira live smoke.",
+            title: "Remote work item Jira live smoke \(ISO8601DateFormatter().string(from: Date()))",
+            bodyMarkdown: "Live smoke issue. Safe to close/delete.",
             container: projectKey,
             issueType: "Task",
-            labels: ["termloop-smoke"]
+            labels: []
         ), projectRoot: root)
         print("created=\(created.reference.key)")
 
