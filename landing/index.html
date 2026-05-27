@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TermLoop — The terminal IDE for your AI agents</title>
-<meta name="description" content="TermLoop is an open source agentic terminal IDE. Run AI agents in parallel, each in its own git worktree. Use your existing Claude or Codex subscription. macOS-native with a phone bridge.">
+<meta name="description" content="TermLoop is a native macOS terminal for running AI coding agents in parallel. Launch agents, manage worktrees, sync tasks, edit prompts, and coordinate agent workflows.">
 <meta property="og:title" content="TermLoop — The terminal IDE for your AI agents">
-<meta property="og:description" content="Open source. Run AI agents in parallel. Built-in git worktrees. Mobile bridge. Use your existing subscription.">
+<meta property="og:description" content="Run AI coding agents in parallel with managed worktrees, editable prompts, task sync, MCP collaboration, and your existing Claude or Codex accounts.">
 <meta property="og:type" content="website">
 <link rel="canonical" href="https://termloop.ai/">
 <meta name="theme-color" content="#000000">
@@ -1380,16 +1380,15 @@
 <section class="hero">
   <div class="container">
     <p class="hero-eyebrow reveal" style="animation-delay: 0.05s">
-      For devs running Claude Code, Codex, Gemini CLI, Aider, Cline — in parallel
+      For developers running Claude Code, Codex, Gemini CLI, Aider, Cline — in parallel
     </p>
     <h1 class="hero-title reveal" style="animation-delay: 0.15s">
-      The terminal IDE<br>
-      for <span class="grad">your AI agents.</span>
+      The native macOS terminal<br>
+      for <span class="grad">AI coding agents.</span>
     </h1>
     <p class="hero-sub reveal" style="animation-delay: 0.3s">
-      Run AI agents in parallel — each in its own git worktree.
-      Use your existing Claude or Codex subscription. Control the whole thing from your phone.
-      Open source, native to macOS.
+      Launch agents, manage worktrees, sync tasks, edit prompts, and coordinate multiple agent sessions without losing context.
+      Use your existing Claude and Codex accounts. Open source, native to macOS.
     </p>
     <div class="hero-cta reveal" style="animation-delay: 0.4s">
       <a href="https://github.com/feritzcan2/termloop/releases/latest/download/termloop-macos.dmg" class="btn btn-primary">
@@ -1419,16 +1418,16 @@
         <div class="eyebrow">Kickoff</div>
         <h3 class="loop-proof-title-h">All your agents in one tap.</h3>
         <p class="loop-proof-lede">
-          Quick Actions are saved agent launches — name, prompt, model,
-          even a starter command. One tap fires the whole set, each agent
-          ready to work on its own task.
+          Quick Actions are saved agent launches — agent, prompt, system prompt,
+          model, permissions, working folder, and launch behavior. One shortcut
+          starts the right agent with the right context.
         </p>
       </div>
       <figure class="loop-proof-figure">
         <div class="loop-proof-frame">
           <div class="loop-proof-bar">
             <div class="loop-proof-dots"><span></span><span></span><span></span></div>
-            <div class="loop-proof-bar-title">termloop · quick action · all agents in one tap</div>
+            <div class="loop-proof-bar-title">termloop · quick action · launch with context</div>
           </div>
           <video autoplay muted loop playsinline preload="metadata" aria-label="One Quick Action launches every TermLoop agent at once" data-captions='[{"t":0,"text":"Open Quick Actions"},{"t":4,"text":"One tap"},{"t":9,"text":"Each on its own task"}]'>
             <source src="/assets/videos/quick-actions.webm" type="video/webm">
@@ -1438,8 +1437,8 @@
         </div>
         <figcaption class="loop-proof-beats">
           <span><b>01</b> Open Quick Actions</span>
-          <span><b>02</b> One tap</span>
-          <span><b>03</b> Each on its own task</span>
+          <span><b>02</b> Pick the saved agent</span>
+          <span><b>03</b> Launch with full context</span>
         </figcaption>
       </figure>
     </div>
@@ -1454,29 +1453,29 @@
         <div class="eyebrow">See it run</div>
         <h3 class="loop-proof-title-h">Four agents. Four tasks. One workspace.</h3>
         <p class="loop-proof-lede">
-          Hand four agents four tasks at once. Each runs in its own
-          <code>worktree</code>, boots its own dev server, opens its own PR.
-          Your host checkout stays clean.
+          Give multiple agents multiple tasks at once. TermLoop creates isolated
+          <code>worktrees</code>, lets each task run its own dev server or test
+          command, and keeps the work reviewable without mixing local state.
         </p>
       </div>
       <figure class="loop-proof-figure">
         <div class="loop-proof-frame">
           <div class="loop-proof-bar">
             <div class="loop-proof-dots"><span></span><span></span><span></span></div>
-            <div class="loop-proof-bar-title">termloop · 4 agents · 1 loop · 18 seconds</div>
+            <div class="loop-proof-bar-title">termloop · 4 agents · 4 worktrees · live previews</div>
           </div>
-          <video autoplay muted loop playsinline preload="metadata" aria-label="Four TermLoop agents running in parallel worktrees, opening PRs, and merging" data-captions='[{"t":0,"text":"Empty workspace"},{"t":4,"text":"4 agents kick off"},{"t":10,"text":"Apps boot · live URLs come in"},{"t":13,"text":"PRs open in the sidebar"},{"t":16,"text":"Pull → finished"}]'>
-            <source src="/assets/videos/worktree-parallel.webm" type="video/webm">
-            <source src="/assets/videos/worktree-parallel.mp4" type="video/mp4">
+          <video autoplay muted loop playsinline preload="metadata" aria-label="Four coding agents working in parallel worktrees with live dev server previews" data-captions='[{"t":0,"text":"Assign multiple tasks"},{"t":4,"text":"Agents work in isolated worktrees"},{"t":9,"text":"Run profiles start"},{"t":13,"text":"Live previews open"},{"t":16,"text":"Review independently"}]'>
+            <source src="/assets/videos/parallel-worktree-agents.webm" type="video/webm">
+            <source src="/assets/videos/parallel-worktree-agents.mp4" type="video/mp4">
           </video>
           <div class="loop-proof-overlay" aria-live="polite"></div>
         </div>
         <figcaption class="loop-proof-beats">
-          <span><b>01</b> Empty workspace</span>
-          <span><b>02</b> 4 agents kick off</span>
-          <span><b>03</b> Apps boot with live URLs</span>
-          <span><b>04</b> PRs open</span>
-          <span><b>05</b> Pull, done</span>
+          <span><b>01</b> Assign multiple tasks</span>
+          <span><b>02</b> Agents work in isolated worktrees</span>
+          <span><b>03</b> Run profiles start</span>
+          <span><b>04</b> Live previews open</span>
+          <span><b>05</b> Review independently</span>
         </figcaption>
       </figure>
     </div>
@@ -1488,20 +1487,19 @@
   <div class="container">
     <div class="loop-proof">
       <div class="loop-proof-head">
-        <div class="eyebrow">Ask-to</div>
-        <h3 class="loop-proof-title-h">Stuck? Ask another agent.</h3>
+        <div class="eyebrow">MCP collaboration</div>
+        <h3 class="loop-proof-title-h">Ask another agent without copy-paste.</h3>
         <p class="loop-proof-lede">
-          When an agent hits a wall, it doesn't wait for you. The built-in
-          <code>ask_to</code> MCP tool lets it consult any other running
-          agent — different model, different worktree, different perspective.
-          Cross-pollination, no human in the loop.
+          While one agent is implementing, ask Claude, Codex, or another agent
+          for review, UI feedback, edge-case checks, or improvement ideas. The
+          reviewer stays attached, so the main agent can ask again as the work evolves.
         </p>
       </div>
       <figure class="loop-proof-figure">
         <div class="loop-proof-frame">
           <div class="loop-proof-bar">
             <div class="loop-proof-dots"><span></span><span></span><span></span></div>
-            <div class="loop-proof-bar-title">termloop · ask_to · cross-agent consult</div>
+            <div class="loop-proof-bar-title">termloop · mcp · agent collaboration</div>
           </div>
           <video autoplay muted loop playsinline preload="metadata" aria-label="One TermLoop agent asks another for help via the built-in ask_to MCP tool" data-captions='[{"t":0,"text":"Agent prepares the question"},{"t":6,"text":"New agent picks it up"},{"t":9,"text":"Back to the asker"},{"t":12,"text":"Answer arrives"}]'>
             <source src="/assets/videos/ask-to.webm" type="video/webm">
@@ -1520,6 +1518,78 @@
   </div>
 </section>
 
+<!-- ═══ TASK BOARD ═══ -->
+<section class="loop-section" id="tasks">
+  <div class="container">
+    <div class="loop-proof">
+      <div class="loop-proof-head">
+        <div class="eyebrow">Task Board + Remote Sync</div>
+        <h3 class="loop-proof-title-h">Bring remote issues into your local AI board.</h3>
+        <p class="loop-proof-lede">
+          Import Jira, GitHub, or GitLab issues into TermLoop, turn them into
+          local tasks, execute them in managed worktrees, and keep local and
+          remote statuses in sync.
+        </p>
+      </div>
+      <figure class="loop-proof-figure">
+        <div class="loop-proof-frame">
+          <div class="loop-proof-bar">
+            <div class="loop-proof-dots"><span></span><span></span><span></span></div>
+            <div class="loop-proof-bar-title">termloop · task board · remote sync</div>
+          </div>
+          <video autoplay muted loop playsinline preload="metadata" aria-label="Task Board syncing remote issues into TermLoop worktrees" data-captions='[{"t":0,"text":"Import remote issues"},{"t":5,"text":"Track them locally"},{"t":10,"text":"Execute in worktrees"},{"t":15,"text":"Sync status back"}]'>
+            <source src="/assets/videos/task-board-remote-sync.webm" type="video/webm">
+            <source src="/assets/videos/task-board-remote-sync.mp4" type="video/mp4">
+          </video>
+          <div class="loop-proof-overlay" aria-live="polite"></div>
+        </div>
+        <figcaption class="loop-proof-beats">
+          <span><b>01</b> Import remote issues</span>
+          <span><b>02</b> Track them locally</span>
+          <span><b>03</b> Execute in worktrees</span>
+          <span><b>04</b> Sync status back</span>
+        </figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ PROMOTE TO TASK ═══ -->
+<section class="loop-section" id="promote">
+  <div class="container">
+    <div class="loop-proof">
+      <div class="loop-proof-head">
+        <div class="eyebrow">Promote to Task</div>
+        <h3 class="loop-proof-title-h">Turn an agent conversation into real work.</h3>
+        <p class="loop-proof-lede">
+          When a chat with an agent becomes a real issue, ask it to promote the
+          conversation into a task. TermLoop proposes the task, can create a
+          remote issue, moves it into a worktree, and starts implementation.
+        </p>
+      </div>
+      <figure class="loop-proof-figure">
+        <div class="loop-proof-frame">
+          <div class="loop-proof-bar">
+            <div class="loop-proof-dots"><span></span><span></span><span></span></div>
+            <div class="loop-proof-bar-title">termloop · mcp · promote to task</div>
+          </div>
+          <video autoplay muted loop playsinline preload="metadata" aria-label="Agent promotes an MCP conversation into a TermLoop task" data-captions='[{"t":0,"text":"Conversation becomes a task"},{"t":2,"text":"TermLoop drafts the spec"},{"t":5,"text":"Accept the popup"},{"t":8,"text":"Implementation starts"}]'>
+            <source src="/assets/videos/promote-to-task-mcp.webm" type="video/webm">
+            <source src="/assets/videos/promote-to-task-mcp.mp4" type="video/mp4">
+          </video>
+          <div class="loop-proof-overlay" aria-live="polite"></div>
+        </div>
+        <figcaption class="loop-proof-beats">
+          <span><b>01</b> Conversation becomes a task</span>
+          <span><b>02</b> TermLoop drafts the spec</span>
+          <span><b>03</b> Accept the popup</span>
+          <span><b>04</b> Implementation starts</span>
+        </figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
 <!-- ═══ MORE INSIDE ═══ -->
 <section class="more" id="more">
   <div class="container">
@@ -1530,34 +1600,45 @@
 
     <div class="more-row">
       <div class="more-image">
-        <img src="/assets/screenshots/sidebar.png" alt="TermLoop sidebar showing worktree agents, open and merged PRs">
+        <img src="/assets/screenshots/prompts-agents.png" alt="Prompts and Agents editor showing editable templates, prompts, system prompt, model, and permissions">
       </div>
       <div class="more-text">
-        <div class="more-eyebrow">Sidebar</div>
-        <h3>Every thread, one rail.</h3>
-        <p>Branch, PR status, dirty file count, port forwards, agent state — every workspace at a glance. Skim ten active threads without switching tabs.</p>
+        <div class="more-eyebrow">Prompts & Agents</div>
+        <h3>Edit everything the agent receives.</h3>
+        <p>Create custom agents and edit the prompt, system prompt, model, permissions, and launch behavior. No hidden prompt layer.</p>
       </div>
     </div>
 
     <div class="more-row reverse">
       <div class="more-image">
-        <img src="/assets/screenshots/context-bank.png" alt="Context Bank cataloging CLAUDE.md files across the project with usage scores">
+        <img src="/assets/screenshots/context-bank.png" alt="Context Bank showing nested AGENTS.md and CLAUDE.md files across a project">
       </div>
       <div class="more-text">
         <div class="more-eyebrow">Context Bank</div>
-        <h3>Shared, scored context.</h3>
-        <p>TermLoop catalogs every <code>CLAUDE.md</code>, <code>AGENTS.md</code>, <code>GEMINI.md</code> across your tree, scores how much each one actually helps, and lets you clone the strong ones into other agents.</p>
+        <h3>View and edit project context in one place.</h3>
+        <p>TermLoop shows every <code>AGENTS.md</code>, <code>CLAUDE.md</code>, and nested folder-specific instruction file, then keeps the right context synced for agents working in different parts of the repo.</p>
       </div>
     </div>
 
     <div class="more-row banner">
       <div class="more-image">
-        <img src="/assets/screenshots/claude-accounts.png" alt="Settings panel binding one Claude account per project">
+        <img src="/assets/screenshots/project-rules.png" alt="Project Rules showing one editable skill synced into agent catalogs">
       </div>
       <div class="more-text">
-        <div class="more-eyebrow">Per-project accounts</div>
-        <h3>Different Claude login per project.</h3>
-        <p>Bind a separate Claude account to each project — work in one, personal in another. No terminal switching, no token juggling.</p>
+        <div class="more-eyebrow">Project Rules</div>
+        <h3>Manage agent skills once per project.</h3>
+        <p>A single editable rule can sync into each agent's native skill catalog, apply always, on demand, or only in worktrees, and be improved with an agent from inside TermLoop.</p>
+      </div>
+    </div>
+
+    <div class="more-row reverse">
+      <div class="more-image">
+        <img src="/assets/screenshots/claude-accounts.png" alt="Settings panel binding agent accounts per project">
+      </div>
+      <div class="more-text">
+        <div class="more-eyebrow">Multiple agent accounts</div>
+        <h3>Use different Claude and Codex accounts.</h3>
+        <p>Keep work, personal, client, or test agent accounts separate across projects and workflows without constantly switching terminal auth state.</p>
       </div>
     </div>
 
@@ -1595,11 +1676,11 @@
       </details>
       <details class="q">
         <summary>Is TermLoop a fork of something?</summary>
-        <p>TermLoop builds on <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener" style="color: var(--cyan-2); text-decoration: underline; text-decoration-color: rgba(34,211,238,0.3);">cmux</a>, an open-source GPL-3.0 terminal multiplexer by Manaflow. cmux gives us the multiplexer foundation — splits, panes, the renderer. The agent-loop layer, worktree orchestration, ask_to MCP, Context Bank, mobile bridge, and per-project Claude accounts — all of it is what TermLoop adds on top.</p>
+        <p>TermLoop builds on <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener" style="color: var(--cyan-2); text-decoration: underline; text-decoration-color: rgba(34,211,238,0.3);">cmux</a>, an open-source GPL-3.0 terminal multiplexer by Manaflow. cmux gives us the multiplexer foundation — splits, panes, the renderer. The agent workflow layer, worktree orchestration, ask_to MCP, Context Bank, mobile bridge, and per-project Claude accounts — all of it is what TermLoop adds on top.</p>
       </details>
       <details class="q">
         <summary>Is it really open source?</summary>
-        <p>Yes. The macOS app is a free download and the source is public. Inspect the socket protocol, the agent loop, the worktree orchestration — everything. No telemetry, no phone-home.</p>
+        <p>Yes. The macOS app is a free download and the source is public. Inspect the socket protocol, agent workflow tools, worktree orchestration — everything. No telemetry, no phone-home.</p>
       </details>
       <details class="q">
         <summary>Linux or Windows?</summary>
