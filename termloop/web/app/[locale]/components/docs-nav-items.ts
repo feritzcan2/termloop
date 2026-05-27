@@ -1,4 +1,4 @@
-export type NavLink = { titleKey: string; href: string };
+export type NavLink = { titleKey: string; href: string; fallbackTitle?: string };
 export type NavSection = { sectionKey: string; children: NavLink[] };
 export type NavEntry = NavLink | NavSection;
 
@@ -19,6 +19,7 @@ export const navItems: NavEntry[] = [
   { titleKey: "keyboardShortcuts", href: "/docs/keyboard-shortcuts" },
   { titleKey: "apiReference", href: "/docs/api" },
   { titleKey: "browserAutomation", href: "/docs/browser-automation" },
+  { titleKey: "devServers", href: "/docs/dev-servers", fallbackTitle: "Dev Servers" },
   { titleKey: "notifications", href: "/docs/notifications" },
   { titleKey: "ssh", href: "/docs/ssh" },
   {

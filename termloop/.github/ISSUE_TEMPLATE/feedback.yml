@@ -1,0 +1,41 @@
+name: Feedback
+description: Share feedback, feature requests, or issues from TermLoop
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing feedback. If TermLoop opened this page for you, most fields should already be filled in.
+
+  - type: textarea
+    id: feedback
+    attributes:
+      label: Feedback
+      description: "What should we know?"
+    validations:
+      required: true
+
+  - type: input
+    id: contact
+    attributes:
+      label: Contact
+      description: "Optional email address or GitHub handle if you want a follow-up."
+    validations:
+      required: false
+
+  - type: textarea
+    id: app-info
+    attributes:
+      label: App and system info
+      description: "TermLoop fills this in when available."
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Screenshots or recordings
+      description: "Attach screenshots or recordings here if they help explain the feedback."
+    validations:
+      required: false

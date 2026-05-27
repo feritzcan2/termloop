@@ -1149,6 +1149,8 @@ final class LastSurfaceCloseShortcutSettingsTests: XCTestCase {
 
 
 final class AppearanceSettingsTests: XCTestCase {
+    private let darkDefaultMigrationKey = "appearanceMode.darkDefaultMigration.v1"
+
     func testResolvedModeDefaultsToSystemWhenUnset() {
         let suiteName = "AppearanceSettingsTests.Default.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
@@ -1162,6 +1164,38 @@ final class AppearanceSettingsTests: XCTestCase {
         let resolved = AppearanceSettings.resolvedMode(defaults: defaults)
         XCTAssertEqual(resolved, .system)
         XCTAssertEqual(defaults.string(forKey: AppearanceSettings.appearanceModeKey), AppearanceMode.system.rawValue)
+    }
+
+    func testDarkDefaultMigrationPreservesStoredDarkMode() {
+        let suiteName = "AppearanceSettingsTests.MigrationDark.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            XCTFail("Failed to create isolated UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set(AppearanceMode.dark.rawValue, forKey: AppearanceSettings.appearanceModeKey)
+
+        TermLoopHooks.migrateAppearanceDarkDefaultIfNeeded(defaults: defaults)
+
+        XCTAssertEqual(defaults.string(forKey: AppearanceSettings.appearanceModeKey), AppearanceMode.dark.rawValue)
+        XCTAssertTrue(defaults.bool(forKey: darkDefaultMigrationKey))
+    }
+
+    func testDarkDefaultMigrationWritesSystemWhenUnset() {
+        let suiteName = "AppearanceSettingsTests.MigrationUnset.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            XCTFail("Failed to create isolated UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.removeObject(forKey: AppearanceSettings.appearanceModeKey)
+
+        TermLoopHooks.migrateAppearanceDarkDefaultIfNeeded(defaults: defaults)
+
+        XCTAssertEqual(defaults.string(forKey: AppearanceSettings.appearanceModeKey), AppearanceMode.system.rawValue)
+        XCTAssertTrue(defaults.bool(forKey: darkDefaultMigrationKey))
     }
 }
 

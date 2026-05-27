@@ -1,7 +1,6 @@
 import AppKit
 import Bonsplit
 import Combine
-import ImageIO
 import SwiftUI
 import ObjectiveC
 import UniformTypeIdentifiers
@@ -10231,32 +10230,11 @@ enum DevBuildBannerDebugSettings {
 
 private enum FeedbackComposerSettings {
     static let storedEmailKey = "sidebarHelpFeedbackEmail"
-    static let endpointEnvironmentKey = "TERMLOOP_FEEDBACK_API_URL"
     static let emailEnvironmentKey = "TERMLOOP_FEEDBACK_EMAIL"
-    static let endpointInfoDictionaryKey = "CMUXFeedbackAPIURL"
     static let emailInfoDictionaryKey = "CMUXFeedbackEmail"
-    static let defaultEndpoint = "https://termloop.ai/api/feedback"
     static let defaultEmail = "feritzcan93@gmail.com"
     static let maxMessageLength = 4_000
     static let maxAttachmentCount = 10
-    // Keep the multipart body below Vercel's 4.5 MB request limit.
-    static let maxTotalAttachmentBytes = 4 * 1_024 * 1_024
-    static let targetTotalAttachmentUploadBytes = 3_500_000
-
-    static func endpointURL(
-        environment: [String: String] = ProcessInfo.processInfo.environment,
-        infoDictionary: [String: Any]? = Bundle.main.infoDictionary
-    ) -> URL? {
-        if let override = configuredValue(
-            environmentKey: endpointEnvironmentKey,
-            infoDictionaryKey: endpointInfoDictionaryKey,
-            environment: environment,
-            infoDictionary: infoDictionary
-        ) {
-            return URL(string: override)
-        }
-        return URL(string: defaultEndpoint)
-    }
 
     static func supportEmail(
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -10271,12 +10249,10 @@ private enum FeedbackComposerSettings {
     }
 
     static func supportLine(includeHumanPrefix: Bool = false) -> String {
-        let prefix = includeHumanPrefix ? "A human will read this! " : ""
+        let prefix = includeHumanPrefix
+            ? "Uses GitHub CLI when signed in; otherwise opens a prefilled GitHub issue. "
+            : ""
         return "\(prefix)You can also reach us at \(supportEmail())."
-    }
-
-    static func unavailableMessage() -> String {
-        "Feedback is unavailable right now. Email \(supportEmail()) instead."
     }
 
     private static func configuredValue(
@@ -10310,7 +10286,6 @@ private struct FeedbackComposerAttachment: Identifiable {
     let url: URL
     let fileName: String
     let fileSize: Int64
-    let mimeType: String
 
     var standardizedPath: String {
         url.standardizedFileURL.path
@@ -10322,7 +10297,6 @@ private struct FeedbackComposerAttachment: Identifiable {
 
     init(url: URL) throws {
         let resourceValues = try url.resourceValues(forKeys: [
-            .contentTypeKey,
             .fileSizeKey,
             .isRegularFileKey,
             .nameKey,
@@ -10334,14 +10308,7 @@ private struct FeedbackComposerAttachment: Identifiable {
         self.url = url
         self.fileName = resourceValues.name ?? url.lastPathComponent
         self.fileSize = Int64(resourceValues.fileSize ?? 0)
-        self.mimeType = resourceValues.contentType?.preferredMIMEType ?? "application/octet-stream"
     }
-}
-
-private struct PreparedFeedbackComposerAttachment {
-    let fileName: String
-    let mimeType: String
-    let data: Data
 }
 
 private struct FeedbackComposerAppMetadata {
@@ -10416,247 +10383,53 @@ private struct FeedbackComposerAppMetadata {
     }
 }
 
+private extension TermLoopFeedbackSubmissionMetadata {
+    init(_ metadata: FeedbackComposerAppMetadata) {
+        self.init(
+            appVersion: metadata.appVersion,
+            appBuild: metadata.appBuild,
+            appCommit: metadata.appCommit,
+            bundleIdentifier: metadata.bundleIdentifier,
+            osVersion: metadata.osVersion,
+            localeIdentifier: metadata.localeIdentifier,
+            hardwareModel: metadata.hardwareModel,
+            chip: metadata.chip,
+            memoryGB: metadata.memoryGB,
+            architecture: metadata.architecture,
+            displayInfo: metadata.displayInfo
+        )
+    }
+}
+
+private extension TermLoopFeedbackAttachmentSummary {
+    init(_ attachment: FeedbackComposerAttachment) {
+        self.init(
+            fileName: attachment.fileName,
+            displaySize: attachment.displaySize
+        )
+    }
+}
+
 private enum FeedbackComposerSubmissionError: Error {
-    case invalidEndpoint
     case invalidResponse
-    case rejected(statusCode: Int)
-    case attachmentReadFailed
-    case attachmentPreparationFailed
-    case transport(URLError)
 }
 
 private enum FeedbackComposerClient {
-    private static let passthroughAttachmentMIMETypes: Set<String> = [
-        "image/gif",
-        "image/heic",
-        "image/heif",
-        "image/jpeg",
-        "image/png",
-        "image/tiff",
-        "image/webp",
-    ]
-    private static let optimizedAttachmentDimensions: [Int] = [2800, 2400, 2000, 1600, 1280, 1024, 768, 640, 512]
-    private static let optimizedAttachmentQualities: [CGFloat] = [0.82, 0.72, 0.62, 0.52, 0.42, 0.32]
-    private static let optimizedAttachmentMIMEType = "image/jpeg"
-
     static func submit(
         email: String,
         message: String,
         attachments: [FeedbackComposerAttachment]
-    ) async throws {
-        guard let endpointURL = FeedbackComposerSettings.endpointURL() else {
-            throw FeedbackComposerSubmissionError.invalidEndpoint
-        }
-
+    ) async throws -> TermLoopFeedbackSubmissionResult {
         let metadata = FeedbackComposerAppMetadata.current
-        let boundary = "Boundary-\(UUID().uuidString)"
-        let preparedAttachments = try prepareAttachmentsForUpload(attachments)
-
-        var request = URLRequest(url: endpointURL)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 30
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        var body = Data()
-        appendField("email", value: email, to: &body, boundary: boundary)
-        appendField("message", value: message, to: &body, boundary: boundary)
-        appendField("appVersion", value: metadata.appVersion, to: &body, boundary: boundary)
-        appendField("appBuild", value: metadata.appBuild, to: &body, boundary: boundary)
-        appendField("appCommit", value: metadata.appCommit, to: &body, boundary: boundary)
-        appendField("bundleIdentifier", value: metadata.bundleIdentifier, to: &body, boundary: boundary)
-        appendField("osVersion", value: metadata.osVersion, to: &body, boundary: boundary)
-        appendField("locale", value: metadata.localeIdentifier, to: &body, boundary: boundary)
-        appendField("hardwareModel", value: metadata.hardwareModel, to: &body, boundary: boundary)
-        appendField("chip", value: metadata.chip, to: &body, boundary: boundary)
-        appendField("memoryGB", value: metadata.memoryGB, to: &body, boundary: boundary)
-        appendField("architecture", value: metadata.architecture, to: &body, boundary: boundary)
-        appendField("displayInfo", value: metadata.displayInfo, to: &body, boundary: boundary)
-
-        for attachment in preparedAttachments {
-            appendFile(
-                named: "attachments",
-                attachment: attachment,
-                to: &body,
-                boundary: boundary
-            )
-        }
-
-        body.append(Data("--\(boundary)--\r\n".utf8))
-        request.httpBody = body
-
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession.shared.data(for: request)
-        } catch let error as URLError {
-            throw FeedbackComposerSubmissionError.transport(error)
-        } catch {
+        guard let result = await TermLoopFeedbackSubmissionService.submit(
+            email: email,
+            message: message,
+            metadata: TermLoopFeedbackSubmissionMetadata(metadata),
+            attachments: attachments.map(TermLoopFeedbackAttachmentSummary.init)
+        ) else {
             throw FeedbackComposerSubmissionError.invalidResponse
         }
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw FeedbackComposerSubmissionError.invalidResponse
-        }
-
-        guard (200..<300).contains(httpResponse.statusCode) else {
-            if let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let errorMessage = payload["error"] as? String,
-               errorMessage.isEmpty == false {
-                NSLog("feedback.submit.rejected status=%@ error=%@", String(httpResponse.statusCode), errorMessage)
-            }
-            throw FeedbackComposerSubmissionError.rejected(statusCode: httpResponse.statusCode)
-        }
-    }
-
-    private static func appendField(
-        _ name: String,
-        value: String,
-        to body: inout Data,
-        boundary: String
-    ) {
-        body.append(Data("--\(boundary)\r\n".utf8))
-        body.append(Data("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".utf8))
-        body.append(Data(value.utf8))
-        body.append(Data("\r\n".utf8))
-    }
-
-    private static func prepareAttachmentsForUpload(
-        _ attachments: [FeedbackComposerAttachment]
-    ) throws -> [PreparedFeedbackComposerAttachment] {
-        guard attachments.isEmpty == false else { return [] }
-
-        struct IndexedAttachment {
-            let index: Int
-            let attachment: FeedbackComposerAttachment
-        }
-
-        let sortedAttachments = attachments.enumerated()
-            .map { IndexedAttachment(index: $0.offset, attachment: $0.element) }
-            .sorted { lhs, rhs in
-                lhs.attachment.fileSize > rhs.attachment.fileSize
-            }
-
-        var preparedByIndex: [Int: PreparedFeedbackComposerAttachment] = [:]
-        var remainingBudget = FeedbackComposerSettings.targetTotalAttachmentUploadBytes
-        var remainingCount = sortedAttachments.count
-
-        for item in sortedAttachments {
-            let perAttachmentBudget = max(1, remainingBudget / max(remainingCount, 1))
-            let preparedAttachment = try prepareAttachmentForUpload(
-                item.attachment,
-                maximumByteCount: perAttachmentBudget
-            )
-            preparedByIndex[item.index] = preparedAttachment
-            remainingBudget -= preparedAttachment.data.count
-            remainingCount -= 1
-        }
-
-        let preparedAttachments = attachments.indices.compactMap { preparedByIndex[$0] }
-        let totalBytes = preparedAttachments.reduce(0) { $0 + $1.data.count }
-        guard totalBytes <= FeedbackComposerSettings.targetTotalAttachmentUploadBytes else {
-            throw FeedbackComposerSubmissionError.attachmentPreparationFailed
-        }
-        return preparedAttachments
-    }
-
-    private static func prepareAttachmentForUpload(
-        _ attachment: FeedbackComposerAttachment,
-        maximumByteCount: Int
-    ) throws -> PreparedFeedbackComposerAttachment {
-        if attachment.fileSize > 0,
-           attachment.fileSize <= Int64(maximumByteCount),
-           passthroughAttachmentMIMETypes.contains(attachment.mimeType),
-           let fileData = try? Data(contentsOf: attachment.url, options: .mappedIfSafe) {
-            return PreparedFeedbackComposerAttachment(
-                fileName: attachment.fileName,
-                mimeType: attachment.mimeType,
-                data: fileData
-            )
-        }
-
-        guard let imageSource = CGImageSourceCreateWithURL(attachment.url as CFURL, nil) else {
-            throw FeedbackComposerSubmissionError.attachmentReadFailed
-        }
-
-        for maxPixelDimension in optimizedAttachmentDimensions {
-            guard let cgImage = downsampledImage(
-                from: imageSource,
-                maxPixelDimension: maxPixelDimension
-            ) else { continue }
-
-            for compressionQuality in optimizedAttachmentQualities {
-                guard let jpegData = jpegData(
-                    from: cgImage,
-                    compressionQuality: compressionQuality
-                ) else { continue }
-                guard jpegData.count <= maximumByteCount else { continue }
-
-                return PreparedFeedbackComposerAttachment(
-                    fileName: optimizedFileName(for: attachment),
-                    mimeType: optimizedAttachmentMIMEType,
-                    data: jpegData
-                )
-            }
-        }
-
-        throw FeedbackComposerSubmissionError.attachmentPreparationFailed
-    }
-
-    private static func downsampledImage(
-        from imageSource: CGImageSource,
-        maxPixelDimension: Int
-    ) -> CGImage? {
-        CGImageSourceCreateThumbnailAtIndex(
-            imageSource,
-            0,
-            [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceShouldCache: false,
-                kCGImageSourceShouldCacheImmediately: false,
-                kCGImageSourceThumbnailMaxPixelSize: maxPixelDimension,
-            ] as CFDictionary
-        )
-    }
-
-    private static func jpegData(
-        from image: CGImage,
-        compressionQuality: CGFloat
-    ) -> Data? {
-        let bitmap = NSBitmapImageRep(cgImage: image)
-        return bitmap.representation(
-            using: .jpeg,
-            properties: [
-                .compressionFactor: compressionQuality,
-            ]
-        )
-    }
-
-    private static func optimizedFileName(
-        for attachment: FeedbackComposerAttachment
-    ) -> String {
-        let baseName = (attachment.fileName as NSString).deletingPathExtension
-        return "\(baseName.isEmpty ? "feedback-image" : baseName).jpg"
-    }
-
-    private static func appendFile(
-        named fieldName: String,
-        attachment: PreparedFeedbackComposerAttachment,
-        to body: inout Data,
-        boundary: String
-    ) {
-        let sanitizedFileName = attachment.fileName.replacingOccurrences(of: "\"", with: "")
-
-        body.append(Data("--\(boundary)\r\n".utf8))
-        body.append(
-            Data(
-                "Content-Disposition: form-data; name=\"\(fieldName)\"; filename=\"\(sanitizedFileName)\"\r\n".utf8
-            )
-        )
-        body.append(Data("Content-Type: \(attachment.mimeType)\r\n\r\n".utf8))
-        body.append(attachment.data)
-        body.append(Data("\r\n".utf8))
+        return result
     }
 }
 
@@ -11307,18 +11080,18 @@ private struct SidebarFeedbackComposerSheet: View {
     @State private var attachments: [FeedbackComposerAttachment] = []
     @State private var isSubmitting = false
     @State private var submissionErrorMessage: String?
-    @State private var didSend = false
+    @State private var submissionResult: TermLoopFeedbackSubmissionResult?
 
     private var trimmedMessage: String {
         message.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var canSubmit: Bool {
-        isValidEmail(email) &&
+        (email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isValidEmail(email)) &&
             !trimmedMessage.isEmpty &&
             message.count <= FeedbackComposerSettings.maxMessageLength &&
             !isSubmitting &&
-            !didSend
+            submissionResult == nil
     }
 
     var body: some View {
@@ -11326,7 +11099,7 @@ private struct SidebarFeedbackComposerSheet: View {
             Text(String(localized: "sidebar.help.feedback.title", defaultValue: "Send Feedback"))
                 .font(.title3.weight(.semibold))
 
-            if didSend {
+            if submissionResult != nil {
                 successView
             } else {
                 formView
@@ -11339,9 +11112,9 @@ private struct SidebarFeedbackComposerSheet: View {
 
     private var successView: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(String(localized: "sidebar.help.feedback.successTitle", defaultValue: "Thanks for the feedback."))
+            Text(successTitle)
                 .font(.headline)
-            Text(FeedbackComposerSettings.supportLine())
+            Text(successBody)
             .font(.system(size: 12))
             .foregroundStyle(.secondary)
             .textSelection(.enabled)
@@ -11356,6 +11129,28 @@ private struct SidebarFeedbackComposerSheet: View {
         }
     }
 
+    private var successTitle: String {
+        switch submissionResult {
+        case .createdGitHubIssue:
+            return "GitHub issue created."
+        case .openedGitHubIssueDraft:
+            return "GitHub issue draft opened."
+        case nil:
+            return ""
+        }
+    }
+
+    private var successBody: String {
+        switch submissionResult {
+        case .createdGitHubIssue(let url):
+            return "Thanks for the feedback. Issue: \(url.absoluteString)"
+        case .openedGitHubIssueDraft:
+            return "Review it in your browser, add screenshots if needed, then submit the issue on GitHub."
+        case nil:
+            return ""
+        }
+    }
+
     private var formView: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(FeedbackComposerSettings.supportLine(includeHumanPrefix: true))
@@ -11363,7 +11158,7 @@ private struct SidebarFeedbackComposerSheet: View {
             .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(String(localized: "sidebar.help.feedback.email", defaultValue: "Your Email"))
+                Text("Email (optional)")
                     .font(.system(size: 12, weight: .medium))
                 TextField(
                     String(localized: "sidebar.help.feedback.emailPlaceholder", defaultValue: "feritzcan93@gmail.com"),
@@ -11415,7 +11210,7 @@ private struct SidebarFeedbackComposerSheet: View {
                     Text(
                         String(
                             localized: "sidebar.help.feedback.attachmentsHint",
-                            defaultValue: "Up to 10 images."
+                            defaultValue: "Attach manually on GitHub after the issue opens."
                         )
                     )
                     .font(.system(size: 11))
@@ -11473,7 +11268,7 @@ private struct SidebarFeedbackComposerSheet: View {
                         ProgressView()
                             .controlSize(.small)
                     } else {
-                        Text(String(localized: "sidebar.help.feedback.send", defaultValue: "Send"))
+                        Text("Send Feedback")
                     }
                 }
                 .keyboardShortcut(.defaultAction)
@@ -11541,7 +11336,7 @@ private struct SidebarFeedbackComposerSheet: View {
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedMessage = trimmedMessage
 
-        guard isValidEmail(trimmedEmail) else {
+        guard trimmedEmail.isEmpty || isValidEmail(trimmedEmail) else {
             submissionErrorMessage = String(
                 localized: "sidebar.help.feedback.invalidEmail",
                 defaultValue: "Enter a valid email address."
@@ -11572,14 +11367,14 @@ private struct SidebarFeedbackComposerSheet: View {
         }
 
         do {
-            try await FeedbackComposerClient.submit(
+            let result = try await FeedbackComposerClient.submit(
                 email: trimmedEmail,
                 message: normalizedMessage,
                 attachments: attachments
             )
             await MainActor.run {
                 isSubmitting = false
-                didSend = true
+                submissionResult = result
                 attachments = []
             }
         } catch {
@@ -11606,54 +11401,11 @@ private struct SidebarFeedbackComposerSheet: View {
         }
 
         switch submissionError {
-        case .invalidEndpoint:
-            return FeedbackComposerSettings.unavailableMessage()
         case .invalidResponse:
             return String(
                 localized: "sidebar.help.feedback.genericError",
                 defaultValue: "Couldn't send feedback. Please try again."
             )
-        case .attachmentReadFailed:
-            return String(
-                localized: "sidebar.help.feedback.invalidImageSelection",
-                defaultValue: "One of the selected files could not be attached."
-            )
-        case .attachmentPreparationFailed:
-            return String(
-                localized: "sidebar.help.feedback.totalImagesTooLarge",
-                defaultValue: "These images are too large to send together. Remove a few and try again."
-            )
-        case .transport(let transportError):
-            if transportError.code == .notConnectedToInternet || transportError.code == .networkConnectionLost {
-                return String(
-                    localized: "sidebar.help.feedback.connectionError",
-                    defaultValue: "Couldn't send feedback. Check your connection and try again."
-                )
-            }
-            return String(
-                localized: "sidebar.help.feedback.genericError",
-                defaultValue: "Couldn't send feedback. Please try again."
-            )
-        case .rejected(let statusCode):
-            switch statusCode {
-            case 400, 413, 415:
-                return String(
-                    localized: "sidebar.help.feedback.validationError",
-                    defaultValue: "Check your message and attachments, then try again."
-                )
-            case 429:
-                return String(
-                    localized: "sidebar.help.feedback.rateLimited",
-                    defaultValue: "Too many feedback attempts. Please try again later."
-                )
-            case 500...599:
-                return FeedbackComposerSettings.unavailableMessage()
-            default:
-                return String(
-                    localized: "sidebar.help.feedback.genericError",
-                    defaultValue: "Couldn't send feedback. Please try again."
-                )
-            }
         }
     }
 }
@@ -11720,7 +11472,7 @@ enum FeedbackComposerBridge {
         }
 
         do {
-            try await FeedbackComposerClient.submit(
+            _ = try await FeedbackComposerClient.submit(
                 email: trimmedEmail,
                 message: normalizedMessage,
                 attachments: attachments
@@ -11746,30 +11498,8 @@ enum FeedbackComposerBridge {
         }
 
         switch submissionError {
-        case .invalidEndpoint:
-            return FeedbackComposerSettings.unavailableMessage()
         case .invalidResponse:
             return "Couldn't send feedback. Please try again."
-        case .attachmentReadFailed:
-            return "One of the selected files could not be attached."
-        case .attachmentPreparationFailed:
-            return "These images are too large to send together. Remove a few and try again."
-        case .transport(let transportError):
-            if transportError.code == .notConnectedToInternet || transportError.code == .networkConnectionLost {
-                return "Couldn't send feedback. Check your connection and try again."
-            }
-            return "Couldn't send feedback. Please try again."
-        case .rejected(let statusCode):
-            switch statusCode {
-            case 400, 413, 415:
-                return "Check your message and attachments, then try again."
-            case 429:
-                return "Too many feedback attempts. Please try again later."
-            case 500...599:
-                return FeedbackComposerSettings.unavailableMessage()
-            default:
-                return "Couldn't send feedback. Please try again."
-            }
         }
     }
 }

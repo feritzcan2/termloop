@@ -261,6 +261,7 @@
 		A9E7000EA6EAC0DE00000001 /* TermLoopSidebarRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E7000EA6EAC0DE00000002 /* TermLoopSidebarRoot.swift */; };
 		A9E7000FA6EAC0DE00000001 /* TermLoopSidebarTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E7000FA6EAC0DE00000002 /* TermLoopSidebarTheme.swift */; };
 		A9E70010A6EAC0DE00000001 /* TermLoopSidebarFooter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70010A6EAC0DE00000002 /* TermLoopSidebarFooter.swift */; };
+		A9E70F00A6EAC0DE00000001 /* TermLoopFeedbackSubmissionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70F00A6EAC0DE00000002 /* TermLoopFeedbackSubmissionService.swift */; };
 		A9E70011A6EAC0DE00000001 /* ClaudeHooksStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70011A6EAC0DE00000002 /* ClaudeHooksStatus.swift */; };
 		A9E70012A6EAC0DE00000001 /* ClaudeHookInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70012A6EAC0DE00000002 /* ClaudeHookInstaller.swift */; };
 		A9E70013A6EAC0DE00000001 /* ClaudeSessionMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70013A6EAC0DE00000002 /* ClaudeSessionMetadata.swift */; };
@@ -905,6 +906,7 @@
 		A9E7000EA6EAC0DE00000002 /* TermLoopSidebarRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/TermLoopSidebarRoot.swift; sourceTree = "<group>"; };
 		A9E7000FA6EAC0DE00000002 /* TermLoopSidebarTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/TermLoopSidebarTheme.swift; sourceTree = "<group>"; };
 		A9E70010A6EAC0DE00000002 /* TermLoopSidebarFooter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/TermLoopSidebarFooter.swift; sourceTree = "<group>"; };
+		A9E70F00A6EAC0DE00000002 /* TermLoopFeedbackSubmissionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Feedback/TermLoopFeedbackSubmissionService.swift; sourceTree = "<group>"; };
 		A9E70011A6EAC0DE00000002 /* ClaudeHooksStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Core/ClaudeHooksStatus.swift; sourceTree = "<group>"; };
 		A9E70012A6EAC0DE00000002 /* ClaudeHookInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/ClaudeHookInstaller.swift; sourceTree = "<group>"; };
 		A9E70013A6EAC0DE00000002 /* ClaudeSessionMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Core/ClaudeSessionMetadata.swift; sourceTree = "<group>"; };
@@ -1923,6 +1925,7 @@
 				A9E7000FA6EAC0DE00000002 /* TermLoopSidebarTheme.swift */,
 				AAFBCD0DA6EAC0DE00000007 /* PanelRenderInstrumentation.swift */,
 				A9E70010A6EAC0DE00000002 /* TermLoopSidebarFooter.swift */,
+				A9E70F00A6EAC0DE00000002 /* TermLoopFeedbackSubmissionService.swift */,
 				A9E70050A6EAC0DE00000002 /* WorktreeGroupHeader.swift */,
 				A9E70057A6EAC0DE00000002 /* WorktreeCoderBadge.swift */,
 				A9E70051A6EAC0DE00000002 /* WorktreeRulesStore.swift */,
@@ -2714,6 +2717,7 @@
 				A9E7000FA6EAC0DE00000001 /* TermLoopSidebarTheme.swift in Sources */,
 				AAFBCD0DA6EAC0DE00000006 /* PanelRenderInstrumentation.swift in Sources */,
 				A9E70010A6EAC0DE00000001 /* TermLoopSidebarFooter.swift in Sources */,
+				A9E70F00A6EAC0DE00000001 /* TermLoopFeedbackSubmissionService.swift in Sources */,
 				A9E70050A6EAC0DE00000001 /* WorktreeGroupHeader.swift in Sources */,
 				A9E70057A6EAC0DE00000001 /* WorktreeCoderBadge.swift in Sources */,
 				A9E70051A6EAC0DE00000001 /* WorktreeRulesStore.swift in Sources */,

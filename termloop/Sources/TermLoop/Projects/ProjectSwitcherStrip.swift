@@ -10,11 +10,16 @@ import SwiftUI
 struct ProjectSwitcherStrip: View {
     @ObservedObject private var projectStore = ProjectStore.shared
     @ObservedObject private var refreshCoordinator = SidebarProjectRefreshCoordinator.shared
+    @ObservedObject private var keyboardShortcutSettingsObserver = KeyboardShortcutSettingsObserver.shared
     @EnvironmentObject private var tabManager: TabManager
+    @AppStorage(ShortcutHintDebugSettings.alwaysShowHintsKey)
+    private var alwaysShowShortcutHints = ShortcutHintDebugSettings.defaultAlwaysShowHints
+    @StateObject private var shortcutHintMonitor = ProjectSwitcherShortcutHintMonitor()
 
     @State private var sheet: ActiveSheet?
     @State private var deleteCandidate: Project?
     @State private var branchTick = 0
+    @State private var projectTitleWidth: CGFloat = 0
 
     private enum ActiveSheet: Identifiable {
         case create
@@ -75,17 +80,20 @@ struct ProjectSwitcherStrip: View {
                 HStack(spacing: 8) {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
-                            Text(TermLoopSidebarTheme.caps(
-                                activeProject?.name ?? String(
-                                    localized: "project.switcher.none",
-                                    defaultValue: "No Project", table: "TermLoop"
-                                )
-                            ))
+                            Text(projectTitleText)
                             .font(TermLoopSidebarTheme.headerLabel)
                             .foregroundStyle(Color.primary)
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .layoutPriority(1)
+                            .background(
+                                GeometryReader { proxy in
+                                    Color.clear.preference(
+                                        key: ProjectSwitcherTitleWidthPreferenceKey.self,
+                                        value: proxy.size.width
+                                    )
+                                }
+                            )
 
 #if DEBUG
                             Text(verbatim: "DEV")
@@ -123,6 +131,16 @@ struct ProjectSwitcherStrip: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .help(activeProject?.folderPath ?? "")
             .accessibilityIdentifier("ProjectSwitcherStrip.Menu")
+            .overlay(alignment: .topLeading) {
+                if showsProjectShortcutHint, let projectShortcutLabel {
+                    ShortcutHintPill(text: projectShortcutLabel, fontSize: 10, emphasis: 0.9)
+                        .offset(x: projectTitleWidth + 6, y: 0)
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                        .accessibilityIdentifier("ProjectSwitcherStrip.ShortcutHint")
+                }
+            }
+            .animation(.easeOut(duration: 0.12), value: showsProjectShortcutHint)
 
             refreshButton
         }
@@ -180,6 +198,21 @@ struct ProjectSwitcherStrip: View {
         }
         .onReceive(WorkspaceMetadataStore.shared.$branchVersion) { newValue in
             branchTick = newValue
+        }
+        .background(
+            WindowAccessor { window in
+                shortcutHintMonitor.setHostWindow(window)
+            }
+            .frame(width: 0, height: 0)
+        )
+        .onAppear {
+            shortcutHintMonitor.start()
+        }
+        .onDisappear {
+            shortcutHintMonitor.stop()
+        }
+        .onPreferenceChange(ProjectSwitcherTitleWidthPreferenceKey.self) { width in
+            projectTitleWidth = width
         }
     }
 
@@ -242,6 +275,32 @@ struct ProjectSwitcherStrip: View {
         return projectStore.project(id: id)
     }
 
+    private var projectTitleText: AttributedString {
+        TermLoopSidebarTheme.caps(
+            activeProject?.name ?? String(
+                localized: "project.switcher.none",
+                defaultValue: "No Project",
+                table: "TermLoop"
+            )
+        )
+    }
+
+    private var projectShortcutLabel: String? {
+        let _ = keyboardShortcutSettingsObserver.revision
+        guard let activeProject,
+              let index = projectStore.projects.firstIndex(where: { $0.id == activeProject.id }),
+              let digit = ProjectShortcutRouter.digitForProject(
+                at: index,
+                projectCount: projectStore.projects.count
+              ) else { return nil }
+        let shortcut = KeyboardShortcutSettings.shortcut(for: .selectProjectByNumber)
+        return "\(shortcut.numberedDigitHintPrefix)\(digit)"
+    }
+
+    private var showsProjectShortcutHint: Bool {
+        (shortcutHintMonitor.isCommandPressed || alwaysShowShortcutHints) && projectShortcutLabel != nil
+    }
+
     private var deleteTitle: String {
         guard let project = deleteCandidate else {
             return String(
@@ -290,6 +349,134 @@ struct ProjectSwitcherStrip: View {
         return path
     }
 
+}
+
+private struct ProjectSwitcherTitleWidthPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+@MainActor
+private final class ProjectSwitcherShortcutHintMonitor: ObservableObject {
+    @Published private(set) var isCommandPressed = false
+
+    private weak var hostWindow: NSWindow?
+    private var hostWindowDidBecomeKeyObserver: NSObjectProtocol?
+    private var hostWindowDidResignKeyObserver: NSObjectProtocol?
+    private var flagsMonitor: Any?
+    private var keyDownMonitor: Any?
+    private var appResignObserver: NSObjectProtocol?
+
+    func setHostWindow(_ window: NSWindow?) {
+        guard hostWindow !== window else { return }
+        removeHostWindowObservers()
+        hostWindow = window
+        guard let window else {
+            reset()
+            return
+        }
+
+        hostWindowDidBecomeKeyObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.update(from: NSEvent.modifierFlags, eventWindow: nil)
+            }
+        }
+
+        hostWindowDidResignKeyObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResignKeyNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.reset()
+            }
+        }
+
+        update(from: NSEvent.modifierFlags, eventWindow: nil)
+    }
+
+    func start() {
+        guard flagsMonitor == nil else {
+            update(from: NSEvent.modifierFlags, eventWindow: nil)
+            return
+        }
+
+        flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            self?.update(from: event.modifierFlags, eventWindow: event.window)
+            return event
+        }
+
+        keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard self?.isCurrentWindow(eventWindow: event.window) == true else { return event }
+            self?.reset()
+            return event
+        }
+
+        appResignObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.reset()
+            }
+        }
+
+        update(from: NSEvent.modifierFlags, eventWindow: nil)
+    }
+
+    func stop() {
+        if let flagsMonitor {
+            NSEvent.removeMonitor(flagsMonitor)
+            self.flagsMonitor = nil
+        }
+        if let keyDownMonitor {
+            NSEvent.removeMonitor(keyDownMonitor)
+            self.keyDownMonitor = nil
+        }
+        if let appResignObserver {
+            NotificationCenter.default.removeObserver(appResignObserver)
+            self.appResignObserver = nil
+        }
+        removeHostWindowObservers()
+        reset()
+    }
+
+    private func update(from modifierFlags: NSEvent.ModifierFlags, eventWindow: NSWindow?) {
+        isCommandPressed = isCurrentWindow(eventWindow: eventWindow)
+            && ShortcutHintModifierPolicy.shouldShowHints(for: modifierFlags)
+    }
+
+    private func isCurrentWindow(eventWindow: NSWindow?) -> Bool {
+        ShortcutHintModifierPolicy.isCurrentWindow(
+            hostWindowNumber: hostWindow?.windowNumber,
+            hostWindowIsKey: hostWindow?.isKeyWindow ?? false,
+            eventWindowNumber: eventWindow?.windowNumber,
+            keyWindowNumber: NSApp.keyWindow?.windowNumber
+        )
+    }
+
+    private func reset() {
+        isCommandPressed = false
+    }
+
+    private func removeHostWindowObservers() {
+        if let hostWindowDidBecomeKeyObserver {
+            NotificationCenter.default.removeObserver(hostWindowDidBecomeKeyObserver)
+            self.hostWindowDidBecomeKeyObserver = nil
+        }
+        if let hostWindowDidResignKeyObserver {
+            NotificationCenter.default.removeObserver(hostWindowDidResignKeyObserver)
+            self.hostWindowDidResignKeyObserver = nil
+        }
+    }
 }
 
 // MARK: - Create sheet

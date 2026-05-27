@@ -393,13 +393,17 @@ enum TermLoopHooks {
     static func migrateAppearanceDarkDefaultIfNeeded(defaults: UserDefaults = .standard) {
         let migrationKey = "appearanceMode.darkDefaultMigration.v1"
         guard !defaults.bool(forKey: migrationKey) else { return }
-        defaults.set(AppearanceSettings.defaultMode.rawValue, forKey: AppearanceSettings.appearanceModeKey)
+        AppearanceSettings.resolvedMode(defaults: defaults)
         defaults.set(true, forKey: migrationKey)
     }
 
     static func removeMirroredSessionSnapshotIfNeeded() {
         guard let currentSessionURL = SessionPersistenceStore.defaultSnapshotFileURL() else { return }
         TaggedBuildSharedState.mirrorCurrentSessionArtifactsIfNeeded(currentSessionURL: currentSessionURL)
+    }
+
+    static func mirrorTaggedBuildUserDefaultsIfNeeded() {
+        TaggedBuildSharedState.mirrorCurrentUserDefaultsIfNeeded()
     }
 
     /// Single entry point for the upstream `handleClient` accept hook.

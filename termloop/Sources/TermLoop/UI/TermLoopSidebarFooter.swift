@@ -11,7 +11,7 @@ extension TermLoopSidebar {
     ///   • sparkle — Skills + Commands popover (TermLoop-owned).
     ///   • Connect Mobile — enables on-demand mobile pairing (TermLoop-owned).
     ///   • flex spacer.
-    ///   • `?`   — "Send feedback" quick action (calls the upstream closure).
+    ///   • Send Feedback — quick action (calls the upstream closure).
     ///   • update pill — upstream pill, only rendered when `showsPill`.
     ///
     /// DEBUG-only red banner is intentionally absent — a muted `DEV` tag in
@@ -342,7 +342,7 @@ private struct CollapsedWorkspaceFooterRows: View {
     }
 }
 
-/// Bare mono `?` glyph that opens the feedback composer. Keeps the footer
+/// Bare mono text button that opens the feedback composer. Keeps the footer
 /// typographically consistent — no SF Symbol rendering, no capsule.
 private struct FeedbackGlyphButton: View {
     let action: () -> Void
@@ -350,12 +350,12 @@ private struct FeedbackGlyphButton: View {
 
     var body: some View {
         Button(action: action) {
-            Text(verbatim: "?")
+            Text(verbatim: "Send Feedback")
                 .font(TermLoopSidebarTheme.bodyMonoStrong)
                 .foregroundStyle(isHovering
                                  ? Color.primary
                                  : TermLoopSidebarTheme.dim)
-                .frame(width: 16, height: 16)
+                .lineLimit(1)
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
