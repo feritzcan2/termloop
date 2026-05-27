@@ -493,6 +493,9 @@ export interface TermLoopClient {
   syncAssignedRemoteTasks(params?: {
     projectId?: string;
   }): Promise<RemoteOperation<RemoteTaskResult>>;
+  refreshLinkedRemoteTasks(params?: {
+    projectId?: string;
+  }): Promise<RemoteOperation<RemoteTaskResult>>;
   updateTaskRemoteStatus(params: {
     taskId: string;
     columnId: TaskColumnId;
@@ -865,6 +868,14 @@ export function createTermLoopClient(opts: {
     async syncAssignedRemoteTasks(params) {
       return callRemoteOperation(
         "tasks.remote_sync_assigned",
+        {
+          ...(params?.projectId ? { project_id: params.projectId } : {}),
+        }
+      );
+    },
+    async refreshLinkedRemoteTasks(params) {
+      return callRemoteOperation(
+        "tasks.remote_refresh_linked",
         {
           ...(params?.projectId ? { project_id: params.projectId } : {}),
         }

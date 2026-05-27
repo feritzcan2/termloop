@@ -1,8 +1,8 @@
 // Copyright (c) 2026-present Ferit özcan. All rights reserved.
 // Part of TermLoop — GPL-3.0-or-later
 
-import Foundation
 import Darwin
+import Foundation
 
 enum TermLoopMCPServer {
     private static let supportedProtocolVersions = [
@@ -263,7 +263,11 @@ enum TermLoopMCPServer {
                     processEnv: processEnv,
                     socketPath: socketPath
                 ) {
-                    try write(response: response)
+                    do {
+                        try write(response: response)
+                    } catch MCPWriteError.outputClosed {
+                        return
+                    }
                 }
             }
         }
@@ -1121,12 +1125,39 @@ enum TermLoopMCPServer {
         return String(describing: error)
     }
 
+    private enum MCPWriteError: Error {
+        case outputClosed
+    }
+
     private static func write(response: [String: Any]) throws {
         guard JSONSerialization.isValidJSONObject(response) else {
             return
         }
         let data = try JSONSerialization.data(withJSONObject: response, options: [])
-        FileHandle.standardOutput.write(data)
-        FileHandle.standardOutput.write(Data([0x0A]))
+        var framed = data
+        framed.append(0x0A)
+        try framed.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.baseAddress else { return }
+            var offset = 0
+            while offset < rawBuffer.count {
+                let written = Darwin.write(
+                    STDOUT_FILENO,
+                    baseAddress.advanced(by: offset),
+                    rawBuffer.count - offset
+                )
+                if written > 0 {
+                    offset += written
+                    continue
+                }
+                if written == -1, errno == EINTR {
+                    continue
+                }
+                if written == -1, errno == EPIPE {
+                    throw MCPWriteError.outputClosed
+                }
+                let code = POSIXErrorCode(rawValue: errno) ?? .EIO
+                throw POSIXError(code)
+            }
+        }
     }
 }

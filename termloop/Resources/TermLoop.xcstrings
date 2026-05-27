@@ -2228,94 +2228,6 @@
         }
       }
     },
-    "plan.alert.deleteBody": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The file will be moved to the Trash. You can restore it from there."
-          }
-        }
-      }
-    },
-    "plan.alert.deleteCancel": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cancel"
-          }
-        }
-      }
-    },
-    "plan.alert.deleteConfirm": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Move to Trash"
-          }
-        }
-      }
-    },
-    "plan.alert.deleteErrorTitle": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Could not move file to Trash"
-          }
-        }
-      }
-    },
-    "plan.alert.deleteTitle": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Move this plan to Trash?"
-          }
-        }
-      }
-    },
-    "plan.contextMenu.delete": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Move to Trash"
-          }
-        }
-      }
-    },
-    "plan.contextMenu.openInTermLoop": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open in TermLoop"
-          }
-        }
-      }
-    },
-    "plan.contextMenu.revealInFinder": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reveal in Finder"
-          }
-        }
-      }
-    },
     "plan.empty.no-files.body": {
       "extractionState": "manual",
       "localizations": {
@@ -2914,17 +2826,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "INTEGR."
-          }
-        }
-      }
-    },
-    "sidebar.tab.plan": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "PLAN"
           }
         }
       }
@@ -3745,13 +3646,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Collapsed"
+            "value": "Archived"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "折りたたみ済み"
+            "value": "アーカイブ済み"
           }
         }
       }

@@ -805,6 +805,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         title rawTitle: String,
         bodyMarkdown rawBodyMarkdown: String? = nil,
         issueType rawIssueType: String? = nil,
+        assignToMe: Bool = false,
         onRemoteCreated: (@MainActor @Sendable (RemoteWorkItemReference) -> Void)? = nil,
         onCreated: (@MainActor @Sendable (UUID) -> Void)? = nil,
         onFailed: (@MainActor @Sendable (String) -> Void)? = nil
@@ -852,7 +853,8 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
             title: title,
             bodyMarkdown: bodyMarkdown,
             container: container,
-            issueType: issueType
+            issueType: issueType,
+            assignToMe: assignToMe
         )
 
         isSyncing = true
@@ -914,6 +916,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         title: String,
         bodyMarkdown: String? = nil,
         issueType: String? = nil,
+        assignToMe: Bool = false,
         onRemoteCreated: (@MainActor @Sendable (RemoteWorkItemReference) -> Void)? = nil
     ) async throws -> UUID {
         try await withCheckedThrowingContinuation { continuation in
@@ -922,6 +925,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 title: title,
                 bodyMarkdown: bodyMarkdown,
                 issueType: issueType,
+                assignToMe: assignToMe,
                 onRemoteCreated: onRemoteCreated,
                 onCreated: { taskId in
                     box.resume(returning: taskId)

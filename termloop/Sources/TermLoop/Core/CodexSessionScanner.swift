@@ -126,7 +126,17 @@ final class CodexSessionScanner {
     func scanRecentUncached(cwd: String, newerThan: Date) -> [CodexSessionMetadata] {
         let normalizedCwd = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedCwd.isEmpty else { return [] }
-        return freshRecentScan(cwd: normalizedCwd, newerThan: newerThan)
+        return freshRecentScan(cwds: [normalizedCwd], newerThan: newerThan)[normalizedCwd] ?? []
+    }
+
+    func scanRecentUncached(cwds: Set<String>, newerThan: Date) -> [String: [CodexSessionMetadata]] {
+        let normalizedCwds = Set(
+            cwds
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )
+        guard !normalizedCwds.isEmpty else { return [:] }
+        return freshRecentScan(cwds: normalizedCwds, newerThan: newerThan)
     }
 
     private func indexedSessionFileURL(sessionId: String, cwd: String?, forceRebuild: Bool) -> URL? {
@@ -209,7 +219,7 @@ final class CodexSessionScanner {
         )
     }
 
-    private func freshRecentScan(cwd: String, newerThan: Date) -> [CodexSessionMetadata] {
+    private func freshRecentScan(cwds: Set<String>, newerThan: Date) -> [String: [CodexSessionMetadata]] {
         guard let enumerator = FileManager.default.enumerator(
             at: sessionsDir,
             includingPropertiesForKeys: [
@@ -219,10 +229,10 @@ final class CodexSessionScanner {
             ],
             options: [.skipsHiddenFiles]
         ) else {
-            return []
+            return [:]
         }
 
-        var matches: [CodexSessionMetadata] = []
+        var matchesByCwd: [String: [CodexSessionMetadata]] = [:]
         for case let fileURL as URL in enumerator {
             guard fileURL.pathExtension == "jsonl" else { continue }
             let values = try? fileURL.resourceValues(forKeys: [
@@ -238,18 +248,22 @@ final class CodexSessionScanner {
             // the recency window depending on filesystem/copy behavior.
             guard creation >= newerThan || mtime >= newerThan else { continue }
             guard let metadata = parse(file: fileURL, mtime: mtime, creation: creation),
-                  metadata.cwd == cwd,
+                  cwds.contains(metadata.cwd),
                   (metadata.creation >= newerThan || metadata.mtime >= newerThan) else {
                 continue
             }
-            matches.append(metadata)
+            matchesByCwd[metadata.cwd, default: []].append(metadata)
         }
-        return matches.sorted {
-            if $0.mtime == $1.mtime {
-                return $0.sessionId < $1.sessionId
+
+        for cwd in matchesByCwd.keys {
+            matchesByCwd[cwd]?.sort {
+                if $0.mtime == $1.mtime {
+                    return $0.sessionId < $1.sessionId
+                }
+                return $0.mtime > $1.mtime
             }
-            return $0.mtime > $1.mtime
         }
+        return matchesByCwd
     }
 
     private func lastAssistantMessage(file: URL) -> String? {

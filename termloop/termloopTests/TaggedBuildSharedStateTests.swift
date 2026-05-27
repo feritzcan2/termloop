@@ -148,6 +148,94 @@ final class TaggedBuildSharedStateTests: XCTestCase {
         XCTAssertEqual(mirroredDomain["termLoop.sidebarTab"] as? String, "docs")
     }
 
+    func testPrepareCurrentBuildStateMirrorsChangesWhenDefaultsNotificationHasNoObject() throws {
+        let currentBundleIdentifier = "com.termloop.app.debug.tests-\(UUID().uuidString)"
+        let currentSuiteName = "TaggedBuildCurrent.\(UUID().uuidString)"
+        let sharedSuiteName = "TaggedBuildShared.\(UUID().uuidString)"
+        let sharedDomainName = "TaggedBuildSharedDomain.\(UUID().uuidString)"
+        let notificationCenter = NotificationCenter()
+
+        let currentDefaults = try XCTUnwrap(UserDefaults(suiteName: currentSuiteName))
+        let sharedDefaults = try XCTUnwrap(UserDefaults(suiteName: sharedSuiteName))
+        currentDefaults.removePersistentDomain(forName: currentBundleIdentifier)
+        sharedDefaults.removePersistentDomain(forName: sharedDomainName)
+        defer {
+            currentDefaults.removePersistentDomain(forName: currentBundleIdentifier)
+            sharedDefaults.removePersistentDomain(forName: sharedDomainName)
+        }
+
+        sharedDefaults.setPersistentDomain(
+            [AppearanceSettings.appearanceModeKey: AppearanceMode.system.rawValue],
+            forName: sharedDomainName
+        )
+
+        TaggedBuildSharedState.prepareCurrentBuildState(
+            bundleIdentifier: currentBundleIdentifier,
+            standardDefaults: currentDefaults,
+            notificationCenter: notificationCenter,
+            sharedDefaultsFactory: { bundleIdentifier in
+                guard bundleIdentifier == TaggedBuildSharedState.canonicalTaggedBundleIdentifier else {
+                    return nil
+                }
+                return TaggedBuildSharedState.SharedDefaultsDomain(
+                    defaults: sharedDefaults,
+                    domainName: sharedDomainName
+                )
+            }
+        )
+
+        currentDefaults.setPersistentDomain(
+            [AppearanceSettings.appearanceModeKey: AppearanceMode.dark.rawValue],
+            forName: currentBundleIdentifier
+        )
+        notificationCenter.post(name: UserDefaults.didChangeNotification, object: nil)
+
+        let mirroredDomain = sharedDefaults.persistentDomain(forName: sharedDomainName) ?? [:]
+        XCTAssertEqual(mirroredDomain[AppearanceSettings.appearanceModeKey] as? String, AppearanceMode.dark.rawValue)
+    }
+
+    func testMirrorCurrentUserDefaultsCopiesCurrentDomainToSharedDomain() throws {
+        let currentBundleIdentifier = "com.termloop.app.debug.tests-\(UUID().uuidString)"
+        let currentSuiteName = "TaggedBuildCurrent.\(UUID().uuidString)"
+        let sharedSuiteName = "TaggedBuildShared.\(UUID().uuidString)"
+        let sharedDomainName = "TaggedBuildSharedDomain.\(UUID().uuidString)"
+
+        let currentDefaults = try XCTUnwrap(UserDefaults(suiteName: currentSuiteName))
+        let sharedDefaults = try XCTUnwrap(UserDefaults(suiteName: sharedSuiteName))
+        currentDefaults.removePersistentDomain(forName: currentBundleIdentifier)
+        sharedDefaults.removePersistentDomain(forName: sharedDomainName)
+        defer {
+            currentDefaults.removePersistentDomain(forName: currentBundleIdentifier)
+            sharedDefaults.removePersistentDomain(forName: sharedDomainName)
+        }
+
+        sharedDefaults.setPersistentDomain(
+            [AppearanceSettings.appearanceModeKey: AppearanceMode.system.rawValue],
+            forName: sharedDomainName
+        )
+        currentDefaults.setPersistentDomain(
+            [AppearanceSettings.appearanceModeKey: AppearanceMode.dark.rawValue],
+            forName: currentBundleIdentifier
+        )
+
+        TaggedBuildSharedState.mirrorCurrentUserDefaultsIfNeeded(
+            bundleIdentifier: currentBundleIdentifier,
+            standardDefaults: currentDefaults,
+            sharedDefaultsFactory: { bundleIdentifier in
+                guard bundleIdentifier == TaggedBuildSharedState.canonicalTaggedBundleIdentifier else {
+                    return nil
+                }
+                return TaggedBuildSharedState.SharedDefaultsDomain(
+                    defaults: sharedDefaults,
+                    domainName: sharedDomainName
+                )
+            }
+        )
+
+        let mirroredDomain = sharedDefaults.persistentDomain(forName: sharedDomainName) ?? [:]
+        XCTAssertEqual(mirroredDomain[AppearanceSettings.appearanceModeKey] as? String, AppearanceMode.dark.rawValue)
+    }
+
     func testPrepareCurrentBuildStateCopiesSharedSessionArtifactsIntoCurrentTag() throws {
         let currentBundleIdentifier = "com.termloop.app.debug.tests-\(UUID().uuidString)"
         let tempDir = FileManager.default.temporaryDirectory

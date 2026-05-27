@@ -3,7 +3,7 @@
 </p>
 
 <h1 align="center">TermLoop</h1>
-<p align="center">The terminal IDE for your AI agents — Claude Code, Codex, Gemini CLI, Aider, Cline, in parallel.</p>
+<p align="center">The native macOS terminal for running AI coding agents in parallel.</p>
 
 <p align="center">
   <a href="https://github.com/feritzcan2/termloop/releases/latest/download/termloop-macos.dmg">
@@ -17,77 +17,106 @@
 </p>
 
 <p align="center">
-  <img src="./termloop/docs/assets/quick-actions.gif" alt="One Quick Action launches all your agents in their own worktrees" width="900" />
+  <img src="./termloop/docs/assets/quick-actions.gif" alt="Quick Actions launching coding agents from TermLoop" width="900" />
 </p>
 
 <p align="center">
   <a href="https://termloop.ai">▶ Watch the demos at termloop.ai</a>
 </p>
 
-## What TermLoop adds
+## What TermLoop is
 
-The agent-loop layer — what makes TermLoop different from a plain terminal multiplexer.
+TermLoop is a terminal built for the agent-driven development loop: launch agents, manage worktrees, sync tasks, review changes, and coordinate multiple agent sessions without losing context.
+
+It works with the tools you already use: Claude Code, Codex, Gemini CLI, Aider, Cline, OpenCode, and any other CLI-based agent.
+
+## Agent workflow features
 
 <table>
 <tr>
 <td width="40%" valign="middle">
-<h3>Quick Actions — all your agents in one tap</h3>
-Save an agent launch — name, prompt, model, even a starter command. One tap fires the whole set. No copy-pasting prompts, no per-agent setup.
+<h3>Quick Actions</h3>
+Launch your preferred coding agent with the right context from one shortcut. Save the agent, prompt, model, permissions, working folder, and launch behavior once; reuse it whenever the loop starts again.
 </td>
 <td width="60%">
-<img src="./termloop/docs/assets/quick-actions.gif" alt="Quick Actions panel launching multiple agents at once" width="600" />
+<img src="./termloop/docs/assets/quick-actions.gif" alt="Quick Actions panel launching coding agents" width="600" />
 </td>
 </tr>
 <tr>
 <td width="40%" valign="middle">
 <h3>Parallel worktree agents</h3>
-Hand four agents four tasks at once. Each runs in its own <code>.termloop-worktrees/&lt;branch&gt;</code>, boots its own dev server, opens its own PR. Your host checkout stays clean.
+Give multiple agents multiple tasks at once. TermLoop creates isolated worktrees, lets each task run its own dev server or test command, and keeps the work reviewable without mixing branches or local state.
 </td>
 <td width="60%">
-<img src="./termloop/docs/assets/worktree-parallel.gif" alt="Four agents running in parallel worktrees, opening PRs, then merging" width="600" />
+<img src="./termloop/docs/assets/parallel-worktree-agents.gif" alt="Four coding agents working in parallel worktrees with live dev server previews" width="600" />
 </td>
 </tr>
 <tr>
 <td width="40%" valign="middle">
-<h3>Cross-agent consults via <code>ask_to</code></h3>
-When one agent gets stuck, it doesn't wait for you. The built-in <code>ask_to</code> MCP tool lets it consult any other running agent — different model, different worktree. Cross-pollination, no human in the loop.
+<h3>Prompts & Agents</h3>
+Create custom agents and edit everything sent to them, including the prompt, system prompt, model, and permissions. No hidden prompt layer; if an agent receives it, you can inspect and change it.
 </td>
 <td width="60%">
-<img src="./termloop/docs/assets/ask-to.gif" alt="One TermLoop agent asks another agent for help via the ask_to MCP tool" width="600" />
+<img src="./termloop/docs/assets/prompts-agents.png" alt="Prompts and Agents editor showing editable templates, prompts, system prompt, model, and permissions" width="600" />
 </td>
 </tr>
 <tr>
 <td width="40%" valign="middle">
-<h3>Context Bank — shared, scored context</h3>
-TermLoop catalogs every <code>CLAUDE.md</code>, <code>AGENTS.md</code>, <code>GEMINI.md</code> across your tree, scores how much each one actually helps, and lets you clone the strong ones into other agents.
+<h3>Context Bank</h3>
+View and edit every agent instruction file in your project, including nested <code>AGENTS.md</code>, <code>CLAUDE.md</code>, and <code>GEMINI.md</code> files that apply to specific folders. Keep the right context synced for agents working in different parts of the codebase.
 </td>
 <td width="60%">
-<img src="./termloop/docs/assets/context-bank.png" alt="Context Bank cataloging CLAUDE.md files with usage scores" width="500" />
+<img src="./termloop/docs/assets/context-bank.png" alt="Context Bank showing project agent instruction files" width="500" />
 </td>
 </tr>
 <tr>
 <td width="40%" valign="middle">
-<h3>Per-project Claude account</h3>
-Bind a different Claude login to each project — work in one, personal in another. No terminal switching, no token juggling.
+<h3>Project Rules</h3>
+Manage agent skills once at the project level. A single editable rule can be synced into each agent's native skill catalog, applied always, on demand, or only in worktrees, and improved with an agent from inside TermLoop.
 </td>
 <td width="60%">
-<img src="./termloop/docs/assets/claude-accounts.png" alt="Settings panel binding one Claude account per project" width="600" />
+<img src="./termloop/docs/assets/project-rules.png" alt="Project Rules showing one editable skill synced into agent catalogs" width="600" />
 </td>
 </tr>
 <tr>
 <td width="40%" valign="middle">
-<h3>Sidebar — every thread, one rail</h3>
-Branch, PR status, dirty file count, port forwards, agent state — every workspace at a glance. Skim ten active threads without switching tabs.
+<h3>Task Board + Remote Sync</h3>
+Write specs with customized agents, execute tasks into managed worktrees, and track progress locally. Import issues from Jira, GitHub, or GitLab, work on them in isolated worktrees, and keep local and remote statuses in sync.
 </td>
 <td width="60%">
-<img src="./termloop/docs/assets/sidebar.png" alt="TermLoop sidebar showing worktree agents, open and merged PRs" width="400" />
+<img src="./termloop/docs/assets/task-board-remote-sync.gif" alt="Task Board syncing remote issues into TermLoop worktrees" width="600" />
+</td>
+</tr>
+<tr>
+<td width="40%" valign="middle">
+<h3>MCP-powered agent collaboration</h3>
+Agents can use TermLoop through MCP. Ask one agent to consult another for review, UI/UX feedback, edge-case checks, or improvements. The reviewer agent stays attached to the workflow, so the main agent can ask again as the implementation evolves.
+</td>
+<td width="60%">
+<img src="./termloop/docs/assets/ask-to.gif" alt="One TermLoop agent asks another agent for help via MCP" width="600" />
+</td>
+</tr>
+<tr>
+<td width="40%" valign="middle">
+<h3>Promote to Task</h3>
+Turn an agent conversation into a real task. TermLoop proposes a task description, can optionally create a Jira/GitHub/GitLab issue, moves it into a managed worktree, and starts implementation.
+</td>
+<td width="60%">
+<img src="./termloop/docs/assets/promote-to-task-mcp.gif" alt="Agent promotes an MCP conversation into a TermLoop task" width="600" />
 </td>
 </tr>
 </table>
 
-## Phone bridge — your sessions, in your pocket
+## More agent-loop tools
 
-Native iOS client pairs with your Mac over an authenticated TCP socket on your local network. Watch live agent output, switch projects, jump into a session — from the couch, the queue, or another room. Stable today; still under active development.
+- **Built-in setup agents** — Generate run profiles and local setup for the project. TermLoop can inspect your repo and propose dev servers, test runners, typecheckers, Storybook, workers, docs servers, env/config preparation, dependency setup, and other per-worktree commands.
+- **Multiple agent accounts** — Use different Claude and Codex accounts across projects or workflows without constantly switching terminal auth state.
+- **Agent Sessions** — Reopen, restore, fork, and hand off agent sessions without losing task context. When you close and reopen TermLoop, your agent sessions and workspaces can be restored.
+- **Agentic Sidebar** — See branch, PR status, dirty file count, running targets, agent state, and task progress in one rail.
+
+## Phone bridge
+
+The iOS client pairs with your Mac over an authenticated TCP socket on your local network. Watch live agent output, switch projects, and jump into a session from your phone.
 
 <table>
 <tr>
@@ -96,66 +125,6 @@ Native iOS client pairs with your Mac over an authenticated TCP socket on your l
 <td width="33%" align="center"><img src="./termloop/docs/assets/mobile/agent-session.jpg" alt="Live agent session in iOS" width="280" /></td>
 </tr>
 </table>
-
-## Built on the cmux foundation
-
-TermLoop builds on [cmux](https://github.com/manaflow-ai/cmux), an open-source GPL-3.0 terminal multiplexer by Manaflow. cmux gives us the multiplexer foundation — splits, panes, the renderer. The features below come from there:
-
-<table>
-<tr>
-<td width="40%" valign="middle">
-<h3>Notification rings</h3>
-Panes get a blue ring and tabs light up when coding agents need your attention.
-</td>
-<td width="60%">
-<img src="./termloop/docs/assets/notification-rings.png" alt="Notification rings" width="600" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>In-app browser</h3>
-Split a browser alongside your terminal with a scriptable API ported from <a href="https://github.com/vercel-labs/agent-browser">agent-browser</a>.
-</td>
-<td width="60%">
-<img src="./termloop/docs/assets/built-in-browser.png" alt="Built-in browser" width="600" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>Vertical + horizontal tabs</h3>
-Sidebar shows git branch, linked PR status/number, working directory, listening ports, and latest notification text. Split horizontally and vertically.
-</td>
-<td width="60%">
-<img src="./termloop/docs/assets/vertical-horizontal-tabs-and-splits.png" alt="Vertical tabs and split panes" width="600" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>SSH workspaces</h3>
-<code>termloop ssh user@remote</code> creates a workspace for a remote machine. Browser panes route through the remote network so localhost just works. Drag an image into a remote session to upload via scp.
-</td>
-<td width="60%">
-<img src="./termloop/docs/assets/ssh.png" alt="TermLoop SSH" width="600" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>Claude Code Teams</h3>
-<code>termloop claude-teams</code> runs Claude Code's teammate mode with one command. Teammates spawn as native splits with sidebar metadata and notifications. No tmux required.
-</td>
-<td width="60%">
-<img src="./termloop/docs/assets/claude-code-teams.png" alt="Claude Code Teams" width="600" />
-</td>
-</tr>
-</table>
-
-- **Notification panel** — See all pending notifications in one place, jump to the most recent unread
-- **Browser import** — Import cookies, history, and sessions from Chrome, Firefox, Arc, and 20+ browsers so browser panes start authenticated
-- **Custom commands** — Define project-specific actions in [`cmux.json`](https://termloop.ai/docs/custom-commands) that launch from the command palette
-- **Scriptable** — CLI and socket API to create workspaces, split panes, send keystrokes, and automate the browser
-- **Native macOS app** — Built with Swift and AppKit, not Electron. Fast startup, low memory.
-- **Ghostty compatible** — Reads your existing `~/.config/ghostty/config` for themes, fonts, and colors
-- **GPU-accelerated** — Powered by libghostty for smooth rendering
 
 ## Install
 
@@ -184,21 +153,17 @@ On first launch, macOS may ask you to confirm opening an app from an identified 
 
 ## Why TermLoop?
 
-I run more AI coding agents than I have screens for — Claude Code, Codex, Gemini CLI, Aider — usually three or four at a time, on different branches, doing different work. The mismatch between how agents work and how terminals work was getting in the way.
+I run more AI coding agents than I have screens for: Claude Code, Codex, Gemini CLI, Aider, and others, usually on different tasks at the same time. The mismatch between how agents work and how terminals work was getting in the way.
 
 A coding agent is asynchronous. It reads, thinks, edits, runs tests, comes back with a question, waits, runs more tests. While it's working, I want to be doing something else — code review, another agent, lunch. But standard terminals don't tell you which pane is asking for input. You alt-tab into the wrong pane, lose your place, and an agent has been blocked for ten minutes.
 
-Worktrees are the right answer for parallel work — different branch, different directory, no stash gymnastics. But booting them by hand for every agent is friction. So TermLoop creates one per task, automatically, and tears it down when you merge.
+Worktrees are the right answer for parallel work: different branch, different directory, no stash gymnastics. But booting them by hand for every agent is friction. TermLoop creates them for tasks, keeps metadata attached, and helps run each task independently.
 
-Then there's the question of how agents talk to each other. When Claude gets stuck on something Codex is good at, it should ask Codex — not me. The `ask_to` MCP tool makes that a one-line call, cross-model, cross-worktree.
+Then there is the question of how agents collaborate. When one agent needs review, UI feedback, or a second opinion, it should be able to ask another agent without forcing you to copy context between terminals. TermLoop's MCP tools make that an agent-to-agent workflow.
 
-And the context. Every project has a `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` somewhere. Most of them are stale or unused. The Context Bank scores them and lets you clone the strong ones across agents — so the next worker starts with the same memory the last one had.
+And the context matters. Many projects now have `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, and folder-specific instruction files. TermLoop makes those files visible and editable in one place so the agent context is not scattered or stale.
 
-The whole thing is a terminal, not a panel bolted onto an IDE. You bring your own subscription (Claude Code, Codex, Gemini CLI, etc.) — TermLoop never proxies your API traffic, never adds a billing layer, never locks you in. Built on top of [cmux](https://github.com/manaflow-ai/cmux), so the multiplexer, browser, and rendering foundation is solid; everything above the terminal is what TermLoop adds.
-
-## Documentation
-
-For more info on how to configure TermLoop, [head over to our docs](https://termloop.ai/docs/getting-started?utm_source=readme).
+The whole thing is still a terminal, not a panel bolted onto an IDE. You bring your own subscription or local agent. TermLoop never proxies your model traffic, never adds a billing layer, and never locks you into one agent provider.
 
 ## Telemetry
 
@@ -211,114 +176,7 @@ This fork ships with crash reporting disabled by default.
 
 ## Keyboard Shortcuts
 
-### Workspaces
-
-| Shortcut | Action |
-|----------|--------|
-| ⌘ N | New workspace |
-| ⌘ ⌥ 1–8 | Jump to workspace 1–8 |
-| ⌘ ⌥ 9 | Jump to last workspace |
-| ⌃ ⌘ ] | Next workspace |
-| ⌃ ⌘ [ | Previous workspace |
-| ⌘ ⇧ W | Close workspace |
-| ⌘ ⇧ R | Rename workspace |
-| ⌘ B | Toggle sidebar |
-
-### Projects
-
-| Shortcut | Action |
-|----------|--------|
-| ⌘ 1–8 | Jump to project 1–8 |
-| ⌘ 9 | Jump to last project |
-
-### Surfaces
-
-| Shortcut | Action |
-|----------|--------|
-| ⌘ T | New surface |
-| ⌘ ⇧ ] | Next surface |
-| ⌘ ⇧ [ | Previous surface |
-| ⌃ Tab | Next surface |
-| ⌃ ⇧ Tab | Previous surface |
-| ⌃ 1–8 | Jump to surface 1–8 |
-| ⌃ 9 | Jump to last surface |
-| ⌘ W | Close surface |
-
-### Split Panes
-
-| Shortcut | Action |
-|----------|--------|
-| ⌘ D | Split right |
-| ⌘ ⇧ D | Split down |
-| ⌥ ⌘ ← → ↑ ↓ | Focus pane directionally |
-| ⌘ ⇧ H | Flash focused panel |
-
-### Browser
-
-Browser developer-tool shortcuts follow Safari defaults and are customizable in `Settings → Keyboard Shortcuts`.
-
-| Shortcut | Action |
-|----------|--------|
-| ⌘ ⇧ L | Open browser in split |
-| ⌘ L | Focus address bar |
-| ⌘ [ | Back |
-| ⌘ ] | Forward |
-| ⌘ R | Reload page |
-| ⌥ ⌘ I | Toggle Developer Tools (Safari default) |
-| ⌥ ⌘ C | Show JavaScript Console (Safari default) |
-
-### Notifications
-
-| Shortcut | Action |
-|----------|--------|
-| ⌘ I | Show notifications panel |
-| ⌘ ⇧ U | Jump to latest unread |
-
-### Find
-
-| Shortcut | Action |
-|----------|--------|
-| ⌘ F | Find |
-| ⌘ G / ⌘ ⇧ G | Find next / previous |
-| ⌘ ⇧ F | Hide find bar |
-| ⌘ E | Use selection for find |
-
-### Terminal
-
-| Shortcut | Action |
-|----------|--------|
-| ⌘ K | Clear scrollback |
-| ⌘ C | Copy (with selection) |
-| ⌘ V | Paste |
-| ⌘ + / ⌘ - | Increase / decrease font size |
-| ⌘ 0 | Reset font size |
-
-### Window
-
-| Shortcut | Action |
-|----------|--------|
-| ⌘ ⇧ N | New window |
-| ⌘ , | Settings |
-| ⌘ ⇧ , | Reload configuration |
-| ⌘ Q | Quit |
-
-## Nightly Builds
-
-[Download TermLoop NIGHTLY](https://github.com/feritzcan2/termloop/releases/download/nightly/termloop-nightly-macos.dmg)
-
-TermLoop NIGHTLY is a separate app with its own bundle ID, so it runs alongside the stable version. Built automatically from the latest `main` commit and auto-updates via its own Sparkle feed.
-
-Report nightly bugs on [GitHub Issues](https://github.com/feritzcan2/termloop/issues) or [GitHub Discussions](https://github.com/feritzcan2/termloop/discussions).
-
-## Session restore (current behavior)
-
-On relaunch, TermLoop currently restores app layout and metadata only:
-- Window/workspace/pane layout
-- Working directories
-- Terminal scrollback (best effort)
-- Browser URL and navigation history
-
-TermLoop does **not** restore live process state inside terminal apps. For example, active Claude Code/tmux/vim sessions are not resumed after restart yet.
+TermLoop has configurable shortcuts for workspaces, projects, surfaces, panes, browser actions, notifications, find, terminal actions, and windows. See the [keyboard shortcut docs](https://termloop.ai/docs/keyboard-shortcuts) for the full list.
 
 ## Star History
 
