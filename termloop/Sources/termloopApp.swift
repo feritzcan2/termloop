@@ -922,6 +922,9 @@ struct cmuxApp: App {
             appearanceMode = mode.rawValue
         }
         Self.applyAppearance(mode)
+        // MARK: termloop-hook
+        TermLoopHooks.mirrorTaggedBuildUserDefaultsIfNeeded()
+        // MARK: /termloop-hook
     }
 
     private static func applyAppearance(_ mode: AppearanceMode) {

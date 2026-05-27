@@ -19,6 +19,18 @@ enum ProjectShortcutRouter {
         return index < projectCount ? index : nil
     }
 
+    /// Returns the primary digit badge to display for a project row.
+    /// Picks the lowest digit that maps to that project index.
+    static func digitForProject(at index: Int, projectCount: Int) -> Int? {
+        guard index >= 0 && index < projectCount else { return nil }
+        for digit in 1...9 {
+            if projectIndex(forDigit: digit, projectCount: projectCount) == index {
+                return digit
+            }
+        }
+        return nil
+    }
+
     @discardableResult
     static func selectProject(forDigit digit: Int, tabManager: TabManager?) -> Bool {
         let store = ProjectStore.shared

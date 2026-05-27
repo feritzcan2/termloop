@@ -11,6 +11,13 @@ export function DocsPager() {
   const index = flat.findIndex((item) => item.href === pathname);
   const prev = index > 0 ? flat[index - 1] : null;
   const next = index < flat.length - 1 ? flat[index + 1] : null;
+  const titleFor = (item: (typeof flat)[number]) => {
+    try {
+      return t(item.titleKey);
+    } catch {
+      return item.fallbackTitle ?? item.titleKey;
+    }
+  };
 
   if (!prev && !next) return null;
 
@@ -22,7 +29,7 @@ export function DocsPager() {
           className="flex items-center gap-1.5 text-muted hover:text-foreground transition-colors"
         >
           <span aria-hidden>&larr;</span>
-          {t(prev.titleKey)}
+          {titleFor(prev)}
         </Link>
       ) : (
         <span />
@@ -32,7 +39,7 @@ export function DocsPager() {
           href={next.href}
           className="flex items-center gap-1.5 text-muted hover:text-foreground transition-colors"
         >
-          {t(next.titleKey)}
+          {titleFor(next)}
           <span aria-hidden>&rarr;</span>
         </Link>
       ) : (
