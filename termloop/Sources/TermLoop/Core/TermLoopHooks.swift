@@ -59,6 +59,11 @@ enum TermLoopHooks {
         let baselineHead: String?
     }
 
+    private struct SidecarPersistencePayload {
+        let sessionURL: URL
+        let snapshot: TermLoopSessionSnapshot
+    }
+
     static var restoredTerminalLauncher: (Workspace, TerminalAgent, String?, [String: String]) -> Void = {
         workspace, agent, cwd, env in
         TerminalAgentRunner.dispatchRestoredAgentCommand(in: workspace, agent: agent, cwd: cwd, env: env)
@@ -272,10 +277,30 @@ enum TermLoopHooks {
         TermLoopV2KnownRefsRefreshGate.refreshIfNeeded(method: method, refresh: refresh)
     }
 
-    /// Writes the TermLoop sidecar snapshot next to upstream's session file.
-    /// Called from `AppDelegate.persistSessionSnapshot` after the upstream
-    /// session JSON is written.
-    static func saveSidecarSnapshot(alongside sessionURL: URL) {
+    /// Captures the TermLoop sidecar snapshot on the main actor, then writes it
+    /// next to upstream's session file on the session persistence queue.
+    static func saveSidecarSnapshot(
+        alongside sessionURL: URL,
+        synchronously: Bool = false,
+        persistenceQueue: DispatchQueue? = nil
+    ) {
+        let payload = captureSidecarPayload(alongside: sessionURL)
+        let write = {
+            writeSidecarPayload(payload)
+        }
+
+        guard let persistenceQueue else {
+            write()
+            return
+        }
+        if synchronously {
+            persistenceQueue.sync(execute: write)
+        } else {
+            persistenceQueue.async(execute: write)
+        }
+    }
+
+    private static func captureSidecarPayload(alongside sessionURL: URL) -> SidecarPersistencePayload {
         backfillPersistedAgentSessionsIfNeeded()
         let restoreStampsByPosition = AppDelegate.shared?.termLoopWorkspaceRestoreStampsByPosition() ?? []
         let hiddenWorkspaceMetadata = hiddenWorkspaceMetadataByIdForPersistence()
@@ -309,9 +334,21 @@ enum TermLoopHooks {
             hiddenWorkspaceMetadataById: hiddenWorkspaceMetadata.isEmpty ? nil : hiddenWorkspaceMetadata
         )
 
+        return SidecarPersistencePayload(sessionURL: sessionURL, snapshot: snapshot)
+    }
+
+    private nonisolated static func writeSidecarPayload(_ payload: SidecarPersistencePayload) {
+        let sessionURL = payload.sessionURL
+        let snapshot = payload.snapshot
         let url = TermLoopSessionSnapshot.sidecarURL(for: sessionURL)
         let directory = url.deletingLastPathComponent()
         do {
+#if DEBUG
+            let totalStart = ProcessInfo.processInfo.systemUptime
+            var encodeMs: Double = 0
+            var writeMs: Double = 0
+            var mirrorMs: Double = 0
+#endif
             try FileManager.default.createDirectory(
                 at: directory,
                 withIntermediateDirectories: true,
@@ -319,17 +356,46 @@ enum TermLoopHooks {
             )
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+#if DEBUG
+            let encodeStart = ProcessInfo.processInfo.systemUptime
+#endif
             let data = try encoder.encode(snapshot)
+#if DEBUG
+            encodeMs = (ProcessInfo.processInfo.systemUptime - encodeStart) * 1000.0
+            let writeStart = ProcessInfo.processInfo.systemUptime
+#endif
             try data.write(to: url, options: .atomic)
+#if DEBUG
+            writeMs = (ProcessInfo.processInfo.systemUptime - writeStart) * 1000.0
+#endif
 #if DEBUG
             dlog(
                 "session.save.sidecar wrote path=\(url.path) bytes=\(data.count) projects=\(snapshot.projects.count) " +
                 "visibleWindows=\(snapshot.workspaceMetadataByPosition?.count ?? 0) hidden=\(snapshot.hiddenWorkspaceMetadataById?.count ?? 0)"
             )
 #endif
+#if DEBUG
+            let mirrorStart = ProcessInfo.processInfo.systemUptime
+#endif
             TaggedBuildSharedState.mirrorCurrentSessionArtifactsIfNeeded(currentSessionURL: sessionURL)
+#if DEBUG
+            mirrorMs = (ProcessInfo.processInfo.systemUptime - mirrorStart) * 1000.0
+            let totalMs = (ProcessInfo.processInfo.systemUptime - totalStart) * 1000.0
+            CmuxTypingTiming.logBreakdown(
+                path: "session.save.sidecar.write",
+                totalMs: totalMs,
+                thresholdMs: 2.0,
+                parts: [
+                    ("sidecarEncodeMs", encodeMs),
+                    ("sidecarWriteMs", writeMs),
+                    ("mirrorMs", mirrorMs),
+                ],
+                extra: "session=\(sessionURL.lastPathComponent)"
+            )
+#endif
         } catch {
-            logger.error("sidecar save failed: \(String(describing: error), privacy: .public)")
+            Logger(subsystem: "com.termloop.fork", category: "hooks")
+                .error("sidecar save failed: \(String(describing: error), privacy: .public)")
         }
     }
 

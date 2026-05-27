@@ -4617,19 +4617,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #if DEBUG
         debugLogSessionSaveSnapshot(snapshot, includeScrollback: includeScrollback)
 #endif
-        // MARK: termloop-hook
-        // Save TermLoop sidecar from the same in-memory state that produced
-        // `snapshot`, before any async queue delay can reorder/mutate tabs.
-        if let sessionURL = SessionPersistenceStore.defaultSnapshotFileURL() {
-            TermLoopHooks.saveSidecarSnapshot(alongside: sessionURL)
-        }
-        // MARK: /termloop-hook
         persistSessionSnapshot(
             snapshot,
             removeWhenEmpty: false,
             persistedGeometryData: persistedGeometryData,
             synchronously: writeSynchronously
         )
+        // MARK: termloop-hook
+        if let sessionURL = SessionPersistenceStore.defaultSnapshotFileURL() { TermLoopHooks.saveSidecarSnapshot(alongside: sessionURL, synchronously: writeSynchronously, persistenceQueue: sessionPersistenceQueue) }
+        // MARK: /termloop-hook
         return true
     }
 
