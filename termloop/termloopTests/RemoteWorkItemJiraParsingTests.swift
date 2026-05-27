@@ -106,6 +106,25 @@ final class RemoteWorkItemJiraParsingTests: XCTestCase {
         XCTAssertEqual(projects.map(\.key), ["KAN", "UKIE"])
         XCTAssertEqual(projects.first?.displayLabel, "KAN — Kanban")
     }
+
+    func testJiraCreateCanAssignToMe() async throws {
+        let runner = JiraCreateRecordingRunner()
+        let provider = JiraRemoteWorkItemProvider(runner: runner)
+
+        _ = try await provider.create(RemoteWorkItemCreateRequest(
+            provider: .jira,
+            title: "Investigate issue",
+            bodyMarkdown: "Finding details",
+            container: "KAN",
+            issueType: "Task",
+            assignToMe: true
+        ))
+
+        let calls = await runner.callsSnapshot()
+        let createCall = try XCTUnwrap(calls.first { $0.starts(with: ["jira", "workitem", "create"]) })
+        XCTAssertTrue(createCall.contains("--assignee"))
+        XCTAssertEqual(createCall.value(after: "--assignee"), "@me")
+    }
 }
 
 private actor RecordingRemoteWorkItemCommandRunner: RemoteWorkItemCommandRunning {
@@ -131,6 +150,42 @@ private actor RecordingRemoteWorkItemCommandRunner: RemoteWorkItemCommandRunning
 
     func callsSnapshot() -> [[String]] {
         calls
+    }
+}
+
+private actor JiraCreateRecordingRunner: RemoteWorkItemCommandRunning {
+    private var calls: [[String]] = []
+
+    func callsSnapshot() -> [[String]] { calls }
+
+    func run(
+        executable: String,
+        arguments: [String],
+        cwd: String?,
+        timeout: TimeInterval
+    ) async throws -> RemoteWorkItemCommandResult {
+        calls.append(arguments)
+        let stdout: String
+        if arguments.starts(with: ["jira", "workitem", "create"]) {
+            stdout = #"{"key":"KAN-123"}"#
+        } else {
+            stdout = #"{"key":"KAN-123","summary":"Investigate issue","status":"To Do","assignee":{"displayName":"Me"}}"#
+        }
+        return RemoteWorkItemCommandResult(
+            exitStatus: 0,
+            stdout: stdout,
+            stderr: "",
+            timedOut: false
+        )
+    }
+}
+
+private extension Array where Element == String {
+    func value(after flag: String) -> String? {
+        guard let index = firstIndex(of: flag) else { return nil }
+        let next = index + 1
+        guard next < count else { return nil }
+        return self[next]
     }
 }
 

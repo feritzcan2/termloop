@@ -35,14 +35,13 @@ struct TaskSidebarDrillInView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 10) {
                     breadcrumb
-                    header(detailSnapshot)
-                    flatSection {
-                        mergedTaskCard(detailSnapshot)
+                    sidebarCard {
+                        header(detailSnapshot)
                     }
-                    Divider().opacity(0.6)
-                    flatSection {
+                    mergedTaskCard(detailSnapshot)
+                    sidebarCard {
                         TaskBranchesSection(
                             branch: detailSnapshot.branch,
                             worktreePath: detailSnapshot.worktreePath,
@@ -88,23 +87,24 @@ struct TaskSidebarDrillInView: View {
                         // Compact footer for git/PR status — both render as
                         // single-line summaries when empty, full sections when
                         // there is something to show.
-                        VStack(alignment: .leading, spacing: 8) {
-                            TaskGitChangesSection(
-                                workspaceId: detailSnapshot.workspaceId,
-                                worktreePath: detailSnapshot.worktreePath,
-                                branch: detailSnapshot.branch,
-                                projectId: projectId
-                            )
-                            Divider().opacity(0.6)
-                            TaskOpenPRsSection(
-                                workspaceId: detailSnapshot.workspaceId,
-                                worktreePath: detailSnapshot.worktreePath,
-                                branch: detailSnapshot.branch
-                            )
+                        sidebarCard {
+                            VStack(alignment: .leading, spacing: 8) {
+                                TaskGitChangesSection(
+                                    workspaceId: detailSnapshot.workspaceId,
+                                    worktreePath: detailSnapshot.worktreePath,
+                                    branch: detailSnapshot.branch,
+                                    projectId: projectId
+                                )
+                                Divider().opacity(0.6)
+                                TaskOpenPRsSection(
+                                    workspaceId: detailSnapshot.workspaceId,
+                                    worktreePath: detailSnapshot.worktreePath,
+                                    branch: detailSnapshot.branch
+                                )
+                            }
                         }
-                        .padding(.top, 4)
                     }
-                    flatSection {
+                    sidebarCard {
                         devServersSection
                     }
                 }
@@ -299,6 +299,10 @@ struct TaskSidebarDrillInView: View {
                 }
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(.accentColor)
+                .padding(.vertical, 5)
+                .padding(.horizontal, 7)
+                .background(Color.accentColor.opacity(0.10))
+                .clipShape(Capsule())
             }
             .buttonStyle(.plain)
 
@@ -316,6 +320,7 @@ struct TaskSidebarDrillInView: View {
                          defaultValue: "Task Settings",
                          table: "TermLoop"))
         }
+        .padding(.bottom, 2)
     }
 
     private func header(_ snap: TaskDetailSnapshot) -> some View {
@@ -466,9 +471,16 @@ struct TaskSidebarDrillInView: View {
             .joined(separator: " ")
     }
 
-    private func flatSection<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    private func sidebarCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
+            .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.52))
+            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .stroke(TermLoopSidebarTheme.rule.opacity(0.85), lineWidth: 1)
+            )
     }
 
 }

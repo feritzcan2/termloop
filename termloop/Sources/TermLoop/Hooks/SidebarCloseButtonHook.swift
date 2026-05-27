@@ -287,31 +287,6 @@ enum WorkspaceHideCoordinator {
         }
     }
 
-    struct HiddenWorkspaceSummary: Identifiable {
-        let id: UUID
-        let branch: String?
-        let cwd: String?
-        let agentId: String?
-        let title: String?
-        let projectId: UUID?
-    }
-
-    static func hiddenSummaries() -> [HiddenWorkspaceSummary] {
-        WorkspaceMetadataStore.shared.hiddenWorkspaces().map { pair in
-            HiddenWorkspaceSummary(
-                id: pair.id,
-                branch: pair.metadata.branch,
-                cwd: pair.metadata.persistedAgentSession?.cwd,
-                agentId: pair.metadata.persistedAgentSession?.agentId ?? pair.metadata.terminalAgentId,
-                title: pair.metadata.collapsedDisplayTitle,
-                projectId: pair.metadata.projectId
-            )
-        }
-        .sorted { lhs, rhs in
-            (lhs.branch ?? "") < (rhs.branch ?? "")
-        }
-    }
-
     @discardableResult
     static func unhide(workspaceId oldId: UUID, tabManager: TabManager) -> Workspace? {
         TerminalAgentLifecycle.reopenHiddenWorkspace(

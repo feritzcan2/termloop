@@ -42,6 +42,52 @@ final class TaskLifecycleCoordinatorTests: XCTestCase {
         XCTAssertEqual(snap?.cards.first?.title, "first")
     }
 
+    func testRemoteTaskPromotionBodyDoesNotAddTermLoopMetadata() {
+        let draft = RemoteTaskPromotionDraft(
+            id: UUID(uuidString: "E7DCDA08-74A4-4695-82CD-F24394CD192A")!,
+            projectId: projectId,
+            sourceWorkspaceId: UUID(),
+            title: "Investigate issue",
+            descriptionMarkdown: "\nFinding details\n",
+            provider: .jira,
+            container: "KAN"
+        )
+
+        let body = RemoteTaskPromotionCoordinator.bodyMarkdown(for: draft)
+
+        XCTAssertEqual(body, "Finding details")
+        XCTAssertFalse(body.contains("termloop"))
+        XCTAssertFalse(body.contains("promotion-id"))
+        XCTAssertFalse(body.contains(draft.id.uuidString))
+    }
+
+    func testRemoteTaskPromotionUsesEditedBranchName() {
+        let reference = RemoteWorkItemReference(
+            provider: .jira,
+            key: "KAN-42",
+            url: nil,
+            host: nil,
+            namespace: nil,
+            repository: nil,
+            number: nil
+        )
+        let draft = RemoteTaskPromotionDraft(
+            id: UUID(),
+            projectId: projectId,
+            sourceWorkspaceId: UUID(),
+            title: "Investigate issue",
+            descriptionMarkdown: "Finding details",
+            branchName: "custom/promo-branch",
+            provider: .jira,
+            container: "KAN"
+        )
+
+        XCTAssertEqual(
+            RemoteTaskPromotionCoordinator.branchName(for: draft, reference: reference, title: draft.title),
+            "custom/promo-branch"
+        )
+    }
+
     func testRestoreTaskReturnsArchivedTaskToActiveColumn() throws {
         let id = try coordinator.createTask(title: "first", columnId: .backlog)
         try coordinator.archiveTask(id)

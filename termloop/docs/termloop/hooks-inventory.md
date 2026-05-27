@@ -5,67 +5,67 @@ in upstream-owned Swift files. Regenerate with `scripts/generate-hooks-inventory
 
 | File | Line | Hook |
 |------|------|------|
-| `CLI/termloop.swift` | 2257 | `case "list-projects", "current-project", "new-project", "rename-project",` |
-| `CLI/termloop.swift` | 2264 | `case "agent":` |
-| `CLI/termloop.swift` | 2269 | `case "session":` |
-| `CLI/termloop.swift` | 12729 | `if let sessionId = parsedInput.sessionId {` |
-| `CLI/termloop.swift` | 12929 | `TermLoopCLICommands.clearClaudeSession(workspaceId: workspaceId, client: client)` |
+| `CLI/termloop.swift` | 2454 | `case "list-projects", "current-project", "new-project", "rename-project",` |
+| `CLI/termloop.swift` | 2461 | `case "agent":` |
+| `CLI/termloop.swift` | 2466 | `case "session":` |
+| `CLI/termloop.swift` | 12615 | `if let sessionId = parsedInput.sessionId {` |
+| `CLI/termloop.swift` | 12815 | `TermLoopCLICommands.clearClaudeSession(workspaceId: workspaceId, client: client)` |
 | `Sources/AppDelegate.swift` | 2542 | `TermLoopHooks.bootstrapBlockedBin()` |
 | `Sources/AppDelegate.swift` | 2545 | `TermLoopHooks.installQuickActionHotkey()` |
 | `Sources/AppDelegate.swift` | 3007 | `TermLoopHooks.applicationWillTerminate()` |
 | `Sources/AppDelegate.swift` | 3787 | `// Bootstrap TermLoop stores from the sidecar (or create a Default` |
 | `Sources/AppDelegate.swift` | 3855 | `TermLoopHooks.removeLegacyPersistedWindowGeometryIfPresent(defaults: defaults, keys: legacyPersistedWindowGeometryDefaultsKeys)` |
-| `Sources/AppDelegate.swift` | 4620 | `// Save TermLoop sidecar from the same in-memory state that produced` |
-| `Sources/AppDelegate.swift` | 4650 | `return TermLoopHooks.shouldSkipSessionSaveDuringStartupRestore(isApplyingStartupSessionRestore: isApplyingStartupSessionRestore, includeScrollback: includeScrollback)` |
-| `Sources/AppDelegate.swift` | 4834 | `TermLoopHooks.removeMirroredSessionSnapshotIfNeeded()` |
-| `Sources/AppDelegate.swift` | 5460 | `/// Walks window contexts in the same sorted order that` |
-| `Sources/AppDelegate.swift` | 11480 | `if TermLoopHooks.handleProjectNumberShortcut(digit: numberedConfiguredShortcutDigit(event: event, action: .selectProjectByNumber), tabManager: tabManager) { return true }` |
-| `Sources/ContentView.swift` | 692 | `termLoopResetForwardingOnExit(sender: sender)` |
-| `Sources/ContentView.swift` | 708 | `if let accepted = termLoopTryPrepareForwardedDrop(sender: sender, shouldCapture: shouldCapture) {` |
-| `Sources/ContentView.swift` | 745 | `if let result = termLoopTryPerformForwardedDrop(sender: sender, shouldCapture: shouldCapture) {` |
-| `Sources/ContentView.swift` | 787 | `termLoopConcludeForwardedDrop(sender: sender)` |
-| `Sources/ContentView.swift` | 802 | `if let op = termLoopTryForwardDragUpdate(sender: sender, shouldCapture: shouldCapture) {` |
-| `Sources/ContentView.swift` | 2695 | `let mainAreaPresentation = TermLoopHooks.mainAreaPresentationSnapshot(windowId: windowId, tabManager: tabManager, retiringWorkspaceId: retiringWorkspaceId, mountedWorkspaceIds: mountedWorkspaceIds, handoffGeneration: workspaceHandoffGeneration, hasCommandPaletteOrFileDropOverlay: isCommandPalettePresented \|\| sidebarDraggedTabId != nil)` |
-| `Sources/ContentView.swift` | 2728 | `.overlay(alignment: .bottom) { TermLoopHooks.workspaceFooterExtras(workspace: tab) }` |
-| `Sources/ContentView.swift` | 2757 | `TermLoopHooks.mainAreaOverlaySwap {` |
-| `Sources/ContentView.swift` | 3284 | `view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .terminalSurfaceDidBecomeReady)) { notification in TermLoopHooks.handleWorkspaceHandoffReadiness(notification: notification, selectedWorkspaceId: tabManager.selectedTabId, canComplete: { canCompleteWorkspaceHandoffImmediately(for: $0) }, complete: { completeWorkspaceHandoffIfNeeded(focusedTabId: $0, reason: $1) }) })` |
-| `Sources/ContentView.swift` | 3977 | `guard TermLoopHooks.shouldKeepRetiringWorkspaceVisibleForHandoff(windowId: windowId, tabManager: tabManager, oldWorkspaceId: oldSelectedId, newWorkspaceId: newSelectedId, mountedWorkspaceIds: mountedWorkspaceIds, handoffGeneration: workspaceHandoffGeneration, hasCommandPaletteOrFileDropOverlay: isCommandPalettePresented \|\| sidebarDraggedTabId != nil) else { completeWorkspaceHandoff(reason: "presentation_policy"); return }` |
-| `Sources/ContentView.swift` | 7272 | `TermLoopHooks.handleNewWorkspacePaletteCommand(tabManager: tabManager)` |
-| `Sources/ContentView.swift` | 10110 | `TermLoopSidebar.Root(` |
-| `Sources/ContentView.swift` | 11084 | `TermLoopSidebar.FooterButton()` |
-| `Sources/ContentView.swift` | 12761 | `TermLoopSidebar.WorktreeBadge(workspace: tab)` |
-| `Sources/ContentView.swift` | 12768 | `TermLoopHooks.sidebarCloseButton(tab: tab, tabManager: tabManager, isEnabled: showCloseButton && !showsWorkspaceShortcutHint, foregroundColor: activeSecondaryColor(0.7), tooltip: closeButtonTooltip)` |
-| `Sources/ContentView.swift` | 12785 | `TermLoopHooks.sidebarWorkspaceDescription(markdown: tab.customDescription, isActive: usesInvertedActiveForeground)` |
-| `Sources/ContentView.swift` | 12861 | `TermLoopHooks.sidebarBranchDirectoryRow(tab: tab, isActive: isActive, settings: settings)` |
-| `Sources/ContentView.swift` | 13134 | `TermLoopHooks.workspaceContextMenuExtras(workspace: tab)` |
-| `Sources/ContentView.swift` | 13138 | `TermLoopHooks.workspaceForkMenu(workspace: tab, isMulti: isMulti)` |
-| `Sources/ContentView.swift` | 13142 | `TermLoopHooks.workspaceLinkToMenu(workspace: tab, isMulti: isMulti, tabManager: tabManager)` |
-| `Sources/ContentView.swift` | 13146 | `TermLoopSidebar.WorktreeMenuItems(targetIds: targetIds, tabManager: tabManager)` |
-| `Sources/ContentView.swift` | 13150 | `TermLoopSidebar.RestoreClaudeSessionMenuItem(targetIds: targetIds)` |
-| `Sources/ContentView.swift` | 13154 | `TermLoopSidebar.SelectPlanMenuItem(targetIds: targetIds)` |
-| `Sources/ContentView.swift` | 14168 | `.modifier(TermLoopHooks.claudeRunningShimmer(entryKey: entry.key, entryValue: entry.value))` |
+| `Sources/AppDelegate.swift` | 4626 | `if let sessionURL = SessionPersistenceStore.defaultSnapshotFileURL() { TermLoopHooks.saveSidecarSnapshot(alongside: sessionURL, synchronously: writeSynchronously, persistenceQueue: sessionPersistenceQueue) }` |
+| `Sources/AppDelegate.swift` | 4646 | `return TermLoopHooks.shouldSkipSessionSaveDuringStartupRestore(isApplyingStartupSessionRestore: isApplyingStartupSessionRestore, includeScrollback: includeScrollback)` |
+| `Sources/AppDelegate.swift` | 4830 | `TermLoopHooks.removeMirroredSessionSnapshotIfNeeded()` |
+| `Sources/AppDelegate.swift` | 5456 | `/// Walks window contexts in the same sorted order that` |
+| `Sources/AppDelegate.swift` | 11476 | `if TermLoopHooks.handleProjectNumberShortcut(digit: numberedConfiguredShortcutDigit(event: event, action: .selectProjectByNumber), tabManager: tabManager) { return true }` |
+| `Sources/ContentView.swift` | 691 | `termLoopResetForwardingOnExit(sender: sender)` |
+| `Sources/ContentView.swift` | 707 | `if let accepted = termLoopTryPrepareForwardedDrop(sender: sender, shouldCapture: shouldCapture) {` |
+| `Sources/ContentView.swift` | 744 | `if let result = termLoopTryPerformForwardedDrop(sender: sender, shouldCapture: shouldCapture) {` |
+| `Sources/ContentView.swift` | 786 | `termLoopConcludeForwardedDrop(sender: sender)` |
+| `Sources/ContentView.swift` | 801 | `if let op = termLoopTryForwardDragUpdate(sender: sender, shouldCapture: shouldCapture) {` |
+| `Sources/ContentView.swift` | 2694 | `let mainAreaPresentation = TermLoopHooks.mainAreaPresentationSnapshot(windowId: windowId, tabManager: tabManager, retiringWorkspaceId: retiringWorkspaceId, mountedWorkspaceIds: mountedWorkspaceIds, handoffGeneration: workspaceHandoffGeneration, hasCommandPaletteOrFileDropOverlay: isCommandPalettePresented \|\| sidebarDraggedTabId != nil)` |
+| `Sources/ContentView.swift` | 2727 | `.overlay(alignment: .bottom) { TermLoopHooks.workspaceFooterExtras(workspace: tab) }` |
+| `Sources/ContentView.swift` | 2756 | `TermLoopHooks.mainAreaOverlaySwap {` |
+| `Sources/ContentView.swift` | 3283 | `view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .terminalSurfaceDidBecomeReady)) { notification in TermLoopHooks.handleWorkspaceHandoffReadiness(notification: notification, selectedWorkspaceId: tabManager.selectedTabId, canComplete: { canCompleteWorkspaceHandoffImmediately(for: $0) }, complete: { completeWorkspaceHandoffIfNeeded(focusedTabId: $0, reason: $1) }) })` |
+| `Sources/ContentView.swift` | 3976 | `guard TermLoopHooks.shouldKeepRetiringWorkspaceVisibleForHandoff(windowId: windowId, tabManager: tabManager, oldWorkspaceId: oldSelectedId, newWorkspaceId: newSelectedId, mountedWorkspaceIds: mountedWorkspaceIds, handoffGeneration: workspaceHandoffGeneration, hasCommandPaletteOrFileDropOverlay: isCommandPalettePresented \|\| sidebarDraggedTabId != nil) else { completeWorkspaceHandoff(reason: "presentation_policy"); return }` |
+| `Sources/ContentView.swift` | 7271 | `TermLoopHooks.handleNewWorkspacePaletteCommand(tabManager: tabManager)` |
+| `Sources/ContentView.swift` | 10109 | `TermLoopSidebar.Root(` |
+| `Sources/ContentView.swift` | 10857 | `TermLoopSidebar.FooterButton()` |
+| `Sources/ContentView.swift` | 12491 | `TermLoopSidebar.WorktreeBadge(workspace: tab)` |
+| `Sources/ContentView.swift` | 12498 | `TermLoopHooks.sidebarCloseButton(tab: tab, tabManager: tabManager, isEnabled: showCloseButton && !showsWorkspaceShortcutHint, foregroundColor: activeSecondaryColor(0.7), tooltip: closeButtonTooltip)` |
+| `Sources/ContentView.swift` | 12515 | `TermLoopHooks.sidebarWorkspaceDescription(markdown: tab.customDescription, isActive: usesInvertedActiveForeground)` |
+| `Sources/ContentView.swift` | 12591 | `TermLoopHooks.sidebarBranchDirectoryRow(tab: tab, isActive: isActive, settings: settings)` |
+| `Sources/ContentView.swift` | 12864 | `TermLoopHooks.workspaceContextMenuExtras(workspace: tab)` |
+| `Sources/ContentView.swift` | 12868 | `TermLoopHooks.workspaceForkMenu(workspace: tab, isMulti: isMulti)` |
+| `Sources/ContentView.swift` | 12872 | `TermLoopHooks.workspaceLinkToMenu(workspace: tab, isMulti: isMulti, tabManager: tabManager)` |
+| `Sources/ContentView.swift` | 12876 | `TermLoopSidebar.WorktreeMenuItems(targetIds: targetIds, tabManager: tabManager)` |
+| `Sources/ContentView.swift` | 12880 | `TermLoopSidebar.RestoreClaudeSessionMenuItem(targetIds: targetIds)` |
+| `Sources/ContentView.swift` | 12884 | `TermLoopSidebar.SelectPlanMenuItem(targetIds: targetIds)` |
+| `Sources/ContentView.swift` | 13898 | `.modifier(TermLoopHooks.claudeRunningShimmer(entryKey: entry.key, entryValue: entry.value))` |
 | `Sources/FileExplorerStore.swift` | 979 | `return GitCommandRunner.runOptional(arguments, in: directory, kind: GitCommandRunner.CommandKind.classify(arguments: arguments), caller: "GitStatusProvider")` |
 | `Sources/GhosttyTerminalView.swift` | 4242 | `TermLoopHooks.applyManagedGitEnvironment(to: &env, protectedKeys: &protectedStartupEnvironmentKeys)` |
 | `Sources/GhosttyTerminalView.swift` | 10499 | `guard !TermLoopHooks.shouldDeferTerminalFocusSteal() else { return }` |
 | `Sources/GhosttyTerminalView.swift` | 10716 | `guard !TermLoopHooks.shouldDeferTerminalFocusSteal() else { return }` |
 | `Sources/PortScanner.swift` | 63 | `private static let burstOffsets: [Double] = [1, 3, 10]` |
 | `Sources/PortScanner.swift` | 307 | `guard TermLoopPortScanThrottle.shouldScan(workspaceId: workspaceId) else { return }` |
-| `Sources/TabManager.swift` | 876 | `TermLoopHooks.workspaceSelectionChanged(tabManager: self, selectedTabId: selectedTabId)` |
-| `Sources/TabManager.swift` | 1015 | `TermLoopHooks.registerSidebarProjectRefreshBridge(tabManager: self, scheduleGitMetadata: { [weak self] workspaceId, panelId, reason in self?.scheduleWorkspaceGitMetadataRefreshIfPossible(workspaceId: workspaceId, panelId: panelId, reason: reason) }, schedulePullRequest: { [weak self] workspaceId, panelId, reason in self?.scheduleWorkspacePullRequestRefresh(workspaceId: workspaceId, panelId: panelId, reason: reason) })` |
-| `Sources/TabManager.swift` | 1287 | `return WorkspacePullRequestCandidate(workspaceId: workspace.id, panelId: panelId, branch: branch, repoSlugs: PullRequestRepositoryIdentityCache.shared.resolveOrPopulate(directory: gitProbeDirectory(for: workspace, panelId: panelId)))` |
-| `Sources/TabManager.swift` | 1962 | `projectId: UUID? = nil,` |
-| `Sources/TabManager.swift` | 2016 | `WorkspaceMetadataStore.shared.setProjectId(` |
-| `Sources/TabManager.swift` | 2022 | `TermLoopHooks.bindTerminalAgentOnWorkspaceCreate(workspace: newWorkspace, terminalAgentId: terminalAgentId)` |
-| `Sources/TabManager.swift` | 2448 | `if let snapshot = TermLoopHooks.initialWorkspaceGitMetadataSnapshot(directory: directory) { return InitialWorkspaceGitMetadataSnapshot(branch: snapshot.branch, isDirty: snapshot.isDirty, changes: snapshot.changes, pullRequest: snapshot.branch == nil ? .notFound : .deferred) }` |
-| `Sources/TabManager.swift` | 2474 | `return GitCommandRunner.runOptional(arguments, in: directory, kind: GitCommandRunner.CommandKind.classify(arguments: arguments), caller: "TabManager.gitMetadata")` |
-| `Sources/TabManager.swift` | 2978 | `return GitRemoteParser.githubRepositorySlugs(fromRemoteVOutput: output)` |
-| `Sources/TabManager.swift` | 3637 | `TermLoopHooks.workspaceDidClose(workspaceId: workspace.id)` |
-| `Sources/TabManager.swift` | 3958 | `if TermLoopHooks.workspaceWillClose(workspace: workspace, completion: { [weak self] shouldClose in if shouldClose { self?.closeWorkspaceIfRunningProcess(workspace, requiresConfirmation: requiresConfirmation) } }) { return }` |
-| `Sources/TabManager.swift` | 4136 | `if confirmCloseExitedLastLocalSurface(tab: tab, surfaceId: surfaceId) { return }` |
-| `Sources/TabManager.swift` | 6614 | `TermLoopHooks.sessionSnapshot(for: $0, includeScrollback: includeScrollback)` |
-| `Sources/TabManager.swift` | 6669 | `TermLoopHooks.beginTabManagerSessionRestore(tabManager: self, selectedWorkspaceIndex: snapshot.selectedWorkspaceIndex, totalWorkspaceCount: snapshot.workspaces.count)` |
-| `Sources/TabManager.swift` | 6681 | `TermLoopHooks.restoreWorkspaceSessionSnapshot(workspace: workspace, snapshot: workspaceSnapshot, tabManager: self)` |
-| `Sources/TabManager.swift` | 6710 | `TermLoopHooks.didRestoreWorkspaces(workspaces: newTabs)` |
+| `Sources/TabManager.swift` | 880 | `TermLoopHooks.workspaceSelectionChanged(tabManager: self, selectedTabId: selectedTabId)` |
+| `Sources/TabManager.swift` | 1019 | `TermLoopHooks.registerSidebarProjectRefreshBridge(tabManager: self, scheduleGitMetadata: { [weak self] workspaceId, panelId, reason in self?.scheduleWorkspaceGitMetadataRefreshIfPossible(workspaceId: workspaceId, panelId: panelId, reason: reason) }, schedulePullRequest: { [weak self] workspaceId, panelId, reason in self?.scheduleWorkspacePullRequestRefresh(workspaceId: workspaceId, panelId: panelId, reason: reason) })` |
+| `Sources/TabManager.swift` | 1291 | `return WorkspacePullRequestCandidate(workspaceId: workspace.id, panelId: panelId, branch: branch, repoSlugs: PullRequestRepositoryIdentityCache.shared.resolveOrPopulate(directory: gitProbeDirectory(for: workspace, panelId: panelId)))` |
+| `Sources/TabManager.swift` | 1968 | `projectId: UUID? = nil,` |
+| `Sources/TabManager.swift` | 2022 | `WorkspaceMetadataStore.shared.setProjectId(` |
+| `Sources/TabManager.swift` | 2028 | `TermLoopHooks.bindTerminalAgentOnWorkspaceCreate(workspace: newWorkspace, terminalAgentId: terminalAgentId)` |
+| `Sources/TabManager.swift` | 2454 | `if let snapshot = TermLoopHooks.initialWorkspaceGitMetadataSnapshot(directory: directory) { return InitialWorkspaceGitMetadataSnapshot(branch: snapshot.branch, isDirty: snapshot.isDirty, changes: snapshot.changes, pullRequest: snapshot.branch == nil ? .notFound : .deferred) }` |
+| `Sources/TabManager.swift` | 2480 | `return GitCommandRunner.runOptional(arguments, in: directory, kind: GitCommandRunner.CommandKind.classify(arguments: arguments), caller: "TabManager.gitMetadata")` |
+| `Sources/TabManager.swift` | 2984 | `return GitRemoteParser.githubRepositorySlugs(fromRemoteVOutput: output)` |
+| `Sources/TabManager.swift` | 3643 | `TermLoopHooks.workspaceDidClose(workspaceId: workspace.id)` |
+| `Sources/TabManager.swift` | 3964 | `if TermLoopHooks.workspaceWillClose(workspace: workspace, completion: { [weak self] shouldClose in if shouldClose { self?.closeWorkspaceIfRunningProcess(workspace, requiresConfirmation: requiresConfirmation) } }) { return }` |
+| `Sources/TabManager.swift` | 4142 | `if confirmCloseExitedLastLocalSurface(tab: tab, surfaceId: surfaceId) { return }` |
+| `Sources/TabManager.swift` | 6620 | `TermLoopHooks.sessionSnapshot(for: $0, includeScrollback: includeScrollback)` |
+| `Sources/TabManager.swift` | 6675 | `TermLoopHooks.beginTabManagerSessionRestore(tabManager: self, selectedWorkspaceIndex: snapshot.selectedWorkspaceIndex, totalWorkspaceCount: snapshot.workspaces.count)` |
+| `Sources/TabManager.swift` | 6687 | `TermLoopHooks.restoreWorkspaceSessionSnapshot(workspace: workspace, snapshot: workspaceSnapshot, tabManager: self)` |
+| `Sources/TabManager.swift` | 6716 | `TermLoopHooks.didRestoreWorkspaces(workspaces: newTabs)` |
 | `Sources/TerminalController.swift` | 1060 | `TermLoopTCPBridge.shared.start { [weak self] fd in` |
 | `Sources/TerminalController.swift` | 1198 | `TermLoopTCPBridge.shared.stop()` |
 | `Sources/TerminalController.swift` | 1275 | `TermLoopSocketIO.writeText(payload, to: socket)` |
@@ -94,11 +94,12 @@ in upstream-owned Swift files. Regenerate with `scripts/generate-hooks-inventory
 | `Sources/termloopApp.swift` | 178 | `TermLoopHooks.migrateAppearanceDarkDefaultIfNeeded()` |
 | `Sources/termloopApp.swift` | 407 | `TermLoopMobilePairingStore.restoreBridgeSettingsForPairedDevicesIfNeeded()` |
 | `Sources/termloopApp.swift` | 428 | `.background(TermLoopTCPBridgeCoordinator())` |
-| `Sources/termloopApp.swift` | 432 | `.background(TermLoopRootTickInstrumentation(tabManager: tabManager, notificationStore: notificationStore, sidebarState: sidebarState, sidebarSelectionState: sidebarSelectionState, fileExplorerState: fileExplorerState, cmuxConfigStore: cmuxConfigStore))` |
+| `Sources/termloopApp.swift` | 432 | `.background(TermLoopRootTickInstrumentation(tabManager: tabManager, notificationStore: notificationStore, sidebarState: sidebarState, sidebarSelectionState: sidebarSelectionState, fileExplorerState: fileExplorerState, termloopConfigStore: cmuxConfigStore))` |
 | `Sources/termloopApp.swift` | 449 | `Button(String(localized: "termloop.settings.menu.label", defaultValue: "TermLoop Settings…", table: "TermLoop")) { TermLoopHooks.openTermLoopSettingsWindow() }.keyboardShortcut(",", modifiers: [.command, .option])` |
 | `Sources/termloopApp.swift` | 570 | `Button(String(localized: "termloop.debugEventLog.menu.label", defaultValue: "Debug Event Log…", table: "TermLoop")) { TermLoopHooks.openDebugEventLogWindow() }` |
 | `Sources/termloopApp.swift` | 627 | `TermLoopHooks.debugTitlebarControlsStyleMenu(selection: $titlebarControlsStyle)` |
 | `Sources/termloopApp.swift` | 645 | `Button(String(localized: "termloop.deleteAllData.menu.label", defaultValue: "Delete All Data (This Build)…", table: "TermLoop")) { TermLoopHooks.promptDeleteAllBuildData() }` |
-| `Sources/termloopApp.swift` | 1245 | `"cmux.debugEventLog",` |
+| `Sources/termloopApp.swift` | 925 | `TermLoopHooks.mirrorTaggedBuildUserDefaultsIfNeeded()` |
+| `Sources/termloopApp.swift` | 1248 | `"cmux.debugEventLog",` |
 
-Total hook blocks: **95**.
+Total hook blocks: **96**.

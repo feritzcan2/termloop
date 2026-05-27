@@ -96,8 +96,6 @@ extension TermLoopSidebar {
                 break
             case .integrations:
                 break
-            case .plan:
-                break
             }
         }
 
@@ -139,8 +137,6 @@ extension TermLoopSidebar {
                     AgentsSidebarView()
                 case .integrations:
                     IntegrationsTab(projectRoot: activeProjectFolderURL)
-                case .plan:
-                    PlanTab(projectRoot: activeProjectFolderURL)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

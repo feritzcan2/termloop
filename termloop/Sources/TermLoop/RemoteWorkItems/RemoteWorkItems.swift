@@ -108,6 +108,7 @@ struct RemoteWorkItemCreateRequest: Codable, Equatable, Sendable {
     var container: String
     var issueType: String?
     var labels: [String]
+    var assignToMe: Bool
 
     init(
         provider: RemoteWorkItemProviderId,
@@ -115,7 +116,8 @@ struct RemoteWorkItemCreateRequest: Codable, Equatable, Sendable {
         bodyMarkdown: String? = nil,
         container: String,
         issueType: String? = nil,
-        labels: [String] = []
+        labels: [String] = [],
+        assignToMe: Bool = false
     ) {
         self.provider = provider
         self.title = title
@@ -123,6 +125,7 @@ struct RemoteWorkItemCreateRequest: Codable, Equatable, Sendable {
         self.container = container
         self.issueType = issueType
         self.labels = labels
+        self.assignToMe = assignToMe
     }
 }
 

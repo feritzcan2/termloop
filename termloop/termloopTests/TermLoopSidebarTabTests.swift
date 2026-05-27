@@ -12,11 +12,10 @@ final class TermLoopSidebarTabTests: XCTestCase {
         XCTAssertEqual(TermLoopSidebarTab.work.rawValue, "work")
         XCTAssertEqual(TermLoopSidebarTab.agents.rawValue, "agents")
         XCTAssertEqual(TermLoopSidebarTab.integrations.rawValue, "integrations")
-        XCTAssertEqual(TermLoopSidebarTab.plan.rawValue, "plan")
     }
 
     func testAllCasesOrdering() {
-        XCTAssertEqual(TermLoopSidebarTab.allCases, [.work, .agents, .integrations, .plan])
+        XCTAssertEqual(TermLoopSidebarTab.allCases, [.work, .agents, .integrations])
     }
 
     func testFocusVolatileSidebarTweaksDefaultToOff() {

@@ -112,6 +112,28 @@ enum TaggedBuildSharedState {
         )
     }
 
+    static func mirrorCurrentUserDefaultsIfNeeded(
+        bundleIdentifier: String? = Bundle.main.bundleIdentifier,
+        standardDefaults: UserDefaults = .standard,
+        sharedDefaultsFactory: @escaping (String) -> SharedDefaultsDomain? = {
+            guard let defaults = UserDefaults(suiteName: $0) else { return nil }
+            return SharedDefaultsDomain(defaults: defaults, domainName: $0)
+        }
+    ) {
+        guard let currentBundleIdentifier = normalizedBundleIdentifier(bundleIdentifier),
+              let sharedBundleIdentifier = sharedStateBundleIdentifier(for: currentBundleIdentifier),
+              sharedBundleIdentifier != currentBundleIdentifier else {
+            return
+        }
+
+        syncUserDefaultsToSharedState(
+            currentBundleIdentifier: currentBundleIdentifier,
+            sharedBundleIdentifier: sharedBundleIdentifier,
+            standardDefaults: standardDefaults,
+            sharedDefaultsFactory: sharedDefaultsFactory
+        )
+    }
+
     static func sharedStateBundleIdentifier(for bundleIdentifier: String?) -> String? {
         guard let bundleIdentifier = normalizedBundleIdentifier(bundleIdentifier) else {
             return nil
@@ -168,7 +190,7 @@ enum TaggedBuildSharedState {
 
         let observer = notificationCenter.addObserver(
             forName: UserDefaults.didChangeNotification,
-            object: standardDefaults,
+            object: nil,
             queue: nil
         ) { _ in
             syncUserDefaultsToSharedState(

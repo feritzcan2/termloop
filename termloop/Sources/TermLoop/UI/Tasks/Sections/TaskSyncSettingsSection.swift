@@ -4,34 +4,6 @@
 import AppKit
 import SwiftUI
 
-struct TaskSidebarSettingsButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 7) {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 12, weight: .semibold))
-                Text(String(localized: "tasks.sidebar.settings.open",
-                            defaultValue: "Task Settings",
-                            table: "TermLoop"))
-                    .font(.system(size: 12, weight: .medium))
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(.secondary)
-            }
-            .foregroundColor(.secondary)
-            .padding(.vertical, 8)
-            .padding(.horizontal, 9)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 struct TaskSettingsSidebarView: View {
     @ObservedObject var remoteSync: TaskRemoteSyncCoordinator
     let onBack: () -> Void
