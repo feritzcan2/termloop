@@ -18,14 +18,6 @@ function SidebarLink({
   t: (key: string) => string;
 }) {
   const active = pathname === item.href;
-  const title = (() => {
-    try {
-      return t(item.titleKey);
-    } catch {
-      return item.fallbackTitle ?? item.titleKey;
-    }
-  })();
-
   return (
     <Link
       href={item.href}
@@ -38,7 +30,7 @@ function SidebarLink({
           : "text-muted hover:text-foreground"
       }`}
     >
-      {title}
+      {t(item.titleKey)}
     </Link>
   );
 }

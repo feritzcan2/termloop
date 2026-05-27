@@ -21,7 +21,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { path: "/docs/custom-commands", lastModified: "2026-03-18", changeFrequency: "monthly" as const, priority: 0.7 },
     { path: "/docs/keyboard-shortcuts", lastModified: "2026-04-03", changeFrequency: "monthly" as const, priority: 0.7 },
     { path: "/docs/api", lastModified: "2026-03-18", changeFrequency: "monthly" as const, priority: 0.8 },
-    { path: "/docs/dev-servers", lastModified: "2026-05-27", changeFrequency: "monthly" as const, priority: 0.8 },
     { path: "/docs/notifications", lastModified: "2026-03-18", changeFrequency: "monthly" as const, priority: 0.8 },
     { path: "/docs/ssh", lastModified: "2026-03-31", changeFrequency: "monthly" as const, priority: 0.8 },
     { path: "/docs/changelog", lastModified: "2026-03-18", changeFrequency: "weekly" as const, priority: 0.5 },
