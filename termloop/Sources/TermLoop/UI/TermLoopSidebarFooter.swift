@@ -2,6 +2,7 @@
 // Part of TermLoop — GPL-3.0-or-later
 
 import AppKit
+import Combine
 import SwiftUI
 
 extension TermLoopSidebar {
@@ -65,7 +66,7 @@ extension TermLoopSidebar {
 private struct CollapsedWorkspaceFooterRows: View {
     @EnvironmentObject private var tabManager: TabManager
     @ObservedObject private var projectStore = ProjectStore.shared
-    @State private var hiddenTick: Int = 0
+    @State private var snapshot = FooterSnapshot()
     @AppStorage("termloop.collapsedFooter.sectionCollapsed.v1") private var sectionCollapsed: Bool = false
 
     private struct WorktreeGroup: Identifiable, Equatable {
@@ -74,14 +75,25 @@ private struct CollapsedWorkspaceFooterRows: View {
         let workspaceIds: [UUID]
     }
 
-    var body: some View {
-        let _ = hiddenTick
-        let summaries = scopedSummaries
-        let worktreeGroups = groupedWorktrees(from: summaries)
-        let agentRows = summaries.filter { ($0.branch ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private struct FooterSnapshot: Equatable {
+        var worktreeGroups: [WorktreeGroup] = []
+        var agentRows: [WorkspaceMetadataStore.HiddenWorkspaceProjection] = []
+        var archivedTasks: [TaskCardSummary] = []
 
+        var count: Int {
+            worktreeGroups.reduce(0) { $0 + $1.workspaceIds.count }
+                + agentRows.count
+                + archivedTasks.count
+        }
+
+        var isEmpty: Bool {
+            worktreeGroups.isEmpty && agentRows.isEmpty && archivedTasks.isEmpty
+        }
+    }
+
+    var body: some View {
         Group {
-            if !worktreeGroups.isEmpty || !agentRows.isEmpty {
+            if !snapshot.isEmpty {
                 VStack(spacing: 1) {
                     TermLoopSidebarRule()
 
@@ -95,13 +107,13 @@ private struct CollapsedWorkspaceFooterRows: View {
                                 .frame(width: 10, height: 10)
                             Text(TermLoopSidebarTheme.caps(String(
                                 localized: "workspaceCollapse.footer.title",
-                                defaultValue: "Collapsed",
+                                defaultValue: "Archived",
                                 table: "TermLoop"
                             )))
                             .font(TermLoopSidebarTheme.sectionCaps)
                             .foregroundStyle(TermLoopSidebarTheme.dim)
                             Spacer()
-                            Text(verbatim: "\(summaries.count)")
+                            Text(verbatim: "\(snapshot.count)")
                                 .font(TermLoopSidebarTheme.tinyMono)
                                 .foregroundStyle(TermLoopSidebarTheme.dim)
                                 .monospacedDigit()
@@ -117,12 +129,12 @@ private struct CollapsedWorkspaceFooterRows: View {
                     .buttonStyle(.plain)
                     .help(String(
                         localized: "workspaceCollapse.footer.toggleHelp",
-                        defaultValue: "Show or hide collapsed workspaces",
+                        defaultValue: "Show or hide archived workspaces and tasks",
                         table: "TermLoop"
                     ))
 
                     if !sectionCollapsed {
-                        ForEach(worktreeGroups) { group in
+                        ForEach(snapshot.worktreeGroups) { group in
                             footerRow(
                                 iconName: "shippingbox.fill",
                                 title: group.branch,
@@ -138,7 +150,7 @@ private struct CollapsedWorkspaceFooterRows: View {
                             )
                         }
 
-                        ForEach(agentRows) { summary in
+                        ForEach(snapshot.agentRows) { summary in
                             let title = agentTitle(summary)
                             footerRow(
                                 iconName: "circle.fill",
@@ -154,28 +166,74 @@ private struct CollapsedWorkspaceFooterRows: View {
                                 )
                             )
                         }
+
+                        ForEach(snapshot.archivedTasks) { task in
+                            footerRow(
+                                iconName: "checklist",
+                                title: task.title,
+                                detail: nil,
+                                isWorktree: false,
+                                onRestore: { restoreArchivedTask(task.id) },
+                                onDelete: nil,
+                                restoreHelp: String(
+                                    localized: "tasks.sidebar.archived.restore.help",
+                                    defaultValue: "Restore task",
+                                    table: "TermLoop"
+                                )
+                            )
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity)
             }
         }
-        .onReceive(WorkspaceMetadataStore.shared.$hiddenVersion) { newValue in
-            guard newValue != hiddenTick else { return }
-            hiddenTick = newValue
+        .onAppear {
+            rebuildSnapshot()
+        }
+        .onChange(of: projectStore.activeProjectId) {
+            rebuildSnapshot()
+        }
+        .onReceive(WorkspaceMetadataStore.shared.$hiddenVersion.removeDuplicates()) { _ in
+            rebuildSnapshot()
+        }
+        .onReceive(activeArchivedSnapshotsPublisher.dropFirst()) { archivedTasks in
+            rebuildSnapshot(archivedTasks: archivedTasks)
         }
     }
 
-    private var scopedSummaries: [WorkspaceHideCoordinator.HiddenWorkspaceSummary] {
-        WorkspaceHideCoordinator.hiddenSummaries().filter { summary in
-            guard let activeProjectId = projectStore.activeProjectId else { return true }
-            return summary.projectId == activeProjectId
+    private var activeTaskStore: TaskBoardStore? {
+        guard let activeProjectId = projectStore.activeProjectId else { return nil }
+        return TaskBoardStoreProvider.shared.store(for: activeProjectId)
+    }
+
+    private var activeArchivedSnapshotsPublisher: AnyPublisher<[TaskCardSummary], Never> {
+        activeTaskStore?.$archivedSnapshots.eraseToAnyPublisher()
+            ?? Empty().eraseToAnyPublisher()
+    }
+
+    private func rebuildSnapshot(archivedTasks providedArchivedTasks: [TaskCardSummary]? = nil) {
+        let archivedTasks = providedArchivedTasks ?? activeTaskStore?.archivedSnapshots ?? []
+        let archivedWorkspaceIds = Set(archivedTasks.compactMap(\.workspaceId))
+        let summaries = WorkspaceMetadataStore.shared.hiddenWorkspaceProjections(
+            projectId: projectStore.activeProjectId,
+            excludingWorkspaceIds: archivedWorkspaceIds
+        )
+        .sorted { lhs, rhs in
+            (lhs.branch ?? "") < (rhs.branch ?? "")
         }
+        let nextSnapshot = FooterSnapshot(
+            worktreeGroups: groupedWorktrees(from: summaries),
+            agentRows: summaries.filter { ($0.branch ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty },
+            archivedTasks: archivedTasks
+        )
+        guard snapshot != nextSnapshot else { return }
+        snapshot = nextSnapshot
     }
 
     private func groupedWorktrees(
-        from summaries: [WorkspaceHideCoordinator.HiddenWorkspaceSummary]
+        from summaries: [WorkspaceMetadataStore.HiddenWorkspaceProjection]
     ) -> [WorktreeGroup] {
-        var buckets: [String: [WorkspaceHideCoordinator.HiddenWorkspaceSummary]] = [:]
+        var buckets: [String: [WorkspaceMetadataStore.HiddenWorkspaceProjection]] = [:]
         for summary in summaries {
             let branch = (summary.branch ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !branch.isEmpty else { continue }
@@ -255,7 +313,7 @@ private struct CollapsedWorkspaceFooterRows: View {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
-    private func agentTitle(_ summary: WorkspaceHideCoordinator.HiddenWorkspaceSummary) -> String {
+    private func agentTitle(_ summary: WorkspaceMetadataStore.HiddenWorkspaceProjection) -> String {
         let restoredTitle = summary.title?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let restoredTitle, !restoredTitle.isEmpty { return restoredTitle }
         let agentName = summary.agentId.flatMap { TerminalAgentRegistry.shared.agent(id: $0)?.displayName }
@@ -279,7 +337,7 @@ private struct CollapsedWorkspaceFooterRows: View {
         detail: String?,
         isWorktree: Bool,
         onRestore: @escaping () -> Void,
-        onDelete: @escaping () -> Void,
+        onDelete: (() -> Void)?,
         restoreHelp: String
     ) -> some View {
         HStack(spacing: 6) {
@@ -322,23 +380,31 @@ private struct CollapsedWorkspaceFooterRows: View {
             }
             .buttonStyle(.plain)
             .help(restoreHelp)
-            Button(action: onDelete) {
-                Image(systemName: "trash")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(TermLoopSidebarTheme.dim)
-                    .frame(width: 14, height: 14)
-                    .contentShape(Rectangle())
+            if let onDelete {
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(TermLoopSidebarTheme.dim)
+                        .frame(width: 14, height: 14)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(String(
+                    localized: "workspaceCollapse.footer.deleteHelp",
+                    defaultValue: "Delete collapsed workspace",
+                    table: "TermLoop"
+                ))
             }
-            .buttonStyle(.plain)
-            .help(String(
-                localized: "workspaceCollapse.footer.deleteHelp",
-                defaultValue: "Delete collapsed workspace",
-                table: "TermLoop"
-            ))
         }
         .padding(.horizontal, TermLoopSidebarTheme.rowInsetH)
         .padding(.vertical, 3)
         .contentShape(Rectangle())
+    }
+
+    private func restoreArchivedTask(_ taskId: UUID) {
+        guard let store = activeTaskStore else { return }
+        try? TaskLifecycleCoordinator.makeForProject(store: store).restoreTask(taskId)
+        rebuildSnapshot()
     }
 }
 
