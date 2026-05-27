@@ -26,14 +26,6 @@ find_real_claude() {
         return 0
     fi
 
-    # App-level discovery hint for GUI launches with a minimal PATH.
-    local resolved=""
-    resolved="$(resolve_explicit_claude_path "${TERMLOOP_REAL_CLAUDE_PATH:-}" 2>/dev/null || true)"
-    if [[ -n "$resolved" ]]; then
-        printf '%s' "$resolved"
-        return 0
-    fi
-
     local self_dir
     self_dir="$(cd "$(dirname "$0")" && pwd)"
     local IFS=:
@@ -48,6 +40,17 @@ find_real_claude() {
         fi
         printf '%s' "$d/claude" && return 0
     done
+
+    # App-level discovery is only a fallback for GUI launches with a minimal
+    # PATH. The interactive shell's PATH wins after zsh/bash startup files have
+    # selected tools such as nvm, mise, bun, or Homebrew.
+    local resolved=""
+    resolved="$(resolve_explicit_claude_path "${TERMLOOP_REAL_CLAUDE_PATH:-}" 2>/dev/null || true)"
+    if [[ -n "$resolved" ]]; then
+        printf '%s' "$resolved"
+        return 0
+    fi
+
     # Fallback: well-known installation paths that may not be in PATH
     # (macOS GUI apps inherit a minimal PATH from launchd).
     local candidate

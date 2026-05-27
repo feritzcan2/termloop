@@ -16,9 +16,7 @@ struct TaskSidebarTaskListView: View {
     var isSyncRemoteItemsDisabled = false
     var isSyncRemoteItemsRunning = false
     var onOpenSettings: () -> Void = {}
-    var onRestoreArchived: ((UUID) -> Void)?
 
-    @State private var isArchivedExpanded = false
     @State private var expandedColumnIds: Set<TaskColumnId> = []
     @AppStorage("tasks.sidebar.remoteItemsTipDismissed")
     private var isRemoteItemsTipDismissed = false
@@ -53,11 +51,6 @@ struct TaskSidebarTaskListView: View {
                             }
                         }
                     }
-                    archivedSection(
-                        cards: store.archivedSnapshots,
-                        workItems: workItems,
-                        onRestore: onRestoreArchived
-                    )
                 }
                 .padding(10)
             }
@@ -139,55 +132,6 @@ struct TaskSidebarTaskListView: View {
                       table: "TermLoop")
     }
 
-    @ViewBuilder
-    private func archivedSection(
-        cards: [TaskCardSummary],
-        workItems: [UUID: TaskWorkItemSnapshot],
-        onRestore: ((UUID) -> Void)?
-    ) -> some View {
-        if !cards.isEmpty {
-            VStack(alignment: .leading, spacing: 5) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.12)) {
-                        isArchivedExpanded.toggle()
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: isArchivedExpanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(TermLoopSidebarTheme.dim)
-                            .frame(width: 10)
-                        Text(String(localized: "tasks.sidebar.archived",
-                                    defaultValue: "Archived", table: "TermLoop"))
-                            .font(TermLoopSidebarTheme.adaptiveSectionFont(size: 11))
-                            .foregroundStyle(TermLoopSidebarTheme.adaptiveSectionColor)
-                        Spacer()
-                        Text("\(cards.count)")
-                            .font(.system(size: 11, weight: .regular))
-                            .foregroundStyle(TermLoopSidebarTheme.dim)
-                            .monospacedDigit()
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 2)
-
-                if isArchivedExpanded {
-                    ForEach(cards) { card in
-                        row(
-                            card,
-                            status: nil,
-                            workItem: workItems[card.id],
-                            isSelectable: false,
-                            isArchived: true,
-                            onRestore: onRestore
-                        )
-                    }
-                }
-            }
-        }
-    }
-
     private var agentStatusesByTaskId: [UUID: TaskAgentStatusSummary] {
         // Intentional subscription reads: task rows project live agent state
         // without storing agent telemetry in TaskBoardStore.
@@ -220,43 +164,49 @@ struct TaskSidebarTaskListView: View {
         workItems: [UUID: TaskWorkItemSnapshot]
     ) -> some View {
         let isExpanded = expandedColumnIds.contains(columnId)
-        return VStack(alignment: .leading, spacing: 6) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.12)) {
-                    toggleColumnExpansion(columnId)
+        return sidebarSectionChrome {
+            VStack(alignment: .leading, spacing: 6) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.12)) {
+                        toggleColumnExpansion(columnId)
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(TermLoopSidebarTheme.dim)
+                            .frame(width: 10)
+                        Text(TermLoopSidebarTheme.adaptiveSectionTitle(title))
+                            .font(TermLoopSidebarTheme.adaptiveSectionFont(size: 11))
+                            .foregroundStyle(TermLoopSidebarTheme.adaptiveSectionColor)
+                        Spacer()
+                        Text("\(cards.count)")
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(TermLoopSidebarTheme.dim)
+                            .monospacedDigit()
+                    }
+                    .contentShape(Rectangle())
                 }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(TermLoopSidebarTheme.dim)
-                        .frame(width: 10)
-                    Text(TermLoopSidebarTheme.adaptiveSectionTitle(title))
-                        .font(TermLoopSidebarTheme.adaptiveSectionFont(size: 11))
-                        .foregroundStyle(TermLoopSidebarTheme.adaptiveSectionColor)
-                    Spacer()
-                    Text("\(cards.count)")
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(TermLoopSidebarTheme.dim)
-                        .monospacedDigit()
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+                .buttonStyle(.plain)
 
-            if isExpanded {
-                ForEach(cards) { card in
-                    row(card, status: statuses[card.id], workItem: workItems[card.id])
+                if isExpanded {
+                    ForEach(cards) { card in
+                        row(card, status: statuses[card.id], workItem: workItems[card.id])
+                    }
                 }
             }
         }
-        .padding(8)
-        .background(taskSidebarSurface.opacity(0.56))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(TermLoopSidebarTheme.rule.opacity(0.9), lineWidth: 1)
-        )
+    }
+
+    private func sidebarSectionChrome<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(8)
+            .background(taskSidebarSurface.opacity(0.56))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(TermLoopSidebarTheme.rule.opacity(0.9), lineWidth: 1)
+            )
     }
 
     private func toggleColumnExpansion(_ columnId: TaskColumnId) {
@@ -269,19 +219,13 @@ struct TaskSidebarTaskListView: View {
         _ card: TaskCardSummary,
         status: TaskAgentStatusSummary?,
         workItem: TaskWorkItemSnapshot?,
-        isSelectable: Bool = true,
-        isArchived: Bool = false,
-        onRestore: ((UUID) -> Void)? = nil
+        isSelectable: Bool = true
     ) -> some View {
         let statusPresentation = TaskStatusPresentation(
             provisionState: card.provisionState,
             agentStatus: status
         )
-        let trailingStatus = isArchived
-            ? String(localized: "tasks.sidebar.archivedStatus",
-                     defaultValue: "Archived", table: "TermLoop")
-            : statusPresentation.text
-        let statusColor = isArchived ? Color.secondary : statusPresentation.color
+        let statusColor = statusPresentation.color
         return HStack(alignment: .top, spacing: 8) {
             Circle()
                 .fill(statusColor)
@@ -312,27 +256,7 @@ struct TaskSidebarTaskListView: View {
                     .truncationMode(.middle)
             }
             Spacer(minLength: 0)
-            if isArchived, let onRestore {
-                Button {
-                    onRestore(card.id)
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.uturn.backward")
-                            .font(.system(size: 9, weight: .semibold))
-                        Text(String(localized: "tasks.sidebar.archived.restore",
-                                    defaultValue: "restore", table: "TermLoop"))
-                            .font(.system(size: 10, weight: .regular))
-                    }
-                    .foregroundStyle(TermLoopSidebarTheme.dim)
-                    .lineLimit(1)
-                }
-                .buttonStyle(.plain)
-                .help(String(localized: "tasks.sidebar.archived.restore.help",
-                             defaultValue: "Restore task",
-                             table: "TermLoop"))
-            } else {
-                rowStatusPill(trailingStatus, color: statusColor)
-            }
+            rowStatusPill(statusPresentation.text, color: statusColor)
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
@@ -343,7 +267,6 @@ struct TaskSidebarTaskListView: View {
                 .stroke(rowBorderColor(card), lineWidth: 1)
         )
         .contentShape(Rectangle())
-        .opacity(isArchived ? 0.72 : 1)
         .onTapGesture {
             guard isSelectable else { return }
             selection.select(card.id)

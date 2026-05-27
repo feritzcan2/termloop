@@ -882,13 +882,48 @@ final class WorkspaceMetadataStore: ObservableObject {
         return true
     }
 
+    struct HiddenWorkspaceProjection: Equatable, Identifiable {
+        let id: UUID
+        let branch: String?
+        let cwd: String?
+        let agentId: String?
+        let title: String?
+        let projectId: UUID?
+    }
+
     /// Snapshot of every workspace id currently flagged `isHidden`, paired
-    /// with its full metadata. Used by the sidebar's "Hidden" footer which
-    /// must list workspaces that no longer have a live tab.
+    /// with its full metadata. Used by persistence, where the complete
+    /// metadata payload is required. Render paths should use the projected
+    /// variant below to avoid repeatedly copying full `Metadata` values.
     func hiddenWorkspaces() -> [(id: UUID, metadata: Metadata)] {
         byWorkspaceId.compactMap { pair in
             pair.value.isHidden == true ? (pair.key, pair.value) : nil
         }
+    }
+
+    /// Lightweight projection for UI lists that only need footer display
+    /// fields. This avoids carrying full `Metadata` values into SwiftUI render
+    /// state.
+    func hiddenWorkspaceProjections(
+        projectId activeProjectId: UUID?,
+        excludingWorkspaceIds excludedWorkspaceIds: Set<UUID> = []
+    ) -> [HiddenWorkspaceProjection] {
+        var projections: [HiddenWorkspaceProjection] = []
+        projections.reserveCapacity(byWorkspaceId.count)
+        for (id, metadata) in byWorkspaceId {
+            guard metadata.isHidden == true else { continue }
+            guard !excludedWorkspaceIds.contains(id) else { continue }
+            if let activeProjectId, metadata.projectId != activeProjectId { continue }
+            projections.append(HiddenWorkspaceProjection(
+                id: id,
+                branch: metadata.branch,
+                cwd: metadata.persistedAgentSession?.cwd,
+                agentId: metadata.persistedAgentSession?.agentId ?? metadata.terminalAgentId,
+                title: metadata.collapsedDisplayTitle,
+                projectId: metadata.projectId
+            ))
+        }
+        return projections
     }
 
     func setHideFromWorkspaceTree(_ hidden: Bool, forWorkspaceId id: UUID) {

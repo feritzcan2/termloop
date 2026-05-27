@@ -281,7 +281,6 @@
 		A9E70032A6EAC0DE00000001 /* SubmoduleInitContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70032A6EAC0DE00000002 /* SubmoduleInitContentView.swift */; };
 		A9E70050A6EAC0DE00000001 /* WorktreeGroupHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70050A6EAC0DE00000002 /* WorktreeGroupHeader.swift */; };
 		A9E70051A6EAC0DE00000001 /* WorktreeRulesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70051A6EAC0DE00000002 /* WorktreeRulesStore.swift */; };
-		A9E70053A6EAC0DE00000001 /* PlanTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70053A6EAC0DE00000002 /* PlanTab.swift */; };
 		A9E70054A6EAC0DE00000001 /* PlanFileRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70054A6EAC0DE00000002 /* PlanFileRow.swift */; };
 		A9E70055A6EAC0DE00000001 /* PlanFileScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70055A6EAC0DE00000002 /* PlanFileScanner.swift */; };
 		A9E70056A6EAC0DE00000001 /* PlanPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E70056A6EAC0DE00000002 /* PlanPicker.swift */; };
@@ -924,7 +923,6 @@
 		A9E70032A6EAC0DE00000002 /* SubmoduleInitContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/SubmoduleInitContentView.swift; sourceTree = "<group>"; };
 		A9E70050A6EAC0DE00000002 /* WorktreeGroupHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/WorktreeGroupHeader.swift; sourceTree = "<group>"; };
 		A9E70051A6EAC0DE00000002 /* WorktreeRulesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/Agents/WorktreeRulesStore.swift; sourceTree = "<group>"; };
-		A9E70053A6EAC0DE00000002 /* PlanTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/Plan/PlanTab.swift; sourceTree = "<group>"; };
 		A9E70054A6EAC0DE00000002 /* PlanFileRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/Plan/PlanFileRow.swift; sourceTree = "<group>"; };
 		A9E70055A6EAC0DE00000002 /* PlanFileScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/Plan/PlanFileScanner.swift; sourceTree = "<group>"; };
 		A9E70056A6EAC0DE00000002 /* PlanPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermLoop/UI/Plan/PlanPicker.swift; sourceTree = "<group>"; };
@@ -1932,7 +1930,6 @@
 				A9E70407A6EAC0DE00000002 /* TerminalAgentRunner.swift */,
 				F10A0002A6EAC0DE00000102 /* RunTargetStore.swift */,
 				A9E70460A6EAC0DE00000002 /* AgentSystemPromptInjector.swift */,
-				A9E70053A6EAC0DE00000002 /* PlanTab.swift */,
 				A9E70054A6EAC0DE00000002 /* PlanFileRow.swift */,
 				A9E70055A6EAC0DE00000002 /* PlanFileScanner.swift */,
 				A9E70056A6EAC0DE00000002 /* PlanPicker.swift */,
@@ -2723,7 +2720,6 @@
 				A9E70051A6EAC0DE00000001 /* WorktreeRulesStore.swift in Sources */,
 				A9E70407A6EAC0DE00000001 /* TerminalAgentRunner.swift in Sources */,
 				F10A0002A6EAC0DE00000101 /* RunTargetStore.swift in Sources */,
-				A9E70053A6EAC0DE00000001 /* PlanTab.swift in Sources */,
 				A9E70054A6EAC0DE00000001 /* PlanFileRow.swift in Sources */,
 				A9E70055A6EAC0DE00000001 /* PlanFileScanner.swift in Sources */,
 				A9E70056A6EAC0DE00000001 /* PlanPicker.swift in Sources */,

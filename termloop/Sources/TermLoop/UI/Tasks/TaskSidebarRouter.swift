@@ -118,10 +118,7 @@ struct TaskSidebarRouter: View {
                 },
                 isSyncRemoteItemsDisabled: remoteSync.isSyncing || !remoteSync.settings.isAssignedSyncEnabled,
                 isSyncRemoteItemsRunning: remoteSync.isSyncing,
-                onOpenSettings: { isShowingSettings = true },
-                onRestoreArchived: coordinator.map { c in
-                    { id in try? c.restoreTask(id) }
-                }
+                onOpenSettings: { isShowingSettings = true }
             )
         }
     }

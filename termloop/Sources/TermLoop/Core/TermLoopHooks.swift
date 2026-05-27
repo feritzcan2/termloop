@@ -541,6 +541,11 @@ enum TermLoopHooks {
 
         let grouped = Dictionary(grouping: candidates) { "\($0.agentId)|\($0.cwd)" }
         let cutoff = now.addingTimeInterval(-persistedAgentFallbackRecency)
+        let recentCodexSessionsByCwd = codexRecentBackfillSessionsByCwd(
+            for: candidates,
+            cutoff: cutoff,
+            codexScanner: codexScanner
+        )
         for (_, group) in grouped {
             guard let first = group.first else { continue }
             let sortedCandidates = group.sorted { lhs, rhs in
@@ -556,13 +561,18 @@ enum TermLoopHooks {
                 }
             }
 
-            let sessions = persistedSessionsForBackfill(
-                agentId: first.agentId,
-                cwd: first.cwd,
-                cutoff: cutoff,
-                claudeScanner: claudeScanner,
-                codexScanner: codexScanner
-            )
+            let sessions: [BackfillSessionCandidate]
+            if first.agentId == "codex" {
+                sessions = recentCodexSessionsByCwd[first.cwd] ?? []
+            } else {
+                sessions = persistedSessionsForBackfill(
+                    agentId: first.agentId,
+                    cwd: first.cwd,
+                    cutoff: cutoff,
+                    claudeScanner: claudeScanner,
+                    codexScanner: codexScanner
+                )
+            }
 
             for candidate in sortedCandidates {
                 guard let session = bestBackfillSession(
@@ -579,6 +589,37 @@ enum TermLoopHooks {
         }
 
         return didRecover
+    }
+
+    private static func codexRecentBackfillSessionsByCwd(
+        for candidates: [BackfillCandidate],
+        cutoff: Date,
+        codexScanner: CodexSessionScanner = .shared
+    ) -> [String: [BackfillSessionCandidate]] {
+        let codexCwds = Set(
+            candidates
+                .filter { $0.agentId == "codex" }
+                .map(\.cwd)
+        )
+        guard !codexCwds.isEmpty else { return [:] }
+
+        return codexScanner
+            .scanRecentUncached(cwds: codexCwds, newerThan: cutoff)
+            .mapValues { sessions in
+                sessions.map {
+                    BackfillSessionCandidate(
+                        session: PersistedAgentSession(
+                            agentId: "codex",
+                            sessionId: $0.sessionId,
+                            cwd: $0.cwd,
+                            updatedAt: $0.mtime
+                        ),
+                        title: $0.title,
+                        assistantPreview: nil,
+                        userPreview: nil
+                    )
+                }
+            }
     }
 
     static func persistedAgentSessionsForBackfill(

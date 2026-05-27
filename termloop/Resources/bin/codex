@@ -24,7 +24,7 @@ print $path;
 }
 
 resolve_explicit_codex_path() {
-    local candidate="${TERMLOOP_REAL_CODEX_PATH:-}"
+    local candidate="${1:-}"
     candidate="${candidate#"${candidate%%[![:space:]]*}"}"
     candidate="${candidate%"${candidate##*[![:space:]]}"}"
     [[ -n "$candidate" && -f "$candidate" && -x "$candidate" ]] || return 1
@@ -65,13 +65,6 @@ prepend_path_dir() {
 }
 
 find_real_codex() {
-    local explicit_codex=""
-    explicit_codex="$(resolve_explicit_codex_path 2>/dev/null || true)"
-    if [[ -n "$explicit_codex" ]]; then
-        printf '%s\n' "$explicit_codex"
-        return 0
-    fi
-
     local self_dir
     self_dir="$(cd "$(dirname "$0")" && pwd)"
 
@@ -86,6 +79,16 @@ find_real_codex() {
         printf '%s\n' "$d/codex"
         return 0
     done
+
+    # App-level discovery is only a fallback for GUI launches with a minimal
+    # PATH. The interactive shell's PATH wins after zsh/bash startup files have
+    # selected tools such as nvm, mise, bun, or Homebrew.
+    local explicit_codex=""
+    explicit_codex="$(resolve_explicit_codex_path "${TERMLOOP_REAL_CODEX_PATH:-}" 2>/dev/null || true)"
+    if [[ -n "$explicit_codex" ]]; then
+        printf '%s\n' "$explicit_codex"
+        return 0
+    fi
 
     local candidate=""
     for candidate in \
