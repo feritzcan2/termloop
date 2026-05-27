@@ -12,12 +12,16 @@ struct TaskSidebarTaskListView: View {
     var onCreateTask: ((TaskColumnId) -> UUID?)?
     var onCreateRemoteItem: (() -> Void)?
     var isCreateRemoteItemDisabled = false
+    var onSyncRemoteItems: (() -> Void)?
+    var isSyncRemoteItemsDisabled = false
+    var isSyncRemoteItemsRunning = false
     var onOpenSettings: () -> Void = {}
     var onRestoreArchived: ((UUID) -> Void)?
 
     @State private var isArchivedExpanded = false
-    @State private var isAllTasksExpanded = false
-    @State private var isRemoteItemsTipDismissed = false
+    @State private var expandedColumnIds: Set<TaskColumnId> = []
+    @AppStorage("tasks.sidebar.remoteItemsTipDismissed")
+    private var isRemoteItemsTipDismissed = false
     @ObservedObject private var metadataStore = WorkspaceMetadataStore.shared
     @ObservedObject private var activityStore = TerminalAgentActivityStore.shared
     @ObservedObject private var worktreeProjectionStore = WorktreeProjectionStore.shared
@@ -27,14 +31,20 @@ struct TaskSidebarTaskListView: View {
         let statuses = agentStatusesByTaskId
         let workItems = store.settingsSnapshot.remoteSync.isEnabled ? workItemsByTaskId : [:]
         return VStack(spacing: 0) {
+            taskListHeader
+            Divider().opacity(0.45)
+
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
-                    createButton
-                    createRemoteItemButton
-                    if isAllTasksExpanded {
+                    primaryActions
+                    remoteItemsTip
+                    if activeTaskCount == 0 {
+                        emptyState
+                    } else {
                         ForEach(store.columnSnapshots) { col in
                             if !col.cards.isEmpty {
                                 section(
+                                    columnId: col.id,
                                     title: store.columnTitle(for: col.id),
                                     cards: col.cards,
                                     statuses: statuses,
@@ -43,30 +53,60 @@ struct TaskSidebarTaskListView: View {
                             }
                         }
                     }
+                    archivedSection(
+                        cards: store.archivedSnapshots,
+                        workItems: workItems,
+                        onRestore: onRestoreArchived
+                    )
                 }
                 .padding(10)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            VStack(alignment: .leading, spacing: 10) {
-                remoteItemsTip
-                allTasksDisclosure
-                archivedSection(
-                    cards: store.archivedSnapshots,
-                    workItems: workItems,
-                    onRestore: onRestoreArchived
-                )
-                TaskSidebarSettingsButton(action: onOpenSettings)
-            }
-                .padding(10)
-                .padding(.top, 1)
-                .background(Color(nsColor: .windowBackgroundColor))
         }
+    }
+
+    private var taskListHeader: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(String(localized: "tasks.sidebar.title",
+                            defaultValue: "Tasks",
+                            table: "TermLoop"))
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.primary)
+                Text(taskCountSummary)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Button(action: onOpenSettings) {
+                Label(String(localized: "tasks.sidebar.settings.short",
+                             defaultValue: "Settings",
+                             table: "TermLoop"),
+                      systemImage: "slider.horizontal.3")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .padding(.vertical, 5)
+                    .padding(.horizontal, 8)
+                    .background(Color.accentColor.opacity(0.10))
+                    .clipShape(Capsule())
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.accentColor.opacity(0.22), lineWidth: 1)
+                    )
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(String(localized: "tasks.sidebar.settings.open",
+                         defaultValue: "Task Settings",
+                         table: "TermLoop"))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
     }
 
     @ViewBuilder
     private var remoteItemsTip: some View {
-        if !store.settingsSnapshot.remoteSync.isEnabled && !isRemoteItemsTipDismissed {
+        if !isRemoteItemsTipDismissed {
             TaskSidebarTipBanner(
                 iconSystemName: "point.3.connected.trianglepath.dotted",
                 title: String(localized: "tasks.sidebar.remote.tip.title",
@@ -87,43 +127,15 @@ struct TaskSidebarTaskListView: View {
         }
     }
 
-    @ViewBuilder
-    private var allTasksDisclosure: some View {
-        if activeTaskCount > 0 {
-            Button {
-                withAnimation(.easeInOut(duration: 0.12)) {
-                    isAllTasksExpanded.toggle()
-                }
-            } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: isAllTasksExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(TermLoopSidebarTheme.dim)
-                        .frame(width: 10)
-                    Text(allTasksDisclosureTitle)
-                        .font(.system(size: 12, weight: .medium))
-                    Spacer(minLength: 0)
-                }
-                .foregroundColor(.secondary)
-                .padding(.vertical, 7)
-                .padding(.horizontal, 8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(nsColor: .controlBackgroundColor).opacity(0.45))
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    private var allTasksDisclosureTitle: String {
-        if isAllTasksExpanded {
-            return String(localized: "tasks.sidebar.hideAllTasks",
-                          defaultValue: "Hide all tasks (\(activeTaskCount))",
+    private var taskCountSummary: String {
+        let archivedCount = store.archivedSnapshots.count
+        if archivedCount > 0 {
+            return String(localized: "tasks.sidebar.countSummary.withArchived",
+                          defaultValue: "\(activeTaskCount) active · \(archivedCount) archived",
                           table: "TermLoop")
         }
-        return String(localized: "tasks.sidebar.showAllTasks",
-                      defaultValue: "Show all tasks (\(activeTaskCount))",
+        return String(localized: "tasks.sidebar.countSummary.active",
+                      defaultValue: "\(activeTaskCount) active",
                       table: "TermLoop")
     }
 
@@ -201,25 +213,55 @@ struct TaskSidebarTaskListView: View {
     }
 
     private func section(
+        columnId: TaskColumnId,
         title: String,
         cards: [TaskCardSummary],
         statuses: [UUID: TaskAgentStatusSummary],
         workItems: [UUID: TaskWorkItemSnapshot]
     ) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Text(TermLoopSidebarTheme.adaptiveSectionTitle(title))
-                    .font(TermLoopSidebarTheme.adaptiveSectionFont(size: 11))
-                    .foregroundStyle(TermLoopSidebarTheme.adaptiveSectionColor)
-                Spacer()
-                Text("\(cards.count)")
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(TermLoopSidebarTheme.dim)
-                    .monospacedDigit()
+        let isExpanded = expandedColumnIds.contains(columnId)
+        return VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    toggleColumnExpansion(columnId)
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(TermLoopSidebarTheme.dim)
+                        .frame(width: 10)
+                    Text(TermLoopSidebarTheme.adaptiveSectionTitle(title))
+                        .font(TermLoopSidebarTheme.adaptiveSectionFont(size: 11))
+                        .foregroundStyle(TermLoopSidebarTheme.adaptiveSectionColor)
+                    Spacer()
+                    Text("\(cards.count)")
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(TermLoopSidebarTheme.dim)
+                        .monospacedDigit()
+                }
+                .contentShape(Rectangle())
             }
-            ForEach(cards) { card in
-                row(card, status: statuses[card.id], workItem: workItems[card.id])
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                ForEach(cards) { card in
+                    row(card, status: statuses[card.id], workItem: workItems[card.id])
+                }
             }
+        }
+        .padding(8)
+        .background(taskSidebarSurface.opacity(0.56))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(TermLoopSidebarTheme.rule.opacity(0.9), lineWidth: 1)
+        )
+    }
+
+    private func toggleColumnExpansion(_ columnId: TaskColumnId) {
+        if expandedColumnIds.remove(columnId) == nil {
+            expandedColumnIds.insert(columnId)
         }
     }
 
@@ -240,15 +282,29 @@ struct TaskSidebarTaskListView: View {
                      defaultValue: "Archived", table: "TermLoop")
             : statusPresentation.text
         let statusColor = isArchived ? Color.secondary : statusPresentation.color
-        return HStack(alignment: .center, spacing: 7) {
+        return HStack(alignment: .top, spacing: 8) {
             Circle()
                 .fill(statusColor)
                 .frame(width: 6, height: 6)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(rowTitle(card, workItem: workItem))
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
+                .padding(.top, 7)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(rowTitle(card, workItem: workItem))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                    if let workItem {
+                        Text(workItem.key)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Color.accentColor)
+                            .lineLimit(1)
+                            .padding(.vertical, 1)
+                            .padding(.horizontal, 5)
+                            .background(Color.accentColor.opacity(0.10))
+                            .clipShape(Capsule())
+                    }
+                }
                 Text(rowSubtitle(card))
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
@@ -256,12 +312,6 @@ struct TaskSidebarTaskListView: View {
                     .truncationMode(.middle)
             }
             Spacer(minLength: 0)
-            if let workItem {
-                Text(workItem.key)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .lineLimit(1)
-            }
             if isArchived, let onRestore {
                 Button {
                     onRestore(card.id)
@@ -281,22 +331,35 @@ struct TaskSidebarTaskListView: View {
                              defaultValue: "Restore task",
                              table: "TermLoop"))
             } else {
-                Text(trailingStatus)
-                    .font(.system(size: 10, weight: .regular))
-                    .foregroundStyle(statusColor)
-                    .lineLimit(1)
+                rowStatusPill(trailingStatus, color: statusColor)
             }
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
         .background(rowBackground(card))
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(rowBorderColor(card), lineWidth: 1)
+        )
         .contentShape(Rectangle())
         .opacity(isArchived ? 0.72 : 1)
         .onTapGesture {
             guard isSelectable else { return }
             selection.select(card.id)
         }
+    }
+
+    private func rowStatusPill(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .padding(.vertical, 2)
+            .padding(.horizontal, 6)
+            .background(color.opacity(0.10))
+            .clipShape(Capsule())
+            .padding(.top, 1)
     }
 
     private func rowSubtitle(_ card: TaskCardSummary) -> String {
@@ -314,51 +377,147 @@ struct TaskSidebarTaskListView: View {
         workItem?.title ?? card.title
     }
 
-    private var createButton: some View {
-        Button(action: createTask) {
-            HStack(spacing: 6) {
-                Image(systemName: "plus")
-                Text(String(localized: "tasks.sidebar.newTask",
-                            defaultValue: "New task", table: "TermLoop"))
+    private var primaryActions: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                createButton
+                settingsActionButton
             }
-            .font(.system(size: 12, weight: .medium))
-            .foregroundColor(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 7)
-            .padding(.horizontal, 8)
-            .background(Color(nsColor: .controlBackgroundColor).opacity(0.45))
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            if store.settingsSnapshot.remoteSync.isEnabled {
+                VStack(spacing: 8) {
+                    createRemoteItemButton
+                    syncRemoteItemsButton
+                }
+            }
         }
-        .buttonStyle(.plain)
+    }
+
+    private var createButton: some View {
+        taskActionButton(
+            title: String(localized: "tasks.sidebar.newTask",
+                          defaultValue: "New task",
+                          table: "TermLoop"),
+            systemImage: "plus",
+            tint: .accentColor,
+            isProminent: true,
+            isDisabled: onCreateTask == nil,
+            isRunning: false,
+            action: createTask
+        )
+    }
+
+    private var settingsActionButton: some View {
+        taskActionButton(
+            title: String(localized: "tasks.sidebar.settings.open",
+                          defaultValue: "Task Settings",
+                          table: "TermLoop"),
+            systemImage: "slider.horizontal.3",
+            tint: .accentColor,
+            isProminent: false,
+            isDisabled: false,
+            isRunning: false,
+            action: onOpenSettings
+        )
     }
 
     @ViewBuilder
     private var createRemoteItemButton: some View {
-        if store.settingsSnapshot.remoteSync.isEnabled, let onCreateRemoteItem {
-            Button(action: onCreateRemoteItem) {
-                HStack(spacing: 7) {
-                    Image(systemName: "point.3.connected.trianglepath.dotted")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text(String(localized: "tasks.sidebar.createRemoteItem",
-                                defaultValue: "Create remote item",
-                                table: "TermLoop"))
-                        .font(.system(size: 12, weight: .medium))
-                    Spacer(minLength: 0)
-                    Image(systemName: "plus.circle")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(TermLoopSidebarTheme.dim)
-                }
-                .foregroundColor(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 7)
-                .padding(.horizontal, 8)
-                .background(Color.accentColor.opacity(0.10))
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .disabled(isCreateRemoteItemDisabled)
-            .opacity(isCreateRemoteItemDisabled ? 0.65 : 1)
+        if let onCreateRemoteItem {
+            taskActionButton(
+                title: String(localized: "tasks.sidebar.createRemoteItem.short",
+                              defaultValue: "Create remote",
+                              table: "TermLoop"),
+                systemImage: "point.3.connected.trianglepath.dotted",
+                tint: .blue,
+                isProminent: false,
+                isDisabled: isCreateRemoteItemDisabled,
+                isRunning: false,
+                action: onCreateRemoteItem
+            )
         }
+    }
+
+    @ViewBuilder
+    private var syncRemoteItemsButton: some View {
+        if let onSyncRemoteItems {
+            taskActionButton(
+                title: String(localized: "tasks.sidebar.syncRemoteItems",
+                              defaultValue: "Sync remote items",
+                              table: "TermLoop"),
+                systemImage: "arrow.triangle.2.circlepath",
+                tint: .blue,
+                isProminent: false,
+                isDisabled: isSyncRemoteItemsDisabled,
+                isRunning: isSyncRemoteItemsRunning,
+                action: onSyncRemoteItems
+            )
+        }
+    }
+
+    private func taskActionButton(
+        title: String,
+        systemImage: String,
+        tint: Color,
+        isProminent: Bool,
+        isDisabled: Bool,
+        isRunning: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if isRunning {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 12, height: 12)
+                } else {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isProminent ? Color.white : tint)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 9)
+            .background(isProminent ? tint : tint.opacity(0.10))
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .stroke(tint.opacity(isProminent ? 0 : 0.20), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .opacity(isDisabled ? 0.55 : 1)
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Image(systemName: "checklist.unchecked")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+            Text(String(localized: "tasks.sidebar.empty.title",
+                        defaultValue: "No tasks yet",
+                        table: "TermLoop"))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.primary)
+            Text(String(localized: "tasks.sidebar.empty.subtitle",
+                        defaultValue: "Create a task to start a dedicated worktree and launch agents from here.",
+                        table: "TermLoop"))
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(taskSidebarSurface.opacity(0.58))
+        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .stroke(TermLoopSidebarTheme.rule.opacity(0.9), lineWidth: 1)
+        )
     }
 
     private func rowBackground(_ card: TaskCardSummary) -> Color {
@@ -368,10 +527,21 @@ struct TaskSidebarTaskListView: View {
         if case .failed = card.provisionState {
             return Color.red.opacity(0.07)
         }
-        // Resting rows now sit on the sidebar material — drop the per-row
-        // `controlBackgroundColor` wash so the list reads like the Work tab
-        // (one surface, signal carried by the leading dot + state text).
-        return Color.clear
+        return taskSidebarSurface.opacity(0.40)
+    }
+
+    private func rowBorderColor(_ card: TaskCardSummary) -> Color {
+        if selection.selectedTaskId == card.id {
+            return Color.accentColor.opacity(0.28)
+        }
+        if case .failed = card.provisionState {
+            return Color.red.opacity(0.16)
+        }
+        return TermLoopSidebarTheme.rule.opacity(0.55)
+    }
+
+    private var taskSidebarSurface: Color {
+        Color(nsColor: .controlBackgroundColor)
     }
 
     private func createTask() {
