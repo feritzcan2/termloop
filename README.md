@@ -26,7 +26,7 @@
 
 ## What TermLoop is
 
-TermLoop is a terminal built for the agent-driven development loop: launch agents, manage worktrees, sync tasks, review changes, and coordinate multiple agent sessions without losing context.
+TermLoop is a terminal built for agent-driven development: launch agents, manage worktrees, sync tasks, review changes, and coordinate multiple agent sessions without losing context.
 
 It works with the tools you already use: Claude Code, Codex, Gemini CLI, Aider, Cline, OpenCode, and any other CLI-based agent.
 
@@ -40,6 +40,15 @@ Launch your preferred coding agent with the right context from one shortcut. Sav
 </td>
 <td width="60%">
 <img src="./termloop/docs/assets/quick-actions.gif" alt="Quick Actions panel launching coding agents" width="600" />
+</td>
+</tr>
+<tr>
+<td width="40%" valign="middle">
+<h3>Sidebar — every thread, one rail</h3>
+Branch, PR status, dirty file count, port forwards, agent state, and running previews are visible at a glance. Skim many active threads without switching tabs.
+</td>
+<td width="60%">
+<img src="./termloop/docs/assets/sidebar.png" alt="TermLoop sidebar showing open PRs, merged PRs, worktree agents, active agents, and running previews" width="400" />
 </td>
 </tr>
 <tr>
@@ -107,7 +116,7 @@ Turn an agent conversation into a real task. TermLoop proposes a task descriptio
 </tr>
 </table>
 
-## More agent-loop tools
+## More TermLoop tools
 
 - **Built-in setup agents** — Generate run profiles and local setup for the project. TermLoop can inspect your repo and propose dev servers, test runners, typecheckers, Storybook, workers, docs servers, env/config preparation, dependency setup, and other per-worktree commands.
 - **Multiple agent accounts** — Use different Claude and Codex accounts across projects or workflows without constantly switching terminal auth state.
