@@ -133,7 +133,10 @@ final class WorktreeCoordinator: ObservableObject {
             createdWorktree = false
             createdBranch = false
             resolvesToMain = true
-        } else if let existing = worktrees.first(where: { $0.branch == trimmed }) {
+        } else if let existing = try service.existingUsableWorktree(
+            in: project.folderPath,
+            branch: trimmed
+        ) {
             effectivePath = existing.path
             createdWorktree = false
             createdBranch = false

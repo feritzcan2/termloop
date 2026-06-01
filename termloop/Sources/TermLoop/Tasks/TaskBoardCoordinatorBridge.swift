@@ -45,8 +45,7 @@ public final class TaskBoardWorktreeProvisioner: TaskBoundWorktreeProvisioning {
         }
 
         let service = GitWorktreeService()
-        let existing = try service.list(in: projectRoot.path)
-            .first { $0.branch == branch }
+        let existing = try service.existingUsableWorktree(in: projectRoot.path, branch: branch)
         let effectivePath: String
         let createdWorktree: Bool
         if let existing {

@@ -58,6 +58,31 @@ struct GitWorktreeService {
         return parsed
     }
 
+    func existingUsableWorktree(in folder: String, branch rawBranch: String) throws -> ListEntry? {
+        let branch = rawBranch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !branch.isEmpty else { return nil }
+        func match(_ entries: [ListEntry]) -> ListEntry? {
+            entries.first { $0.branch == branch }
+        }
+
+        guard let entry = match(try list(in: folder)) else { return nil }
+        guard !Self.isUsableWorktreeEntry(entry) else { return entry }
+
+        try prune(folder: folder)
+        guard let refreshed = match(try list(in: folder)) else { return nil }
+        guard Self.isUsableWorktreeEntry(refreshed) else {
+            throw WorktreeError.worktreeMissingOnDisk(path: refreshed.path)
+        }
+        return refreshed
+    }
+
+    static func isUsableWorktreeEntry(_ entry: ListEntry) -> Bool {
+        guard !entry.isPrunable else { return false }
+        var isDirectory = ObjCBool(false)
+        return FileManager.default.fileExists(atPath: entry.path, isDirectory: &isDirectory)
+            && isDirectory.boolValue
+    }
+
     func add(folder: String, path: String, branch: String) throws {
         #if DEBUG
         Self.debugLog("add.begin folder=\(folder) path=\(path) branch=\(branch)")
@@ -327,7 +352,7 @@ struct GitWorktreeService {
         let out = try run(["branch", "--list", "--format=\(format)"], in: folder)
         let worktrees = try list(in: folder)
         var checkoutByBranch: [String: String] = [:]
-        for w in worktrees {
+        for w in worktrees where Self.isUsableWorktreeEntry(w) {
             if let b = w.branch { checkoutByBranch[b] = w.path }
         }
 

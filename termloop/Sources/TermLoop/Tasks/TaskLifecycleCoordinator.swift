@@ -204,7 +204,7 @@ public final class TaskLifecycleCoordinator {
         do {
             result = try await worktrees.provision(
                 projectRoot: store.projectRoot,
-                branchHint: branchHint ?? task.branch ?? slugFrom(title: task.title),
+                branchHint: branchHint ?? defaultBranchHint(for: task),
                 allowDirty: allowDirty
             )
         } catch {
@@ -430,6 +430,17 @@ public final class TaskLifecycleCoordinator {
         return TaskRanking.after(last)
     }
 
+    private func defaultBranchHint(for task: TaskRecord) -> String {
+        if let branch = normalizedNonEmpty(task.branch) {
+            return branch
+        }
+        if let key = task.remoteWorkItem?.key,
+           let component = branchComponent(from: key) {
+            return "feature/\(component)"
+        }
+        return slugFrom(title: task.title)
+    }
+
     private func slugFrom(title: String) -> String {
         let lower = title.lowercased()
         let allowed = lower.unicodeScalars
@@ -437,7 +448,30 @@ public final class TaskLifecycleCoordinator {
         let collapsed = String(allowed)
             .split(separator: "-", omittingEmptySubsequences: true)
             .joined(separator: "-")
-        return "feat/\(collapsed)-\(UUID().uuidString.prefix(4))"
+        let slug = collapsed.isEmpty ? "task" : collapsed
+        return "feature/\(slug)-\(UUID().uuidString.prefix(4))"
+    }
+
+    private func branchComponent(from value: String) -> String? {
+        let allowed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .unicodeScalars
+            .map { scalar -> Character in
+                if CharacterSet.alphanumerics.contains(scalar) ||
+                    CharacterSet(charactersIn: "-_.").contains(scalar) {
+                    return Character(scalar)
+                }
+                return "-"
+            }
+        let component = String(allowed)
+            .split(separator: "-", omittingEmptySubsequences: true)
+            .joined(separator: "-")
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".-_"))
+        return component.isEmpty ? nil : component
+    }
+
+    private func normalizedNonEmpty(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
