@@ -1,6 +1,6 @@
 {
   "name": "terminal-app",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "main": "expo-router/entry",
   "private": true,
   "scripts": {
