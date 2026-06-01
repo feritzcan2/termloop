@@ -244,6 +244,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
             }
             lastMessage = nil
             if enabled {
+                ensureCodexMCPConfigForRemotePromotion()
                 prepareRemoteSettings()
             } else {
                 syncTask?.cancel()
@@ -326,8 +327,13 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
             lastMessage = String(describing: error)
         }
         if enabled {
+            ensureCodexMCPConfigForRemotePromotion()
             syncAssignedToMe(reason: "tasks.settings.toggle")
         }
+    }
+
+    private func ensureCodexMCPConfigForRemotePromotion() {
+        TermLoopCodexHooks.ensureGlobalCodexConfigInstalled()
     }
 
     public func setAssignedSyncLimit(_ limit: Int) {

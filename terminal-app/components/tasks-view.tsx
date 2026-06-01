@@ -339,11 +339,15 @@ function RemoteSyncBar({
   if (!context) return null;
   const provider = context.provider_label || context.provider || "Remote";
   const enabled = context.enabled;
-  const canSync =
+  const showSyncButton =
     enabled &&
+    (context.can_sync_assigned ||
+      hasRemoteTasks ||
+      context.provider.toLowerCase() === "jira");
+  const canSync =
+    showSyncButton &&
     !busy &&
-    !context.is_syncing &&
-    (context.can_sync_assigned || hasRemoteTasks);
+    !context.is_syncing;
   const status = !enabled
     ? "Off on Mac"
     : context.is_syncing || busy
@@ -372,7 +376,7 @@ function RemoteSyncBar({
           {context.last_error || context.last_message || status}
         </Text>
       </View>
-      {context.can_sync_assigned || hasRemoteTasks ? (
+      {showSyncButton ? (
         <Pressable
           style={[styles.remoteSyncBtn, !canSync && styles.remoteSyncBtnOff]}
           onPress={onSync}
@@ -381,7 +385,11 @@ function RemoteSyncBar({
           {busy || context.is_syncing ? (
             <ActivityIndicator color={colors.primary} size="small" />
           ) : (
-            <Text style={styles.remoteSyncText}>Sync {provider}</Text>
+            <Text style={styles.remoteSyncText} numberOfLines={1}>
+              {context.provider.toLowerCase() === "jira"
+                ? "Sync Jira issues"
+                : "Sync issues"}
+            </Text>
           )}
         </Pressable>
       ) : null}
@@ -773,7 +781,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   remoteSyncBtn: {
-    minWidth: 56,
+    minWidth: 112,
     minHeight: 30,
     borderRadius: radii.sm,
     borderWidth: 1,

@@ -993,6 +993,7 @@ struct NewWorkspaceWithWorktreeForm: View {
         enum PathMatch {
             case safeReuse(GitWorktreeService.ListEntry)
             case collision(GitWorktreeService.ListEntry)
+            case stale(GitWorktreeService.ListEntry)
             case none
         }
 
@@ -1004,6 +1005,9 @@ struct NewWorkspaceWithWorktreeForm: View {
         // the wrong commit.
         func classify(_ entries: [GitWorktreeService.ListEntry]) -> PathMatch {
             if let byBranch = entries.first(where: { $0.branch == trimmedBranch }) {
+                guard GitWorktreeService.isUsableWorktreeEntry(byBranch) else {
+                    return .stale(byBranch)
+                }
                 return .safeReuse(byBranch)
             }
             guard let byPath = entries.first(where: {
@@ -1011,6 +1015,9 @@ struct NewWorkspaceWithWorktreeForm: View {
                     == normalizedResolvedPath
             }) else {
                 return .none
+            }
+            guard GitWorktreeService.isUsableWorktreeEntry(byPath) else {
+                return .stale(byPath)
             }
             if byPath.branch == trimmedBranch {
                 return .safeReuse(byPath)
@@ -1037,6 +1044,20 @@ struct NewWorkspaceWithWorktreeForm: View {
         case .collision(let entry):
             throw NewWorkspaceWithWorktreeError
                 .pathOccupiedByOtherWorktree(path: entry.path, branch: entry.branch)
+        case .stale:
+            try service.prune(folder: projectFolder)
+            worktrees = try service.list(in: projectFolder)
+            switch classify(worktrees) {
+            case .safeReuse(let entry):
+                return prepared(from: entry)
+            case .collision(let entry):
+                throw NewWorkspaceWithWorktreeError
+                    .pathOccupiedByOtherWorktree(path: entry.path, branch: entry.branch)
+            case .stale(let entry):
+                throw WorktreeError.worktreeMissingOnDisk(path: entry.path)
+            case .none:
+                break
+            }
         case .none:
             break
         }
@@ -1058,6 +1079,8 @@ struct NewWorkspaceWithWorktreeForm: View {
                 case .collision(let entry):
                     throw NewWorkspaceWithWorktreeError
                         .pathOccupiedByOtherWorktree(path: entry.path, branch: entry.branch)
+                case .stale:
+                    break
                 case .none:
                     break
                 }
@@ -1077,10 +1100,14 @@ struct NewWorkspaceWithWorktreeForm: View {
                 case .collision(let entry):
                     throw NewWorkspaceWithWorktreeError
                         .pathOccupiedByOtherWorktree(path: entry.path, branch: entry.branch)
+                case .stale(let entry):
+                    throw WorktreeError.worktreeMissingOnDisk(path: entry.path)
                 case .none:
                     break
                 }
             } catch let error as NewWorkspaceWithWorktreeError {
+                throw error
+            } catch let error as WorktreeError {
                 throw error
             } catch {
                 // Prune failed for a non-collision reason (transient git

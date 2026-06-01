@@ -442,6 +442,51 @@ final class TerminalAgentRunnerForkTests: XCTestCase {
 }
 
 final class GitWorktreeServiceRemovalTests: XCTestCase {
+    func testExistingUsableWorktreePrunesMissingRegistration() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("git-worktree-stale-\(UUID().uuidString)", isDirectory: true)
+        let repo = root.appendingPathComponent("repo", isDirectory: true)
+        let missing = repo
+            .appendingPathComponent(".termloop-worktrees", isDirectory: true)
+            .appendingPathComponent("feature__gone", isDirectory: true)
+        let state = root.appendingPathComponent("state")
+        defer { try? fileManager.removeItem(at: root) }
+
+        try fileManager.createDirectory(at: repo, withIntermediateDirectories: true)
+        try "stale".write(to: state, atomically: true, encoding: .utf8)
+
+        let fakeGit = root.appendingPathComponent("git")
+        let script = """
+        #!/bin/sh
+        state="\(state.path)"
+        if [ "$1" = "worktree" ] && [ "$2" = "list" ]; then
+          printf 'worktree %s\\nHEAD abc123\\nbranch refs/heads/main\\n\\n' "$PWD"
+          if [ "$(cat "$state")" = "stale" ]; then
+            printf 'worktree %s\\nHEAD def456\\nbranch refs/heads/feature/gone\\nprunable gitdir file points to non-existent location\\n\\n' "\(missing.path)"
+          fi
+          exit 0
+        fi
+        if [ "$1" = "worktree" ] && [ "$2" = "prune" ]; then
+          printf 'pruned' > "$state"
+          exit 0
+        fi
+        echo "unexpected git $*" >&2
+        exit 2
+        """
+        try script.write(to: fakeGit, atomically: true, encoding: .utf8)
+        try fileManager.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o755))],
+            ofItemAtPath: fakeGit.path
+        )
+
+        let entry = try GitWorktreeService(gitPath: fakeGit.path)
+            .existingUsableWorktree(in: repo.path, branch: "feature/gone")
+
+        XCTAssertNil(entry)
+        XCTAssertEqual(try String(contentsOf: state, encoding: .utf8), "pruned")
+    }
+
     func testRemoveCleansFilesystemWhenGitAlreadyUnregisteredWorktree() throws {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory
