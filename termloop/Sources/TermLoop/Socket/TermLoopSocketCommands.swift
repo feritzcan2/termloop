@@ -1141,12 +1141,21 @@ enum TermLoopSocketCommands {
             throw MobileWorktreeCreateError.pathResolutionFailed
         }
 
-        let entries = try service.list(in: projectFolder)
+        var entries = try service.list(in: projectFolder)
         if let main = entries.first(where: { $0.isMain }),
            main.branch == branch {
             throw MobileWorktreeCreateError.branchMatchesMainCheckout(branch)
         }
         if let existing = entries.first(where: { $0.branch == branch }) {
+            if !GitWorktreeService.isUsableWorktreeEntry(existing) {
+                try service.prune(folder: projectFolder)
+                entries = try service.list(in: projectFolder)
+            }
+        }
+        if let existing = entries.first(where: { $0.branch == branch }) {
+            guard GitWorktreeService.isUsableWorktreeEntry(existing) else {
+                throw WorktreeError.worktreeMissingOnDisk(path: existing.path)
+            }
             return PreparedMobileWorktree(
                 branch: branch,
                 path: existing.path,
@@ -1156,8 +1165,22 @@ enum TermLoopSocketCommands {
         }
 
         let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        if entries.contains(where: {
+            URL(fileURLWithPath: $0.path).standardizedFileURL.path == normalizedPath
+                && !GitWorktreeService.isUsableWorktreeEntry($0)
+        }) {
+            try service.prune(folder: projectFolder)
+            entries = try service.list(in: projectFolder)
+            if let remaining = entries.first(where: {
+                URL(fileURLWithPath: $0.path).standardizedFileURL.path == normalizedPath
+                    && !GitWorktreeService.isUsableWorktreeEntry($0)
+            }) {
+                throw WorktreeError.worktreeMissingOnDisk(path: remaining.path)
+            }
+        }
         if let collision = entries.first(where: {
             URL(fileURLWithPath: $0.path).standardizedFileURL.path == normalizedPath
+                && GitWorktreeService.isUsableWorktreeEntry($0)
         }) {
             throw MobileWorktreeCreateError.pathOccupiedByOtherWorktree(
                 path: collision.path,

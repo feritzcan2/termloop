@@ -317,7 +317,7 @@ public enum RemoteTaskPromotionCoordinator {
             throw TaskLifecycleError.provisionFailed("Could not resolve worktree path.")
         }
         let service = GitWorktreeService()
-        if let existing = try service.list(in: projectPath).first(where: { $0.branch == branch }) {
+        if let existing = try service.existingUsableWorktree(in: projectPath, branch: branch) {
             return PreparedWorktree(
                 branch: branch,
                 path: existing.path,

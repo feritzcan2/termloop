@@ -52,6 +52,40 @@
         }
       }
     },
+    "activeAgents.inlineDelete.agentPrompt": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete agent?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントを削除しますか？"
+          }
+        }
+      }
+    },
+    "activeAgents.inlineDelete.agentTooltip": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete agent"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントを削除"
+          }
+        }
+      }
+    },
     "activeAgents.inlineDelete.no": {
       "extractionState": "manual",
       "localizations": {
@@ -75,13 +109,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Delete workspace?"
+            "value": "Delete agent?"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ワークスペースを削除しますか？"
+            "value": "エージェントを削除しますか？"
           }
         }
       }
@@ -92,13 +126,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Close workspace"
+            "value": "Delete agent"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ワークスペースを閉じる"
+            "value": "エージェントを削除"
           }
         }
       }
