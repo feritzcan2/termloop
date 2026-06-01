@@ -230,11 +230,11 @@ enum TermLoopTaskSocketCommands {
 
         if let workspaceId = task.workspaceId,
            AppDelegate.shared?.workspaceFor(tabId: workspaceId) != nil {
-            // Already bound — just (re)set the terminal agent metadata so the
-            // mobile client can land on a configured workspace.
-            if let agentId {
-                WorkspaceMetadataStore.shared.setTerminalAgentId(agentId, for: workspaceId)
-            }
+            launchTaskAgentIfPossible(
+                explicitAgentId: agentId,
+                workspaceId: workspaceId,
+                cwd: task.worktreePath
+            )
             return .ok([
                 "task_id": taskId.uuidString,
                 "workspace_id": workspaceId.uuidString,
@@ -256,10 +256,13 @@ enum TermLoopTaskSocketCommands {
         Task {
             do {
                 try await coordinator.bindWorktree(taskId: taskId, allowDirty: allowDirty)
-                if let agentId,
-                   let updated = store.fileSnapshot().tasks.first(where: { $0.id == taskId }),
+                if let updated = store.fileSnapshot().tasks.first(where: { $0.id == taskId }),
                    let wsId = updated.workspaceId {
-                    WorkspaceMetadataStore.shared.setTerminalAgentId(agentId, for: wsId)
+                    launchTaskAgentIfPossible(
+                        explicitAgentId: agentId,
+                        workspaceId: wsId,
+                        cwd: updated.worktreePath
+                    )
                 }
             } catch {
                 #if DEBUG
@@ -271,6 +274,33 @@ enum TermLoopTaskSocketCommands {
             "task_id": taskId.uuidString,
             "status": "provisioning"
         ])
+    }
+
+    @discardableResult
+    private static func launchTaskAgentIfPossible(
+        explicitAgentId: String?,
+        workspaceId: UUID,
+        cwd: String?
+    ) -> TerminalAgentLifecycle.LaunchOutcome? {
+        guard let workspace = AppDelegate.shared?.workspaceFor(tabId: workspaceId) else {
+            return nil
+        }
+        let resolvedAgentId = TerminalAgentLifecycle.resolveAgentId(
+            explicit: explicitAgentId,
+            workspaceId: workspaceId
+        )
+        guard let agent = TerminalAgentRegistry.shared.agent(id: resolvedAgentId) else {
+            #if DEBUG
+            print("tasks.start_agent launch failed: unknown agent \(resolvedAgentId)")
+            #endif
+            return nil
+        }
+        WorkspaceMetadataStore.shared.setTerminalAgentId(resolvedAgentId, for: workspaceId)
+        return TerminalAgentLifecycle.launchInExistingWorkspace(
+            in: workspace,
+            agent: agent,
+            cwd: cwd ?? workspace.termLoopPresentationCwd()
+        )
     }
 
     private static func tasksRemoteContext(_ params: [String: Any]) -> TerminalController.V2CallResult {

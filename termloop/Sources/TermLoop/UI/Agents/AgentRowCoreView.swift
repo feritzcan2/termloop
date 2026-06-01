@@ -2,6 +2,7 @@
 // Part of TermLoop — GPL-3.0-or-later
 
 import SwiftUI
+import AppKit
 
 /// Typed trailing-slot data. Kept Equatable so panels memoizing on their
 /// snapshot `==` stay stable; the tap action is a separate closure on the core
@@ -32,7 +33,7 @@ enum AgentRowTrailingSlot: Equatable {
 /// memoization used on sidebar hot paths.
 enum AgentRowDismissBehavior {
     case none
-    /// × opens a "Delete workspace?" popover; Yes fires `onConfirm`.
+    /// × opens a "Delete agent?" popover; Yes fires `onConfirm`.
     case confirmClose(onConfirm: () -> Void)
 
     var isActive: Bool {
@@ -116,6 +117,7 @@ struct AgentRowCoreView: View, Equatable {
     @State private var isHovering = false
     @State private var isDeletePopoverPresented = false
     @State private var hasBeenTapped = false
+    @FocusState private var isDeletePopoverFocused: Bool
 
     private var isAcknowledgeable: Bool {
         switch core.displayState {
@@ -187,8 +189,8 @@ struct AgentRowCoreView: View, Equatable {
 
     private var xButtonTooltip: String {
         String(
-            localized: "activeAgents.inlineDelete.tooltip",
-            defaultValue: "Close workspace",
+            localized: "activeAgents.inlineDelete.agentTooltip",
+            defaultValue: "Delete agent",
             table: "TermLoop"
         )
     }
@@ -205,6 +207,14 @@ struct AgentRowCoreView: View, Equatable {
             onAcknowledgeAttention?()
         }
         onActivate()
+    }
+
+    private func confirmDelete() {
+        guard isDeletePopoverPresented else { return }
+        isDeletePopoverPresented = false
+        if case .confirmClose(let onConfirm) = dismissBehavior {
+            onConfirm()
+        }
     }
 
     private var descriptionText: String? {
@@ -461,16 +471,16 @@ struct AgentRowCoreView: View, Equatable {
         .allowsHitTesting(true)
         .help(xButtonTooltip)
         .popover(isPresented: $isDeletePopoverPresented, arrowEdge: .trailing) {
-            deleteWorkspacePopover
+            deleteAgentPopover
         }
     }
 
     @ViewBuilder
-    private var deleteWorkspacePopover: some View {
+    private var deleteAgentPopover: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(String(
-                localized: "activeAgents.inlineDelete.prompt",
-                defaultValue: "Delete workspace?",
+                localized: "activeAgents.inlineDelete.agentPrompt",
+                defaultValue: "Delete agent?",
                 table: "TermLoop"
             ))
             .font(.system(size: 13, weight: .semibold))
@@ -488,10 +498,7 @@ struct AgentRowCoreView: View, Equatable {
                 Spacer()
 
                 Button(role: .destructive) {
-                    isDeletePopoverPresented = false
-                    if case .confirmClose(let onConfirm) = dismissBehavior {
-                        onConfirm()
-                    }
+                    confirmDelete()
                 } label: {
                     Text(String(
                         localized: "activeAgents.inlineDelete.yes",
@@ -504,5 +511,114 @@ struct AgentRowCoreView: View, Equatable {
         }
         .padding(12)
         .frame(minWidth: 220, alignment: .leading)
+        .focusable()
+        .focused($isDeletePopoverFocused)
+        .onAppear {
+            isDeletePopoverFocused = true
+        }
+        .onKeyPress(.return) {
+            confirmDelete()
+            return .handled
+        }
+        .background(
+            AgentDeletePopoverKeyMonitor(
+                onConfirm: confirmDelete,
+                onCancel: { isDeletePopoverPresented = false }
+            )
+            .frame(width: 0, height: 0)
+        )
+    }
+}
+
+private struct AgentDeletePopoverKeyMonitor: NSViewRepresentable {
+    let onConfirm: () -> Void
+    let onCancel: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onConfirm: onConfirm, onCancel: onCancel)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        context.coordinator.attach(to: view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.onConfirm = onConfirm
+        context.coordinator.onCancel = onCancel
+        context.coordinator.attach(to: nsView)
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.detach()
+    }
+
+    final class Coordinator {
+        var onConfirm: () -> Void
+        var onCancel: () -> Void
+
+        private weak var window: NSWindow?
+        private var keyMonitor: Any?
+
+        init(onConfirm: @escaping () -> Void, onCancel: @escaping () -> Void) {
+            self.onConfirm = onConfirm
+            self.onCancel = onCancel
+        }
+
+        deinit {
+            detach()
+        }
+
+        func attach(to view: NSView) {
+            DispatchQueue.main.async { [weak self, weak view] in
+                guard let self, let view, let window = view.window else { return }
+                self.window = window
+                if let panel = window as? NSPanel {
+                    panel.becomesKeyOnlyIfNeeded = false
+                }
+                window.makeKeyAndOrderFront(nil)
+                self.installMonitorIfNeeded()
+            }
+        }
+
+        func detach() {
+            if let keyMonitor {
+                NSEvent.removeMonitor(keyMonitor)
+                self.keyMonitor = nil
+            }
+            window = nil
+        }
+
+        private func installMonitorIfNeeded() {
+            guard keyMonitor == nil else { return }
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, let window = self.window, window.isVisible else { return event }
+
+                let shortcutModifiers = event.modifierFlags.intersection([.command, .control, .option])
+                guard shortcutModifiers.isEmpty else { return event }
+
+                if Self.isReturn(event) {
+                    DispatchQueue.main.async { [weak self] in self?.onConfirm() }
+                    return nil
+                }
+                if Self.isEscape(event) {
+                    DispatchQueue.main.async { [weak self] in self?.onCancel() }
+                    return nil
+                }
+                return event
+            }
+        }
+
+        private static func isReturn(_ event: NSEvent) -> Bool {
+            event.keyCode == 36
+                || event.keyCode == 76
+                || event.charactersIgnoringModifiers == "\r"
+                || event.charactersIgnoringModifiers == "\u{3}"
+        }
+
+        private static func isEscape(_ event: NSEvent) -> Bool {
+            event.keyCode == 53 || event.charactersIgnoringModifiers == "\u{1b}"
+        }
     }
 }
