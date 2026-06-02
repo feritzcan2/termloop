@@ -225,22 +225,36 @@ enum TermLoopTaskSocketCommands {
             return .err(code: "not_found", message: "Task not found", data: nil)
         }
         let agentId = nonEmptyParam(params, "terminal_agent_id")
+        let promptText = nonEmptyParam(params, "prompt_text")
         let allowDirty = (params["allow_dirty"] as? Bool) ?? false
         let coordinator = TaskLifecycleCoordinator.makeForProject(store: store)
 
         if let workspaceId = task.workspaceId,
            AppDelegate.shared?.workspaceFor(tabId: workspaceId) != nil {
-            launchTaskAgentIfPossible(
+            guard let outcome = launchTaskAgentIfPossible(
                 explicitAgentId: agentId,
                 workspaceId: workspaceId,
-                cwd: task.worktreePath
-            )
+                cwd: task.worktreePath,
+                projectId: store.projectId,
+                branch: task.branch,
+                promptText: promptText
+            ) else {
+                return .err(
+                    code: "agent_launch_failed",
+                    message: "Could not launch the selected agent in this task workspace.",
+                    data: ["workspace_id": workspaceId.uuidString]
+                )
+            }
+            if let error = launchOutcomeError(outcome, workspaceId: workspaceId) {
+                return error
+            }
             return .ok([
                 "task_id": taskId.uuidString,
                 "workspace_id": workspaceId.uuidString,
                 "worktree_path": orNull(task.worktreePath),
                 "branch": orNull(task.branch),
-                "status": "ready"
+                "status": "ready",
+                "launch_mode": launchModeString(outcome)
             ])
         }
 
@@ -261,7 +275,10 @@ enum TermLoopTaskSocketCommands {
                     launchTaskAgentIfPossible(
                         explicitAgentId: agentId,
                         workspaceId: wsId,
-                        cwd: updated.worktreePath
+                        cwd: updated.worktreePath,
+                        projectId: store.projectId,
+                        branch: updated.branch,
+                        promptText: promptText
                     )
                 }
             } catch {
@@ -280,12 +297,23 @@ enum TermLoopTaskSocketCommands {
     private static func launchTaskAgentIfPossible(
         explicitAgentId: String?,
         workspaceId: UUID,
-        cwd: String?
+        cwd: String?,
+        projectId: UUID,
+        branch: String?,
+        promptText: String?
     ) -> TerminalAgentLifecycle.LaunchOutcome? {
         guard let workspace = AppDelegate.shared?.workspaceFor(tabId: workspaceId) else {
             return nil
         }
-        let resolvedAgentId = TerminalAgentLifecycle.resolveAgentId(
+        let plan = taskAgentInvocationPlan(
+            explicitAgentId: explicitAgentId,
+            workspaceId: workspaceId,
+            projectId: projectId,
+            cwd: cwd,
+            branch: branch,
+            promptText: promptText
+        )
+        let resolvedAgentId = plan?.agentId ?? TerminalAgentLifecycle.resolveAgentId(
             explicit: explicitAgentId,
             workspaceId: workspaceId
         )
@@ -296,11 +324,124 @@ enum TermLoopTaskSocketCommands {
             return nil
         }
         WorkspaceMetadataStore.shared.setTerminalAgentId(resolvedAgentId, for: workspaceId)
+        if let plan {
+            ProjectSkillMaterializer.materializeForLaunch(plan)
+        }
         return TerminalAgentLifecycle.launchInExistingWorkspace(
             in: workspace,
             agent: agent,
-            cwd: cwd ?? workspace.termLoopPresentationCwd()
+            cwd: cwd ?? workspace.termLoopPresentationCwd(),
+            permission: plan?.resolvedPermission,
+            initialPrompt: plan?.resolvedPromptBody,
+            systemPrompt: plan?.launchSystemInstructions,
+            model: plan?.resolvedModel,
+            reasoning: plan?.resolvedReasoning,
+            launchProvidedFullContext: plan?.launchProvidedFullContext ?? false
         )
+    }
+
+    private static func taskAgentInvocationPlan(
+        explicitAgentId: String?,
+        workspaceId: UUID,
+        projectId: UUID,
+        cwd: String?,
+        branch: String?,
+        promptText: String?
+    ) -> AgentInvocationPlan? {
+        let trimmedPrompt = promptText?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let trimmedPrompt, !trimmedPrompt.isEmpty else {
+            return nil
+        }
+        let request = AgentInvocationRequest(
+            agentId: explicitAgentId,
+            userPrompt: trimmedPrompt,
+            workspaceId: workspaceId,
+            projectId: projectId,
+            runCwd: cwd.map { URL(fileURLWithPath: $0) },
+            branchName: branch,
+            source: .socket,
+            reasonTag: "tasks.mobile.startAgent"
+        )
+        do {
+            return try AgentInvocationComposer.compose(request)
+        } catch {
+            #if DEBUG
+            print("tasks.start_agent compose failed: \(error)")
+            #endif
+            return nil
+        }
+    }
+
+    private static func launchOutcomeError(
+        _ outcome: TerminalAgentLifecycle.LaunchOutcome,
+        workspaceId: UUID
+    ) -> TerminalController.V2CallResult? {
+        switch outcome {
+        case .launched:
+            return nil
+        case .held(let reason):
+            return .err(
+                code: "agent_launch_held",
+                message: launchHoldMessage(reason),
+                data: [
+                    "workspace_id": workspaceId.uuidString,
+                    "reason": launchHoldReasonString(reason)
+                ]
+            )
+        case .rejected(let reason):
+            return .err(
+                code: "agent_launch_rejected",
+                message: launchRejectMessage(reason),
+                data: [
+                    "workspace_id": workspaceId.uuidString,
+                    "reason": launchRejectReasonString(reason)
+                ]
+            )
+        }
+    }
+
+    private static func launchModeString(_ outcome: TerminalAgentLifecycle.LaunchOutcome) -> String {
+        guard case .launched(let mode) = outcome else { return "none" }
+        switch mode {
+        case .fresh: return "fresh"
+        case .restore: return "restore"
+        }
+    }
+
+    private static func launchHoldReasonString(_ reason: TerminalAgentLifecycle.HoldReason) -> String {
+        switch reason {
+        case .claudeAutoRestoreDisabled: return "claude_auto_restore_disabled"
+        }
+    }
+
+    private static func launchRejectReasonString(_ reason: TerminalAgentLifecycle.RejectReason) -> String {
+        switch reason {
+        case .liveAgentRunning:
+            return "live_agent_running"
+        case .agentMismatch:
+            return "agent_mismatch"
+        case .freshLaunchPayloadRequiresFreshSession:
+            return "fresh_launch_payload_requires_fresh_session"
+        }
+    }
+
+    private static func launchHoldMessage(_ reason: TerminalAgentLifecycle.HoldReason) -> String {
+        switch reason {
+        case .claudeAutoRestoreDisabled:
+            return "Claude auto-restore is disabled for this workspace. Reopen the existing terminal or start a fresh task workspace."
+        }
+    }
+
+    private static func launchRejectMessage(_ reason: TerminalAgentLifecycle.RejectReason) -> String {
+        switch reason {
+        case .liveAgentRunning:
+            return "An agent is already running in this task workspace. Open the existing agent terminal instead."
+        case .agentMismatch:
+            return "This task workspace has a persisted session for a different agent. Open the existing terminal or start a fresh task workspace."
+        case .freshLaunchPayloadRequiresFreshSession:
+            return "This task workspace has a persisted agent session, so TermLoop cannot safely send the new prompt without starting a fresh session."
+        }
     }
 
     private static func tasksRemoteContext(_ params: [String: Any]) -> TerminalController.V2CallResult {
@@ -842,6 +983,7 @@ enum TermLoopTaskSocketCommands {
             "provision_state": provisionStateString(task.provisionState),
             "provision_failure_reason": orNull(task.provisionState.failureDisplayText),
             "remote_status_label": orNull(task.remoteStatusLabel),
+            "remote_description": orNull(remoteDescription(for: task)),
             "task_file_path": orNull(task.taskFilePath),
             "created_at": task.createdAt.timeIntervalSince1970,
             "updated_at": task.updatedAt.timeIntervalSince1970,
@@ -857,6 +999,32 @@ enum TermLoopTaskSocketCommands {
             payload["remote_url"] = NSNull()
         }
         return payload
+    }
+
+    private static func remoteDescription(for task: TaskRecord) -> String? {
+        guard task.remoteWorkItem != nil else { return nil }
+        if let reference = task.remoteWorkItem,
+           let body = RemoteWorkItemSnapshotStore.shared.snapshot(for: reference)?.bodyMarkdown?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !body.isEmpty {
+            return body
+        }
+        guard let path = task.taskFilePath,
+              let markdown = try? String(contentsOfFile: path, encoding: .utf8) else {
+            return nil
+        }
+        return remoteDescription(fromMaterializedMarkdown: markdown)
+    }
+
+    private static func remoteDescription(fromMaterializedMarkdown markdown: String) -> String? {
+        guard let heading = markdown.range(of: "\n## Description\n") else { return nil }
+        let bodyStart = heading.upperBound
+        let bodyEnd = markdown[bodyStart...].range(of: "\n<!-- termloop:remote-work-item:end -->")?.lowerBound
+            ?? markdown.endIndex
+        let body = markdown[bodyStart..<bodyEnd]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty, body != "_No description._" else { return nil }
+        return body
     }
 
     private static func provisionStateString(_ state: TaskProvisionState) -> String {

@@ -17,12 +17,6 @@ enum ClaudeSettingsJSON {
         let repairedEvents: [String]
         let alreadyPresentEvents: [String]
         let unsupportedEvents: [String]
-
-        var installed: Bool {
-            !changed
-                && unsupportedEvents.isEmpty
-                && Set(alreadyPresentEvents) == Set(SelfRequired.events)
-        }
     }
 
     enum TransformError: Error, LocalizedError {
@@ -267,6 +261,9 @@ enum ClaudeSettingsJSON {
     }
 
     private static func isCanonicalHookGroup(event: String, group: [String: Any]) -> Bool {
+        // Canonical TermLoop groups are intentionally strict. Extra keys or a
+        // matcher-specific group are treated as stale and rewritten once so the
+        // trust-sensitive command shape remains byte-stable.
         guard group.count == 2,
               (group["matcher"] as? String) == "",
               let hooks = group["hooks"] as? [[String: Any]],

@@ -115,6 +115,14 @@ final class ClaudeHookInstallerCommandTests: XCTestCase {
         }
     }
 
+    func test_canonicalStopCommandBytesAreStable() {
+        let expected = """
+        # termloop-managed:v1
+        TERMLOOP_BIN="${TERMLOOP_BUNDLED_CLI_PATH:-$(command -v termloop)}"; { [ -n "$TERMLOOP_SURFACE_ID" ] || [ -n "$TERMLOOP_WORKSPACE_ID" ]; } && [ "$TERMLOOP_HOOKS_DISABLED" != "1" ] && [ "$TERMLOOP_CLAUDE_HOOKS_DISABLED" != "1" ] && [ -n "$TERMLOOP_BIN" ] && [ -x "$TERMLOOP_BIN" ] && { "$TERMLOOP_BIN" claude-hook stop >/dev/null 2>/dev/null || true; echo '{}'; } || echo '{}'
+        """
+        XCTAssertEqual(ClaudeSettingsJSON.canonicalCommand(for: "Stop"), expected)
+    }
+
     func test_settingsTransform_healthyConfigProducesNoWrite() throws {
         let root: [String: Any] = [
             "permissions": ["allow": ["Read"]],
@@ -184,6 +192,30 @@ final class ClaudeHookInstallerCommandTests: XCTestCase {
         let hooks = parsed["hooks"] as! [String: Any]
         XCTAssertEqual(hooks["Stop"] as? String, "future-schema")
         XCTAssertEqual(parsed["model"] as? String, "sonnet")
+    }
+
+    func test_settingsTransform_stripsLegacyUnmarkedTermLoopHook() throws {
+        let legacyCommand = """
+        TERMLOOP_BIN="${TERMLOOP_BUNDLED_CLI_PATH:-$(command -v termloop)}"; termloop claude-hook stop
+        """
+        let root: [String: Any] = [
+            "hooks": [
+                "Stop": [
+                    [
+                        "matcher": "",
+                        "hooks": [
+                            ["type": "command", "command": legacyCommand]
+                        ]
+                    ] as [String: Any]
+                ]
+            ]
+        ]
+
+        let mutation = try ClaudeSettingsJSON.installTransform(ClaudeSettingsJSON.serialize(root))
+        XCTAssertTrue(mutation.changed)
+        XCTAssertEqual(mutation.repairedEvents, ["Stop"])
+        XCTAssertFalse(mutation.content.contains(legacyCommand))
+        XCTAssertTrue(mutation.content.contains(ClaudeSettingsJSON.ownershipMarker))
     }
 
     func test_claudeJSONMCPTransform_touchesOnlyActiveProject() throws {
