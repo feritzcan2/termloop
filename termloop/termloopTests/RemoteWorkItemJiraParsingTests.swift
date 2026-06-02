@@ -107,6 +107,26 @@ final class RemoteWorkItemJiraParsingTests: XCTestCase {
         XCTAssertEqual(projects.first?.displayLabel, "KAN — Kanban")
     }
 
+    func testJiraAssignedListFailsBeforeParsingTruncatedStdout() async throws {
+        let runner = TruncatedStdoutRunner()
+        let provider = JiraRemoteWorkItemProvider(runner: runner)
+
+        do {
+            _ = try await provider.listAssignedToMe(RemoteWorkItemListRequest(
+                provider: .jira,
+                container: "UKIE",
+                limit: 100
+            ))
+            XCTFail("Expected truncated stdout to fail before JSON parsing")
+        } catch RemoteWorkItemError.commandFailed(let message) {
+            XCTAssertTrue(message.contains("Stdout exceeded capture limit by 42 bytes."))
+            XCTAssertTrue(message.contains("Provider CLI stdout exceeded TermLoop's capture limit."))
+            XCTAssertFalse(message.contains("NSCocoaErrorDomain"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testJiraCreateCanAssignToMe() async throws {
         let runner = JiraCreateRecordingRunner()
         let provider = JiraRemoteWorkItemProvider(runner: runner)
@@ -124,6 +144,23 @@ final class RemoteWorkItemJiraParsingTests: XCTestCase {
         let createCall = try XCTUnwrap(calls.first { $0.starts(with: ["jira", "workitem", "create"]) })
         XCTAssertTrue(createCall.contains("--assignee"))
         XCTAssertEqual(createCall.value(after: "--assignee"), "@me")
+    }
+}
+
+private actor TruncatedStdoutRunner: RemoteWorkItemCommandRunning {
+    func run(
+        executable: String,
+        arguments: [String],
+        cwd: String?,
+        timeout: TimeInterval
+    ) async throws -> RemoteWorkItemCommandResult {
+        RemoteWorkItemCommandResult(
+            exitStatus: 0,
+            stdout: #"{"issues":["#,
+            stderr: "",
+            stdoutTruncatedBytes: 42,
+            timedOut: false
+        )
     }
 }
 

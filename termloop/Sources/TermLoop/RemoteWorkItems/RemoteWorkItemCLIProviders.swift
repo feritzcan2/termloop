@@ -12,6 +12,8 @@ struct RemoteWorkItemCommandResult: Sendable {
     var exitStatus: Int32
     var stdout: String
     var stderr: String
+    var stdoutTruncatedBytes: Int = 0
+    var stderrTruncatedBytes: Int = 0
     var timedOut: Bool
     var terminatedBySignal: Bool = false
 }
@@ -89,6 +91,8 @@ actor RemoteWorkItemCommandRunner: RemoteWorkItemCommandRunning {
                         exitStatus: 124,
                         stdout: stdoutBuffer.string(),
                         stderr: stderrBuffer.string(),
+                        stdoutTruncatedBytes: stdoutBuffer.truncatedBytes,
+                        stderrTruncatedBytes: stderrBuffer.truncatedBytes,
                         timedOut: true,
                         terminatedBySignal: false
                     )))
@@ -111,6 +115,8 @@ actor RemoteWorkItemCommandRunner: RemoteWorkItemCommandRunning {
                         exitStatus: proc.terminationStatus,
                         stdout: stdoutBuffer.string(),
                         stderr: stderrBuffer.string(),
+                        stdoutTruncatedBytes: stdoutBuffer.truncatedBytes,
+                        stderrTruncatedBytes: stderrBuffer.truncatedBytes,
                         timedOut: timedOut,
                         terminatedBySignal: proc.terminationReason == .uncaughtSignal
                     )))
@@ -199,12 +205,14 @@ private final class RemoteWorkItemCommandCompletion: @unchecked Sendable {
 }
 
 private final class RemoteWorkItemPipeBuffer: @unchecked Sendable {
+    private static let defaultCap = 8 * 1_024 * 1_024
+
     private let lock = NSLock()
     private let cap: Int
     private var data = Data()
     private var truncatedByteCount = 0
 
-    init(cap: Int = 512_000) {
+    init(cap: Int = RemoteWorkItemPipeBuffer.defaultCap) {
         self.cap = cap
     }
 
@@ -229,14 +237,15 @@ private final class RemoteWorkItemPipeBuffer: @unchecked Sendable {
     func string() -> String {
         lock.lock()
         let snapshot = data
-        let truncated = truncatedByteCount
         lock.unlock()
 
-        var text = String(data: snapshot, encoding: .utf8) ?? ""
-        if truncated > 0 {
-            text += "\n... truncated \(truncated) bytes"
-        }
-        return text
+        return String(decoding: snapshot, as: UTF8.self)
+    }
+
+    var truncatedBytes: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return truncatedByteCount
     }
 }
 
@@ -1025,6 +1034,12 @@ private func remoteValidate(_ result: RemoteWorkItemCommandResult) throws {
     if result.timedOut {
         throw RemoteWorkItemError.commandFailed(remoteCommandFailureMessage(result, fallback: "Provider CLI timed out."))
     }
+    if result.stdoutTruncatedBytes > 0 {
+        throw RemoteWorkItemError.commandFailed(remoteCommandFailureMessage(
+            result,
+            fallback: "Provider CLI stdout exceeded TermLoop's capture limit."
+        ))
+    }
     guard result.exitStatus == 0 else {
         throw RemoteWorkItemError.commandFailed(remoteCommandFailureMessage(result, fallback: "Provider CLI exited \(result.exitStatus)."))
     }
@@ -1045,6 +1060,12 @@ func remoteCommandFailureMessage(_ result: RemoteWorkItemCommandResult, fallback
         lines.append("Exit: signal \(result.exitStatus)")
     } else {
         lines.append("Exit: \(result.exitStatus)")
+    }
+    if result.stdoutTruncatedBytes > 0 {
+        lines.append("Stdout exceeded capture limit by \(result.stdoutTruncatedBytes) bytes.")
+    }
+    if result.stderrTruncatedBytes > 0 {
+        lines.append("Stderr exceeded capture limit by \(result.stderrTruncatedBytes) bytes.")
     }
 
     let stderr = remoteSnippet(result.stderr)

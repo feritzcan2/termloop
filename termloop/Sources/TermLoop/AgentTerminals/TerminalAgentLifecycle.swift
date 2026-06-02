@@ -103,6 +103,7 @@ final class TerminalAgentLifecycle {
     enum RejectReason {
         case liveAgentRunning
         case agentMismatch
+        case freshLaunchPayloadRequiresFreshSession
     }
 
     enum RestoreDecision {
@@ -410,7 +411,12 @@ final class TerminalAgentLifecycle {
         agent: TerminalAgent,
         cwd: String?,
         env: [String: String] = [:],
-        permission: AgentTemplate.PermissionMode? = nil
+        permission: AgentTemplate.PermissionMode? = nil,
+        initialPrompt: String? = nil,
+        systemPrompt: String? = nil,
+        model: AgentModelOption? = nil,
+        reasoning: AgentReasoningOption? = nil,
+        launchProvidedFullContext: Bool = false
     ) -> LaunchOutcome {
         switch _decideExistingLaunch(workspace: workspace, agent: agent) {
         case .reject(let reason):
@@ -418,6 +424,15 @@ final class TerminalAgentLifecycle {
         case .hold(let reason):
             return .held(reason)
         case .restore(let backend):
+            if hasFreshLaunchPayload(
+                initialPrompt: initialPrompt,
+                systemPrompt: systemPrompt,
+                permission: permission,
+                model: model,
+                reasoning: reasoning
+            ) {
+                return .rejected(.freshLaunchPayloadRequiresFreshSession)
+            }
             return _runRestoreInExistingWorkspace(
                 workspace: workspace,
                 agent: agent,
@@ -426,16 +441,47 @@ final class TerminalAgentLifecycle {
                 backend: backend
             )
         case .fresh:
-            TerminalAgentActivityStore.shared.markPendingRestore(workspaceId: workspace.id)
+            let hasInitialPrompt = !(initialPrompt ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty
+            TerminalAgentActivityStore.shared.markPendingRestore(
+                workspaceId: workspace.id,
+                state: TerminalAgentRunner.pendingPlaceholderState(
+                    hasInitialPrompt: hasInitialPrompt
+                )
+            )
             TerminalAgentRunner.dispatchAgentLaunchCommand(
                 in: workspace,
                 agent: agent,
                 cwd: cwd,
                 env: env,
-                permission: permission
+                permission: permission,
+                initialPrompt: initialPrompt,
+                systemPrompt: systemPrompt,
+                model: model,
+                reasoning: reasoning,
+                launchProvidedFullContext: launchProvidedFullContext
             )
             return .launched(mode: .fresh)
         }
+    }
+
+    private static func hasFreshLaunchPayload(
+        initialPrompt: String?,
+        systemPrompt: String?,
+        permission: AgentTemplate.PermissionMode?,
+        model: AgentModelOption?,
+        reasoning: AgentReasoningOption?
+    ) -> Bool {
+        if let initialPrompt,
+           !initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return true
+        }
+        if let systemPrompt,
+           !systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return true
+        }
+        return permission != nil || model != nil || reasoning != nil
     }
 
     // Trigger-agnostic batch restore. Per-workspace policy (Claude auto-restore
