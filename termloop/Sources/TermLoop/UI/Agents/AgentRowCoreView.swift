@@ -278,7 +278,13 @@ struct AgentRowCoreView: View, Equatable {
         .onChange(of: core.displayState) { _ in
             hasBeenTapped = false
         }
-        .onHover { isHovering = $0 }
+        .onHover { hovering in
+            guard !AppMenuTrackingGate.shared.isTrackingMenu else { return }
+            isHovering = hovering
+        }
+        .onReceive(AppMenuTrackingGate.shared.trackingEnded) { _ in
+            isHovering = false
+        }
         .safeHelp(core.preview ?? core.agentLabel)
     }
 

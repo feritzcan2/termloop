@@ -15,6 +15,9 @@ import {
   View,
 } from "react-native";
 import {
+  mergeTaskColumns,
+  taskColumnsFromTasks,
+  taskRemoteContextColumns,
   type TaskColumnSummary,
   type TaskRecord,
   type TaskRemoteContext,
@@ -62,7 +65,13 @@ export function TasksView({
           .catch(() => null),
       ]);
       setTasks(out.tasks);
-      setColumns(out.columns);
+      setColumns(
+        mergeTaskColumns(
+          out.columns,
+          taskRemoteContextColumns(context),
+          taskColumnsFromTasks(out.tasks)
+        )
+      );
       setRemoteContext(context);
     } catch (err) {
       setError(String((err as Error).message ?? err));
@@ -128,8 +137,16 @@ export function TasksView({
   );
 
   const onCreated = useCallback(
-    (created: TaskRecord) => {
+    (created: TaskRecord, context?: TaskRemoteContext | null) => {
       setTasks((prev) => (prev ? [created, ...prev] : [created]));
+      if (context) setRemoteContext(context);
+      setColumns((current) =>
+        mergeTaskColumns(
+          current,
+          taskRemoteContextColumns(context),
+          taskColumnsFromTasks([created])
+        )
+      );
       setCreatorOpen(false);
     },
     []
@@ -146,7 +163,16 @@ export function TasksView({
       const result = settled.result;
       if (result?.tasks) setTasks(result.tasks);
       if (result?.context) setRemoteContext(result.context);
-      if (!result?.tasks) await load();
+      if (result?.tasks || result?.context) {
+        setColumns((current) =>
+          mergeTaskColumns(
+            current,
+            taskRemoteContextColumns(result?.context),
+            taskColumnsFromTasks(result?.tasks)
+          )
+        );
+      }
+      if (!result?.tasks && !result?.context) await load();
     } catch (err) {
       Alert.alert("Remote sync failed", String((err as Error).message ?? err));
     } finally {
@@ -479,7 +505,7 @@ interface NewTaskSheetProps {
   columns: TaskColumnSummary[];
   remoteContext: TaskRemoteContext | null;
   onClose: () => void;
-  onCreated: (task: TaskRecord) => void;
+  onCreated: (task: TaskRecord, context?: TaskRemoteContext | null) => void;
 }
 
 function NewTaskSheet({
@@ -528,6 +554,8 @@ function NewTaskSheet({
         const task = settled.result?.task;
         if (!task) throw new Error("Remote item was created but no task returned.");
         created = task;
+        onCreated(created, settled.result?.context);
+        return;
       } else {
         created = await client.createTask({
           title: trimmedTitle,
@@ -590,7 +618,7 @@ function NewTaskSheet({
 
               <Text style={styles.fieldLabel}>Column</Text>
               <View style={styles.colPicker}>
-                {pickerColumns.slice(0, 5).map((column) => {
+                {pickerColumns.map((column) => {
                   const active = columnId === column.id;
                   return (
                     <Pressable

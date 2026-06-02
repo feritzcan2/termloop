@@ -213,7 +213,13 @@ struct AbilityAgentRow: View, Equatable {
         )
         .contentShape(Rectangle())
         .onTapGesture { onTap() }
-        .onHover { isHovering = $0 }
+        .onHover { hovering in
+            guard !AppMenuTrackingGate.shared.isTrackingMenu else { return }
+            isHovering = hovering
+        }
+        .onReceive(AppMenuTrackingGate.shared.trackingEnded) { _ in
+            isHovering = false
+        }
         .contextMenu {
             if let snapshot = contextMenuSnapshot {
                 ActiveAgentWorkspaceContextMenu(
