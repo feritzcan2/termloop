@@ -101,19 +101,40 @@ extension TerminalController {
     func termLoopPrepareWorkspaceAgentLaunch(
         terminalAgentId: String?,
         cwd: String?,
-        context: TermLoopWorkspaceCreateContext
+        context: TermLoopWorkspaceCreateContext,
+        promptText: String? = nil,
+        permissionModeRaw: String? = nil
     ) throws -> TerminalAgentLifecycle.PreparedFreshWorkspaceLaunch? {
         guard let id = terminalAgentId?.trimmingCharacters(in: .whitespacesAndNewlines),
               !id.isEmpty,
               let agent = TerminalAgentRegistry.shared.agent(id: id) else {
             return nil
         }
+        let permissionMode = try TermLoopSocketAgentLaunchInput.permissionMode(rawValue: permissionModeRaw)
+        let plan = try TermLoopSocketAgentLaunchInput.invocationPlan(
+            agentId: agent.id,
+            promptText: promptText,
+            projectId: context.projectId,
+            cwd: cwd,
+            branch: context.worktreeBinding?.branch,
+            permissionMode: permissionMode,
+            reasonTag: "mobile.workspace.create"
+        )
+        if let plan {
+            ProjectSkillMaterializer.materializeForLaunch(plan)
+        }
         return try TerminalAgentLifecycle.prepareFreshWorkspaceLaunch(
             agent: agent,
             cwd: cwd,
             worktreeExpectation: context.worktreeBinding?.expectation,
             baselineHead: context.worktreeBinding?.baselineHead,
-            baseEnv: context.launchEnvironment
+            baseEnv: context.launchEnvironment,
+            initialPrompt: plan?.resolvedPromptBody ?? "",
+            permission: plan?.resolvedPermission,
+            systemPrompt: plan?.launchSystemInstructions,
+            model: plan?.resolvedModel,
+            reasoning: plan?.resolvedReasoning,
+            launchProvidedFullContext: plan?.launchProvidedFullContext ?? false
         )
     }
 

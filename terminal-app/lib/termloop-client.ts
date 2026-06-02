@@ -109,6 +109,8 @@ export interface CreateWorkspaceParams {
   createWorktree?: boolean;
   worktreeBranch?: string;
   allowDirty?: boolean;
+  promptText?: string;
+  planMode?: boolean;
 }
 
 export interface CreateWorkspaceResult {
@@ -529,6 +531,7 @@ export interface TermLoopClient {
     projectId?: string;
     allowDirty?: boolean;
     promptText?: string;
+    planMode?: boolean;
   }): Promise<StartTaskAgentResult>;
   getTaskRemoteContext(params?: { projectId?: string }): Promise<TaskRemoteContext>;
   getRemoteOperation(operationId: string): Promise<RemoteOperation<RemoteTaskResult>>;
@@ -725,6 +728,8 @@ export function createTermLoopClient(opts: {
           ? { worktree_branch: params.worktreeBranch }
           : {}),
         ...(params.allowDirty ? { allow_dirty: true } : {}),
+        ...(params.promptText ? { prompt_text: params.promptText } : {}),
+        ...(params.planMode ? { permission_mode: "plan" } : {}),
       });
     },
     async listTerminalAgents() {
@@ -869,6 +874,7 @@ export function createTermLoopClient(opts: {
         ...(params.projectId ? { project_id: params.projectId } : {}),
         ...(params.allowDirty ? { allow_dirty: true } : {}),
         ...(params.promptText ? { prompt_text: params.promptText } : {}),
+        ...(params.planMode ? { permission_mode: "plan" } : {}),
       });
     },
     async getTaskRemoteContext(params) {
