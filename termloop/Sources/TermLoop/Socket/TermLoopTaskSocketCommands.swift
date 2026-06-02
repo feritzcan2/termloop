@@ -226,6 +226,12 @@ enum TermLoopTaskSocketCommands {
         }
         let agentId = nonEmptyParam(params, "terminal_agent_id")
         let promptText = nonEmptyParam(params, "prompt_text")
+        let permissionMode: AgentTemplate.PermissionMode?
+        do {
+            permissionMode = try launchPermissionMode(params)
+        } catch {
+            return .err(code: "invalid_params", message: error.localizedDescription, data: nil)
+        }
         let allowDirty = (params["allow_dirty"] as? Bool) ?? false
         let coordinator = TaskLifecycleCoordinator.makeForProject(store: store)
 
@@ -237,7 +243,8 @@ enum TermLoopTaskSocketCommands {
                 cwd: task.worktreePath,
                 projectId: store.projectId,
                 branch: task.branch,
-                promptText: promptText
+                promptText: promptText,
+                permissionMode: permissionMode
             ) else {
                 return .err(
                     code: "agent_launch_failed",
@@ -278,7 +285,8 @@ enum TermLoopTaskSocketCommands {
                         cwd: updated.worktreePath,
                         projectId: store.projectId,
                         branch: updated.branch,
-                        promptText: promptText
+                        promptText: promptText,
+                        permissionMode: permissionMode
                     )
                 }
             } catch {
@@ -300,7 +308,8 @@ enum TermLoopTaskSocketCommands {
         cwd: String?,
         projectId: UUID,
         branch: String?,
-        promptText: String?
+        promptText: String?,
+        permissionMode: AgentTemplate.PermissionMode?
     ) -> TerminalAgentLifecycle.LaunchOutcome? {
         guard let workspace = AppDelegate.shared?.workspaceFor(tabId: workspaceId) else {
             return nil
@@ -311,7 +320,8 @@ enum TermLoopTaskSocketCommands {
             projectId: projectId,
             cwd: cwd,
             branch: branch,
-            promptText: promptText
+            promptText: promptText,
+            permissionMode: permissionMode
         )
         let resolvedAgentId = plan?.agentId ?? TerminalAgentLifecycle.resolveAgentId(
             explicit: explicitAgentId,
@@ -346,31 +356,30 @@ enum TermLoopTaskSocketCommands {
         projectId: UUID,
         cwd: String?,
         branch: String?,
-        promptText: String?
+        promptText: String?,
+        permissionMode: AgentTemplate.PermissionMode?
     ) -> AgentInvocationPlan? {
-        let trimmedPrompt = promptText?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let trimmedPrompt, !trimmedPrompt.isEmpty else {
-            return nil
-        }
-        let request = AgentInvocationRequest(
-            agentId: explicitAgentId,
-            userPrompt: trimmedPrompt,
-            workspaceId: workspaceId,
-            projectId: projectId,
-            runCwd: cwd.map { URL(fileURLWithPath: $0) },
-            branchName: branch,
-            source: .socket,
-            reasonTag: "tasks.mobile.startAgent"
-        )
         do {
-            return try AgentInvocationComposer.compose(request)
+            return try TermLoopSocketAgentLaunchInput.invocationPlan(
+                agentId: explicitAgentId,
+                promptText: promptText,
+                workspaceId: workspaceId,
+                projectId: projectId,
+                cwd: cwd,
+                branch: branch,
+                permissionMode: permissionMode,
+                reasonTag: "tasks.mobile.startAgent"
+            )
         } catch {
             #if DEBUG
             print("tasks.start_agent compose failed: \(error)")
             #endif
             return nil
         }
+    }
+
+    private static func launchPermissionMode(_ params: [String: Any]) throws -> AgentTemplate.PermissionMode? {
+        try TermLoopSocketAgentLaunchInput.permissionMode(rawValue: nonEmptyParam(params, "permission_mode"))
     }
 
     private static func launchOutcomeError(
@@ -1016,15 +1025,37 @@ enum TermLoopTaskSocketCommands {
         return remoteDescription(fromMaterializedMarkdown: markdown)
     }
 
-    private static func remoteDescription(fromMaterializedMarkdown markdown: String) -> String? {
-        guard let heading = markdown.range(of: "\n## Description\n") else { return nil }
-        let bodyStart = heading.upperBound
-        let bodyEnd = markdown[bodyStart...].range(of: "\n<!-- termloop:remote-work-item:end -->")?.lowerBound
-            ?? markdown.endIndex
-        let body = markdown[bodyStart..<bodyEnd]
+    static func remoteDescription(fromMaterializedMarkdown markdown: String) -> String? {
+        let normalized = markdown.replacingOccurrences(of: "\r\n", with: "\n")
+        guard let bodyStart = descriptionBodyStart(in: normalized) else { return nil }
+        let bodyEnd = normalized[bodyStart...].range(of: "<!-- termloop:remote-work-item:end -->")?.lowerBound
+            ?? normalized.endIndex
+        let body = normalized[bodyStart..<bodyEnd]
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty, body != "_No description._" else { return nil }
         return body
+    }
+
+    private static func descriptionBodyStart(in markdown: String) -> String.Index? {
+        var searchStart = markdown.startIndex
+        while let range = markdown.range(of: "## Description", range: searchStart..<markdown.endIndex) {
+            let lineStart = markdown[..<range.lowerBound]
+                .lastIndex(of: "\n")
+                .map { markdown.index(after: $0) }
+                ?? markdown.startIndex
+            let lineEnd = markdown[range.upperBound...]
+                .firstIndex(of: "\n")
+                ?? markdown.endIndex
+            let line = markdown[lineStart..<lineEnd]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if line == "## Description" {
+                return lineEnd == markdown.endIndex
+                    ? lineEnd
+                    : markdown.index(after: lineEnd)
+            }
+            searchStart = range.upperBound
+        }
+        return nil
     }
 
     private static func provisionStateString(_ state: TaskProvisionState) -> String {

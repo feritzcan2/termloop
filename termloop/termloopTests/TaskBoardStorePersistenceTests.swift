@@ -181,4 +181,37 @@ final class TaskBoardStorePersistenceTests: XCTestCase {
         let decoded = try JSONDecoder.tasks.decode(TaskBoardFile.self, from: Data(contentsOf: path))
         XCTAssertEqual(decoded.tasks.count, 10)
     }
+
+    func testRemoteDescriptionFallbackParsesMaterializedMarkdown() {
+        let markdown = """
+        # ABC-123
+
+        <!-- termloop:remote-work-item:start -->
+        ## Description
+        First line.
+
+        Second line.
+        <!-- termloop:remote-work-item:end -->
+        """
+
+        XCTAssertEqual(
+            TermLoopTaskSocketCommands.remoteDescription(fromMaterializedMarkdown: markdown),
+            "First line.\n\nSecond line."
+        )
+    }
+
+    func testRemoteDescriptionFallbackHandlesCRLFAndNoLeadingNewline() {
+        let markdown = "# ABC-123\r\n## Description\r\nBody text\r\n<!-- termloop:remote-work-item:end -->"
+
+        XCTAssertEqual(
+            TermLoopTaskSocketCommands.remoteDescription(fromMaterializedMarkdown: markdown),
+            "Body text"
+        )
+    }
+
+    func testRemoteDescriptionFallbackIgnoresMissingOrEmptyDescriptions() {
+        XCTAssertNil(TermLoopTaskSocketCommands.remoteDescription(fromMaterializedMarkdown: "# ABC-123"))
+        XCTAssertNil(TermLoopTaskSocketCommands.remoteDescription(fromMaterializedMarkdown: "## Description\n_No description._"))
+        XCTAssertNil(TermLoopTaskSocketCommands.remoteDescription(fromMaterializedMarkdown: "## Description\n\n"))
+    }
 }
