@@ -3532,7 +3532,13 @@ struct WorktreeAgentsPanel: View {
                 }
             }
             .onHover { hovering in
+                guard !AppMenuTrackingGate.shared.isTrackingMenu else { return }
                 hoveredBranch = hovering ? group.id : (hoveredBranch == group.id ? nil : hoveredBranch)
+            }
+            .onReceive(AppMenuTrackingGate.shared.trackingEnded) { _ in
+                if hoveredBranch == group.id {
+                    hoveredBranch = nil
+                }
             }
             .onTapGesture { toggleExpanded(branch: group.id) }
 
