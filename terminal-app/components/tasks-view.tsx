@@ -112,6 +112,7 @@ export function TasksView({
         if (t.branch?.toLowerCase().includes(trimmed)) return true;
         if (t.remote_key?.toLowerCase().includes(trimmed)) return true;
         if (t.brief && t.brief.toLowerCase().includes(trimmed)) return true;
+        if (t.remote_description?.toLowerCase().includes(trimmed)) return true;
         return false;
       });
     }
@@ -432,6 +433,7 @@ function TaskRow({ item, onPress }: TaskRowProps) {
   const tone = rowTone(item);
   const agentLabel = inferAgentLabel(item);
   const ago = relativeTime(item.updated_at);
+  const preview = item.brief || item.remote_description;
   return (
     <Pressable
       onPress={onPress}
@@ -448,9 +450,9 @@ function TaskRow({ item, onPress }: TaskRowProps) {
         <Text style={styles.rowTitle} numberOfLines={1}>
           {item.title}
         </Text>
-        {item.brief ? (
+        {preview ? (
           <Text style={styles.rowBrief} numberOfLines={2}>
-            {item.brief}
+            {preview}
           </Text>
         ) : null}
         <View style={styles.rowMeta}>

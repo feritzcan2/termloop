@@ -70,6 +70,7 @@ export default function TaskDetailScreen() {
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [agents, setAgents] = useState<TerminalAgentSummary[] | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [agentPromptText, setAgentPromptText] = useState("");
 
   const loadedProjectId = task?.project_id;
   const refresh = useCallback(async () => {
@@ -273,11 +274,17 @@ export default function TaskDetailScreen() {
     /dirty|uncommit/i.test(task.provision_failure_reason ?? "");
 
   const onTapStartAgent = async () => {
+    if (task) setAgentPromptText(defaultTaskAgentPrompt(task));
     setAgentPickerOpen(true);
     await ensureAgentsLoaded();
   };
 
-  const startAgentWith = async (agentId: string | null, allowDirty: boolean) => {
+  const startAgentWith = async (
+    agentId: string | null,
+    allowDirty: boolean,
+    promptText: string
+  ) => {
+    const trimmedPrompt = promptText.trim();
     setStarting(true);
     try {
       const result = await client.startTaskAgent({
@@ -285,6 +292,7 @@ export default function TaskDetailScreen() {
         terminalAgentId: agentId ?? undefined,
         projectId: taskProjectId,
         allowDirty: allowDirty || undefined,
+        promptText: trimmedPrompt || undefined,
       });
       if (result.workspace_id && result.status === "ready") {
         setAgentPickerOpen(false);
@@ -432,6 +440,7 @@ export default function TaskDetailScreen() {
     remoteContext?.provider_label ||
     task.remote_provider?.replace(/^\w/, (c) => c.toUpperCase()) ||
     "Remote";
+  const remoteDescription = task.remote_description?.trim() || null;
   const titleDirty = draftTitle.trim() !== task.title;
   const briefDirty = (draftBrief.trim() || null) !== (task.brief ?? null);
   const canSaveEdit = (titleDirty || briefDirty) && draftTitle.trim().length > 0 && !savingEdit;
@@ -504,12 +513,26 @@ export default function TaskDetailScreen() {
             placeholderTextColor={colors.placeholder}
             multiline
           />
-          <Text style={styles.fieldLabel}>Description</Text>
+          {remoteDescription ? (
+            <>
+              <Text style={styles.fieldLabel}>{providerName} description</Text>
+              <Text style={[styles.field, styles.remoteDescriptionText]}>
+                {remoteDescription}
+              </Text>
+            </>
+          ) : null}
+          <Text style={styles.fieldLabel}>
+            {remoteDescription ? "Notes" : "Description"}
+          </Text>
           <TextInput
             style={[styles.field, styles.inlineBriefInput]}
             value={draftBrief}
             onChangeText={setDraftBrief}
-            placeholder="Context, acceptance criteria, implementation notes…"
+            placeholder={
+              remoteDescription
+                ? "Local context and implementation notes…"
+                : "Context, acceptance criteria, implementation notes…"
+            }
             placeholderTextColor={colors.placeholder}
             multiline
           />
@@ -710,6 +733,8 @@ export default function TaskDetailScreen() {
         }}
         onConfirm={startAgentWith}
         defaultAllowDirty={lastFailureWasDirty}
+        promptText={agentPromptText}
+        onPromptTextChange={setAgentPromptText}
         starting={starting}
       />
     </SafeAreaView>
@@ -809,8 +834,14 @@ interface AgentPickerSheetProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onClose: () => void;
-  onConfirm: (agentId: string | null, allowDirty: boolean) => void;
+  onConfirm: (
+    agentId: string | null,
+    allowDirty: boolean,
+    promptText: string
+  ) => void;
   defaultAllowDirty: boolean;
+  promptText: string;
+  onPromptTextChange: (value: string) => void;
   starting: boolean;
 }
 function AgentPickerSheet({
@@ -821,6 +852,8 @@ function AgentPickerSheet({
   onClose,
   onConfirm,
   defaultAllowDirty,
+  promptText,
+  onPromptTextChange,
   starting,
 }: AgentPickerSheetProps) {
   const [allowDirty, setAllowDirty] = useState(defaultAllowDirty);
@@ -839,8 +872,19 @@ function AgentPickerSheet({
           <View style={styles.handle} />
           <Text style={styles.sheetTitle}>Pick agent</Text>
           <Text style={styles.sheetSub}>
-            Picks the terminal agent to launch on the new worktree.
+            Picks the terminal agent and the first prompt to send on the new worktree.
           </Text>
+          <Text style={styles.fieldLabel}>Prompt</Text>
+          <TextInput
+            style={[styles.field, styles.promptField]}
+            value={promptText}
+            onChangeText={onPromptTextChange}
+            placeholder="Tell the agent what to do for this task."
+            placeholderTextColor={colors.placeholder}
+            multiline
+            textAlignVertical="top"
+            editable={!starting}
+          />
           {agents === null ? (
             <ActivityIndicator style={styles.agentSpinner} />
           ) : agents.length === 0 ? (
@@ -893,7 +937,7 @@ function AgentPickerSheet({
               { marginTop: 14 },
               starting && styles.btnBusy,
             ]}
-            onPress={() => onConfirm(selectedId, allowDirty)}
+            onPress={() => onConfirm(selectedId, allowDirty, promptText)}
             disabled={
               starting || (!selectedId && (agents?.length ?? 0) > 0)
             }
@@ -925,6 +969,28 @@ function AgentPickerSheet({
 function shortId(id: string | null | undefined): string {
   if (!id) return "—";
   return `${id.slice(0, 8)}…${id.slice(-4)}`;
+}
+
+function defaultTaskAgentPrompt(task: TaskRecord): string {
+  const lines = [`Implement this task: ${task.title.trim()}`];
+  const brief = task.brief?.trim();
+  if (brief) {
+    lines.push("", "Task details:", brief);
+  }
+  const remoteDescription = task.remote_description?.trim();
+  if (remoteDescription) {
+    lines.push("", "Remote description:", remoteDescription);
+  }
+  const remoteLabel = [task.remote_provider, task.remote_key]
+    .filter(Boolean)
+    .join(" ");
+  if (remoteLabel || task.remote_url) {
+    lines.push("", "Remote work item:");
+    if (remoteLabel) lines.push(remoteLabel);
+    if (task.remote_url) lines.push(task.remote_url);
+  }
+  lines.push("", "Work in the task worktree and make the minimal coherent change.");
+  return lines.join("\n");
 }
 
 async function pollUntilSettled(
@@ -1073,6 +1139,10 @@ const styles = StyleSheet.create({
   inlineBriefInput: {
     minHeight: 108,
     textAlignVertical: "top",
+    lineHeight: 19,
+  },
+  remoteDescriptionText: {
+    color: colors.text,
     lineHeight: 19,
   },
   inlineSaveRow: {
@@ -1338,6 +1408,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   textarea: { minHeight: 100, textAlignVertical: "top" },
+  promptField: { minHeight: 128, maxHeight: 220, marginBottom: 12 },
 
   cancel: {
     marginTop: 8,
