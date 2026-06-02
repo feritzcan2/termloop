@@ -9,6 +9,9 @@
   <a href="https://github.com/feritzcan2/termloop/releases/latest/download/termloop-macos.dmg">
     <img src="./termloop/docs/assets/macos-badge.png" alt="Download TermLoop for macOS" width="180" />
   </a>
+  <a href="https://apps.apple.com/de/app/termloop-mobile/id6765898303">
+    <img src="https://img.shields.io/badge/Download_on_the-App_Store-0D96F6?logo=apple&logoColor=white" alt="Download TermLoop Mobile on the App Store" />
+  </a>
 </p>
 
 <p align="center">
@@ -127,6 +130,12 @@ Turn an agent conversation into a real task. TermLoop proposes a task descriptio
 
 The iOS client pairs with your Mac over an authenticated TCP socket on your local network. Watch live agent output, switch projects, and jump into a session from your phone.
 
+<p>
+  <a href="https://apps.apple.com/de/app/termloop-mobile/id6765898303">
+    <img src="https://img.shields.io/badge/Download_TermLoop_Mobile-App_Store-0D96F6?logo=apple&logoColor=white" alt="Download TermLoop Mobile on the App Store" />
+  </a>
+</p>
+
 <table>
 <tr>
 <td width="33%" align="center"><img src="./termloop/docs/assets/mobile/connections.jpg" alt="iOS app pairing with a Mac" width="280" /></td>
@@ -159,6 +168,10 @@ brew upgrade --cask termloop
 ```
 
 On first launch, macOS may ask you to confirm opening an app from an identified developer. Click **Open** to proceed.
+
+### TermLoop Mobile for iOS
+
+Install [TermLoop Mobile on the App Store](https://apps.apple.com/de/app/termloop-mobile/id6765898303) to pair with your Mac, watch live agent output, switch projects, and open sessions from your phone.
 
 ## Why TermLoop?
 
