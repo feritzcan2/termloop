@@ -167,6 +167,7 @@ export interface TaskRecord {
   remote_key?: string | null;
   remote_url?: string | null;
   remote_status_label?: string | null;
+  remote_description?: string | null;
   task_file_path?: string | null;
   created_at: number;
   updated_at: number;
@@ -527,6 +528,7 @@ export interface TermLoopClient {
     terminalAgentId?: string;
     projectId?: string;
     allowDirty?: boolean;
+    promptText?: string;
   }): Promise<StartTaskAgentResult>;
   getTaskRemoteContext(params?: { projectId?: string }): Promise<TaskRemoteContext>;
   getRemoteOperation(operationId: string): Promise<RemoteOperation<RemoteTaskResult>>;
@@ -866,6 +868,7 @@ export function createTermLoopClient(opts: {
           : {}),
         ...(params.projectId ? { project_id: params.projectId } : {}),
         ...(params.allowDirty ? { allow_dirty: true } : {}),
+        ...(params.promptText ? { prompt_text: params.promptText } : {}),
       });
     },
     async getTaskRemoteContext(params) {

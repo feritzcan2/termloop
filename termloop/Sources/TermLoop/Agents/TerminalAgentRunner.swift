@@ -70,6 +70,11 @@ enum TerminalAgentRunner {
         let fallbackCommand: String?
     }
 
+    struct PreparedExistingLaunch {
+        let command: String
+        let hasInitialPrompt: Bool
+    }
+
     static func pendingPlaceholderState(
         hasInitialPrompt: Bool
     ) -> TerminalAgentActivityStore.PendingPlaceholderState {
@@ -120,18 +125,11 @@ enum TerminalAgentRunner {
             for: agent,
             argv: effectiveArgv + injection.extraArgv
         )
-        let combinedPrompt = (injection.promptPrefix ?? "") + initialPrompt
-        let trimmed = combinedPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let hasInitialPrompt = !trimmed.isEmpty
-        if hasInitialPrompt {
-            if combinedPrompt.count <= inlinePromptArgvLimit {
-                baseCommand += " " + TermLoopShell.quoteSingle(combinedPrompt)
-            } else {
-                let promptURL = try writePromptFile(combinedPrompt)
-                let bootstrap = "The user's opening message is the exact contents of the file at \(promptURL.path). Treat those contents as the user's first turn verbatim and respond directly."
-                baseCommand += " " + TermLoopShell.quoteSingle(bootstrap)
-            }
-        }
+        let hasInitialPrompt = try appendInitialPrompt(
+            initialPrompt,
+            promptPrefix: injection.promptPrefix,
+            to: &baseCommand
+        )
         let workspaceId = UUID()
         let launchBaseEnv = baseEnv.merging(worktreeExpectation?.environment ?? [:]) {
             current,
@@ -240,6 +238,24 @@ enum TerminalAgentRunner {
         TerminalCommandQuoter.join([launchExecutable(for: agent)] + argv)
     }
 
+    private static func appendInitialPrompt(
+        _ initialPrompt: String,
+        promptPrefix: String?,
+        to command: inout String
+    ) throws -> Bool {
+        let combinedPrompt = (promptPrefix ?? "") + initialPrompt
+        let trimmed = combinedPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if combinedPrompt.count <= inlinePromptArgvLimit {
+            command += " " + TermLoopShell.quoteSingle(combinedPrompt)
+        } else {
+            let promptURL = try writePromptFile(combinedPrompt)
+            let bootstrap = "The user's opening message is the exact contents of the file at \(promptURL.path). Treat those contents as the user's first turn verbatim and respond directly."
+            command += " " + TermLoopShell.quoteSingle(bootstrap)
+        }
+        return true
+    }
+
     private static func bundledExecutablePath(for agent: TerminalAgent) -> String? {
         guard let resourceURL = Bundle.main.resourceURL else { return nil }
         let candidate = resourceURL
@@ -262,34 +278,104 @@ enum TerminalAgentRunner {
         agent: TerminalAgent,
         cwd: String?,
         env: [String: String],
-        permission: AgentTemplate.PermissionMode?
+        permission: AgentTemplate.PermissionMode?,
+        initialPrompt: String? = nil,
+        systemPrompt: String? = nil,
+        model: AgentModelOption? = nil,
+        reasoning: AgentReasoningOption? = nil,
+        launchProvidedFullContext: Bool = false
     ) {
-        installAgentHooks(agent: agent, cwd: cwd)
         let resolvedPermission = permission
             ?? WorkspaceMetadataStore.shared
                 .permissionMode(for: workspace.id)
                 .flatMap { AgentTemplate.PermissionMode(rawValue: $0) }
-        let command = defaultLaunchCommand(
-            for: agent,
-            cwd: cwd,
-            env: agentEnvironment(
-                base: env,
+        let prepared: PreparedExistingLaunch
+        do {
+            prepared = try prepareExistingLaunch(
+                agent: agent,
+                cwd: cwd,
+                baseEnv: env,
                 workspaceId: workspace.id,
-                agentId: agent.id
-            ),
-            workspaceId: workspace.id,
-            permission: resolvedPermission
-        )
+                permission: resolvedPermission,
+                initialPrompt: initialPrompt ?? "",
+                systemPrompt: systemPrompt,
+                model: model,
+                reasoning: reasoning,
+                launchProvidedFullContext: launchProvidedFullContext
+            )
+        } catch {
+            #if DEBUG
+            dlog("runner.dispatchLaunch.prepareFailed workspace=\(workspace.id.uuidString) agent=\(agent.id) error=\(error.localizedDescription)")
+            #endif
+            return
+        }
         lifecycleLog(
-            "runner.dispatchLaunch workspace=\(workspace.id.uuidString) agent=\(agent.id) cwd=\(cwd ?? "nil") permission=\(resolvedPermission?.rawValue ?? "nil") commandChars=\(command.count)"
+            "runner.dispatchLaunch workspace=\(workspace.id.uuidString) agent=\(agent.id) cwd=\(cwd ?? "nil") permission=\(resolvedPermission?.rawValue ?? "nil") prompt=\(prepared.hasInitialPrompt ? 1 : 0) commandChars=\(prepared.command.count)"
         )
         sendCommandWhenReady(
             to: workspace,
-            command: command,
+            command: prepared.command,
             attempt: 0
         )
         scheduleCodexHookReviewProbeIfNeeded(agent: agent, in: workspace)
         TermLoopHooks.schedulePersistedAgentSessionRecoveryIfNeeded(agentId: agent.id)
+    }
+
+    static func prepareExistingLaunch(
+        agent: TerminalAgent,
+        cwd: String?,
+        baseEnv: [String: String] = [:],
+        workspaceId: UUID,
+        permission: AgentTemplate.PermissionMode?,
+        initialPrompt: String,
+        systemPrompt: String?,
+        model: AgentModelOption? = nil,
+        reasoning: AgentReasoningOption? = nil,
+        launchProvidedFullContext: Bool = false
+    ) throws -> PreparedExistingLaunch {
+        installAgentHooks(agent: agent, cwd: cwd)
+        let effectiveArgv = launchArgv(
+            for: agent,
+            permission: permission,
+            model: model,
+            reasoning: reasoning
+        )
+        let injection = try AgentInvocationTransportAdapter.resolveSystemInstructions(
+            agentId: agent.id,
+            systemInstructions: systemPrompt
+        )
+        var baseCommand = commandLine(
+            for: agent,
+            argv: effectiveArgv + injection.extraArgv
+        )
+        let hasInitialPrompt = try appendInitialPrompt(
+            initialPrompt,
+            promptPrefix: injection.promptPrefix,
+            to: &baseCommand
+        )
+        let launchEnv = agentEnvironment(
+            base: baseEnv,
+            workspaceId: workspaceId,
+            agentId: agent.id,
+            launchProvidedContext: launchProvidedFullContext
+        )
+        installClaudeProjectMCPServersIfNeeded(
+            agent: agent,
+            cwd: cwd,
+            env: launchEnv,
+            workspaceId: workspaceId
+        )
+        let command = composeLaunchCommand(
+            agent: agent,
+            baseCommand: baseCommand,
+            cwd: cwd,
+            env: launchEnv,
+            workspaceId: workspaceId
+        )
+        return PreparedExistingLaunch(
+            command: command,
+            hasInitialPrompt: hasInitialPrompt
+        )
     }
 
     /// Backend dispatch for a restored agent. Codex re-uses the persisted
@@ -581,17 +667,11 @@ enum TerminalAgentRunner {
             baseCommand = commandLine(for: agent, argv: effectiveArgv + injection.extraArgv)
         }
 
-        let combinedPrompt = (injection.promptPrefix ?? "") + initialPrompt
-        let trimmedPrompt = combinedPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedPrompt.isEmpty {
-            if combinedPrompt.count <= inlinePromptArgvLimit {
-                baseCommand += " " + TermLoopShell.quoteSingle(combinedPrompt)
-            } else {
-                let promptURL = try writePromptFile(combinedPrompt)
-                let bootstrap = "The user's opening message is the exact contents of the file at \(promptURL.path). Treat those contents as the user's first turn verbatim and respond directly."
-                baseCommand += " " + TermLoopShell.quoteSingle(bootstrap)
-            }
-        }
+        _ = try appendInitialPrompt(
+            initialPrompt,
+            promptPrefix: injection.promptPrefix,
+            to: &baseCommand
+        )
         return baseCommand
     }
 
