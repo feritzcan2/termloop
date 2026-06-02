@@ -119,6 +119,12 @@ export interface CreateWorkspaceResult {
   workspace_ref?: string;
 }
 
+export interface CloseWorkspaceResult {
+  window_id?: string | null;
+  workspace_id: string;
+  workspace_ref?: string;
+}
+
 export interface JiraTicketSummary {
   workspace_id?: string;
   key: string;
@@ -479,6 +485,7 @@ export interface TermLoopClient {
   currentProject(): Promise<ProjectSummary | null>;
   listWorkspaces(): Promise<WorkspaceSummary[]>;
   createWorkspace(params: CreateWorkspaceParams): Promise<CreateWorkspaceResult>;
+  closeWorkspace(workspaceId: string): Promise<CloseWorkspaceResult>;
   listTerminalAgents(): Promise<TerminalAgentSummary[]>;
   registerPushToken(params: RegisterPushTokenParams): Promise<void>;
   getJiraTicket(workspaceId: string): Promise<JiraTicketSummary | null>;
@@ -730,6 +737,11 @@ export function createTermLoopClient(opts: {
         ...(params.allowDirty ? { allow_dirty: true } : {}),
         ...(params.promptText ? { prompt_text: params.promptText } : {}),
         ...(params.planMode ? { permission_mode: "plan" } : {}),
+      });
+    },
+    async closeWorkspace(workspaceId) {
+      return call<CloseWorkspaceResult>("workspace.close", {
+        workspace_id: workspaceId,
       });
     },
     async listTerminalAgents() {
