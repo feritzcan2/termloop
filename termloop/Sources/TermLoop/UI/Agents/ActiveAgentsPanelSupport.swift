@@ -87,8 +87,14 @@ struct ActiveAgentsPanel: View {
     @State var projectScopeTick: Int = 0
     @State var activityTick: Int = 0
     @State var bridgeOverviewTick: Int = 0
+    @State var pendingAgentSessionTick: Int?
+    @State var pendingProjectScopeTick: Int?
     @State var pendingActivityTick: Int?
     @State var pendingBridgeOverviewTick: Int?
+    @State var pendingWorkspaceTitleTick: Int?
+    @State var pendingAttentionMuteTick: Int?
+    @State var hasPendingBranchRefresh: Bool = false
+    @State var pendingCuratorForkKeys: Set<UUID>?
     @State var branchTick: Int = 0
     @State var attentionMuteTick: Int = 0
     @State var workspaceTitleTick: Int = 0

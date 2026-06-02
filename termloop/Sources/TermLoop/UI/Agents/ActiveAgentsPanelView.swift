@@ -31,11 +31,19 @@ extension ActiveAgentsPanel {
         }
         .onReceive(WorkspaceMetadataStore.shared.$agentSessionVersion) { newValue in
             guard newValue != agentSessionTick else { return }
+            if AppMenuTrackingGate.shared.isTrackingMenu {
+                pendingAgentSessionTick = newValue
+                return
+            }
             agentSessionTick = newValue
             refreshRestoredAgentPresentations(tabs: projectScopedTabs())
         }
         .onReceive(WorkspaceMetadataStore.shared.$projectScopeVersion) { newValue in
             guard newValue != projectScopeTick else { return }
+            if AppMenuTrackingGate.shared.isTrackingMenu {
+                pendingProjectScopeTick = newValue
+                return
+            }
             projectScopeTick = newValue
             refreshRestoredAgentPresentations(tabs: projectScopedTabs())
         }
@@ -48,13 +56,18 @@ extension ActiveAgentsPanel {
             activityTick = newValue
         }
         .onReceive(WorkspaceMetadataStore.shared.$branchVersion) { _ in
-            let nextKeys = branchObservationKeys(for: scopedTabs)
-            guard nextKeys != observedBranchKeys else { return }
-            observedBranchKeys = nextKeys
-            branchTick &+= 1
+            if AppMenuTrackingGate.shared.isTrackingMenu {
+                hasPendingBranchRefresh = true
+                return
+            }
+            applyBranchRefresh(tabs: scopedTabs)
         }
         .onReceive(WorkspaceMetadataStore.shared.$titleVersion) { newValue in
             guard newValue != workspaceTitleTick else { return }
+            if AppMenuTrackingGate.shared.isTrackingMenu {
+                pendingWorkspaceTitleTick = newValue
+                return
+            }
             workspaceTitleTick = newValue
         }
         .onReceive(bridgeStore.$overviewVersion) { newValue in
@@ -66,20 +79,14 @@ extension ActiveAgentsPanel {
             bridgeOverviewTick = newValue
         }
         .onReceive(AppMenuTrackingGate.shared.trackingEnded) { _ in
-            if let pending = pendingActivityTick,
-               pending != activityTick {
-                activityTick = pending
-            }
-            pendingActivityTick = nil
-
-            if let pending = pendingBridgeOverviewTick,
-               pending != bridgeOverviewTick {
-                bridgeOverviewTick = pending
-            }
-            pendingBridgeOverviewTick = nil
+            applyDeferredMenuTicks()
         }
         .onReceive(TerminalAgentAttentionMuteStore.shared.$version) { newValue in
             guard newValue != attentionMuteTick else { return }
+            if AppMenuTrackingGate.shared.isTrackingMenu {
+                pendingAttentionMuteTick = newValue
+                return
+            }
             attentionMuteTick = newValue
         }
         .onReceive(ContextBankStore.shared.$activeRuns) { newRuns in
@@ -89,8 +96,77 @@ extension ActiveAgentsPanel {
             // panel for nothing.
             let nextKeys = Set(newRuns.map { $0.id })
             guard nextKeys != observedCuratorForkKeys else { return }
+            if AppMenuTrackingGate.shared.isTrackingMenu {
+                pendingCuratorForkKeys = nextKeys
+                return
+            }
             observedCuratorForkKeys = nextKeys
             curatorForkTick &+= 1
+        }
+    }
+
+    func applyBranchRefresh(tabs: [Workspace]) {
+        let nextKeys = branchObservationKeys(for: tabs)
+        guard nextKeys != observedBranchKeys else { return }
+        observedBranchKeys = nextKeys
+        branchTick &+= 1
+    }
+
+    func applyDeferredMenuTicks() {
+        var shouldRefreshRestoredPresentations = false
+
+        if let pending = pendingAgentSessionTick,
+           pending != agentSessionTick {
+            agentSessionTick = pending
+            shouldRefreshRestoredPresentations = true
+        }
+        pendingAgentSessionTick = nil
+
+        if let pending = pendingProjectScopeTick,
+           pending != projectScopeTick {
+            projectScopeTick = pending
+            shouldRefreshRestoredPresentations = true
+        }
+        pendingProjectScopeTick = nil
+
+        if hasPendingBranchRefresh {
+            applyBranchRefresh(tabs: projectScopedTabs())
+        }
+        hasPendingBranchRefresh = false
+
+        if let pending = pendingWorkspaceTitleTick,
+           pending != workspaceTitleTick {
+            workspaceTitleTick = pending
+        }
+        pendingWorkspaceTitleTick = nil
+
+        if let pending = pendingActivityTick,
+           pending != activityTick {
+            activityTick = pending
+        }
+        pendingActivityTick = nil
+
+        if let pending = pendingBridgeOverviewTick,
+           pending != bridgeOverviewTick {
+            bridgeOverviewTick = pending
+        }
+        pendingBridgeOverviewTick = nil
+
+        if let pending = pendingAttentionMuteTick,
+           pending != attentionMuteTick {
+            attentionMuteTick = pending
+        }
+        pendingAttentionMuteTick = nil
+
+        if let pending = pendingCuratorForkKeys,
+           pending != observedCuratorForkKeys {
+            observedCuratorForkKeys = pending
+            curatorForkTick &+= 1
+        }
+        pendingCuratorForkKeys = nil
+
+        if shouldRefreshRestoredPresentations {
+            refreshRestoredAgentPresentations(tabs: projectScopedTabs())
         }
     }
 
