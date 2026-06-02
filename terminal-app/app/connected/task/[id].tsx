@@ -71,6 +71,7 @@ export default function TaskDetailScreen() {
   const [agents, setAgents] = useState<TerminalAgentSummary[] | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agentPromptText, setAgentPromptText] = useState("");
+  const [agentPlanMode, setAgentPlanMode] = useState(false);
 
   const loadedProjectId = task?.project_id;
   const refresh = useCallback(async () => {
@@ -282,7 +283,8 @@ export default function TaskDetailScreen() {
   const startAgentWith = async (
     agentId: string | null,
     allowDirty: boolean,
-    promptText: string
+    promptText: string,
+    planMode: boolean
   ) => {
     const trimmedPrompt = promptText.trim();
     setStarting(true);
@@ -293,6 +295,7 @@ export default function TaskDetailScreen() {
         projectId: taskProjectId,
         allowDirty: allowDirty || undefined,
         promptText: trimmedPrompt || undefined,
+        planMode,
       });
       if (result.workspace_id && result.status === "ready") {
         setAgentPickerOpen(false);
@@ -735,6 +738,8 @@ export default function TaskDetailScreen() {
         defaultAllowDirty={lastFailureWasDirty}
         promptText={agentPromptText}
         onPromptTextChange={setAgentPromptText}
+        planMode={agentPlanMode}
+        onPlanModeChange={setAgentPlanMode}
         starting={starting}
       />
     </SafeAreaView>
@@ -837,11 +842,14 @@ interface AgentPickerSheetProps {
   onConfirm: (
     agentId: string | null,
     allowDirty: boolean,
-    promptText: string
+    promptText: string,
+    planMode: boolean
   ) => void;
   defaultAllowDirty: boolean;
   promptText: string;
   onPromptTextChange: (value: string) => void;
+  planMode: boolean;
+  onPlanModeChange: (value: boolean) => void;
   starting: boolean;
 }
 function AgentPickerSheet({
@@ -854,6 +862,8 @@ function AgentPickerSheet({
   defaultAllowDirty,
   promptText,
   onPromptTextChange,
+  planMode,
+  onPlanModeChange,
   starting,
 }: AgentPickerSheetProps) {
   const [allowDirty, setAllowDirty] = useState(defaultAllowDirty);
@@ -885,6 +895,21 @@ function AgentPickerSheet({
             textAlignVertical="top"
             editable={!starting}
           />
+          <Pressable
+            style={[styles.toggleRow, planMode && styles.toggleRowActive]}
+            onPress={() => !starting && onPlanModeChange(!planMode)}
+            disabled={starting}
+          >
+            <View style={[styles.checkbox, planMode && styles.checkboxActive]}>
+              {planMode ? <Text style={styles.checkboxMark}>✓</Text> : null}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleTitle}>Plan mode</Text>
+              <Text style={styles.toggleHint}>
+                Ask the agent to plan first instead of editing immediately.
+              </Text>
+            </View>
+          </Pressable>
           {agents === null ? (
             <ActivityIndicator style={styles.agentSpinner} />
           ) : agents.length === 0 ? (
@@ -937,7 +962,7 @@ function AgentPickerSheet({
               { marginTop: 14 },
               starting && styles.btnBusy,
             ]}
-            onPress={() => onConfirm(selectedId, allowDirty, promptText)}
+            onPress={() => onConfirm(selectedId, allowDirty, promptText, planMode)}
             disabled={
               starting || (!selectedId && (agents?.length ?? 0) > 0)
             }

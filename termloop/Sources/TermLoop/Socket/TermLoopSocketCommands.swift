@@ -1034,6 +1034,13 @@ enum TermLoopSocketCommands {
         let baseRef = nonEmptyString(params, "base_ref") ?? "HEAD"
         let allowDirty = (params["allow_dirty"] as? Bool) == true
         let title = nonEmptyString(params, "title") ?? branch
+        let promptText = nonEmptyString(params, "prompt_text")
+        let permissionMode: AgentTemplate.PermissionMode?
+        do {
+            permissionMode = try launchPermissionMode(params)
+        } catch {
+            return .err(code: "invalid_params", message: error.localizedDescription, data: nil)
+        }
         let service = GitWorktreeService()
         let prepared: PreparedMobileWorktree
 
@@ -1070,6 +1077,17 @@ enum TermLoopSocketCommands {
         }
 
         do {
+            let plan = try mobileWorktreeInvocationPlan(
+                agentId: agent.id,
+                projectId: project.id,
+                cwd: prepared.path,
+                branch: prepared.branch,
+                promptText: promptText,
+                permissionMode: permissionMode
+            )
+            if let plan {
+                ProjectSkillMaterializer.materializeForLaunch(plan)
+            }
             let workspace = try TerminalAgentLifecycle.createFreshWorkspace(
                 tabManager: tabManager,
                 agent: agent,
@@ -1080,8 +1098,13 @@ enum TermLoopSocketCommands {
                     branch: prepared.branch
                 ),
                 baselineHead: prepared.baselineHead,
-                initialPrompt: "",
+                initialPrompt: plan?.resolvedPromptBody ?? "",
                 projectId: project.id,
+                permission: plan?.resolvedPermission,
+                systemPrompt: plan?.launchSystemInstructions,
+                model: plan?.resolvedModel,
+                reasoning: plan?.resolvedReasoning,
+                launchProvidedFullContext: plan?.launchProvidedFullContext ?? false,
                 select: !isTcpClient
             )
             WorktreeProjectionStore.shared.refresh(
@@ -1118,6 +1141,29 @@ enum TermLoopSocketCommands {
                         message: "Failed to launch agent in new worktree: \(error.localizedDescription)",
                         data: nil)
         }
+    }
+
+    private static func launchPermissionMode(_ params: [String: Any]) throws -> AgentTemplate.PermissionMode? {
+        try TermLoopSocketAgentLaunchInput.permissionMode(rawValue: nonEmptyString(params, "permission_mode"))
+    }
+
+    private static func mobileWorktreeInvocationPlan(
+        agentId: String,
+        projectId: UUID,
+        cwd: String,
+        branch: String,
+        promptText: String?,
+        permissionMode: AgentTemplate.PermissionMode?
+    ) throws -> AgentInvocationPlan? {
+        try TermLoopSocketAgentLaunchInput.invocationPlan(
+            agentId: agentId,
+            promptText: promptText,
+            projectId: projectId,
+            cwd: cwd,
+            branch: branch,
+            permissionMode: permissionMode,
+            reasonTag: "mobile.workspace.createWorktree"
+        )
     }
 
     private enum MobileWorktreeCreateError: Error {
@@ -1652,6 +1698,59 @@ enum TermLoopSocketCommands {
                         message: "Source workspace is not available",
                         data: ["request_id": requestId.uuidString])
         }
+    }
+}
+
+@MainActor
+enum TermLoopSocketAgentLaunchInput {
+    enum InputError: LocalizedError {
+        case invalidPermissionMode(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidPermissionMode(let mode):
+                return "Invalid permission_mode: \(mode)"
+            }
+        }
+    }
+
+    static func permissionMode(rawValue: String?) throws -> AgentTemplate.PermissionMode? {
+        let trimmed = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return nil }
+        guard let mode = AgentTemplate.PermissionMode(rawValue: trimmed) else {
+            throw InputError.invalidPermissionMode(trimmed)
+        }
+        return mode
+    }
+
+    static func invocationPlan(
+        agentId: String?,
+        promptText: String?,
+        workspaceId: UUID? = nil,
+        projectId: UUID?,
+        cwd: String?,
+        branch: String?,
+        permissionMode: AgentTemplate.PermissionMode?,
+        reasonTag: String
+    ) throws -> AgentInvocationPlan? {
+        let trimmedPrompt = promptText?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let effectivePrompt = trimmedPrompt?.isEmpty == false ? trimmedPrompt : nil
+        guard effectivePrompt != nil || permissionMode != nil else {
+            return nil
+        }
+        let request = AgentInvocationRequest(
+            agentId: agentId,
+            userPrompt: effectivePrompt,
+            workspaceId: workspaceId,
+            projectId: projectId,
+            runCwd: cwd.map { URL(fileURLWithPath: $0) },
+            branchName: branch,
+            permissionOverride: permissionMode,
+            source: .socket,
+            reasonTag: reasonTag
+        )
+        return try AgentInvocationComposer.compose(request)
     }
 }
 

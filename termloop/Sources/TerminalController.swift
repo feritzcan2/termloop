@@ -3541,6 +3541,8 @@ class TerminalController {
         let explicitProjectId = v2UUID(params, "project_id")
         let explicitTerminalAgentId = v2RawString(params, "terminal_agent_id")?
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        let termLoopPromptText = v2RawString(params, "prompt_text")
+        let termLoopPermissionMode = v2RawString(params, "permission_mode")
         let isTcpClient = TermLoopTCPBridge.isCurrentThreadTcpClient()
         let shouldDeferMobileBlankClaudeSessionPersistence =
             isTcpClient
@@ -3556,7 +3558,7 @@ class TerminalController {
         let termLoopWorkspaceAgentLaunch: TerminalAgentLifecycle.PreparedFreshWorkspaceLaunch?
         if initialCommand == nil {
             do {
-                termLoopWorkspaceAgentLaunch = try self.termLoopPrepareWorkspaceAgentLaunch(terminalAgentId: explicitTerminalAgentId, cwd: cwd, context: termLoopWorkspaceCreateContext)
+                termLoopWorkspaceAgentLaunch = try self.termLoopPrepareWorkspaceAgentLaunch(terminalAgentId: explicitTerminalAgentId, cwd: cwd, context: termLoopWorkspaceCreateContext, promptText: termLoopPromptText, permissionModeRaw: termLoopPermissionMode)
             } catch {
                 return .err(code: "internal_error", message: "Failed to prepare terminal agent launch: \(error)", data: nil)
             }
