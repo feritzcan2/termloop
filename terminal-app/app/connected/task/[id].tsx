@@ -19,7 +19,10 @@ import {
   getActiveConnectionId,
 } from "../../../lib/session";
 import {
+  mergeTaskColumns,
   surfaceLabel,
+  taskColumnsFromTasks,
+  taskRemoteContextColumns,
   type TaskColumnSummary,
   type TaskRecord,
   type TaskRemoteContext,
@@ -77,10 +80,20 @@ export default function TaskDetailScreen() {
         projectId: loadedProjectId ?? projectId,
       });
       setTask(result.task);
-      setColumns(result.columns.length > 0 ? result.columns : COLUMN_FALLBACK);
+      setColumns(
+        mergeTaskColumns(
+          result.columns.length > 0 ? result.columns : COLUMN_FALLBACK,
+          taskColumnsFromTasks([result.task])
+        )
+      );
       client
         .getTaskRemoteContext({ projectId: result.task.project_id })
-        .then(setRemoteContext)
+        .then((context) => {
+          setRemoteContext(context);
+          setColumns((current) =>
+            mergeTaskColumns(current, taskRemoteContextColumns(context))
+          );
+        })
         .catch(() => setRemoteContext(null));
       setError(null);
     } catch (err) {
@@ -326,6 +339,15 @@ export default function TaskDetailScreen() {
   }) => {
     if (result.task) setTask(result.task);
     if (result.context) setRemoteContext(result.context);
+    if (result.task || result.context) {
+      setColumns((current) =>
+        mergeTaskColumns(
+          current,
+          taskRemoteContextColumns(result.context),
+          taskColumnsFromTasks(result.task ? [result.task] : null)
+        )
+      );
+    }
   };
 
   const waitForRemoteTask = async (operationId: string) => {

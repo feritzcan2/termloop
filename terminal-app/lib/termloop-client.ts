@@ -180,6 +180,69 @@ export interface TaskListResult {
   include_archived: boolean;
 }
 
+export function taskColumnsFromTasks(
+  tasks: TaskRecord[] | null | undefined
+): TaskColumnSummary[] {
+  const seen = new Set<string>();
+  const columns: TaskColumnSummary[] = [];
+  for (const task of tasks ?? []) {
+    const id = String(task.column_id ?? "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    columns.push({
+      id,
+      title: task.column_title?.trim() || id,
+    });
+  }
+  return columns;
+}
+
+export function taskRemoteContextColumns(
+  context: TaskRemoteContext | null | undefined
+): TaskColumnSummary[] {
+  if (!context?.enabled) return [];
+  return (context.columns ?? []).filter((column) =>
+    Boolean(column.remote_status_label?.trim())
+  );
+}
+
+export function mergeTaskColumns(
+  ...sources: Array<TaskColumnSummary[] | null | undefined>
+): TaskColumnSummary[] {
+  const indexes = new Map<string, number>();
+  const result: TaskColumnSummary[] = [];
+  for (const source of sources) {
+    for (const column of source ?? []) {
+      const id = String(column.id ?? "").trim();
+      if (!id) continue;
+      const title = column.title?.trim() || id;
+      const existingIndex = indexes.get(id);
+      if (existingIndex === undefined) {
+        indexes.set(id, result.length);
+        result.push({
+          id,
+          title,
+          ...(column.remote_status_label !== undefined
+            ? { remote_status_label: column.remote_status_label }
+            : {}),
+        });
+        continue;
+      }
+      const existing = result[existingIndex];
+      result[existingIndex] = {
+        ...existing,
+        title:
+          existing.title.trim().length === 0 || existing.title === id
+            ? title
+            : existing.title,
+        remote_status_label:
+          existing.remote_status_label ?? column.remote_status_label,
+      };
+    }
+  }
+  return result;
+}
+
 export interface CreateTaskParams {
   title: string;
   brief?: string;
