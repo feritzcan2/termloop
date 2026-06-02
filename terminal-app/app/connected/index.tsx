@@ -104,6 +104,8 @@ export default function ConnectedScreen() {
   const [selectedTargetKey, setSelectedTargetKey] = useState("project");
   const [worktreeBranchName, setWorktreeBranchName] = useState("");
   const [allowDirtyWorktree, setAllowDirtyWorktree] = useState(false);
+  const [agentPromptText, setAgentPromptText] = useState("");
+  const [agentPlanMode, setAgentPlanMode] = useState(false);
   const [startingAgent, setStartingAgent] = useState(false);
   const [workspaceContexts, setWorkspaceContexts] = useState<
     Record<string, WorkspaceContextState>
@@ -455,6 +457,8 @@ export default function ConnectedScreen() {
         createWorktree: startsNewWorktree,
         worktreeBranch: startsNewWorktree && trimmedBranch ? trimmedBranch : undefined,
         allowDirty: startsNewWorktree && allowDirtyWorktree,
+        promptText: agentPromptText.trim() || undefined,
+        planMode: agentPlanMode,
       });
       await loadOverview();
       setOpeningId(created.workspace_id);
@@ -939,6 +943,43 @@ export default function ConnectedScreen() {
                   </Pressable>
                 </View>
               ) : null}
+
+              <Text style={styles.sheetLabel}>Prompt</Text>
+              <TextInput
+                style={styles.promptInput}
+                value={agentPromptText}
+                onChangeText={setAgentPromptText}
+                placeholder="Tell the agent what to do."
+                placeholderTextColor={colors.placeholder}
+                multiline
+                textAlignVertical="top"
+                editable={!startingAgent}
+              />
+              <Pressable
+                style={[
+                  styles.toggleRow,
+                  agentPlanMode && styles.toggleRowActive,
+                ]}
+                onPress={() => !startingAgent && setAgentPlanMode((value) => !value)}
+                disabled={startingAgent}
+              >
+                <View
+                  style={[
+                    styles.checkbox,
+                    agentPlanMode && styles.checkboxActive,
+                  ]}
+                >
+                  {agentPlanMode ? (
+                    <Text style={styles.checkboxMark}>✓</Text>
+                  ) : null}
+                </View>
+                <View style={styles.toggleText}>
+                  <Text style={styles.toggleTitle}>Plan mode</Text>
+                  <Text style={styles.toggleHint} numberOfLines={2}>
+                    Ask the agent to plan first instead of editing immediately.
+                  </Text>
+                </View>
+              </Pressable>
 
               <Text style={styles.sheetLabel}>Agent</Text>
               {agents === null ? (
@@ -1671,6 +1712,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     fontSize: 13,
     fontFamily: monoFont,
+  },
+  promptInput: {
+    minHeight: 118,
+    maxHeight: 220,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.inputBg,
+    color: colors.text,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    fontSize: 13,
+    lineHeight: 18,
   },
   toggleRow: {
     flexDirection: "row",
