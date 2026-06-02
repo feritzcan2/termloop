@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Swipeable } from "react-native-gesture-handler";
 import { saveLastTerminal } from "../../lib/last-terminal";
 import {
   closeSession,
@@ -107,6 +108,7 @@ export default function ConnectedScreen() {
   const [agentPromptText, setAgentPromptText] = useState("");
   const [agentPlanMode, setAgentPlanMode] = useState(false);
   const [startingAgent, setStartingAgent] = useState(false);
+  const [closingWorkspaceId, setClosingWorkspaceId] = useState<string | null>(null);
   const [workspaceContexts, setWorkspaceContexts] = useState<
     Record<string, WorkspaceContextState>
   >({});
@@ -503,6 +505,29 @@ export default function ConnectedScreen() {
     }
   };
 
+  const closeAgentWorkspace = async (ws: WorkspaceSummary) => {
+    if (!client || closingWorkspaceId) return;
+    const name = workspaceLabel(ws);
+    Alert.alert("Close agent", `Close "${name}" and stop its agent?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Close",
+        style: "destructive",
+        onPress: async () => {
+          setClosingWorkspaceId(ws.id);
+          try {
+            await client.closeWorkspace(ws.id);
+            await loadOverview();
+          } catch (err) {
+            Alert.alert("Failed to close agent", String((err as Error).message ?? err));
+          } finally {
+            setClosingWorkspaceId(null);
+          }
+        },
+      },
+    ]);
+  };
+
   return (
     <SafeAreaView style={styles.root} edges={["bottom"]}>
       <Stack.Screen
@@ -715,6 +740,7 @@ export default function ConnectedScreen() {
           }}
           renderItem={({ item }) => {
             const isOpening = openingId === item.ws.id;
+            const isClosing = closingWorkspaceId === item.ws.id;
             const itemContext = workspaceContexts[item.ws.id];
             const showRowContext = selectedView === "active";
             const locationLabel = showRowContext
@@ -735,15 +761,16 @@ export default function ConnectedScreen() {
               item.changeLabel ||
               rowJiraLabel ||
               rowTargetLabel;
-            return (
+            const row = (
               <Pressable
                 style={({ pressed }) => [
                   styles.workspaceRow,
                   item.toolLabel && styles.workspaceRowAgent,
                   pressed && styles.workspaceRowPressed,
+                  isClosing && styles.workspaceRowClosing,
                 ]}
                 onPress={() => onOpenWorkspace(item.ws)}
-                disabled={openingId !== null}
+                disabled={openingId !== null || closingWorkspaceId !== null}
               >
                 <View style={styles.workspaceIcon}>
                   <Text style={styles.workspaceIconText}>
@@ -798,7 +825,7 @@ export default function ConnectedScreen() {
                   ) : null}
                 </View>
                 <View style={styles.openCol}>
-                  {isOpening ? (
+                  {isOpening || isClosing ? (
                     <ActivityIndicator color={colors.primary} />
                   ) : (
                     <>
@@ -808,6 +835,30 @@ export default function ConnectedScreen() {
                   )}
                 </View>
               </Pressable>
+            );
+            if (!workspaceHasAgent(item)) return row;
+            return (
+              <Swipeable
+                overshootRight={false}
+                renderRightActions={() => (
+                  <View style={styles.swipeActions}>
+                    <Pressable
+                      style={[
+                        styles.swipeCloseAction,
+                        closingWorkspaceId !== null && styles.controlDisabled,
+                      ]}
+                      onPress={() => closeAgentWorkspace(item.ws)}
+                      disabled={closingWorkspaceId !== null}
+                    >
+                      <Text style={styles.swipeCloseText}>
+                        {isClosing ? "Closing" : "Close"}
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
+              >
+                {row}
+              </Swipeable>
             );
           }}
         />
@@ -1548,6 +1599,27 @@ const styles = StyleSheet.create({
   workspaceRowPressed: {
     borderColor: colors.borderStrong,
     backgroundColor: colors.bgRaised,
+  },
+  workspaceRowClosing: { opacity: 0.58 },
+  swipeActions: {
+    width: 88,
+    minHeight: 56,
+    marginBottom: 7,
+    alignItems: "stretch",
+  },
+  swipeCloseAction: {
+    flex: 1,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.dangerBorder,
+    backgroundColor: colors.dangerDim,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  swipeCloseText: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: "900",
   },
   workspaceIcon: {
     width: 34,
