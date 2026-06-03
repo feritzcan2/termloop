@@ -59,6 +59,12 @@ extension TerminalController {
         let gitChanges = workspace.aggregatedGitChanges()
         fields["git_dirty"] = (gitChanges?.count ?? 0) > 0
         fields["git_change_count"] = gitChanges?.count ?? 0
+        fields["pull_requests"] = TermLoopMobilePullRequestPayloads.openPayloads(
+            workspace: workspace,
+            directory: workspace.termLoopPresentationCwd(),
+            branch: branch,
+            reason: "mobile.workspace.summary"
+        )
         let md = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: workspace.id)
         fields["terminal_agent_id"] = md.terminalAgentId as Any? ?? NSNull()
         fields["permission_mode"] = md.permissionMode as Any? ?? NSNull()
@@ -357,6 +363,57 @@ extension TerminalController {
             filePath: filePath,
             maxPatchBytes: maxPatchBytes
         )
+    }
+}
+
+@MainActor
+enum TermLoopMobilePullRequestPayloads {
+    static func openPayloads(
+        workspace: Workspace? = nil,
+        directory: String?,
+        branch: String?,
+        reason: String
+    ) -> [[String: Any]] {
+        guard let normalized = normalizedInput(directory: directory, branch: branch) else { return [] }
+        WorktreeBranchPullRequestStore.shared.ensureLookup(
+            directory: normalized.directory,
+            branch: normalized.branch,
+            reason: reason
+        )
+        let branchPullRequests = WorktreeBranchPullRequestStore.shared.cachedPullRequests(
+            directory: normalized.directory,
+            branch: normalized.branch
+        )
+        let workspacePullRequests = workspace?.sidebarPullRequestsInDisplayOrder() ?? []
+        return WorktreeAgentsPullRequestSummary
+            .orderedUniquePullRequests(from: workspacePullRequests + branchPullRequests)
+            .filter { $0.status == .open }
+            .map(payload(for:))
+    }
+
+    private static func normalizedInput(
+        directory: String?,
+        branch: String?
+    ) -> (directory: String, branch: String)? {
+        guard let branch else { return nil }
+        let trimmedBranch = branch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedBranch.isEmpty else { return nil }
+        guard let resolved = TaskPathNormalization.resolveDisplayAndKey(directory) else { return nil }
+        return (resolved.displayPath, trimmedBranch)
+    }
+
+    private static func payload(for pullRequest: SidebarPullRequestState) -> [String: Any] {
+        [
+            "number": pullRequest.number,
+            "label": pullRequest.label,
+            "url": pullRequest.url.absoluteString,
+            "status": pullRequest.status.rawValue,
+            "display_status": pullRequest.displayStatus,
+            "status_detail": pullRequest.statusDetail as Any? ?? NSNull(),
+            "branch": pullRequest.branch as Any? ?? NSNull(),
+            "base_branch": pullRequest.baseBranch as Any? ?? NSNull(),
+            "stale": pullRequest.isStale
+        ]
     }
 }
 

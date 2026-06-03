@@ -4,6 +4,7 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   type ListRenderItem,
   Modal,
   Platform,
@@ -20,6 +21,7 @@ import {
   taskColumnsFromTasks,
   taskRemoteContextColumns,
   type TaskColumnSummary,
+  type PullRequestSummary,
   type TaskRecord,
   type TaskRemoteContext,
   type TermLoopClient,
@@ -436,9 +438,14 @@ function TaskRow({ item, onPress, onOpenChanges }: TaskRowProps) {
   const preview = item.brief || item.remote_description;
   const changeCount = item.git_change_count ?? 0;
   const canOpenChanges = changeCount > 0 && Boolean(item.workspace_id || item.worktree_path);
+  const pullRequest = firstOpenPullRequest(item);
   const openChanges = (event: GestureResponderEvent) => {
     event.stopPropagation();
     if (canOpenChanges) onOpenChanges?.(item);
+  };
+  const openPullRequest = (event: GestureResponderEvent) => {
+    event.stopPropagation();
+    if (pullRequest?.url) Linking.openURL(pullRequest.url);
   };
   return (
     <Pressable
@@ -480,6 +487,13 @@ function TaskRow({ item, onPress, onOpenChanges }: TaskRowProps) {
             <Pressable onPress={openChanges} hitSlop={6}>
               <Text style={[styles.pill, styles.pillChanges]} numberOfLines={1}>
                 {changeCount === 1 ? "1 change" : `${changeCount} changes`}
+              </Text>
+            </Pressable>
+          ) : null}
+          {pullRequest ? (
+            <Pressable onPress={openPullRequest} hitSlop={6}>
+              <Text style={[styles.pill, styles.pillPullRequest]} numberOfLines={1}>
+                {pullRequestLabel(pullRequest)}
               </Text>
             </Pressable>
           ) : null}
@@ -745,6 +759,20 @@ function inferAgentLabel(task: TaskRecord): string | null {
     if (lower.includes("gemini")) return "Gemini";
   }
   return "Agent";
+}
+
+function firstOpenPullRequest(task: TaskRecord): PullRequestSummary | null {
+  return (
+    task.pull_requests?.find((pr) => {
+      const status = pr.status?.toLowerCase();
+      return status === "open" || !status;
+    }) ?? null
+  );
+}
+
+function pullRequestLabel(pr: PullRequestSummary): string {
+  const status = pr.display_status || pr.status_detail || pr.status || "open";
+  return `${pr.label || "PR"} #${pr.number} · ${status}`;
 }
 
 function railStyleFor(columnId: string) {
@@ -1043,6 +1071,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgRaised,
     color: colors.warn,
     borderColor: colors.warn,
+  },
+  pillPullRequest: {
+    backgroundColor: colors.primaryDim,
+    color: colors.primary,
+    borderColor: colors.borderAccent,
   },
   pillJira: {
     backgroundColor: "rgba(230,179,71,0.13)",

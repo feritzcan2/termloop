@@ -233,8 +233,8 @@ function ChangedFile({
           {statusShort(file.status)}
         </Text>
         <View style={styles.fileTitleBlock}>
-          <Text style={styles.filePath} numberOfLines={2}>
-            {file.path}
+          <Text style={styles.filePath}>
+            {wrappablePath(file.path)}
           </Text>
           <Text style={styles.fileMeta} numberOfLines={1}>
             {file.binary
@@ -309,6 +309,12 @@ function folderName(path: string): string {
   const normalized = path.replace(/\\/g, "/");
   const index = normalized.lastIndexOf("/");
   return index > 0 ? normalized.slice(0, index) : ".";
+}
+
+function wrappablePath(path: string): string {
+  return path
+    .replace(/([/_.-])/g, "$1\u200B")
+    .replace(/([^/\u200B]{24})/g, "$1\u200B");
 }
 
 function DiffLine({ line }: { line: WorkspaceDiffLine }) {
@@ -464,7 +470,7 @@ const styles = StyleSheet.create({
   fileHeader: {
     minHeight: 54,
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 10,
     paddingHorizontal: 10,
     paddingVertical: 9,
@@ -472,6 +478,7 @@ const styles = StyleSheet.create({
   statusBadge: {
     width: 24,
     height: 24,
+    marginTop: 1,
     borderRadius: radii.sm,
     borderWidth: 1,
     textAlign: "center",
@@ -502,13 +509,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryDim,
   },
   fileTitleBlock: { flex: 1, minWidth: 0, gap: 2 },
-  filePath: { color: colors.text, fontSize: 13, fontWeight: "800" },
+  filePath: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 18,
+  },
   fileMeta: { color: colors.sub, fontSize: 11, fontFamily: monoFont },
   expandIcon: {
     color: colors.primary,
     fontSize: 19,
     fontWeight: "900",
     width: 22,
+    marginTop: 1,
     textAlign: "center",
   },
   notice: {
