@@ -24,6 +24,7 @@ import {
   taskColumnsFromTasks,
   taskRemoteContextColumns,
   type TaskColumnSummary,
+  type PullRequestSummary,
   type TaskRecord,
   type TaskRemoteContext,
   type TerminalAgentSummary,
@@ -416,22 +417,6 @@ export default function TaskDetailScreen() {
     }
   };
 
-  const unlinkRemote = async () => {
-    if (!task.remote_key || remoteBusy) return;
-    setRemoteBusy(true);
-    try {
-      const result = await client.unlinkTaskRemoteItem({
-        taskId: task.id,
-        projectId: taskProjectId,
-      });
-      applyRemoteTaskResult(result);
-    } catch (err) {
-      Alert.alert("Unlink failed", String((err as Error).message ?? err));
-    } finally {
-      setRemoteBusy(false);
-    }
-  };
-
   const updateRemoteStatus = async (sourceTask: TaskRecord = task) => {
     if (!sourceTask.remote_key || remoteBusy) return;
     setRemoteBusy(true);
@@ -464,6 +449,10 @@ export default function TaskDetailScreen() {
   const canSaveEdit = (titleDirty || briefDirty) && draftTitle.trim().length > 0 && !savingEdit;
   const changeCount = task.git_change_count ?? 0;
   const canOpenChanges = Boolean(task.worktree_path || task.workspace_id);
+  const openPullRequests = taskOpenPullRequests(task);
+  const openPullRequest = (pullRequest: PullRequestSummary) => {
+    if (pullRequest.url) Linking.openURL(pullRequest.url);
+  };
 
   return (
     <SafeAreaView style={styles.root} edges={["bottom"]}>
@@ -651,27 +640,6 @@ export default function TaskDetailScreen() {
                   {remoteBusy ? "Working…" : `Sync ${providerName}`}
                 </Text>
               </Pressable>
-              <Pressable
-                style={styles.smallBtn}
-                onPress={() => setRemoteLinkOpen(true)}
-                disabled={remoteBusy}
-              >
-                <Text style={styles.smallBtnText}>Relink</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.smallBtn, styles.smallBtnDanger]}
-                onPress={() =>
-                  Alert.alert("Unlink work item?", task.remote_key ?? "", [
-                    { text: "Cancel", style: "cancel" },
-                    { text: "Unlink", style: "destructive", onPress: unlinkRemote },
-                  ])
-                }
-                disabled={remoteBusy}
-              >
-                <Text style={[styles.smallBtnText, styles.smallBtnDangerText]}>
-                  Unlink
-                </Text>
-              </Pressable>
             </View>
           </View>
         ) : (
@@ -687,15 +655,31 @@ export default function TaskDetailScreen() {
           </Pressable>
         )}
 
-        <Text style={styles.sectionLabel}>Workspace</Text>
-        <View style={styles.kv}>
-          <KvRow k="Branch" v={task.branch ?? "—"} mono />
-          <KvRow k="Worktree" v={task.worktree_path ?? "—"} mono />
-          <KvRow k="Workspace" v={shortId(task.workspace_id)} mono />
-          {task.task_file_path ? (
-            <KvRow k="Spec" v={task.task_file_path} mono />
-          ) : null}
-        </View>
+        {openPullRequests.length > 0 ? (
+          <>
+            <Text style={styles.sectionLabel}>Pull Requests</Text>
+            <View style={styles.pullRequestList}>
+              {openPullRequests.map((pullRequest) => (
+                <Pressable
+                  key={pullRequest.url || `${pullRequest.label}:${pullRequest.number}`}
+                  style={styles.pullRequestRow}
+                  onPress={() => openPullRequest(pullRequest)}
+                >
+                  <View style={styles.pullRequestDot} />
+                  <View style={styles.pullRequestText}>
+                    <Text style={styles.pullRequestTitle} numberOfLines={1}>
+                      {pullRequestCompactLabel(pullRequest)}
+                    </Text>
+                    <Text style={styles.pullRequestSub} numberOfLines={1}>
+                      {pullRequestDetailLabel(pullRequest)}
+                    </Text>
+                  </View>
+                  <Text style={styles.pullRequestOpen}>Open</Text>
+                </Pressable>
+              ))}
+            </View>
+          </>
+        ) : null}
 
         <View style={styles.actions}>
           {task.workspace_id || taskWorkspaces.length > 0 ? (
@@ -799,22 +783,6 @@ export default function TaskDetailScreen() {
         starting={starting}
       />
     </SafeAreaView>
-  );
-}
-
-interface KvRowProps {
-  k: string;
-  v: string;
-  mono?: boolean;
-}
-function KvRow({ k, v, mono }: KvRowProps) {
-  return (
-    <View style={styles.kvRow}>
-      <Text style={styles.kvKey}>{k}</Text>
-      <Text style={[styles.kvVal, mono && styles.kvValMono]} numberOfLines={3}>
-        {v}
-      </Text>
-    </View>
   );
 }
 
@@ -1119,6 +1087,28 @@ function workspaceIsAgent(workspace: WorkspaceSummary): boolean {
       workspace.agent_activity_phase ||
       workspace.agent_activity_updated_at
   );
+}
+
+function taskOpenPullRequests(task: TaskRecord): PullRequestSummary[] {
+  return (task.pull_requests ?? []).filter((pullRequest) => {
+    const status = pullRequest.status?.toLowerCase();
+    return status === "open" || !status;
+  });
+}
+
+function pullRequestCompactLabel(pullRequest: PullRequestSummary): string {
+  return `${pullRequest.label || "PR"} #${pullRequest.number}`;
+}
+
+function pullRequestDetailLabel(pullRequest: PullRequestSummary): string {
+  const status =
+    pullRequest.display_status ||
+    pullRequest.status_detail ||
+    pullRequest.status ||
+    "open";
+  const base = pullRequest.base_branch ? ` -> ${pullRequest.base_branch}` : "";
+  const stale = pullRequest.stale ? " · stale" : "";
+  return `${status}${base}${stale}`;
 }
 
 async function pollUntilSettled(
@@ -1435,36 +1425,42 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800",
   },
-  smallBtnDanger: {
-    borderColor: colors.dangerBorder,
-    backgroundColor: colors.dangerDim,
-  },
-  smallBtnDangerText: { color: colors.danger },
-
-  kv: {
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.bgElevated,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  kvRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    paddingVertical: 6,
-    gap: 12,
-  },
-  kvKey: {
-    width: 80,
-    color: colors.label,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  kvVal: { flex: 1, color: colors.text, fontSize: 12 },
-  kvValMono: { fontFamily: monoFont, fontSize: 11 },
-
   actions: { gap: 8, marginTop: 16 },
+  pullRequestList: { gap: 8 },
+  pullRequestRow: {
+    minHeight: 52,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderAccent,
+    backgroundColor: colors.primaryDim,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  pullRequestDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.success,
+  },
+  pullRequestText: { flex: 1, minWidth: 0 },
+  pullRequestTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  pullRequestSub: {
+    color: colors.sub,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  pullRequestOpen: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "800",
+  },
   agentWorkspaceList: { gap: 8 },
   agentWorkspaceRow: {
     minHeight: 54,
