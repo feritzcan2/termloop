@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Swipeable } from "react-native-gesture-handler";
 import { saveLastTerminal } from "../../lib/last-terminal";
 import {
   closeSession,
@@ -107,6 +108,7 @@ export default function ConnectedScreen() {
   const [agentPromptText, setAgentPromptText] = useState("");
   const [agentPlanMode, setAgentPlanMode] = useState(false);
   const [startingAgent, setStartingAgent] = useState(false);
+  const [closingWorkspaceId, setClosingWorkspaceId] = useState<string | null>(null);
   const [workspaceContexts, setWorkspaceContexts] = useState<
     Record<string, WorkspaceContextState>
   >({});
@@ -503,6 +505,39 @@ export default function ConnectedScreen() {
     }
   };
 
+  const closeAgentWorkspace = async (ws: WorkspaceSummary) => {
+    if (!client || closingWorkspaceId) return;
+    const name = workspaceLabel(ws);
+    Alert.alert("Close agent", `Close "${name}" and stop its agent?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Close",
+        style: "destructive",
+        onPress: async () => {
+          setClosingWorkspaceId(ws.id);
+          try {
+            await client.closeWorkspace(ws.id);
+            await loadOverview();
+          } catch (err) {
+            Alert.alert("Failed to close agent", String((err as Error).message ?? err));
+          } finally {
+            setClosingWorkspaceId(null);
+          }
+        },
+      },
+    ]);
+  };
+
+  const openWorkspaceChanges = (row: WorkspaceRow) => {
+    router.push({
+      pathname: "/connected/changes" as never,
+      params: {
+        workspaceId: row.ws.id,
+        name: row.worktreeLabel ?? row.title,
+      },
+    });
+  };
+
   return (
     <SafeAreaView style={styles.root} edges={["bottom"]}>
       <Stack.Screen
@@ -663,21 +698,38 @@ export default function ConnectedScreen() {
             const context = sectionContextSummary(section, workspaceContexts);
             const showContext =
               selectedView === "worktrees" && hasSectionContext(context);
+            const changeCount =
+              selectedView === "worktrees" ? worktreeSectionChangeCount(section) : 0;
+            const changesRow =
+              changeCount > 0 ? firstChangedWorkspaceRow(section) : null;
             return (
               <View style={styles.sectionHeader}>
                 <View style={styles.sectionHeaderTop}>
                   <Text style={styles.sectionTitle} numberOfLines={1}>
                     {section.title}
                   </Text>
-                  {section.kind === "worktree" ? (
-                    <Pressable
-                      style={styles.sectionAgentBtn}
-                      onPress={() => openAgentPicker(section.key)}
-                      hitSlop={6}
-                    >
-                      <Text style={styles.sectionAgentBtnText}>+ Agent</Text>
-                    </Pressable>
-                  ) : null}
+                  <View style={styles.sectionHeaderActions}>
+                    {changesRow ? (
+                      <Pressable
+                        style={styles.sectionChangesBtn}
+                        onPress={() => openWorkspaceChanges(changesRow)}
+                        hitSlop={6}
+                      >
+                        <Text style={styles.sectionChangesBtnText}>
+                          Changes {changeCount}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                    {section.kind === "worktree" ? (
+                      <Pressable
+                        style={styles.sectionAgentBtn}
+                        onPress={() => openAgentPicker(section.key)}
+                        hitSlop={6}
+                      >
+                        <Text style={styles.sectionAgentBtnText}>+ Agent</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
                 </View>
                 <Text style={styles.sectionSubtitle} numberOfLines={1}>
                   {section.subtitle}
@@ -715,8 +767,11 @@ export default function ConnectedScreen() {
           }}
           renderItem={({ item }) => {
             const isOpening = openingId === item.ws.id;
+            const isClosing = closingWorkspaceId === item.ws.id;
             const itemContext = workspaceContexts[item.ws.id];
             const showRowContext = selectedView === "active";
+            const rowChangeLabel =
+              selectedView === "worktrees" ? item.changeLabel : null;
             const locationLabel = showRowContext
               ? workspaceLocationLabel(item)
               : null;
@@ -732,18 +787,19 @@ export default function ConnectedScreen() {
               locationLabel ||
               item.statusLabel ||
               item.activityLabel ||
-              item.changeLabel ||
+              rowChangeLabel ||
               rowJiraLabel ||
               rowTargetLabel;
-            return (
+            const row = (
               <Pressable
                 style={({ pressed }) => [
                   styles.workspaceRow,
                   item.toolLabel && styles.workspaceRowAgent,
                   pressed && styles.workspaceRowPressed,
+                  isClosing && styles.workspaceRowClosing,
                 ]}
                 onPress={() => onOpenWorkspace(item.ws)}
-                disabled={openingId !== null}
+                disabled={openingId !== null || closingWorkspaceId !== null}
               >
                 <View style={styles.workspaceIcon}>
                   <Text style={styles.workspaceIconText}>
@@ -776,10 +832,12 @@ export default function ConnectedScreen() {
                           {item.activityLabel}
                         </Text>
                       ) : null}
-                      {item.changeLabel ? (
-                        <Text style={styles.workspaceMetaChip} numberOfLines={1}>
-                          {item.changeLabel}
-                        </Text>
+                      {rowChangeLabel ? (
+                        <Pressable onPress={() => openWorkspaceChanges(item)}>
+                          <Text style={styles.workspaceChangesMetaChip} numberOfLines={1}>
+                            {rowChangeLabel}
+                          </Text>
+                        </Pressable>
                       ) : null}
                       {rowJiraLabel ? (
                         <Text style={styles.workspaceJiraMetaChip} numberOfLines={1}>
@@ -798,7 +856,7 @@ export default function ConnectedScreen() {
                   ) : null}
                 </View>
                 <View style={styles.openCol}>
-                  {isOpening ? (
+                  {isOpening || isClosing ? (
                     <ActivityIndicator color={colors.primary} />
                   ) : (
                     <>
@@ -808,6 +866,30 @@ export default function ConnectedScreen() {
                   )}
                 </View>
               </Pressable>
+            );
+            if (!workspaceHasAgent(item)) return row;
+            return (
+              <Swipeable
+                overshootRight={false}
+                renderRightActions={() => (
+                  <View style={styles.swipeActions}>
+                    <Pressable
+                      style={[
+                        styles.swipeCloseAction,
+                        closingWorkspaceId !== null && styles.controlDisabled,
+                      ]}
+                      onPress={() => closeAgentWorkspace(item.ws)}
+                      disabled={closingWorkspaceId !== null}
+                    >
+                      <Text style={styles.swipeCloseText}>
+                        {isClosing ? "Closing" : "Close"}
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
+              >
+                {row}
+              </Swipeable>
             );
           }}
         />
@@ -1129,6 +1211,17 @@ function workspaceHasAgent(row: WorkspaceRow): boolean {
 
 function sectionItemCount(sections: WorkspaceSection[]): number {
   return sections.reduce((sum, section) => sum + section.data.length, 0);
+}
+
+function worktreeSectionChangeCount(section: WorkspaceSection): number {
+  return section.data.reduce(
+    (sum, row) => sum + (row.ws.git_change_count ?? 0),
+    0
+  );
+}
+
+function firstChangedWorkspaceRow(section: WorkspaceSection): WorkspaceRow | null {
+  return section.data.find((row) => (row.ws.git_change_count ?? 0) > 0) ?? null;
 }
 
 function workspaceLocationLabel(row: WorkspaceRow): string | null {
@@ -1513,8 +1606,13 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
   },
-  sectionAgentBtn: {
+  sectionHeaderActions: {
     marginLeft: "auto",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  sectionAgentBtn: {
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: radii.sm,
@@ -1524,6 +1622,19 @@ const styles = StyleSheet.create({
   },
   sectionAgentBtnText: {
     color: colors.primary,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  sectionChangesBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.warn,
+    backgroundColor: colors.bgRaised,
+  },
+  sectionChangesBtnText: {
+    color: colors.warn,
     fontSize: 11,
     fontWeight: "800",
   },
@@ -1548,6 +1659,27 @@ const styles = StyleSheet.create({
   workspaceRowPressed: {
     borderColor: colors.borderStrong,
     backgroundColor: colors.bgRaised,
+  },
+  workspaceRowClosing: { opacity: 0.58 },
+  swipeActions: {
+    width: 88,
+    minHeight: 56,
+    marginBottom: 7,
+    alignItems: "stretch",
+  },
+  swipeCloseAction: {
+    flex: 1,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.dangerBorder,
+    backgroundColor: colors.dangerDim,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  swipeCloseText: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: "900",
   },
   workspaceIcon: {
     width: 34,
@@ -1592,6 +1724,12 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
     maxWidth: 140,
+  },
+  workspaceChangesMetaChip: {
+    color: colors.warn,
+    fontSize: 10,
+    fontWeight: "800",
+    maxWidth: 150,
   },
   workspaceJiraMetaChip: {
     color: colors.warn,

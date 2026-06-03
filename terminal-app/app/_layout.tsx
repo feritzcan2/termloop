@@ -111,6 +111,10 @@ export default function RootLayout() {
           options={{ headerShown: false }}
         />
         <Stack.Screen
+          name="connected/changes"
+          options={{ title: "Changes" }}
+        />
+        <Stack.Screen
           name="connected/task/[id]"
           options={{ title: "Task" }}
         />
