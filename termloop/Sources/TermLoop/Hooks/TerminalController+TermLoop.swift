@@ -374,17 +374,21 @@ enum TermLoopMobilePullRequestPayloads {
         branch: String?,
         reason: String
     ) -> [[String: Any]] {
-        guard let normalized = normalizedInput(directory: directory, branch: branch) else { return [] }
-        WorktreeBranchPullRequestStore.shared.ensureLookup(
-            directory: normalized.directory,
-            branch: normalized.branch,
-            reason: reason
-        )
-        let branchPullRequests = WorktreeBranchPullRequestStore.shared.cachedPullRequests(
-            directory: normalized.directory,
-            branch: normalized.branch
-        )
         let workspacePullRequests = workspace?.sidebarPullRequestsInDisplayOrder() ?? []
+        let branchPullRequests: [SidebarPullRequestState]
+        if let normalized = normalizedInput(directory: directory, branch: branch) {
+            WorktreeBranchPullRequestStore.shared.ensureLookup(
+                directory: normalized.directory,
+                branch: normalized.branch,
+                reason: reason
+            )
+            branchPullRequests = WorktreeBranchPullRequestStore.shared.cachedPullRequests(
+                directory: normalized.directory,
+                branch: normalized.branch
+            )
+        } else {
+            branchPullRequests = []
+        }
         return WorktreeAgentsPullRequestSummary
             .orderedUniquePullRequests(from: workspacePullRequests + branchPullRequests)
             .filter { $0.status == .open }

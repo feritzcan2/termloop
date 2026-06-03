@@ -724,9 +724,6 @@ export default function ConnectedScreen() {
               selectedView === "worktrees" ? worktreeSectionChangeCount(section) : 0;
             const changesRow =
               changeCount > 0 ? firstChangedWorkspaceRow(section) : null;
-            const openPullRequests =
-              selectedView === "worktrees" ? worktreeSectionPullRequests(section) : [];
-            const primaryPullRequest = openPullRequests[0] ?? null;
             return (
               <View style={styles.sectionHeader}>
                 <View style={styles.sectionHeaderTop}>
@@ -734,19 +731,6 @@ export default function ConnectedScreen() {
                     {section.title}
                   </Text>
                   <View style={styles.sectionHeaderActions}>
-                    {primaryPullRequest ? (
-                      <Pressable
-                        style={styles.sectionPullRequestBtn}
-                        onPress={(event) => openPullRequest(primaryPullRequest, event)}
-                        hitSlop={6}
-                      >
-                        <Text style={styles.sectionPullRequestBtnText}>
-                          {openPullRequests.length === 1
-                            ? pullRequestCompactLabel(primaryPullRequest)
-                            : `${openPullRequests.length} PRs`}
-                        </Text>
-                      </Pressable>
-                    ) : null}
                     {changesRow ? (
                       <Pressable
                         style={styles.sectionChangesBtn}
@@ -821,14 +805,14 @@ export default function ConnectedScreen() {
               showRowContext && itemContext?.runTargets[0]
                 ? runTargetChipLabel(itemContext.runTargets[0])
                 : null;
-            const rowPullRequest =
-              selectedView === "worktrees" ? firstOpenPullRequest(item.ws) : null;
+            const rowPullRequests =
+              selectedView === "worktrees" ? openPullRequests(item.ws) : [];
             const showMeta =
               locationLabel ||
               item.statusLabel ||
               item.activityLabel ||
               rowChangeLabel ||
-              rowPullRequest ||
+              rowPullRequests.length > 0 ||
               rowJiraLabel ||
               rowTargetLabel;
             const row = (
@@ -880,15 +864,17 @@ export default function ConnectedScreen() {
                           </Text>
                         </Pressable>
                       ) : null}
-                      {rowPullRequest ? (
+                      {rowPullRequests.map((pullRequest) => (
                         <Pressable
-                          onPress={(event) => openPullRequest(rowPullRequest, event)}
+                          key={pullRequest.url || `${pullRequest.label}:${pullRequest.number}`}
+                          onPress={(event) => openPullRequest(pullRequest, event)}
+                          hitSlop={6}
                         >
                           <Text style={styles.workspacePullRequestMetaChip} numberOfLines={1}>
-                            {pullRequestRowLabel(rowPullRequest)}
+                            {pullRequestRowLabel(pullRequest)}
                           </Text>
                         </Pressable>
-                      ) : null}
+                      ))}
                       {rowJiraLabel ? (
                         <Text style={styles.workspaceJiraMetaChip} numberOfLines={1}>
                           {rowJiraLabel}
@@ -1272,24 +1258,6 @@ function worktreeSectionChangeCount(section: WorkspaceSection): number {
 
 function firstChangedWorkspaceRow(section: WorkspaceSection): WorkspaceRow | null {
   return section.data.find((row) => (row.ws.git_change_count ?? 0) > 0) ?? null;
-}
-
-function worktreeSectionPullRequests(section: WorkspaceSection): PullRequestSummary[] {
-  const seen = new Set<string>();
-  const out: PullRequestSummary[] = [];
-  for (const row of section.data) {
-    for (const pr of openPullRequests(row.ws)) {
-      const key = pr.url || `${pr.label ?? "PR"}:${pr.number}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(pr);
-    }
-  }
-  return out;
-}
-
-function firstOpenPullRequest(ws: WorkspaceSummary): PullRequestSummary | null {
-  return openPullRequests(ws)[0] ?? null;
 }
 
 function openPullRequests(ws: WorkspaceSummary): PullRequestSummary[] {
@@ -1722,20 +1690,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "800",
   },
-  sectionPullRequestBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.borderAccent,
-    backgroundColor: colors.primaryDim,
-  },
-  sectionPullRequestBtnText: {
-    color: colors.primary,
-    fontSize: 11,
-    fontWeight: "800",
-  },
-
   workspaceRow: {
     flexDirection: "row",
     alignItems: "center",
