@@ -3501,6 +3501,15 @@ class TerminalController {
         guard let payload else {
             return .err(code: "not_found", message: "Workspace not found", data: nil)
         }
+        if v2Bool(params, "include_patch") == true {
+            let maxPatchBytes = v2Int(params, "max_patch_bytes")
+            let filePath = v2RawString(params, "file_path")
+            return .ok(self.termLoopWorkspaceGitChangesPayloadAddingPatches(
+                payload,
+                filePath: filePath,
+                maxPatchBytes: maxPatchBytes
+            ))
+        }
         return .ok(payload)
     }
 
