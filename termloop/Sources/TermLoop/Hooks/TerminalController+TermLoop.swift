@@ -303,6 +303,50 @@ extension TerminalController {
         ]
     }
 
+    func termLoopWorkspaceGitChangesPayload(
+        worktreePath: String,
+        title: String?,
+        branch: String?
+    ) -> [String: Any] {
+        let normalizedPath = URL(fileURLWithPath: worktreePath).standardizedFileURL.path
+        let files = GitWorktreePresentationStore.shared.files(for: normalizedPath)
+        let trimmedBranch = branch?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedBranch = (trimmedBranch?.isEmpty == true ? nil : trimmedBranch)
+            ?? GitWorktreePresentationStore.shared.branch(for: normalizedPath)
+        return [
+            "workspace_id": NSNull(),
+            "title": title as Any? ?? NSNull(),
+            "branch": resolvedBranch as Any? ?? NSNull(),
+            "worktree_path": normalizedPath,
+            "git_dirty": !files.isEmpty,
+            "git_change_count": files.count,
+            "files": files.map { file in
+                [
+                    "path": file.path,
+                    "status": file.status.rawValue
+                ]
+            }
+        ]
+    }
+
+    @MainActor
+    func termLoopWorkspaceMatchingWorktreePath(
+        _ worktreePath: String,
+        tabManager: TabManager
+    ) -> Workspace? {
+        let requested = URL(fileURLWithPath: worktreePath).standardizedFileURL.path
+        return tabManager.tabs.first { workspace in
+            [
+                WorkspaceMetadataStore.shared.worktreePath(forWorkspaceId: workspace.id),
+                workspace.termLoopPresentationCwd(),
+                workspace.currentDirectory
+            ]
+            .compactMap { $0 }
+            .map { URL(fileURLWithPath: $0).standardizedFileURL.path }
+            .contains(requested)
+        }
+    }
+
     func termLoopWorkspaceGitChangesPayloadAddingPatches(
         _ payload: [String: Any],
         filePath: String?,
