@@ -179,6 +179,8 @@ function createSessionClient(session: ActiveSession): TermLoopClient {
         (client) => client.closeWorkspace(workspaceId),
         "prewrite"
       ),
+    getWorkspaceChanges: (params) =>
+      withReconnect(session, (client) => client.getWorkspaceChanges(params)),
     listTerminalAgents: (): Promise<TerminalAgentSummary[]> =>
       withReconnect(session, (client) => client.listTerminalAgents()),
     registerPushToken: (params: RegisterPushTokenParams) =>

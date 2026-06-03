@@ -140,6 +140,52 @@ export interface WorkspaceRunTargetSummary {
   reported_at?: string | null;
 }
 
+export type WorkspaceChangeStatus =
+  | "modified"
+  | "added"
+  | "deleted"
+  | "renamed"
+  | "untracked"
+  | string;
+
+export type WorkspaceDiffLineKind = "context" | "add" | "delete" | "meta" | string;
+
+export interface WorkspaceDiffLine {
+  kind: WorkspaceDiffLineKind;
+  old_line?: number;
+  new_line?: number;
+  text: string;
+}
+
+export interface WorkspaceDiffHunk {
+  old_start: number;
+  old_lines: number;
+  new_start: number;
+  new_lines: number;
+  lines: WorkspaceDiffLine[];
+}
+
+export interface WorkspaceChangeFile {
+  path: string;
+  old_path?: string | null;
+  status: WorkspaceChangeStatus;
+  binary?: boolean;
+  additions?: number;
+  deletions?: number;
+  patch_truncated?: boolean;
+  hunks?: WorkspaceDiffHunk[];
+}
+
+export interface WorkspaceChangesResult {
+  workspace_id: string;
+  title?: string;
+  branch?: string | null;
+  worktree_path?: string | null;
+  git_dirty: boolean;
+  git_change_count: number;
+  files: WorkspaceChangeFile[];
+}
+
 export type TaskColumnId =
   | "backlog"
   | "todo"
@@ -486,6 +532,12 @@ export interface TermLoopClient {
   listWorkspaces(): Promise<WorkspaceSummary[]>;
   createWorkspace(params: CreateWorkspaceParams): Promise<CreateWorkspaceResult>;
   closeWorkspace(workspaceId: string): Promise<CloseWorkspaceResult>;
+  getWorkspaceChanges(params: {
+    workspaceId: string;
+    includePatch?: boolean;
+    filePath?: string;
+    maxPatchBytes?: number;
+  }): Promise<WorkspaceChangesResult>;
   listTerminalAgents(): Promise<TerminalAgentSummary[]>;
   registerPushToken(params: RegisterPushTokenParams): Promise<void>;
   getJiraTicket(workspaceId: string): Promise<JiraTicketSummary | null>;
@@ -742,6 +794,14 @@ export function createTermLoopClient(opts: {
     async closeWorkspace(workspaceId) {
       return call<CloseWorkspaceResult>("workspace.close", {
         workspace_id: workspaceId,
+      });
+    },
+    async getWorkspaceChanges(params) {
+      return call<WorkspaceChangesResult>("workspace.changes", {
+        workspace_id: params.workspaceId,
+        ...(params.includePatch ? { include_patch: true } : {}),
+        ...(params.filePath ? { file_path: params.filePath } : {}),
+        ...(params.maxPatchBytes ? { max_patch_bytes: params.maxPatchBytes } : {}),
       });
     },
     async listTerminalAgents() {

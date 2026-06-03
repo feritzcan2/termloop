@@ -255,6 +255,17 @@ export default function TaskDetailScreen() {
     await openWorkspace(task.workspace_id);
   };
 
+  const onOpenChanges = () => {
+    if (!task?.workspace_id) return;
+    router.push({
+      pathname: "/connected/changes" as never,
+      params: {
+        workspaceId: task.workspace_id,
+        name: task.branch ?? task.title,
+      },
+    });
+  };
+
   const ensureAgentsLoaded = async () => {
     if (agents !== null) return;
     try {
@@ -682,18 +693,28 @@ export default function TaskDetailScreen() {
 
         <View style={styles.actions}>
           {task.workspace_id ? (
-            <Pressable
-              style={[styles.btn, styles.btnPrimary]}
-              onPress={onOpenAgent}
-              disabled={opening}
-            >
-              {opening ? (
-                <ActivityIndicator color={colors.onPrimary} size="small" />
+            <>
+              <Pressable
+                style={[styles.btn, styles.btnPrimary]}
+                onPress={onOpenAgent}
+                disabled={opening}
+              >
+                {opening ? (
+                  <ActivityIndicator color={colors.onPrimary} size="small" />
+                ) : null}
+                <Text style={styles.btnPrimaryText}>
+                  {opening ? "Opening…" : "Open agent terminal"}
+                </Text>
+              </Pressable>
+              {task.worktree_path ? (
+                <Pressable
+                  style={[styles.btn, styles.btnSecondary]}
+                  onPress={onOpenChanges}
+                >
+                  <Text style={styles.btnSecondaryText}>View changes</Text>
+                </Pressable>
               ) : null}
-              <Text style={styles.btnPrimaryText}>
-                {opening ? "Opening…" : "Open agent terminal"}
-              </Text>
-            </Pressable>
+            </>
           ) : (
             <Pressable
               style={[styles.btn, styles.btnPrimary]}
@@ -1374,6 +1395,16 @@ const styles = StyleSheet.create({
   btnPrimary: { backgroundColor: colors.primary },
   btnPrimaryText: {
     color: colors.onPrimary,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  btnSecondary: {
+    borderWidth: 1,
+    borderColor: colors.borderAccent,
+    backgroundColor: colors.primaryDim,
+  },
+  btnSecondaryText: {
+    color: colors.primary,
     fontSize: 14,
     fontWeight: "800",
   },
