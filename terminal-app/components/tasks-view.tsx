@@ -8,6 +8,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  type GestureResponderEvent,
   ScrollView,
   StyleSheet,
   Text,
@@ -30,6 +31,7 @@ interface TasksViewProps {
   client: TermLoopClient;
   projectId?: string;
   onOpenTask: (taskId: string, projectId: string) => void;
+  onOpenChanges?: (task: TaskRecord) => void;
 }
 
 const ROW_HEIGHT = 92;
@@ -41,6 +43,7 @@ export function TasksView({
   client,
   projectId,
   onOpenTask,
+  onOpenChanges,
 }: TasksViewProps) {
   const [tasks, setTasks] = useState<TaskRecord[] | null>(null);
   const [columns, setColumns] = useState<TaskColumnSummary[]>([]);
@@ -132,9 +135,10 @@ export function TasksView({
       <TaskRow
         item={item}
         onPress={() => onOpenTask(item.id, item.project_id)}
+        onOpenChanges={onOpenChanges}
       />
     ),
-    [onOpenTask]
+    [onOpenTask, onOpenChanges]
   );
 
   const onCreated = useCallback(
@@ -277,11 +281,6 @@ export function TasksView({
           data={filtered}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
-          getItemLayout={(_, index) => ({
-            length: ROW_HEIGHT,
-            offset: ROW_HEIGHT * index,
-            index,
-          })}
           contentContainerStyle={styles.listContent}
           removeClippedSubviews
           windowSize={11}
@@ -427,13 +426,20 @@ function RemoteSyncBar({
 interface TaskRowProps {
   item: TaskRecord;
   onPress: () => void;
+  onOpenChanges?: (task: TaskRecord) => void;
 }
 
-function TaskRow({ item, onPress }: TaskRowProps) {
+function TaskRow({ item, onPress, onOpenChanges }: TaskRowProps) {
   const tone = rowTone(item);
   const agentLabel = inferAgentLabel(item);
   const ago = relativeTime(item.updated_at);
   const preview = item.brief || item.remote_description;
+  const changeCount = item.git_change_count ?? 0;
+  const canOpenChanges = changeCount > 0 && Boolean(item.workspace_id || item.worktree_path);
+  const openChanges = (event: GestureResponderEvent) => {
+    event.stopPropagation();
+    if (canOpenChanges) onOpenChanges?.(item);
+  };
   return (
     <Pressable
       onPress={onPress}
@@ -469,6 +475,13 @@ function TaskRow({ item, onPress }: TaskRowProps) {
             <Text style={[styles.pill, styles.pillBranch]} numberOfLines={1}>
               {item.branch}
             </Text>
+          ) : null}
+          {canOpenChanges ? (
+            <Pressable onPress={openChanges} hitSlop={6}>
+              <Text style={[styles.pill, styles.pillChanges]} numberOfLines={1}>
+                {changeCount === 1 ? "1 change" : `${changeCount} changes`}
+              </Text>
+            </Pressable>
           ) : null}
           {item.remote_key ? (
             <Text style={[styles.pill, styles.pillJira]} numberOfLines={1}>
@@ -1025,6 +1038,11 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     fontFamily: monoFont,
     fontSize: 10,
+  },
+  pillChanges: {
+    backgroundColor: colors.bgRaised,
+    color: colors.warn,
+    borderColor: colors.warn,
   },
   pillJira: {
     backgroundColor: "rgba(230,179,71,0.13)",

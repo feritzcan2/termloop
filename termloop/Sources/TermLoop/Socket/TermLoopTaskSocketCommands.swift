@@ -58,8 +58,13 @@ enum TermLoopTaskSocketCommands {
         let visible = store.fileSnapshot().tasks.filter { task in
             includeArchived || task.archivedAt == nil
         }
+        let gitChangeCounts = taskGitChangeCounts(for: visible)
         let payloads: [[String: Any]] = visible.map { task in
-            taskPayload(task, columnTitle: titlesByColumn[task.columnId] ?? store.columnTitle(for: task.columnId))
+            taskPayload(
+                task,
+                columnTitle: titlesByColumn[task.columnId] ?? store.columnTitle(for: task.columnId),
+                gitChangeCount: gitChangeCounts[task.id]
+            )
         }
         return .ok([
             "project_id": store.projectId.uuidString,
@@ -975,7 +980,12 @@ enum TermLoopTaskSocketCommands {
         ]
     }
 
-    private static func taskPayload(_ task: TaskRecord, columnTitle: String) -> [String: Any] {
+    private static func taskPayload(
+        _ task: TaskRecord,
+        columnTitle: String,
+        gitChangeCount providedGitChangeCount: Int? = nil
+    ) -> [String: Any] {
+        let gitChangeCount = providedGitChangeCount ?? taskGitChangeCount(for: task)
         var payload: [String: Any] = [
             "id": task.id.uuidString,
             "project_id": task.projectId.uuidString,
@@ -994,6 +1004,8 @@ enum TermLoopTaskSocketCommands {
             "remote_status_label": orNull(task.remoteStatusLabel),
             "remote_description": orNull(remoteDescription(for: task)),
             "task_file_path": orNull(task.taskFilePath),
+            "git_dirty": gitChangeCount > 0,
+            "git_change_count": gitChangeCount,
             "created_at": task.createdAt.timeIntervalSince1970,
             "updated_at": task.updatedAt.timeIntervalSince1970,
             "archived_at": task.archivedAt.map { $0.timeIntervalSince1970 as Any } ?? NSNull()
@@ -1008,6 +1020,29 @@ enum TermLoopTaskSocketCommands {
             payload["remote_url"] = NSNull()
         }
         return payload
+    }
+
+    private static func taskGitChangeCount(for task: TaskRecord) -> Int {
+        guard let path = task.worktreePath?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !path.isEmpty else { return 0 }
+        return GitWorktreePresentationStore.shared.files(for: path).count
+    }
+
+    private static func taskGitChangeCounts(for tasks: [TaskRecord]) -> [UUID: Int] {
+        var countsByPath: [String: Int] = [:]
+        var result: [UUID: Int] = [:]
+        for task in tasks {
+            guard let path = task.worktreePath?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !path.isEmpty else {
+                result[task.id] = 0
+                continue
+            }
+            if countsByPath[path] == nil {
+                countsByPath[path] = GitWorktreePresentationStore.shared.files(for: path).count
+            }
+            result[task.id] = countsByPath[path] ?? 0
+        }
+        return result
     }
 
     private static func remoteDescription(for task: TaskRecord) -> String? {

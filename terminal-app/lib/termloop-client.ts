@@ -177,7 +177,7 @@ export interface WorkspaceChangeFile {
 }
 
 export interface WorkspaceChangesResult {
-  workspace_id: string;
+  workspace_id?: string | null;
   title?: string;
   branch?: string | null;
   worktree_path?: string | null;
@@ -223,6 +223,8 @@ export interface TaskRecord {
   remote_status_label?: string | null;
   remote_description?: string | null;
   task_file_path?: string | null;
+  git_dirty?: boolean;
+  git_change_count?: number;
   created_at: number;
   updated_at: number;
   archived_at?: number | null;
@@ -533,7 +535,10 @@ export interface TermLoopClient {
   createWorkspace(params: CreateWorkspaceParams): Promise<CreateWorkspaceResult>;
   closeWorkspace(workspaceId: string): Promise<CloseWorkspaceResult>;
   getWorkspaceChanges(params: {
-    workspaceId: string;
+    workspaceId?: string;
+    worktreePath?: string;
+    name?: string;
+    branch?: string;
     includePatch?: boolean;
     filePath?: string;
     maxPatchBytes?: number;
@@ -798,7 +803,10 @@ export function createTermLoopClient(opts: {
     },
     async getWorkspaceChanges(params) {
       return call<WorkspaceChangesResult>("workspace.changes", {
-        workspace_id: params.workspaceId,
+        ...(params.workspaceId ? { workspace_id: params.workspaceId } : {}),
+        ...(params.worktreePath ? { worktree_path: params.worktreePath } : {}),
+        ...(params.name ? { name: params.name } : {}),
+        ...(params.branch ? { branch: params.branch } : {}),
         ...(params.includePatch ? { include_patch: true } : {}),
         ...(params.filePath ? { file_path: params.filePath } : {}),
         ...(params.maxPatchBytes ? { max_patch_bytes: params.maxPatchBytes } : {}),

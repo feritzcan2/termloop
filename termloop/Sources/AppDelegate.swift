@@ -6426,6 +6426,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return isCommandPaletteResponder(textView)
     }
 
+    private func pruneStaleCommandPaletteVisibilityIfNeeded(for window: NSWindow) {
+        guard isCommandPaletteVisible(for: window) else { return }
+        guard !isCommandPalettePendingOpen(for: window),
+              !isCommandPaletteOverlayPresented(in: window),
+              !isCommandPaletteResponderActive(in: window) else {
+            return
+        }
+        setCommandPaletteVisible(false, for: window)
+#if DEBUG
+        dlog(
+            "shortcut.palette.visibilityPrune " +
+            "window={\(debugWindowToken(window))} reason=noOverlayNoResponder"
+        )
+#endif
+    }
+
     private func commandPaletteMarkedTextInput(in window: NSWindow) -> NSTextView? {
         if let textView = window.firstResponder as? NSTextView,
            isCommandPaletteResponder(textView),
@@ -6444,7 +6460,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func isCommandPaletteEffectivelyVisible(in window: NSWindow) -> Bool {
-        isCommandPaletteVisible(for: window)
+        pruneStaleCommandPaletteVisibilityIfNeeded(for: window)
+        return isCommandPaletteVisible(for: window)
             || isCommandPalettePendingOpen(for: window)
             || isCommandPaletteOverlayPresented(in: window)
             || isCommandPaletteResponderActive(in: window)
@@ -10851,6 +10868,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         if NSApp.modalWindow != nil || NSApp.keyWindow?.attachedSheet != nil {
+            return false
+        }
+        if event.window is QuickActionPanel || NSApp.keyWindow is QuickActionPanel {
             return false
         }
 

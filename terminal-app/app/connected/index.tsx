@@ -31,6 +31,7 @@ import {
   workspaceProjectId,
   type JiraTicketSummary,
   type ProjectSummary,
+  type TaskRecord,
   type TerminalAgentSummary,
   type WorkspaceRunTargetSummary,
   type WorkspaceSummary,
@@ -538,6 +539,18 @@ export default function ConnectedScreen() {
     });
   };
 
+  const openTaskChanges = (task: TaskRecord) => {
+    router.push({
+      pathname: "/connected/changes" as never,
+      params: {
+        ...(task.workspace_id ? { workspaceId: task.workspace_id } : {}),
+        ...(task.worktree_path ? { worktreePath: task.worktree_path } : {}),
+        ...(task.branch ? { branch: task.branch } : {}),
+        name: task.branch ?? task.title,
+      },
+    });
+  };
+
   return (
     <SafeAreaView style={styles.root} edges={["bottom"]}>
       <Stack.Screen
@@ -662,6 +675,7 @@ export default function ConnectedScreen() {
               params: { id: taskId, projectId: taskProjectId },
             })
           }
+          onOpenChanges={openTaskChanges}
         />
       ) : visibleWorkspaces === null ? (
         <View style={styles.loadingPane}>
