@@ -74,6 +74,7 @@ export interface WorkspaceSummary {
   agent_activity_updated_at?: number | null;
   git_dirty?: boolean;
   git_change_count?: number;
+  pull_requests?: PullRequestSummary[];
 }
 
 export function workspaceLabel(ws: WorkspaceSummary): string {
@@ -138,6 +139,18 @@ export interface WorkspaceRunTargetSummary {
   status?: string | null;
   url?: string | null;
   reported_at?: string | null;
+}
+
+export interface PullRequestSummary {
+  number: number;
+  label?: string | null;
+  url: string;
+  status?: string | null;
+  display_status?: string | null;
+  status_detail?: string | null;
+  branch?: string | null;
+  base_branch?: string | null;
+  stale?: boolean;
 }
 
 export type WorkspaceChangeStatus =
@@ -225,6 +238,7 @@ export interface TaskRecord {
   task_file_path?: string | null;
   git_dirty?: boolean;
   git_change_count?: number;
+  pull_requests?: PullRequestSummary[];
   created_at: number;
   updated_at: number;
   archived_at?: number | null;

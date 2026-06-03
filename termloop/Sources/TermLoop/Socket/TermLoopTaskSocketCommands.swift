@@ -59,11 +59,13 @@ enum TermLoopTaskSocketCommands {
             includeArchived || task.archivedAt == nil
         }
         let gitChangeCounts = taskGitChangeCounts(for: visible)
+        let pullRequests = taskOpenPullRequests(for: visible)
         let payloads: [[String: Any]] = visible.map { task in
             taskPayload(
                 task,
                 columnTitle: titlesByColumn[task.columnId] ?? store.columnTitle(for: task.columnId),
-                gitChangeCount: gitChangeCounts[task.id]
+                gitChangeCount: gitChangeCounts[task.id],
+                pullRequests: pullRequests[task.id]
             )
         }
         return .ok([
@@ -983,9 +985,11 @@ enum TermLoopTaskSocketCommands {
     private static func taskPayload(
         _ task: TaskRecord,
         columnTitle: String,
-        gitChangeCount providedGitChangeCount: Int? = nil
+        gitChangeCount providedGitChangeCount: Int? = nil,
+        pullRequests providedPullRequests: [[String: Any]]? = nil
     ) -> [String: Any] {
         let gitChangeCount = providedGitChangeCount ?? taskGitChangeCount(for: task)
+        let pullRequests = providedPullRequests ?? taskOpenPullRequests(for: task)
         var payload: [String: Any] = [
             "id": task.id.uuidString,
             "project_id": task.projectId.uuidString,
@@ -1006,6 +1010,7 @@ enum TermLoopTaskSocketCommands {
             "task_file_path": orNull(task.taskFilePath),
             "git_dirty": gitChangeCount > 0,
             "git_change_count": gitChangeCount,
+            "pull_requests": pullRequests,
             "created_at": task.createdAt.timeIntervalSince1970,
             "updated_at": task.updatedAt.timeIntervalSince1970,
             "archived_at": task.archivedAt.map { $0.timeIntervalSince1970 as Any } ?? NSNull()
@@ -1041,6 +1046,33 @@ enum TermLoopTaskSocketCommands {
                 countsByPath[path] = GitWorktreePresentationStore.shared.files(for: path).count
             }
             result[task.id] = countsByPath[path] ?? 0
+        }
+        return result
+    }
+
+    private static func taskOpenPullRequests(for task: TaskRecord) -> [[String: Any]] {
+        TermLoopMobilePullRequestPayloads.openPayloads(
+            directory: task.worktreePath,
+            branch: task.branch,
+            reason: "mobile.tasks.payload"
+        )
+    }
+
+    private static func taskOpenPullRequests(for tasks: [TaskRecord]) -> [UUID: [[String: Any]]] {
+        var payloadsByKey: [String: [[String: Any]]] = [:]
+        var result: [UUID: [[String: Any]]] = [:]
+        for task in tasks {
+            let path = task.worktreePath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let branch = task.branch?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !path.isEmpty, !branch.isEmpty else {
+                result[task.id] = []
+                continue
+            }
+            let key = "\(path)\u{1f}|\(branch)"
+            if payloadsByKey[key] == nil {
+                payloadsByKey[key] = taskOpenPullRequests(for: task)
+            }
+            result[task.id] = payloadsByKey[key] ?? []
         }
         return result
     }
