@@ -1,6 +1,6 @@
 ---
 name: deployment
-description: Use when the user asks to deploy or release TermLoop, publish a TermLoop Mobile OTA update, upload TermLoop Mobile to TestFlight/App Store Connect, or reload the dev-tagged TermLoop app.
+description: Use when the user asks to deploy or release TermLoop, publish a TermLoop Mobile OTA update, upload TermLoop Mobile to TestFlight/App Store Connect, or rebuild/reload the dev-tagged TermLoop app.
 ---
 
 # Deployment
@@ -13,11 +13,14 @@ Positive examples:
 - “mobile OTA release yap”
 - “mobil TestFlight’a yükle”
 - “termloop release çıkar”
+- “rebuild et termloopu”
+- “termloop dev dev’i rebuild et”
 
 Negative examples:
 - “mobile app’te release notes ekranını düzelt”
 - “TermLoop reload bug’ını kodda fixle”
 - “deployment docs’unu oku ama release çalıştırma”
+- “TermLoop build settings bug’ını düzelt”
 
 ## Commands
 
@@ -26,7 +29,7 @@ Use `/bin/bash` for Raycast scripts. Verify with `bash --version`; if missing, s
 - Mobile OTA / over-the-air release: run `bash /Users/felixzcan/RaycastScripts/Termloop/release-termloop-mobile-ota.sh "<update message>"` because this publishes EAS Update from local `terminal-app/` files without merge, commit, or push. If the user did not give a message, use a short factual message from the task.
 - Mobile TestFlight / mobile App Store Connect release: run `bash /Users/felixzcan/RaycastScripts/Termloop/release-termloop-mobile-locally.sh` because this is the preferred local IPA build + submit path. Do this even when the user does not say “locally”. Leave the default `production` profile unless the user explicitly asks for `staging`.
 - TermLoop stable desktop release: run `bash /Users/felixzcan/RaycastScripts/Termloop/release-termloop.sh` because it merges `origin/dev` into `master`, bumps the Sparkle app version, pushes `master`, creates the next `v1.0.x` tag, and triggers `.github/workflows/release-termloop.yml`.
-- TermLoop dev reload: reload the `dev` tag, not a random tag, because the user’s active dev build is `TermLoop DEV dev.app`.
+- TermLoop dev rebuild/reload: when the user says “rebuild TermLoop”, “reload TermLoop”, “termloop dev”, or “dev’i rebuild et”, reload the `dev` tag, not a random tag, because the user’s active dev build is `TermLoop DEV dev.app`.
 
 ## Safe dev reload
 

@@ -3490,12 +3490,38 @@ class TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
+        let requestedWorktreePath: String? = {
+            let trimmed = v2RawString(params, "worktree_path")?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed?.isEmpty == false ? trimmed : nil
+        }()
+        let shouldResolveWorkspace =
+            v2HasNonNullParam(params, "workspace_id") ||
+            v2HasNonNullParam(params, "surface_id") ||
+            v2HasNonNullParam(params, "tab_id") ||
+            requestedWorktreePath == nil
         var payload: [String: Any]?
         v2MainSync {
-            guard let workspace = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+            if shouldResolveWorkspace,
+               let workspace = v2ResolveWorkspace(params: params, tabManager: tabManager) {
+                payload = self.termLoopWorkspaceGitChangesPayload(for: workspace)
                 return
             }
-            payload = self.termLoopWorkspaceGitChangesPayload(for: workspace)
+            if let requestedWorktreePath,
+               let workspace = self.termLoopWorkspaceMatchingWorktreePath(
+                   requestedWorktreePath,
+                   tabManager: tabManager
+               ) {
+                payload = self.termLoopWorkspaceGitChangesPayload(for: workspace)
+            }
+        }
+
+        if payload == nil, let requestedWorktreePath {
+            payload = self.termLoopWorkspaceGitChangesPayload(
+                worktreePath: requestedWorktreePath,
+                title: v2RawString(params, "name") ?? v2RawString(params, "title"),
+                branch: v2RawString(params, "branch")
+            )
         }
 
         guard let payload else {

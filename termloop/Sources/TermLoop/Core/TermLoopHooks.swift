@@ -2346,7 +2346,10 @@ enum TermLoopHooks {
     /// the state is unknown, so callers can retry later in the same process.
     @discardableResult
     private static func ensureClaudeHooksInstalled() -> Bool {
-        if ClaudeHooksStatus.probe() { return true }
+        if ClaudeHooksStatus.probe() {
+            ClaudeHooksStatus.shared.markDirty()
+            return true
+        }
         do {
             try ClaudeHookInstaller.install(jsonOutput: false)
             ClaudeHooksStatus.shared.markDirty()

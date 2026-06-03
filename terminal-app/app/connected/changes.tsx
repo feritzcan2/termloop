@@ -19,27 +19,37 @@ import { colors, monoFont, radii } from "../../lib/theme";
 
 export default function ChangesScreen() {
   const router = useRouter();
-  const { workspaceId, name } = useLocalSearchParams<{
+  const { workspaceId, worktreePath, name, branch } = useLocalSearchParams<{
     workspaceId?: string;
+    worktreePath?: string;
     name?: string;
+    branch?: string;
   }>();
   const client = getActiveClient();
   const [changes, setChanges] = useState<WorkspaceChangesResult | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!client || !workspaceId) return;
+    if (!client || (!workspaceId && !worktreePath)) return;
     setLoading(true);
     setError(null);
     try {
       const next = await client.getWorkspaceChanges({
         workspaceId,
+        worktreePath,
+        name,
+        branch,
         includePatch: true,
         maxPatchBytes: 240_000,
       });
       setChanges(next);
+      setExpandedFolders((current) => {
+        if (Object.keys(current).length > 0) return current;
+        return Object.fromEntries(folderGroups(next.files).map((group) => [group.key, true]));
+      });
       setExpanded((current) => {
         if (Object.keys(current).length > 0) return current;
         const first = next.files[0]?.path;
@@ -50,7 +60,7 @@ export default function ChangesScreen() {
     } finally {
       setLoading(false);
     }
-  }, [client, workspaceId]);
+  }, [branch, client, name, workspaceId, worktreePath]);
 
   useEffect(() => {
     if (!client) {
@@ -67,6 +77,7 @@ export default function ChangesScreen() {
     const unit = count === 1 ? "file" : "files";
     return `${count} ${unit}${changes.branch ? ` - ${changes.branch}` : ""}`;
   }, [changes]);
+  const groups = useMemo(() => folderGroups(changes?.files ?? []), [changes]);
 
   return (
     <SafeAreaView style={styles.root} edges={["bottom"]}>
@@ -83,7 +94,7 @@ export default function ChangesScreen() {
               {loading ? (
                 <ActivityIndicator color={colors.primary} size="small" />
               ) : (
-                <Text style={styles.headerButtonText}>Refresh</Text>
+                <Text style={styles.headerButtonText}>↻</Text>
               )}
             </Pressable>
           ),
@@ -125,17 +136,24 @@ export default function ChangesScreen() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
-          {changes.files.map((file) => {
-            const isExpanded = expanded[file.path] ?? false;
+          {groups.map((group) => {
+            const folderOpen = expandedFolders[group.key] ?? true;
             return (
-              <ChangedFile
-                key={file.path}
-                file={file}
-                expanded={isExpanded}
+              <FolderGroup
+                key={group.key}
+                group={group}
+                expanded={folderOpen}
                 onToggle={() =>
+                  setExpandedFolders((current) => ({
+                    ...current,
+                    [group.key]: !folderOpen,
+                  }))
+                }
+                fileExpanded={expanded}
+                onToggleFile={(path) =>
                   setExpanded((current) => ({
                     ...current,
-                    [file.path]: !isExpanded,
+                    [path]: !(current[path] ?? false),
                   }))
                 }
               />
@@ -144,6 +162,57 @@ export default function ChangesScreen() {
         </ScrollView>
       )}
     </SafeAreaView>
+  );
+}
+
+interface ChangeFolderGroup {
+  key: string;
+  label: string;
+  files: WorkspaceChangeFile[];
+  additions: number;
+  deletions: number;
+}
+
+function FolderGroup({
+  group,
+  expanded,
+  onToggle,
+  fileExpanded,
+  onToggleFile,
+}: {
+  group: ChangeFolderGroup;
+  expanded: boolean;
+  onToggle: () => void;
+  fileExpanded: Record<string, boolean>;
+  onToggleFile: (path: string) => void;
+}) {
+  return (
+    <View style={styles.folderBlock}>
+      <Pressable style={styles.folderHeader} onPress={onToggle}>
+        <Text style={styles.folderIcon}>{expanded ? "-" : "+"}</Text>
+        <View style={styles.folderText}>
+          <Text style={styles.folderTitle} numberOfLines={1}>
+            {group.label}
+          </Text>
+          <Text style={styles.folderMeta} numberOfLines={1}>
+            {group.files.length} {group.files.length === 1 ? "file" : "files"} -{" "}
+            {group.additions}+ {group.deletions}-
+          </Text>
+        </View>
+      </Pressable>
+      {expanded ? (
+        <View style={styles.folderFiles}>
+          {group.files.map((file) => (
+            <ChangedFile
+              key={file.path}
+              file={file}
+              expanded={fileExpanded[file.path] ?? false}
+              onToggle={() => onToggleFile(file.path)}
+            />
+          ))}
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -202,6 +271,44 @@ function ChangedFile({
       ) : null}
     </View>
   );
+}
+
+function folderGroups(files: WorkspaceChangeFile[]): ChangeFolderGroup[] {
+  const byFolder = new Map<string, ChangeFolderGroup>();
+  for (const file of files) {
+    const folder = folderName(file.path);
+    const existing =
+      byFolder.get(folder) ??
+      ({
+        key: folder,
+        label: folder === "." ? "Project root" : folder,
+        files: [],
+        additions: 0,
+        deletions: 0,
+      } satisfies ChangeFolderGroup);
+    existing.files.push(file);
+    existing.additions += file.additions ?? 0;
+    existing.deletions += file.deletions ?? 0;
+    byFolder.set(folder, existing);
+  }
+  return [...byFolder.values()]
+    .map((group) => ({
+      ...group,
+      files: [...group.files].sort((a, b) =>
+        a.path.localeCompare(b.path, undefined, { numeric: true })
+      ),
+    }))
+    .sort((a, b) => {
+      if (a.key === ".") return -1;
+      if (b.key === ".") return 1;
+      return a.key.localeCompare(b.key, undefined, { numeric: true });
+    });
+}
+
+function folderName(path: string): string {
+  const normalized = path.replace(/\\/g, "/");
+  const index = normalized.lastIndexOf("/");
+  return index > 0 ? normalized.slice(0, index) : ".";
 }
 
 function DiffLine({ line }: { line: WorkspaceDiffLine }) {
@@ -270,8 +377,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   headerButton: {
-    minHeight: 30,
-    paddingHorizontal: 10,
+    width: 34,
+    height: 30,
     borderRadius: radii.sm,
     borderWidth: 1,
     borderColor: colors.borderAccent,
@@ -279,7 +386,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  headerButtonText: { color: colors.primary, fontSize: 12, fontWeight: "800" },
+  headerButtonText: { color: colors.primary, fontSize: 18, fontWeight: "900" },
   disabled: { opacity: 0.5 },
   summary: {
     gap: 3,
@@ -311,7 +418,42 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { color: colors.text, fontSize: 15, fontWeight: "800" },
   emptyText: { color: colors.sub, fontSize: 12 },
-  content: { paddingBottom: 18, gap: 8 },
+  content: { paddingBottom: 18, gap: 10 },
+  folderBlock: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgElevated,
+    overflow: "hidden",
+  },
+  folderHeader: {
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: colors.bgRaised,
+  },
+  folderIcon: {
+    width: 22,
+    color: colors.primary,
+    fontSize: 18,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  folderText: { flex: 1, minWidth: 0 },
+  folderTitle: { color: colors.text, fontSize: 13, fontWeight: "900" },
+  folderMeta: {
+    color: colors.sub,
+    fontSize: 11,
+    fontFamily: monoFont,
+    marginTop: 2,
+  },
+  folderFiles: {
+    gap: 6,
+    padding: 8,
+  },
   fileBlock: {
     borderRadius: radii.md,
     borderWidth: 1,
