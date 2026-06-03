@@ -1052,6 +1052,7 @@ enum TermLoopTaskSocketCommands {
 
     private static func taskOpenPullRequests(for task: TaskRecord) -> [[String: Any]] {
         TermLoopMobilePullRequestPayloads.openPayloads(
+            workspace: liveWorkspace(for: task),
             directory: task.worktreePath,
             branch: task.branch,
             reason: "mobile.tasks.payload"
@@ -1068,13 +1069,22 @@ enum TermLoopTaskSocketCommands {
                 result[task.id] = []
                 continue
             }
-            let key = "\(path)\u{1f}|\(branch)"
+            let workspaceKey = task.workspaceId?.uuidString ?? ""
+            let key = "\(workspaceKey)\u{1f}|\(path)\u{1f}|\(branch)"
             if payloadsByKey[key] == nil {
                 payloadsByKey[key] = taskOpenPullRequests(for: task)
             }
             result[task.id] = payloadsByKey[key] ?? []
         }
         return result
+    }
+
+    private static func liveWorkspace(for task: TaskRecord) -> Workspace? {
+        guard let workspaceId = task.workspaceId,
+              let tabManager = AppDelegate.shared?.tabManagerFor(tabId: workspaceId) else {
+            return nil
+        }
+        return tabManager.tabs.first(where: { $0.id == workspaceId })
     }
 
     private static func remoteDescription(for task: TaskRecord) -> String? {
