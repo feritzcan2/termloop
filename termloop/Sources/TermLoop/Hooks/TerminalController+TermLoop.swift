@@ -302,6 +302,285 @@ extension TerminalController {
             } ?? []
         ]
     }
+
+    func termLoopWorkspaceGitChangesPayloadAddingPatches(
+        _ payload: [String: Any],
+        filePath: String?,
+        maxPatchBytes: Int?
+    ) -> [String: Any] {
+        TermLoopMobileGitDiffPayload.addPatches(
+            to: payload,
+            filePath: filePath,
+            maxPatchBytes: maxPatchBytes
+        )
+    }
+}
+
+private enum TermLoopMobileGitDiffPayload {
+    private static let defaultMaxPatchBytes = 200_000
+    private static let hardMaxPatchBytes = 1_000_000
+
+    static func addPatches(
+        to payload: [String: Any],
+        filePath: String?,
+        maxPatchBytes requestedMaxPatchBytes: Int?
+    ) -> [String: Any] {
+        guard let worktreePath = payload["worktree_path"] as? String,
+              !worktreePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let files = payload["files"] as? [[String: Any]] else {
+            return payload
+        }
+        let requestedFilePath = filePath?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let maxPatchBytes = min(
+            max(requestedMaxPatchBytes ?? defaultMaxPatchBytes, 16_000),
+            hardMaxPatchBytes
+        )
+        let nextFiles = files.compactMap { file -> [String: Any]? in
+            guard let path = file["path"] as? String, !path.isEmpty else {
+                return file
+            }
+            if let requestedFilePath, !requestedFilePath.isEmpty, requestedFilePath != path {
+                return nil
+            }
+            var next = file
+            let status = (file["status"] as? String).flatMap(GitFileStatus.init(rawValue:))
+            let patch = unifiedDiff(
+                directory: worktreePath,
+                relativePath: path,
+                status: status,
+                maxPatchBytes: maxPatchBytes
+            )
+            next["binary"] = patch.binary
+            next["patch_truncated"] = patch.truncated
+            next["additions"] = patch.additions
+            next["deletions"] = patch.deletions
+            next["hunks"] = patch.hunks
+            return next
+        }
+        var nextPayload = payload
+        nextPayload["files"] = nextFiles
+        return nextPayload
+    }
+
+    private static func unifiedDiff(
+        directory: String,
+        relativePath: String,
+        status: GitFileStatus?,
+        maxPatchBytes: Int
+    ) -> PatchPayload {
+        let output: String?
+        if status == .untracked {
+            output = synthesizeAdditionPatch(
+                directory: directory,
+                relativePath: relativePath,
+                maxPatchBytes: maxPatchBytes
+            )
+        } else {
+            output = gitDiff(directory: directory, relativePath: relativePath)
+        }
+        guard let output else { return .empty }
+        let truncated = output.utf8.count > maxPatchBytes
+        let limited = truncated ? byteLimitedPrefix(output, maxBytes: maxPatchBytes) : output
+        let parsed = parseUnifiedDiff(limited)
+        return PatchPayload(
+            binary: parsed.binary,
+            truncated: truncated,
+            additions: parsed.additions,
+            deletions: parsed.deletions,
+            hunks: parsed.hunks
+        )
+    }
+
+    private static func gitDiff(directory: String, relativePath: String) -> String? {
+        for arguments in [
+            ["diff", "--no-ext-diff", "--find-renames", "HEAD", "--", relativePath],
+            ["diff", "--no-ext-diff", "--find-renames", "--", relativePath],
+            ["diff", "--no-ext-diff", "--find-renames", "--cached", "--", relativePath]
+        ] {
+            guard let output = try? GitCommandRunner.runThrowing(
+                arguments,
+                in: directory,
+                kind: .diff,
+                caller: "TermLoopMobileGitDiffPayload"
+            ) else {
+                continue
+            }
+            let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return output
+            }
+        }
+        return nil
+    }
+
+    private static func synthesizeAdditionPatch(
+        directory: String,
+        relativePath: String,
+        maxPatchBytes: Int
+    ) -> String? {
+        let fileURL = URL(fileURLWithPath: directory).appendingPathComponent(relativePath)
+        guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else {
+            return "Binary file: \(relativePath)"
+        }
+        let limitedContents = contents.utf8.count > maxPatchBytes
+            ? byteLimitedPrefix(contents, maxBytes: maxPatchBytes)
+            : contents
+        let lines = limitedContents.components(separatedBy: "\n")
+        let body = lines.map { "+" + $0 }.joined(separator: "\n")
+        return """
+        diff --git a/\(relativePath) b/\(relativePath)
+        new file mode 100644
+        --- /dev/null
+        +++ b/\(relativePath)
+        @@ -0,0 +1,\(lines.count) @@
+        \(body)
+        """
+    }
+
+    private static func byteLimitedPrefix(_ value: String, maxBytes: Int) -> String {
+        var bytes = 0
+        var end = value.startIndex
+        while end < value.endIndex {
+            let next = value[end]
+            let count = String(next).utf8.count
+            guard bytes + count <= maxBytes else { break }
+            bytes += count
+            end = value.index(after: end)
+        }
+        return String(value[..<end])
+    }
+
+    private static func parseUnifiedDiff(_ diff: String) -> ParsedPatch {
+        if diff.hasPrefix("Binary file:") || diff.contains("\nBinary files ") {
+            return ParsedPatch(binary: true, additions: 0, deletions: 0, hunks: [])
+        }
+        var hunks: [[String: Any]] = []
+        var current: HunkBuilder?
+        var additions = 0
+        var deletions = 0
+        for line in diff.components(separatedBy: "\n") {
+            if let header = HunkHeader.parse(line) {
+                if let built = current?.build() {
+                    hunks.append(built)
+                }
+                current = HunkBuilder(header: header)
+                continue
+            }
+            guard var builder = current else {
+                continue
+            }
+            if line.hasPrefix("+"), !line.hasPrefix("+++") {
+                builder.append(kind: "add", text: String(line.dropFirst()))
+                additions += 1
+            } else if line.hasPrefix("-"), !line.hasPrefix("---") {
+                builder.append(kind: "delete", text: String(line.dropFirst()))
+                deletions += 1
+            } else if line.hasPrefix(" ") {
+                builder.append(kind: "context", text: String(line.dropFirst()))
+            } else if line.hasPrefix("\\") {
+                builder.append(kind: "meta", text: line)
+            }
+            current = builder
+        }
+        if let built = current?.build() {
+            hunks.append(built)
+        }
+        return ParsedPatch(binary: false, additions: additions, deletions: deletions, hunks: hunks)
+    }
+
+    private struct PatchPayload {
+        let binary: Bool
+        let truncated: Bool
+        let additions: Int
+        let deletions: Int
+        let hunks: [[String: Any]]
+
+        static let empty = PatchPayload(
+            binary: false,
+            truncated: false,
+            additions: 0,
+            deletions: 0,
+            hunks: []
+        )
+    }
+
+    private struct ParsedPatch {
+        let binary: Bool
+        let additions: Int
+        let deletions: Int
+        let hunks: [[String: Any]]
+    }
+
+    private struct HunkHeader {
+        let oldStart: Int
+        let oldLines: Int
+        let newStart: Int
+        let newLines: Int
+
+        static func parse(_ line: String) -> HunkHeader? {
+            guard line.hasPrefix("@@ ") else { return nil }
+            let parts = line.split(separator: " ")
+            guard parts.count >= 3,
+                  let oldRange = parseRange(String(parts[1]).dropFirst()),
+                  let newRange = parseRange(String(parts[2]).dropFirst()) else {
+                return nil
+            }
+            return HunkHeader(
+                oldStart: oldRange.start,
+                oldLines: oldRange.lines,
+                newStart: newRange.start,
+                newLines: newRange.lines
+            )
+        }
+
+        private static func parseRange(_ value: Substring) -> (start: Int, lines: Int)? {
+            let pieces = value.split(separator: ",", maxSplits: 1, omittingEmptySubsequences: false)
+            guard let first = pieces.first,
+                  let start = Int(first) else { return nil }
+            let lines = pieces.count > 1 ? Int(pieces[1]) ?? 1 : 1
+            return (start, lines)
+        }
+    }
+
+    private struct HunkBuilder {
+        let header: HunkHeader
+        var oldLine: Int
+        var newLine: Int
+        var lines: [[String: Any]] = []
+
+        init(header: HunkHeader) {
+            self.header = header
+            self.oldLine = header.oldStart
+            self.newLine = header.newStart
+        }
+
+        mutating func append(kind: String, text: String) {
+            switch kind {
+            case "add":
+                lines.append(["kind": kind, "new_line": newLine, "text": text])
+                newLine += 1
+            case "delete":
+                lines.append(["kind": kind, "old_line": oldLine, "text": text])
+                oldLine += 1
+            case "context":
+                lines.append(["kind": kind, "old_line": oldLine, "new_line": newLine, "text": text])
+                oldLine += 1
+                newLine += 1
+            default:
+                lines.append(["kind": kind, "text": text])
+            }
+        }
+
+        func build() -> [String: Any] {
+            [
+                "old_start": header.oldStart,
+                "old_lines": header.oldLines,
+                "new_start": header.newStart,
+                "new_lines": header.newLines,
+                "lines": lines
+            ]
+        }
+    }
 }
 
 private enum TermLoopWorkspaceWorktreeBindingResolver {

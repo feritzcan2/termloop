@@ -528,6 +528,16 @@ export default function ConnectedScreen() {
     ]);
   };
 
+  const openWorkspaceChanges = (row: WorkspaceRow) => {
+    router.push({
+      pathname: "/connected/changes" as never,
+      params: {
+        workspaceId: row.ws.id,
+        name: row.worktreeLabel ?? row.title,
+      },
+    });
+  };
+
   return (
     <SafeAreaView style={styles.root} edges={["bottom"]}>
       <Stack.Screen
@@ -688,21 +698,38 @@ export default function ConnectedScreen() {
             const context = sectionContextSummary(section, workspaceContexts);
             const showContext =
               selectedView === "worktrees" && hasSectionContext(context);
+            const changeCount =
+              selectedView === "worktrees" ? worktreeSectionChangeCount(section) : 0;
+            const changesRow =
+              changeCount > 0 ? firstChangedWorkspaceRow(section) : null;
             return (
               <View style={styles.sectionHeader}>
                 <View style={styles.sectionHeaderTop}>
                   <Text style={styles.sectionTitle} numberOfLines={1}>
                     {section.title}
                   </Text>
-                  {section.kind === "worktree" ? (
-                    <Pressable
-                      style={styles.sectionAgentBtn}
-                      onPress={() => openAgentPicker(section.key)}
-                      hitSlop={6}
-                    >
-                      <Text style={styles.sectionAgentBtnText}>+ Agent</Text>
-                    </Pressable>
-                  ) : null}
+                  <View style={styles.sectionHeaderActions}>
+                    {changesRow ? (
+                      <Pressable
+                        style={styles.sectionChangesBtn}
+                        onPress={() => openWorkspaceChanges(changesRow)}
+                        hitSlop={6}
+                      >
+                        <Text style={styles.sectionChangesBtnText}>
+                          Changes {changeCount}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                    {section.kind === "worktree" ? (
+                      <Pressable
+                        style={styles.sectionAgentBtn}
+                        onPress={() => openAgentPicker(section.key)}
+                        hitSlop={6}
+                      >
+                        <Text style={styles.sectionAgentBtnText}>+ Agent</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
                 </View>
                 <Text style={styles.sectionSubtitle} numberOfLines={1}>
                   {section.subtitle}
@@ -743,6 +770,8 @@ export default function ConnectedScreen() {
             const isClosing = closingWorkspaceId === item.ws.id;
             const itemContext = workspaceContexts[item.ws.id];
             const showRowContext = selectedView === "active";
+            const rowChangeLabel =
+              selectedView === "worktrees" ? item.changeLabel : null;
             const locationLabel = showRowContext
               ? workspaceLocationLabel(item)
               : null;
@@ -758,7 +787,7 @@ export default function ConnectedScreen() {
               locationLabel ||
               item.statusLabel ||
               item.activityLabel ||
-              item.changeLabel ||
+              rowChangeLabel ||
               rowJiraLabel ||
               rowTargetLabel;
             const row = (
@@ -803,10 +832,12 @@ export default function ConnectedScreen() {
                           {item.activityLabel}
                         </Text>
                       ) : null}
-                      {item.changeLabel ? (
-                        <Text style={styles.workspaceMetaChip} numberOfLines={1}>
-                          {item.changeLabel}
-                        </Text>
+                      {rowChangeLabel ? (
+                        <Pressable onPress={() => openWorkspaceChanges(item)}>
+                          <Text style={styles.workspaceChangesMetaChip} numberOfLines={1}>
+                            {rowChangeLabel}
+                          </Text>
+                        </Pressable>
                       ) : null}
                       {rowJiraLabel ? (
                         <Text style={styles.workspaceJiraMetaChip} numberOfLines={1}>
@@ -1180,6 +1211,17 @@ function workspaceHasAgent(row: WorkspaceRow): boolean {
 
 function sectionItemCount(sections: WorkspaceSection[]): number {
   return sections.reduce((sum, section) => sum + section.data.length, 0);
+}
+
+function worktreeSectionChangeCount(section: WorkspaceSection): number {
+  return section.data.reduce(
+    (sum, row) => sum + (row.ws.git_change_count ?? 0),
+    0
+  );
+}
+
+function firstChangedWorkspaceRow(section: WorkspaceSection): WorkspaceRow | null {
+  return section.data.find((row) => (row.ws.git_change_count ?? 0) > 0) ?? null;
 }
 
 function workspaceLocationLabel(row: WorkspaceRow): string | null {
@@ -1564,8 +1606,13 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
   },
-  sectionAgentBtn: {
+  sectionHeaderActions: {
     marginLeft: "auto",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  sectionAgentBtn: {
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: radii.sm,
@@ -1575,6 +1622,19 @@ const styles = StyleSheet.create({
   },
   sectionAgentBtnText: {
     color: colors.primary,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  sectionChangesBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.warn,
+    backgroundColor: colors.bgRaised,
+  },
+  sectionChangesBtnText: {
+    color: colors.warn,
     fontSize: 11,
     fontWeight: "800",
   },
@@ -1664,6 +1724,12 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
     maxWidth: 140,
+  },
+  workspaceChangesMetaChip: {
+    color: colors.warn,
+    fontSize: 10,
+    fontWeight: "800",
+    maxWidth: 150,
   },
   workspaceJiraMetaChip: {
     color: colors.warn,
