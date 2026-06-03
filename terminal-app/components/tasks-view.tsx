@@ -438,14 +438,17 @@ function TaskRow({ item, onPress, onOpenChanges }: TaskRowProps) {
   const preview = item.brief || item.remote_description;
   const changeCount = item.git_change_count ?? 0;
   const canOpenChanges = changeCount > 0 && Boolean(item.workspace_id || item.worktree_path);
-  const pullRequest = firstOpenPullRequest(item);
+  const pullRequests = openPullRequests(item);
   const openChanges = (event: GestureResponderEvent) => {
     event.stopPropagation();
     if (canOpenChanges) onOpenChanges?.(item);
   };
-  const openPullRequest = (event: GestureResponderEvent) => {
+  const openPullRequest = (
+    pullRequest: PullRequestSummary,
+    event: GestureResponderEvent
+  ) => {
     event.stopPropagation();
-    if (pullRequest?.url) Linking.openURL(pullRequest.url);
+    if (pullRequest.url) Linking.openURL(pullRequest.url);
   };
   return (
     <Pressable
@@ -490,13 +493,17 @@ function TaskRow({ item, onPress, onOpenChanges }: TaskRowProps) {
               </Text>
             </Pressable>
           ) : null}
-          {pullRequest ? (
-            <Pressable onPress={openPullRequest} hitSlop={6}>
+          {pullRequests.map((pullRequest) => (
+            <Pressable
+              key={pullRequest.url || `${pullRequest.label}:${pullRequest.number}`}
+              onPress={(event) => openPullRequest(pullRequest, event)}
+              hitSlop={6}
+            >
               <Text style={[styles.pill, styles.pillPullRequest]} numberOfLines={1}>
                 {pullRequestLabel(pullRequest)}
               </Text>
             </Pressable>
-          ) : null}
+          ))}
           {item.remote_key ? (
             <Text style={[styles.pill, styles.pillJira]} numberOfLines={1}>
               {item.remote_key}
@@ -761,13 +768,11 @@ function inferAgentLabel(task: TaskRecord): string | null {
   return "Agent";
 }
 
-function firstOpenPullRequest(task: TaskRecord): PullRequestSummary | null {
-  return (
-    task.pull_requests?.find((pr) => {
-      const status = pr.status?.toLowerCase();
-      return status === "open" || !status;
-    }) ?? null
-  );
+function openPullRequests(task: TaskRecord): PullRequestSummary[] {
+  return (task.pull_requests ?? []).filter((pr) => {
+    const status = pr.status?.toLowerCase();
+    return status === "open" || !status;
+  });
 }
 
 function pullRequestLabel(pr: PullRequestSummary): string {
