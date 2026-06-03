@@ -28,7 +28,9 @@ import {
   type TaskRemoteContext,
   type TerminalAgentSummary,
   type TermLoopClient,
+  type WorkspaceSummary,
   waitForTerminalSurface,
+  workspaceLabel,
 } from "../../../lib/termloop-client";
 import { relativeTime } from "../../../lib/format";
 import { colors, monoFont, radii } from "../../../lib/theme";
@@ -67,6 +69,7 @@ export default function TaskDetailScreen() {
   const [remoteContext, setRemoteContext] = useState<TaskRemoteContext | null>(
     null
   );
+  const [taskWorkspaces, setTaskWorkspaces] = useState<WorkspaceSummary[]>([]);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [agents, setAgents] = useState<TerminalAgentSummary[] | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -77,11 +80,15 @@ export default function TaskDetailScreen() {
   const refresh = useCallback(async () => {
     if (!client || !taskId) return;
     try {
-      const result = await client.getTask({
-        taskId,
-        projectId: loadedProjectId ?? projectId,
-      });
+      const [result, workspaces] = await Promise.all([
+        client.getTask({
+          taskId,
+          projectId: loadedProjectId ?? projectId,
+        }),
+        client.listWorkspaces().catch(() => []),
+      ]);
       setTask(result.task);
+      setTaskWorkspaces(taskMatchingWorkspaces(result.task, workspaces));
       setColumns(
         mergeTaskColumns(
           result.columns.length > 0 ? result.columns : COLUMN_FALLBACK,
@@ -250,17 +257,14 @@ export default function TaskDetailScreen() {
     }
   };
 
-  const onOpenAgent = async () => {
-    if (!task.workspace_id) return;
-    await openWorkspace(task.workspace_id);
-  };
-
   const onOpenChanges = () => {
-    if (!task?.workspace_id) return;
+    if (!task?.workspace_id && !task?.worktree_path) return;
     router.push({
       pathname: "/connected/changes" as never,
       params: {
-        workspaceId: task.workspace_id,
+        ...(task.workspace_id ? { workspaceId: task.workspace_id } : {}),
+        ...(task.worktree_path ? { worktreePath: task.worktree_path } : {}),
+        ...(task.branch ? { branch: task.branch } : {}),
         name: task.branch ?? task.title,
       },
     });
@@ -458,6 +462,8 @@ export default function TaskDetailScreen() {
   const titleDirty = draftTitle.trim() !== task.title;
   const briefDirty = (draftBrief.trim() || null) !== (task.brief ?? null);
   const canSaveEdit = (titleDirty || briefDirty) && draftTitle.trim().length > 0 && !savingEdit;
+  const changeCount = task.git_change_count ?? 0;
+  const canOpenChanges = Boolean(task.worktree_path || task.workspace_id);
 
   return (
     <SafeAreaView style={styles.root} edges={["bottom"]}>
@@ -692,27 +698,44 @@ export default function TaskDetailScreen() {
         </View>
 
         <View style={styles.actions}>
-          {task.workspace_id ? (
+          {task.workspace_id || taskWorkspaces.length > 0 ? (
             <>
-              <Pressable
-                style={[styles.btn, styles.btnPrimary]}
-                onPress={onOpenAgent}
-                disabled={opening}
-              >
-                {opening ? (
-                  <ActivityIndicator color={colors.onPrimary} size="small" />
-                ) : null}
-                <Text style={styles.btnPrimaryText}>
-                  {opening ? "Opening…" : "Open agent terminal"}
-                </Text>
-              </Pressable>
-              {task.worktree_path ? (
-                <Pressable
-                  style={[styles.btn, styles.btnSecondary]}
-                  onPress={onOpenChanges}
-                >
-                  <Text style={styles.btnSecondaryText}>View changes</Text>
-                </Pressable>
+              {taskWorkspaces.length > 0 ? (
+                <View style={styles.agentWorkspaceList}>
+                  {taskWorkspaces.map((workspace) => (
+                    <Pressable
+                      key={workspace.id}
+                      style={styles.agentWorkspaceRow}
+                      onPress={() => openWorkspace(workspace.id)}
+                      disabled={opening}
+                    >
+                      <View style={styles.agentWorkspaceText}>
+                        <Text style={styles.agentWorkspaceTitle} numberOfLines={1}>
+                          {workspaceAgentTitle(workspace)}
+                        </Text>
+                        <Text style={styles.agentWorkspaceSub} numberOfLines={1}>
+                          {workspaceAgentSubtitle(workspace)}
+                        </Text>
+                      </View>
+                      {opening ? (
+                        <ActivityIndicator color={colors.primary} size="small" />
+                      ) : (
+                        <Text style={styles.agentWorkspaceOpen}>Open</Text>
+                      )}
+                    </Pressable>
+                  ))}
+                </View>
+              ) : task.workspace_id ? (
+                <View style={styles.agentWorkspaceRow}>
+                  <View style={styles.agentWorkspaceText}>
+                    <Text style={styles.agentWorkspaceTitle} numberOfLines={1}>
+                      Agent workspace closed
+                    </Text>
+                    <Text style={styles.agentWorkspaceSub} numberOfLines={1}>
+                      {shortId(task.workspace_id)}
+                    </Text>
+                  </View>
+                </View>
               ) : null}
             </>
           ) : (
@@ -733,6 +756,18 @@ export default function TaskDetailScreen() {
               </Text>
             </Pressable>
           )}
+          {canOpenChanges ? (
+            <Pressable
+              style={[styles.btn, styles.btnSecondary]}
+              onPress={onOpenChanges}
+            >
+              <Text style={styles.btnSecondaryText}>
+                {changeCount > 0
+                  ? `View ${changeCount === 1 ? "1 change" : `${changeCount} changes`}`
+                  : "View changes"}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
       </ScrollView>
 
@@ -1037,6 +1072,53 @@ function defaultTaskAgentPrompt(task: TaskRecord): string {
   }
   lines.push("", "Work in the task worktree and make the minimal coherent change.");
   return lines.join("\n");
+}
+
+function taskMatchingWorkspaces(
+  task: TaskRecord,
+  workspaces: WorkspaceSummary[]
+): WorkspaceSummary[] {
+  const taskWorkspaceId = task.workspace_id?.trim();
+  const taskPath = normalizedPath(task.worktree_path);
+  return workspaces.filter((workspace) => {
+    if (taskWorkspaceId && workspace.id === taskWorkspaceId) return true;
+    if (!taskPath) return false;
+    return [workspace.worktree_path, workspace.current_directory]
+      .map(normalizedPath)
+      .includes(taskPath);
+  }).filter(workspaceIsAgent);
+}
+
+function normalizedPath(path?: string | null): string | null {
+  const trimmed = path?.trim();
+  if (!trimmed) return null;
+  return trimmed.replace(/\/+$/, "");
+}
+
+function workspaceAgentTitle(workspace: WorkspaceSummary): string {
+  return (
+    workspace.terminal_agent_id?.trim() ||
+    workspace.agent?.trim() ||
+    workspaceLabel(workspace)
+  );
+}
+
+function workspaceAgentSubtitle(workspace: WorkspaceSummary): string {
+  return (
+    workspace.agent_activity_preview?.trim() ||
+    workspace.branch?.trim() ||
+    workspace.worktree_path?.trim() ||
+    workspaceLabel(workspace)
+  );
+}
+
+function workspaceIsAgent(workspace: WorkspaceSummary): boolean {
+  return Boolean(
+    workspace.terminal_agent_id ||
+      workspace.agent ||
+      workspace.agent_activity_phase ||
+      workspace.agent_activity_updated_at
+  );
 }
 
 async function pollUntilSettled(
@@ -1383,6 +1465,36 @@ const styles = StyleSheet.create({
   kvValMono: { fontFamily: monoFont, fontSize: 11 },
 
   actions: { gap: 8, marginTop: 16 },
+  agentWorkspaceList: { gap: 8 },
+  agentWorkspaceRow: {
+    minHeight: 54,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgElevated,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  agentWorkspaceText: { flex: 1, minWidth: 0 },
+  agentWorkspaceTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  agentWorkspaceSub: {
+    color: colors.sub,
+    fontSize: 11,
+    fontFamily: monoFont,
+    marginTop: 2,
+  },
+  agentWorkspaceOpen: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "800",
+  },
   btn: {
     height: 46,
     borderRadius: radii.md,

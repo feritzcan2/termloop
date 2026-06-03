@@ -85,8 +85,8 @@ struct SidebarAgentHooksWarning: View {
             )
             .help(tooltipText)
             .onAppear {
-                claudeStatus.refreshIfStale()
-                codexStatus.refreshIfStale()
+                claudeStatus.markDirty()
+                codexStatus.markDirty()
             }
         }
     }
