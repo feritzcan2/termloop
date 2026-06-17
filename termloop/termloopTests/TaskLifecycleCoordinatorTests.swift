@@ -88,6 +88,32 @@ final class TaskLifecycleCoordinatorTests: XCTestCase {
         )
     }
 
+    func testRemoteTaskPromotionDefaultsJiraBranchNameFromRemoteKey() {
+        let reference = RemoteWorkItemReference(
+            provider: .jira,
+            key: "KAN-42",
+            url: nil,
+            host: nil,
+            namespace: nil,
+            repository: nil,
+            number: nil
+        )
+        let draft = RemoteTaskPromotionDraft(
+            id: UUID(),
+            projectId: projectId,
+            sourceWorkspaceId: UUID(),
+            title: "Investigate issue",
+            descriptionMarkdown: "Finding details",
+            provider: .jira,
+            container: "KAN"
+        )
+
+        XCTAssertEqual(
+            RemoteTaskPromotionCoordinator.branchName(for: draft, reference: reference, title: draft.title),
+            "feature/KAN-42"
+        )
+    }
+
     func testRestoreTaskReturnsArchivedTaskToActiveColumn() throws {
         let id = try coordinator.createTask(title: "first", columnId: .backlog)
         try coordinator.archiveTask(id)

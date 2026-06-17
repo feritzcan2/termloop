@@ -396,6 +396,9 @@ public enum RemoteTaskPromotionCoordinator {
 
     private static func branchHint(reference: RemoteWorkItemReference, title: String) -> String {
         let key = reference.key.trimmingCharacters(in: .whitespacesAndNewlines)
+        if reference.provider == .jira, !key.isEmpty {
+            return "feature/\(key)"
+        }
         let slug = titleSlug(title)
         if key.isEmpty { return slug }
         if slug.isEmpty { return key }
