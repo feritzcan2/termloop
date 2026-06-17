@@ -134,11 +134,23 @@ struct RemoteWorkItemListRequest: Codable, Equatable, Sendable {
     /// GitHub/GitLab: owner/repo or group/project. Jira: optional project key.
     var container: String?
     var limit: Int
+    /// Provider server-side lower bound for incremental assigned sync when supported.
+    var updatedSince: Date?
+    /// Fetch the complete result set when the provider CLI supports pagination.
+    var paginate: Bool
 
-    init(provider: RemoteWorkItemProviderId, container: String? = nil, limit: Int = 50) {
+    init(
+        provider: RemoteWorkItemProviderId,
+        container: String? = nil,
+        limit: Int = 50,
+        updatedSince: Date? = nil,
+        paginate: Bool = false
+    ) {
         self.provider = provider
         self.container = container
         self.limit = max(1, min(limit, 500))
+        self.updatedSince = updatedSince
+        self.paginate = paginate
     }
 }
 

@@ -276,7 +276,243 @@ private struct TaskRemoteWorkItemSettingsView: View {
             providerFields
 
             assignedSyncControls
+
+            backgroundSyncControls
         }
+    }
+
+    private var backgroundSyncControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider().opacity(0.45)
+
+            Toggle(isOn: backgroundSyncBinding) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(String(localized: "tasks.settings.backgroundSync.title",
+                                defaultValue: "Enable background sync",
+                                table: "TermLoop"))
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(String(localized: "tasks.settings.backgroundSync.subtitle",
+                                defaultValue: "Let TermLoop check this project's assigned remote work in the background.",
+                                table: "TermLoop"))
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+
+            if remoteSync.settings.isBackgroundSyncEnabled {
+                HStack(spacing: 6) {
+                    Text(String(localized: "tasks.settings.backgroundSync.interval",
+                                defaultValue: "Poll every",
+                                table: "TermLoop"))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                    Spacer(minLength: 0)
+                    Picker("", selection: backgroundPollIntervalBinding) {
+                        Text("2 min").tag(TimeInterval(120))
+                        Text("5 min").tag(TimeInterval(300))
+                        Text("10 min").tag(TimeInterval(600))
+                        Text("30 min").tag(TimeInterval(1800))
+                        Text("60 min").tag(TimeInterval(3600))
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .controlSize(.mini)
+                    .frame(width: 96)
+                }
+
+                Toggle(isOn: backgroundAssignedBinding) {
+                    Text(String(localized: "tasks.settings.backgroundSync.assigned",
+                                defaultValue: "Sync assigned work items in background",
+                                table: "TermLoop"))
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+
+                Toggle(isOn: autoCreateWorktreeBinding) {
+                    Text(String(localized: "tasks.settings.backgroundSync.autoWorktree",
+                                defaultValue: "Auto-create worktree for new assigned tasks",
+                                table: "TermLoop"))
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+                .disabled(!remoteSync.settings.backgroundSyncAssignedToMe)
+
+                Toggle(isOn: autoExecuteBinding) {
+                    Text(String(localized: "tasks.settings.backgroundSync.autoExecute",
+                                defaultValue: "Auto-execute with agent",
+                                table: "TermLoop"))
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+                .disabled(!remoteSync.settings.autoCreateWorktree)
+
+                if remoteSync.settings.isAutoExecuteEnabled {
+                    autoExecuteControls
+                }
+
+                if let backgroundStatusText {
+                    Text(backgroundStatusText)
+                        .font(.system(size: 10))
+                        .foregroundColor(backgroundStatusColor)
+                        .lineLimit(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                backgroundActivityPanel
+            }
+        }
+        .padding(8)
+        .background(Color.white.opacity(0.035))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private var backgroundActivityPanel: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Image(systemName: "list.bullet.rectangle")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.secondary)
+                Text(String(localized: "tasks.settings.backgroundSync.activity.title",
+                            defaultValue: "Background activity",
+                            table: "TermLoop"))
+                    .font(.system(size: 10, weight: .semibold))
+                Spacer(minLength: 0)
+                if !remoteSync.settings.backgroundActivityLog.isEmpty {
+                    Button(action: { remoteSync.clearBackgroundActivityLog() }) {
+                        Image(systemName: "xmark.circle")
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.secondary)
+                    .help(String(localized: "tasks.settings.backgroundSync.activity.clear",
+                                 defaultValue: "Clear activity",
+                                 table: "TermLoop"))
+                }
+            }
+
+            if remoteSync.settings.backgroundActivityLog.isEmpty {
+                Text(String(localized: "tasks.settings.backgroundSync.activity.empty",
+                            defaultValue: "No background activity recorded yet.",
+                            table: "TermLoop"))
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(remoteSync.settings.backgroundActivityLog.prefix(24)) { entry in
+                        backgroundActivityRow(entry)
+                    }
+                }
+            }
+        }
+        .padding(8)
+        .background(Color(nsColor: .textBackgroundColor).opacity(0.18))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private func backgroundActivityRow(_ entry: TaskBackgroundSyncActivityEntry) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Circle()
+                .fill(backgroundActivityColor(entry.level))
+                .frame(width: 7, height: 7)
+                .padding(.top, 4)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Text(entry.createdAt.formatted(date: .omitted, time: .standard))
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(.secondary)
+                    if let remoteKey = entry.remoteKey, !remoteKey.isEmpty {
+                        Text(remoteKey)
+                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.primary.opacity(0.82))
+                            .lineLimit(1)
+                    }
+                }
+                Text(entry.message)
+                    .font(.system(size: 10))
+                    .foregroundColor(entry.level == .error ? .red : .secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var autoExecuteControls: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            pickerRow(
+                title: String(localized: "tasks.settings.backgroundSync.maxAgents",
+                              defaultValue: "Max concurrent agents",
+                              table: "TermLoop")
+            ) {
+                Picker("", selection: autoExecuteMaxConcurrentAgentsBinding) {
+                    ForEach(autoExecuteMaxConcurrentAgentChoices, id: \.self) { count in
+                        Text("\(count)").tag(count)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.mini)
+            }
+
+            pickerRow(
+                title: String(localized: "tasks.settings.backgroundSync.agent",
+                              defaultValue: "Agent",
+                              table: "TermLoop")
+            ) {
+                Picker("", selection: autoExecuteAgentBinding) {
+                    Text(String(localized: "tasks.settings.backgroundSync.agent.default",
+                                defaultValue: "Project default",
+                                table: "TermLoop"))
+                        .tag("")
+                    ForEach(AgentCatalogStore.shared.agents, id: \.id) { agent in
+                        Text(agent.displayName).tag(agent.id)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.mini)
+            }
+
+            pickerRow(
+                title: String(localized: "tasks.settings.backgroundSync.permission",
+                              defaultValue: "Permission",
+                              table: "TermLoop")
+            ) {
+                Picker("", selection: autoExecutePermissionBinding) {
+                    ForEach(autoExecutePermissionOptions, id: \.mode) { option in
+                        Text(option.title).tag(option.mode)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.mini)
+            }
+
+            pickerRow(
+                title: String(localized: "tasks.settings.backgroundSync.template",
+                              defaultValue: "Prompt template",
+                              table: "TermLoop")
+            ) {
+                Picker("", selection: autoExecuteTemplateBinding) {
+                    ForEach(autoExecuteTemplateOptions, id: \.id) { template in
+                        Text(template.name).tag(template.id)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.mini)
+            }
+        }
+        .padding(.leading, 8)
     }
 
     private var assignedSyncControls: some View {
@@ -556,6 +792,76 @@ private struct TaskRemoteWorkItemSettingsView: View {
         )
     }
 
+    private var backgroundSyncBinding: Binding<Bool> {
+        Binding(
+            get: { remoteSync.settings.backgroundSyncEnabled },
+            set: { remoteSync.setBackgroundSyncEnabled($0) }
+        )
+    }
+
+    private var backgroundAssignedBinding: Binding<Bool> {
+        Binding(
+            get: { remoteSync.settings.backgroundSyncAssignedToMe },
+            set: { remoteSync.setBackgroundSyncAssignedToMe($0) }
+        )
+    }
+
+    private var backgroundPollIntervalBinding: Binding<TimeInterval> {
+        Binding(
+            get: { remoteSync.settings.backgroundPollIntervalSeconds },
+            set: { remoteSync.setBackgroundPollIntervalSeconds($0) }
+        )
+    }
+
+    private var autoCreateWorktreeBinding: Binding<Bool> {
+        Binding(
+            get: { remoteSync.settings.autoCreateWorktree },
+            set: { remoteSync.setAutoCreateWorktree($0) }
+        )
+    }
+
+    private var autoExecuteBinding: Binding<Bool> {
+        Binding(
+            get: { remoteSync.settings.autoExecuteWithAgent },
+            set: { remoteSync.setAutoExecuteWithAgent($0) }
+        )
+    }
+
+    private var autoExecuteMaxConcurrentAgentsBinding: Binding<Int> {
+        Binding(
+            get: { remoteSync.settings.autoExecuteMaxConcurrentAgents },
+            set: { remoteSync.setAutoExecuteMaxConcurrentAgents($0) }
+        )
+    }
+
+    private var autoExecuteMaxConcurrentAgentChoices: [Int] {
+        let configured = TaskRemoteSyncSettings.normalizedAutoExecuteMaxConcurrentAgents(
+            remoteSync.settings.autoExecuteMaxConcurrentAgents
+        )
+        return Array(Set([1, 2, 3, 5, 10, configured])).sorted()
+    }
+
+    private var autoExecuteAgentBinding: Binding<String> {
+        Binding(
+            get: { remoteSync.settings.autoExecuteAgentId ?? "" },
+            set: { remoteSync.setAutoExecuteAgentId($0) }
+        )
+    }
+
+    private var autoExecutePermissionBinding: Binding<AgentTemplate.PermissionMode> {
+        Binding(
+            get: { remoteSync.settings.resolvedAutoExecutePermissionMode },
+            set: { remoteSync.setAutoExecutePermissionMode($0) }
+        )
+    }
+
+    private var autoExecuteTemplateBinding: Binding<String> {
+        Binding(
+            get: { remoteSync.settings.autoExecuteTemplateId },
+            set: { remoteSync.setAutoExecuteTemplateId($0) }
+        )
+    }
+
     private var remoteEnabledBinding: Binding<Bool> {
         Binding(
             get: { remoteSync.settings.isEnabled },
@@ -658,6 +964,57 @@ private struct TaskRemoteWorkItemSettingsView: View {
         remoteSync.settings.lastError == nil ? .secondary : .red
     }
 
+    private var backgroundStatusText: String? {
+        if let message = remoteSync.settings.backgroundLastMessage, !message.isEmpty {
+            return message
+        }
+        if let date = remoteSync.settings.backgroundLastCheckedAt {
+            return String(localized: "tasks.settings.backgroundSync.lastChecked",
+                          defaultValue: "Last checked \(date.formatted(date: .abbreviated, time: .shortened))",
+                          table: "TermLoop")
+        }
+        return String(localized: "tasks.settings.backgroundSync.notChecked",
+                      defaultValue: "Background sync has not checked yet.",
+                      table: "TermLoop")
+    }
+
+    private var backgroundStatusColor: Color {
+        remoteSync.settings.backgroundLastError == nil ? .secondary : .red
+    }
+
+    private func backgroundActivityColor(_ level: TaskBackgroundSyncActivityLevel) -> Color {
+        switch level {
+        case .info:
+            return .blue
+        case .success:
+            return .green
+        case .warning:
+            return .orange
+        case .error:
+            return .red
+        }
+    }
+
+    private var autoExecutePermissionOptions: [PermissionModeOption] {
+        let agentId = remoteSync.settings.autoExecuteAgentId ?? TerminalAgent.claudeId
+        let options = PermissionModeCatalog.surfaceableModes(forAgentId: agentId)
+        return options.isEmpty
+            ? [PermissionModeOption(mode: .acceptEdits, title: "Accept Edits", description: "", flagPreview: "", badgeColor: .acceptEdits)]
+            : options
+    }
+
+    private var autoExecuteTemplateOptions: [AgentTemplate] {
+        let templates = AgentTemplateStore.shared.templates.filter { template in
+            template.variables.contains("task_file_path")
+        }
+        if templates.contains(where: { $0.id == remoteSync.settings.autoExecuteTemplateId }) {
+            return templates
+        }
+        return templates + AgentTemplateStore.shared.templates.filter {
+            $0.id == TaskRemoteSyncSettings.defaultAutoExecuteTemplateId
+        }
+    }
+
     private func cliDotColor(for provider: RemoteWorkItemProviderId) -> Color {
         let status = remoteSync.cliStatus(for: provider)
         if status.isChecking { return .orange }
@@ -672,6 +1029,17 @@ private struct TaskRemoteWorkItemSettingsView: View {
             TextField(placeholder, text: text)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 11))
+        }
+    }
+
+    private func pickerRow<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+            Spacer(minLength: 0)
+            content()
+                .frame(width: 142, alignment: .trailing)
         }
     }
 
