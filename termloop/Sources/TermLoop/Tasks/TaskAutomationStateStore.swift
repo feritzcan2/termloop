@@ -193,6 +193,11 @@ final class TaskAutomationStateStore {
         }
     }
 
+    func hasAgentStarted(storageKey: String) -> Bool {
+        ensureLoaded()
+        return file.remotes[storageKey]?.agentStartedAt != nil
+    }
+
     func markFailed(storageKey: String, message: String, now: Date = Date()) {
         mutateRemote(storageKey, now: now) { state in
             state.failedAt = now

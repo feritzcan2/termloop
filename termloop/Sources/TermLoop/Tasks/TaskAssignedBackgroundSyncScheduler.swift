@@ -335,7 +335,8 @@ final class TaskAssignedBackgroundSyncScheduler {
             let storageKey = snapshot.reference.storageKey
             guard !claimedKeys.contains(storageKey),
                   let remoteState = remoteStates[storageKey],
-                  remoteState.taskCreatedAt != nil || remoteState.worktreeStartedAt != nil || remoteState.agentStartedAt != nil,
+                  remoteState.agentStartedAt == nil,
+                  remoteState.taskCreatedAt != nil || remoteState.worktreeStartedAt != nil,
                   let localTask = task(for: snapshot, store: store) else {
                 return false
             }

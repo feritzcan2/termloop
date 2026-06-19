@@ -2055,6 +2055,11 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         if file.settings.remoteSync.isAssignedRemoteItemSuppressed(reference) {
             return true
         }
+        if TaskAutomationStateStoreProvider
+            .store(projectRoot: store.projectRoot)
+            .hasAgentStarted(storageKey: reference.storageKey) {
+            return true
+        }
         return file.tasks.contains { task in
             task.archivedAt != nil
                 && task.remoteWorkItem?.representsSameRemoteItem(as: reference) == true
