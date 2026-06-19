@@ -187,6 +187,7 @@ enum WorktreeAgentsPullRequestSummary {
 struct WorktreeAgentsGroup: Identifiable {
     let id: String
     let branch: String
+    let worktreeLabel: String?
     let workspaces: [Workspace]
     let worktreePath: String?
     let projectId: UUID?
@@ -199,6 +200,7 @@ struct WorktreeAgentsGroup: Identifiable {
     init(
         id: String? = nil,
         branch: String,
+        worktreeLabel: String? = nil,
         workspaces: [Workspace],
         worktreePath: String?,
         projectId: UUID? = nil,
@@ -209,6 +211,7 @@ struct WorktreeAgentsGroup: Identifiable {
     ) {
         self.id = id ?? branch
         self.branch = branch
+        self.worktreeLabel = worktreeLabel
         self.workspaces = workspaces
         self.worktreePath = worktreePath
         self.projectId = projectId
@@ -242,6 +245,19 @@ struct WorktreeGroupContextMenu: View {
                     table: "TermLoop"
                 ),
                 systemImage: "arrow.clockwise"
+            )
+        }
+
+        Button {
+            WorktreeLabelPrompt.present(group: group)
+        } label: {
+            Label(
+                String(
+                    localized: "worktreeAgents.group.renameLabel",
+                    defaultValue: "Rename Worktree Label…",
+                    table: "TermLoop"
+                ),
+                systemImage: "tag"
             )
         }
 
@@ -753,6 +769,81 @@ struct WorktreeGroupContextMenu: View {
         alert.alertStyle = .informational
         alert.messageText = message
         alert.runModal()
+    }
+}
+
+@MainActor
+private enum WorktreeLabelPrompt {
+    static func present(group: WorktreeAgentsGroup) {
+        guard group.worktreePath != nil || !group.workspaces.isEmpty else {
+            NSSound.beep()
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = String(
+            localized: "worktreeLabel.prompt.title",
+            defaultValue: "Rename Worktree Label",
+            table: "TermLoop"
+        )
+        alert.informativeText = String(
+            localized: "worktreeLabel.prompt.message",
+            defaultValue: "Write a short personal label for this worktree. The branch name stays visible as technical context.",
+            table: "TermLoop"
+        )
+        alert.alertStyle = .informational
+
+        let input = NSTextField(string: group.worktreeLabel ?? "")
+        input.placeholderString = String(
+            localized: "worktreeLabel.prompt.placeholder",
+            defaultValue: "e.g. Sidebar labels",
+            table: "TermLoop"
+        )
+        input.frame = NSRect(x: 0, y: 0, width: 360, height: 22)
+        alert.accessoryView = input
+
+        alert.addButton(withTitle: String(
+            localized: "common.save",
+            defaultValue: "Save",
+            table: "TermLoop"
+        ))
+        if group.worktreeLabel != nil {
+            alert.addButton(withTitle: String(
+                localized: "common.clear",
+                defaultValue: "Clear",
+                table: "TermLoop"
+            ))
+        }
+        alert.addButton(withTitle: String(
+            localized: "common.cancel",
+            defaultValue: "Cancel",
+            table: "TermLoop"
+        ))
+
+        let alertWindow = alert.window
+        alertWindow.initialFirstResponder = input
+        DispatchQueue.main.async {
+            alertWindow.makeFirstResponder(input)
+            input.selectText(nil)
+        }
+
+        let response = alert.runModal()
+        switch response {
+        case .alertFirstButtonReturn:
+            _ = WorkspaceMetadataStore.shared.setWorktreeLabel(
+                input.stringValue,
+                forWorktreePath: group.worktreePath,
+                workspaceIds: group.workspaces.map(\.id)
+            )
+        case .alertSecondButtonReturn where group.worktreeLabel != nil:
+            _ = WorkspaceMetadataStore.shared.setWorktreeLabel(
+                nil,
+                forWorktreePath: group.worktreePath,
+                workspaceIds: group.workspaces.map(\.id)
+            )
+        default:
+            break
+        }
     }
 }
 
@@ -1419,6 +1510,7 @@ struct WorktreeAgentsPanel: View {
         let taskBoardTick: UInt64
         let remoteItemTick: Int
         let remoteSnapshotTick: Int
+        let worktreeLabelTick: Int
         let runTargetTick: Int
         let devServerRunTick: Int
     }
@@ -1511,11 +1603,13 @@ struct WorktreeAgentsPanel: View {
     @State private var pendingTaskBoardTick = false
     @State private var pendingRemoteItemTick: Int?
     @State private var pendingRemoteSnapshotTick: Int?
+    @State private var pendingWorktreeLabelTick: Int?
     @State private var pendingRunTargetTick: Int?
     @State private var pendingDevServerRunTick: Int?
     @State private var pendingWorktreeProjectionVersion: UInt64?
     @State private var remoteItemTick: Int = 0
     @State private var remoteSnapshotTick: Int = 0
+    @State private var worktreeLabelTick: Int = 0
     @State private var runTargetTick: Int = 0
     @State private var devServerRunTick: Int = 0
     @State private var hoveredBranch: String?
@@ -1556,6 +1650,7 @@ struct WorktreeAgentsPanel: View {
         let _ = activityTick
         let _ = remoteItemTick
         let _ = remoteSnapshotTick
+        let _ = worktreeLabelTick
         let _ = runTargetTick
         let _ = devServerRunTick
         let collapsedBranchSet = branchSet(from: collapsedBranchesRaw)
@@ -1576,6 +1671,7 @@ struct WorktreeAgentsPanel: View {
                 taskBoardTick: taskBoardTick,
                 remoteItemTick: remoteItemTick,
                 remoteSnapshotTick: remoteSnapshotTick,
+                worktreeLabelTick: worktreeLabelTick,
                 runTargetTick: runTargetTick,
                 devServerRunTick: devServerRunTick
             )
@@ -1699,6 +1795,14 @@ struct WorktreeAgentsPanel: View {
                 pendingRemoteSnapshotTick = newValue
             } else {
                 remoteSnapshotTick = newValue
+            }
+        }
+        .onReceive(WorkspaceMetadataStore.shared.$worktreeLabelVersion) { newValue in
+            guard newValue != worktreeLabelTick else { return }
+            if AppMenuTrackingGate.shared.isTrackingMenu {
+                pendingWorktreeLabelTick = newValue
+            } else {
+                worktreeLabelTick = newValue
             }
         }
         .onReceive(RunTargetStore.shared.$version) { newValue in
@@ -1857,6 +1961,11 @@ struct WorktreeAgentsPanel: View {
             remoteSnapshotTick = pending
         }
         pendingRemoteSnapshotTick = nil
+
+        if let pending = pendingWorktreeLabelTick, pending != worktreeLabelTick {
+            worktreeLabelTick = pending
+        }
+        pendingWorktreeLabelTick = nil
 
         if let pending = pendingRunTargetTick, pending != runTargetTick {
             runTargetTick = pending
@@ -2094,6 +2203,7 @@ struct WorktreeAgentsPanel: View {
             return WorktreeAgentsGroup(
                 id: key,
                 branch: displayBranch,
+                worktreeLabel: WorkspaceMetadataStore.shared.worktreeLabel(forWorktreePath: worktreePath),
                 workspaces: workspaces,
                 worktreePath: worktreePath,
                 projectId: groupProjectId(workspaces: workspaces, worktreePath: worktreePath),
@@ -2132,6 +2242,7 @@ struct WorktreeAgentsPanel: View {
                 groups.append(WorktreeAgentsGroup(
                     id: "path:\(WorktreeResolver.normalizePath(entry.path) ?? entry.path)",
                     branch: displayBranch,
+                    worktreeLabel: WorkspaceMetadataStore.shared.worktreeLabel(forWorktreePath: entry.path),
                     workspaces: [],
                     worktreePath: entry.path,
                     projectId: activeProject.id,
@@ -2249,13 +2360,20 @@ struct WorktreeAgentsPanel: View {
             }
         )
 
+        func groupDisplayTitle(_ group: WorktreeAgentsGroup) -> String {
+            let label = group.worktreeLabel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return label.isEmpty ? group.branch : label
+        }
+
         func orderedGroups(_ groups: [WorktreeAgentsGroup]) -> [WorktreeAgentsGroup] {
             groups.sorted { lhs, rhs in
                 let lhsPriority = groupPriorityByBranch[lhs.id] ?? 6
                 let rhsPriority = groupPriorityByBranch[rhs.id] ?? 6
                 if lhsPriority != rhsPriority { return lhsPriority < rhsPriority }
-                if lhs.branch != rhs.branch {
-                    return lhs.branch.localizedStandardCompare(rhs.branch) == .orderedAscending
+                let lhsTitle = groupDisplayTitle(lhs)
+                let rhsTitle = groupDisplayTitle(rhs)
+                if lhsTitle != rhsTitle {
+                    return lhsTitle.localizedStandardCompare(rhsTitle) == .orderedAscending
                 }
                 return (lhs.worktreePath ?? lhs.id).localizedStandardCompare(rhs.worktreePath ?? rhs.id) == .orderedAscending
             }
@@ -2273,7 +2391,7 @@ struct WorktreeAgentsPanel: View {
         )
         let branchAttributedStringByBranch = Dictionary(
             uniqueKeysWithValues: groups.map { group in
-                (group.id, Self.branchAttributedString(group.branch))
+                (group.id, Self.branchAttributedString(groupDisplayTitle(group)))
             }
         )
 
@@ -2509,6 +2627,10 @@ struct WorktreeAgentsPanel: View {
     }
 
     private func worktreeMenuLabel(for group: WorktreeAgentsGroup) -> String {
+        let label = group.worktreeLabel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !label.isEmpty {
+            return label
+        }
         if let worktreePath = group.worktreePath {
             let leaf = URL(fileURLWithPath: worktreePath).lastPathComponent
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3049,6 +3171,18 @@ struct WorktreeAgentsPanel: View {
         let pathLeaf = group.worktreePath.map {
             URL(fileURLWithPath: $0).lastPathComponent
         }?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedLabel = group.worktreeLabel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let hasWorktreeLabel = !trimmedLabel.isEmpty
+        let branchDetail: String = {
+            guard let pathLeaf, !pathLeaf.isEmpty, pathLeaf != group.branch else {
+                return group.branch
+            }
+            return "\(group.branch) · \(pathLeaf)"
+        }()
+        let titleHelp = [hasWorktreeLabel ? trimmedLabel : nil, group.branch, path]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
         let availableAgents = TerminalAgentRegistry.shared.agents
         let canPerformBranchActions = group.expectedBranches.count == 1
         let singleExpectedBranch = canPerformBranchActions ? group.expectedBranches.first : nil
@@ -3088,13 +3222,23 @@ struct WorktreeAgentsPanel: View {
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(isArchivedSection ? TermLoopSidebarTheme.dimmer : TermLoopSidebarTheme.dim)
                         .frame(width: 10, height: 10)
-                    Text(renderSnapshot.branchAttributedStringByBranch[group.id] ?? Self.branchAttributedString(group.branch))
-                        .font(WorktreeAgentsPanelTypography.branchValue)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .layoutPriority(1)
-                        .help(path ?? group.branch)
-                    if let pathLeaf, !pathLeaf.isEmpty {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(renderSnapshot.branchAttributedStringByBranch[group.id] ?? Self.branchAttributedString(group.branch))
+                            .font(WorktreeAgentsPanelTypography.branchValue)
+                            .lineLimit(hasWorktreeLabel ? 2 : 1)
+                            .truncationMode(hasWorktreeLabel ? .tail : .middle)
+                            .layoutPriority(1)
+                        if hasWorktreeLabel {
+                            Text(verbatim: branchDetail)
+                                .font(TermLoopSidebarTheme.tinyMono)
+                                .foregroundStyle(TermLoopSidebarTheme.dimmer)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                    .layoutPriority(1)
+                    .help(titleHelp.isEmpty ? group.branch : titleHelp)
+                    if !hasWorktreeLabel, let pathLeaf, !pathLeaf.isEmpty {
                         Text(verbatim: "· \(pathLeaf)")
                             .font(TermLoopSidebarTheme.tinyMono)
                             .foregroundStyle(TermLoopSidebarTheme.dimmer)
@@ -3234,6 +3378,19 @@ struct WorktreeAgentsPanel: View {
                             table: "TermLoop"
                         ),
                         systemImage: "arrow.clockwise"
+                    )
+                }
+
+                Button {
+                    WorktreeLabelPrompt.present(group: group)
+                } label: {
+                    Label(
+                        String(
+                            localized: "worktreeAgents.group.renameLabel",
+                            defaultValue: "Rename Worktree Label…",
+                            table: "TermLoop"
+                        ),
+                        systemImage: "tag"
                     )
                 }
 
