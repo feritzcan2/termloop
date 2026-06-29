@@ -7,9 +7,11 @@ class TermLoopVoiceDictation: NSObject {
   private let audioEngine = AVAudioEngine()
   private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
   private var recognitionTask: SFSpeechRecognitionTask?
-  private var latestTranscript = ""
+  private var committedTranscript = ""
+  private var latestPartialTranscript = ""
   private var recording = false
   private var tapInstalled = false
+  private var stopping = false
 
   @objc
   static func requiresMainQueueSetup() -> Bool {
@@ -49,10 +51,10 @@ class TermLoopVoiceDictation: NSObject {
   @objc(stop:rejecter:)
   func stop(
     resolver resolve: @escaping RCTPromiseResolveBlock,
-    rejecter reject: @escaping RCTPromiseRejectBlock
+    rejecter reject: RCTPromiseRejectBlock
   ) {
     DispatchQueue.main.async {
-      let text = self.latestTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+      let text = self.currentTranscript()
       self.cleanup(cancelTask: false)
       resolve(["text": text])
     }
@@ -61,7 +63,7 @@ class TermLoopVoiceDictation: NSObject {
   @objc(cancel:rejecter:)
   func cancel(
     resolver resolve: @escaping RCTPromiseResolveBlock,
-    rejecter reject: @escaping RCTPromiseRejectBlock
+    rejecter reject: RCTPromiseRejectBlock
   ) {
     DispatchQueue.main.async {
       self.cleanup(cancelTask: true)
@@ -84,18 +86,44 @@ class TermLoopVoiceDictation: NSObject {
 
   private func startRecording() throws {
     cleanup(cancelTask: true)
-    latestTranscript = ""
-
-    guard let recognizer = SFSpeechRecognizer(), recognizer.isAvailable else {
-      throw VoiceDictationError.speechUnavailable
-    }
+    committedTranscript = ""
+    latestPartialTranscript = ""
+    stopping = false
 
     let audioSession = AVAudioSession.sharedInstance()
     try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
     try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
 
+    audioEngine.prepare()
+    try audioEngine.start()
+    recording = true
+    try startRecognitionTask()
+  }
+
+  private func startRecognitionTask() throws {
+    guard let recognizer = SFSpeechRecognizer(), recognizer.isAvailable else {
+      throw VoiceDictationError.speechUnavailable
+    }
+
+    recognitionTask?.cancel()
+    recognitionTask = nil
+    recognitionRequest?.endAudio()
+    recognitionRequest = nil
+
+    if tapInstalled {
+      audioEngine.inputNode.removeTap(onBus: 0)
+      tapInstalled = false
+    }
+
+    latestPartialTranscript = ""
     let request = SFSpeechAudioBufferRecognitionRequest()
     request.shouldReportPartialResults = true
+    if #available(iOS 16.0, *) {
+      request.addsPunctuation = true
+    }
+    if #available(iOS 13.0, *), recognizer.supportsOnDeviceRecognition {
+      request.requiresOnDeviceRecognition = true
+    }
     recognitionRequest = request
 
     let inputNode = audioEngine.inputNode
@@ -105,23 +133,66 @@ class TermLoopVoiceDictation: NSObject {
     }
     tapInstalled = true
 
-    audioEngine.prepare()
-    try audioEngine.start()
-    recording = true
-
     recognitionTask = recognizer.recognitionTask(with: request) { result, error in
-      if let result {
-        self.latestTranscript = result.bestTranscription.formattedString
-      }
-      if error != nil || result?.isFinal == true {
-        DispatchQueue.main.async {
-          self.cleanup(cancelTask: false)
+      DispatchQueue.main.async {
+        if let result {
+          self.latestPartialTranscript = result.bestTranscription.formattedString
+          if result.isFinal {
+            self.commitLatestPartial()
+          }
+        }
+
+        guard self.recording, !self.stopping else { return }
+        if error != nil || result?.isFinal == true {
+          self.restartRecognitionTask()
         }
       }
     }
   }
 
+  private func restartRecognitionTask() {
+    recognitionTask?.cancel()
+    recognitionTask = nil
+    recognitionRequest?.endAudio()
+    recognitionRequest = nil
+
+    if tapInstalled {
+      audioEngine.inputNode.removeTap(onBus: 0)
+      tapInstalled = false
+    }
+
+    guard recording, audioEngine.isRunning else { return }
+    do {
+      try startRecognitionTask()
+    } catch {
+      cleanup(cancelTask: true)
+    }
+  }
+
+  private func commitLatestPartial() {
+    let partial = latestPartialTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !partial.isEmpty else { return }
+    if committedTranscript.isEmpty {
+      committedTranscript = partial
+    } else if !committedTranscript.hasSuffix(partial) {
+      committedTranscript += "\n" + partial
+    }
+    latestPartialTranscript = ""
+  }
+
+  private func currentTranscript() -> String {
+    let partial = latestPartialTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+    if committedTranscript.isEmpty {
+      return partial
+    }
+    if partial.isEmpty || committedTranscript.hasSuffix(partial) {
+      return committedTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    return "\(committedTranscript)\n\(partial)".trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
   private func cleanup(cancelTask: Bool) {
+    stopping = true
     if audioEngine.isRunning {
       audioEngine.stop()
     }
@@ -135,11 +206,12 @@ class TermLoopVoiceDictation: NSObject {
     }
     recognitionTask = nil
     recognitionRequest = nil
+    latestPartialTranscript = ""
     recording = false
+    stopping = false
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
   }
 }
-
 enum VoiceDictationError: Error, LocalizedError {
   case speechUnavailable
 

@@ -546,6 +546,7 @@ export default function ConnectedScreen() {
 
   const onVoicePress = useCallback(
     async (mode: VoiceMode) => {
+      if (voiceBusy) return;
       if (voiceMode === mode) {
         await finishVoiceDictation(mode);
         return;
@@ -563,14 +564,17 @@ export default function ConnectedScreen() {
       }
 
       setVoiceMode(mode);
+      setVoiceBusy(true);
       try {
         await startVoiceDictation();
       } catch (err) {
         setVoiceMode(null);
         Alert.alert("Voice input failed", String((err as Error).message ?? err));
+      } finally {
+        setVoiceBusy(false);
       }
     },
-    [finishVoiceDictation, voiceMode]
+    [finishVoiceDictation, voiceBusy, voiceMode]
   );
 
   if (!client) return null;
