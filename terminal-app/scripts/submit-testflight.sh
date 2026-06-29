@@ -234,6 +234,7 @@ EOF
 
 echo "Creating local iOS archive..."
 xcodebuild archive \
+  -quiet \
   -workspace "$WORKSPACE" \
   -scheme "$SCHEME" \
   -configuration Release \
