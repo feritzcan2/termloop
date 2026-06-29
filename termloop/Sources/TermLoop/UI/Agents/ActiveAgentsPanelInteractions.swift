@@ -37,7 +37,7 @@ extension ActiveAgentsPanel {
                       let ws = tm.tabs.first(where: { $0.id == session.workspaceId }) else {
                     return
                 }
-                _ = tm.closeWorkspaceWithConfirmation(ws)
+                tm.closeWorkspaceFromSidebarPopover(ws)
             },
             onCollapse: { [weak tabManager] in
                 guard let tm = tabManager,

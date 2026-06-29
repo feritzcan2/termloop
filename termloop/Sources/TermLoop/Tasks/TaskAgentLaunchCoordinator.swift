@@ -78,7 +78,8 @@ enum TaskAgentLaunchCoordinator {
         guard let task, let workspaceId = task.workspaceId else {
             throw TaskAgentLaunchError.workspaceUnavailable
         }
-        if hasActiveAgent(workspaceId: workspaceId) {
+        if hasActiveAgent(workspaceId: workspaceId)
+            || hasActiveAgent(forWorktreePath: task.worktreePath, projectId: store.projectId, excluding: workspaceId) {
             throw TaskAgentLaunchError.runningAgentExists
         }
         guard let workspace = AppDelegate.shared?.workspaceFor(tabId: workspaceId) else {
@@ -150,5 +151,20 @@ enum TaskAgentLaunchCoordinator {
         case .inactive, .failed:
             return false
         }
+    }
+
+    private static func hasActiveAgent(
+        forWorktreePath path: String?,
+        projectId: UUID,
+        excluding excludedWorkspaceId: UUID
+    ) -> Bool {
+        guard let path = path?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty else {
+            return false
+        }
+        return WorkspaceMetadataStore.shared
+            .workspaceIds(withWorktreePath: path, projectId: projectId)
+            .contains { workspaceId in
+                workspaceId != excludedWorkspaceId && hasActiveAgent(workspaceId: workspaceId)
+            }
     }
 }

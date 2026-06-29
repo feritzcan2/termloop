@@ -28,6 +28,12 @@ import {
 import { getActiveClient } from "../../lib/session";
 import { type SurfaceSubscription } from "../../lib/termloop-client";
 import { colors, monoFont, radii } from "../../lib/theme";
+import {
+  cancelVoiceDictation,
+  isVoiceDictationAvailable,
+  startVoiceDictation,
+  stopVoiceDictation,
+} from "../../lib/voice-dictation";
 
 const MAX_BUFFER_LINES = 3000;
 const MAX_BUFFER_CHARS = 450_000;
@@ -205,6 +211,8 @@ export default function TerminalScreen() {
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [sending, setSending] = useState(false);
+  const [voiceRecording, setVoiceRecording] = useState(false);
+  const [voiceBusy, setVoiceBusy] = useState(false);
   const [surfaceWidth, setSurfaceWidth] = useState(0);
   const [liveInputEnabled, setLiveInputEnabled] = useState(false);
   const [liveCapture, setLiveCapture] = useState("");
@@ -276,6 +284,7 @@ export default function TerminalScreen() {
       aliveRef.current = false;
       pendingOutputRef.current = "";
       clearOutputFlushTimer();
+      cancelVoiceDictation().catch(() => {});
     };
   }, [clearOutputFlushTimer]);
 
@@ -686,6 +695,49 @@ export default function TerminalScreen() {
     setTimeout(() => inputRef.current?.focus(), 0);
   }, []);
 
+  const onVoicePress = useCallback(async () => {
+    if (liveInputEnabled) {
+      setInlineError("Voice input is available after leaving Live input.");
+      return;
+    }
+
+    if (voiceRecording) {
+      setVoiceBusy(true);
+      try {
+        const text = await stopVoiceDictation();
+        setVoiceRecording(false);
+        if (!text) {
+          setInlineError("No speech detected.");
+          return;
+        }
+        setDraft((current) =>
+          current.trim() ? `${current.trimEnd()}\n${text}` : text
+        );
+        setHistoryIndex(null);
+        focusInputSoon();
+      } catch (err) {
+        setInlineError(`Voice input failed: ${friendlyTransportError(err)}`);
+        setVoiceRecording(false);
+      } finally {
+        setVoiceBusy(false);
+      }
+      return;
+    }
+
+    if (!isVoiceDictationAvailable()) {
+      setInlineError("Voice input is available on iOS development builds.");
+      return;
+    }
+
+    setVoiceRecording(true);
+    try {
+      await startVoiceDictation();
+    } catch (err) {
+      setVoiceRecording(false);
+      setInlineError(`Voice input failed: ${friendlyTransportError(err)}`);
+    }
+  }, [focusInputSoon, liveInputEnabled, voiceRecording]);
+
   const cycleFont = useCallback(() => {
     setFontIndex((i) => (((i + 1) % FONT_SIZES.length) as FontIndex));
   }, []);
@@ -1082,6 +1134,23 @@ export default function TerminalScreen() {
             </View>
             <Pressable
               style={[
+                styles.micBtn,
+                voiceRecording && styles.micBtnActive,
+                (voiceBusy || liveInputEnabled) && styles.micBtnDisabled,
+              ]}
+              onPress={onVoicePress}
+              disabled={voiceBusy || liveInputEnabled}
+            >
+              {voiceBusy ? (
+                <ActivityIndicator color={colors.sub} size="small" />
+              ) : (
+                <Text style={styles.micBtnText}>
+                  {voiceRecording ? "Stop" : "Mic"}
+                </Text>
+              )}
+            </Pressable>
+            <Pressable
+              style={[
                 styles.sendBtn,
                 liveInputEnabled && styles.liveDoneBtn,
                 primaryButtonDisabled && styles.sendBtnDisabled,
@@ -1404,6 +1473,27 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     minHeight: 44,
     minWidth: 72,
+  },
+  micBtn: {
+    paddingHorizontal: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: colors.primaryDim,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderAccent,
+    minHeight: 44,
+    minWidth: 58,
+  },
+  micBtnActive: {
+    borderColor: colors.successBorder,
+    backgroundColor: colors.successDim,
+  },
+  micBtnDisabled: { opacity: 0.45 },
+  micBtnText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "800",
   },
   liveDoneBtn: { backgroundColor: colors.bgRaised },
   sendBtnDisabled: { opacity: 0.45 },

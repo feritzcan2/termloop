@@ -289,14 +289,12 @@ enum TermLoopHooks {
             writeSidecarPayload(payload)
         }
 
-        guard let persistenceQueue else {
-            write()
-            return
-        }
         if synchronously {
-            persistenceQueue.sync(execute: write)
-        } else {
+            write()
+        } else if let persistenceQueue {
             persistenceQueue.async(execute: write)
+        } else {
+            write()
         }
     }
 

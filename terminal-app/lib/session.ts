@@ -2,6 +2,7 @@ import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { connectionHostCandidates, type SavedConnection } from "./connections";
 import { TcpTransport } from "./tcp-transport";
+import { saveVoiceAgentConnection } from "./voice-agent-config";
 import {
   createTermLoopClient,
   type AuthResult,
@@ -26,6 +27,7 @@ import {
 interface ConnectedClient {
   client: TermLoopClient;
   auth?: AuthResult;
+  host: string;
 }
 
 interface ActiveSession {
@@ -79,6 +81,13 @@ export async function openSession(
   };
   session.client = createSessionClient(session);
   active = session;
+  void saveVoiceAgentConnection({
+    ...conn,
+    host: current.host,
+    alternateHosts: connectionHostCandidates(conn),
+  }).catch((err) => {
+    console.warn("Voice agent shortcut config skipped:", err);
+  });
   void registerPushToken(session.client).catch((err) => {
     console.warn("Push registration skipped:", err);
   });
@@ -133,7 +142,7 @@ async function connectHost(
 
   try {
     const { auth } = await applyAuth(client, conn);
-    return { client, auth };
+    return { client, auth, host };
   } catch (err) {
     await client.close().catch(() => {});
     throw err;

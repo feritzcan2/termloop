@@ -14,6 +14,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "TermLoop Mobile uses the camera to scan pairing QR codes shown by TermLoop on your Mac.",
         "NSLocalNetworkUsageDescription": "TermLoop Mobile connects to TermLoop on your Mac over your local network or Tailscale.",
+        "NSMicrophoneUsageDescription": "TermLoop Mobile uses the microphone to dictate prompts for terminal agents.",
+        "NSSpeechRecognitionUsageDescription": "TermLoop Mobile uses speech recognition to turn dictated agent prompts into editable text.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -36,6 +38,7 @@
       "expo-router",
       "expo-notifications",
       "./plugins/with-apns-entitlement",
+      "./plugins/with-voice-agent-intent",
       [
         "expo-camera",
         {

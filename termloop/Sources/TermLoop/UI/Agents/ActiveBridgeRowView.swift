@@ -75,7 +75,7 @@ struct ActiveBridgeRow: View {
                 core: snapshot,
                 isSelected: isSelected,
                 trailingSlot: .none,
-                dismissBehavior: .confirmClose(onConfirm: {
+                dismissBehavior: .directClose(onClose: {
                     BridgeCoordinator.shared.dismissAndCloseRight(bridgeId: bridge.id)
                 }),
                 onActivate: {

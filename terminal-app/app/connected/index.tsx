@@ -17,6 +17,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Swipeable } from "react-native-gesture-handler";
+import { pickDefaultAgent } from "../../lib/agents";
 import { saveLastTerminal } from "../../lib/last-terminal";
 import {
   closeSession,
@@ -40,12 +41,19 @@ import {
   type WorkspaceSummary,
 } from "../../lib/termloop-client";
 import { colors, monoFont, radii } from "../../lib/theme";
+import {
+  cancelVoiceDictation,
+  isVoiceDictationAvailable,
+  startVoiceDictation,
+  stopVoiceDictation,
+} from "../../lib/voice-dictation";
 import { TasksView } from "../../components/tasks-view";
 
 type ProjectState = ProjectSummary | null | "loading";
 type WorkspaceSectionKind = "worktree" | "workspace";
 type AgentTargetKind = WorkspaceSectionKind | "new_worktree";
 type WorkspaceViewMode = "active" | "worktrees" | "tasks";
+type VoiceMode = "main" | "picker";
 
 
 interface WorkspaceRow {
@@ -112,6 +120,8 @@ export default function ConnectedScreen() {
   const [agentPromptText, setAgentPromptText] = useState("");
   const [agentPlanMode, setAgentPlanMode] = useState(false);
   const [startingAgent, setStartingAgent] = useState(false);
+  const [voiceMode, setVoiceMode] = useState<VoiceMode | null>(null);
+  const [voiceBusy, setVoiceBusy] = useState(false);
   const [closingWorkspaceId, setClosingWorkspaceId] = useState<string | null>(null);
   const [workspaceContexts, setWorkspaceContexts] = useState<
     Record<string, WorkspaceContextState>
@@ -153,6 +163,12 @@ export default function ConnectedScreen() {
     }
     loadOverview();
   }, [client, loadOverview, router]);
+
+  useEffect(() => {
+    return () => {
+      cancelVoiceDictation().catch(() => {});
+    };
+  }, []);
 
   const onDisconnect = async () => {
     await closeSession();
@@ -408,6 +424,155 @@ export default function ConnectedScreen() {
     [agentTargets, selectedTargetKey]
   );
 
+  const ensureAgents = useCallback(async (): Promise<TerminalAgentSummary[]> => {
+    if (!client) return [];
+    if (agents !== null) return agents;
+    const list = await client.listTerminalAgents();
+    setAgents(list);
+    setSelectedAgentId((currentId) => currentId ?? list[0]?.id ?? null);
+    return list;
+  }, [client, agents]);
+
+  const openCreatedAgentWorkspace = useCallback(
+    async (
+      workspaceId: string,
+      workspaceName: string,
+      alertTitle = "Agent started"
+    ) => {
+      if (!client) return;
+      await loadOverview();
+      setOpeningId(workspaceId);
+      const surface = await waitForTerminalSurface(client, workspaceId);
+      if (!surface) {
+        Alert.alert(
+          alertTitle,
+          "The workspace was created, but the agent terminal has not produced output yet. Pull to refresh and open it again."
+        );
+        return;
+      }
+
+      const surfaceName = surfaceLabel(surface);
+      const connectionId = getActiveConnectionId();
+      if (connectionId) {
+        await saveLastTerminal({
+          connectionId,
+          workspaceId,
+          surfaceId: surface.id,
+          workspaceName,
+          surfaceName,
+        }).catch(() => {});
+      }
+
+      router.push({
+        pathname: "/connected/terminal",
+        params: {
+          workspaceId,
+          surfaceId: surface.id,
+          name: workspaceName,
+          surfaceName,
+          projectName: current !== "loading" ? current?.name ?? "" : "",
+          projectPath:
+            current !== "loading" ? projectSummaryPath(current) ?? "" : "",
+        },
+      });
+    },
+    [client, current, loadOverview, router]
+  );
+
+  const startDefaultVoiceAgent = useCallback(
+    async (promptText: string) => {
+      if (!client) return;
+      const list = await ensureAgents();
+      const agent = pickDefaultAgent(list);
+      if (!agent) {
+        Alert.alert("No agent", "No terminal agents are available.");
+        return;
+      }
+
+      const activeProject =
+        current !== "loading" && current !== null ? current : null;
+      const created = await client.createWorkspace({
+        title: "Voice Agent",
+        cwd: projectSummaryPath(activeProject),
+        projectId: activeProject?.id,
+        terminalAgentId: agent.id,
+        promptText,
+      });
+      await openCreatedAgentWorkspace(
+        created.workspace_id,
+        agent.display_name,
+        "Voice agent started"
+      );
+    },
+    [client, current, ensureAgents, openCreatedAgentWorkspace]
+  );
+
+  const finishVoiceDictation = useCallback(
+    async (mode: VoiceMode) => {
+      setVoiceBusy(true);
+      try {
+        const text = await stopVoiceDictation();
+        setVoiceMode(null);
+        if (!text) {
+          Alert.alert("No speech detected", "Try again and speak after tapping Mic.");
+          return;
+        }
+
+        if (mode === "main") {
+          setStartingAgent(true);
+          try {
+            await startDefaultVoiceAgent(text);
+          } finally {
+            setStartingAgent(false);
+            setOpeningId(null);
+          }
+          return;
+        }
+
+        setAgentPromptText((currentText) =>
+          currentText.trim()
+            ? `${currentText.trimEnd()}\n\n${text}`
+            : text
+        );
+      } catch (err) {
+        Alert.alert("Voice input failed", String((err as Error).message ?? err));
+        setVoiceMode(null);
+      } finally {
+        setVoiceBusy(false);
+      }
+    },
+    [startDefaultVoiceAgent]
+  );
+
+  const onVoicePress = useCallback(
+    async (mode: VoiceMode) => {
+      if (voiceMode === mode) {
+        await finishVoiceDictation(mode);
+        return;
+      }
+      if (voiceMode) {
+        Alert.alert("Voice input active", "Stop the current recording first.");
+        return;
+      }
+      if (!isVoiceDictationAvailable()) {
+        Alert.alert(
+          "Voice input unavailable",
+          "Voice input is available on iOS development builds."
+        );
+        return;
+      }
+
+      setVoiceMode(mode);
+      try {
+        await startVoiceDictation();
+      } catch (err) {
+        setVoiceMode(null);
+        Alert.alert("Voice input failed", String((err as Error).message ?? err));
+      }
+    },
+    [finishVoiceDictation, voiceMode]
+  );
+
   if (!client) return null;
 
   const projectName =
@@ -427,9 +592,7 @@ export default function ConnectedScreen() {
     setAgentPickerOpen(true);
     if (agents === null) {
       try {
-        const list = await client.listTerminalAgents();
-        setAgents(list);
-        setSelectedAgentId((currentId) => currentId ?? list[0]?.id ?? null);
+        await ensureAgents();
       } catch (err) {
         Alert.alert(
           "Failed to load agents",
@@ -466,41 +629,8 @@ export default function ConnectedScreen() {
         promptText: agentPromptText.trim() || undefined,
         planMode: agentPlanMode,
       });
-      await loadOverview();
-      setOpeningId(created.workspace_id);
-      const surface = await waitForTerminalSurface(client, created.workspace_id);
-      if (!surface) {
-        setAgentPickerOpen(false);
-        Alert.alert(
-          "Agent started",
-          "The workspace was created, but the agent terminal has not produced output yet. Pull to refresh and open it again."
-        );
-        return;
-      }
-      const surfaceName = surfaceLabel(surface);
-      const connectionId = getActiveConnectionId();
-      if (connectionId) {
-        await saveLastTerminal({
-          connectionId,
-          workspaceId: created.workspace_id,
-          surfaceId: surface.id,
-          workspaceName: agent.display_name,
-          surfaceName,
-        }).catch(() => {});
-      }
       setAgentPickerOpen(false);
-      router.push({
-        pathname: "/connected/terminal",
-        params: {
-          workspaceId: created.workspace_id,
-          surfaceId: surface.id,
-          name: agent.display_name,
-          surfaceName,
-          projectName: current !== "loading" ? current?.name ?? "" : "",
-          projectPath:
-            current !== "loading" ? projectSummaryPath(current) ?? "" : "",
-        },
-      });
+      await openCreatedAgentWorkspace(created.workspace_id, agent.display_name);
     } catch (err) {
       Alert.alert("Failed to start agent", String((err as Error).message ?? err));
     } finally {
@@ -583,6 +713,24 @@ export default function ConnectedScreen() {
           ),
           headerRight: () => (
             <View style={styles.headerActions}>
+              <Pressable
+                style={[
+                  styles.headerAction,
+                  voiceMode === "main" && styles.headerActionActive,
+                  (voiceBusy || startingAgent) && styles.controlDisabled,
+                ]}
+                onPress={() => onVoicePress("main")}
+                disabled={voiceBusy || startingAgent}
+                hitSlop={8}
+              >
+                {voiceBusy && voiceMode === "main" ? (
+                  <ActivityIndicator color={colors.sub} size="small" />
+                ) : (
+                  <Text style={styles.headerVoiceText}>
+                    {voiceMode === "main" ? "Stop" : "Mic"}
+                  </Text>
+                )}
+              </Pressable>
               <Pressable
                 style={styles.headerAction}
                 onPress={() => openAgentPicker()}
@@ -1062,7 +1210,26 @@ export default function ConnectedScreen() {
                 </View>
               ) : null}
 
-              <Text style={styles.sheetLabel}>Prompt</Text>
+              <View style={styles.promptLabelRow}>
+                <Text style={styles.sheetLabel}>Prompt</Text>
+                <Pressable
+                  style={[
+                    styles.promptMicBtn,
+                    voiceMode === "picker" && styles.promptMicBtnActive,
+                    (voiceBusy || startingAgent) && styles.controlDisabled,
+                  ]}
+                  onPress={() => onVoicePress("picker")}
+                  disabled={voiceBusy || startingAgent}
+                >
+                  {voiceBusy && voiceMode === "picker" ? (
+                    <ActivityIndicator color={colors.sub} size="small" />
+                  ) : (
+                    <Text style={styles.promptMicText}>
+                      {voiceMode === "picker" ? "Stop" : "Mic"}
+                    </Text>
+                  )}
+                </Pressable>
+              </View>
               <TextInput
                 style={styles.promptInput}
                 value={agentPromptText}
@@ -1483,6 +1650,7 @@ const styles = StyleSheet.create({
   headerAction: {
     minWidth: 30,
     minHeight: 30,
+    paddingHorizontal: 7,
     borderRadius: radii.sm,
     borderWidth: 1,
     borderColor: colors.border,
@@ -1490,11 +1658,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  headerActionActive: {
+    borderColor: colors.successBorder,
+    backgroundColor: colors.successDim,
+  },
   headerActionText: {
     color: colors.primary,
     fontSize: 17,
     fontWeight: "800",
     lineHeight: 19,
+  },
+  headerVoiceText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 16,
   },
   controlDisabled: { opacity: 0.5 },
   headerExit: {
@@ -1880,6 +2058,33 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0,
     marginTop: 6,
+  },
+  promptLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginTop: 6,
+  },
+  promptMicBtn: {
+    minHeight: 28,
+    minWidth: 54,
+    paddingHorizontal: 9,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.borderAccent,
+    backgroundColor: colors.primaryDim,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  promptMicBtnActive: {
+    borderColor: colors.successBorder,
+    backgroundColor: colors.successDim,
+  },
+  promptMicText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "800",
   },
   fieldLabel: {
     color: colors.label,
