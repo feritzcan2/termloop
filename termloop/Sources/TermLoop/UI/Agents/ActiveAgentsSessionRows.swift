@@ -10,9 +10,8 @@ struct TerminalAgentActivityRow: View, Equatable {
     let tabManager: TabManager
     let contextMenuSnapshot: ActiveAgentWorkspaceContextMenuSnapshot?
     let onTap: () -> Void
-    /// Hard-close action: × opens a "Delete workspace?" popover via the shared
-    /// `AgentRowCoreView`; Yes fires this. ActiveAgents always provides it —
-    /// Worktree/Ticket do not expose × at all.
+    /// Hard-close action: the Active Agents sidebar X fires this immediately.
+    /// Worktree/Ticket callers keep their own confirmation behavior.
     let onCloseWorkspace: () -> Void
     let onCollapseWorkspace: () -> Void
 
@@ -42,7 +41,7 @@ struct TerminalAgentActivityRow: View, Equatable {
             core: coreForRow,
             isSelected: isSelected,
             trailingSlot: .collapseButton,
-            dismissBehavior: .confirmClose(onConfirm: onCloseWorkspace),
+            dismissBehavior: .directClose(onClose: onCloseWorkspace),
             onActivate: onTap,
             onAcknowledgeAttention: { [workspaceId = session.core.workspaceId] in
                 TerminalAgentActivityStore.shared.acknowledgeViewedAttention(forWorkspaceId: workspaceId)

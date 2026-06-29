@@ -33,6 +33,9 @@ enum AgentRowTrailingSlot: Equatable {
 /// memoization used on sidebar hot paths.
 enum AgentRowDismissBehavior {
     case none
+    /// × fires `onClose` immediately. Used only by entry points that should
+    /// not ask for an inline confirmation.
+    case directClose(onClose: () -> Void)
     /// × opens a "Delete agent?" popover; Yes fires `onConfirm`.
     case confirmClose(onConfirm: () -> Void)
 
@@ -45,7 +48,7 @@ enum AgentRowDismissBehavior {
 extension AgentRowDismissBehavior: Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool {
         switch (lhs, rhs) {
-        case (.none, .none), (.confirmClose, .confirmClose):
+        case (.none, .none), (.directClose, .directClose), (.confirmClose, .confirmClose):
             return true
         default:
             return false
@@ -196,7 +199,12 @@ struct AgentRowCoreView: View, Equatable {
     }
 
     private func dismissPressed() {
-        if case .confirmClose = dismissBehavior {
+        switch dismissBehavior {
+        case .none:
+            break
+        case .directClose(let onClose):
+            onClose()
+        case .confirmClose:
             isDeletePopoverPresented = true
         }
     }

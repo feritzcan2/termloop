@@ -97,6 +97,14 @@ Staging goes to TestFlight:
 npm run eas:build:staging
 ```
 
+For a local agent-driven release, use the guarded script. It runs
+`npm run typecheck`, verifies EAS auth, commits the current repository state,
+and starts the staging iOS build with `--auto-submit`:
+
+```bash
+npm run testflight -- --message "chore: ship mobile TestFlight build"
+```
+
 Production goes to App Store submission:
 
 ```bash
