@@ -58,6 +58,8 @@ function ensureBridgingHeader(projectRoot) {
     appDir,
     "TermLoopMobile-Bridging-Header.h"
   );
+  // Expo's generated project already points SWIFT_OBJC_BRIDGING_HEADER at
+  // this app header; this plugin only keeps the React bridge import present.
   const importLine = "#import <React/RCTBridgeModule.h>";
   let contents = fs.existsSync(headerPath)
     ? fs.readFileSync(headerPath, "utf8")

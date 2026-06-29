@@ -696,6 +696,7 @@ export default function TerminalScreen() {
   }, []);
 
   const onVoicePress = useCallback(async () => {
+    if (voiceBusy) return;
     if (liveInputEnabled) {
       setInlineError("Voice input is available after leaving Live input.");
       return;
@@ -730,13 +731,16 @@ export default function TerminalScreen() {
     }
 
     setVoiceRecording(true);
+    setVoiceBusy(true);
     try {
       await startVoiceDictation();
     } catch (err) {
       setVoiceRecording(false);
       setInlineError(`Voice input failed: ${friendlyTransportError(err)}`);
+    } finally {
+      setVoiceBusy(false);
     }
-  }, [focusInputSoon, liveInputEnabled, voiceRecording]);
+  }, [focusInputSoon, liveInputEnabled, voiceBusy, voiceRecording]);
 
   const cycleFont = useCallback(() => {
     setFontIndex((i) => (((i + 1) % FONT_SIZES.length) as FontIndex));
