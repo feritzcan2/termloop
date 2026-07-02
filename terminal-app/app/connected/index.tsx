@@ -122,6 +122,8 @@ export default function ConnectedScreen() {
   const [startingAgent, setStartingAgent] = useState(false);
   const [voiceMode, setVoiceMode] = useState<VoiceMode | null>(null);
   const [voiceBusy, setVoiceBusy] = useState(false);
+  const [voiceDraftText, setVoiceDraftText] = useState("");
+  const [voiceConfirmOpen, setVoiceConfirmOpen] = useState(false);
   const [closingWorkspaceId, setClosingWorkspaceId] = useState<string | null>(null);
   const [workspaceContexts, setWorkspaceContexts] = useState<
     Record<string, WorkspaceContextState>
@@ -519,13 +521,8 @@ export default function ConnectedScreen() {
         }
 
         if (mode === "main") {
-          setStartingAgent(true);
-          try {
-            await startDefaultVoiceAgent(text);
-          } finally {
-            setStartingAgent(false);
-            setOpeningId(null);
-          }
+          setVoiceDraftText(text);
+          setVoiceConfirmOpen(true);
           return;
         }
 
@@ -541,8 +538,24 @@ export default function ConnectedScreen() {
         setVoiceBusy(false);
       }
     },
-    [startDefaultVoiceAgent]
+    []
   );
+
+  const submitVoiceDraft = useCallback(async () => {
+    const text = voiceDraftText.trim();
+    if (!text || startingAgent) return;
+    setStartingAgent(true);
+    try {
+      await startDefaultVoiceAgent(text);
+      setVoiceConfirmOpen(false);
+      setVoiceDraftText("");
+    } catch (err) {
+      Alert.alert("Failed to start agent", String((err as Error).message ?? err));
+    } finally {
+      setStartingAgent(false);
+      setOpeningId(null);
+    }
+  }, [startDefaultVoiceAgent, startingAgent, voiceDraftText]);
 
   const onVoicePress = useCallback(
     async (mode: VoiceMode) => {
@@ -585,6 +598,7 @@ export default function ConnectedScreen() {
     current !== "loading" ? projectSummaryPath(current) : undefined;
   const projectPath =
     activeProjectPath ?? "No project path";
+  const canSubmitVoiceDraft = Boolean(voiceDraftText.trim()) && !startingAgent;
 
   const openAgentPicker = async (targetKey = "project") => {
     if (!client) return;
@@ -1131,6 +1145,67 @@ export default function ConnectedScreen() {
                 }}
               />
             )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={voiceConfirmOpen}
+        onRequestClose={() => {
+          if (!startingAgent) setVoiceConfirmOpen(false);
+        }}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => {
+            if (!startingAgent) setVoiceConfirmOpen(false);
+          }}
+        >
+          <Pressable style={styles.modalSheet} onPress={() => {}}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Voice prompt</Text>
+            <TextInput
+              style={styles.voiceDraftInput}
+              value={voiceDraftText}
+              onChangeText={setVoiceDraftText}
+              placeholder="Dictated prompt"
+              placeholderTextColor={colors.placeholder}
+              multiline
+              textAlignVertical="top"
+              editable={!startingAgent}
+            />
+            <View style={styles.voiceDraftActions}>
+              <Pressable
+                style={[
+                  styles.voiceDraftSecondaryBtn,
+                  startingAgent && styles.controlDisabled,
+                ]}
+                onPress={() => {
+                  setVoiceConfirmOpen(false);
+                  setVoiceDraftText("");
+                }}
+                disabled={startingAgent}
+              >
+                <Text style={styles.voiceDraftSecondaryText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.voiceDraftPrimaryBtn,
+                  !canSubmitVoiceDraft && styles.controlDisabled,
+                ]}
+                onPress={submitVoiceDraft}
+                disabled={!canSubmitVoiceDraft}
+              >
+                {startingAgent ? (
+                  <ActivityIndicator color={colors.onPrimary} size="small" />
+                ) : null}
+                <Text style={styles.voiceDraftPrimaryText}>
+                  {startingAgent ? "Starting…" : "Start agent"}
+                </Text>
+              </Pressable>
+            </View>
           </Pressable>
         </Pressable>
       </Modal>
@@ -2089,6 +2164,56 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 12,
     fontWeight: "800",
+  },
+  voiceDraftInput: {
+    minHeight: 150,
+    maxHeight: 260,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.inputBg,
+    color: colors.text,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  voiceDraftActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 8,
+    marginTop: 12,
+  },
+  voiceDraftSecondaryBtn: {
+    minHeight: 40,
+    paddingHorizontal: 14,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgRaised,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  voiceDraftSecondaryText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  voiceDraftPrimaryBtn: {
+    minHeight: 40,
+    paddingHorizontal: 14,
+    borderRadius: radii.sm,
+    backgroundColor: colors.primary,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  voiceDraftPrimaryText: {
+    color: colors.onPrimary,
+    fontSize: 13,
+    fontWeight: "900",
   },
   fieldLabel: {
     color: colors.label,
