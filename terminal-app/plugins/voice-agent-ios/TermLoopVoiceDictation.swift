@@ -11,7 +11,6 @@ class TermLoopVoiceDictation: NSObject {
   private var latestPartialTranscript = ""
   private var recording = false
   private var tapInstalled = false
-  private var stopping = false
 
   @objc
   static func requiresMainQueueSetup() -> Bool {
@@ -88,16 +87,15 @@ class TermLoopVoiceDictation: NSObject {
     cleanup(cancelTask: true)
     committedTranscript = ""
     latestPartialTranscript = ""
-    stopping = false
 
     let audioSession = AVAudioSession.sharedInstance()
     try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
     try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
 
+    try startRecognitionTask()
     audioEngine.prepare()
     try audioEngine.start()
     recording = true
-    try startRecognitionTask()
   }
 
   private func startRecognitionTask() throws {
@@ -128,12 +126,15 @@ class TermLoopVoiceDictation: NSObject {
 
     let inputNode = audioEngine.inputNode
     let recordingFormat = inputNode.outputFormat(forBus: 0)
+    guard recordingFormat.sampleRate > 0, recordingFormat.channelCount > 0 else {
+      throw VoiceDictationError.invalidInputFormat
+    }
     inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
       request.append(buffer)
     }
     tapInstalled = true
 
-    recognitionTask = recognizer.recognitionTask(with: request) { result, error in
+    recognitionTask = recognizer.recognitionTask(with: request) { result, _ in
       DispatchQueue.main.async {
         if let result {
           self.latestPartialTranscript = result.bestTranscription.formattedString
@@ -141,31 +142,7 @@ class TermLoopVoiceDictation: NSObject {
             self.commitLatestPartial()
           }
         }
-
-        guard self.recording, !self.stopping else { return }
-        if error != nil || result?.isFinal == true {
-          self.restartRecognitionTask()
-        }
       }
-    }
-  }
-
-  private func restartRecognitionTask() {
-    recognitionTask?.cancel()
-    recognitionTask = nil
-    recognitionRequest?.endAudio()
-    recognitionRequest = nil
-
-    if tapInstalled {
-      audioEngine.inputNode.removeTap(onBus: 0)
-      tapInstalled = false
-    }
-
-    guard recording, audioEngine.isRunning else { return }
-    do {
-      try startRecognitionTask()
-    } catch {
-      cleanup(cancelTask: true)
     }
   }
 
@@ -192,7 +169,6 @@ class TermLoopVoiceDictation: NSObject {
   }
 
   private func cleanup(cancelTask: Bool) {
-    stopping = true
     if audioEngine.isRunning {
       audioEngine.stop()
     }
@@ -208,17 +184,19 @@ class TermLoopVoiceDictation: NSObject {
     recognitionRequest = nil
     latestPartialTranscript = ""
     recording = false
-    stopping = false
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
   }
 }
 enum VoiceDictationError: Error, LocalizedError {
   case speechUnavailable
+  case invalidInputFormat
 
   var errorDescription: String? {
     switch self {
     case .speechUnavailable:
       return "Speech recognition is not available on this device."
+    case .invalidInputFormat:
+      return "Microphone input is not available."
     }
   }
 }
