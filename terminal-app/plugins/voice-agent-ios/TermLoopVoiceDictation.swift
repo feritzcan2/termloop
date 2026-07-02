@@ -99,7 +99,8 @@ class TermLoopVoiceDictation: NSObject {
   }
 
   private func startRecognitionTask() throws {
-    guard let recognizer = SFSpeechRecognizer(), recognizer.isAvailable else {
+    let locale = Locale(identifier: "tr-TR")
+    guard let recognizer = SFSpeechRecognizer(locale: locale), recognizer.isAvailable else {
       throw VoiceDictationError.speechUnavailable
     }
 
