@@ -1,4 +1,5 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import * as Clipboard from "expo-clipboard";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -46,6 +47,7 @@ const SEND_SETTLE_MS = 60;
 const NEAR_BOTTOM_PX = 80;
 const MAX_COMMAND_HISTORY = 50;
 const COMPOSER_MAX_HEIGHT = 96;
+const COPY_FEEDBACK_MS = 1400;
 const TERMINAL_HORIZONTAL_PADDING = 24;
 const TERMINAL_CONTENT_PADDING = 12;
 const TERMINAL_CHAR_WIDTH_RATIO = 0.72;
@@ -216,6 +218,7 @@ export default function TerminalScreen() {
   const [surfaceWidth, setSurfaceWidth] = useState(0);
   const [liveInputEnabled, setLiveInputEnabled] = useState(false);
   const [liveCapture, setLiveCapture] = useState("");
+  const [copyFeedback, setCopyFeedback] = useState(false);
 
   const aliveRef = useRef(true);
   const liveStateRef = useRef<LiveState>("connecting");
@@ -228,6 +231,9 @@ export default function TerminalScreen() {
   const reconnectRef = useRef<() => void>(() => {});
   const pendingOutputRef = useRef("");
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
   const liveInputQueueRef = useRef<Promise<void>>(Promise.resolve());
   const liveCaptureRef = useRef("");
   const lastLiveDeleteAtRef = useRef(0);
@@ -284,6 +290,10 @@ export default function TerminalScreen() {
       aliveRef.current = false;
       pendingOutputRef.current = "";
       clearOutputFlushTimer();
+      if (copyFeedbackTimerRef.current) {
+        clearTimeout(copyFeedbackTimerRef.current);
+        copyFeedbackTimerRef.current = null;
+      }
       cancelVoiceDictation().catch(() => {});
     };
   }, [clearOutputFlushTimer]);
@@ -753,6 +763,29 @@ export default function TerminalScreen() {
   }, []);
 
   const terminalLines = useMemo(() => terminalLinesForBuffer(buffer), [buffer]);
+  const copyableOutput = useMemo(
+    () => normalizeTerminalLineBreaks(stripAnsi(buffer)).trimEnd(),
+    [buffer]
+  );
+
+  const copyTerminalOutput = useCallback(async () => {
+    if (!copyableOutput) return;
+    try {
+      await Clipboard.setStringAsync(copyableOutput);
+      setCopyFeedback(true);
+      if (copyFeedbackTimerRef.current) {
+        clearTimeout(copyFeedbackTimerRef.current);
+      }
+      copyFeedbackTimerRef.current = setTimeout(() => {
+        copyFeedbackTimerRef.current = null;
+        if (aliveRef.current) setCopyFeedback(false);
+      }, COPY_FEEDBACK_MS);
+    } catch (err) {
+      if (aliveRef.current) {
+        setInlineError(`Copy failed: ${friendlyTransportError(err)}`);
+      }
+    }
+  }, [copyableOutput]);
 
   const maxLineChars = useMemo(
     () => terminalLines.reduce((max, line) => Math.max(max, line.text.length), 1),
@@ -830,6 +863,13 @@ export default function TerminalScreen() {
         disabled: false,
         active: liveInputEnabled,
       },
+      {
+        kind: "action",
+        label: copyFeedback ? "Copied" : "Copy All",
+        onPress: copyTerminalOutput,
+        disabled: !copyableOutput,
+        active: copyFeedback,
+      },
       k("Tab"),
       k("Esc"),
       k("Ctrl-C"),
@@ -876,6 +916,9 @@ export default function TerminalScreen() {
     draft,
     scrollToBottom,
     isNearBottom,
+    copyFeedback,
+    copyTerminalOutput,
+    copyableOutput,
   ]);
   const renderTerminalLine = useCallback(
     ({ item }: ListRenderItemInfo<TerminalRenderLine>) => (
