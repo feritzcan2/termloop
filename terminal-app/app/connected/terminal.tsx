@@ -1,9 +1,9 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import * as Clipboard from "expo-clipboard";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
+  Clipboard,
   type AppStateStatus,
   FlatList,
   KeyboardAvoidingView,
@@ -771,7 +771,7 @@ export default function TerminalScreen() {
   const copyTerminalOutput = useCallback(async () => {
     if (!copyableOutput) return;
     try {
-      await Clipboard.setStringAsync(copyableOutput);
+      Clipboard.setString(copyableOutput);
       setCopyFeedback(true);
       if (copyFeedbackTimerRef.current) {
         clearTimeout(copyFeedbackTimerRef.current);
