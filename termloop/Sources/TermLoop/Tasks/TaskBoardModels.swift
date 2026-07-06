@@ -281,9 +281,60 @@ public struct TaskRecord: Codable, Identifiable, Equatable, Hashable, Sendable {
     }
 }
 
+public enum TaskBackgroundSyncActivityLevel: String, Codable, Equatable, Sendable {
+    case info
+    case success
+    case warning
+    case error
+}
+
+public struct TaskBackgroundSyncActivityEntry: Codable, Equatable, Identifiable, Sendable {
+    public var id: UUID
+    public var createdAt: Date
+    public var level: TaskBackgroundSyncActivityLevel
+    public var message: String
+    public var remoteKey: String?
+
+    public init(
+        id: UUID = UUID(),
+        createdAt: Date = Date(),
+        level: TaskBackgroundSyncActivityLevel,
+        message: String,
+        remoteKey: String? = nil
+    ) {
+        self.id = id
+        self.createdAt = createdAt
+        self.level = level
+        self.message = message
+        self.remoteKey = remoteKey?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    }
+}
+
 public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
+    public static let defaultBackgroundPollIntervalSeconds: TimeInterval = 300
+    public static let minimumBackgroundPollIntervalSeconds: TimeInterval = 120
+    public static let defaultAutoExecuteTemplateId = "task-auto-executor-agent"
+    public static let defaultAutoExecuteMaxConcurrentAgents = 5
+    public static let backgroundActivityLimit = 80
+    public static let suppressedAssignedRemoteItemLimit = 1_000
+
     public var remoteItemsEnabled: Bool
     public var syncAssignedToMe: Bool
+    public var backgroundSyncEnabled: Bool
+    public var backgroundSyncAssignedToMe: Bool
+    public var backgroundPollIntervalSeconds: TimeInterval
+    public var backgroundLastCheckedAt: Date?
+    public var backgroundLastMessage: String?
+    public var backgroundLastError: String?
+    public var backgroundJiraWatermark: Date?
+    public var backgroundActivityLog: [TaskBackgroundSyncActivityEntry]
+    public var suppressedAssignedRemoteItemKeys: [String: Date]
+    public var autoCreateWorktree: Bool
+    public var autoExecuteWithAgent: Bool
+    public var autoExecuteMaxConcurrentAgents: Int
+    public var autoExecuteAgentId: String?
+    public var autoExecutePermissionModeRawValue: String
+    public var autoExecuteTemplateId: String
     public var provider: RemoteWorkItemProviderId
     /// Per-provider selected container so switching tabs preserves each provider's project/repo.
     public var providerContainers: [RemoteWorkItemProviderId: String]
@@ -300,6 +351,21 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
     public init(
         remoteItemsEnabled: Bool = false,
         syncAssignedToMe: Bool = false,
+        backgroundSyncEnabled: Bool = false,
+        backgroundSyncAssignedToMe: Bool = true,
+        backgroundPollIntervalSeconds: TimeInterval = TaskRemoteSyncSettings.defaultBackgroundPollIntervalSeconds,
+        backgroundLastCheckedAt: Date? = nil,
+        backgroundLastMessage: String? = nil,
+        backgroundLastError: String? = nil,
+        backgroundJiraWatermark: Date? = nil,
+        backgroundActivityLog: [TaskBackgroundSyncActivityEntry] = [],
+        suppressedAssignedRemoteItemKeys: [String: Date] = [:],
+        autoCreateWorktree: Bool = false,
+        autoExecuteWithAgent: Bool = false,
+        autoExecuteMaxConcurrentAgents: Int = TaskRemoteSyncSettings.defaultAutoExecuteMaxConcurrentAgents,
+        autoExecuteAgentId: String? = nil,
+        autoExecutePermissionMode: String = "acceptEdits",
+        autoExecuteTemplateId: String = TaskRemoteSyncSettings.defaultAutoExecuteTemplateId,
         provider: RemoteWorkItemProviderId = .jira,
         providerContainers: [RemoteWorkItemProviderId: String] = [:],
         jiraSite: String? = nil,
@@ -311,6 +377,23 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
     ) {
         self.remoteItemsEnabled = remoteItemsEnabled
         self.syncAssignedToMe = remoteItemsEnabled && syncAssignedToMe
+        self.backgroundSyncEnabled = remoteItemsEnabled && backgroundSyncEnabled
+        self.backgroundSyncAssignedToMe = backgroundSyncAssignedToMe
+        self.backgroundPollIntervalSeconds = Self.normalizedBackgroundPollInterval(backgroundPollIntervalSeconds)
+        self.backgroundLastCheckedAt = backgroundLastCheckedAt
+        self.backgroundLastMessage = backgroundLastMessage?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.backgroundLastError = backgroundLastError?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.backgroundJiraWatermark = backgroundJiraWatermark
+        self.backgroundActivityLog = Self.trimmedBackgroundActivityLog(backgroundActivityLog)
+        self.suppressedAssignedRemoteItemKeys = Self.trimmedSuppressedAssignedRemoteItemKeys(suppressedAssignedRemoteItemKeys)
+        self.autoCreateWorktree = remoteItemsEnabled && autoCreateWorktree
+        self.autoExecuteWithAgent = remoteItemsEnabled && autoExecuteWithAgent
+        self.autoExecuteMaxConcurrentAgents = Self.normalizedAutoExecuteMaxConcurrentAgents(autoExecuteMaxConcurrentAgents)
+        self.autoExecuteAgentId = autoExecuteAgentId?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.autoExecutePermissionModeRawValue = AgentTemplate.PermissionMode(rawValue: autoExecutePermissionMode)?.rawValue
+            ?? AgentTemplate.PermissionMode.acceptEdits.rawValue
+        self.autoExecuteTemplateId = autoExecuteTemplateId.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            ?? Self.defaultAutoExecuteTemplateId
         self.provider = provider
         var containers = providerContainers.compactMapValues {
             $0.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
@@ -330,6 +413,22 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case remoteItemsEnabled
         case syncAssignedToMe
+        case backgroundSyncEnabled
+        case backgroundSyncAssignedToMe
+        case backgroundPollIntervalSeconds
+        case backgroundLastCheckedAt
+        case backgroundLastMessage
+        case backgroundLastError
+        case backgroundJiraWatermark
+        case backgroundActivityLog
+        case suppressedAssignedRemoteItemKeys
+        case autoCreateWorktree
+        case autoExecuteWithAgent
+        case autoExecuteMaxConcurrentAgents
+        case autoExecuteAgentId
+        case autoExecutePermissionModeRawValue
+        case autoExecutePermissionMode
+        case autoExecuteTemplateId
         case provider
         case providerContainers
         case jiraSite
@@ -345,6 +444,44 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
         self.remoteItemsEnabled = try container.decodeIfPresent(Bool.self, forKey: .remoteItemsEnabled) ?? false
         let decodedSyncAssigned = try container.decodeIfPresent(Bool.self, forKey: .syncAssignedToMe) ?? false
         self.syncAssignedToMe = remoteItemsEnabled && decodedSyncAssigned
+        let decodedBackgroundEnabled = try container.decodeIfPresent(Bool.self, forKey: .backgroundSyncEnabled) ?? false
+        self.backgroundSyncEnabled = remoteItemsEnabled && decodedBackgroundEnabled
+        self.backgroundSyncAssignedToMe = try container.decodeIfPresent(Bool.self, forKey: .backgroundSyncAssignedToMe) ?? true
+        let decodedPollInterval = try container.decodeIfPresent(TimeInterval.self, forKey: .backgroundPollIntervalSeconds)
+            ?? Self.defaultBackgroundPollIntervalSeconds
+        self.backgroundPollIntervalSeconds = Self.normalizedBackgroundPollInterval(decodedPollInterval)
+        self.backgroundLastCheckedAt = try container.decodeIfPresent(Date.self, forKey: .backgroundLastCheckedAt)
+        self.backgroundLastMessage = try container.decodeIfPresent(String.self, forKey: .backgroundLastMessage)?
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.backgroundLastError = try container.decodeIfPresent(String.self, forKey: .backgroundLastError)?
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.backgroundJiraWatermark = try container.decodeIfPresent(Date.self, forKey: .backgroundJiraWatermark)
+        self.backgroundActivityLog = Self.trimmedBackgroundActivityLog(
+            try container.decodeIfPresent([TaskBackgroundSyncActivityEntry].self, forKey: .backgroundActivityLog) ?? []
+        )
+        self.suppressedAssignedRemoteItemKeys = Self.trimmedSuppressedAssignedRemoteItemKeys(
+            try container.decodeIfPresent([String: Date].self, forKey: .suppressedAssignedRemoteItemKeys) ?? [:]
+        )
+        let decodedAutoCreateWorktree = try container.decodeIfPresent(Bool.self, forKey: .autoCreateWorktree) ?? false
+        let decodedAutoExecuteWithAgent = try container.decodeIfPresent(Bool.self, forKey: .autoExecuteWithAgent) ?? false
+        self.autoCreateWorktree = remoteItemsEnabled && decodedAutoCreateWorktree
+        self.autoExecuteWithAgent = remoteItemsEnabled && decodedAutoExecuteWithAgent
+        self.autoExecuteMaxConcurrentAgents = Self.normalizedAutoExecuteMaxConcurrentAgents(
+            try container.decodeIfPresent(Int.self, forKey: .autoExecuteMaxConcurrentAgents)
+                ?? Self.defaultAutoExecuteMaxConcurrentAgents
+        )
+        self.autoExecuteAgentId = try container.decodeIfPresent(String.self, forKey: .autoExecuteAgentId)?
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        if let raw = try container.decodeIfPresent(String.self, forKey: .autoExecutePermissionModeRawValue)
+            ?? container.decodeIfPresent(String.self, forKey: .autoExecutePermissionMode),
+           AgentTemplate.PermissionMode(rawValue: raw) != nil {
+            self.autoExecutePermissionModeRawValue = raw
+        } else {
+            self.autoExecutePermissionModeRawValue = AgentTemplate.PermissionMode.acceptEdits.rawValue
+        }
+        self.autoExecuteTemplateId = (try container.decodeIfPresent(String.self, forKey: .autoExecuteTemplateId))?
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            ?? Self.defaultAutoExecuteTemplateId
         self.provider = try container.decodeIfPresent(RemoteWorkItemProviderId.self, forKey: .provider) ?? .jira
         var providerContainers = try container.decodeIfPresent([RemoteWorkItemProviderId: String].self, forKey: .providerContainers) ?? [:]
         providerContainers = providerContainers.compactMapValues {
@@ -379,6 +516,27 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
 
         try container.encode(remoteItemsEnabled, forKey: .remoteItemsEnabled)
         try container.encode(remoteItemsEnabled && syncAssignedToMe, forKey: .syncAssignedToMe)
+        try container.encode(remoteItemsEnabled && backgroundSyncEnabled, forKey: .backgroundSyncEnabled)
+        try container.encode(backgroundSyncAssignedToMe, forKey: .backgroundSyncAssignedToMe)
+        try container.encode(Self.normalizedBackgroundPollInterval(backgroundPollIntervalSeconds), forKey: .backgroundPollIntervalSeconds)
+        try container.encodeIfPresent(backgroundLastCheckedAt, forKey: .backgroundLastCheckedAt)
+        try container.encodeIfPresent(backgroundLastMessage?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty, forKey: .backgroundLastMessage)
+        try container.encodeIfPresent(backgroundLastError?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty, forKey: .backgroundLastError)
+        try container.encodeIfPresent(backgroundJiraWatermark, forKey: .backgroundJiraWatermark)
+        try container.encode(Self.trimmedBackgroundActivityLog(backgroundActivityLog), forKey: .backgroundActivityLog)
+        try container.encode(
+            Self.trimmedSuppressedAssignedRemoteItemKeys(suppressedAssignedRemoteItemKeys),
+            forKey: .suppressedAssignedRemoteItemKeys
+        )
+        try container.encode(remoteItemsEnabled && autoCreateWorktree, forKey: .autoCreateWorktree)
+        try container.encode(remoteItemsEnabled && autoExecuteWithAgent, forKey: .autoExecuteWithAgent)
+        try container.encode(Self.normalizedAutoExecuteMaxConcurrentAgents(autoExecuteMaxConcurrentAgents), forKey: .autoExecuteMaxConcurrentAgents)
+        try container.encodeIfPresent(autoExecuteAgentId?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty, forKey: .autoExecuteAgentId)
+        try container.encode(autoExecutePermissionModeRawValue, forKey: .autoExecutePermissionModeRawValue)
+        try container.encode(
+            autoExecuteTemplateId.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? Self.defaultAutoExecuteTemplateId,
+            forKey: .autoExecuteTemplateId
+        )
         try container.encode(provider, forKey: .provider)
         try container.encode(containers, forKey: .providerContainers)
         try container.encodeIfPresent(jiraSite?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty, forKey: .jiraSite)
@@ -391,6 +549,66 @@ public struct TaskRemoteSyncSettings: Codable, Equatable, Sendable {
 
     public var isEnabled: Bool { remoteItemsEnabled }
     public var isAssignedSyncEnabled: Bool { isEnabled && syncAssignedToMe }
+    public var isBackgroundSyncEnabled: Bool { isEnabled && backgroundSyncEnabled }
+    public var isBackgroundAssignedSyncEnabled: Bool { isBackgroundSyncEnabled && backgroundSyncAssignedToMe }
+    public var isAutoCreateWorktreeEnabled: Bool { isBackgroundSyncEnabled && autoCreateWorktree }
+    public var isAutoExecuteEnabled: Bool { isBackgroundSyncEnabled && autoExecuteWithAgent }
+    var backgroundAutomationScopeKey: String {
+        [
+            provider.rawValue,
+            Self.normalizedScopePart(jiraSite),
+            Self.normalizedScopePart(jiraEmail),
+            Self.normalizedScopePart(container)
+        ].joined(separator: "|")
+    }
+    var resolvedAutoExecutePermissionMode: AgentTemplate.PermissionMode {
+        get { AgentTemplate.PermissionMode(rawValue: autoExecutePermissionModeRawValue) ?? .acceptEdits }
+        set { autoExecutePermissionModeRawValue = newValue.rawValue }
+    }
+
+    public static func normalizedBackgroundPollInterval(_ value: TimeInterval) -> TimeInterval {
+        max(minimumBackgroundPollIntervalSeconds, min(value, 3600))
+    }
+
+    public static func normalizedAutoExecuteMaxConcurrentAgents(_ value: Int) -> Int {
+        max(1, min(value, 10))
+    }
+
+    public static func trimmedBackgroundActivityLog(
+        _ entries: [TaskBackgroundSyncActivityEntry]
+    ) -> [TaskBackgroundSyncActivityEntry] {
+        Array(entries.sorted { $0.createdAt > $1.createdAt }.prefix(backgroundActivityLimit))
+    }
+
+    mutating func suppressAssignedRemoteItem(_ reference: RemoteWorkItemReference, at date: Date = Date()) {
+        suppressedAssignedRemoteItemKeys[reference.storageKey] = date
+        suppressedAssignedRemoteItemKeys = Self.trimmedSuppressedAssignedRemoteItemKeys(suppressedAssignedRemoteItemKeys)
+    }
+
+    mutating func unsuppressAssignedRemoteItem(_ reference: RemoteWorkItemReference) {
+        suppressedAssignedRemoteItemKeys.removeValue(forKey: reference.storageKey)
+    }
+
+    func isAssignedRemoteItemSuppressed(_ reference: RemoteWorkItemReference) -> Bool {
+        suppressedAssignedRemoteItemKeys[reference.storageKey] != nil
+    }
+
+    public static func trimmedSuppressedAssignedRemoteItemKeys(_ keys: [String: Date]) -> [String: Date] {
+        Dictionary(
+            uniqueKeysWithValues: keys
+                .sorted { $0.value > $1.value }
+                .prefix(suppressedAssignedRemoteItemLimit)
+                .map { ($0.key, $0.value) }
+        )
+    }
+
+    private static func normalizedScopePart(_ value: String?) -> String {
+        value?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .nilIfEmpty
+            ?? "-"
+    }
 }
 
 public struct TaskColumnSettings: Codable, Equatable, Sendable, Identifiable {

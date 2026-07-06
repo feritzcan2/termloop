@@ -157,6 +157,11 @@ final class WorkspaceMetadataStore: ObservableObject {
     /// when a referenced `Workspace` mutates its own `@Published` title.
     @Published private(set) var titleVersion: Int = 0
 
+    /// Incremented when a user-authored worktree label changes. Worktree labels
+    /// are keyed by normalized checkout path, so they survive workspace remints
+    /// and apply to every agent attached to the same physical worktree.
+    @Published private(set) var worktreeLabelVersion: Int = 0
+
     /// Incremented whenever any presentation-relevant metadata field actually
     /// changes for a workspace (terminal agent id, persisted session,
     /// awaiting-input state, preview, attention kind, last prompt). Feeds
@@ -200,6 +205,8 @@ final class WorkspaceMetadataStore: ObservableObject {
     /// process). Persisted relaunch state lives separately in
     /// `Metadata.persistedAgentSession`.
     @Published private(set) var ephemeralClaudeSessions: [String: EphemeralClaudeSession] = [:]
+
+    private var worktreeLabelsByPath: [String: String] = [:]
 
     /// Reverse index: `sessionId → workspaceIdString`. Kept in sync with
     /// `ephemeralClaudeSessions` in `setClaudeSession` / `clearClaudeSession`
@@ -379,6 +386,56 @@ final class WorkspaceMetadataStore: ObservableObject {
 
     func worktreePath(forWorkspaceId id: UUID) -> String? {
         byWorkspaceId[id]?.worktreePath
+    }
+
+    func worktreeLabel(forWorktreePath path: String?) -> String? {
+        guard let key = normalizeWorktreePath(path) else { return nil }
+        return worktreeLabelsByPath[key]
+    }
+
+    func worktreeLabel(forWorkspaceId id: UUID) -> String? {
+        worktreeLabel(forWorktreePath: byWorkspaceId[id]?.worktreePath)
+    }
+
+    @discardableResult
+    func setWorktreeLabel(
+        _ label: String?,
+        forWorktreePath path: String?,
+        workspaceIds: [UUID] = []
+    ) -> Bool {
+        let normalizedLabel = normalizeWorktreeLabel(label)
+        let key = normalizeWorktreePath(path)
+            ?? workspaceIds.lazy
+                .compactMap { self.normalizeWorktreePath(self.byWorkspaceId[$0]?.worktreePath) }
+                .first
+        guard let key else { return false }
+        guard worktreeLabelsByPath[key] != normalizedLabel else { return false }
+        if let normalizedLabel {
+            worktreeLabelsByPath[key] = normalizedLabel
+        } else {
+            worktreeLabelsByPath.removeValue(forKey: key)
+        }
+        worktreeLabelVersion &+= 1
+        return true
+    }
+
+    func worktreeLabelSnapshot() -> [String: String] {
+        worktreeLabelsByPath
+    }
+
+    func restoreWorktreeLabels(_ labels: [String: String]?) {
+        let pairs: [(String, String)] = (labels ?? [:]).compactMap { rawPath, rawLabel in
+            guard let path = normalizeWorktreePath(rawPath),
+                  let label = normalizeWorktreeLabel(rawLabel) else { return nil }
+            return (path, label)
+        }
+        let normalized = Dictionary(
+            pairs,
+            uniquingKeysWith: { _, next in next }
+        )
+        guard worktreeLabelsByPath != normalized else { return }
+        worktreeLabelsByPath = normalized
+        worktreeLabelVersion &+= 1
     }
 
     /// Updates only the physical checkout path for an existing branch binding.
@@ -1133,6 +1190,15 @@ final class WorkspaceMetadataStore: ObservableObject {
 
     private func normalizeWorktreePath(_ value: String?) -> String? {
         WorktreeResolver.normalizePath(value)
+    }
+
+    private func normalizeWorktreeLabel(_ value: String?) -> String? {
+        let collapsed = (value ?? "")
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !collapsed.isEmpty else { return nil }
+        return String(collapsed.prefix(120))
     }
 
     private func nextWorktreeBindingGeneration(after current: UInt64?) -> UInt64 {

@@ -79,13 +79,11 @@ private final class RemoteTaskPromotionSheetModel: ObservableObject {
     private let store: RemoteTaskPromotionDraftStore
     private let remoteSync: TaskRemoteSyncCoordinator?
     private var remoteSyncCancellable: AnyCancellable?
-    private var hasCustomizedBranchName = false
 
     init(draft: RemoteTaskPromotionDraft, store: RemoteTaskPromotionDraftStore) {
         self.title = draft.title
         self.descriptionMarkdown = draft.descriptionMarkdown
-        self.branchName = draft.branchName
-            ?? RemoteTaskPromotionCoordinator.suggestedBranchName(title: draft.title)
+        self.branchName = draft.branchName ?? ""
         self.assignToMe = draft.assignToMe
         self.customIssueType = draft.issueType ?? ""
         self.shouldCreateWorktreeAndAttachAgent = draft.shouldCreateWorktreeAndAttachAgent
@@ -104,7 +102,6 @@ private final class RemoteTaskPromotionSheetModel: ObservableObject {
         self.remoteKey = draft.remoteWorkItem?.key
         self.remoteURL = draft.remoteWorkItem?.url
         self.store = store
-        self.hasCustomizedBranchName = draft.branchName != nil
         if let taskStore = TaskBoardStoreProvider.shared.store(for: draft.projectId) {
             let coordinator = TaskRemoteSyncCoordinatorProvider.shared.coordinator(for: taskStore)
             self.remoteSync = coordinator
@@ -124,10 +121,6 @@ private final class RemoteTaskPromotionSheetModel: ObservableObject {
         guard !isWorking,
               !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !descriptionMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return false
-        }
-        if shouldCreateWorktreeAndAttachAgent,
-           branchName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return false
         }
         guard provider == .jira else { return true }
@@ -166,13 +159,10 @@ private final class RemoteTaskPromotionSheetModel: ObservableObject {
 
     func setTitle(_ value: String) {
         title = value
-        guard !hasCustomizedBranchName else { return }
-        branchName = RemoteTaskPromotionCoordinator.suggestedBranchName(title: value)
     }
 
     func setBranchName(_ value: String) {
         branchName = value
-        hasCustomizedBranchName = true
     }
 
     func onAppear() {
@@ -206,7 +196,8 @@ private final class RemoteTaskPromotionSheetModel: ObservableObject {
                     $0.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
                     $0.descriptionMarkdown = descriptionMarkdown.trimmingCharacters(in: .whitespacesAndNewlines)
                     $0.issueType = selectedIssueTypeForCreate
-                    $0.branchName = branchName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let branch = branchName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    $0.branchName = branch.isEmpty ? nil : branch
                     $0.assignToMe = assignToMe
                     $0.shouldCreateWorktreeAndAttachAgent = shouldCreateWorktreeAndAttachAgent
                     $0.errorMessage = nil
@@ -420,7 +411,7 @@ private struct RemoteTaskPromotionSheet: View {
                     .foregroundStyle(.secondary)
                     TextField(String(
                         localized: "tasks.remotePromotion.confirm.branchPlaceholder",
-                        defaultValue: "task/fix-terminal",
+                        defaultValue: "feature/ISSUE-123",
                         table: "TermLoop"
                     ), text: Binding(
                         get: { model.branchName },
@@ -434,6 +425,14 @@ private struct RemoteTaskPromotionSheet: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                    } else {
+                        Text(String(
+                            localized: "tasks.remotePromotion.confirm.branchDefaultHint",
+                            defaultValue: "Leave blank to use feature/<issue key> after the remote task is created.",
+                            table: "TermLoop"
+                        ))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     }
                 }
             }

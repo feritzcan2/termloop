@@ -324,14 +324,16 @@ enum TermLoopHooks {
             )
         }
 #endif
+        let worktreeLabels = WorkspaceMetadataStore.shared.worktreeLabelSnapshot()
         let snapshot = TermLoopSessionSnapshot(
-            version: 7,
+            version: 8,
             projects: ProjectStore.shared.sessionSnapshot,
             activeProjectId: ProjectStore.shared.activeProjectId?.uuidString,
             openProjectIds: ProjectStore.shared.openProjectIds.map { $0.uuidString },
             workspaceMetadataByPosition: restoreStampsByPosition.map { $0.map(\.metadata) },
             workspaceRestoreStampsByPosition: restoreStampsByPosition,
-            hiddenWorkspaceMetadataById: hiddenWorkspaceMetadata.isEmpty ? nil : hiddenWorkspaceMetadata
+            hiddenWorkspaceMetadataById: hiddenWorkspaceMetadata.isEmpty ? nil : hiddenWorkspaceMetadata,
+            worktreeLabelsByPath: worktreeLabels.isEmpty ? nil : worktreeLabels
         )
 
         return SidecarPersistencePayload(sessionURL: sessionURL, snapshot: snapshot)
@@ -371,7 +373,7 @@ enum TermLoopHooks {
 #if DEBUG
             dlog(
                 "session.save.sidecar wrote path=\(url.path) bytes=\(data.count) projects=\(snapshot.projects.count) " +
-                "visibleWindows=\(snapshot.workspaceMetadataByPosition?.count ?? 0) hidden=\(snapshot.hiddenWorkspaceMetadataById?.count ?? 0)"
+                "visibleWindows=\(snapshot.workspaceMetadataByPosition?.count ?? 0) hidden=\(snapshot.hiddenWorkspaceMetadataById?.count ?? 0) worktreeLabels=\(snapshot.worktreeLabelsByPath?.count ?? 0)"
             )
 #endif
 #if DEBUG
@@ -983,6 +985,7 @@ enum TermLoopHooks {
                 }
             }
             restoreHiddenWorkspaceMetadata(snapshot.hiddenWorkspaceMetadataById)
+            WorkspaceMetadataStore.shared.restoreWorktreeLabels(snapshot.worktreeLabelsByPath)
         } catch {
             logger.error("sidecar load failed: \(String(describing: error), privacy: .public)")
             _ = ProjectStore.shared.bootstrap(from: nil)
