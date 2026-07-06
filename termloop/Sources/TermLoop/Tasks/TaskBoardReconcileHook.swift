@@ -20,10 +20,12 @@ public enum TaskBoardReconcileHook {
             TaskBoardStoreProvider.shared.workspaceLister = TaskBoardWorkspaceListingAdapter.shared
         }
         TaskBoardReconcileScheduler.shared.start()
+        TaskAssignedBackgroundSyncScheduler.shared.start()
     }
 
     public static func projectDidActivate(_ projectId: UUID?) {
         bootstrap()
         TaskBoardReconcileScheduler.shared.request(projectId: projectId, reason: "projectDidActivate")
+        TaskAssignedBackgroundSyncScheduler.shared.projectDidActivate(projectId)
     }
 }

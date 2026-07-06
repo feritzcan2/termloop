@@ -60,6 +60,15 @@ struct TaskRemoteWorkItemCreateError: LocalizedError, Sendable {
     var errorDescription: String? { message }
 }
 
+struct TaskAssignedSyncSummary: Sendable {
+    let snapshots: [RemoteWorkItemSnapshot]
+    let createdCount: Int
+    let updatedCount: Int
+    let reachedLimit: Bool
+    let message: String
+    let syncedAt: Date
+}
+
 private final class TaskRemoteCreateContinuation: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<UUID, Error>?
@@ -239,6 +248,9 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 settings.remoteSync.remoteItemsEnabled = enabled
                 if !enabled {
                     settings.remoteSync.syncAssignedToMe = false
+                    settings.remoteSync.backgroundSyncEnabled = false
+                    settings.remoteSync.autoCreateWorktree = false
+                    settings.remoteSync.autoExecuteWithAgent = false
                 }
                 settings.remoteSync.lastError = nil
             }
@@ -305,8 +317,12 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 settings.remoteSync.provider = provider
                 settings.remoteSync.container = settings.remoteSync.providerContainers[provider]
                 settings.remoteSync.lastError = nil
+                settings.remoteSync.backgroundLastMessage = nil
+                settings.remoteSync.backgroundLastError = nil
+                settings.remoteSync.backgroundJiraWatermark = nil
             }
             hydrateRemoteMetadataFromCache()
+            TaskAssignedBackgroundSyncScheduler.shared.settingsDidChange(projectId: store.projectId)
         } catch {
             lastMessage = String(describing: error)
         }
@@ -348,6 +364,177 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
     }
 
+    public func setBackgroundSyncEnabled(_ enabled: Bool) {
+        do {
+            try store.updateSettings { settings in
+                if enabled {
+                    settings.remoteSync.remoteItemsEnabled = true
+                    settings.remoteSync.syncAssignedToMe = true
+                    settings.remoteSync.backgroundSyncAssignedToMe = true
+                }
+                settings.remoteSync.backgroundSyncEnabled = enabled
+                if !enabled {
+                    settings.remoteSync.autoCreateWorktree = false
+                    settings.remoteSync.autoExecuteWithAgent = false
+                }
+                settings.remoteSync.lastError = nil
+                settings.remoteSync.backgroundLastMessage = nil
+                settings.remoteSync.backgroundLastError = nil
+                appendBackgroundActivity(
+                    &settings.remoteSync,
+                    level: enabled ? .info : .warning,
+                    message: enabled ? "Background sync enabled." : "Background sync disabled."
+                )
+            }
+            TaskAssignedBackgroundSyncScheduler.shared.settingsDidChange(projectId: store.projectId)
+        } catch {
+            lastMessage = String(describing: error)
+        }
+    }
+
+    public func setBackgroundPollIntervalSeconds(_ value: TimeInterval) {
+        do {
+            try store.updateSettings { settings in
+                settings.remoteSync.backgroundPollIntervalSeconds = TaskRemoteSyncSettings.normalizedBackgroundPollInterval(value)
+                settings.remoteSync.backgroundLastMessage = nil
+                settings.remoteSync.backgroundLastError = nil
+            }
+            TaskAssignedBackgroundSyncScheduler.shared.settingsDidChange(projectId: store.projectId)
+        } catch {
+            lastMessage = String(describing: error)
+        }
+    }
+
+    public func setBackgroundSyncAssignedToMe(_ enabled: Bool) {
+        do {
+            try store.updateSettings { settings in
+                settings.remoteSync.backgroundSyncAssignedToMe = enabled
+                if enabled {
+                    settings.remoteSync.remoteItemsEnabled = true
+                    settings.remoteSync.syncAssignedToMe = true
+                    settings.remoteSync.backgroundSyncEnabled = true
+                } else {
+                    settings.remoteSync.autoCreateWorktree = false
+                    settings.remoteSync.autoExecuteWithAgent = false
+                }
+                settings.remoteSync.backgroundLastMessage = nil
+                settings.remoteSync.backgroundLastError = nil
+            }
+            TaskAssignedBackgroundSyncScheduler.shared.settingsDidChange(projectId: store.projectId)
+        } catch {
+            lastMessage = String(describing: error)
+        }
+    }
+
+    public func setAutoCreateWorktree(_ enabled: Bool) {
+        do {
+            try store.updateSettings { settings in
+                settings.remoteSync.autoCreateWorktree = settings.remoteSync.isBackgroundSyncEnabled && enabled
+                if !enabled {
+                    settings.remoteSync.autoExecuteWithAgent = false
+                }
+                settings.remoteSync.backgroundLastMessage = nil
+                settings.remoteSync.backgroundLastError = nil
+            }
+        } catch {
+            lastMessage = String(describing: error)
+        }
+    }
+
+    public func setAutoExecuteWithAgent(_ enabled: Bool) {
+        do {
+            try store.updateSettings { settings in
+                if enabled {
+                    settings.remoteSync.remoteItemsEnabled = true
+                    settings.remoteSync.syncAssignedToMe = true
+                    settings.remoteSync.backgroundSyncEnabled = true
+                    settings.remoteSync.backgroundSyncAssignedToMe = true
+                    settings.remoteSync.autoCreateWorktree = true
+                }
+                settings.remoteSync.autoExecuteWithAgent = settings.remoteSync.isBackgroundSyncEnabled && enabled
+                settings.remoteSync.backgroundLastMessage = nil
+                settings.remoteSync.backgroundLastError = nil
+            }
+        } catch {
+            lastMessage = String(describing: error)
+        }
+    }
+
+    public func setAutoExecuteMaxConcurrentAgents(_ value: Int) {
+        do {
+            try store.updateSettings { settings in
+                settings.remoteSync.autoExecuteMaxConcurrentAgents = TaskRemoteSyncSettings.normalizedAutoExecuteMaxConcurrentAgents(value)
+                settings.remoteSync.backgroundLastMessage = nil
+                settings.remoteSync.backgroundLastError = nil
+            }
+            TaskAssignedBackgroundSyncScheduler.shared.settingsDidChange(projectId: store.projectId)
+        } catch {
+            lastMessage = String(describing: error)
+        }
+    }
+
+    public func setAutoExecuteAgentId(_ value: String?) {
+        do {
+            try store.updateSettings { settings in
+                settings.remoteSync.autoExecuteAgentId = value?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                settings.remoteSync.backgroundLastMessage = nil
+                settings.remoteSync.backgroundLastError = nil
+            }
+        } catch {
+            lastMessage = String(describing: error)
+        }
+    }
+
+    func setAutoExecutePermissionMode(_ mode: AgentTemplate.PermissionMode) {
+        do {
+            try store.updateSettings { settings in
+                settings.remoteSync.resolvedAutoExecutePermissionMode = mode
+                settings.remoteSync.backgroundLastMessage = nil
+                settings.remoteSync.backgroundLastError = nil
+            }
+        } catch {
+            lastMessage = String(describing: error)
+        }
+    }
+
+    public func setAutoExecuteTemplateId(_ value: String) {
+        do {
+            try store.updateSettings { settings in
+                settings.remoteSync.autoExecuteTemplateId = value.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                    ?? TaskRemoteSyncSettings.defaultAutoExecuteTemplateId
+                settings.remoteSync.backgroundLastMessage = nil
+                settings.remoteSync.backgroundLastError = nil
+            }
+        } catch {
+            lastMessage = String(describing: error)
+        }
+    }
+
+    public func clearBackgroundActivityLog() {
+        do {
+            try store.updateSettings { settings in
+                settings.remoteSync.backgroundActivityLog = []
+                settings.remoteSync.backgroundLastMessage = nil
+                settings.remoteSync.backgroundLastError = nil
+            }
+        } catch {
+            lastMessage = String(describing: error)
+        }
+    }
+
+    private func appendBackgroundActivity(
+        _ remoteSync: inout TaskRemoteSyncSettings,
+        level: TaskBackgroundSyncActivityLevel,
+        message: String,
+        remoteKey: String? = nil
+    ) {
+        remoteSync.backgroundActivityLog.insert(
+            TaskBackgroundSyncActivityEntry(level: level, message: message, remoteKey: remoteKey),
+            at: 0
+        )
+        remoteSync.backgroundActivityLog = TaskRemoteSyncSettings.trimmedBackgroundActivityLog(remoteSync.backgroundActivityLog)
+    }
+
     public func setContainer(_ value: String) {
         do {
             try store.updateSettings { settings in
@@ -360,8 +547,12 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                     settings.remoteSync.providerContainers.removeValue(forKey: settings.remoteSync.provider)
                 }
                 settings.remoteSync.lastError = nil
+                settings.remoteSync.backgroundLastMessage = nil
+                settings.remoteSync.backgroundLastError = nil
+                settings.remoteSync.backgroundJiraWatermark = nil
             }
             hydrateRemoteMetadataFromCache()
+            TaskAssignedBackgroundSyncScheduler.shared.settingsDidChange(projectId: store.projectId)
         } catch {
             lastMessage = String(describing: error)
         }
@@ -372,8 +563,12 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
             try store.updateSettings { settings in
                 settings.remoteSync.jiraSite = Self.normalizedJiraSite(value)
                 settings.remoteSync.lastError = nil
+                settings.remoteSync.backgroundLastMessage = nil
+                settings.remoteSync.backgroundLastError = nil
+                settings.remoteSync.backgroundJiraWatermark = nil
             }
             hydrateRemoteMetadataFromCache()
+            TaskAssignedBackgroundSyncScheduler.shared.settingsDidChange(projectId: store.projectId)
         } catch {
             lastMessage = String(describing: error)
         }
@@ -386,8 +581,12 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                     .nilIfEmpty
                 settings.remoteSync.lastError = nil
+                settings.remoteSync.backgroundLastMessage = nil
+                settings.remoteSync.backgroundLastError = nil
+                settings.remoteSync.backgroundJiraWatermark = nil
             }
             hydrateRemoteMetadataFromCache()
+            TaskAssignedBackgroundSyncScheduler.shared.settingsDidChange(projectId: store.projectId)
         } catch {
             lastMessage = String(describing: error)
         }
@@ -400,8 +599,12 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 settings.remoteSync.jiraSite = option.site
                 settings.remoteSync.jiraEmail = option.email
                 settings.remoteSync.lastError = nil
+                settings.remoteSync.backgroundLastMessage = nil
+                settings.remoteSync.backgroundLastError = nil
+                settings.remoteSync.backgroundJiraWatermark = nil
             }
             hydrateRemoteMetadataFromCache()
+            TaskAssignedBackgroundSyncScheduler.shared.settingsDidChange(projectId: store.projectId)
         } catch {
             lastMessage = String(describing: error)
         }
@@ -743,7 +946,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                         self.isSyncing = false
                         return
                     }
-                    self.applyAssignedSnapshots(
+                    _ = self.applyAssignedSnapshots(
                         snapshots,
                         reason: reason,
                         requestLimit: request.limit,
@@ -758,7 +961,13 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
     }
 
-    public func syncAssignedToMeAsync(reason: String = "tasks.mobile.syncNow") async throws {
+    @discardableResult
+    func syncAssignedToMeAsync(
+        reason: String = "tasks.mobile.syncNow",
+        updatedSince: Date? = nil,
+        paginate: Bool = false,
+        showCompletionAlert: Bool = false
+    ) async throws -> TaskAssignedSyncSummary {
         guard settings.isAssignedSyncEnabled else {
             let message = String(localized: "tasks.settings.remote.assignedSyncRequired",
                                  defaultValue: "Turn on Sync assigned to me before syncing assigned work items.",
@@ -777,7 +986,9 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         let request = RemoteWorkItemListRequest(
             provider: syncSettings.provider,
             container: syncSettings.container,
-            limit: syncSettings.limit
+            limit: syncSettings.limit,
+            updatedSince: updatedSince,
+            paginate: paginate
         )
 
         isSyncing = true
@@ -795,11 +1006,12 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                     table: "TermLoop"
                 ))
             }
-            applyAssignedSnapshots(
+            return applyAssignedSnapshots(
                 snapshots,
                 reason: reason,
                 requestLimit: request.limit,
-                showCompletionAlert: false
+                paginated: request.paginate,
+                showCompletionAlert: showCompletionAlert
             )
         } catch {
             finishSync(error: error)
@@ -1474,12 +1686,14 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         }
     }
 
+    @discardableResult
     private func applyAssignedSnapshots(
         _ snapshots: [RemoteWorkItemSnapshot],
         reason: String,
         requestLimit: Int,
+        paginated: Bool = false,
         showCompletionAlert: Bool
-    ) {
+    ) -> TaskAssignedSyncSummary {
         RemoteWorkItemSnapshotStore.shared.upsert(snapshots)
         let now = Date()
         var materializeInputs: [(taskId: UUID, snapshot: RemoteWorkItemSnapshot)] = []
@@ -1529,6 +1743,10 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                         && task.remoteWorkItem?.representsSameRemoteItem(as: snapshot.reference) == true
                 }
                 if !matchingIndexes.isEmpty {
+                    if file.settings.remoteSync.isAssignedRemoteItemSuppressed(snapshot.reference) {
+                        file.settings.remoteSync.unsuppressAssignedRemoteItem(snapshot.reference)
+                        didChange = true
+                    }
                     for idx in matchingIndexes {
                         let old = file.tasks[idx]
                         update(&file.tasks[idx], with: snapshot, syncedAt: now)
@@ -1545,6 +1763,9 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                         materializeInputs.append((file.tasks[idx].id, snapshot))
                     }
                 } else {
+                    guard !shouldSkipAssignedMaterialization(snapshot.reference, in: file) else {
+                        continue
+                    }
                     let rank = nextRank(in: targetColumn)
                     let task = TaskRecord(
                         projectId: store.projectId,
@@ -1579,7 +1800,7 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         if changed || !materializeInputs.isEmpty {
             do { try store.saveNow() } catch { lastMessage = String(describing: error) }
         }
-        let reachedLimit = snapshots.count >= requestLimit
+        let reachedLimit = !paginated && snapshots.count >= requestLimit
         let baseMessage = String(
             localized: "tasks.remoteSync.synced",
             defaultValue: "Synced \(snapshots.count) latest assigned work items. Added \(createdCount), updated \(updatedCount).",
@@ -1602,6 +1823,14 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
             )
         }
         NSLog("[Tasks] assigned-to-me sync applied count=\(snapshots.count) reason=\(reason)")
+        return TaskAssignedSyncSummary(
+            snapshots: snapshots,
+            createdCount: createdCount,
+            updatedCount: updatedCount,
+            reachedLimit: reachedLimit,
+            message: message,
+            syncedAt: now
+        )
     }
 
     @discardableResult
@@ -1650,6 +1879,10 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                     let task = file.tasks[idx]
                     return task.archivedAt == nil
                         && task.remoteWorkItem?.representsSameRemoteItem(as: snapshot.reference) == true
+                }
+                if file.settings.remoteSync.isAssignedRemoteItemSuppressed(snapshot.reference) {
+                    file.settings.remoteSync.unsuppressAssignedRemoteItem(snapshot.reference)
+                    didChange = true
                 }
                 if !matchingIndexes.isEmpty {
                     for idx in matchingIndexes {
@@ -1728,6 +1961,10 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
                 var rankCursorByColumn = Self.lastRankByColumn(file.tasks)
                 var touchedColumns = Set<TaskColumnId>()
                 var didChange = false
+                if file.settings.remoteSync.isAssignedRemoteItemSuppressed(snapshot.reference) {
+                    file.settings.remoteSync.unsuppressAssignedRemoteItem(snapshot.reference)
+                    didChange = true
+                }
 
                 func targetColumn(for snapshot: RemoteWorkItemSnapshot) -> TaskColumnId? {
                     guard shouldSyncColumnsFromRemote,
@@ -1809,6 +2046,24 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         task.remoteStatusLabel = snapshot.statusLabel
         task.lastRemoteSyncAt = syncedAt
         task.updatedAt = syncedAt
+    }
+
+    private func shouldSkipAssignedMaterialization(
+        _ reference: RemoteWorkItemReference,
+        in file: TaskBoardFile
+    ) -> Bool {
+        if file.settings.remoteSync.isAssignedRemoteItemSuppressed(reference) {
+            return true
+        }
+        if TaskAutomationStateStoreProvider
+            .store(projectRoot: store.projectRoot)
+            .hasAgentStarted(storageKey: reference.storageKey) {
+            return true
+        }
+        return file.tasks.contains { task in
+            task.archivedAt != nil
+                && task.remoteWorkItem?.representsSameRemoteItem(as: reference) == true
+        }
     }
 
     private func materialize(_ inputs: [(taskId: UUID, snapshot: RemoteWorkItemSnapshot)]) {

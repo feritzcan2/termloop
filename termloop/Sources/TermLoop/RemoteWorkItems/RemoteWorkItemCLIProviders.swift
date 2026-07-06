@@ -614,15 +614,23 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
         if let project = request.container?.trimmingCharacters(in: .whitespacesAndNewlines), !project.isEmpty {
             jql += " AND project = \(project)"
         }
+        if let updatedSince = request.updatedSince {
+            jql += " AND updated >= \"\(Self.jiraJQLDateFormatter.string(from: updatedSince))\""
+        }
         jql += " ORDER BY updated DESC"
+        var args = [
+            "jira", "workitem", "search",
+            "--jql", jql,
+            "--fields", "key,summary,status,assignee,labels,description",
+            "--json"
+        ]
+        if request.paginate {
+            args.append("--paginate")
+        } else {
+            args += ["--limit", "\(request.limit)"]
+        }
         let result = try await runAcli(
-            [
-                "jira", "workitem", "search",
-                "--jql", jql,
-                "--limit", "\(request.limit)",
-                "--fields", "key,summary,status,assignee,labels,description",
-                "--json"
-            ],
+            args,
             timeout: 20
         )
         try remoteValidate(result)
@@ -955,6 +963,14 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
         return site.nilIfEmpty
     }
 
+    private static let jiraJQLDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy/MM/dd HH:mm"
+        return formatter
+    }()
+
     private func jiraSnapshot(reference: RemoteWorkItemReference, json: [String: Any]) -> RemoteWorkItemSnapshot {
         let fields = json["fields"] as? [String: Any]
         let status = ((fields?["status"] as? [String: Any])?["name"] as? String) ?? (json["status"] as? String)
@@ -970,7 +986,7 @@ struct JiraRemoteWorkItemProvider: RemoteWorkItemProvider {
             statusLabel: status,
             assignees: remoteNames(from: fields?["assignee"] ?? json["assignee"]),
             labels: remoteStringArray(fields?["labels"]),
-            providerUpdatedAt: remoteParseDate(fields?["updated"] as? String),
+            providerUpdatedAt: remoteParseDate((fields?["updated"] as? String) ?? (json["updated"] as? String)),
             fetchedAt: Date()
         )
     }

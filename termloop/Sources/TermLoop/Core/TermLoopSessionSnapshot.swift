@@ -13,7 +13,7 @@ import Foundation
 /// Collapsed/hidden workspaces have no upstream tab to position against, so
 /// those are persisted separately by their preserved metadata UUID.
 struct TermLoopSessionSnapshot: Codable {
-    var version: Int = 7
+    var version: Int = 8
     var projects: [SessionProjectSnapshot] = []
     var activeProjectId: String?
     var openProjectIds: [String] = []
@@ -30,6 +30,8 @@ struct TermLoopSessionSnapshot: Codable {
     /// removed from the upstream session snapshot, so positional restore would
     /// otherwise drop them on the next sidecar save/restart.
     var hiddenWorkspaceMetadataById: [String: WorkspaceMetadataStore.Metadata]?
+    /// User-authored worktree labels keyed by normalized checkout path.
+    var worktreeLabelsByPath: [String: String]?
 
     private enum CodingKeys: String, CodingKey {
         case version
@@ -39,16 +41,18 @@ struct TermLoopSessionSnapshot: Codable {
         case workspaceMetadataByPosition
         case workspaceRestoreStampsByPosition
         case hiddenWorkspaceMetadataById
+        case worktreeLabelsByPath
     }
 
     init(
-        version: Int = 7,
+        version: Int = 8,
         projects: [SessionProjectSnapshot] = [],
         activeProjectId: String? = nil,
         openProjectIds: [String] = [],
         workspaceMetadataByPosition: [[WorkspaceMetadataStore.Metadata]]? = nil,
         workspaceRestoreStampsByPosition: [[WorkspaceRestoreStamp]]? = nil,
-        hiddenWorkspaceMetadataById: [String: WorkspaceMetadataStore.Metadata]? = nil
+        hiddenWorkspaceMetadataById: [String: WorkspaceMetadataStore.Metadata]? = nil,
+        worktreeLabelsByPath: [String: String]? = nil
     ) {
         self.version = version
         self.projects = projects
@@ -57,11 +61,12 @@ struct TermLoopSessionSnapshot: Codable {
         self.workspaceMetadataByPosition = workspaceMetadataByPosition
         self.workspaceRestoreStampsByPosition = workspaceRestoreStampsByPosition
         self.hiddenWorkspaceMetadataById = hiddenWorkspaceMetadataById
+        self.worktreeLabelsByPath = worktreeLabelsByPath
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 7
+        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 8
         projects = try container.decodeIfPresent([SessionProjectSnapshot].self, forKey: .projects) ?? []
         activeProjectId = try container.decodeIfPresent(String.self, forKey: .activeProjectId)
         openProjectIds = try container.decodeIfPresent([String].self, forKey: .openProjectIds) ?? []
@@ -76,6 +81,10 @@ struct TermLoopSessionSnapshot: Codable {
         hiddenWorkspaceMetadataById = try container.decodeIfPresent(
             [String: WorkspaceMetadataStore.Metadata].self,
             forKey: .hiddenWorkspaceMetadataById
+        )
+        worktreeLabelsByPath = try container.decodeIfPresent(
+            [String: String].self,
+            forKey: .worktreeLabelsByPath
         )
     }
 }

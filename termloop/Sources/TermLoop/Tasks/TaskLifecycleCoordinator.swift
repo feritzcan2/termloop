@@ -114,7 +114,16 @@ public final class TaskLifecycleCoordinator {
 
     public func archiveTask(_ id: UUID) throws {
         let task = try requireTask(id)
-        try mutateTask(id) { $0.archivedAt = Date(); $0.updatedAt = Date() }
+        let now = Date()
+        _ = store.mutate { file in
+            guard let idx = file.tasks.firstIndex(where: { $0.id == id }) else { return false }
+            file.tasks[idx].archivedAt = now
+            file.tasks[idx].updatedAt = now
+            if let reference = task.remoteWorkItem {
+                file.settings.remoteSync.suppressAssignedRemoteItem(reference, at: now)
+            }
+            return true
+        }
         try store.saveNow()
         DevServerRunCoordinator.shared.stopTaskRunsAndCleanup(
             projectId: store.projectId,
@@ -125,10 +134,16 @@ public final class TaskLifecycleCoordinator {
     }
 
     public func restoreTask(_ id: UUID) throws {
-        guard try requireTask(id).archivedAt != nil else { return }
-        try mutateTask(id) { task in
-            task.archivedAt = nil
-            task.updatedAt = Date()
+        let existing = try requireTask(id)
+        guard existing.archivedAt != nil else { return }
+        _ = store.mutate { file in
+            guard let idx = file.tasks.firstIndex(where: { $0.id == id }) else { return false }
+            file.tasks[idx].archivedAt = nil
+            file.tasks[idx].updatedAt = Date()
+            if let reference = existing.remoteWorkItem {
+                file.settings.remoteSync.unsuppressAssignedRemoteItem(reference)
+            }
+            return true
         }
         try store.saveNow()
     }
@@ -137,6 +152,9 @@ public final class TaskLifecycleCoordinator {
         let task = try requireTask(id)
         _ = store.mutate { file in
             guard file.tasks.contains(where: { $0.id == id }) else { return false }
+            if let reference = task.remoteWorkItem {
+                file.settings.remoteSync.suppressAssignedRemoteItem(reference)
+            }
             file.tasks.removeAll { $0.id == id }
             return true
         }

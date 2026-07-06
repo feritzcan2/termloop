@@ -506,6 +506,9 @@
 		D0TASK000000000000000161 /* RemoteTaskPromotionConfirmationPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0TASK000000000000000162 /* RemoteTaskPromotionConfirmationPresenter.swift */; };
 		D0TASK000000000000000121 /* TaskSyncSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0TASK000000000000000122 /* TaskSyncSettingsSection.swift */; };
 		D0TASK000000000000000131 /* TaskBoardReconcileScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0TASK000000000000000132 /* TaskBoardReconcileScheduler.swift */; };
+		D0TASK000000000000000171 /* TaskAutomationStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0TASK000000000000000172 /* TaskAutomationStateStore.swift */; };
+		D0TASK000000000000000181 /* TaskAgentLaunchCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0TASK000000000000000182 /* TaskAgentLaunchCoordinator.swift */; };
+		D0TASK000000000000000191 /* TaskAssignedBackgroundSyncScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0TASK000000000000000192 /* TaskAssignedBackgroundSyncScheduler.swift */; };
 		D1236FF988EB6887018881D0 /* IntegrationSet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D601FD4A764B0941BC576828 /* IntegrationSet.swift */; };
 		D1320AA0D1320AA0D1320AA1 /* AppIconDockTilePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1320AA0D1320AA0D1320AA4 /* AppIconDockTilePlugin.swift */; };
 		D1320AA0D1320AA0D1320AA2 /* TermLoopDockTilePlugin.plugin in Copy Dock Tile Plugin */ = {isa = PBXBuildFile; fileRef = D1320AA0D1320AA0D1320AA5 /* TermLoopDockTilePlugin.plugin */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -1147,6 +1150,9 @@
 		D0TASK000000000000000162 /* RemoteTaskPromotionConfirmationPresenter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteTaskPromotionConfirmationPresenter.swift; sourceTree = "<group>"; };
 		D0TASK000000000000000122 /* TaskSyncSettingsSection.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskSyncSettingsSection.swift; sourceTree = "<group>"; };
 		D0TASK000000000000000132 /* TaskBoardReconcileScheduler.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskBoardReconcileScheduler.swift; sourceTree = "<group>"; };
+		D0TASK000000000000000172 /* TaskAutomationStateStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskAutomationStateStore.swift; sourceTree = "<group>"; };
+		D0TASK000000000000000182 /* TaskAgentLaunchCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskAgentLaunchCoordinator.swift; sourceTree = "<group>"; };
+		D0TASK000000000000000192 /* TaskAssignedBackgroundSyncScheduler.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TaskAssignedBackgroundSyncScheduler.swift; sourceTree = "<group>"; };
 		D1320AA0D1320AA0D1320AA4 /* AppIconDockTilePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconDockTilePlugin.swift; sourceTree = "<group>"; };
 		D1320AA0D1320AA0D1320AA5 /* TermLoopDockTilePlugin.plugin */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TermLoopDockTilePlugin.plugin; sourceTree = BUILT_PRODUCTS_DIR; };
 		D1BEF00001A1B2C3D4E5F719 /* open */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/open; sourceTree = SOURCE_ROOT; };
@@ -1403,11 +1409,14 @@
 				3AA4BD925DC6659703695A1C /* TaskBoardImportReconciler.swift */,
 				B38DC6D2C48FBDF01DBA9AF7 /* TaskBoardReconcileHook.swift */,
 				D0TASK000000000000000132 /* TaskBoardReconcileScheduler.swift */,
+				D0TASK000000000000000192 /* TaskAssignedBackgroundSyncScheduler.swift */,
 				D29DB2B552E6AA5B979D0D3D /* TaskBoardStoreProvider.swift */,
 				0B4DEC96D9CA979AD3A41600 /* TaskBoardWorkspaceListingAdapter.swift */,
 				4F7B3D10ABD86A479BF509A3 /* TaskBoardCoordinatorBridge.swift */,
 				D0TASK000000000000000102 /* TaskMarkdownFileWriter.swift */,
 				D0TASK000000000000000112 /* TaskRemoteSyncCoordinator.swift */,
+				D0TASK000000000000000172 /* TaskAutomationStateStore.swift */,
+				D0TASK000000000000000182 /* TaskAgentLaunchCoordinator.swift */,
 				D0TASK000000000000000142 /* RemoteTaskPromotionDraftStore.swift */,
 				D0TASK000000000000000152 /* RemoteTaskPromotionCoordinator.swift */,
 				D0TASK000000000000000162 /* RemoteTaskPromotionConfirmationPresenter.swift */,
@@ -2915,6 +2924,7 @@
 				6395D249A400E0F2DE8ABC52 /* TaskBoardImportReconciler.swift in Sources */,
 				13F57177D03310BBFE9F732A /* TaskBoardReconcileHook.swift in Sources */,
 				D0TASK000000000000000131 /* TaskBoardReconcileScheduler.swift in Sources */,
+				D0TASK000000000000000191 /* TaskAssignedBackgroundSyncScheduler.swift in Sources */,
 				465F0DBE1F6C74FEAB2EF3AE /* TaskBoardStoreProvider.swift in Sources */,
 				AE784569A22BBEB146204E79 /* TaskSelectionStore.swift in Sources */,
 				ABCD10000000000000000001 /* TaskSelectionStoreProvider.swift in Sources */,
@@ -2938,6 +2948,8 @@
 				79B1D68879FE30FAEE214114 /* TaskBoardWorkspaceListingAdapter.swift in Sources */,
 				D0TASK000000000000000101 /* TaskMarkdownFileWriter.swift in Sources */,
 				D0TASK000000000000000111 /* TaskRemoteSyncCoordinator.swift in Sources */,
+				D0TASK000000000000000171 /* TaskAutomationStateStore.swift in Sources */,
+				D0TASK000000000000000181 /* TaskAgentLaunchCoordinator.swift in Sources */,
 				D0TASK000000000000000141 /* RemoteTaskPromotionDraftStore.swift in Sources */,
 				D0TASK000000000000000151 /* RemoteTaskPromotionCoordinator.swift in Sources */,
 				D0TASK000000000000000161 /* RemoteTaskPromotionConfirmationPresenter.swift in Sources */,

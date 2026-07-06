@@ -326,6 +326,7 @@ struct TaskSidebarRouter: View {
            let task = createWorktreeTask {
             TaskCreateWorktreeSheet(
                 task: task,
+                projectId: store.projectId,
                 onWorkspaceCreated: { creation in
                     try coordinator.bindExistingWorktree(
                         taskId: task.id,
@@ -653,6 +654,7 @@ private struct TaskCreateRemoteItemSheet: View {
 
 private struct TaskCreateWorktreeSheet: View {
     let task: TaskRecord
+    let projectId: UUID
     let onWorkspaceCreated: (NewWorkspaceWithWorktreeForm.Creation) throws -> Void
     let onCancel: () -> Void
     let onSuccess: () -> Void
@@ -673,7 +675,7 @@ private struct TaskCreateWorktreeSheet: View {
 
     private var request: NewWorkspaceWithWorktreeRequest {
         NewWorkspaceWithWorktreeRequest(
-            projectId: task.projectId,
+            projectId: projectId,
             terminalAgentId: nil,
             suggestedBranchName: suggestedBranchName,
             assignedTicket: assignedTicket
