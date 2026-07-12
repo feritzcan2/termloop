@@ -63,6 +63,9 @@ enum AgentModelOption: String, Equatable, Hashable, Codable {
     case `default`
     case opus
     case sonnet
+    case gpt56Sol = "gpt-5.6-sol"
+    case gpt56Terra = "gpt-5.6-terra"
+    case gpt56Luna = "gpt-5.6-luna"
     case gpt55 = "gpt-5.5"
     case gpt54 = "gpt-5.4"
     case gpt54Mini = "gpt-5.4-mini"
@@ -75,6 +78,9 @@ extension AgentModelOption {
     var displayLabel: String {
         switch self {
         case .default: return rawValue
+        case .gpt56Sol: return "gpt-5.6-sol"
+        case .gpt56Terra: return "gpt-5.6-terra"
+        case .gpt56Luna: return "gpt-5.6-luna"
         case .gpt55: return "gpt-5.5"
         case .gpt54: return "gpt-5.4"
         case .gpt54Mini: return "GPT-5.4-Mini"
@@ -89,6 +95,9 @@ extension AgentModelOption {
         .default,
         .sonnet,
         .opus,
+        .gpt56Sol,
+        .gpt56Terra,
+        .gpt56Luna,
         .gpt55,
         .gpt54,
         .gpt54Mini,

@@ -553,9 +553,28 @@ private struct AgentDeletePopoverKeyMonitor: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
+        let view = LifecycleView(frame: .zero)
+        let coordinator = context.coordinator
+        view.onWindowChange = { [weak coordinator] window in
+            coordinator?.windowDidChange(window)
+        }
         context.coordinator.attach(to: view)
         return view
+    }
+
+    /// SwiftUI does not reliably call `dismantleNSView` when a popover's
+    /// anchor row unmounts while the popover is open (the row deletes itself
+    /// on confirm). A leaked coordinator would keep a global key monitor that
+    /// silently consumes every plain Return/Escape in the app until restart,
+    /// so the coordinator must also tear down when the content leaves its
+    /// window.
+    final class LifecycleView: NSView {
+        var onWindowChange: ((NSWindow?) -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            onWindowChange?(window)
+        }
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
@@ -572,6 +591,7 @@ private struct AgentDeletePopoverKeyMonitor: NSViewRepresentable {
         var onConfirm: () -> Void
         var onCancel: () -> Void
 
+        private weak var view: NSView?
         private weak var window: NSWindow?
         private var keyMonitor: Any?
 
@@ -585,6 +605,7 @@ private struct AgentDeletePopoverKeyMonitor: NSViewRepresentable {
         }
 
         func attach(to view: NSView) {
+            self.view = view
             DispatchQueue.main.async { [weak self, weak view] in
                 guard let self, let view, let window = view.window else { return }
                 self.window = window
@@ -593,6 +614,14 @@ private struct AgentDeletePopoverKeyMonitor: NSViewRepresentable {
                 }
                 window.makeKeyAndOrderFront(nil)
                 self.installMonitorIfNeeded()
+            }
+        }
+
+        func windowDidChange(_ window: NSWindow?) {
+            if window == nil {
+                detach()
+            } else if let view {
+                attach(to: view)
             }
         }
 
@@ -607,16 +636,39 @@ private struct AgentDeletePopoverKeyMonitor: NSViewRepresentable {
         private func installMonitorIfNeeded() {
             guard keyMonitor == nil else { return }
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                guard let self, let window = self.window, window.isVisible else { return event }
+                // Derive the window from the live view on every event: if the
+                // popover content was torn out of its window without a
+                // dismantle, the monitor must stop consuming immediately.
+                guard let self,
+                      let view = self.view,
+                      let window = view.window,
+                      window === self.window,
+                      window.isVisible else { return event }
+
+                // The popover window keeps key focus while shown, but AppKit
+                // may still target the hosting (parent) window. Never consume
+                // events heading to unrelated windows (quick action panel,
+                // other main windows).
+                if let eventWindow = event.window,
+                   eventWindow !== window,
+                   eventWindow !== window.parent {
+                    return event
+                }
 
                 let shortcutModifiers = event.modifierFlags.intersection([.command, .control, .option])
                 guard shortcutModifiers.isEmpty else { return event }
 
                 if Self.isReturn(event) {
+#if DEBUG
+                    dlog("agentDeletePopover.keyMonitor consume=return eventWindow=\(event.window?.windowNumber ?? -1)")
+#endif
                     DispatchQueue.main.async { [weak self] in self?.onConfirm() }
                     return nil
                 }
                 if Self.isEscape(event) {
+#if DEBUG
+                    dlog("agentDeletePopover.keyMonitor consume=escape eventWindow=\(event.window?.windowNumber ?? -1)")
+#endif
                     DispatchQueue.main.async { [weak self] in self?.onCancel() }
                     return nil
                 }
