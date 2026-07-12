@@ -567,6 +567,23 @@
         }
       }
     },
+    "bridge.cable.closeAskTo": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close Ask-To session"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask-To セッションを閉じる"
+          }
+        }
+      }
+    },
     "bridge.cable.mode.tag.arm": {
       "extractionState": "manual",
       "localizations": {

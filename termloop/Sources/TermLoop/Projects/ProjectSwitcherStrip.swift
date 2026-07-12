@@ -328,13 +328,20 @@ struct ProjectSwitcherStrip: View {
 
     private func selectFirstWorkspaceForActiveProject() {
         guard let activeId = projectStore.activeProjectId else { return }
-        if let current = tabManager.selectedTabId,
-           let tab = tabManager.tabs.first(where: { $0.id == current }),
-           tab.projectId == activeId {
-            return
+        let candidates = tabManager.tabs.map { workspace in
+            MainAreaWorkspaceSelectionCandidate(
+                id: workspace.id,
+                projectId: workspace.projectId,
+                isHiddenFromWorkspaceTree: WorkspaceMetadataStore.shared
+                    .isHiddenFromWorkspaceTree(workspaceId: workspace.id)
+            )
         }
-        if let first = tabManager.tabs.first(where: { $0.projectId == activeId }) {
-            tabManager.selectedTabId = first.id
+        if let preferredId = MainAreaAutomaticWorkspaceSelectionPolicy.preferredWorkspaceId(
+            activeProjectId: activeId,
+            preferredWorkspaceId: tabManager.selectedTabId,
+            candidates: candidates
+        ), preferredId != tabManager.selectedTabId {
+            tabManager.selectedTabId = preferredId
         }
     }
 

@@ -52,13 +52,20 @@ enum ProjectShortcutRouter {
 
     private static func selectFirstWorkspace(forProjectId projectId: UUID, tabManager: TabManager?) {
         guard let tabManager else { return }
-        if let current = tabManager.selectedTabId,
-           let tab = tabManager.tabs.first(where: { $0.id == current }),
-           tab.projectId == projectId {
-            return
+        let candidates = tabManager.tabs.map { workspace in
+            MainAreaWorkspaceSelectionCandidate(
+                id: workspace.id,
+                projectId: workspace.projectId,
+                isHiddenFromWorkspaceTree: WorkspaceMetadataStore.shared
+                    .isHiddenFromWorkspaceTree(workspaceId: workspace.id)
+            )
         }
-        if let first = tabManager.tabs.first(where: { $0.projectId == projectId }) {
-            tabManager.selectedTabId = first.id
+        if let preferredId = MainAreaAutomaticWorkspaceSelectionPolicy.preferredWorkspaceId(
+            activeProjectId: projectId,
+            preferredWorkspaceId: tabManager.selectedTabId,
+            candidates: candidates
+        ), preferredId != tabManager.selectedTabId {
+            tabManager.selectedTabId = preferredId
         }
     }
 }

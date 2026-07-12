@@ -44,10 +44,24 @@ extension TabManager {
 
         // If selectedTabId still points at a pruned workspace (can happen
         // if upstream selection logic ran before our hook), repair it.
+        let selectionCandidates = tabs.map { workspace in
+            MainAreaWorkspaceSelectionCandidate(
+                id: workspace.id,
+                projectId: workspace.projectId,
+                isHiddenFromWorkspaceTree: WorkspaceMetadataStore.shared
+                    .isHiddenFromWorkspaceTree(workspaceId: workspace.id)
+            )
+        }
         if let selected = selectedTabId,
            !tabs.contains(where: { $0.id == selected }),
-           let first = tabs.first {
-            selectedTabId = first.id
+           let preferredId = MainAreaAutomaticWorkspaceSelectionPolicy.preferredWorkspaceId(
+                activeProjectId: ProjectStore.shared.activeProjectId,
+                preferredWorkspaceId: nil,
+                candidates: selectionCandidates
+           ) ?? MainAreaAutomaticWorkspaceSelectionPolicy.fallbackWorkspaceId(
+                candidates: selectionCandidates
+           ) {
+            selectedTabId = preferredId
         }
     }
 }
