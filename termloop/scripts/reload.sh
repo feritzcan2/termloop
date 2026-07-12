@@ -1,6 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Resolve a *stable* codesigning identity for the dev app.
+#
+# Ad-hoc signing (`codesign --sign -`) gives the bundle a new cdhash on every
+# rebuild, so macOS treats each build as a different application. That
+# invalidates keychain "Always Allow" grants tied to the app, which forces
+# tools launched inside TermLoop (e.g. Claude Code) to re-authenticate on every
+# relaunch. Signing with a real cert gives the app a stable Designated
+# Requirement so the grant persists.
+#
+# Prefers an Apple Development cert, then Developer ID Application. Falls back to
+# ad-hoc ('-') when no cert exists (CI / VM) so builds never break. Override
+# with TERMLOOP_CODESIGN_IDENTITY (set it to '-' to force ad-hoc).
+resolve_codesign_identity() {
+  if [[ -n "${TERMLOOP_CODESIGN_IDENTITY:-}" ]]; then
+    printf '%s' "$TERMLOOP_CODESIGN_IDENTITY"
+    return
+  fi
+  local ids hash
+  ids="$(security find-identity -v -p codesigning 2>/dev/null || true)"
+  hash="$(printf '%s\n' "$ids" | grep 'Apple Development' | head -1 | awk '{print $2}')"
+  if [[ -z "$hash" ]]; then
+    hash="$(printf '%s\n' "$ids" | grep 'Developer ID Application' | head -1 | awk '{print $2}')"
+  fi
+  printf '%s' "${hash:--}"
+}
+
 APP_NAME="TermLoop DEV"
 BUNDLE_ID="com.termloop.app.debug"
 BASE_APP_NAME="TermLoop DEV"
@@ -434,7 +460,13 @@ if [[ -n "$TAG" && "$APP_NAME" != "$SEARCH_APP_NAME" ]]; then
         rm -f "$TERMLOOP_SOCKET"
       fi
     fi
-    /usr/bin/codesign --force --sign - --timestamp=none --generate-entitlement-der "$TAG_APP_PATH" >/dev/null 2>&1 || true
+    SIGN_IDENTITY="$(resolve_codesign_identity)"
+    if ! /usr/bin/codesign --force --sign "$SIGN_IDENTITY" --timestamp=none --generate-entitlement-der "$TAG_APP_PATH" >/dev/null 2>&1; then
+      if [[ "$SIGN_IDENTITY" != "-" ]]; then
+        echo "warn: codesign with '$SIGN_IDENTITY' failed; falling back to ad-hoc (keychain grants will not persist)" >&2
+        /usr/bin/codesign --force --sign - --timestamp=none --generate-entitlement-der "$TAG_APP_PATH" >/dev/null 2>&1 || true
+      fi
+    fi
   fi
   APP_PATH="$TAG_APP_PATH"
 fi

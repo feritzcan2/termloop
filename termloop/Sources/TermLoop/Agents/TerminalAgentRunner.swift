@@ -469,6 +469,7 @@ enum TerminalAgentRunner {
             case .opus: return ["--model", "opus"]
             case .sonnet: return ["--model", "sonnet"]
             case .default,
+                 .gpt56Sol, .gpt56Terra, .gpt56Luna,
                  .gpt55, .gpt54, .gpt54Mini, .gpt53Codex, .gpt53CodexSpark, .gpt52:
                 return []  // unreachable / unsupported for claude
             }

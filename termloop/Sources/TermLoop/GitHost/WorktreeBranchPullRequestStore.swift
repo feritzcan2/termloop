@@ -249,7 +249,12 @@ final class WorktreeBranchPullRequestStore: ObservableObject {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private static func fetch(directory: String, branch: String) async -> FetchResult {
+    // `nonisolated` is load-bearing: this type is @MainActor, so without it the
+    // Task.detached in `ensureLookup` would hop right back to the main actor and
+    // run the synchronous credential probes (git credential fill, az CLI — up to
+    // ~6s of semaphore-blocked subprocess each) on the main thread. That froze
+    // the app long enough to trigger force-quit (hang report 2026-07-08).
+    nonisolated private static func fetch(directory: String, branch: String) async -> FetchResult {
         let identities = GitProjectStore.shared.pullRequestRepositoryIdentities(for: directory)
         guard !identities.isEmpty else {
 #if DEBUG
@@ -324,12 +329,14 @@ final class WorktreeBranchPullRequestStore: ObservableObject {
         )
     }
 
-    private static let iso8601Formatter: ISO8601DateFormatter = ISO8601DateFormatter()
+    // ISO8601DateFormatter is documented thread-safe; accessed from the
+    // nonisolated fetch pipeline.
+    nonisolated(unsafe) private static let iso8601Formatter: ISO8601DateFormatter = ISO8601DateFormatter()
 
     /// Fetch merge requests for a GitLab identity through the host provider
     /// and convert them to the legacy probe-item shape so the rest of the
     /// pipeline (filter / preferred / sidebar mapping) stays unchanged.
-    private static func fetchGitLabMergeRequests(
+    nonisolated private static func fetchGitLabMergeRequests(
         identity: GitRemoteIdentity,
         branch: String,
         session: URLSession
@@ -346,7 +353,7 @@ final class WorktreeBranchPullRequestStore: ObservableObject {
         }
     }
 
-    private static func mergeRequestToProbeItem(_ pr: HostPullRequest) -> GitHostPullRequestProbeItem {
+    nonisolated private static func mergeRequestToProbeItem(_ pr: HostPullRequest) -> GitHostPullRequestProbeItem {
         let stateString: String
         let detail: String?
         switch pr.state {
@@ -369,7 +376,7 @@ final class WorktreeBranchPullRequestStore: ObservableObject {
         )
     }
 
-    private static func normalizedBranchName(_ branch: String?) -> String? {
+    nonisolated private static func normalizedBranchName(_ branch: String?) -> String? {
         guard let branch else { return nil }
         let trimmed = branch.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }

@@ -10876,6 +10876,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         let normalizedFlags = flags.subtracting([.numericPad, .function, .capsLock])
         let commandPaletteTargetWindow = commandPaletteWindowForShortcutEvent(event)
+        // Self-heal stale palette visibility before treating the palette as
+        // interactive. A missed visible=false sync (window teardown races,
+        // key-window fallback writing to another window) would otherwise make
+        // this branch consume every plain Return in the window until an
+        // Escape press or an app restart.
+        if let commandPaletteTargetWindow {
+            pruneStaleCommandPaletteVisibilityIfNeeded(for: commandPaletteTargetWindow)
+        }
         let commandPaletteShortcutWindow = shouldHandleCommandPaletteShortcutEvent(
             event,
             paletteWindow: commandPaletteTargetWindow
