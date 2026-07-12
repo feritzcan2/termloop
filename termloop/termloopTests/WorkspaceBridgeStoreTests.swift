@@ -333,4 +333,112 @@ final class WorkspaceBridgeStoreTests: XCTestCase {
         XCTAssertEqual(store.bridges.count, 1)
     }
 
+    func testPartialRestoreDoesNotDropBridgeUntilBothEndpointStampsExist() {
+        let store = makeStore()
+        let bridge = makeBridge()
+        XCTAssertTrue(store.add(bridge))
+
+        let restoredLeft = UUID()
+        WorkspaceMetadataStore.shared.restoreMetadata(
+            WorkspaceMetadataStore.Metadata(
+                projectId: testProjectId,
+                terminalAgentId: "claude",
+                bridgeMembership: BridgeMembership(bridgeId: bridge.id, role: .left)
+            ),
+            forWorkspaceId: restoredLeft
+        )
+
+        XCTAssertFalse(store.rebindAfterRestore(
+            knownWorkspaceIds: [restoredLeft],
+            dropUnresolved: false
+        ))
+        XCTAssertEqual(store.bridge(id: bridge.id)?.leftWorkspaceId, bridge.leftWorkspaceId)
+        XCTAssertEqual(store.bridges.count, 1)
+    }
+
+    func testFinalRestoreDropsUnresolvedBridgeAndClearsSurvivingStamp() {
+        let store = makeStore()
+        let bridge = makeBridge()
+        XCTAssertTrue(store.add(bridge))
+
+        let restoredLeft = UUID()
+        WorkspaceMetadataStore.shared.restoreMetadata(
+            WorkspaceMetadataStore.Metadata(
+                projectId: testProjectId,
+                terminalAgentId: "claude",
+                bridgeMembership: BridgeMembership(bridgeId: bridge.id, role: .left)
+            ),
+            forWorkspaceId: restoredLeft
+        )
+
+        XCTAssertTrue(store.rebindAfterRestore(
+            knownWorkspaceIds: [restoredLeft],
+            dropUnresolved: true
+        ))
+        XCTAssertTrue(store.bridges.isEmpty)
+        XCTAssertNil(
+            WorkspaceMetadataStore.shared
+                .metadata(forWorkspaceId: restoredLeft)
+                .bridgeMembership
+        )
+    }
+
+    func testRestoreRebindsBridgeAcrossRemintedWorkspaceIds() {
+        let store = makeStore()
+        let bridge = makeBridge()
+        XCTAssertTrue(store.add(bridge))
+
+        let restoredLeft = UUID()
+        let restoredRight = UUID()
+        WorkspaceMetadataStore.shared.restoreMetadata(
+            WorkspaceMetadataStore.Metadata(
+                projectId: testProjectId,
+                terminalAgentId: "claude",
+                bridgeMembership: BridgeMembership(bridgeId: bridge.id, role: .left)
+            ),
+            forWorkspaceId: restoredLeft
+        )
+        WorkspaceMetadataStore.shared.restoreMetadata(
+            WorkspaceMetadataStore.Metadata(
+                projectId: testProjectId,
+                terminalAgentId: "claude",
+                bridgeMembership: BridgeMembership(bridgeId: bridge.id, role: .right)
+            ),
+            forWorkspaceId: restoredRight
+        )
+
+        XCTAssertTrue(store.rebindAfterRestore(
+            knownWorkspaceIds: [restoredLeft, restoredRight],
+            dropUnresolved: true
+        ))
+        XCTAssertEqual(store.bridge(id: bridge.id)?.leftWorkspaceId, restoredLeft)
+        XCTAssertEqual(store.bridge(id: bridge.id)?.rightWorkspaceId, restoredRight)
+    }
+
+    func testDismissClearsEveryStaleMembershipForBridgeId() {
+        let store = makeStore()
+        let bridge = makeBridge()
+        XCTAssertTrue(store.add(bridge))
+
+        let staleRemintedHelper = UUID()
+        WorkspaceMetadataStore.shared.restoreMetadata(
+            WorkspaceMetadataStore.Metadata(
+                projectId: testProjectId,
+                terminalAgentId: "claude",
+                hideFromWorkspaceTree: true,
+                bridgeMembership: BridgeMembership(bridgeId: bridge.id, role: .right)
+            ),
+            forWorkspaceId: staleRemintedHelper
+        )
+
+        store.dismiss(id: bridge.id)
+
+        XCTAssertNil(
+            WorkspaceMetadataStore.shared
+                .metadata(forWorkspaceId: staleRemintedHelper)
+                .bridgeMembership
+        )
+        XCTAssertTrue(store.bridges.isEmpty)
+    }
+
 }

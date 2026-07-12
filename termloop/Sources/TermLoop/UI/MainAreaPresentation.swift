@@ -180,6 +180,88 @@ struct MainAreaPresentationSnapshot: Equatable {
     }
 }
 
+struct MainAreaWorkspaceSelectionCandidate: Equatable {
+    let id: UUID
+    let projectId: UUID?
+    let isHiddenFromWorkspaceTree: Bool
+}
+
+/// Automatic navigation must never land on internal Ask-To helper tabs. They
+/// remain explicitly openable from their bridge row, but project/page restore
+/// and fallback selection operate only on user-navigable workspaces.
+enum MainAreaAutomaticWorkspaceSelectionPolicy {
+    static func preferredWorkspaceId(
+        activeProjectId: UUID?,
+        preferredWorkspaceId: UUID?,
+        candidates: [MainAreaWorkspaceSelectionCandidate]
+    ) -> UUID? {
+        if let preferredWorkspaceId,
+           let preferred = candidates.first(where: { $0.id == preferredWorkspaceId }),
+           !preferred.isHiddenFromWorkspaceTree,
+           activeProjectId == nil || preferred.projectId == activeProjectId {
+            return preferred.id
+        }
+
+        if let activeProjectId {
+            return candidates.first {
+                $0.projectId == activeProjectId && !$0.isHiddenFromWorkspaceTree
+            }?.id
+        }
+        return candidates.first { !$0.isHiddenFromWorkspaceTree }?.id
+    }
+
+    static func isEligible(
+        workspaceId: UUID,
+        activeProjectId: UUID?,
+        candidates: [MainAreaWorkspaceSelectionCandidate]
+    ) -> Bool {
+        preferredWorkspaceId(
+            activeProjectId: activeProjectId,
+            preferredWorkspaceId: workspaceId,
+            candidates: candidates
+        ) == workspaceId
+    }
+
+    /// Selection repair (after a close/prune) must never leave a dangling id.
+    /// Prefer a visible workspace globally when the active project has none;
+    /// only fall back to the first raw candidate if every remaining tab is an
+    /// internal helper and the caller cannot create a replacement itself.
+    static func fallbackWorkspaceId(
+        candidates: [MainAreaWorkspaceSelectionCandidate]
+    ) -> UUID? {
+        candidates.first { !$0.isHiddenFromWorkspaceTree }?.id
+            ?? candidates.first?.id
+    }
+
+    /// When an upstream next/previous/history path lands on a hidden helper,
+    /// continue through it in the direction implied by the prior visible tab.
+    /// This turns the central selection guard into a true filtered tab cycle
+    /// instead of bouncing back to the first workspace.
+    static func adjacentVisibleWorkspaceId(
+        attemptedWorkspaceId: UUID,
+        previousWorkspaceId: UUID?,
+        candidates: [MainAreaWorkspaceSelectionCandidate]
+    ) -> UUID? {
+        guard candidates.count > 1,
+              let previousWorkspaceId,
+              let attemptedIndex = candidates.firstIndex(where: { $0.id == attemptedWorkspaceId }),
+              let previousIndex = candidates.firstIndex(where: { $0.id == previousWorkspaceId }) else {
+            return nil
+        }
+        let forwardDistance = (attemptedIndex - previousIndex + candidates.count) % candidates.count
+        let backwardDistance = (previousIndex - attemptedIndex + candidates.count) % candidates.count
+        let step = forwardDistance <= backwardDistance ? 1 : -1
+        for offset in 1...candidates.count {
+            let rawIndex = attemptedIndex + (step * offset)
+            let index = (rawIndex % candidates.count + candidates.count) % candidates.count
+            if !candidates[index].isHiddenFromWorkspaceTree {
+                return candidates[index].id
+            }
+        }
+        return nil
+    }
+}
+
 enum MainAreaPresentationPolicy {
     static func resolve(_ input: MainAreaPresentationInput) -> MainAreaPresentationSnapshot {
         let page = resolveMainPage(input)

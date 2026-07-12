@@ -79,18 +79,36 @@ extension TermLoopSidebar {
             projectStore.projects.isEmpty
         }
 
+        private var automaticSelectionCandidates: [MainAreaWorkspaceSelectionCandidate] {
+            tabManager.tabs.map { workspace in
+                MainAreaWorkspaceSelectionCandidate(
+                    id: workspace.id,
+                    projectId: workspace.projectId,
+                    isHiddenFromWorkspaceTree: WorkspaceMetadataStore.shared
+                        .isHiddenFromWorkspaceTree(workspaceId: workspace.id)
+                )
+            }
+        }
+
         private func handleSidebarTabChange(_ newTab: TermLoopSidebarTab) {
+            let candidates = automaticSelectionCandidates
             if let currentId = tabManager.selectedTabId,
-               tabManager.tabs.contains(where: { $0.id == currentId }) {
+               MainAreaAutomaticWorkspaceSelectionPolicy.isEligible(
+                    workspaceId: currentId,
+                    activeProjectId: projectStore.activeProjectId,
+                    candidates: candidates
+               ) {
                 workLastWorkspaceId = currentId.uuidString
             }
             switch newTab {
             case .work:
-                if let wid = UUID(uuidString: workLastWorkspaceId),
-                   tabManager.tabs.contains(where: { $0.id == wid }) {
-                    tabManager.selectedTabId = wid
-                } else if let firstWorkspace = tabManager.tabs.first {
-                    tabManager.selectedTabId = firstWorkspace.id
+                let rememberedId = UUID(uuidString: workLastWorkspaceId)
+                if let preferredId = MainAreaAutomaticWorkspaceSelectionPolicy.preferredWorkspaceId(
+                    activeProjectId: projectStore.activeProjectId,
+                    preferredWorkspaceId: rememberedId,
+                    candidates: candidates
+                ) {
+                    tabManager.selectedTabId = preferredId
                 }
             case .agents:
                 break
@@ -107,14 +125,12 @@ extension TermLoopSidebar {
 
         private func selectFirstWorkspaceForActiveProjectIfNeeded() {
             guard let activeId = projectStore.activeProjectId else { return }
-            let tabs = tabManager.tabs
-            if let current = tabManager.selectedTabId,
-               let tab = tabs.first(where: { $0.id == current }),
-               tab.projectId == activeId {
-                return
-            }
-            if let first = tabs.first(where: { $0.projectId == activeId }) {
-                tabManager.selectedTabId = first.id
+            if let preferredId = MainAreaAutomaticWorkspaceSelectionPolicy.preferredWorkspaceId(
+                activeProjectId: activeId,
+                preferredWorkspaceId: tabManager.selectedTabId,
+                candidates: automaticSelectionCandidates
+            ), preferredId != tabManager.selectedTabId {
+                tabManager.selectedTabId = preferredId
             }
         }
 

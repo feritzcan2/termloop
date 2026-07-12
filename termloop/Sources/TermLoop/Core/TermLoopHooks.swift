@@ -81,6 +81,37 @@ enum TermLoopHooks {
     /// the migration toast fires exactly once per legacy workspace.
     private static var pendingMigrationToastWorkspaceIds: Set<UUID> = []
 
+    /// Hidden helpers may only be selected through an explicit bridge-row
+    /// activation. Every upstream fallback/cycle still writes selectedTabId
+    /// directly, so this per-window state lets the central didSet hook reject
+    /// accidental helper selections without blocking the intentional open.
+    private final class WorkspaceSelectionState {
+        weak var tabManager: TabManager?
+        var explicitlyAllowedHiddenWorkspaceId: UUID?
+        var lastVisibleWorkspaceId: UUID?
+
+        init(tabManager: TabManager) {
+            self.tabManager = tabManager
+        }
+    }
+
+    private static var workspaceSelectionStates: [ObjectIdentifier: WorkspaceSelectionState] = [:]
+
+    private static func workspaceSelectionState(
+        for tabManager: TabManager
+    ) -> WorkspaceSelectionState {
+        workspaceSelectionStates = workspaceSelectionStates.filter {
+            $0.value.tabManager != nil
+        }
+        let managerId = ObjectIdentifier(tabManager)
+        if let existing = workspaceSelectionStates[managerId] {
+            return existing
+        }
+        let created = WorkspaceSelectionState(tabManager: tabManager)
+        workspaceSelectionStates[managerId] = created
+        return created
+    }
+
 #if DEBUG
     private static func debugClean(_ value: String?) -> String {
         let trimmed = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1186,7 +1217,21 @@ enum TermLoopHooks {
             )
 #endif
         }
-        scheduleRestoreMissingWorktreeBranchBindings(workspaces: workspaces)
+        let restoredTabManager = workspaces.first?.owningTabManager
+        if let restoredTabManager {
+            // Bridge membership is positional metadata, so reconciliation must
+            // happen here—not on the earlier @Published tabs assignment. This
+            // partial pass also removes unowned hidden helpers before their
+            // persisted agent sessions can auto-resume.
+            BridgeCoordinator.shared.workspaceMetadataDidRestore(
+                tabManager: restoredTabManager
+            )
+        }
+        let liveWorkspaceIds = restoredTabManager.map { Set($0.tabs.map(\.id)) }
+        let liveRestoredWorkspaces = workspaces.filter { workspace in
+            liveWorkspaceIds?.contains(workspace.id) ?? true
+        }
+        scheduleRestoreMissingWorktreeBranchBindings(workspaces: liveRestoredWorkspaces)
 
         let didRecoverBeforeRestore = backfillPersistedAgentSessionsIfNeeded()
 #if DEBUG
@@ -1200,22 +1245,36 @@ enum TermLoopHooks {
         // window and can permanently miss auto-restore. They are restored when
         // the user selects the workspace, or by the serial background drain
         // below once launch has settled.
-        let materializedWorkspaces = workspaces.filter {
+        let materializedWorkspaces = liveRestoredWorkspaces.filter {
             !TermLoopDeferredWorkspaceRestore.isDeferred(workspace: $0)
         }
 #if DEBUG
         dlog(
-            "session.restore.materialized count=\(materializedWorkspaces.count) deferred=\(workspaces.count - materializedWorkspaces.count)"
+            "session.restore.materialized count=\(materializedWorkspaces.count) " +
+            "deferred=\(liveRestoredWorkspaces.count - materializedWorkspaces.count) " +
+            "pruned=\(workspaces.count - liveRestoredWorkspaces.count)"
         )
 #endif
         TerminalAgentLifecycle.restoreWorkspaces(materializedWorkspaces, autoRestoreClaude: autoRestore)
         // Ability-agent sessions don't survive relaunch; see
         // `TabManager+TermLoopPrune.swift` for the guard-bypass rationale.
-        if let tabManager = workspaces.first?.owningTabManager {
+        if let tabManager = restoredTabManager {
             tabManager.pruneAbilityAgentWorkspaces()
         }
-        TermLoopDeferredWorkspaceRestore.scheduleBackgroundMaterialization(for: workspaces)
-        scheduleStartupAgentRestoreSelfHeal(workspaces: workspaces)
+        TermLoopDeferredWorkspaceRestore.scheduleBackgroundMaterialization(for: liveRestoredWorkspaces)
+        scheduleStartupAgentRestoreSelfHeal(workspaces: liveRestoredWorkspaces)
+    }
+
+    /// Final bridge prune after every startup window has applied positional
+    /// metadata. Partial per-window passes retain unresolved cross-window
+    /// endpoints; only this app-level completion may drop them.
+    static func completeStartupSessionRestore() {
+        BridgeCoordinator.shared.startupSessionRestoreDidFinish()
+    }
+
+    static func completeStartupSessionRestoreIfUnavailable(canRestore: Bool) {
+        guard !canRestore else { return }
+        completeStartupSessionRestore()
     }
 
     private static func resolvedRestoreMetadata(
@@ -2304,8 +2363,8 @@ enum TermLoopHooks {
     }
 
     /// Called once per window from `TermLoopSidebar.Root.body.onAppear`.
-    /// Idempotent (`BridgeCoordinator.start` guards `!started`), so repeated
-    /// `onAppear` firings (e.g. window hide/show) are safe.
+    /// Registration is idempotent and deliberately does not run destructive
+    /// restore reconciliation against a bootstrap placeholder tab.
     @MainActor
     static func bootstrapSidebar(tabManager: TabManager) {
         BridgeCoordinator.shared.start(tabManager: tabManager)
@@ -2611,13 +2670,61 @@ export const TermLoopOpenCode = async ({ $, directory }) => {
         WorkspaceMetadataStore.shared.setTerminalAgentId(resolvedId, for: workspace.id)
     }
 
-    /// Called from `TabManager.selectedTabId.didSet`. Consumes the
-    /// migration toast flag so the notification fires once per legacy
-    /// workspace.
+    static func allowExplicitHiddenWorkspaceSelection(
+        workspaceId: UUID,
+        tabManager: TabManager
+    ) {
+        guard WorkspaceMetadataStore.shared
+            .isHiddenFromWorkspaceTree(workspaceId: workspaceId) else { return }
+        workspaceSelectionState(for: tabManager)
+            .explicitlyAllowedHiddenWorkspaceId = workspaceId
+    }
+
+    /// Called from `TabManager.selectedTabId.didSet`. Hidden Ask-To helpers are
+    /// excluded from every automatic upstream selection path here; bridge-row
+    /// activation grants a one-shot exception above. Also consumes the
+    /// migration toast flag for normal workspaces.
     static func workspaceSelectionChanged(tabManager: TabManager, selectedTabId: UUID?) {
         guard let selectedTabId,
               let workspace = tabManager.tabs.first(where: { $0.id == selectedTabId })
         else { return }
+        let selectionState = workspaceSelectionState(for: tabManager)
+        let isExplicitHiddenSelection = selectionState
+            .explicitlyAllowedHiddenWorkspaceId == selectedTabId
+        selectionState.explicitlyAllowedHiddenWorkspaceId = nil
+        if WorkspaceMetadataStore.shared
+            .isHiddenFromWorkspaceTree(workspaceId: selectedTabId),
+           !isExplicitHiddenSelection {
+            let candidates = tabManager.tabs.map { candidate in
+                MainAreaWorkspaceSelectionCandidate(
+                    id: candidate.id,
+                    projectId: candidate.projectId,
+                    isHiddenFromWorkspaceTree: WorkspaceMetadataStore.shared
+                        .isHiddenFromWorkspaceTree(workspaceId: candidate.id)
+                )
+            }
+            let replacementId = MainAreaAutomaticWorkspaceSelectionPolicy
+                .adjacentVisibleWorkspaceId(
+                    attemptedWorkspaceId: selectedTabId,
+                    previousWorkspaceId: selectionState.lastVisibleWorkspaceId,
+                    candidates: candidates
+                )
+                ?? MainAreaAutomaticWorkspaceSelectionPolicy.preferredWorkspaceId(
+                    activeProjectId: ProjectStore.shared.activeProjectId,
+                    preferredWorkspaceId: nil,
+                    candidates: candidates
+                )
+                ?? MainAreaAutomaticWorkspaceSelectionPolicy
+                    .fallbackWorkspaceId(candidates: candidates)
+            if let replacementId, replacementId != selectedTabId {
+                tabManager.selectedTabId = replacementId
+                return
+            }
+        }
+        if !WorkspaceMetadataStore.shared
+            .isHiddenFromWorkspaceTree(workspaceId: selectedTabId) {
+            selectionState.lastVisibleWorkspaceId = selectedTabId
+        }
         TermLoopDeferredWorkspaceRestore.materializeIfNeeded(workspace: workspace)
         if consumeMigrationToast(workspaceId: workspace.id) {
             surfaceMigrationToast(workspaceId: workspace.id)

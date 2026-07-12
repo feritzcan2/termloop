@@ -38,7 +38,7 @@ struct WorkspaceRowBridgeExtras: View {
                         onForward: { sender in
                             BridgeCoordinator.shared.forwardLatestMessage(from: sender, in: bridge)
                         },
-                        onStop: { store.stop(id: bridge.id, reason: .manual); BridgeCoordinator.shared.stop(bridgeId: bridge.id) },
+                        onStop: { BridgeCoordinator.shared.stop(bridgeId: bridge.id) },
                         onDismiss: { BridgeCoordinator.shared.dismiss(bridgeId: bridge.id) },
                         onJumpToRight: {
                             if rightWorkspace != nil {

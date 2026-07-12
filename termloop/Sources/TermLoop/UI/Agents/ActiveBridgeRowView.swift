@@ -54,7 +54,6 @@ struct ActiveBridgeRow: View {
                     BridgeCoordinator.shared.forwardLatestMessage(from: sender, in: bridge)
                 },
                 onStop: {
-                    store.stop(id: bridge.id, reason: .manual)
                     BridgeCoordinator.shared.stop(bridgeId: bridge.id)
                 },
                 onDismiss: {

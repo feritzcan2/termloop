@@ -259,43 +259,65 @@ final class WorkspaceBridgeStore: ObservableObject {
         return .recorded(bridgeId: bridges[idx].id, messageId: message.id)
     }
 
-    /// Completely removes the bridge from the store and clears the
-    /// `bridgeMembership` stamps from both endpoints.
+    /// Completely removes the bridge from the store and clears every
+    /// `bridgeMembership` stamp carrying its id, including stale reminted
+    /// endpoint records left by older restore flows.
     func dismiss(id: UUID) {
-        guard let bridge = bridges.first(where: { $0.id == id }) else { return }
+        guard bridges.contains(where: { $0.id == id }) else { return }
         let metaStore = WorkspaceMetadataStore.shared
-        metaStore.setBridgeMembership(nil, forWorkspaceId: bridge.leftWorkspaceId)
-        metaStore.setBridgeMembership(nil, forWorkspaceId: bridge.rightWorkspaceId)
+        // Hidden workspace metadata used to be persisted both positionally
+        // and by UUID, so old reminted endpoint records can outlive the bridge's
+        // current ids. Clear every matching stamp, not only the two endpoints.
+        let stampedWorkspaceIds: [UUID] = metaStore.byWorkspaceId.compactMap { entry in
+            let (workspaceId, metadata) = entry
+            return metadata.bridgeMembership?.bridgeId == id ? workspaceId : nil
+        }
+        for workspaceId in stampedWorkspaceIds {
+            metaStore.setBridgeMembership(nil, forWorkspaceId: workspaceId)
+        }
         bridges.removeAll { $0.id == id }
         overviewVersion &+= 1
         save()
     }
 
-    /// Re-links each persisted bridge to the current-session workspace UUIDs
-    /// by scanning `WorkspaceMetadataStore` for matching `bridgeMembership`
-    /// stamps. Workspace UUIDs are reminted by upstream session restore, but
-    /// metadata stamps travel positionally (visible) or by preserved id
-    /// (hidden), so the stamp is the stable identity. Bridges whose stamps
-    /// can't both be found are dropped.
-    func rebindAfterRestore(tabManager: TabManager) {
+    /// Re-links persisted bridges to current-session workspace UUIDs by
+    /// scanning `WorkspaceMetadataStore` for matching `bridgeMembership`
+    /// stamps. A partial pass updates complete pairs but preserves unresolved
+    /// bridges while other windows are still restoring. The final pass drops
+    /// unresolved bridges and clears their stale endpoint stamps.
+    @discardableResult
+    func rebindAfterRestore(
+        knownWorkspaceIds: Set<UUID>,
+        dropUnresolved: Bool
+    ) -> Bool {
         let metaStore = WorkspaceMetadataStore.shared
-        let knownIds = Set(tabManager.tabs.map(\.id))
         var sidesByBridgeId: [UUID: [BridgeSender: UUID]] = [:]
         for (wsId, meta) in metaStore.byWorkspaceId {
-            guard let stamp = meta.bridgeMembership, knownIds.contains(wsId) else { continue }
+            guard let stamp = meta.bridgeMembership,
+                  knownWorkspaceIds.contains(wsId) else { continue }
             sidesByBridgeId[stamp.bridgeId, default: [:]][stamp.role] = wsId
         }
-        BridgeDebugTrace.log("store.rebind start bridges=\(bridges.count) stamps=\(sidesByBridgeId.count) known=\(knownIds.count)")
+        BridgeDebugTrace.log(
+            "store.rebind start bridges=\(bridges.count) stamps=\(sidesByBridgeId.count) " +
+            "known=\(knownWorkspaceIds.count) final=\(dropUnresolved ? 1 : 0)"
+        )
 
         var rebuilt: [WorkspaceBridge] = []
         var changed = false
+        var droppedBridgeIds: Set<UUID> = []
         for bridge in bridges {
             guard let sides = sidesByBridgeId[bridge.id],
                   let newLeft = sides[.left],
                   let newRight = sides[.right]
             else {
-                BridgeDebugTrace.log("store.rebind drop id=\(bridge.id.uuidString.prefix(8)) reason=stamps-missing")
-                changed = true
+                if dropUnresolved {
+                    BridgeDebugTrace.log("store.rebind drop id=\(bridge.id.uuidString.prefix(8)) reason=stamps-missing")
+                    droppedBridgeIds.insert(bridge.id)
+                    changed = true
+                } else {
+                    BridgeDebugTrace.log("store.rebind defer id=\(bridge.id.uuidString.prefix(8)) reason=stamps-incomplete")
+                    rebuilt.append(bridge)
+                }
                 continue
             }
             var updated = bridge
@@ -312,11 +334,24 @@ final class WorkspaceBridgeStore: ObservableObject {
             }
             rebuilt.append(updated)
         }
+
+        if !droppedBridgeIds.isEmpty {
+            let staleWorkspaceIds: [UUID] = metaStore.byWorkspaceId.compactMap { entry in
+                let (wsId, metadata) = entry
+                guard let membership = metadata.bridgeMembership,
+                      droppedBridgeIds.contains(membership.bridgeId) else { return nil as UUID? }
+                return wsId
+            }
+            for workspaceId in staleWorkspaceIds {
+                metaStore.setBridgeMembership(nil, forWorkspaceId: workspaceId)
+            }
+        }
         if changed {
             bridges = rebuilt
             overviewVersion &+= 1
             save()
         }
+        return changed
     }
 
     private static func fallbackAgents(

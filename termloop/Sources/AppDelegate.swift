@@ -3890,6 +3890,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard !didAttemptStartupSessionRestore else { return }
         didAttemptStartupSessionRestore = true
         guard !didHandleExplicitOpenIntentAtStartup else { return }
+        // MARK: termloop-hook
+        TermLoopHooks.completeStartupSessionRestoreIfUnavailable(canRestore: startupSessionSnapshot != nil && contextForMainTerminalWindow(primaryWindow) != nil)
+        // MARK: /termloop-hook
         guard let primaryContext = contextForMainTerminalWindow(primaryWindow) else { return }
 
         let startupSnapshot = startupSessionSnapshot
@@ -3953,6 +3956,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func completeStartupSessionRestore() {
         startupSessionSnapshot = nil
         isApplyingStartupSessionRestore = false
+        // MARK: termloop-hook
+        TermLoopHooks.completeStartupSessionRestore()
+        // MARK: /termloop-hook
         _ = saveSessionSnapshot(includeScrollback: false)
     }
 
@@ -6956,6 +6962,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             startupSessionSnapshot = nil
             didAttemptStartupSessionRestore = true
         }
+        // MARK: termloop-hook
+        TermLoopHooks.completeStartupSessionRestore()
+        // MARK: /termloop-hook
     }
 
     private func externalOpenDirectories(from urls: [URL]) -> [String] {
