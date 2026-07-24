@@ -97,6 +97,24 @@ final class CodexSessionScannerTests: XCTestCase {
         )
     }
 
+    func testLatestModelReadsNewestTurnContext() throws {
+        let targetCwd = "/tmp/repo"
+        let url = try writeSession(id: "sid-model", cwd: targetCwd, ageSeconds: 1)
+        try """
+        {"timestamp":"2026-04-19T10:00:01Z","type":"turn_context","payload":{"model":"gpt-5.5"}}
+        {"timestamp":"2026-04-19T10:00:02Z","type":"event_msg","payload":{"type":"task_complete"}}
+        {"timestamp":"2026-04-19T10:00:03Z","type":"turn_context","payload":{"model":"gpt-5.6-terra"}}
+        {"timestamp":"2026-04-19T10:00:04Z","type":"event_msg","payload":{"type":"task_started"}}
+        """.appendLine(to: url)
+
+        let scanner = CodexSessionScanner(codexHome: tempDir)
+
+        XCTAssertEqual(
+            scanner.latestModel(sessionId: "sid-model", cwd: targetCwd),
+            .gpt56Terra
+        )
+    }
+
     func testSessionFileURLResolvesBySessionIdWithoutCwd() throws {
         let targetCwd = "/tmp/repo"
         let target = try writeSession(id: "sid-direct", cwd: targetCwd, ageSeconds: 5)

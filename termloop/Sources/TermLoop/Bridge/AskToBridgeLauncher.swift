@@ -155,8 +155,8 @@ enum AskToBridgeLauncher {
                 title: target.defaultWorkspaceTitle,
                 cwd: sourceWorkspace.currentDirectory,
                 baseEnv: [
-                    "TERMLOOP_ASK_TO_REQUEST_ID": requestId.uuidString,
-                    "TERMLOOP_ASK_TO_REPLY_TOKEN": askToReplyToken
+                    TermLoopBuiltInMCP.askToRequestIdEnvironmentKey: requestId.uuidString,
+                    TermLoopBuiltInMCP.askToReplyTokenEnvironmentKey: askToReplyToken
                 ],
                 initialPrompt: plan.resolvedPromptBody ?? "",
                 projectId: sourceProjectId,

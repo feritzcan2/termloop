@@ -91,6 +91,48 @@ final class WorkspaceBridgeStore: ObservableObject {
         }
     }
 
+    func agentRestoreContext(
+        forWorkspaceId workspaceId: UUID
+    ) -> WorkspaceBridgeAgentRestoreContext? {
+        let metaStore = WorkspaceMetadataStore.shared
+        let metadata = metaStore.metadata(forWorkspaceId: workspaceId)
+        guard let membership = metadata.bridgeMembership,
+              let bridge = bridge(id: membership.bridgeId),
+              bridge.workspaceId(for: membership.role) == workspaceId,
+              let agentId = Self.fallbackAgents(for: bridge, metaStore: metaStore)
+                .first(where: { $0.0 == workspaceId })?
+                .1
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !agentId.isEmpty else {
+            return nil
+        }
+
+        let isAskToHelper = bridge.intent == .askAgent && membership.role == .right
+        var launchEnvironment: [String: String] = [:]
+        if isAskToHelper,
+           let request = bridge.openAskToRequest,
+           let replyToken = bridge.askToReplyToken?.trimmingCharacters(
+                in: .whitespacesAndNewlines
+           ),
+           !replyToken.isEmpty {
+            launchEnvironment[TermLoopBuiltInMCP.askToRequestIdEnvironmentKey] =
+                request.id.uuidString
+            launchEnvironment[TermLoopBuiltInMCP.askToReplyTokenEnvironmentKey] =
+                replyToken
+        }
+
+        return WorkspaceBridgeAgentRestoreContext(
+            bridgeId: bridge.id,
+            role: membership.role,
+            agentId: agentId,
+            isAskToHelper: isAskToHelper,
+            minimumSessionDate: isAskToHelper
+                ? AskToHelperRestorePolicy.minimumSessionDate(for: bridge)
+                : nil,
+            launchEnvironment: launchEnvironment
+        )
+    }
+
     /// Returns false if the bridge fails creation validation or if either
     /// workspace is already in another bridge. Delegates to
     /// `BridgeCreationValidator` as the single source of truth so the

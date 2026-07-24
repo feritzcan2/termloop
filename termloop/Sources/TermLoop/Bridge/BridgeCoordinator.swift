@@ -46,16 +46,9 @@ final class BridgeCoordinator {
         }
     }
 
-    /// Tolerance for filtering pre-bridge sessions in the shared cwd. The
-    /// askAgent helper inherits the source workspace's cwd, so the cwd-fallback
-    /// in the scanner could otherwise pick up the user's own pre-existing
-    /// session as the helper's response. One second absorbs ordering skew
-    /// between bridge.createdAt and the helper's first session-file write.
-    private static let sessionFloorSkewBuffer: TimeInterval = 1
-
     private static func sessionFloor(for bridge: WorkspaceBridge, wsId: UUID) -> Date? {
         guard bridge.intent == .askAgent, wsId == bridge.rightWorkspaceId else { return nil }
-        return bridge.createdAt.addingTimeInterval(-sessionFloorSkewBuffer)
+        return AskToHelperRestorePolicy.minimumSessionDate(for: bridge)
     }
 
     /// For ask-agent helper workspaces, returns the persisted-agent-session
@@ -78,9 +71,11 @@ final class BridgeCoordinator {
         let isAskHelper = bridge.intent == .askAgent
             && wsId == bridge.rightWorkspaceId
         guard isAskHelper else { return persisted }
-        guard let updatedAt = persisted.updatedAt,
-              updatedAt >= bridge.createdAt.addingTimeInterval(-sessionFloorSkewBuffer)
-        else { return nil }
+        guard AskToHelperRestorePolicy.accepts(
+            sessionFileCreationDate: nil,
+            persistedUpdatedAt: persisted.updatedAt,
+            minimumSessionDate: AskToHelperRestorePolicy.minimumSessionDate(for: bridge)
+        ) else { return nil }
         return persisted
     }
 
@@ -142,11 +137,21 @@ final class BridgeCoordinator {
             tabManagers: liveTabManagers(),
             dropUnresolved: false
         )
-        // Ask-To helpers are process-scoped, not durable workspaces. Closing
-        // them here, before TerminalAgentLifecycle.restoreWorkspaces, prevents
-        // stale same-cwd session ids from resuming the wrong agent and avoids a
-        // spawn-then-kill race at the app-wide final barrier.
-        _ = cleanupRestoredAskToHelpers(tabManager: tabManager)
+#if DEBUG
+        let durableHelperIds = tabManager.tabs.compactMap { workspace -> String? in
+            guard store.agentRestoreContext(forWorkspaceId: workspace.id)?
+                .isAskToHelper == true else {
+                return nil
+            }
+            return String(workspace.id.uuidString.prefix(8))
+        }
+        if !durableHelperIds.isEmpty {
+            restoreAuditLog(
+                "bridge.restore.helpers action=preserve count=\(durableHelperIds.count) " +
+                "workspaces=\(durableHelperIds.joined(separator: ","))"
+            )
+        }
+#endif
     }
 
     /// Called once all startup windows have restored. At this point unresolved
@@ -234,37 +239,6 @@ final class BridgeCoordinator {
         if dropUnresolved {
             _ = cleanupDetachedHiddenHelperMetadata(knownWorkspaceIds: knownWorkspaceIds)
         }
-    }
-
-    /// Restored Ask-To endpoints are deliberately transient. This is separate
-    /// from generic orphan cleanup because a fully rebound, otherwise-valid
-    /// helper must also be removed before any persisted agent resume occurs.
-    @discardableResult
-    private func cleanupRestoredAskToHelpers(tabManager: TabManager) -> Bool {
-        let metaStore = WorkspaceMetadataStore.shared
-        let helpers = tabManager.tabs.filter { workspace in
-            guard let membership = metaStore
-                .metadata(forWorkspaceId: workspace.id)
-                .bridgeMembership,
-                  membership.role == .right,
-                  let bridge = store.bridge(id: membership.bridgeId) else {
-                return false
-            }
-            return bridge.intent == .askAgent
-        }
-        guard !helpers.isEmpty else { return false }
-        if helpers.count == tabManager.tabs.count {
-            _ = tabManager.addWorkspace(
-                select: true,
-                eagerLoadTerminal: false,
-                projectId: ProjectStore.shared.activeProjectId
-            )
-        }
-        for helper in helpers {
-            tabManager.closeWorkspace(helper)
-            _ = metaStore.removeMetadataForId(helper.id)
-        }
-        return true
     }
 
     /// Ask-To helper metadata can outlive its reminted workspace id after a
@@ -424,9 +398,9 @@ final class BridgeCoordinator {
 
     func stop(bridgeId: UUID) {
         guard let bridge = store.bridge(id: bridgeId) else { return }
-        // Ask-To helpers are transient processes. A stopped Ask-To bridge cannot
-        // accept follow-ups, so keeping its hidden endpoint alive only creates
-        // an unreachable session. Treat Stop as full Ask-To teardown.
+        // A stopped Ask-To bridge cannot accept follow-ups, so keeping its
+        // private endpoint alive only creates an unreachable session. Treat
+        // Stop as full Ask-To teardown.
         if bridge.intent == .askAgent {
             dismiss(bridgeId: bridgeId)
             return

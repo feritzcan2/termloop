@@ -56,6 +56,25 @@ enum TerminalAgentRunner {
     private static func debugWorkspaceTitle(_ workspace: Workspace) -> String {
         debugClean(workspace.customTitle ?? workspace.title)
     }
+
+    private static func debugNormalizedPath(_ value: String?) -> String? {
+        let trimmed = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return URL(fileURLWithPath: trimmed).standardizedFileURL.path
+    }
+
+    private static func debugRestoreCwdSource(
+        preferredCwd: String?,
+        fallbackCwd: String?,
+        persistedCwd: String?,
+        worktreePath: String?
+    ) -> String {
+        guard let preferred = debugNormalizedPath(preferredCwd) else { return "none" }
+        if preferred == debugNormalizedPath(worktreePath) { return "worktree-expectation" }
+        if preferred == debugNormalizedPath(persistedCwd) { return "persisted-session" }
+        if preferred == debugNormalizedPath(fallbackCwd) { return "lifecycle-fallback" }
+        return "other"
+    }
 #endif
 
     private struct BootstrapLaunch {
@@ -68,6 +87,7 @@ enum TerminalAgentRunner {
         let initialCommand: String?
         let initialEnvironment: [String: String]
         let fallbackCommand: String?
+        let model: AgentModelOption?
     }
 
     struct PreparedExistingLaunch {
@@ -146,7 +166,8 @@ enum TerminalAgentRunner {
             baseCommand: baseCommand,
             cwd: cwd,
             env: launchEnv,
-            workspaceId: workspaceId
+            workspaceId: workspaceId,
+            model: model
         )
         lifecycleLog(
             "runner.prepareLaunch.done agent=\(agent.id) workspace=\(workspaceId.uuidString) hasInitialPrompt=\(hasInitialPrompt ? 1 : 0) initialCommand=\(plan.initialCommand == nil ? 0 : 1) fallback=\(plan.fallbackCommand == nil ? 0 : 1)"
@@ -199,7 +220,8 @@ enum TerminalAgentRunner {
             baseCommand: baseCommand,
             cwd: cwd,
             env: launchEnv,
-            workspaceId: workspaceId
+            workspaceId: workspaceId,
+            model: model
         )
         lifecycleLog(
             "runner.prepareNativeFork.done agent=\(agent.id) workspace=\(workspaceId.uuidString) hasInitialPrompt=\(hasInitialPrompt ? 1 : 0) initialCommand=\(plan.initialCommand == nil ? 0 : 1) fallback=\(plan.fallbackCommand == nil ? 0 : 1)"
@@ -379,7 +401,7 @@ enum TerminalAgentRunner {
     }
 
     /// Backend dispatch for a restored agent. Codex re-uses the persisted
-    /// session id; others fall back to their normal launch command.
+    /// session id and latest recorded model; others use their normal backend.
     /// Lifecycle owns markPendingRestore + policy; this is the dispatch tail.
     static func dispatchRestoredAgentCommand(
         in workspace: Workspace,
@@ -415,12 +437,19 @@ enum TerminalAgentRunner {
             }
         }
         installAgentHooks(agent: agent, cwd: preferredCwd)
+        let restoredModel = resolvedRestoreModel(
+            for: agent,
+            persistedSession: persistedSession,
+            restoreCwd: preferredCwd,
+            workspaceId: workspace.id
+        )
         let restoredCommand = restoreLaunchCommand(
             for: agent,
             cwd: preferredCwd,
             env: launchEnv,
             workspaceId: workspace.id,
-            persistedSession: persistedSession
+            persistedSession: persistedSession,
+            model: restoredModel
         )
         let commandToDispatch: String = {
             guard agent.usesStartupBootstrap,
@@ -437,12 +466,15 @@ enum TerminalAgentRunner {
         )
 #if DEBUG
         let metadata = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: workspace.id)
-        dlog(
+        restoreAuditLog(
             "runner.dispatchRestore.detail ws=\(workspace.id.uuidString) title=\(debugWorkspaceTitle(workspace)) " +
             "agent=\(agent.id) preferredCwd=\(debugClean(preferredCwd)) fallbackCwd=\(debugClean(cwd)) " +
             "project=\(debugProject(metadata.projectId)) branch=\(debugClean(metadata.branch)) worktree=\(debugClean(metadata.worktreePath)) " +
+            "expectationPath=\(debugClean(worktreeExpectation?.path)) expectationBranch=\(debugClean(worktreeExpectation?.branch)) " +
             "persistedAgent=\(debugClean(persistedSession?.agentId)) sid=\(debugClean(persistedSession?.sessionId)) " +
-            "persistedCwd=\(debugClean(persistedSession?.cwd)) commandChars=\(commandToDispatch.count)"
+            "persistedCwd=\(debugClean(persistedSession?.cwd)) " +
+            "cwdSource=\(debugRestoreCwdSource(preferredCwd: preferredCwd, fallbackCwd: cwd, persistedCwd: persistedSession?.cwd, worktreePath: worktreeExpectation?.path)) " +
+            "model=\(restoredModel?.rawValue ?? "default") commandChars=\(commandToDispatch.count)"
         )
 #endif
         sendCommandWhenReady(
@@ -598,12 +630,21 @@ enum TerminalAgentRunner {
         cwd: String?,
         env: [String: String] = [:],
         workspaceId: UUID,
-        persistedSession: PersistedAgentSession?
+        persistedSession: PersistedAgentSession?,
+        model: AgentModelOption? = nil
     ) -> String {
+        let resolvedModel = resolvedRestoreModel(
+            for: agent,
+            persistedSession: persistedSession,
+            restoreCwd: cwd,
+            workspaceId: workspaceId,
+            preferredModel: model
+        )
         let baseCommand = restoredBaseCommand(
             for: agent,
             persistedSession: persistedSession,
-            restoreCwd: cwd
+            restoreCwd: cwd,
+            model: resolvedModel
         )
             ?? commandLine(for: agent, argv: agent.argv)
         installClaudeProjectMCPServersIfNeeded(
@@ -701,7 +742,8 @@ enum TerminalAgentRunner {
         baseCommand: String,
         cwd: String?,
         env: [String: String],
-        workspaceId: UUID
+        workspaceId: UUID,
+        model: AgentModelOption?
     ) -> AgentLaunchPlan {
         if let agent {
             installClaudeProjectMCPServersIfNeeded(
@@ -721,7 +763,8 @@ enum TerminalAgentRunner {
                     workspaceId: workspaceId,
                     initialCommand: bootstrapLaunch.initialCommand,
                     initialEnvironment: bootstrapLaunch.initialEnvironment,
-                    fallbackCommand: nil
+                    fallbackCommand: nil,
+                    model: model
                 )
             }
         }
@@ -736,7 +779,8 @@ enum TerminalAgentRunner {
             workspaceId: workspaceId,
             initialCommand: nil,
             initialEnvironment: [:],
-            fallbackCommand: fallback
+            fallbackCommand: fallback,
+            model: model
         )
     }
 
@@ -1292,7 +1336,8 @@ enum TerminalAgentRunner {
     private static func restoredBaseCommand(
         for agent: TerminalAgent,
         persistedSession: PersistedAgentSession?,
-        restoreCwd: String?
+        restoreCwd: String?,
+        model: AgentModelOption?
     ) -> String? {
         guard let persistedSession,
               persistedSession.agentId == agent.id else {
@@ -1307,12 +1352,38 @@ enum TerminalAgentRunner {
             return TerminalCommandQuoter.join(
                 [launchExecutable(for: agent), "resume"]
                 + agent.argv
+                + modelArgv(for: agent, model: model)
                 + (trimmedRestoreCwd.map { ["--cd", $0] } ?? [])
                 + [sessionId]
             )
         default:
             return nil
         }
+    }
+
+    private static func resolvedRestoreModel(
+        for agent: TerminalAgent,
+        persistedSession: PersistedAgentSession?,
+        restoreCwd: String?,
+        workspaceId: UUID,
+        preferredModel: AgentModelOption? = nil
+    ) -> AgentModelOption? {
+        let sessionModel: AgentModelOption? = {
+            guard agent.id == AgentCatalogStore.codexId,
+                  let persistedSession,
+                  persistedSession.agentId == agent.id else {
+                return nil
+            }
+            return CodexSessionScanner.shared.latestModel(
+                sessionId: persistedSession.sessionId,
+                cwd: persistedSession.cwd ?? restoreCwd
+            )
+        }()
+        let candidate = sessionModel
+            ?? preferredModel
+            ?? WorkspaceMetadataStore.shared.terminalAgentModel(for: workspaceId)
+        let resolved = AgentCatalogStore.shared.resolveModel(candidate, for: agent.id)
+        return resolved == .default ? nil : resolved
     }
 
     private static func prepareWrappedLaunch(

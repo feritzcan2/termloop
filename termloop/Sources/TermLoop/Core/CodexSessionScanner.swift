@@ -49,6 +49,11 @@ final class CodexSessionScanner {
         let snapshot: LifecycleSnapshot?
     }
 
+    private struct ModelEntry {
+        let mtime: Date
+        let model: AgentModelOption?
+    }
+
     private struct IndexState {
         let builtAt: Date
         let sessionFileById: [String: URL]
@@ -61,6 +66,7 @@ final class CodexSessionScanner {
     private var cache: [URL: CacheEntry] = [:]
     private var assistantTextCache: [URL: AssistantTextEntry] = [:]
     private var lifecycleCache: [URL: LifecycleEntry] = [:]
+    private var modelCache: [URL: ModelEntry] = [:]
     private var indexState: IndexState?
     private static let eventTimestampFormatter = ISO8601DateFormatter()
     private static let indexTTL: TimeInterval = 30
@@ -97,6 +103,14 @@ final class CodexSessionScanner {
     func lifecycleSnapshot(sessionId: String, cwd: String?) -> LifecycleSnapshot? {
         guard let file = sessionFileURL(sessionId: sessionId, cwd: cwd) else { return nil }
         return lifecycleSnapshot(file: file)
+    }
+
+    /// Returns the model from the newest Codex turn context. Reading from the
+    /// end avoids walking an entire long-lived JSONL transcript during app
+    /// restore, while still following model changes made inside Codex.
+    func latestModel(sessionId: String, cwd: String?) -> AgentModelOption? {
+        guard let file = sessionFileURL(sessionId: sessionId, cwd: cwd) else { return nil }
+        return latestModel(file: file)
     }
 
     func sessionFileURL(sessionId: String, cwd: String?) -> URL? {
@@ -325,6 +339,43 @@ final class CodexSessionScanner {
         lifecycleCache[file] = LifecycleEntry(mtime: mtime, snapshot: latest)
         cacheLock.unlock()
         return latest
+    }
+
+    private func latestModel(file: URL) -> AgentModelOption? {
+        let mtime = file.modificationDateOrEpoch
+
+        cacheLock.lock()
+        if let entry = modelCache[file], entry.mtime == mtime {
+            let cached = entry.model
+            cacheLock.unlock()
+            return cached
+        }
+        cacheLock.unlock()
+
+        guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
+        defer { try? handle.close() }
+
+        var model: AgentModelOption?
+        var iterator = CodexReverseLineIterator(handle: handle)
+        while let rawLine = iterator.next() {
+            guard rawLine.contains("turn_context"),
+                  let jsonData = rawLine.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                  (object["type"] as? String) == "turn_context",
+                  let payload = object["payload"] as? [String: Any],
+                  let rawModel = (payload["model"] as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !rawModel.isEmpty else {
+                continue
+            }
+            model = AgentModelOption(rawValue: rawModel)
+            break
+        }
+
+        cacheLock.lock()
+        modelCache[file] = ModelEntry(mtime: mtime, model: model)
+        cacheLock.unlock()
+        return model
     }
 
     private func parse(file: URL, mtime: Date, creation: Date) -> CodexSessionMetadata? {
@@ -577,6 +628,47 @@ private struct CodexLineIterator: Sequence, IteratorProtocol {
             return rest.isEmpty ? nil : rest
         }
         return nil
+    }
+}
+
+private struct CodexReverseLineIterator: Sequence, IteratorProtocol {
+    private let handle: FileHandle
+    private var offset: UInt64
+    private var buffer = Data()
+    private var reachedStart: Bool
+    private let chunk = 65_536
+
+    init(handle: FileHandle) {
+        self.handle = handle
+        let endOffset = (try? handle.seekToEnd()) ?? 0
+        self.offset = endOffset
+        self.reachedStart = endOffset == 0
+    }
+
+    mutating func next() -> String? {
+        while true {
+            if let newline = buffer.lastIndex(of: 0x0A) {
+                let lineStart = buffer.index(after: newline)
+                let lineData = Data(buffer[lineStart..<buffer.endIndex])
+                buffer.removeSubrange(newline..<buffer.endIndex)
+                if lineData.isEmpty { continue }
+                return String(data: lineData, encoding: .utf8) ?? ""
+            }
+
+            if reachedStart {
+                guard !buffer.isEmpty else { return nil }
+                let line = String(data: buffer, encoding: .utf8) ?? ""
+                buffer.removeAll()
+                return line.isEmpty ? nil : line
+            }
+
+            let readLength = Int(Swift.min(UInt64(chunk), offset))
+            offset -= UInt64(readLength)
+            try? handle.seek(toOffset: offset)
+            let data = SafeFileHandleRead.readData(ofLength: readLength, from: handle)
+            buffer.insert(contentsOf: data, at: buffer.startIndex)
+            reachedStart = offset == 0
+        }
     }
 }
 
