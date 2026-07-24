@@ -127,6 +127,14 @@ enum TermLoopHooks {
         return String(id.uuidString.prefix(8))
     }
 
+    private static func debugFileModificationTime(_ url: URL) -> String {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let date = attributes[.modificationDate] as? Date else {
+            return "nil"
+        }
+        return String(format: "%.3f", date.timeIntervalSince1970)
+    }
+
     private static func debugSession(_ session: PersistedAgentSession?) -> String {
         guard let session else { return "nil" }
         return "agent=\(session.agentId) sid=\(session.sessionId) cwd=\(debugClean(session.cwd))"
@@ -151,6 +159,54 @@ enum TermLoopHooks {
         ].joined(separator: " ")
     }
 
+    private static func debugPathRelation(_ candidate: String?, to root: String?) -> String {
+        let rawCandidate = (candidate ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawRoot = (root ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawCandidate.isEmpty, !rawRoot.isEmpty else { return "unknown" }
+        let candidatePath = URL(fileURLWithPath: rawCandidate).standardizedFileURL.path
+        let rootPath = URL(fileURLWithPath: rawRoot).standardizedFileURL.path
+        return candidatePath == rootPath || candidatePath.hasPrefix(rootPath + "/")
+            ? "inside"
+            : "outside"
+    }
+
+    private static func debugBindingInvariant(
+        _ metadata: WorkspaceMetadataStore.Metadata,
+        workspaceCurrentDirectory: String?,
+        stampedCurrentDirectory: String?
+    ) -> String {
+        let persistedRelation = debugPathRelation(
+            metadata.persistedAgentSession?.cwd,
+            to: metadata.worktreePath
+        )
+        let stampedRelation = debugPathRelation(stampedCurrentDirectory, to: metadata.worktreePath)
+        let workspaceRelation = debugPathRelation(workspaceCurrentDirectory, to: metadata.worktreePath)
+        let hasBranch = !(metadata.branch ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty
+        let hasWorktree = !(metadata.worktreePath ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty
+        let status: String
+        if !hasBranch && !hasWorktree {
+            status = "unbound"
+        } else if !hasBranch || !hasWorktree {
+            status = "partial-binding"
+        } else if persistedRelation == "outside" {
+            status = "persisted-cwd-outside-worktree"
+        } else {
+            status = "consistent"
+        }
+        return "bindingInvariant=\(status) persistedVsWorktree=\(persistedRelation) " +
+            "stampedVsWorktree=\(stampedRelation) workspaceVsWorktree=\(workspaceRelation)"
+    }
+
+    private static func debugHasPersistedCwdOutsideWorktree(
+        _ metadata: WorkspaceMetadataStore.Metadata
+    ) -> Bool {
+        debugPathRelation(metadata.persistedAgentSession?.cwd, to: metadata.worktreePath) == "outside"
+    }
+
     private static func debugRestoreEntry(_ entry: PendingRestoreWorkspaceMetadata) -> String {
         [
             "restoreId=\(entry.termLoopRestoreId?.uuidString ?? "nil")",
@@ -166,10 +222,15 @@ enum TermLoopHooks {
         workspace: Workspace,
         entry: PendingRestoreWorkspaceMetadata
     ) {
-        dlog(
+        restoreAuditLog(
             "session.restore.map stage=\(stage) entry=\(entryIndex) ws=\(workspace.id.uuidString) " +
             "wsTitle=\(debugClean(workspaceDisplayTitle(workspace))) wsCwd=\(debugClean(workspace.currentDirectory)) " +
-            debugRestoreEntry(entry)
+            debugRestoreEntry(entry) + " " +
+            debugBindingInvariant(
+                entry.metadata,
+                workspaceCurrentDirectory: workspace.currentDirectory,
+                stampedCurrentDirectory: entry.currentDirectory
+            )
         )
     }
 
@@ -226,7 +287,7 @@ enum TermLoopHooks {
         totalWorkspaceCount: Int
     ) {
 #if DEBUG
-        dlog(
+        restoreAuditLog(
             "session.restore.begin windowTabs=\(totalWorkspaceCount) selectedIndex=\(selectedWorkspaceIndex.map(String.init) ?? "nil") " +
             "pendingMetadataWindows=\(pendingRestoreMetadata.count)"
         )
@@ -245,7 +306,7 @@ enum TermLoopHooks {
     ) {
         workspace.applyTermLoopRestoreId(snapshot.termLoopRestoreId)
 #if DEBUG
-        dlog(
+        restoreAuditLog(
             "session.restore.snapshot ws=\(workspace.id.uuidString) " +
             "restoreId=\(workspace.termLoopRestoreId.uuidString) " +
             "title=\(debugClean(snapshot.processTitle)) cwd=\(debugClean(snapshot.currentDirectory))"
@@ -442,6 +503,20 @@ enum TermLoopHooks {
             workspaceCurrentDirectory: workspace.currentDirectory
         )
 #if DEBUG
+        if debugHasPersistedCwdOutsideWorktree(metadata) {
+            restoreAuditLog(
+                "sidecar.save.binding-mismatch action=preserved ws=\(workspace.id.uuidString) " +
+                "restoreId=\(workspace.termLoopRestoreId.uuidString) " +
+                "title=\(debugClean(workspaceDisplayTitle(workspace))) " +
+                "workspaceCwd=\(debugClean(workspace.currentDirectory)) " +
+                debugSnapshotMetadata(metadata, workspaceId: workspace.id) + " " +
+                debugBindingInvariant(
+                    metadata,
+                    workspaceCurrentDirectory: workspace.currentDirectory,
+                    stampedCurrentDirectory: nil
+                )
+            )
+        }
         if originalMetadata != metadata {
             dlog(
                 "session.save.heal ws=\(workspace.id.uuidString) title=\(debugClean(workspaceDisplayTitle(workspace))) " +
@@ -973,15 +1048,37 @@ enum TermLoopHooks {
         AgentEngine.shared.bootstrap(builtinBundleDir: BuiltinTemplates.bundleDir)
 
         let url = TermLoopSessionSnapshot.sidecarURL(for: sessionURL)
+#if DEBUG
+        restoreAuditLog(
+            "sidecar.load.begin session=\(sessionURL.path) sidecar=\(url.path) " +
+            "exists=\(FileManager.default.fileExists(atPath: url.path) ? 1 : 0) " +
+            "sessionMtime=\(debugFileModificationTime(sessionURL)) sidecarMtime=\(debugFileModificationTime(url)) " +
+            "bundle=\(Bundle.main.bundleIdentifier ?? "nil") log=\(DebugEventLog.logFilePath)"
+        )
+#endif
         guard FileManager.default.fileExists(atPath: url.path) else {
             // First launch after Plan A ships: no sidecar yet, bootstrap a
             // Default project so every workspace has a valid owner.
+#if DEBUG
+            restoreAuditLog("sidecar.load.missing action=bootstrap-default")
+#endif
             _ = ProjectStore.shared.bootstrap(from: nil)
             return
         }
         do {
             let data = try Data(contentsOf: url)
             let snapshot = try JSONDecoder().decode(TermLoopSessionSnapshot.self, from: data)
+#if DEBUG
+            let restoreSource = snapshot.workspaceRestoreStampsByPosition == nil
+                ? "legacy-position"
+                : "restore-stamp"
+            restoreAuditLog(
+                "sidecar.load.decoded version=\(snapshot.version) bytes=\(data.count) source=\(restoreSource) " +
+                "projects=\(snapshot.projects.count) windows=\((snapshot.workspaceRestoreStampsByPosition ?? []).count) " +
+                "legacyWindows=\((snapshot.workspaceMetadataByPosition ?? []).count) " +
+                "hidden=\(snapshot.hiddenWorkspaceMetadataById?.count ?? 0)"
+            )
+#endif
             ProjectStore.shared.restoreFromSidecar(
                 projects: snapshot.projects,
                 activeProjectId: snapshot.activeProjectId.flatMap(UUID.init(uuidString:)),
@@ -1013,10 +1110,30 @@ enum TermLoopHooks {
                     }
                 }
             }
+#if DEBUG
+            for (windowIndex, entries) in pendingRestoreMetadata.enumerated() {
+                for (entryIndex, entry) in entries.enumerated() {
+                    restoreAuditLog(
+                        "sidecar.load.entry window=\(windowIndex) entry=\(entryIndex) " +
+                        debugRestoreEntry(entry) + " " +
+                        debugBindingInvariant(
+                            entry.metadata,
+                            workspaceCurrentDirectory: nil,
+                            stampedCurrentDirectory: entry.currentDirectory
+                        )
+                    )
+                }
+            }
+#endif
             restoreHiddenWorkspaceMetadata(snapshot.hiddenWorkspaceMetadataById)
             WorkspaceMetadataStore.shared.restoreWorktreeLabels(snapshot.worktreeLabelsByPath)
         } catch {
             logger.error("sidecar load failed: \(String(describing: error), privacy: .public)")
+#if DEBUG
+            restoreAuditLog(
+                "sidecar.load.failed error=\(debugClean(String(describing: error))) action=bootstrap-default"
+            )
+#endif
             _ = ProjectStore.shared.bootstrap(from: nil)
         }
         performWorktreeBootstrapCleanup()
@@ -1026,6 +1143,11 @@ enum TermLoopHooks {
         if !migrated.isEmpty {
             pendingMigrationToastWorkspaceIds.formUnion(migrated)
         }
+#if DEBUG
+        restoreAuditLog(
+            "sidecar.load.complete pendingWindows=\(pendingRestoreMetadata.count) migratedAgents=\(migrated.count)"
+        )
+#endif
     }
 
     private static func restoreHiddenWorkspaceMetadata(
@@ -1041,9 +1163,14 @@ enum TermLoopHooks {
             )
             metadata.isHidden = true
 #if DEBUG
-            dlog(
+            restoreAuditLog(
                 "session.restore.hidden ws=\(workspaceId.uuidString) " +
-                debugSnapshotMetadata(metadata, workspaceId: workspaceId)
+                debugSnapshotMetadata(metadata, workspaceId: workspaceId) + " " +
+                debugBindingInvariant(
+                    metadata,
+                    workspaceCurrentDirectory: nil,
+                    stampedCurrentDirectory: nil
+                )
             )
 #endif
             WorkspaceMetadataStore.shared.restoreMetadata(metadata, forWorkspaceId: workspaceId)
@@ -1185,7 +1312,7 @@ enum TermLoopHooks {
         let windowMetadata = pendingRestoreMetadata.isEmpty ? [] : pendingRestoreMetadata.removeFirst()
         let autoRestore = isClaudeAutoRestoreEnabled()
 #if DEBUG
-        dlog(
+        restoreAuditLog(
             "session.restore.didRestoreWorkspaces workspaces=\(workspaces.count) metadataEntries=\(windowMetadata.count) " +
             "autoRestoreClaude=\(autoRestore ? 1 : 0)"
         )
@@ -1198,6 +1325,22 @@ enum TermLoopHooks {
         for workspace in workspaces {
             let pendingMetadata = metadataByWorkspaceId[workspace.id]
             let rawMetadata = pendingMetadata?.metadata ?? WorkspaceMetadataStore.Metadata()
+#if DEBUG
+            restoreAuditLog(
+                "session.restore.metadata.input ws=\(workspace.id.uuidString) " +
+                "restoreId=\(workspace.termLoopRestoreId.uuidString) " +
+                "title=\(debugClean(workspaceDisplayTitle(workspace))) " +
+                "workspaceCwd=\(debugClean(workspace.currentDirectory)) " +
+                "stampedCwd=\(debugClean(pendingMetadata?.currentDirectory)) " +
+                "source=\(pendingMetadata == nil ? "empty" : "sidecar") " +
+                debugMetadata(rawMetadata) + " " +
+                debugBindingInvariant(
+                    rawMetadata,
+                    workspaceCurrentDirectory: workspace.currentDirectory,
+                    stampedCurrentDirectory: pendingMetadata?.currentDirectory
+                )
+            )
+#endif
             var metadata = healedMetadata(
                 rawMetadata,
                 workspaceCurrentDirectory: workspace.currentDirectory,
@@ -1210,19 +1353,33 @@ enum TermLoopHooks {
             )
             WorkspaceMetadataStore.shared.restoreMetadata(metadata, forWorkspaceId: workspace.id)
 #if DEBUG
-            dlog(
+            restoreAuditLog(
                 "session.restore.metadata ws=\(workspace.id.uuidString) title=\(debugClean(workspaceDisplayTitle(workspace))) " +
                 "workspaceCwd=\(debugClean(workspace.currentDirectory)) stampedCwd=\(debugClean(pendingMetadata?.currentDirectory)) " +
-                "source=\(pendingMetadata == nil ? "empty" : "sidecar") \(debugMetadata(metadata))"
+                "source=\(pendingMetadata == nil ? "empty" : "sidecar") changed=\(rawMetadata == metadata ? 0 : 1) " +
+                debugMetadata(metadata) + " " +
+                debugBindingInvariant(
+                    metadata,
+                    workspaceCurrentDirectory: workspace.currentDirectory,
+                    stampedCurrentDirectory: pendingMetadata?.currentDirectory
+                )
             )
+            if debugHasPersistedCwdOutsideWorktree(metadata) {
+                restoreAuditLog(
+                    "session.restore.binding-mismatch action=preserved ws=\(workspace.id.uuidString) " +
+                    "restoreId=\(workspace.termLoopRestoreId.uuidString) " +
+                    "title=\(debugClean(workspaceDisplayTitle(workspace))) " +
+                    debugMetadata(metadata)
+                )
+            }
 #endif
         }
         let restoredTabManager = workspaces.first?.owningTabManager
         if let restoredTabManager {
             // Bridge membership is positional metadata, so reconciliation must
             // happen here—not on the earlier @Published tabs assignment. This
-            // partial pass also removes unowned hidden helpers before their
-            // persisted agent sessions can auto-resume.
+            // partial pass rebinds durable Ask-To helpers before their exact
+            // persisted agent sessions auto-resume.
             BridgeCoordinator.shared.workspaceMetadataDidRestore(
                 tabManager: restoredTabManager
             )
@@ -1236,7 +1393,7 @@ enum TermLoopHooks {
         let didRecoverBeforeRestore = backfillPersistedAgentSessionsIfNeeded()
 #if DEBUG
         if didRecoverBeforeRestore {
-            dlog("session.restore.backfill-before-agent-restore recovered=1")
+            restoreAuditLog("session.restore.backfill-before-agent-restore recovered=1")
         }
 #endif
 
@@ -1249,7 +1406,7 @@ enum TermLoopHooks {
             !TermLoopDeferredWorkspaceRestore.isDeferred(workspace: $0)
         }
 #if DEBUG
-        dlog(
+        restoreAuditLog(
             "session.restore.materialized count=\(materializedWorkspaces.count) " +
             "deferred=\(liveRestoredWorkspaces.count - materializedWorkspaces.count) " +
             "pruned=\(workspaces.count - liveRestoredWorkspaces.count)"
@@ -1269,11 +1426,17 @@ enum TermLoopHooks {
     /// metadata. Partial per-window passes retain unresolved cross-window
     /// endpoints; only this app-level completion may drop them.
     static func completeStartupSessionRestore() {
+#if DEBUG
+        restoreAuditLog("session.restore.complete")
+#endif
         BridgeCoordinator.shared.startupSessionRestoreDidFinish()
     }
 
     static func completeStartupSessionRestoreIfUnavailable(canRestore: Bool) {
         guard !canRestore else { return }
+#if DEBUG
+        restoreAuditLog("session.restore.unavailable action=complete-without-snapshot")
+#endif
         completeStartupSessionRestore()
     }
 
@@ -1281,18 +1444,26 @@ enum TermLoopHooks {
         entries: [PendingRestoreWorkspaceMetadata],
         workspaces: [Workspace]
     ) -> [UUID: PendingRestoreWorkspaceMetadata] {
+#if DEBUG
+        if entries.isEmpty || workspaces.isEmpty {
+            restoreAuditLog(
+                "session.restore.resolve.skip entries=\(entries.count) workspaces=\(workspaces.count)"
+            )
+        }
+#endif
         guard !entries.isEmpty, !workspaces.isEmpty else { return [:] }
 
 #if DEBUG
-        dlog(
+        restoreAuditLog(
             "session.restore.resolve entries=\(entries.count) workspaces=\(workspaces.count)"
         )
         for (index, entry) in entries.enumerated() {
-            dlog("session.restore.resolve.entry index=\(index) \(debugRestoreEntry(entry))")
+            restoreAuditLog("session.restore.resolve.entry index=\(index) \(debugRestoreEntry(entry))")
         }
         for workspace in workspaces {
-            dlog(
+            restoreAuditLog(
                 "session.restore.resolve.workspace ws=\(workspace.id.uuidString) " +
+                "restoreId=\(workspace.termLoopRestoreId.uuidString) " +
                 "title=\(debugClean(workspaceDisplayTitle(workspace))) cwd=\(debugClean(workspace.currentDirectory))"
             )
         }
@@ -1388,6 +1559,22 @@ enum TermLoopHooks {
             }
             assign(entryIndex, to: workspace, stage: "leftover")
         }
+
+#if DEBUG
+        let unusedEntryIndices = entries.indices.filter { !usedEntryIndices.contains($0) }
+        let unresolvedWorkspaceIds = workspaces
+            .filter { resolved[$0.id] == nil }
+            .map { $0.id.uuidString }
+        restoreAuditLog(
+            "session.restore.resolve.result matched=\(resolved.count) entries=\(entries.count) " +
+            "workspaces=\(workspaces.count) ambiguousRestoreIds=\(ambiguousRestoreIds.count) " +
+            "unusedEntries=\(unusedEntryIndices.map(String.init).joined(separator: ",")) " +
+            "unresolvedWorkspaces=\(unresolvedWorkspaceIds.joined(separator: ","))"
+        )
+        for restoreId in ambiguousRestoreIds.sorted(by: { $0.uuidString < $1.uuidString }) {
+            restoreAuditLog("session.restore.resolve.ambiguous restoreId=\(restoreId.uuidString)")
+        }
+#endif
 
         return resolved
     }
@@ -1575,7 +1762,7 @@ enum TermLoopHooks {
                 var healed = metadata
                 healed.persistedAgentSession = replacement.session
 #if DEBUG
-                dlog(
+                restoreAuditLog(
                     "session.restore.reconcile-persisted ws=\(workspace.id.uuidString) title=\(debugClean(workspaceDisplayTitle(workspace))) " +
                     "agent=\(persisted.agentId) oldSid=\(persisted.sessionId) oldTitle=\(debugClean(currentTitle)) oldScore=\(currentScore) " +
                     "newSid=\(replacement.session.sessionId) newTitle=\(debugClean(replacement.title)) newScore=\(replacementScore)"
@@ -1590,7 +1777,7 @@ enum TermLoopHooks {
         // Only rewrite when a strictly better high-confidence transcript was
         // found above.
 #if DEBUG
-        dlog(
+        restoreAuditLog(
             "session.restore.keep-mismatched-persisted ws=\(workspace.id.uuidString) title=\(debugClean(workspaceDisplayTitle(workspace))) " +
             "agent=\(persisted.agentId) sid=\(persisted.sessionId) sessionTitle=\(debugClean(currentTitle)) score=\(currentScore)"
         )
@@ -1721,6 +1908,13 @@ enum TermLoopHooks {
             logger.info(
                 "restore worktree branch recovered ws=\(binding.workspaceId.uuidString, privacy: .public) branch=\(binding.branch, privacy: .public)"
             )
+#if DEBUG
+            restoreAuditLog(
+                "session.restore.worktree-binding-recovered ws=\(binding.workspaceId.uuidString) " +
+                "branch=\(debugClean(binding.branch)) worktree=\(debugClean(binding.worktreePath)) " +
+                "baseline=\(debugClean(binding.baselineHead))"
+            )
+#endif
         }
     }
 
@@ -3567,7 +3761,7 @@ private enum TermLoopDeferredWorkspaceRestore {
         applyPlaceholderMetadata(to: workspace, snapshot: snapshot)
         snapshotsByWorkspaceId[workspace.id] = snapshot
 #if DEBUG
-        dlog(
+        restoreAuditLog(
             "session.restore.deferWorkspace workspace=\(workspace.id.uuidString.prefix(8)) " +
             "index=\(index) selectedIndex=\(context.selectedIndex) total=\(context.totalCount) " +
             "queue=\(backgroundMaterializeQueue.count) remaining=\(snapshotsByWorkspaceId.count)"
@@ -3587,7 +3781,7 @@ private enum TermLoopDeferredWorkspaceRestore {
         }
 #if DEBUG
         let startedAt = ProcessInfo.processInfo.systemUptime
-        dlog("session.restore.materializeWorkspace.start workspace=\(workspace.id.uuidString.prefix(8)) trigger=\(trigger)")
+        restoreAuditLog("session.restore.materializeWorkspace.start workspace=\(workspace.id.uuidString.prefix(8)) trigger=\(trigger)")
 #endif
         workspace.restoreSessionSnapshot(snapshot)
         TerminalAgentLifecycle.restoreWorkspaces(
@@ -3597,7 +3791,7 @@ private enum TermLoopDeferredWorkspaceRestore {
         TermLoopHooks.scheduleStartupAgentRestoreSelfHeal(workspaces: [workspace])
 #if DEBUG
         let elapsedMs = (ProcessInfo.processInfo.systemUptime - startedAt) * 1000
-        dlog(
+        restoreAuditLog(
             "session.restore.materializeWorkspace.finish workspace=\(workspace.id.uuidString.prefix(8)) " +
             "ms=\(String(format: "%.2f", elapsedMs)) remaining=\(snapshotsByWorkspaceId.count) " +
             "queue=\(backgroundMaterializeQueue.count) trigger=\(trigger)"
@@ -3619,7 +3813,7 @@ private enum TermLoopDeferredWorkspaceRestore {
         guard !newIds.isEmpty else { return }
         backgroundMaterializeQueue.append(contentsOf: newIds)
 #if DEBUG
-        dlog(
+        restoreAuditLog(
             "session.restore.background.enqueue added=\(newIds.count) " +
             "queue=\(backgroundMaterializeQueue.count) remaining=\(snapshotsByWorkspaceId.count)"
         )

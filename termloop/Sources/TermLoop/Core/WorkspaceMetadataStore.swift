@@ -46,6 +46,10 @@ final class WorkspaceMetadataStore: ObservableObject {
         /// pre-feature workspaces — `TerminalAgentRunner` falls back to the
         /// agent's registry default in that case.
         var permissionMode: String?
+        /// Model selected when this workspace's terminal agent was launched.
+        /// Codex restore prefers the newest model recorded in its session
+        /// JSONL, then falls back to this value for sessions with no turn yet.
+        var terminalAgentModel: AgentModelOption?
         /// Persisted agent session used for relaunch restore. This is the
         /// only on-disk source for `resume` metadata (agent/session/cwd).
         var persistedAgentSession: PersistedAgentSession?
@@ -84,8 +88,8 @@ final class WorkspaceMetadataStore: ObservableObject {
         /// for task cleanup and deletion prompts.
         var assignedTicket: AssignedTicket?
         /// When true, the workspace stays functional/selectable but is omitted
-        /// from the normal sidebar tree. Used for transient helper agents
-        /// whose primary UI lives elsewhere (for example an Ask Codex bridge).
+        /// from the normal sidebar tree. Used for internal helper agents whose
+        /// primary UI lives elsewhere (for example an Ask Codex bridge).
         var hideFromWorkspaceTree: Bool?
         /// True when this agent session was spawned from a System Starter
         /// "Agent" button. System sessions are non-dismissible in the
@@ -616,6 +620,10 @@ final class WorkspaceMetadataStore: ObservableObject {
         byWorkspaceId[workspaceId]?.permissionMode
     }
 
+    func terminalAgentModel(for workspaceId: UUID) -> AgentModelOption? {
+        byWorkspaceId[workspaceId]?.terminalAgentModel
+    }
+
     func resolvedClaudeCredentialProfileId(for workspaceId: UUID) -> String? {
         byWorkspaceId[workspaceId]?.resolvedClaudeCredentialProfileId
     }
@@ -635,6 +643,13 @@ final class WorkspaceMetadataStore: ObservableObject {
         let newValue = (normalized?.isEmpty ?? true) ? nil : normalized
         guard current.permissionMode != newValue else { return }
         current.permissionMode = newValue
+        byWorkspaceId[workspaceId] = current
+    }
+
+    func setTerminalAgentModel(_ model: AgentModelOption?, for workspaceId: UUID) {
+        var current = byWorkspaceId[workspaceId, default: Metadata()]
+        guard current.terminalAgentModel != model else { return }
+        current.terminalAgentModel = model
         byWorkspaceId[workspaceId] = current
     }
 

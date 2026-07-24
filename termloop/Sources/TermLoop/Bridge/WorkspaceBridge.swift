@@ -262,6 +262,40 @@ struct WorkspaceBridge: Identifiable, Equatable, Hashable {
     }
 }
 
+/// Restore-time identity for one persisted bridge endpoint. Ask-To helpers
+/// additionally carry a session floor and the open request's launch credential
+/// so a resumed MCP process remains bound to the same durable conversation.
+struct WorkspaceBridgeAgentRestoreContext: Equatable {
+    let bridgeId: UUID
+    let role: BridgeSender
+    let agentId: String
+    let isAskToHelper: Bool
+    let minimumSessionDate: Date?
+    let launchEnvironment: [String: String]
+}
+
+/// Shared identity policy for Ask-To helpers. Helpers intentionally share the
+/// source workspace's cwd, so cwd matching alone cannot distinguish their
+/// transcript from older agent sessions in that checkout.
+enum AskToHelperRestorePolicy {
+    private static let sessionFloorSkewBuffer: TimeInterval = 1
+
+    static func minimumSessionDate(for bridge: WorkspaceBridge) -> Date {
+        bridge.createdAt.addingTimeInterval(-sessionFloorSkewBuffer)
+    }
+
+    static func accepts(
+        sessionFileCreationDate: Date?,
+        persistedUpdatedAt: Date?,
+        minimumSessionDate: Date
+    ) -> Bool {
+        guard let identityDate = sessionFileCreationDate ?? persistedUpdatedAt else {
+            return false
+        }
+        return identityDate >= minimumSessionDate
+    }
+}
+
 extension WorkspaceBridge: Codable {
     enum CodingKeys: String, CodingKey {
         case id

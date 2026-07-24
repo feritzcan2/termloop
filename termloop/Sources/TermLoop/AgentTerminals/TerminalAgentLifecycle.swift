@@ -49,6 +49,17 @@ final class TerminalAgentLifecycle {
         debugClean(workspace.customTitle ?? workspace.title)
     }
 
+    private static func debugPathRelation(_ candidate: String?, to root: String?) -> String {
+        let rawCandidate = (candidate ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawRoot = (root ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawCandidate.isEmpty, !rawRoot.isEmpty else { return "unknown" }
+        let candidatePath = URL(fileURLWithPath: rawCandidate).standardizedFileURL.path
+        let rootPath = URL(fileURLWithPath: rawRoot).standardizedFileURL.path
+        return candidatePath == rootPath || candidatePath.hasPrefix(rootPath + "/")
+            ? "inside"
+            : "outside"
+    }
+
     private static func debugMetadata(
         _ metadata: WorkspaceMetadataStore.Metadata,
         workspace: Workspace
@@ -61,7 +72,9 @@ final class TerminalAgentLifecycle {
             "terminalAgent=\(debugClean(metadata.terminalAgentId))",
             "branch=\(debugClean(metadata.branch))",
             "worktree=\(debugClean(metadata.worktreePath))",
-            "persisted={\(debugSession(metadata.persistedAgentSession))}"
+            "persisted={\(debugSession(metadata.persistedAgentSession))}",
+            "persistedVsWorktree=\(debugPathRelation(metadata.persistedAgentSession?.cwd, to: metadata.worktreePath))",
+            "workspaceVsWorktree=\(debugPathRelation(workspace.currentDirectory, to: metadata.worktreePath))"
         ].joined(separator: " ")
     }
 
@@ -227,6 +240,10 @@ final class TerminalAgentLifecycle {
             state: TerminalAgentRunner.pendingPlaceholderState(
                 hasInitialPrompt: launch.hasInitialPrompt
             )
+        )
+        WorkspaceMetadataStore.shared.setTerminalAgentModel(
+            launch.plan.model,
+            for: workspace.id
         )
         TerminalAgentRunner.applyWorktreeBinding(
             launch.worktreeExpectation,
@@ -450,6 +467,7 @@ final class TerminalAgentLifecycle {
                     hasInitialPrompt: hasInitialPrompt
                 )
             )
+            WorkspaceMetadataStore.shared.setTerminalAgentModel(model, for: workspace.id)
             TerminalAgentRunner.dispatchAgentLaunchCommand(
                 in: workspace,
                 agent: agent,
@@ -493,7 +511,7 @@ final class TerminalAgentLifecycle {
         autoRestoreClaude: Bool
     ) {
 #if DEBUG
-        dlog("agent-restore.batch count=\(workspaces.count) autoRestoreClaude=\(autoRestoreClaude ? 1 : 0)")
+        restoreAuditLog("agent-restore.batch count=\(workspaces.count) autoRestoreClaude=\(autoRestoreClaude ? 1 : 0)")
 #endif
         for (index, workspace) in workspaces.enumerated() {
             if workspaces.count > 1, index > 0 {
@@ -503,41 +521,82 @@ final class TerminalAgentLifecycle {
                 continue
             }
             let metadata = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: workspace.id)
-            let bridgeAgentId = bridgeAgentId(forWorkspaceId: workspace.id, metadata: metadata)
+            let bridgeRestoreContext = WorkspaceBridgeStore.shared.agentRestoreContext(
+                forWorkspaceId: workspace.id
+            )
+            let bridgeAgentId = bridgeRestoreContext?.agentId
             guard let agentId = bridgeAgentId
                 ?? metadata.persistedAgentSession?.agentId
                 ?? metadata.terminalAgentId else {
 #if DEBUG
-                dlog("agent-restore.skip reason=no-agent \(debugMetadata(metadata, workspace: workspace))")
+                restoreAuditLog("agent-restore.skip reason=no-agent \(debugMetadata(metadata, workspace: workspace))")
 #endif
                 continue
             }
+            let minimumSessionDate: Date? = {
+                guard bridgeRestoreContext?.isAskToHelper == true,
+                      TerminalAgentRunner.supportsResume(agentId: agentId) else {
+                    return nil
+                }
+                return bridgeRestoreContext?.minimumSessionDate
+            }()
             let persistedForRestore = persistedSessionForRestore(
                 metadata.persistedAgentSession,
                 agentId: agentId,
-                bridgeAgentOverride: bridgeAgentId != nil
+                bridgeAgentOverride: bridgeRestoreContext != nil,
+                minimumSessionDate: minimumSessionDate
             )
+            let requiresExactAskToSession = bridgeRestoreContext?.isAskToHelper == true
+                && TerminalAgentRunner.supportsResume(agentId: agentId)
 
 #if DEBUG
-            dlog("agent-restore.evaluate agent=\(agentId) bridgeOverride=\(bridgeAgentId ?? "nil") persistedForRestore=\(persistedForRestore?.sessionId ?? "nil") \(debugMetadata(metadata, workspace: workspace))")
+            restoreAuditLog(
+                "agent-restore.evaluate agent=\(agentId) bridgeOverride=\(bridgeAgentId ?? "nil") " +
+                "bridge=\(bridgeRestoreContext?.bridgeId.uuidString ?? "nil") " +
+                "bridgeRole=\(bridgeRestoreContext?.role.rawValue ?? "nil") " +
+                "askToHelper=\(bridgeRestoreContext?.isAskToHelper == true ? 1 : 0) " +
+                "persistedForRestore=\(persistedForRestore?.sessionId ?? "nil") " +
+                debugMetadata(metadata, workspace: workspace)
+            )
 #endif
 
-            if bridgeAgentId != nil, persistedForRestore == nil {
+            if requiresExactAskToSession, persistedForRestore == nil {
+#if DEBUG
+                restoreAuditLog(
+                    "agent-restore.skip reason=ask-to-exact-session-unavailable agent=\(agentId) " +
+                    "bridge=\(bridgeRestoreContext?.bridgeId.uuidString ?? "nil") " +
+                    "persisted=\(metadata.persistedAgentSession?.sessionId ?? "nil") " +
+                    debugMetadata(metadata, workspace: workspace)
+                )
+#endif
+                continue
+            }
+
+            if bridgeRestoreContext != nil, persistedForRestore == nil {
                 guard let agent = TerminalAgentRegistry.shared.agent(id: agentId) else {
 #if DEBUG
-                    dlog("agent-restore.skip bridge-fresh reason=unknown-agent agent=\(agentId) \(debugMetadata(metadata, workspace: workspace))")
+                    restoreAuditLog("agent-restore.skip bridge-fresh reason=unknown-agent agent=\(agentId) \(debugMetadata(metadata, workspace: workspace))")
 #endif
                     continue
                 }
+                let worktreeExpectation = try? workspace.termLoopWorktreeExpectation()
                 let cwd: String? = (try? workspace.termLoopSpawnCwd()) ?? {
                     let raw = workspace.currentDirectory
                         .trimmingCharacters(in: .whitespacesAndNewlines)
                     return raw.isEmpty ? nil : raw
                 }()
-                let env = (try? workspace.termLoopWorktreeExpectation())?.environment ?? [:]
+                let env = restoreEnvironment(
+                    worktreeExpectation: worktreeExpectation,
+                    bridgeRestoreContext: bridgeRestoreContext
+                )
                 TerminalAgentActivityStore.shared.markPendingRestore(workspaceId: workspace.id)
 #if DEBUG
-                dlog("agent-restore.dispatch bridge-fresh agent=\(agent.id) cwd=\(debugClean(cwd)) \(debugMetadata(metadata, workspace: workspace))")
+                restoreAuditLog(
+                    "agent-restore.dispatch bridge-fresh agent=\(agent.id) cwd=\(debugClean(cwd)) " +
+                    "expectationPath=\(debugClean(worktreeExpectation?.path)) " +
+                    "cwdVsExpectation=\(debugPathRelation(cwd, to: worktreeExpectation?.path)) " +
+                    debugMetadata(metadata, workspace: workspace)
+                )
 #endif
                 TermLoopHooks.restoredTerminalLauncher(workspace, agent, cwd, env)
                 continue
@@ -547,25 +606,25 @@ final class TerminalAgentLifecycle {
             case .claudeCoordinator:
                 guard autoRestoreClaude else {
 #if DEBUG
-                    dlog("agent-restore.skip backend=claude reason=auto-restore-disabled \(debugMetadata(metadata, workspace: workspace))")
+                    restoreAuditLog("agent-restore.skip backend=claude reason=auto-restore-disabled \(debugMetadata(metadata, workspace: workspace))")
 #endif
                     continue
                 }
                 guard let persisted = persistedForRestore else {
 #if DEBUG
-                    dlog("agent-restore.skip backend=claude reason=missing-persisted-session \(debugMetadata(metadata, workspace: workspace))")
+                    restoreAuditLog("agent-restore.skip backend=claude reason=missing-persisted-session \(debugMetadata(metadata, workspace: workspace))")
 #endif
                     continue
                 }
                 guard persisted.agentId == TerminalAgent.claudeId else {
 #if DEBUG
-                    dlog("agent-restore.skip backend=claude reason=persisted-agent-mismatch persistedAgent=\(persisted.agentId) \(debugMetadata(metadata, workspace: workspace))")
+                    restoreAuditLog("agent-restore.skip backend=claude reason=persisted-agent-mismatch persistedAgent=\(persisted.agentId) \(debugMetadata(metadata, workspace: workspace))")
 #endif
                     continue
                 }
                 TerminalAgentActivityStore.shared.markPendingRestore(workspaceId: workspace.id)
 #if DEBUG
-                dlog("agent-restore.dispatch backend=claude sid=\(persisted.sessionId) \(debugMetadata(metadata, workspace: workspace))")
+                restoreAuditLog("agent-restore.dispatch backend=claude sid=\(persisted.sessionId) \(debugMetadata(metadata, workspace: workspace))")
 #endif
                 ClaudeRestoreCoordinator.shared.restoreAfterSessionLoad(
                     workspaceId: workspace.id,
@@ -578,7 +637,7 @@ final class TerminalAgentLifecycle {
                     persistedSession: persistedForRestore
                 ) else {
 #if DEBUG
-                    dlog(
+                    restoreAuditLog(
                         "agent-restore.skip backend=generic reason=\(debugGenericIneligibilityReason(agentId: agentId, persistedSession: persistedForRestore)) " +
                         debugMetadata(metadata, workspace: workspace)
                     )
@@ -588,20 +647,27 @@ final class TerminalAgentLifecycle {
                 guard let agent = TerminalAgentRegistry.shared.agent(id: agentId) else {
                     Self.logger.error("restore skipped unknown terminal agent id")
 #if DEBUG
-                    dlog("agent-restore.skip backend=generic reason=unknown-agent agent=\(agentId) \(debugMetadata(metadata, workspace: workspace))")
+                    restoreAuditLog("agent-restore.skip backend=generic reason=unknown-agent agent=\(agentId) \(debugMetadata(metadata, workspace: workspace))")
 #endif
                     continue
                 }
+                let worktreeExpectation = try? workspace.termLoopWorktreeExpectation()
                 let cwd: String? = (try? workspace.termLoopSpawnCwd()) ?? {
                     let raw = workspace.currentDirectory
                         .trimmingCharacters(in: .whitespacesAndNewlines)
                     return raw.isEmpty ? nil : raw
                 }()
-                let env = (try? workspace.termLoopWorktreeExpectation())?.environment ?? [:]
+                let env = restoreEnvironment(
+                    worktreeExpectation: worktreeExpectation,
+                    bridgeRestoreContext: bridgeRestoreContext
+                )
                 TerminalAgentActivityStore.shared.markPendingRestore(workspaceId: workspace.id)
 #if DEBUG
-                dlog(
+                restoreAuditLog(
                     "agent-restore.dispatch backend=generic agent=\(agent.id) cwd=\(debugClean(cwd)) " +
+                    "expectationPath=\(debugClean(worktreeExpectation?.path)) " +
+                    "expectationBranch=\(debugClean(worktreeExpectation?.branch)) " +
+                    "cwdVsExpectation=\(debugPathRelation(cwd, to: worktreeExpectation?.path)) " +
                     "envKeys=\(env.keys.sorted().joined(separator: ",")) \(debugMetadata(metadata, workspace: workspace))"
                 )
 #endif
@@ -610,37 +676,69 @@ final class TerminalAgentLifecycle {
         }
     }
 
-    private static func bridgeAgentId(
-        forWorkspaceId workspaceId: UUID,
-        metadata: WorkspaceMetadataStore.Metadata
-    ) -> String? {
-        guard let membership = metadata.bridgeMembership,
-              let bridge = WorkspaceBridgeStore.shared.bridge(id: membership.bridgeId) else {
-            return nil
-        }
-        let raw: String?
-        switch membership.role {
-        case .left:
-            raw = bridge.leftAgentId
-        case .right:
-            raw = bridge.rightAgentId
-        }
-        guard let normalized = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !normalized.isEmpty else {
-            return nil
-        }
-        return normalized
+    private static func restoreEnvironment(
+        worktreeExpectation: TermLoopWorktreeExpectation?,
+        bridgeRestoreContext: WorkspaceBridgeAgentRestoreContext?
+    ) -> [String: String] {
+        (worktreeExpectation?.environment ?? [:])
+            .merging(bridgeRestoreContext?.launchEnvironment ?? [:]) { _, bridgeValue in
+                bridgeValue
+            }
     }
 
     private static func persistedSessionForRestore(
         _ persisted: PersistedAgentSession?,
         agentId: String,
-        bridgeAgentOverride: Bool
+        bridgeAgentOverride: Bool,
+        minimumSessionDate: Date?
     ) -> PersistedAgentSession? {
         guard let persisted else { return nil }
         let persistedAgent = persisted.agentId.trimmingCharacters(in: .whitespacesAndNewlines)
-        if persistedAgent == agentId { return persisted }
-        return bridgeAgentOverride ? nil : persisted
+        let candidate: PersistedAgentSession
+        if persistedAgent == agentId {
+            candidate = persisted
+        } else if bridgeAgentOverride {
+            return nil
+        } else {
+            candidate = persisted
+        }
+        guard let minimumSessionDate else { return candidate }
+        guard AskToHelperRestorePolicy.accepts(
+            sessionFileCreationDate: persistedSessionFileCreationDate(candidate),
+            persistedUpdatedAt: candidate.updatedAt,
+            minimumSessionDate: minimumSessionDate
+        ) else {
+            return nil
+        }
+        return candidate
+    }
+
+    private static func persistedSessionFileCreationDate(
+        _ persisted: PersistedAgentSession
+    ) -> Date? {
+        let fileURL: URL?
+        switch persisted.agentId {
+        case TerminalAgent.claudeId:
+            fileURL = ClaudeSessionScanner.shared.sessionFileURL(
+                sessionId: persisted.sessionId,
+                cwd: persisted.cwd
+            )
+        case "codex":
+            fileURL = CodexSessionScanner.shared.sessionFileURL(
+                sessionId: persisted.sessionId,
+                cwd: persisted.cwd
+            )
+        default:
+            fileURL = nil
+        }
+        guard let fileURL,
+              let attributes = try? FileManager.default.attributesOfItem(
+                atPath: fileURL.path
+              ) else {
+            return nil
+        }
+        return (attributes[.creationDate] as? Date)
+            ?? (attributes[.modificationDate] as? Date)
     }
 
     // Worktree migration relaunch. Caller does the worktree primitives
@@ -682,7 +780,7 @@ final class TerminalAgentLifecycle {
         TerminalAgentActivityStore.shared.clear(workspaceId: workspace.id)
         TerminalAgentActivityStore.shared.markPendingRestore(workspaceId: workspace.id)
 #if DEBUG
-        dlog(
+        restoreAuditLog(
             "agent-restore.worktreeRelaunch backend=\(backend == .claudeCoordinator ? "claude" : "generic") " +
             "agent=\(agent.id) sid=\(persistedSession.sessionId) toPath=\(debugClean(toPath)) project=\(debugProject(project.id)) " +
             debugMetadata(metadata.metadata(forWorkspaceId: workspace.id), workspace: workspace)
@@ -717,7 +815,10 @@ final class TerminalAgentLifecycle {
         guard oldMetadata.isHidden == true else { return nil }
 
         let cwd = oldMetadata.persistedAgentSession?.cwd
-        let terminalAgentId = bridgeAgentId(forWorkspaceId: oldWorkspaceId, metadata: oldMetadata)
+        let bridgeAgentId = WorkspaceBridgeStore.shared
+            .agentRestoreContext(forWorkspaceId: oldWorkspaceId)?
+            .agentId
+        let terminalAgentId = bridgeAgentId
             ?? oldMetadata.persistedAgentSession?.agentId
             ?? oldMetadata.terminalAgentId
 
@@ -737,7 +838,7 @@ final class TerminalAgentLifecycle {
         rebuilt.suppressAgentsOnClose = nil
         let resolvedAfterAdd = metadataStore.metadata(forWorkspaceId: newWorkspace.id)
         rebuilt.projectId = resolvedAfterAdd.projectId
-        rebuilt.terminalAgentId = bridgeAgentId(forWorkspaceId: oldWorkspaceId, metadata: oldMetadata)
+        rebuilt.terminalAgentId = bridgeAgentId
             ?? resolvedAfterAdd.terminalAgentId
         metadataStore.restoreMetadata(rebuilt, forWorkspaceId: newWorkspace.id)
         metadataStore.removeMetadataForId(oldWorkspaceId)
@@ -821,12 +922,20 @@ final class TerminalAgentLifecycle {
         backend: RestoreBackend,
         additionalSystemPrompt: String? = nil
     ) -> String {
+        let restoreEnvironment = ["TERMLOOP_WORKSPACE_ID": workspaceId.uuidString]
+            .merging(
+                WorkspaceBridgeStore.shared
+                    .agentRestoreContext(forWorkspaceId: workspaceId)?
+                    .launchEnvironment ?? [:]
+            ) { _, bridgeValue in
+                bridgeValue
+            }
         switch backend {
         case .claudeCoordinator:
             return ClaudeResumeCommandBuilder.buildCommand(
                 sessionId: persistedSession.sessionId,
                 additionalSystemPrompt: additionalSystemPrompt,
-                env: ["TERMLOOP_WORKSPACE_ID": workspaceId.uuidString],
+                env: restoreEnvironment,
                 projectFolderPath: project.folderPath,
                 runCwd: toPath,
                 cdIntoRunCwd: false
@@ -836,7 +945,7 @@ final class TerminalAgentLifecycle {
             return TerminalAgentRunner.restoreLaunchCommand(
                 for: agent,
                 cwd: toPath,
-                env: ["TERMLOOP_WORKSPACE_ID": workspaceId.uuidString],
+                env: restoreEnvironment,
                 workspaceId: workspaceId,
                 persistedSession: persistedSession
             )
@@ -858,6 +967,13 @@ final class TerminalAgentLifecycle {
             .metadata(forWorkspaceId: workspace.id).persistedAgentSession else {
             return .rejected(.agentMismatch)
         }
+        let restoreEnvironment = env.merging(
+            WorkspaceBridgeStore.shared
+                .agentRestoreContext(forWorkspaceId: workspace.id)?
+                .launchEnvironment ?? [:]
+        ) { _, bridgeValue in
+            bridgeValue
+        }
         TerminalAgentActivityStore.shared.markPendingRestore(workspaceId: workspace.id)
         switch backend {
         case .claudeCoordinator:
@@ -866,7 +982,12 @@ final class TerminalAgentLifecycle {
                 session: persisted
             )
         case .genericRunner:
-            TermLoopHooks.restoredTerminalLauncher(workspace, agent, cwd, env)
+            TermLoopHooks.restoredTerminalLauncher(
+                workspace,
+                agent,
+                cwd,
+                restoreEnvironment
+            )
         }
         return .launched(mode: .restore)
     }
@@ -930,6 +1051,7 @@ final class TerminalAgentLifecycle {
             workspaceId: ws.id,
             state: TerminalAgentRunner.pendingPlaceholderState(hasInitialPrompt: hasInitialPrompt)
         )
+        WorkspaceMetadataStore.shared.setTerminalAgentModel(plan.model, for: ws.id)
         TerminalAgentRunner.applyWorktreeBinding(
             worktreeExpectation,
             to: ws,
