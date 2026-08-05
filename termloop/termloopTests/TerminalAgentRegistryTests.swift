@@ -223,6 +223,10 @@ final class TerminalAgentRegistryTests: XCTestCase {
         let reg = TerminalAgentRegistry.shared
         let codex = try XCTUnwrap(reg.agent(id: "codex"))
         let workspaceId = testWorkspaceId.uuidString
+        WorkspaceMetadataStore.shared.setTerminalAgentModel(.gpt56Terra, for: testWorkspaceId)
+        defer {
+            WorkspaceMetadataStore.shared.setTerminalAgentModel(nil, for: testWorkspaceId)
+        }
         let command = TerminalAgentRunner.restoreLaunchCommand(
             for: codex,
             cwd: "/tmp/fallback",
@@ -245,7 +249,13 @@ final class TerminalAgentRegistryTests: XCTestCase {
         assertCommand(
             script,
             invokesExecutableNamed: "codex",
-            containsAll: ["resume", "--dangerously-bypass-approvals-and-sandbox", "sess-123"]
+            containsAll: [
+                "resume",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--model",
+                "gpt-5.6-terra",
+                "sess-123",
+            ]
         )
         XCTAssertTrue(script.contains("\"message_preview\":\"Codex resume failed\""))
         XCTAssertFalse(script.contains("\"phase\":\"ready\""))

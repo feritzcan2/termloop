@@ -62,8 +62,8 @@ TCP socket.
    config, and `docs/deployment.md` together if this changes.
 10. **Permissions stay minimal.** Camera is for QR pairing, local-network
    access is for the Mac TCP bridge, Android network permissions are for
-   the same bridge. Do not add microphone permission unless a microphone
-   feature exists.
+   the same bridge. Microphone and speech-recognition permissions are only
+   for the iOS voice prompt feature.
 11. **Assets are product identity.** App icon and splash assets live under
     `assets/`; keep `assets/icon.png` opaque 1024x1024 for store builds.
 

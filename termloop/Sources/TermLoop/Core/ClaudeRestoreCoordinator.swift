@@ -33,6 +33,7 @@ final class ClaudeRestoreCoordinator {
 
     private struct PendingRestoreState {
         let session: PersistedAgentSession
+        let onCommandSubmitted: TerminalAgentRunner.CommandDispatchCompletion?
     }
 
     /// Pending resume requests keyed by workspace id. Entries are removed as
@@ -114,24 +115,34 @@ final class ClaudeRestoreCoordinator {
     /// Registers intent to resume `session` in `workspaceId` the next time
     /// that workspace's terminal surface reports ready. Called once per
     /// workspace at sidecar load time.
-    func enqueue(workspaceId: UUID, session: PersistedAgentSession) {
-        pending[workspaceId] = PendingRestoreState(session: session)
+    @discardableResult
+    func enqueue(
+        workspaceId: UUID,
+        session: PersistedAgentSession,
+        onCommandSubmitted: TerminalAgentRunner.CommandDispatchCompletion? = nil
+    ) -> Bool {
+        guard pending[workspaceId] == nil else { return false }
+        pending[workspaceId] = PendingRestoreState(
+            session: session,
+            onCommandSubmitted: onCommandSubmitted
+        )
 #if DEBUG
-        dlog("claude-restore.enqueue ws=\(workspaceId.uuidString.prefix(8)) sid=\(session.sessionId.prefix(8)) cwd=\(session.cwd ?? "nil")")
+        restoreAuditLog("claude-restore.enqueue ws=\(workspaceId.uuidString.prefix(8)) sid=\(session.sessionId.prefix(8)) cwd=\(session.cwd ?? "nil")")
 #endif
         scheduleRetries(workspaceId: workspaceId, session: session)
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.pendingTimeout) { [weak self] in
             guard let self else { return }
             if self.pending[workspaceId] != nil {
-                self.pending.removeValue(forKey: workspaceId)
+                self.failPendingRestore(workspaceId: workspaceId, error: .deferredTimeout)
                 Self.logger.info(
                     "restore timeout ws=\(workspaceId.uuidString, privacy: .public)"
                 )
 #if DEBUG
-                dlog("claude-restore.timeout ws=\(workspaceId.uuidString.prefix(8))")
+                restoreAuditLog("claude-restore.timeout ws=\(workspaceId.uuidString.prefix(8))")
 #endif
             }
         }
+        return true
     }
 
     /// User-initiated restore (right-click → "Restore Claude Session"). Tries
@@ -143,7 +154,7 @@ final class ClaudeRestoreCoordinator {
             return
         }
         if fire(workspaceId: workspaceId, session: session) { return }
-        enqueue(workspaceId: workspaceId, session: session)
+        _ = enqueue(workspaceId: workspaceId, session: session)
     }
 
     /// Called from `TermLoopHooks.didRestoreWorkspaces` right after a
@@ -153,14 +164,26 @@ final class ClaudeRestoreCoordinator {
     /// surface init) — so we try to fire immediately, and fall back to
     /// enqueueing if the panel isn't available yet (e.g. window restored
     /// but not yet materialized on the main thread).
-    func restoreAfterSessionLoad(workspaceId: UUID, session: PersistedAgentSession) {
-        enqueue(workspaceId: workspaceId, session: session)
+    @discardableResult
+    func restoreAfterSessionLoad(
+        workspaceId: UUID,
+        session: PersistedAgentSession,
+        onCommandSubmitted: TerminalAgentRunner.CommandDispatchCompletion? = nil
+    ) -> Bool {
+        guard enqueue(
+            workspaceId: workspaceId,
+            session: session,
+            onCommandSubmitted: onCommandSubmitted
+        ) else {
+            return false
+        }
         // Defer one runloop tick so the workspace's panels finish wiring
         // up after the session-restore pass that called us.
         DispatchQueue.main.async { [weak self] in
             guard let self, self.pending[workspaceId] != nil else { return }
             _ = self.fire(workspaceId: workspaceId, session: session)
         }
+        return true
     }
 
     // MARK: - Internals
@@ -171,7 +194,7 @@ final class ClaudeRestoreCoordinator {
         }
 #if DEBUG
         let pendingState = pending[workspaceId] == nil ? "no-pending" : "has-pending"
-        dlog("claude-restore.surfaceReady ws=\(workspaceId.uuidString.prefix(8)) \(pendingState)")
+        restoreAuditLog("claude-restore.surfaceReady ws=\(workspaceId.uuidString.prefix(8)) \(pendingState)")
 #endif
         guard let state = pending[workspaceId] else { return }
         _ = fire(workspaceId: workspaceId, session: state.session)
@@ -198,9 +221,9 @@ final class ClaudeRestoreCoordinator {
         let wsIdStr = workspaceId.uuidString
         if WorkspaceMetadataStore.shared.claudeSession(workspaceId: wsIdStr) != nil {
 #if DEBUG
-            dlog("claude-restore.fire skip=liveSession ws=\(wsIdStr.prefix(8))")
+            restoreAuditLog("claude-restore.fire skip=liveSession ws=\(wsIdStr.prefix(8))")
 #endif
-            pending.removeValue(forKey: workspaceId)
+            failPendingRestore(workspaceId: workspaceId, error: .restoreUnavailable)
             return false
         }
         guard pending[workspaceId]?.session == session else {
@@ -208,20 +231,20 @@ final class ClaudeRestoreCoordinator {
         }
         guard let workspace = AppDelegate.shared?.workspaceFor(tabId: workspaceId) else {
 #if DEBUG
-            dlog("claude-restore.fire skip=noWorkspace ws=\(wsIdStr.prefix(8))")
+            restoreAuditLog("claude-restore.fire skip=noWorkspace ws=\(wsIdStr.prefix(8))")
 #endif
             return false
         }
         guard let panel = selectTerminalPanel(for: workspace) else {
 #if DEBUG
-            dlog("claude-restore.fire skip=noPanel ws=\(wsIdStr.prefix(8))")
+            restoreAuditLog("claude-restore.fire skip=noPanel ws=\(wsIdStr.prefix(8))")
 #endif
             workspace.requestBackgroundTerminalSurfaceStartIfNeeded()
             return false
         }
         guard panel.surface.surface != nil else {
 #if DEBUG
-            dlog("claude-restore.fire skip=surfaceNotReady ws=\(wsIdStr.prefix(8)) panel=\(panel.id.uuidString.prefix(5))")
+            restoreAuditLog("claude-restore.fire skip=surfaceNotReady ws=\(wsIdStr.prefix(8)) panel=\(panel.id.uuidString.prefix(5))")
 #endif
             panel.surface.requestBackgroundSurfaceStartIfNeeded()
             workspace.requestBackgroundTerminalSurfaceStartIfNeeded()
@@ -239,7 +262,7 @@ final class ClaudeRestoreCoordinator {
            ClaudeProjectFiles.sessionExists(sessionId: session.sessionId, cwd: persistedWorktreeRoot) {
             guard let recoveredWorktree,
                   let project = recoveredWorktree.project else {
-                pending.removeValue(forKey: workspaceId)
+                failPendingRestore(workspaceId: workspaceId, error: .restoreUnavailable)
                 surfaceFailure(.missingWorktree(persistedWorktreeRoot), in: panel, workspaceId: workspaceId, session: session)
                 return false
             }
@@ -250,7 +273,7 @@ final class ClaudeRestoreCoordinator {
                     branch: recoveredWorktree.branch
                 )
             } catch {
-                pending.removeValue(forKey: workspaceId)
+                failPendingRestore(workspaceId: workspaceId, error: .restoreUnavailable)
                 surfaceFailure(
                     .recreateWorktreeFailed(recoveredWorktree.path, recoveredWorktree.branch),
                     in: panel,
@@ -275,7 +298,7 @@ final class ClaudeRestoreCoordinator {
         )
 #if DEBUG
         let metadata = WorkspaceMetadataStore.shared.metadata(forWorkspaceId: workspaceId)
-        dlog(
+        restoreAuditLog(
             "claude-restore.fire.evaluate ws=\(wsIdStr) title=\(Self.debugClean(workspace.customTitle ?? workspace.title)) " +
             "sid=\(session.sessionId) sessionCwd=\(Self.debugClean(session.cwd)) targetCwd=\(Self.debugClean(targetCwd)) " +
             "project=\(Self.debugProject(metadata.projectId)) branch=\(Self.debugClean(metadata.branch)) worktree=\(Self.debugClean(metadata.worktreePath)) " +
@@ -284,9 +307,9 @@ final class ClaudeRestoreCoordinator {
 #endif
         guard let targetCwd, !targetCwd.isEmpty else {
 #if DEBUG
-            dlog("claude-restore.fire skip=noCwd ws=\(wsIdStr.prefix(8))")
+            restoreAuditLog("claude-restore.fire skip=noCwd ws=\(wsIdStr.prefix(8))")
 #endif
-            pending.removeValue(forKey: workspaceId)
+            failPendingRestore(workspaceId: workspaceId, error: .restoreUnavailable)
             surfaceFailure(.missingCwd, in: panel, workspaceId: workspaceId, session: session)
             return false
         }
@@ -297,7 +320,7 @@ final class ClaudeRestoreCoordinator {
             Self.logger.error(
                 "claude-restore: refusing — unsafe session id \(session.sessionId, privacy: .public)"
             )
-            pending.removeValue(forKey: workspaceId)
+            failPendingRestore(workspaceId: workspaceId, error: .restoreUnavailable)
             surfaceFailure(.unsafeSessionId(session.sessionId), in: panel, workspaceId: workspaceId, session: session)
             return false
         }
@@ -332,9 +355,9 @@ final class ClaudeRestoreCoordinator {
                 "session file missing ws=\(wsIdStr, privacy: .public) sid=\(session.sessionId, privacy: .public)"
             )
 #if DEBUG
-            dlog("claude-restore.fire skip=sessionFileMissing ws=\(wsIdStr.prefix(8)) sid=\(session.sessionId.prefix(8))")
+            restoreAuditLog("claude-restore.fire skip=sessionFileMissing ws=\(wsIdStr.prefix(8)) sid=\(session.sessionId.prefix(8))")
 #endif
-            pending.removeValue(forKey: workspaceId)
+            failPendingRestore(workspaceId: workspaceId, error: .restoreUnavailable)
             if WorkspaceMetadataStore.shared.clearPersistedAgentSession(for: workspaceId) {
                 TermLoopHooks.saveCriticalAgentRestoreStateSync()
             }
@@ -351,11 +374,20 @@ final class ClaudeRestoreCoordinator {
         // --dangerously-skip-permissions'`). `c` with no alias will fail
         // with "command not found" — that's visible and trivially fixable,
         // preferable to silently stripping the user's custom invocation.
+        let bridgeRestoreEnvironment = WorkspaceBridgeStore.shared
+            .agentRestoreContext(forWorkspaceId: workspaceId)?
+            .launchEnvironment ?? [:]
+        let restoreEnvironment = ["TERMLOOP_WORKSPACE_ID": wsIdStr]
+            .merging(worktreeExpectation?.environment ?? [:]) { _, worktreeValue in
+                worktreeValue
+            }
+            .merging(bridgeRestoreEnvironment) { _, bridgeValue in
+                bridgeValue
+            }
         let resumeCommand = ClaudeResumeCommandBuilder.buildCommand(
             executable: "c",
             sessionId: session.sessionId,
-            env: ["TERMLOOP_WORKSPACE_ID": wsIdStr]
-                .merging(worktreeExpectation?.environment ?? [:]) { _, new in new },
+            env: restoreEnvironment,
             projectFolderPath: projectFolderPath,
             runCwd: targetCwd,
             cdIntoRunCwd: true
@@ -368,19 +400,33 @@ final class ClaudeRestoreCoordinator {
         }()
 
 #if DEBUG
-        dlog(
+        restoreAuditLog(
             "claude-restore.fire dispatch ws=\(wsIdStr) panel=\(panel.id.uuidString.prefix(5)) " +
             "sid=\(session.sessionId) targetCwd=\(Self.debugClean(targetCwd)) projectFolder=\(Self.debugClean(projectFolderPath))"
         )
 #endif
+        let completion = pending[workspaceId]?.onCommandSubmitted
+        pending.removeValue(forKey: workspaceId)
         TerminalAgentRunner.dispatchShellCommandWhenReady(
             commandText,
             on: panel,
-            enterFallbackDelay: 0.75
+            enterFallbackDelay: 0.75,
+            onSubmitted: {
+                completion?(.success(()))
+            },
+            onFailed: { error in
+                completion?(.failure(error))
+            }
         )
-
-        pending.removeValue(forKey: workspaceId)
         return true
+    }
+
+    private func failPendingRestore(
+        workspaceId: UUID,
+        error: TerminalAgentRunner.CommandDispatchError
+    ) {
+        guard let state = pending.removeValue(forKey: workspaceId) else { return }
+        state.onCommandSubmitted?(.failure(error))
     }
 
     private func surfaceFailure(
@@ -395,7 +441,7 @@ final class ClaudeRestoreCoordinator {
             "restore failed ws=\(workspaceId.uuidString, privacy: .public) reason=\(message, privacy: .public)"
         )
 #if DEBUG
-        dlog("claude-restore.failure ws=\(workspaceId.uuidString.prefix(8)) message=\(message)")
+        restoreAuditLog("claude-restore.failure ws=\(workspaceId.uuidString.prefix(8)) message=\(message)")
 #endif
         _ = TermLoopSocketCommands.workspaceReportAgentActivity([
             "workspace_id": workspaceId.uuidString,

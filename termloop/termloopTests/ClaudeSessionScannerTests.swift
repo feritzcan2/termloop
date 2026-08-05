@@ -194,4 +194,41 @@ final class ClaudeSessionScannerTests: XCTestCase {
 
         XCTAssertEqual(resolved, expected)
     }
+
+    func test_sessionContainingFindsExactPostCutoffTranscript() throws {
+        let cwd = "/tmp/repo"
+        let requestId = UUID().uuidString
+        let slugDir = tempProjectsDir.appendingPathComponent(ClaudeSessionScanner.slug(forCwd: cwd))
+        try FileManager.default.createDirectory(at: slugDir, withIntermediateDirectories: true)
+
+        let matching = slugDir.appendingPathComponent("matching.jsonl")
+        try """
+        {"type":"user","cwd":"\(cwd)","message":{"role":"user","content":"Request ID: \(requestId)"}}
+        {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"answer"}]}}
+        """.write(to: matching, atomically: true, encoding: .utf8)
+
+        let unrelated = slugDir.appendingPathComponent("unrelated.jsonl")
+        try """
+        {"type":"user","cwd":"\(cwd)","message":{"role":"user","content":"newer unrelated session"}}
+        {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"other"}]}}
+        """.write(to: unrelated, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(1)],
+            ofItemAtPath: unrelated.path
+        )
+
+        let scanner = ClaudeSessionScanner(projectsDir: tempProjectsDir)
+        let recovered = scanner.sessionContaining(
+            text: requestId.lowercased(),
+            cwd: cwd,
+            newerThan: Date().addingTimeInterval(-60)
+        )
+
+        XCTAssertEqual(recovered?.sessionId, "matching")
+        XCTAssertNil(scanner.sessionContaining(
+            text: requestId,
+            cwd: cwd,
+            newerThan: Date().addingTimeInterval(60)
+        ))
+    }
 }

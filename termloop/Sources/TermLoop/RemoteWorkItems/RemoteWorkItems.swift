@@ -241,11 +241,23 @@ protocol RemoteWorkItemProvider: Sendable {
     func updateStatus(_ reference: RemoteWorkItemReference, to status: RemoteWorkItemStatusOption) async throws -> RemoteWorkItemSnapshot
 }
 
-enum RemoteWorkItemError: Error, Equatable, Sendable {
+enum RemoteWorkItemError: LocalizedError, Equatable, Sendable {
     case unsupportedProvider(RemoteWorkItemProviderId)
     case unsupportedReference(String)
     case commandFailed(String)
     case parseFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupportedProvider(let provider):
+            return "Unsupported remote work item provider: \(provider.displayLabel)"
+        case .unsupportedReference(let message),
+             .commandFailed(let message),
+             .parseFailed(let message):
+            let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? "Unknown remote work item error." : trimmed
+        }
+    }
 }
 
 // MARK: - Parser

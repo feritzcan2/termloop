@@ -333,4 +333,278 @@ final class WorkspaceBridgeStoreTests: XCTestCase {
         XCTAssertEqual(store.bridges.count, 1)
     }
 
+    func testPartialRestoreDoesNotDropBridgeUntilBothEndpointStampsExist() {
+        let store = makeStore()
+        let bridge = makeBridge()
+        XCTAssertTrue(store.add(bridge))
+
+        let restoredLeft = UUID()
+        WorkspaceMetadataStore.shared.restoreMetadata(
+            WorkspaceMetadataStore.Metadata(
+                projectId: testProjectId,
+                terminalAgentId: "claude",
+                bridgeMembership: BridgeMembership(bridgeId: bridge.id, role: .left)
+            ),
+            forWorkspaceId: restoredLeft
+        )
+
+        XCTAssertFalse(store.rebindAfterRestore(
+            knownWorkspaceIds: [restoredLeft],
+            dropUnresolved: false
+        ))
+        XCTAssertEqual(store.bridge(id: bridge.id)?.leftWorkspaceId, bridge.leftWorkspaceId)
+        XCTAssertEqual(store.bridges.count, 1)
+    }
+
+    func testFinalRestoreDropsUnresolvedBridgeAndClearsSurvivingStamp() {
+        let store = makeStore()
+        let bridge = makeBridge()
+        XCTAssertTrue(store.add(bridge))
+
+        let restoredLeft = UUID()
+        WorkspaceMetadataStore.shared.restoreMetadata(
+            WorkspaceMetadataStore.Metadata(
+                projectId: testProjectId,
+                terminalAgentId: "claude",
+                bridgeMembership: BridgeMembership(bridgeId: bridge.id, role: .left)
+            ),
+            forWorkspaceId: restoredLeft
+        )
+
+        XCTAssertTrue(store.rebindAfterRestore(
+            knownWorkspaceIds: [restoredLeft],
+            dropUnresolved: true
+        ))
+        XCTAssertTrue(store.bridges.isEmpty)
+        XCTAssertNil(
+            WorkspaceMetadataStore.shared
+                .metadata(forWorkspaceId: restoredLeft)
+                .bridgeMembership
+        )
+    }
+
+    func testRestoreRebindsBridgeAcrossRemintedWorkspaceIds() {
+        let store = makeStore()
+        let bridge = makeBridge()
+        XCTAssertTrue(store.add(bridge))
+
+        let restoredLeft = UUID()
+        let restoredRight = UUID()
+        WorkspaceMetadataStore.shared.restoreMetadata(
+            WorkspaceMetadataStore.Metadata(
+                projectId: testProjectId,
+                terminalAgentId: "claude",
+                bridgeMembership: BridgeMembership(bridgeId: bridge.id, role: .left)
+            ),
+            forWorkspaceId: restoredLeft
+        )
+        WorkspaceMetadataStore.shared.restoreMetadata(
+            WorkspaceMetadataStore.Metadata(
+                projectId: testProjectId,
+                terminalAgentId: "claude",
+                bridgeMembership: BridgeMembership(bridgeId: bridge.id, role: .right)
+            ),
+            forWorkspaceId: restoredRight
+        )
+
+        XCTAssertTrue(store.rebindAfterRestore(
+            knownWorkspaceIds: [restoredLeft, restoredRight],
+            dropUnresolved: true
+        ))
+        XCTAssertEqual(store.bridge(id: bridge.id)?.leftWorkspaceId, restoredLeft)
+        XCTAssertEqual(store.bridge(id: bridge.id)?.rightWorkspaceId, restoredRight)
+    }
+
+    func testAskToRestoreContextSurvivesReloadAndEndpointRebind() {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WorkspaceBridgeStoreTests-\(UUID().uuidString).json")
+        temporaryStoreURLs.append(url)
+        let store = WorkspaceBridgeStore(fileURL: url)
+        let originalLeft = UUID()
+        let originalRight = UUID()
+        WorkspaceMetadataStore.shared.setTerminalAgentId("claude", for: originalLeft)
+        WorkspaceMetadataStore.shared.setTerminalAgentId("codex", for: originalRight)
+        WorkspaceMetadataStore.shared.setProjectId(testProjectId, forWorkspaceId: originalLeft)
+        WorkspaceMetadataStore.shared.setProjectId(testProjectId, forWorkspaceId: originalRight)
+
+        let createdAt = Date(timeIntervalSince1970: 1_750_000_000)
+        let request = AskToRequest(
+            message: "review this",
+            kickoffMessage: "review this",
+            createdAt: createdAt
+        )
+        let bridge = WorkspaceBridge(
+            leftWorkspaceId: originalLeft,
+            rightWorkspaceId: originalRight,
+            intent: .askAgent,
+            leftAgentId: "claude",
+            rightAgentId: "codex",
+            askToRequests: [request],
+            kickoffMessage: request.kickoffMessage,
+            firstSpeaker: .right,
+            askToReplyToken: "reply-token",
+            createdAt: createdAt
+        )
+        XCTAssertTrue(store.add(bridge))
+
+        let restoredLeft = UUID()
+        let restoredRight = UUID()
+        WorkspaceMetadataStore.shared.restoreMetadata(
+            WorkspaceMetadataStore.Metadata(
+                projectId: testProjectId,
+                terminalAgentId: "claude",
+                bridgeMembership: BridgeMembership(bridgeId: bridge.id, role: .left)
+            ),
+            forWorkspaceId: restoredLeft
+        )
+        WorkspaceMetadataStore.shared.restoreMetadata(
+            WorkspaceMetadataStore.Metadata(
+                projectId: testProjectId,
+                terminalAgentId: "codex",
+                hideFromWorkspaceTree: true,
+                bridgeMembership: BridgeMembership(bridgeId: bridge.id, role: .right)
+            ),
+            forWorkspaceId: restoredRight
+        )
+
+        let reloaded = WorkspaceBridgeStore(fileURL: url)
+        XCTAssertTrue(reloaded.rebindAfterRestore(
+            knownWorkspaceIds: [restoredLeft, restoredRight],
+            dropUnresolved: true
+        ))
+
+        let context = reloaded.agentRestoreContext(forWorkspaceId: restoredRight)
+        XCTAssertEqual(context?.bridgeId, bridge.id)
+        XCTAssertEqual(context?.role, .right)
+        XCTAssertEqual(context?.agentId, "codex")
+        XCTAssertEqual(context?.isAskToHelper, true)
+        XCTAssertEqual(
+            context?.minimumSessionDate,
+            createdAt.addingTimeInterval(-1)
+        )
+        XCTAssertEqual(
+            context?.launchEnvironment[
+                TermLoopBuiltInMCP.askToRequestIdEnvironmentKey
+            ],
+            request.id.uuidString
+        )
+        XCTAssertEqual(
+            context?.launchEnvironment[
+                TermLoopBuiltInMCP.askToReplyTokenEnvironmentKey
+            ],
+            "reply-token"
+        )
+    }
+
+    func testAskToRestorePolicyRejectsOlderSameDirectorySession() {
+        let minimumDate = Date(timeIntervalSince1970: 1_750_000_000)
+
+        XCTAssertFalse(AskToHelperRestorePolicy.accepts(
+            sessionFileCreationDate: minimumDate.addingTimeInterval(-10),
+            persistedUpdatedAt: minimumDate.addingTimeInterval(10),
+            minimumSessionDate: minimumDate
+        ))
+        XCTAssertTrue(AskToHelperRestorePolicy.accepts(
+            sessionFileCreationDate: minimumDate.addingTimeInterval(1),
+            persistedUpdatedAt: nil,
+            minimumSessionDate: minimumDate
+        ))
+        XCTAssertTrue(AskToHelperRestorePolicy.accepts(
+            sessionFileCreationDate: nil,
+            persistedUpdatedAt: minimumDate,
+            minimumSessionDate: minimumDate
+        ))
+        XCTAssertFalse(AskToHelperRestorePolicy.accepts(
+            sessionFileCreationDate: nil,
+            persistedUpdatedAt: nil,
+            minimumSessionDate: minimumDate
+        ))
+    }
+
+    func testAskToRestoreReconciliationRecoversClaudeSessionByRequestId() throws {
+        let projectsDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AskToRestoreReconciliation-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: projectsDir) }
+
+        let cwd = "/tmp/ask-to-restore"
+        let slugDir = projectsDir.appendingPathComponent(ClaudeSessionScanner.slug(forCwd: cwd))
+        try FileManager.default.createDirectory(at: slugDir, withIntermediateDirectories: true)
+
+        let request = AskToRequest(
+            message: "question",
+            kickoffMessage: "question",
+            createdAt: Date().addingTimeInterval(-30)
+        )
+        let correctSessionId = "correct-helper-session"
+        try """
+        {"type":"user","cwd":"\(cwd)","message":{"role":"user","content":"TermLoop Ask-To request protocol. Request ID: \(request.id.uuidString)"}}
+        {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"answer"}]}}
+        """.write(
+            to: slugDir.appendingPathComponent("\(correctSessionId).jsonl"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let bridge = WorkspaceBridge(
+            leftWorkspaceId: UUID(),
+            rightWorkspaceId: UUID(),
+            intent: .askAgent,
+            rightAgentId: "claude",
+            askToRequests: [request],
+            kickoffMessage: "question",
+            firstSpeaker: .right,
+            createdAt: Date().addingTimeInterval(-60)
+        )
+        let metadata = WorkspaceMetadataStore.Metadata(
+            terminalAgentId: "claude",
+            persistedAgentSession: PersistedAgentSession(
+                agentId: "claude",
+                sessionId: "unrelated-old-session",
+                cwd: cwd,
+                updatedAt: Date().addingTimeInterval(-3_600)
+            ),
+            bridgeMembership: BridgeMembership(bridgeId: bridge.id, role: .right)
+        )
+
+        let healed = TermLoopHooks.reconciledAskToHelperPersistedAgentSession(
+            metadata,
+            bridge: bridge,
+            workspaceId: bridge.rightWorkspaceId,
+            workspaceTitle: "Claude",
+            workspaceCurrentDirectory: cwd,
+            stampedCurrentDirectory: cwd,
+            claudeScanner: ClaudeSessionScanner(projectsDir: projectsDir)
+        )
+
+        XCTAssertEqual(healed.persistedAgentSession?.sessionId, correctSessionId)
+        XCTAssertEqual(healed.persistedAgentSession?.agentId, "claude")
+        XCTAssertEqual(healed.persistedAgentSession?.cwd, cwd)
+    }
+
+    func testDismissClearsEveryStaleMembershipForBridgeId() {
+        let store = makeStore()
+        let bridge = makeBridge()
+        XCTAssertTrue(store.add(bridge))
+
+        let staleRemintedHelper = UUID()
+        WorkspaceMetadataStore.shared.restoreMetadata(
+            WorkspaceMetadataStore.Metadata(
+                projectId: testProjectId,
+                terminalAgentId: "claude",
+                hideFromWorkspaceTree: true,
+                bridgeMembership: BridgeMembership(bridgeId: bridge.id, role: .right)
+            ),
+            forWorkspaceId: staleRemintedHelper
+        )
+
+        store.dismiss(id: bridge.id)
+
+        XCTAssertNil(
+            WorkspaceMetadataStore.shared
+                .metadata(forWorkspaceId: staleRemintedHelper)
+                .bridgeMembership
+        )
+        XCTAssertTrue(store.bridges.isEmpty)
+    }
+
 }

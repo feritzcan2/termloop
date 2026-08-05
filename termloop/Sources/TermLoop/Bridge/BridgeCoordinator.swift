@@ -38,16 +38,17 @@ final class BridgeCoordinator {
         }
     }
 
-    /// Tolerance for filtering pre-bridge sessions in the shared cwd. The
-    /// askAgent helper inherits the source workspace's cwd, so the cwd-fallback
-    /// in the scanner could otherwise pick up the user's own pre-existing
-    /// session as the helper's response. One second absorbs ordering skew
-    /// between bridge.createdAt and the helper's first session-file write.
-    private static let sessionFloorSkewBuffer: TimeInterval = 1
+    private final class WeakTabManagerBox {
+        weak var value: TabManager?
+
+        init(_ value: TabManager) {
+            self.value = value
+        }
+    }
 
     private static func sessionFloor(for bridge: WorkspaceBridge, wsId: UUID) -> Date? {
         guard bridge.intent == .askAgent, wsId == bridge.rightWorkspaceId else { return nil }
-        return bridge.createdAt.addingTimeInterval(-sessionFloorSkewBuffer)
+        return AskToHelperRestorePolicy.minimumSessionDate(for: bridge)
     }
 
     /// For ask-agent helper workspaces, returns the persisted-agent-session
@@ -70,17 +71,23 @@ final class BridgeCoordinator {
         let isAskHelper = bridge.intent == .askAgent
             && wsId == bridge.rightWorkspaceId
         guard isAskHelper else { return persisted }
-        guard let updatedAt = persisted.updatedAt,
-              updatedAt >= bridge.createdAt.addingTimeInterval(-sessionFloorSkewBuffer)
-        else { return nil }
+        guard AskToHelperRestorePolicy.accepts(
+            sessionFileCreationDate: nil,
+            persistedUpdatedAt: persisted.updatedAt,
+            minimumSessionDate: AskToHelperRestorePolicy.minimumSessionDate(for: bridge)
+        ) else { return nil }
         return persisted
     }
 
-    private weak var tabManager: TabManager?
     private let store: WorkspaceBridgeStore
     private let extractor: BridgeMessageExtractor
-    private var started: Bool = false
-    private var tabsRestoreSubscription: AnyCancellable?
+    /// Every window has its own TabManager. Keeping a registry avoids routing a
+    /// second-window helper through whichever sidebar happened to appear first.
+    private var tabManagers: [ObjectIdentifier: WeakTabManagerBox] = [:]
+    /// Completion can be reported before SwiftUI has registered the first
+    /// window (notably for explicit-open and snapshot-less launches). Remember
+    /// the barrier so every later manager registration receives a final pass.
+    private var startupRestoreDidFinish = false
     /// One subscription per running auto-mode bridge. Watches
     /// `TerminalAgentActivityStore.workspacePresentationDidChange` and forwards
     /// the source side's latest assistant message on a `running → settled`
@@ -105,61 +112,221 @@ final class BridgeCoordinator {
         self.extractor = extractor
     }
 
-    /// Binds the TabManager and schedules the post-restore reconcile pass.
-    /// `bootstrapSidebar` fires from `Root.body.onAppear`, which runs before
-    /// workspaces have finished their async restore — so we wait for the
-    /// first non-empty `tabs` publish before validating persisted bridges or
-    /// closing orphaned hidden helpers. Without this, an empty `tabs` set
-    /// during early bootstrap would mark every persisted bridge as orphaned
-    /// and wipe the JSON file. Idempotent.
+    /// Registers a window manager. This entry point is intentionally
+    /// non-destructive: sidebar onAppear can run against the bootstrap tab
+    /// before restored workspace metadata has been applied.
     func start(tabManager: TabManager) {
-        if started { return }
-        started = true
-        self.tabManager = tabManager
-        BridgeDebugTrace.log("coord.start tabs=\(tabManager.tabs.count) bridges=\(store.bridges.count)")
-        if !tabManager.tabs.isEmpty {
-            reconcileAfterRestore(tabManager: tabManager)
-            return
+        register(tabManager)
+        BridgeDebugTrace.log(
+            "coord.start register tabs=\(tabManager.tabs.count) bridges=\(store.bridges.count)"
+        )
+        if startupRestoreDidFinish {
+            reconcileAfterRestore(
+                tabManagers: liveTabManagers(),
+                dropUnresolved: true
+            )
         }
-        tabsRestoreSubscription = tabManager.$tabs
-            .filter { !$0.isEmpty }
-            .first()
-            .sink { [weak self] tabs in
-                BridgeDebugTrace.log("coord.start.deferred-fire tabs=\(tabs.count)")
-                self?.reconcileAfterRestore(tabManager: tabManager)
-                self?.tabsRestoreSubscription = nil
-            }
-        BridgeDebugTrace.log("coord.start.deferred-wait (tabs empty)")
     }
 
-    private func reconcileAfterRestore(tabManager: TabManager) {
-        BridgeDebugTrace.log("coord.reconcile tabs=\(tabManager.tabs.count) bridges=\(store.bridges.count)")
-        store.rebindAfterRestore(tabManager: tabManager)
-        cleanupOrphanedHiddenHelpers(tabManager: tabManager)
+    /// Called after one window's positional metadata has been restored, before
+    /// agent auto-restore. Complete endpoint pairs are rebound immediately;
+    /// unresolved bridges are retained until the app-wide final pass.
+    func workspaceMetadataDidRestore(tabManager: TabManager) {
+        register(tabManager)
+        reconcileAfterRestore(
+            tabManagers: liveTabManagers(),
+            dropUnresolved: false
+        )
+#if DEBUG
+        let durableHelperIds = tabManager.tabs.compactMap { workspace -> String? in
+            guard store.agentRestoreContext(forWorkspaceId: workspace.id)?
+                .isAskToHelper == true else {
+                return nil
+            }
+            return String(workspace.id.uuidString.prefix(8))
+        }
+        if !durableHelperIds.isEmpty {
+            restoreAuditLog(
+                "bridge.restore.helpers action=preserve count=\(durableHelperIds.count) " +
+                "workspaces=\(durableHelperIds.joined(separator: ","))"
+            )
+        }
+#endif
+    }
+
+    /// Called once all startup windows have restored. At this point unresolved
+    /// bridge records are genuinely stale and hidden helpers without a live
+    /// owner can be torn down safely.
+    func startupSessionRestoreDidFinish() {
+        startupRestoreDidFinish = true
+        let managers = liveTabManagers()
+        guard !managers.isEmpty else { return }
+        reconcileAfterRestore(tabManagers: managers, dropUnresolved: true)
+    }
+
+    private func register(_ tabManager: TabManager) {
+        tabManagers[ObjectIdentifier(tabManager)] = WeakTabManagerBox(tabManager)
+        tabManagers = tabManagers.filter { $0.value.value != nil }
+    }
+
+    private func liveTabManagers() -> [TabManager] {
+        tabManagers = tabManagers.filter { $0.value.value != nil }
+        return tabManagers.values.compactMap(\.value)
+    }
+
+    private func tabManager(containing workspaceId: UUID) -> TabManager? {
+        if let resolved = AppDelegate.shared?.tabManagerFor(tabId: workspaceId) {
+            register(resolved)
+            return resolved
+        }
+        return liveTabManagers().first {
+            $0.tabs.contains(where: { $0.id == workspaceId })
+        }
+    }
+
+    private func tabManager(for bridge: WorkspaceBridge) -> TabManager? {
+        tabManager(containing: bridge.rightWorkspaceId)
+            ?? tabManager(containing: bridge.leftWorkspaceId)
+    }
+
+    private func reconcileAfterRestore(
+        tabManagers: [TabManager],
+        dropUnresolved: Bool
+    ) {
+        let knownWorkspaceIds = Set(tabManagers.flatMap { $0.tabs.map(\.id) })
+        BridgeDebugTrace.log(
+            "coord.reconcile managers=\(tabManagers.count) tabs=\(knownWorkspaceIds.count) " +
+            "bridges=\(store.bridges.count) final=\(dropUnresolved ? 1 : 0)"
+        )
+        let previousEndpoints = Dictionary(uniqueKeysWithValues: store.bridges.map {
+            ($0.id, Set([$0.leftWorkspaceId, $0.rightWorkspaceId]))
+        })
+        _ = store.rebindAfterRestore(
+            knownWorkspaceIds: knownWorkspaceIds,
+            dropUnresolved: dropUnresolved
+        )
+        let currentBridgeIds = Set(store.bridges.map(\.id))
+        for (bridgeId, oldEndpoints) in previousEndpoints {
+            let newEndpoints = store.bridge(id: bridgeId).map {
+                Set([$0.leftWorkspaceId, $0.rightWorkspaceId])
+            }
+            guard newEndpoints != oldEndpoints else { continue }
+            autoForwardCancellables.removeValue(forKey: bridgeId)
+            for workspaceId in oldEndpoints {
+                lastSeenDisplayState.removeValue(forKey: workspaceId)
+            }
+        }
+        let staleAutoForwardIds = autoForwardCancellables.keys.filter {
+            !currentBridgeIds.contains($0)
+        }
+        for bridgeId in staleAutoForwardIds {
+            autoForwardCancellables.removeValue(forKey: bridgeId)
+        }
+        for tabManager in tabManagers {
+            _ = cleanupOrphanedHiddenHelpers(
+                tabManager: tabManager,
+                allowUnreboundMembership: !dropUnresolved
+            )
+            _ = repairHiddenHelperSelection(tabManager: tabManager)
+        }
         for bridge in store.bridges where bridge.state == .running
-            && bridge.effectiveForwardMode == .auto {
+            && bridge.effectiveForwardMode == .auto
+            && knownWorkspaceIds.contains(bridge.leftWorkspaceId)
+            && knownWorkspaceIds.contains(bridge.rightWorkspaceId) {
             attachAutoForwardSubscription(for: bridge)
         }
+        pruneOrphanedDisplayStates()
+        if dropUnresolved {
+            _ = cleanupDetachedHiddenHelperMetadata(knownWorkspaceIds: knownWorkspaceIds)
+        }
+    }
+
+    /// Ask-To helper metadata can outlive its reminted workspace id after a
+    /// failed restore. Remove only `hideFromWorkspaceTree` records here;
+    /// `isHidden` records belong to the user's durable Hidden-workspace list.
+    @discardableResult
+    private func cleanupDetachedHiddenHelperMetadata(
+        knownWorkspaceIds: Set<UUID>
+    ) -> Bool {
+        let metaStore = WorkspaceMetadataStore.shared
+        let staleIds: [UUID] = metaStore.byWorkspaceId.compactMap { entry in
+            let (workspaceId, metadata) = entry
+            guard metadata.hideFromWorkspaceTree == true,
+                  !knownWorkspaceIds.contains(workspaceId) else { return nil }
+            return workspaceId
+        }
+        for workspaceId in staleIds {
+            _ = metaStore.removeMetadataForId(workspaceId)
+        }
+        return !staleIds.isEmpty
     }
 
     /// Closes hidden helper workspaces that are not referenced by any active
     /// bridge. Without a bridge cable they are unreachable from the sidebar
     /// (hideFromWorkspaceTree filters them out) and would otherwise pile up
     /// after a restart that lost the bridge link.
-    private func cleanupOrphanedHiddenHelpers(tabManager: TabManager) {
+    @discardableResult
+    private func cleanupOrphanedHiddenHelpers(
+        tabManager: TabManager,
+        allowUnreboundMembership: Bool = false
+    ) -> Bool {
         let metaStore = WorkspaceMetadataStore.shared
-        let bridgedRightIds = Set(store.bridges.map(\.rightWorkspaceId))
         let orphans = tabManager.tabs.filter { ws in
-            metaStore.isHiddenFromWorkspaceTree(workspaceId: ws.id)
-                && !bridgedRightIds.contains(ws.id)
+            guard metaStore.isHiddenFromWorkspaceTree(workspaceId: ws.id) else { return false }
+            let metadata = metaStore.metadata(forWorkspaceId: ws.id)
+            guard let membership = metadata.bridgeMembership,
+                  let bridge = store.bridge(id: membership.bridgeId),
+                  bridge.intent == .askAgent,
+                  bridge.state == .running else {
+                return true
+            }
+            if allowUnreboundMembership { return false }
+            return bridge.workspaceId(for: membership.role) != ws.id
         }
-        guard !orphans.isEmpty else { return }
+        guard !orphans.isEmpty else { return false }
         #if DEBUG
         dlog("bridge.cleanup orphans=\(orphans.count)")
         #endif
+        if orphans.count == tabManager.tabs.count {
+            _ = tabManager.addWorkspace(
+                select: true,
+                eagerLoadTerminal: false,
+                projectId: ProjectStore.shared.activeProjectId
+            )
+        }
         for orphan in orphans {
             tabManager.closeWorkspace(orphan)
+            _ = metaStore.removeMetadataForId(orphan.id)
         }
+        return true
+    }
+
+    @discardableResult
+    private func repairHiddenHelperSelection(tabManager: TabManager) -> Bool {
+        let metaStore = WorkspaceMetadataStore.shared
+        guard let selectedId = tabManager.selectedTabId,
+              metaStore.isHiddenFromWorkspaceTree(workspaceId: selectedId) else {
+            return false
+        }
+
+        let selectedWorkspace = tabManager.tabs.first(where: { $0.id == selectedId })
+        let selectedMetadata = metaStore.metadata(forWorkspaceId: selectedId)
+        let bridgeSourceId = selectedMetadata.bridgeMembership
+            .flatMap { store.bridge(id: $0.bridgeId) }
+            .map(\.leftWorkspaceId)
+        let replacement = bridgeSourceId.flatMap { sourceId in
+            tabManager.tabs.first {
+                $0.id == sourceId && !metaStore.isHiddenFromWorkspaceTree(workspaceId: $0.id)
+            }
+        } ?? tabManager.tabs.first {
+            $0.projectId == selectedWorkspace?.projectId
+                && !metaStore.isHiddenFromWorkspaceTree(workspaceId: $0.id)
+        } ?? tabManager.tabs.first {
+            !metaStore.isHiddenFromWorkspaceTree(workspaceId: $0.id)
+        }
+        guard let replacement else { return false }
+        tabManager.selectedTabId = replacement.id
+        return true
     }
 
     // MARK: - Bridge lifecycle
@@ -175,9 +342,7 @@ final class BridgeCoordinator {
     /// baseline seeding — subsequent forwarding is manual via
     /// `forwardLatestMessage`.
     func kickoff(bridgeId: UUID) {
-        guard let bridge = store.bridge(id: bridgeId),
-              let tabManager
-        else {
+        guard let bridge = store.bridge(id: bridgeId) else {
             BridgeDebugTrace.log("coord.kickoff guard-fail id=\(bridgeId.uuidString.prefix(8))")
             return
         }
@@ -186,7 +351,8 @@ final class BridgeCoordinator {
         dlog("bridge.kickoff id=\(bridgeId.uuidString.prefix(8)) intent=\(bridge.intent) first=\(bridge.firstSpeaker) kickoffLen=\(bridge.kickoffMessage.count)")
         #endif
         let send: (String, UUID) -> Void = { (text: String, wsId: UUID) in
-            _ = self.sendBridgeInput(text, toWorkspaceId: wsId, tabManager: tabManager, bridgeId: bridgeId)
+            guard let manager = self.tabManager(containing: wsId) else { return }
+            _ = self.sendBridgeInput(text, toWorkspaceId: wsId, tabManager: manager, bridgeId: bridgeId)
         }
         if let role = bridge.rolePrompt?.trimmingCharacters(in: .whitespacesAndNewlines),
            !role.isEmpty {
@@ -212,11 +378,15 @@ final class BridgeCoordinator {
         let kickoffIsToFreshHelper = bridge.intent == .askAgent
             && bridge.firstSpeaker == .right
         if kickoffIsToFreshHelper {
+            guard let helperTabManager = tabManager(containing: targetId) else {
+                BridgeDebugTrace.log("coord.kickoff helper-manager-missing id=\(bridgeId.uuidString.prefix(8))")
+                return
+            }
             sendFreshHelperKickoffWhenReady(
                 bridge: bridge,
                 targetWorkspaceId: targetId,
                 text: bridge.kickoffMessage,
-                tabManager: tabManager
+                tabManager: helperTabManager
             )
         } else {
             send(bridge.kickoffMessage, targetId)
@@ -227,21 +397,42 @@ final class BridgeCoordinator {
     }
 
     func stop(bridgeId: UUID) {
+        guard let bridge = store.bridge(id: bridgeId) else { return }
+        // A stopped Ask-To bridge cannot accept follow-ups, so keeping its
+        // private endpoint alive only creates an unreachable session. Treat
+        // Stop as full Ask-To teardown.
+        if bridge.intent == .askAgent {
+            dismiss(bridgeId: bridgeId)
+            return
+        }
+        if bridge.state == .running {
+            store.stop(id: bridgeId, reason: .manual)
+        }
         cancelPendingHelperReadySend(bridgeId: bridgeId)
         detachAutoForwardSubscription(bridgeId: bridgeId)
-        cleanupHelperWorkspaceIfNeeded(bridgeId: bridgeId, force: false)
     }
 
     func dismiss(bridgeId: UUID) {
-        // cleanupHelperWorkspaceIfNeeded reads the bridge from the store, so
-        // remove the cancellable first, do the helper close, then mutate the
-        // store, and only then prune orphaned display-state entries — at
-        // that point `store.bridges` reflects the post-dismiss truth.
+        guard let bridge = store.bridge(id: bridgeId) else { return }
+        let affectedManager = tabManager(for: bridge)
         cancelPendingHelperReadySend(bridgeId: bridgeId)
         autoForwardCancellables.removeValue(forKey: bridgeId)
-        cleanupHelperWorkspaceIfNeeded(bridgeId: bridgeId, force: true)
+        if affectedManager?.selectedTabId == bridge.rightWorkspaceId,
+           affectedManager?.tabs.contains(where: { $0.id == bridge.leftWorkspaceId }) == true {
+            affectedManager?.selectedTabId = bridge.leftWorkspaceId
+        }
+        // Remove ownership before closing the helper so the synchronous
+        // workspaceDidClose hook cannot re-enter teardown through this bridge.
         store.dismiss(id: bridgeId)
+        cleanupHelperWorkspaceIfNeeded(bridge: bridge, force: true)
+        if let affectedManager {
+            _ = cleanupOrphanedHiddenHelpers(tabManager: affectedManager)
+            _ = repairHiddenHelperSelection(tabManager: affectedManager)
+        }
         pruneOrphanedDisplayStates()
+        DispatchQueue.main.async {
+            TermLoopHooks.saveCriticalAgentRestoreStateSync()
+        }
     }
 
     /// User toggled the cable's mode menu. Updates the persisted bridge and
@@ -265,7 +456,7 @@ final class BridgeCoordinator {
               bridge.intent == .askAgent,
               bridge.state == .running,
               let request = bridge.askToRequest(id: requestId),
-              let tabManager
+              let helperTabManager = tabManager(containing: bridge.rightWorkspaceId)
         else {
             BridgeDebugTrace.log("coord.askTo.send guard-fail bridge=\(bridgeId.uuidString.prefix(8)) request=\(requestId.uuidString.prefix(8))")
             return
@@ -274,7 +465,7 @@ final class BridgeCoordinator {
             bridge: bridge,
             targetWorkspaceId: bridge.rightWorkspaceId,
             text: request.kickoffMessage,
-            tabManager: tabManager
+            tabManager: helperTabManager
         )
     }
 
@@ -349,15 +540,24 @@ final class BridgeCoordinator {
     func dismissAndCloseRight(bridgeId: UUID) {
         guard let bridge = store.bridge(id: bridgeId) else { return }
         let rightWsId = bridge.rightWorkspaceId
+        let rightTabManager = tabManager(containing: rightWsId)
         dismiss(bridgeId: bridgeId)
-        if let tabManager,
-           let workspace = tabManager.tabs.first(where: { $0.id == rightWsId }) {
-            tabManager.closeWorkspaceFromSidebarPopover(workspace)
+        if let rightTabManager,
+           let workspace = rightTabManager.tabs.first(where: { $0.id == rightWsId }) {
+            rightTabManager.closeWorkspaceFromSidebarPopover(workspace)
         }
     }
 
     func workspaceDidClose(workspaceId: UUID) {
         guard let bridge = store.bridge(forWorkspaceId: workspaceId) else { return }
+        if bridge.intent == .askAgent {
+            if workspaceId == bridge.rightWorkspaceId,
+               case .stopped(.sendTimeout) = bridge.state {
+                return
+            }
+            dismiss(bridgeId: bridge.id)
+            return
+        }
         if case .stopped = bridge.state { return }
         store.stop(id: bridge.id, reason: .workspaceClosed)
         stop(bridgeId: bridge.id)
@@ -368,12 +568,13 @@ final class BridgeCoordinator {
     /// Idempotent against double-clicks: dedupes against the last forwarded
     /// message and no-ops when the source has nothing new.
     func forwardLatestMessage(from sender: BridgeSender, in bridge: WorkspaceBridge) {
-        guard let tabManager,
-              let sourceWsId = bridge.workspaceId(for: sender),
+        guard let sourceWsId = bridge.workspaceId(for: sender),
               let target = bridge.opposite(of: sender),
               let targetWsId = bridge.workspaceId(for: target),
               let current = store.bridge(id: bridge.id),
-              current.state == .running
+              current.state == .running,
+              let sourceTabManager = tabManager(containing: sourceWsId),
+              let targetTabManager = tabManager(containing: targetWsId)
         else { return }
 
         let agent = WorkspaceMetadataStore.shared
@@ -382,7 +583,7 @@ final class BridgeCoordinator {
         let session = WorkspaceMetadataStore.shared
             .claudeSession(workspaceId: sourceWsId.uuidString)
         let persisted = Self.freshPersistedSession(forWorkspaceId: sourceWsId, bridge: current)
-        let cwd = tabManager.tabs.first(where: { $0.id == sourceWsId })?.currentDirectory ?? ""
+        let cwd = sourceTabManager.tabs.first(where: { $0.id == sourceWsId })?.currentDirectory ?? ""
 
         guard let snapshot = extractor.assistantMessageSnapshot(
             agentId: agent,
@@ -405,7 +606,12 @@ final class BridgeCoordinator {
         }
 
         store.appendMessage(bridgeId: current.id, sender: sender, text: snapshot.text)
-        sendBridgeInput(snapshot.text, toWorkspaceId: targetWsId, tabManager: tabManager, bridgeId: current.id)
+        sendBridgeInput(
+            snapshot.text,
+            toWorkspaceId: targetWsId,
+            tabManager: targetTabManager,
+            bridgeId: current.id
+        )
     }
 
     /// Delivers the helper's single final Ask-To reply back to the source
@@ -458,8 +664,8 @@ final class BridgeCoordinator {
                 "expected=\(bridge.rightWorkspaceId.uuidString.prefix(8)) actual=\(callerWorkspaceId.uuidString.prefix(8))"
             )
         }
-        guard let tabManager,
-              tabManager.tabs.contains(where: { $0.id == bridge.leftWorkspaceId })
+        guard let sourceTabManager = tabManager(containing: bridge.leftWorkspaceId),
+              sourceTabManager.tabs.contains(where: { $0.id == bridge.leftWorkspaceId })
         else {
             return .sourceWorkspaceUnavailable
         }
@@ -471,7 +677,7 @@ final class BridgeCoordinator {
             _ = sendBridgeInput(
                 Self.finalReplyInput(text),
                 toWorkspaceId: bridge.leftWorkspaceId,
-                tabManager: tabManager,
+                tabManager: sourceTabManager,
                 bridgeId: bridgeId
             )
             BridgeDebugTrace.log(
@@ -939,9 +1145,23 @@ final class BridgeCoordinator {
                 "bridge.send giveup panel=\(self.shortId(panel.id)) ws=\(self.shortId(workspaceId)) bid=\(self.shortId(bridgeId)) chars=\(text.count)"
             )
             if let bridgeId, self.store.bridge(id: bridgeId)?.state == .running {
-                self.store.stop(id: bridgeId, reason: .sendTimeout)
-                self.stop(bridgeId: bridgeId)
+                self.handleSendTimeout(bridgeId: bridgeId)
             }
+        }
+    }
+
+    /// Preserve the stopped record long enough for the cable to explain why
+    /// delivery failed, while still tearing down the hidden helper process.
+    private func handleSendTimeout(bridgeId: UUID) {
+        guard store.bridge(id: bridgeId) != nil else { return }
+        store.stop(id: bridgeId, reason: .sendTimeout)
+        cancelPendingHelperReadySend(bridgeId: bridgeId)
+        detachAutoForwardSubscription(bridgeId: bridgeId)
+        guard let stoppedBridge = store.bridge(id: bridgeId) else { return }
+        cleanupHelperWorkspaceIfNeeded(bridge: stoppedBridge, force: true)
+        pruneOrphanedDisplayStates()
+        DispatchQueue.main.async {
+            TermLoopHooks.saveCriticalAgentRestoreStateSync()
         }
     }
 
@@ -1007,37 +1227,38 @@ final class BridgeCoordinator {
 
     // MARK: - Helper cleanup
 
-    private func cleanupHelperWorkspaceIfNeeded(bridgeId: UUID, force: Bool) {
-        guard let tabManager,
-              let bridge = store.bridge(id: bridgeId),
-              bridge.intent == .askAgent,
-              let helper = tabManager.tabs.first(where: { $0.id == bridge.rightWorkspaceId })
+    private func cleanupHelperWorkspaceIfNeeded(
+        bridge: WorkspaceBridge,
+        force: Bool
+    ) {
+        guard bridge.intent == .askAgent,
+              let helperTabManager = tabManager(containing: bridge.rightWorkspaceId),
+              let helper = helperTabManager.tabs.first(where: { $0.id == bridge.rightWorkspaceId })
         else { return }
 
-        // Keep hidden askAgent helpers alive after natural stops (.manual) so
-        // the bridge row stays clickable — the user can revisit the helper
-        // terminal to forward further messages or inspect state. Only force=true
-        // (explicit × dismiss) and lifecycle-terminal reasons close the helper.
-        let shouldClose: Bool = {
-            if force { return true }
-            guard case let .stopped(reason) = bridge.state else { return false }
-            switch reason {
-            case .workspaceClosed, .sendTimeout:
-                return true
-            case .manual, .replied:
-                return false
-            }
+        let shouldClose = force || {
+            if case .stopped = bridge.state { return true }
+            return false
         }()
         guard shouldClose else { return }
 
-        if tabManager.tabs.count == 1 {
-            _ = tabManager.addWorkspace(
+        // If the user explicitly opened the helper, move selection back to its
+        // source before teardown. This prevents closeWorkspace's index fallback
+        // from landing on an unrelated project.
+        if helperTabManager.selectedTabId == helper.id,
+           helperTabManager.tabs.contains(where: { $0.id == bridge.leftWorkspaceId }) {
+            helperTabManager.selectedTabId = bridge.leftWorkspaceId
+        }
+        if helperTabManager.tabs.count == 1 {
+            _ = helperTabManager.addWorkspace(
                 title: nil,
                 workingDirectory: nil,
                 select: true,
-                eagerLoadTerminal: false
+                eagerLoadTerminal: false,
+                projectId: ProjectStore.shared.activeProjectId
             )
         }
-        tabManager.closeWorkspace(helper)
+        helperTabManager.closeWorkspace(helper)
+        _ = WorkspaceMetadataStore.shared.removeMetadataForId(helper.id)
     }
 }

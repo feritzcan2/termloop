@@ -15,6 +15,9 @@ final class AgentCatalogStore: ObservableObject {
     private static let claudeModels: Set<AgentModelOption> = [.default, .opus, .sonnet]
     private static let codexModels: Set<AgentModelOption> = [
         .default,
+        .gpt56Sol,
+        .gpt56Terra,
+        .gpt56Luna,
         .gpt55,
         .gpt54,
         .gpt54Mini,

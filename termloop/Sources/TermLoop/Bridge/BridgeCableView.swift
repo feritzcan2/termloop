@@ -206,8 +206,12 @@ struct BridgeCableView: View {
                 )
                 modeMenu
                 iconButton(
-                    "stop.fill",
-                    help: String(localized: "bridge.cable.stop",
+                    bridge.intent == .askAgent ? "xmark" : "stop.fill",
+                    help: bridge.intent == .askAgent
+                        ? String(localized: "bridge.cable.closeAskTo",
+                                 defaultValue: "Close Ask-To session",
+                                 table: "TermLoop")
+                        : String(localized: "bridge.cable.stop",
                                  defaultValue: "Stop bridge",
                                  table: "TermLoop"),
                     action: onStop

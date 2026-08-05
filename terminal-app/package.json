@@ -16,7 +16,8 @@
     "eas:build:production": "npx eas-cli build --profile production --platform ios --auto-submit",
     "eas:update:preview": "npx eas-cli update --channel preview",
     "eas:update:staging": "npx eas-cli update --channel staging",
-    "eas:update:production": "npx eas-cli update --channel production"
+    "eas:update:production": "npx eas-cli update --channel production",
+    "testflight": "bash ./scripts/submit-testflight.sh"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

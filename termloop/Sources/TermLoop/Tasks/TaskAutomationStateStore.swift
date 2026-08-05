@@ -3,6 +3,12 @@
 
 import Foundation
 
+enum TaskAutomationFailureStage: String, Codable, Equatable, Sendable {
+    case taskSync
+    case worktree
+    case agentLaunch
+}
+
 struct TaskAutomationRemoteState: Codable, Equatable, Sendable {
     var storageKey: String
     var firstSeenAt: Date
@@ -12,9 +18,12 @@ struct TaskAutomationRemoteState: Codable, Equatable, Sendable {
     var worktreeStartedAt: Date?
     var agentStartedAt: Date?
     var agentWorkspaceId: UUID?
+    var terminalObservedAt: Date?
     var failedAt: Date?
     var failureMessage: String?
     var failureCount: Int?
+    var failureStage: TaskAutomationFailureStage?
+    var failureCountsByStage: [String: Int]?
 
     init(storageKey: String, seenAt: Date, providerUpdatedAt: Date?) {
         self.storageKey = storageKey
@@ -22,6 +31,16 @@ struct TaskAutomationRemoteState: Codable, Equatable, Sendable {
         self.lastSeenAt = seenAt
         self.providerUpdatedAt = providerUpdatedAt
     }
+}
+
+struct TaskAutomationFailureSummary: Identifiable, Equatable, Sendable {
+    var id: String { storageKey }
+    let storageKey: String
+    let remoteKey: String
+    let failedAt: Date
+    let message: String
+    let failureCount: Int
+    let stage: TaskAutomationFailureStage?
 }
 
 struct TaskAutomationStateFile: Codable, Equatable, Sendable {
@@ -79,6 +98,26 @@ final class TaskAutomationStateStore {
         return file
     }
 
+    var unresolvedFailures: [TaskAutomationFailureSummary] {
+        ensureLoaded()
+        return file.remotes.values.compactMap { state in
+            guard let failedAt = state.failedAt,
+                  let message = state.failureMessage?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !message.isEmpty else {
+                return nil
+            }
+            return TaskAutomationFailureSummary(
+                storageKey: state.storageKey,
+                remoteKey: Self.remoteKey(from: state.storageKey),
+                failedAt: failedAt,
+                message: message,
+                failureCount: state.failureCount ?? 1,
+                stage: state.failureStage
+            )
+        }
+        .sorted { $0.failedAt > $1.failedAt }
+    }
+
     func hasCompletedBaseline(scopeKey: String) -> Bool {
         ensureLoaded()
         return file.activeScopeKey == scopeKey && file.baselineCompletedAt != nil
@@ -131,6 +170,31 @@ final class TaskAutomationStateStore {
         save()
     }
 
+    func observeWithoutClaiming(
+        _ snapshots: [RemoteWorkItemSnapshot],
+        scopeKey: String,
+        now: Date = Date()
+    ) {
+        ensureLoaded()
+        guard file.activeScopeKey == scopeKey,
+              file.baselineCompletedAt != nil,
+              !snapshots.isEmpty else {
+            return
+        }
+        for snapshot in snapshots {
+            let storageKey = snapshot.reference.storageKey
+            upsertSeen(snapshot, now: now)
+            if var state = file.remotes[storageKey],
+               state.taskCreatedAt == nil,
+               state.worktreeStartedAt == nil,
+               state.agentStartedAt == nil {
+                state.terminalObservedAt = now
+                file.remotes[storageKey] = state
+            }
+        }
+        save()
+    }
+
     func claimNewSnapshots(
         _ snapshots: [RemoteWorkItemSnapshot],
         scopeKey: String,
@@ -155,6 +219,13 @@ final class TaskAutomationStateStore {
                     providerUpdatedAt: snapshot.providerUpdatedAt
                 )
                 claimed.append(snapshot)
+            } else if let existing = file.remotes[key], shouldClaimReopenedTerminalState(existing) {
+                upsertSeen(snapshot, now: now)
+                if var reopened = file.remotes[key] {
+                    reopened.terminalObservedAt = nil
+                    file.remotes[key] = reopened
+                }
+                claimed.append(snapshot)
             } else if let existing = file.remotes[key], shouldRetry(existing, now: now) {
                 upsertSeen(snapshot, now: now)
                 claimed.append(snapshot)
@@ -171,16 +242,19 @@ final class TaskAutomationStateStore {
     func markTaskCreated(storageKey: String, now: Date = Date()) {
         mutateRemote(storageKey, now: now) { state in
             state.taskCreatedAt = state.taskCreatedAt ?? now
-            state.failureMessage = nil
-            state.failedAt = nil
+            state.terminalObservedAt = nil
+            if state.failureStage == .taskSync {
+                Self.clearFailure(&state)
+            }
         }
     }
 
     func markWorktreeStarted(storageKey: String, now: Date = Date()) {
         mutateRemote(storageKey, now: now) { state in
             state.worktreeStartedAt = state.worktreeStartedAt ?? now
-            state.failureMessage = nil
-            state.failedAt = nil
+            if state.failureStage == .worktree {
+                Self.clearFailure(&state)
+            }
         }
     }
 
@@ -188,8 +262,7 @@ final class TaskAutomationStateStore {
         mutateRemote(storageKey, now: now) { state in
             state.agentStartedAt = state.agentStartedAt ?? now
             state.agentWorkspaceId = workspaceId
-            state.failureMessage = nil
-            state.failedAt = nil
+            Self.clearFailure(&state)
         }
     }
 
@@ -198,12 +271,68 @@ final class TaskAutomationStateStore {
         return file.remotes[storageKey]?.agentStartedAt != nil
     }
 
-    func markFailed(storageKey: String, message: String, now: Date = Date()) {
+    func canAttemptRepair(storageKey: String, now: Date = Date()) -> Bool {
+        ensureLoaded()
+        guard let state = file.remotes[storageKey],
+              state.agentStartedAt == nil else {
+            return false
+        }
+        return failureAllowsRetry(state, now: now)
+    }
+
+    func markFailed(
+        storageKey: String,
+        stage: TaskAutomationFailureStage,
+        message: String,
+        now: Date = Date()
+    ) {
         mutateRemote(storageKey, now: now) { state in
             state.failedAt = now
             state.failureMessage = message
-            state.failureCount = (state.failureCount ?? 0) + 1
+            var counts = state.failureCountsByStage ?? [:]
+            let priorCount = counts[stage.rawValue]
+                ?? (state.failureStage == stage ? state.failureCount : nil)
+                ?? 0
+            let nextCount = priorCount + 1
+            counts[stage.rawValue] = nextCount
+            state.failureCount = nextCount
+            state.failureStage = stage
+            state.failureCountsByStage = counts
         }
+    }
+
+    func resolveCompleted(storageKeys: Set<String>, now: Date = Date()) {
+        ensureLoaded()
+        var changed = false
+        for storageKey in storageKeys {
+            guard var state = file.remotes[storageKey],
+                  state.failedAt != nil || state.failureMessage != nil || state.failureCount != nil else {
+                continue
+            }
+            state.lastSeenAt = now
+            Self.clearFailure(&state)
+            file.remotes[storageKey] = state
+            changed = true
+        }
+        if changed { save() }
+    }
+
+    func pruneFailuresNotSeenInFullReconcile(
+        observedStorageKeys: Set<String>
+    ) {
+        ensureLoaded()
+        let keysToRemove = file.remotes.compactMap { storageKey, state -> String? in
+            guard !observedStorageKeys.contains(storageKey),
+                  state.failedAt != nil else {
+                return nil
+            }
+            return storageKey
+        }
+        guard !keysToRemove.isEmpty else { return }
+        for storageKey in keysToRemove {
+            file.remotes.removeValue(forKey: storageKey)
+        }
+        save()
     }
 
     private func activateScopeIfNeeded(_ scopeKey: String, now: Date) -> Bool {
@@ -236,14 +365,40 @@ final class TaskAutomationStateStore {
         guard state.agentStartedAt == nil else {
             return false
         }
-        if state.worktreeStartedAt != nil, state.failedAt == nil {
-            return true
-        }
-        guard let failedAt = state.failedAt,
-              (state.failureCount ?? 0) < Self.maxFailureRetries else {
+        guard state.worktreeStartedAt != nil || state.failedAt != nil else {
             return false
         }
+        return failureAllowsRetry(state, now: now)
+    }
+
+    private func shouldClaimReopenedTerminalState(_ state: TaskAutomationRemoteState) -> Bool {
+        state.terminalObservedAt != nil
+            && state.taskCreatedAt == nil
+            && state.worktreeStartedAt == nil
+            && state.agentStartedAt == nil
+    }
+
+    private func failureAllowsRetry(_ state: TaskAutomationRemoteState, now: Date) -> Bool {
+        guard let failedAt = state.failedAt else { return true }
+        let stageFailureCount = state.failureStage.flatMap {
+            state.failureCountsByStage?[$0.rawValue]
+        } ?? state.failureCount ?? 0
+        guard stageFailureCount < Self.maxFailureRetries else { return false }
         return now.timeIntervalSince(failedAt) >= Self.failureRetryInterval
+    }
+
+    private static func clearFailure(_ state: inout TaskAutomationRemoteState) {
+        state.failedAt = nil
+        state.failureMessage = nil
+        state.failureCount = nil
+        state.failureStage = nil
+        state.failureCountsByStage = nil
+    }
+
+    private static func remoteKey(from storageKey: String) -> String {
+        let pieces = storageKey.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false)
+        guard pieces.count == 3 else { return storageKey }
+        return String(pieces[2])
     }
 
     private func mutateRemote(

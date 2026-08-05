@@ -1,6 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Resolve a *stable* codesigning identity for the staging app. Ad-hoc signing
+# (`codesign --sign -`) rotates the bundle's cdhash on every rebuild, so macOS
+# treats each build as a new application and drops keychain "Always Allow"
+# grants — which forces tools launched inside TermLoop (e.g. Claude Code) to
+# re-authenticate on every relaunch. A real cert gives a stable Designated
+# Requirement so the grant persists. Prefers Apple Development, then Developer
+# ID Application; falls back to ad-hoc ('-') when no cert exists (CI / VM).
+# Override with TERMLOOP_CODESIGN_IDENTITY (set '-' to force ad-hoc).
+resolve_codesign_identity() {
+  if [[ -n "${TERMLOOP_CODESIGN_IDENTITY:-}" ]]; then
+    printf '%s' "$TERMLOOP_CODESIGN_IDENTITY"
+    return
+  fi
+  local ids hash
+  ids="$(security find-identity -v -p codesigning 2>/dev/null || true)"
+  hash="$(printf '%s\n' "$ids" | grep 'Apple Development' | head -1 | awk '{print $2}')"
+  if [[ -z "$hash" ]]; then
+    hash="$(printf '%s\n' "$ids" | grep 'Developer ID Application' | head -1 | awk '{print $2}')"
+  fi
+  printf '%s' "${hash:--}"
+}
+
 APP_NAME="TermLoop STAGING"
 BUNDLE_ID="com.termloop.app.staging"
 BASE_APP_NAME="TermLoop"
@@ -215,7 +237,13 @@ if [[ -f "$INFO_PLIST" ]]; then
   if [[ -S "$TERMLOOP_SOCKET" ]]; then
     rm -f "$TERMLOOP_SOCKET"
   fi
-  /usr/bin/codesign --force --sign - --timestamp=none --generate-entitlement-der "$STAGING_APP_PATH" >/dev/null 2>&1 || true
+  SIGN_IDENTITY="$(resolve_codesign_identity)"
+  if ! /usr/bin/codesign --force --sign "$SIGN_IDENTITY" --timestamp=none --generate-entitlement-der "$STAGING_APP_PATH" >/dev/null 2>&1; then
+    if [[ "$SIGN_IDENTITY" != "-" ]]; then
+      echo "warn: codesign with '$SIGN_IDENTITY' failed; falling back to ad-hoc (keychain grants will not persist)" >&2
+      /usr/bin/codesign --force --sign - --timestamp=none --generate-entitlement-der "$STAGING_APP_PATH" >/dev/null 2>&1 || true
+    fi
+  fi
 fi
 APP_PATH="$STAGING_APP_PATH"
 

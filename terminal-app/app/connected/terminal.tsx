@@ -3,6 +3,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
+  Clipboard,
   type AppStateStatus,
   FlatList,
   KeyboardAvoidingView,
@@ -28,6 +29,12 @@ import {
 import { getActiveClient } from "../../lib/session";
 import { type SurfaceSubscription } from "../../lib/termloop-client";
 import { colors, monoFont, radii } from "../../lib/theme";
+import {
+  cancelVoiceDictation,
+  isVoiceDictationAvailable,
+  startVoiceDictation,
+  stopVoiceDictation,
+} from "../../lib/voice-dictation";
 
 const MAX_BUFFER_LINES = 3000;
 const MAX_BUFFER_CHARS = 450_000;
@@ -40,6 +47,7 @@ const SEND_SETTLE_MS = 60;
 const NEAR_BOTTOM_PX = 80;
 const MAX_COMMAND_HISTORY = 50;
 const COMPOSER_MAX_HEIGHT = 96;
+const COPY_FEEDBACK_MS = 1400;
 const TERMINAL_HORIZONTAL_PADDING = 24;
 const TERMINAL_CONTENT_PADDING = 12;
 const TERMINAL_CHAR_WIDTH_RATIO = 0.72;
@@ -205,9 +213,12 @@ export default function TerminalScreen() {
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [sending, setSending] = useState(false);
+  const [voiceRecording, setVoiceRecording] = useState(false);
+  const [voiceBusy, setVoiceBusy] = useState(false);
   const [surfaceWidth, setSurfaceWidth] = useState(0);
   const [liveInputEnabled, setLiveInputEnabled] = useState(false);
   const [liveCapture, setLiveCapture] = useState("");
+  const [copyFeedback, setCopyFeedback] = useState(false);
 
   const aliveRef = useRef(true);
   const liveStateRef = useRef<LiveState>("connecting");
@@ -220,6 +231,9 @@ export default function TerminalScreen() {
   const reconnectRef = useRef<() => void>(() => {});
   const pendingOutputRef = useRef("");
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
   const liveInputQueueRef = useRef<Promise<void>>(Promise.resolve());
   const liveCaptureRef = useRef("");
   const lastLiveDeleteAtRef = useRef(0);
@@ -276,6 +290,11 @@ export default function TerminalScreen() {
       aliveRef.current = false;
       pendingOutputRef.current = "";
       clearOutputFlushTimer();
+      if (copyFeedbackTimerRef.current) {
+        clearTimeout(copyFeedbackTimerRef.current);
+        copyFeedbackTimerRef.current = null;
+      }
+      cancelVoiceDictation().catch(() => {});
     };
   }, [clearOutputFlushTimer]);
 
@@ -686,6 +705,53 @@ export default function TerminalScreen() {
     setTimeout(() => inputRef.current?.focus(), 0);
   }, []);
 
+  const onVoicePress = useCallback(async () => {
+    if (voiceBusy) return;
+    if (liveInputEnabled) {
+      setInlineError("Voice input is available after leaving Live input.");
+      return;
+    }
+
+    if (voiceRecording) {
+      setVoiceBusy(true);
+      try {
+        const text = await stopVoiceDictation();
+        setVoiceRecording(false);
+        if (!text) {
+          setInlineError("No speech detected.");
+          return;
+        }
+        setDraft((current) =>
+          current.trim() ? `${current.trimEnd()}\n${text}` : text
+        );
+        setHistoryIndex(null);
+        focusInputSoon();
+      } catch (err) {
+        setInlineError(`Voice input failed: ${friendlyTransportError(err)}`);
+        setVoiceRecording(false);
+      } finally {
+        setVoiceBusy(false);
+      }
+      return;
+    }
+
+    if (!isVoiceDictationAvailable()) {
+      setInlineError("Voice input is available on iOS development builds.");
+      return;
+    }
+
+    setVoiceRecording(true);
+    setVoiceBusy(true);
+    try {
+      await startVoiceDictation();
+    } catch (err) {
+      setVoiceRecording(false);
+      setInlineError(`Voice input failed: ${friendlyTransportError(err)}`);
+    } finally {
+      setVoiceBusy(false);
+    }
+  }, [focusInputSoon, liveInputEnabled, voiceBusy, voiceRecording]);
+
   const cycleFont = useCallback(() => {
     setFontIndex((i) => (((i + 1) % FONT_SIZES.length) as FontIndex));
   }, []);
@@ -697,6 +763,29 @@ export default function TerminalScreen() {
   }, []);
 
   const terminalLines = useMemo(() => terminalLinesForBuffer(buffer), [buffer]);
+  const copyableOutput = useMemo(
+    () => normalizeTerminalLineBreaks(stripAnsi(buffer)).trimEnd(),
+    [buffer]
+  );
+
+  const copyTerminalOutput = useCallback(async () => {
+    if (!copyableOutput) return;
+    try {
+      Clipboard.setString(copyableOutput);
+      setCopyFeedback(true);
+      if (copyFeedbackTimerRef.current) {
+        clearTimeout(copyFeedbackTimerRef.current);
+      }
+      copyFeedbackTimerRef.current = setTimeout(() => {
+        copyFeedbackTimerRef.current = null;
+        if (aliveRef.current) setCopyFeedback(false);
+      }, COPY_FEEDBACK_MS);
+    } catch (err) {
+      if (aliveRef.current) {
+        setInlineError(`Copy failed: ${friendlyTransportError(err)}`);
+      }
+    }
+  }, [copyableOutput]);
 
   const maxLineChars = useMemo(
     () => terminalLines.reduce((max, line) => Math.max(max, line.text.length), 1),
@@ -774,6 +863,13 @@ export default function TerminalScreen() {
         disabled: false,
         active: liveInputEnabled,
       },
+      {
+        kind: "action",
+        label: copyFeedback ? "Copied" : "Copy All",
+        onPress: copyTerminalOutput,
+        disabled: !copyableOutput,
+        active: copyFeedback,
+      },
       k("Tab"),
       k("Esc"),
       k("Ctrl-C"),
@@ -820,6 +916,9 @@ export default function TerminalScreen() {
     draft,
     scrollToBottom,
     isNearBottom,
+    copyFeedback,
+    copyTerminalOutput,
+    copyableOutput,
   ]);
   const renderTerminalLine = useCallback(
     ({ item }: ListRenderItemInfo<TerminalRenderLine>) => (
@@ -897,6 +996,20 @@ export default function TerminalScreen() {
               </View>
               <Pressable style={styles.fontBtn} onPress={cycleFont} hitSlop={6}>
                 <Text style={styles.fontBtnText}>Aa {fontSize}</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.copyBtn,
+                  copyFeedback && styles.copyBtnActive,
+                  !copyableOutput && styles.copyBtnDisabled,
+                ]}
+                onPress={copyTerminalOutput}
+                disabled={!copyableOutput}
+                hitSlop={6}
+              >
+                <Text style={styles.copyBtnText}>
+                  {copyFeedback ? "Copied" : "Copy All"}
+                </Text>
               </Pressable>
               <Pressable
                 style={[styles.refreshBtn, refreshing && styles.refreshBtnBusy]}
@@ -1082,6 +1195,23 @@ export default function TerminalScreen() {
             </View>
             <Pressable
               style={[
+                styles.micBtn,
+                voiceRecording && styles.micBtnActive,
+                (voiceBusy || liveInputEnabled) && styles.micBtnDisabled,
+              ]}
+              onPress={onVoicePress}
+              disabled={voiceBusy || liveInputEnabled}
+            >
+              {voiceBusy ? (
+                <ActivityIndicator color={colors.sub} size="small" />
+              ) : (
+                <Text style={styles.micBtnText}>
+                  {voiceRecording ? "Stop" : "Mic"}
+                </Text>
+              )}
+            </Pressable>
+            <Pressable
+              style={[
                 styles.sendBtn,
                 liveInputEnabled && styles.liveDoneBtn,
                 primaryButtonDisabled && styles.sendBtnDisabled,
@@ -1171,6 +1301,22 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   fontBtnText: { color: colors.text, fontSize: 11, fontWeight: "700" },
+  copyBtn: {
+    minHeight: 28,
+    paddingHorizontal: 8,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.borderAccent,
+    backgroundColor: colors.primaryDim,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  copyBtnActive: {
+    borderColor: colors.successBorder,
+    backgroundColor: colors.successDim,
+  },
+  copyBtnDisabled: { opacity: 0.38 },
+  copyBtnText: { color: colors.primary, fontSize: 11, fontWeight: "800" },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   statusLabel: { color: colors.sub, fontSize: 10, fontWeight: "700" },
   refreshBtn: {
@@ -1404,6 +1550,27 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     minHeight: 44,
     minWidth: 72,
+  },
+  micBtn: {
+    paddingHorizontal: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: colors.primaryDim,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderAccent,
+    minHeight: 44,
+    minWidth: 58,
+  },
+  micBtnActive: {
+    borderColor: colors.successBorder,
+    backgroundColor: colors.successDim,
+  },
+  micBtnDisabled: { opacity: 0.45 },
+  micBtnText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "800",
   },
   liveDoneBtn: { backgroundColor: colors.bgRaised },
   sendBtnDisabled: { opacity: 0.45 },

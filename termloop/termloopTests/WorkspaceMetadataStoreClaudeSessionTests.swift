@@ -78,6 +78,16 @@ final class WorkspaceMetadataStoreClaudeSessionTests: XCTestCase {
         XCTAssertEqual(session?.cwd, "/tmp/codex")
     }
 
+    func testTerminalAgentModelRoundTrips() throws {
+        let store = WorkspaceMetadataStore.shared
+        let workspaceId = UUID()
+
+        store.setTerminalAgentModel(.gpt56Luna, for: workspaceId)
+        defer { store.setTerminalAgentModel(nil, for: workspaceId) }
+
+        XCTAssertEqual(store.terminalAgentModel(for: workspaceId), .gpt56Luna)
+    }
+
     func testClearPersistedAgentSessionRemovesStoredSession() throws {
         let store = WorkspaceMetadataStore.shared
         let workspaceId = UUID()

@@ -98,10 +98,13 @@ final class WorktreeProjectionStore: ObservableObject {
             drafts[key] = draft
         }
 
-        if let registry = WorktreeRegistry.shared.cachedSnapshot(
+        let registry = WorktreeRegistry.shared.cachedSnapshot(
             projectFolder: projectFolder,
             maximumAge: maximumAge
-        ) {
+        ) ?? WorktreeRegistry.shared.lastSuccessfulSnapshot(
+            projectFolder: projectFolder
+        )
+        if let registry {
             for entry in registry.entries {
                 upsert(path: entry.path) { draft in
                     draft.path = normalizedPath(entry.path) ?? entry.path

@@ -142,6 +142,11 @@ private struct CollapsedWorkspaceFooterRows: View {
                                 isWorktree: true,
                                 onRestore: { restore(workspaceIds: group.workspaceIds) },
                                 onDelete: { delete(workspaceIds: group.workspaceIds, targetName: group.branch) },
+                                deleteHelp: String(
+                                    localized: "workspaceCollapse.footer.deleteHelp",
+                                    defaultValue: "Delete collapsed workspace",
+                                    table: "TermLoop"
+                                ),
                                 restoreHelp: String(
                                     localized: "workspaceCollapse.footer.worktreeHelp",
                                     defaultValue: "Restore this worktree and auto-resume saved agents",
@@ -159,6 +164,11 @@ private struct CollapsedWorkspaceFooterRows: View {
                                 isWorktree: false,
                                 onRestore: { restore(workspaceIds: [summary.id]) },
                                 onDelete: { delete(workspaceIds: [summary.id], targetName: title) },
+                                deleteHelp: String(
+                                    localized: "workspaceCollapse.footer.deleteHelp",
+                                    defaultValue: "Delete collapsed workspace",
+                                    table: "TermLoop"
+                                ),
                                 restoreHelp: String(
                                     localized: "workspaceCollapse.footer.agentHelp",
                                     defaultValue: "Restore this agent and auto-resume its saved session",
@@ -174,7 +184,12 @@ private struct CollapsedWorkspaceFooterRows: View {
                                 detail: nil,
                                 isWorktree: false,
                                 onRestore: { restoreArchivedTask(task.id) },
-                                onDelete: nil,
+                                onDelete: { deleteArchivedTask(task.id) },
+                                deleteHelp: String(
+                                    localized: "tasks.card.menu.delete",
+                                    defaultValue: "Delete",
+                                    table: "TermLoop"
+                                ),
                                 restoreHelp: String(
                                     localized: "tasks.sidebar.archived.restore.help",
                                     defaultValue: "Restore task",
@@ -338,6 +353,7 @@ private struct CollapsedWorkspaceFooterRows: View {
         isWorktree: Bool,
         onRestore: @escaping () -> Void,
         onDelete: (() -> Void)?,
+        deleteHelp: String?,
         restoreHelp: String
     ) -> some View {
         HStack(spacing: 6) {
@@ -389,11 +405,7 @@ private struct CollapsedWorkspaceFooterRows: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help(String(
-                    localized: "workspaceCollapse.footer.deleteHelp",
-                    defaultValue: "Delete collapsed workspace",
-                    table: "TermLoop"
-                ))
+                .help(deleteHelp ?? "")
             }
         }
         .padding(.horizontal, TermLoopSidebarTheme.rowInsetH)
@@ -404,6 +416,12 @@ private struct CollapsedWorkspaceFooterRows: View {
     private func restoreArchivedTask(_ taskId: UUID) {
         guard let store = activeTaskStore else { return }
         try? TaskLifecycleCoordinator.makeForProject(store: store).restoreTask(taskId)
+        rebuildSnapshot()
+    }
+
+    private func deleteArchivedTask(_ taskId: UUID) {
+        guard let store = activeTaskStore else { return }
+        try? TaskLifecycleCoordinator.makeForProject(store: store).deleteTask(taskId)
         rebuildSnapshot()
     }
 }

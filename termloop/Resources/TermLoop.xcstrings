@@ -567,6 +567,23 @@
         }
       }
     },
+    "bridge.cable.closeAskTo": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close Ask-To session"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask-To セッションを閉じる"
+          }
+        }
+      }
+    },
     "bridge.cable.mode.tag.arm": {
       "extractionState": "manual",
       "localizations": {
@@ -3913,6 +3930,94 @@
           "stringUnit": {
             "state": "translated",
             "value": "TermLoop 設定"
+          }
+        }
+      }
+    },
+    "tasks.settings.backgroundSync.activity.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background activity"
+          }
+        }
+      }
+    },
+    "tasks.settings.backgroundSync.failures.count": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "×%lld"
+          }
+        }
+      }
+    },
+    "tasks.settings.backgroundSync.failures.more": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+%lld more"
+          }
+        }
+      }
+    },
+    "tasks.settings.backgroundSync.failures.stage.agentLaunch": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent launch"
+          }
+        }
+      }
+    },
+    "tasks.settings.backgroundSync.failures.stage.automation": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automation"
+          }
+        }
+      }
+    },
+    "tasks.settings.backgroundSync.failures.stage.taskSync": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task sync"
+          }
+        }
+      }
+    },
+    "tasks.settings.backgroundSync.failures.stage.worktree": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Worktree"
+          }
+        }
+      }
+    },
+    "tasks.settings.backgroundSync.failures.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needs attention (%lld)"
           }
         }
       }

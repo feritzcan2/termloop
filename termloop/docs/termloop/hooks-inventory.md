@@ -15,11 +15,14 @@ in upstream-owned Swift files. Regenerate with `scripts/generate-hooks-inventory
 | `Sources/AppDelegate.swift` | 3007 | `TermLoopHooks.applicationWillTerminate()` |
 | `Sources/AppDelegate.swift` | 3787 | `// Bootstrap TermLoop stores from the sidecar (or create a Default` |
 | `Sources/AppDelegate.swift` | 3855 | `TermLoopHooks.removeLegacyPersistedWindowGeometryIfPresent(defaults: defaults, keys: legacyPersistedWindowGeometryDefaultsKeys)` |
-| `Sources/AppDelegate.swift` | 4626 | `if let sessionURL = SessionPersistenceStore.defaultSnapshotFileURL() { TermLoopHooks.saveSidecarSnapshot(alongside: sessionURL, synchronously: writeSynchronously, persistenceQueue: sessionPersistenceQueue) }` |
-| `Sources/AppDelegate.swift` | 4646 | `return TermLoopHooks.shouldSkipSessionSaveDuringStartupRestore(isApplyingStartupSessionRestore: isApplyingStartupSessionRestore, includeScrollback: includeScrollback)` |
-| `Sources/AppDelegate.swift` | 4830 | `TermLoopHooks.removeMirroredSessionSnapshotIfNeeded()` |
-| `Sources/AppDelegate.swift` | 5456 | `/// Walks window contexts in the same sorted order that` |
-| `Sources/AppDelegate.swift` | 11476 | `if TermLoopHooks.handleProjectNumberShortcut(digit: numberedConfiguredShortcutDigit(event: event, action: .selectProjectByNumber), tabManager: tabManager) { return true }` |
+| `Sources/AppDelegate.swift` | 3893 | `TermLoopHooks.completeStartupSessionRestoreIfUnavailable(canRestore: startupSessionSnapshot != nil && contextForMainTerminalWindow(primaryWindow) != nil)` |
+| `Sources/AppDelegate.swift` | 3959 | `TermLoopHooks.completeStartupSessionRestore()` |
+| `Sources/AppDelegate.swift` | 4632 | `if let sessionURL = SessionPersistenceStore.defaultSnapshotFileURL() { TermLoopHooks.saveSidecarSnapshot(alongside: sessionURL, synchronously: writeSynchronously, persistenceQueue: sessionPersistenceQueue) }` |
+| `Sources/AppDelegate.swift` | 4652 | `return TermLoopHooks.shouldSkipSessionSaveDuringStartupRestore(isApplyingStartupSessionRestore: isApplyingStartupSessionRestore, includeScrollback: includeScrollback)` |
+| `Sources/AppDelegate.swift` | 4836 | `TermLoopHooks.removeMirroredSessionSnapshotIfNeeded()` |
+| `Sources/AppDelegate.swift` | 5462 | `/// Walks window contexts in the same sorted order that` |
+| `Sources/AppDelegate.swift` | 6965 | `TermLoopHooks.completeStartupSessionRestore()` |
+| `Sources/AppDelegate.swift` | 11513 | `if TermLoopHooks.handleProjectNumberShortcut(digit: numberedConfiguredShortcutDigit(event: event, action: .selectProjectByNumber), tabManager: tabManager) { return true }` |
 | `Sources/ContentView.swift` | 691 | `termLoopResetForwardingOnExit(sender: sender)` |
 | `Sources/ContentView.swift` | 707 | `if let accepted = termLoopTryPrepareForwardedDrop(sender: sender, shouldCapture: shouldCapture) {` |
 | `Sources/ContentView.swift` | 744 | `if let result = termLoopTryPerformForwardedDrop(sender: sender, shouldCapture: shouldCapture) {` |
@@ -76,11 +79,11 @@ in upstream-owned Swift files. Regenerate with `scripts/generate-hooks-inventory
 | `Sources/TerminalController.swift` | 2135 | `let socketFd = TermLoopTCPBridge.currentSocketFd()` |
 | `Sources/TerminalController.swift` | 3094 | `// TermLoopSocketCommands returns this type across file boundaries, so it` |
 | `Sources/TerminalController.swift` | 3455 | `payload.merge(self.termLoopWorkspaceSummaryFields(for: workspace)) { _, new in new }` |
-| `Sources/TerminalController.swift` | 3540 | `let explicitProjectId = v2UUID(params, "project_id")` |
-| `Sources/TerminalController.swift` | 3579 | `projectId: explicitProjectId ?? termLoopWorkspaceCreateContext.projectId,` |
-| `Sources/TerminalController.swift` | 3584 | `if shouldDeferMobileBlankClaudeSessionPersistence {` |
-| `Sources/TerminalController.swift` | 6058 | `/// Narrow bridge for the mobile streaming backend. The stream registry` |
-| `Sources/TerminalController.swift` | 14915 | `if TerminalAgentRegistry.shared.statusKeys.contains(key) {` |
+| `Sources/TerminalController.swift` | 3575 | `let explicitProjectId = v2UUID(params, "project_id")` |
+| `Sources/TerminalController.swift` | 3616 | `projectId: explicitProjectId ?? termLoopWorkspaceCreateContext.projectId,` |
+| `Sources/TerminalController.swift` | 3621 | `if shouldDeferMobileBlankClaudeSessionPersistence {` |
+| `Sources/TerminalController.swift` | 6095 | `/// Narrow bridge for the mobile streaming backend. The stream registry` |
+| `Sources/TerminalController.swift` | 14952 | `if TerminalAgentRegistry.shared.statusKeys.contains(key) {` |
 | `Sources/Update/UpdateTitlebarAccessory.swift` | 411 | `TermLoopHooks.titlebarSettingsButton(config: config)` |
 | `Sources/Workspace.swift` | 454 | `TermLoopHooks.ensurePanelDirectoryBeforeSnapshot(workspace: self, panelId: panelId)` |
 | `Sources/Workspace.swift` | 7637 | `TermLoopHooks.workspaceTitleDidChange(workspace: self)` |
@@ -102,4 +105,4 @@ in upstream-owned Swift files. Regenerate with `scripts/generate-hooks-inventory
 | `Sources/termloopApp.swift` | 925 | `TermLoopHooks.mirrorTaggedBuildUserDefaultsIfNeeded()` |
 | `Sources/termloopApp.swift` | 1248 | `"cmux.debugEventLog",` |
 
-Total hook blocks: **96**.
+Total hook blocks: **99**.

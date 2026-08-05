@@ -42,6 +42,10 @@ enum MainAreaActivation {
         //    final state. Dedupe so re-tapping the active row does not
         //    re-fire `selectedTabId`'s downstream observers.
         if tabManager.selectedTabId != workspaceId {
+            TermLoopHooks.allowExplicitHiddenWorkspaceSelection(
+                workspaceId: workspaceId,
+                tabManager: tabManager
+            )
             tabManager.selectedTabId = workspaceId
         }
     }

@@ -316,6 +316,30 @@ final class ClaudeSessionScanner {
         return results
     }
 
+    /// Finds the exact post-cutoff transcript containing a durable identifier,
+    /// such as an Ask-To request UUID. The creation-date floor prevents an
+    /// older session in the same cwd from becoming the helper merely because
+    /// it received a recent write.
+    func sessionContaining(
+        text: String,
+        cwd: String,
+        newerThan: Date
+    ) -> JSONLMetadata? {
+        let needle = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedCwd = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty, !normalizedCwd.isEmpty else { return nil }
+
+        for entry in listFilesWithMtime(cwd: normalizedCwd) {
+            guard entry.creation >= newerThan,
+                  file(entry.url, contains: needle),
+                  let metadata = parseMetadata(file: entry.url) else {
+                continue
+            }
+            return metadata
+        }
+        return nil
+    }
+
     /// Merges session metadata across multiple cwd roots, deduping by
     /// session id so copied worktree/root entries appear only once.
     /// When duplicates exist, the newest file wins.
@@ -412,6 +436,18 @@ final class ClaudeSessionScanner {
             lastAssistantSnippet: truncate(lastAssistant, to: 100),
             lastUserSnippet: truncate(lastUser, to: 100),
             previewLines: tail.map { $0.line })
+    }
+
+    private func file(_ file: URL, contains needle: String) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: file) else { return false }
+        defer { try? handle.close() }
+
+        for line in LineIterator(handle: handle) {
+            if line.range(of: needle, options: [.caseInsensitive]) != nil {
+                return true
+            }
+        }
+        return false
     }
 
     private func extractUserText(_ obj: [String: Any]) -> String? {
