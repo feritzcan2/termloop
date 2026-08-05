@@ -7,6 +7,69 @@ import XCTest
 #endif
 
 final class WorktreeReconcilerTests: XCTestCase {
+    @MainActor
+    func testProjectionKeepsPhysicalWorktreeWhenFreshnessWindowExpires() {
+        let projectFolder = "/tmp/termloop-projection-\(UUID().uuidString)"
+        let worktreePath = "\(projectFolder)/.termloop-worktrees/feature__agentless"
+        let project = Project(
+            name: "Projection Expiry",
+            folderPath: projectFolder
+        )
+        WorktreeRegistry.shared.record(
+            projectFolder: projectFolder,
+            entries: [entry(path: worktreePath, branch: "feature/agentless")],
+            capturedAt: Date(timeIntervalSinceNow: -120)
+        )
+        defer {
+            WorktreeRegistry.shared.invalidate(projectFolder: projectFolder)
+        }
+
+        let snapshot = WorktreeProjectionStore.shared.snapshot(
+            project: project,
+            maximumAge: 60
+        )
+
+        let projected = snapshot.entry(forWorktreePath: worktreePath)
+        XCTAssertEqual(projected?.branch, "feature/agentless")
+        XCTAssertEqual(projected?.isPhysical, true)
+        XCTAssertEqual(projected?.workspaceIds, [])
+    }
+
+    @MainActor
+    func testProjectionKeepsLastSuccessfulPhysicalWorktreeDuringInvalidation() {
+        let projectFolder = "/tmp/termloop-projection-\(UUID().uuidString)"
+        let worktreePath = "\(projectFolder)/.termloop-worktrees/feature__agentless"
+        let project = Project(
+            name: "Projection Invalidation",
+            folderPath: projectFolder
+        )
+        WorktreeRegistry.shared.record(
+            projectFolder: projectFolder,
+            entries: [entry(path: worktreePath, branch: "feature/agentless")]
+        )
+        WorktreeRegistry.shared.markStale(projectFolder: projectFolder)
+        defer {
+            WorktreeRegistry.shared.invalidate(projectFolder: projectFolder)
+        }
+
+        XCTAssertNil(
+            WorktreeRegistry.shared.cachedSnapshot(
+                projectFolder: projectFolder,
+                maximumAge: 60
+            )
+        )
+
+        let snapshot = WorktreeProjectionStore.shared.snapshot(
+            project: project,
+            maximumAge: 60
+        )
+
+        let projected = snapshot.entry(forWorktreePath: worktreePath)
+        XCTAssertEqual(projected?.branch, "feature/agentless")
+        XCTAssertEqual(projected?.isPhysical, true)
+        XCTAssertEqual(projected?.workspaceIds, [])
+    }
+
     func testHealthyWhenStoredPathMatchesRegisteredExpectedBranch() {
         let path = "/tmp/repo/.termloop-worktrees/feature__x"
         let status = WorktreeReconciler.status(

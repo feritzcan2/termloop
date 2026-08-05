@@ -31,6 +31,11 @@ final class WorktreeRegistry {
 
     private let lock = NSLock()
     private var cache: [String: WorktreeRegistrySnapshot] = [:]
+    /// Last successful Git result, retained while `cache` is stale or a
+    /// replacement refresh is in flight. Presentation projections use this
+    /// as stale-while-revalidate data so physical worktrees do not disappear
+    /// just because freshness expired or Git invalidated the live cache.
+    private var lastSuccessfulCache: [String: WorktreeRegistrySnapshot] = [:]
     private var inFlight: [String: [Completion]] = [:]
     private var invalidationToken: GitPresentationInvalidationCenter.ObservationToken?
 
@@ -53,6 +58,16 @@ final class WorktreeRegistry {
            Date().timeIntervalSince(snapshot.capturedAt) > maximumAge {
             return nil
         }
+        return snapshot
+    }
+
+    func lastSuccessfulSnapshot(
+        projectFolder rawProjectFolder: String
+    ) -> WorktreeRegistrySnapshot? {
+        let projectFolder = normalize(path: rawProjectFolder)
+        lock.lock()
+        let snapshot = lastSuccessfulCache[projectFolder]
+        lock.unlock()
         return snapshot
     }
 
@@ -90,6 +105,7 @@ final class WorktreeRegistry {
             self.lock.lock()
             if case .success(let snapshot) = result {
                 self.cache[projectFolder] = snapshot
+                self.lastSuccessfulCache[projectFolder] = snapshot
             }
             completions = self.inFlight.removeValue(forKey: projectFolder) ?? []
             self.lock.unlock()
@@ -124,15 +140,27 @@ final class WorktreeRegistry {
         )
         lock.lock()
         cache[projectFolder] = snapshot
+        lastSuccessfulCache[projectFolder] = snapshot
         lock.unlock()
         notifyProjectionChanged(reason: "registry.record")
         return snapshot
+    }
+
+    func markStale(projectFolder rawProjectFolder: String) {
+        let projectFolder = normalize(path: rawProjectFolder)
+        lock.lock()
+        cache.removeValue(forKey: projectFolder)
+        lock.unlock()
+        #if DEBUG
+        Self.logger.debug("registry.markStale.project project=\(projectFolder, privacy: .public)")
+        #endif
     }
 
     func invalidate(projectFolder rawProjectFolder: String) {
         let projectFolder = normalize(path: rawProjectFolder)
         lock.lock()
         cache.removeValue(forKey: projectFolder)
+        lastSuccessfulCache.removeValue(forKey: projectFolder)
         lock.unlock()
         #if DEBUG
         Self.logger.debug("registry.invalidate.project project=\(projectFolder, privacy: .public)")
@@ -142,6 +170,7 @@ final class WorktreeRegistry {
     func invalidateAll() {
         lock.lock()
         cache.removeAll()
+        lastSuccessfulCache.removeAll()
         lock.unlock()
         #if DEBUG
         Self.logger.debug("registry.invalidate.all")
@@ -164,22 +193,42 @@ final class WorktreeRegistry {
             }
         }
 
-        if shouldInvalidateAll {
-            invalidateAll()
-            return
-        }
-
-        for project in projectTargets {
-            invalidate(projectFolder: project)
-        }
-
-        guard !pathTargets.isEmpty else { return }
+        var refreshProjects = Set<String>()
         lock.lock()
-        let knownProjects = Array(cache.keys)
+        var knownProjects = Set(cache.keys)
+        knownProjects.formUnion(lastSuccessfulCache.keys)
+        if shouldInvalidateAll {
+            refreshProjects.formUnion(knownProjects)
+            cache.removeAll()
+        } else {
+            for project in projectTargets.map({ normalize(path: $0) }) {
+                refreshProjects.insert(project)
+                cache.removeValue(forKey: project)
+            }
+            for target in pathTargets.map({ normalize(path: $0) }) {
+                for project in knownProjects where Self.path(target, isInside: project) {
+                    refreshProjects.insert(project)
+                    cache.removeValue(forKey: project)
+                }
+            }
+        }
         lock.unlock()
-        for target in pathTargets {
-            for project in knownProjects where Self.path(target, isInside: project) {
-                invalidate(projectFolder: project)
+
+        #if DEBUG
+        if !refreshProjects.isEmpty {
+            Self.logger.debug(
+                "registry.invalidate.stale reason=\(event.reason, privacy: .public) projects=\(refreshProjects.count)"
+            )
+        }
+        #endif
+
+        for project in refreshProjects {
+            refresh(
+                projectFolder: project,
+                reason: "invalidation.\(event.reason)"
+            ) { [weak self] result in
+                guard case .success = result else { return }
+                self?.notifyProjectionChanged(reason: "registry.invalidationRefresh")
             }
         }
     }
