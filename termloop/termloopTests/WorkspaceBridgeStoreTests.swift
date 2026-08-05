@@ -521,6 +521,66 @@ final class WorkspaceBridgeStoreTests: XCTestCase {
         ))
     }
 
+    func testAskToRestoreReconciliationRecoversClaudeSessionByRequestId() throws {
+        let projectsDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AskToRestoreReconciliation-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: projectsDir) }
+
+        let cwd = "/tmp/ask-to-restore"
+        let slugDir = projectsDir.appendingPathComponent(ClaudeSessionScanner.slug(forCwd: cwd))
+        try FileManager.default.createDirectory(at: slugDir, withIntermediateDirectories: true)
+
+        let request = AskToRequest(
+            message: "question",
+            kickoffMessage: "question",
+            createdAt: Date().addingTimeInterval(-30)
+        )
+        let correctSessionId = "correct-helper-session"
+        try """
+        {"type":"user","cwd":"\(cwd)","message":{"role":"user","content":"TermLoop Ask-To request protocol. Request ID: \(request.id.uuidString)"}}
+        {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"answer"}]}}
+        """.write(
+            to: slugDir.appendingPathComponent("\(correctSessionId).jsonl"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let bridge = WorkspaceBridge(
+            leftWorkspaceId: UUID(),
+            rightWorkspaceId: UUID(),
+            intent: .askAgent,
+            rightAgentId: "claude",
+            askToRequests: [request],
+            kickoffMessage: "question",
+            firstSpeaker: .right,
+            createdAt: Date().addingTimeInterval(-60)
+        )
+        let metadata = WorkspaceMetadataStore.Metadata(
+            terminalAgentId: "claude",
+            persistedAgentSession: PersistedAgentSession(
+                agentId: "claude",
+                sessionId: "unrelated-old-session",
+                cwd: cwd,
+                updatedAt: Date().addingTimeInterval(-3_600)
+            ),
+            bridgeMembership: BridgeMembership(bridgeId: bridge.id, role: .right)
+        )
+
+        let healed = TermLoopHooks.reconciledAskToHelperPersistedAgentSession(
+            metadata,
+            bridge: bridge,
+            workspaceId: bridge.rightWorkspaceId,
+            workspaceTitle: "Claude",
+            workspaceCurrentDirectory: cwd,
+            stampedCurrentDirectory: cwd,
+            claudeScanner: ClaudeSessionScanner(projectsDir: projectsDir)
+        )
+
+        XCTAssertEqual(healed.persistedAgentSession?.sessionId, correctSessionId)
+        XCTAssertEqual(healed.persistedAgentSession?.agentId, "claude")
+        XCTAssertEqual(healed.persistedAgentSession?.cwd, cwd)
+    }
+
     func testDismissClearsEveryStaleMembershipForBridgeId() {
         let store = makeStore()
         let bridge = makeBridge()

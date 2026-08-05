@@ -63,7 +63,8 @@ enum TaskAgentLaunchCoordinator {
     @discardableResult
     static func ensureWorktreeAndLaunch(
         store: TaskBoardStore,
-        request: TaskAgentLaunchRequest
+        request: TaskAgentLaunchRequest,
+        onCommandSubmitted: ((Result<UUID, TaskAgentLaunchError>) -> Void)? = nil
     ) async throws -> UUID {
         let lifecycle = TaskLifecycleCoordinator.makeForProject(store: store)
         var task = store.fileSnapshot().tasks.first { $0.id == request.taskId && $0.archivedAt == nil }
@@ -122,11 +123,19 @@ enum TaskAgentLaunchCoordinator {
             systemPrompt: plan.launchSystemInstructions,
             model: plan.resolvedModel,
             reasoning: plan.resolvedReasoning,
-            launchProvidedFullContext: plan.launchProvidedFullContext
+            launchProvidedFullContext: plan.launchProvidedFullContext,
+            onCommandSubmitted: { result in
+                switch result {
+                case .success:
+                    onCommandSubmitted?(.success(workspaceId))
+                case .failure(let error):
+                    onCommandSubmitted?(.failure(.launchRejected(error.localizedDescription)))
+                }
+            }
         )
         switch outcome {
         case .launched:
-            NSLog("[TaskAgentLaunch] launched task=\(request.taskId.uuidString) workspace=\(workspaceId.uuidString) agent=\(resolvedAgentId)")
+            NSLog("[TaskAgentLaunch] launch accepted task=\(request.taskId.uuidString) workspace=\(workspaceId.uuidString) agent=\(resolvedAgentId)")
             return workspaceId
         case .held(let reason):
             throw TaskAgentLaunchError.launchHeld("Agent launch held: \(reason)")

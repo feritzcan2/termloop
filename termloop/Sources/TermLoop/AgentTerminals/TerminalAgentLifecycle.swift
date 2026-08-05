@@ -117,6 +117,7 @@ final class TerminalAgentLifecycle {
         case liveAgentRunning
         case agentMismatch
         case freshLaunchPayloadRequiresFreshSession
+        case launchPreparationFailed
     }
 
     enum RestoreDecision {
@@ -433,7 +434,8 @@ final class TerminalAgentLifecycle {
         systemPrompt: String? = nil,
         model: AgentModelOption? = nil,
         reasoning: AgentReasoningOption? = nil,
-        launchProvidedFullContext: Bool = false
+        launchProvidedFullContext: Bool = false,
+        onCommandSubmitted: TerminalAgentRunner.CommandDispatchCompletion? = nil
     ) -> LaunchOutcome {
         switch _decideExistingLaunch(workspace: workspace, agent: agent) {
         case .reject(let reason):
@@ -455,7 +457,8 @@ final class TerminalAgentLifecycle {
                 agent: agent,
                 cwd: cwd,
                 env: env,
-                backend: backend
+                backend: backend,
+                onCommandSubmitted: onCommandSubmitted
             )
         case .fresh:
             let hasInitialPrompt = !(initialPrompt ?? "")
@@ -468,7 +471,7 @@ final class TerminalAgentLifecycle {
                 )
             )
             WorkspaceMetadataStore.shared.setTerminalAgentModel(model, for: workspace.id)
-            TerminalAgentRunner.dispatchAgentLaunchCommand(
+            let accepted = TerminalAgentRunner.dispatchAgentLaunchCommand(
                 in: workspace,
                 agent: agent,
                 cwd: cwd,
@@ -478,8 +481,22 @@ final class TerminalAgentLifecycle {
                 systemPrompt: systemPrompt,
                 model: model,
                 reasoning: reasoning,
-                launchProvidedFullContext: launchProvidedFullContext
+                launchProvidedFullContext: launchProvidedFullContext,
+                onCommandSubmitted: { result in
+                    if case .failure = result {
+                        TerminalAgentActivityStore.shared.clearPendingRestore(
+                            workspaceId: workspace.id
+                        )
+                    }
+                    onCommandSubmitted?(result)
+                }
             )
+            guard accepted else {
+                TerminalAgentActivityStore.shared.clearPendingRestore(
+                    workspaceId: workspace.id
+                )
+                return .rejected(.launchPreparationFailed)
+            }
             return .launched(mode: .fresh)
         }
     }
@@ -961,7 +978,8 @@ final class TerminalAgentLifecycle {
         agent: TerminalAgent,
         cwd: String?,
         env: [String: String],
-        backend: RestoreBackend
+        backend: RestoreBackend,
+        onCommandSubmitted: TerminalAgentRunner.CommandDispatchCompletion?
     ) -> LaunchOutcome {
         guard let persisted = WorkspaceMetadataStore.shared
             .metadata(forWorkspaceId: workspace.id).persistedAgentSession else {
@@ -975,19 +993,48 @@ final class TerminalAgentLifecycle {
             bridgeValue
         }
         TerminalAgentActivityStore.shared.markPendingRestore(workspaceId: workspace.id)
+        let completion: TerminalAgentRunner.CommandDispatchCompletion? = onCommandSubmitted.map { callback in
+            { result in
+                if case .failure = result {
+                    TerminalAgentActivityStore.shared.clearPendingRestore(
+                        workspaceId: workspace.id
+                    )
+                }
+                callback(result)
+            }
+        }
+        let accepted: Bool
         switch backend {
         case .claudeCoordinator:
-            ClaudeRestoreCoordinator.shared.restoreAfterSessionLoad(
+            accepted = ClaudeRestoreCoordinator.shared.restoreAfterSessionLoad(
                 workspaceId: workspace.id,
-                session: persisted
+                session: persisted,
+                onCommandSubmitted: completion
             )
         case .genericRunner:
-            TermLoopHooks.restoredTerminalLauncher(
-                workspace,
-                agent,
-                cwd,
-                restoreEnvironment
+            if completion != nil {
+                accepted = TerminalAgentRunner.dispatchRestoredAgentCommand(
+                    in: workspace,
+                    agent: agent,
+                    cwd: cwd,
+                    env: restoreEnvironment,
+                    onCommandSubmitted: completion
+                )
+            } else {
+                TermLoopHooks.restoredTerminalLauncher(
+                    workspace,
+                    agent,
+                    cwd,
+                    restoreEnvironment
+                )
+                accepted = true
+            }
+        }
+        guard accepted else {
+            TerminalAgentActivityStore.shared.clearPendingRestore(
+                workspaceId: workspace.id
             )
+            return .rejected(.launchPreparationFailed)
         }
         return .launched(mode: .restore)
     }

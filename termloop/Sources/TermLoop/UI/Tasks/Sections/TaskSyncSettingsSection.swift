@@ -282,7 +282,8 @@ private struct TaskRemoteWorkItemSettingsView: View {
     }
 
     private var backgroundSyncControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let automationFailures = remoteSync.unresolvedAutomationFailures
+        return VStack(alignment: .leading, spacing: 8) {
             Divider().opacity(0.45)
 
             Toggle(isOn: backgroundSyncBinding) {
@@ -365,12 +366,103 @@ private struct TaskRemoteWorkItemSettingsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
+                if !automationFailures.isEmpty {
+                    unresolvedAutomationFailuresPanel(automationFailures)
+                }
+
                 backgroundActivityPanel
             }
         }
         .padding(8)
         .background(Color.white.opacity(0.035))
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private func unresolvedAutomationFailuresPanel(
+        _ failures: [TaskAutomationFailureSummary]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.orange)
+                Text(String(
+                    localized: "tasks.settings.backgroundSync.failures.title",
+                    defaultValue: "Needs attention (\(failures.count))",
+                    table: "TermLoop"
+                ))
+                .font(.system(size: 10, weight: .semibold))
+                Spacer(minLength: 0)
+            }
+
+            ForEach(failures.prefix(12)) { failure in
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 5) {
+                        Text(failure.remoteKey)
+                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        Text(automationFailureStageLabel(failure.stage))
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                        Spacer(minLength: 0)
+                        Text(String(
+                            localized: "tasks.settings.backgroundSync.failures.count",
+                            defaultValue: "×\(failure.failureCount)",
+                            table: "TermLoop"
+                        ))
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                    Text(failure.message)
+                        .font(.system(size: 10))
+                        .foregroundColor(.red)
+                        .textSelection(.enabled)
+                        .lineLimit(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if failures.count > 12 {
+                Text(String(
+                    localized: "tasks.settings.backgroundSync.failures.more",
+                    defaultValue: "+\(failures.count - 12) more",
+                    table: "TermLoop"
+                ))
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(8)
+        .background(Color.orange.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private func automationFailureStageLabel(_ stage: TaskAutomationFailureStage?) -> String {
+        switch stage {
+        case .taskSync:
+            return String(
+                localized: "tasks.settings.backgroundSync.failures.stage.taskSync",
+                defaultValue: "Task sync",
+                table: "TermLoop"
+            )
+        case .worktree:
+            return String(
+                localized: "tasks.settings.backgroundSync.failures.stage.worktree",
+                defaultValue: "Worktree",
+                table: "TermLoop"
+            )
+        case .agentLaunch:
+            return String(
+                localized: "tasks.settings.backgroundSync.failures.stage.agentLaunch",
+                defaultValue: "Agent launch",
+                table: "TermLoop"
+            )
+        case nil:
+            return String(
+                localized: "tasks.settings.backgroundSync.failures.stage.automation",
+                defaultValue: "Automation",
+                table: "TermLoop"
+            )
+        }
     }
 
     private var backgroundActivityPanel: some View {
