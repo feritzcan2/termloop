@@ -1705,6 +1705,17 @@ enum TermLoopHooks {
         workspace: Workspace,
         stampedCurrentDirectory: String?
     ) -> WorkspaceMetadataStore.Metadata {
+        if let bridge = askToHelperBridge(for: metadata) {
+            return reconciledAskToHelperPersistedAgentSession(
+                metadata,
+                bridge: bridge,
+                workspaceId: workspace.id,
+                workspaceTitle: workspaceDisplayTitle(workspace),
+                workspaceCurrentDirectory: workspace.currentDirectory,
+                stampedCurrentDirectory: stampedCurrentDirectory
+            )
+        }
+
         guard let persisted = metadata.persistedAgentSession,
               persisted.agentId == TerminalAgent.claudeId || persisted.agentId == "codex",
               let workspaceTitle = normalizedBackfillTitle(workspaceDisplayTitle(workspace)) else {
@@ -1784,6 +1795,241 @@ enum TermLoopHooks {
 #endif
         return metadata
     }
+
+    /// Ask-To helpers share their cwd with the source agent, so title/cwd
+    /// backfill cannot establish identity. Preserve a valid exact session, or
+    /// recover an already-corrupted sidecar by locating the bridge request UUID
+    /// in a transcript created after the bridge.
+    static func reconciledAskToHelperPersistedAgentSession(
+        _ metadata: WorkspaceMetadataStore.Metadata,
+        bridge: WorkspaceBridge,
+        workspaceId: UUID,
+        workspaceTitle: String?,
+        workspaceCurrentDirectory: String?,
+        stampedCurrentDirectory: String?,
+        claudeScanner: ClaudeSessionScanner = .shared,
+        codexScanner: CodexSessionScanner = .shared
+    ) -> WorkspaceMetadataStore.Metadata {
+        let agentId = [
+            bridge.rightAgentId,
+            metadata.terminalAgentId,
+            metadata.persistedAgentSession?.agentId,
+        ]
+            .compactMap { raw -> String? in
+                let normalized = raw?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased() ?? ""
+                return normalized.isEmpty ? nil : normalized
+            }
+            .first
+
+        guard let agentId,
+              agentId == TerminalAgent.claudeId || agentId == "codex" else {
+#if DEBUG
+            restoreAuditLog(
+                "session.restore.ask-to-session action=keep-unsupported ws=\(workspaceId.uuidString) " +
+                "bridge=\(bridge.id.uuidString) title=\(debugClean(workspaceTitle)) " +
+                "agent=\(debugClean(agentId)) \(debugMetadata(metadata))"
+            )
+#endif
+            return metadata
+        }
+
+        var seenDirectories = Set<String>()
+        let directories = [
+            metadata.persistedAgentSession?.cwd,
+            stampedCurrentDirectory,
+            workspaceCurrentDirectory,
+        ]
+            .compactMap { raw -> String? in
+                let normalized = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard !normalized.isEmpty,
+                      seenDirectories.insert(normalized).inserted else {
+                    return nil
+                }
+                return normalized
+            }
+        let minimumSessionDate = AskToHelperRestorePolicy.minimumSessionDate(for: bridge)
+
+        var persistedCreationDate: Date?
+        if let persisted = metadata.persistedAgentSession,
+           persisted.agentId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == agentId {
+            persistedCreationDate = askToHelperSessionFileCreationDate(
+                persisted,
+                fallbackCwd: directories.first,
+                claudeScanner: claudeScanner,
+                codexScanner: codexScanner
+            )
+        }
+
+        if let recovered = recoveredAskToHelperSession(
+            agentId: agentId,
+            bridge: bridge,
+            directories: directories,
+            minimumSessionDate: minimumSessionDate,
+            claudeScanner: claudeScanner,
+            codexScanner: codexScanner
+        ) {
+            if let persisted = metadata.persistedAgentSession,
+               persisted.agentId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == agentId,
+               persisted.sessionId == recovered.session.sessionId {
+#if DEBUG
+                restoreAuditLog(
+                    "session.restore.ask-to-session action=preserve ws=\(workspaceId.uuidString) " +
+                    "bridge=\(bridge.id.uuidString) request=\(recovered.requestId.uuidString) " +
+                    "title=\(debugClean(workspaceTitle)) agent=\(agentId) sid=\(persisted.sessionId) " +
+                    "creation=\(debugTimestamp(persistedCreationDate)) floor=\(debugTimestamp(minimumSessionDate))"
+                )
+#endif
+                return metadata
+            }
+
+            var healed = metadata
+            healed.terminalAgentId = agentId
+            healed.persistedAgentSession = recovered.session
+#if DEBUG
+            restoreAuditLog(
+                "session.restore.ask-to-session action=recover ws=\(workspaceId.uuidString) " +
+                "bridge=\(bridge.id.uuidString) request=\(recovered.requestId.uuidString) " +
+                "title=\(debugClean(workspaceTitle)) agent=\(agentId) " +
+                "oldSid=\(metadata.persistedAgentSession?.sessionId ?? "nil") " +
+                "newSid=\(recovered.session.sessionId) cwd=\(debugClean(recovered.session.cwd)) " +
+                "floor=\(debugTimestamp(minimumSessionDate))"
+            )
+#endif
+            return healed
+        }
+
+        if let persisted = metadata.persistedAgentSession,
+           persisted.agentId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == agentId,
+           AskToHelperRestorePolicy.accepts(
+               sessionFileCreationDate: persistedCreationDate,
+               persistedUpdatedAt: persisted.updatedAt,
+               minimumSessionDate: minimumSessionDate
+           ) {
+#if DEBUG
+            restoreAuditLog(
+                "session.restore.ask-to-session action=preserve-fallback ws=\(workspaceId.uuidString) " +
+                "bridge=\(bridge.id.uuidString) title=\(debugClean(workspaceTitle)) agent=\(agentId) " +
+                "sid=\(persisted.sessionId) creation=\(debugTimestamp(persistedCreationDate)) " +
+                "updatedAt=\(debugTimestamp(persisted.updatedAt)) floor=\(debugTimestamp(minimumSessionDate))"
+            )
+#endif
+            return metadata
+        }
+
+#if DEBUG
+        restoreAuditLog(
+            "session.restore.ask-to-session action=keep-unresolved ws=\(workspaceId.uuidString) " +
+            "bridge=\(bridge.id.uuidString) title=\(debugClean(workspaceTitle)) agent=\(agentId) " +
+            "sid=\(metadata.persistedAgentSession?.sessionId ?? "nil") " +
+            "creation=\(debugTimestamp(persistedCreationDate)) floor=\(debugTimestamp(minimumSessionDate)) " +
+            "requests=\(bridge.askToRequests.count) dirs=\(directories.count)"
+        )
+#endif
+        return metadata
+    }
+
+    private static func askToHelperBridge(
+        for metadata: WorkspaceMetadataStore.Metadata
+    ) -> WorkspaceBridge? {
+        // Endpoint UUIDs are reminted during upstream restore. Membership and
+        // bridge id are durable before BridgeCoordinator rebinds those UUIDs.
+        guard let membership = metadata.bridgeMembership,
+              membership.role == .right,
+              let bridge = WorkspaceBridgeStore.shared.bridge(id: membership.bridgeId),
+              bridge.intent == .askAgent else {
+            return nil
+        }
+        return bridge
+    }
+
+    private static func askToHelperSessionFileCreationDate(
+        _ persisted: PersistedAgentSession,
+        fallbackCwd: String?,
+        claudeScanner: ClaudeSessionScanner,
+        codexScanner: CodexSessionScanner
+    ) -> Date? {
+        let cwd = persisted.cwd ?? fallbackCwd
+        let fileURL: URL?
+        switch persisted.agentId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case TerminalAgent.claudeId:
+            fileURL = claudeScanner.sessionFileURL(sessionId: persisted.sessionId, cwd: cwd)
+        case "codex":
+            fileURL = codexScanner.sessionFileURL(sessionId: persisted.sessionId, cwd: cwd)
+        default:
+            fileURL = nil
+        }
+        guard let fileURL,
+              let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path) else {
+            return nil
+        }
+        return (attributes[.creationDate] as? Date)
+            ?? (attributes[.modificationDate] as? Date)
+    }
+
+    private static func recoveredAskToHelperSession(
+        agentId: String,
+        bridge: WorkspaceBridge,
+        directories: [String],
+        minimumSessionDate: Date,
+        claudeScanner: ClaudeSessionScanner,
+        codexScanner: CodexSessionScanner
+    ) -> (session: PersistedAgentSession, requestId: UUID)? {
+        var requestIds = bridge.askToRequests
+            .sorted { $0.createdAt > $1.createdAt }
+            .map(\.id)
+        if !requestIds.contains(bridge.id) {
+            requestIds.append(bridge.id)
+        }
+
+        for requestId in requestIds {
+            for cwd in directories {
+                switch agentId {
+                case TerminalAgent.claudeId:
+                    guard let recovered = claudeScanner.sessionContaining(
+                        text: requestId.uuidString,
+                        cwd: cwd,
+                        newerThan: minimumSessionDate
+                    ) else { continue }
+                    return (
+                        PersistedAgentSession(
+                            agentId: agentId,
+                            sessionId: recovered.sessionId,
+                            cwd: recovered.cwd,
+                            updatedAt: recovered.mtime
+                        ),
+                        requestId
+                    )
+                case "codex":
+                    guard let recovered = codexScanner.sessionContaining(
+                        text: requestId.uuidString,
+                        cwd: cwd,
+                        newerThan: minimumSessionDate
+                    ) else { continue }
+                    return (
+                        PersistedAgentSession(
+                            agentId: agentId,
+                            sessionId: recovered.sessionId,
+                            cwd: recovered.cwd,
+                            updatedAt: recovered.mtime
+                        ),
+                        requestId
+                    )
+                default:
+                    return nil
+                }
+            }
+        }
+        return nil
+    }
+
+#if DEBUG
+    private static func debugTimestamp(_ date: Date?) -> String {
+        guard let date else { return "nil" }
+        return String(format: "%.3f", date.timeIntervalSince1970)
+    }
+#endif
 
     private static func persistedSessionTitle(
         agentId: String,

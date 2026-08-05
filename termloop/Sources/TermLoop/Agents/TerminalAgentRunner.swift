@@ -1,4 +1,5 @@
 import Bonsplit
+import AppKit
 import Foundation
 import os
 
@@ -94,6 +95,28 @@ enum TerminalAgentRunner {
         let command: String
         let hasInitialPrompt: Bool
     }
+
+    enum CommandDispatchError: LocalizedError {
+        case workspaceUnavailable
+        case deferredTimeout
+        case terminalUnavailable
+        case restoreUnavailable
+
+        var errorDescription: String? {
+            switch self {
+            case .workspaceUnavailable:
+                return "The agent workspace closed before the launch command could be submitted."
+            case .deferredTimeout:
+                return "The terminal did not become ready before the agent launch timed out."
+            case .terminalUnavailable:
+                return "The terminal became unavailable before the agent launch command was submitted."
+            case .restoreUnavailable:
+                return "The saved agent session could not be restored in this workspace."
+            }
+        }
+    }
+
+    typealias CommandDispatchCompletion = (Result<Void, CommandDispatchError>) -> Void
 
     static func pendingPlaceholderState(
         hasInitialPrompt: Bool
@@ -305,8 +328,9 @@ enum TerminalAgentRunner {
         systemPrompt: String? = nil,
         model: AgentModelOption? = nil,
         reasoning: AgentReasoningOption? = nil,
-        launchProvidedFullContext: Bool = false
-    ) {
+        launchProvidedFullContext: Bool = false,
+        onCommandSubmitted: CommandDispatchCompletion? = nil
+    ) -> Bool {
         let resolvedPermission = permission
             ?? WorkspaceMetadataStore.shared
                 .permissionMode(for: workspace.id)
@@ -329,18 +353,20 @@ enum TerminalAgentRunner {
             #if DEBUG
             dlog("runner.dispatchLaunch.prepareFailed workspace=\(workspace.id.uuidString) agent=\(agent.id) error=\(error.localizedDescription)")
             #endif
-            return
+            return false
         }
         lifecycleLog(
             "runner.dispatchLaunch workspace=\(workspace.id.uuidString) agent=\(agent.id) cwd=\(cwd ?? "nil") permission=\(resolvedPermission?.rawValue ?? "nil") prompt=\(prepared.hasInitialPrompt ? 1 : 0) commandChars=\(prepared.command.count)"
         )
-        sendCommandWhenReady(
+        let accepted = enqueueCommandDispatch(
             to: workspace,
             command: prepared.command,
-            attempt: 0
+            onCommandSubmitted: onCommandSubmitted
         )
+        guard accepted else { return false }
         scheduleCodexHookReviewProbeIfNeeded(agent: agent, in: workspace)
         TermLoopHooks.schedulePersistedAgentSessionRecoveryIfNeeded(agentId: agent.id)
+        return true
     }
 
     static func prepareExistingLaunch(
@@ -403,12 +429,14 @@ enum TerminalAgentRunner {
     /// Backend dispatch for a restored agent. Codex re-uses the persisted
     /// session id and latest recorded model; others use their normal backend.
     /// Lifecycle owns markPendingRestore + policy; this is the dispatch tail.
+    @discardableResult
     static func dispatchRestoredAgentCommand(
         in workspace: Workspace,
         agent: TerminalAgent,
         cwd: String?,
-        env: [String: String] = [:]
-    ) {
+        env: [String: String] = [:],
+        onCommandSubmitted: CommandDispatchCompletion? = nil
+    ) -> Bool {
         let persistedSession = WorkspaceMetadataStore.shared.persistedAgentSession(for: workspace.id)
         let worktreeExpectation = try? workspace.termLoopWorktreeExpectation()
         let preferredCwd = preferredRestoreCwd(
@@ -477,13 +505,14 @@ enum TerminalAgentRunner {
             "model=\(restoredModel?.rawValue ?? "default") commandChars=\(commandToDispatch.count)"
         )
 #endif
-        sendCommandWhenReady(
+        let accepted = enqueueCommandDispatch(
             to: workspace,
             command: commandToDispatch,
-            attempt: 0
+            onCommandSubmitted: onCommandSubmitted
         )
         scheduleCodexHookReviewProbeIfNeeded(agent: agent, in: workspace)
         TermLoopHooks.schedulePersistedAgentSessionRecoveryIfNeeded(agentId: agent.id)
+        return accepted
     }
 
 
@@ -593,7 +622,7 @@ enum TerminalAgentRunner {
             select: true,
             eagerLoadTerminal: true
         )
-        sendCommandWhenReady(to: ws, command: shellCommand, attempt: 0)
+        sendCommandWhenReady(to: ws, command: shellCommand)
         return ws
     }
 
@@ -789,7 +818,7 @@ enum TerminalAgentRunner {
         to workspace: Workspace
     ) {
         guard let command = plan.fallbackCommand else { return }
-        sendCommandWhenReady(to: workspace, command: command, attempt: 0)
+        sendCommandWhenReady(to: workspace, command: command)
     }
 
     static func scheduleCodexHookReviewProbeIfNeeded(
@@ -883,6 +912,7 @@ enum TerminalAgentRunner {
 
     private static let commandDispatchMaxAttempts = 30
     private static let commandDispatchPollInterval: TimeInterval = 0.25
+    private static let commandDispatchTimeout: TimeInterval = 30
     private static let shellReadyStableSamplesRequired = 3
     private static let shellEchoStableSamplesRequired = 2
     private static let visibleTextLineLimit = 60
@@ -890,26 +920,176 @@ enum TerminalAgentRunner {
     private static let codexHookReviewProbeInterval: TimeInterval = 0.7
     private static let codexHookReviewProbeMaxAttempts = 18
 
+    private final class PendingCommandDispatch {
+        weak var workspace: Workspace?
+        let workspaceId: UUID
+        let command: String
+        let completion: CommandDispatchCompletion?
+        var attemptGeneration = 0
+        var deliveryStarted = false
+
+        init(
+            workspace: Workspace,
+            command: String,
+            completion: CommandDispatchCompletion?
+        ) {
+            self.workspace = workspace
+            self.workspaceId = workspace.id
+            self.command = command
+            self.completion = completion
+        }
+    }
+
+    private static var pendingCommandDispatches: [UUID: PendingCommandDispatch] = [:]
+    private static var commandDispatchObservers: [NSObjectProtocol] = []
+    private static var workspaceWakeObserver: NSObjectProtocol?
+    private static var commandDispatchObserversInstalled = false
+
     private final class ShellEnterGuard {
         var didSendEnter = false
+        var isFinished = false
+        let onSubmitted: (() -> Void)?
+        let onFailed: ((CommandDispatchError) -> Void)?
+
+        init(
+            onSubmitted: (() -> Void)? = nil,
+            onFailed: ((CommandDispatchError) -> Void)? = nil
+        ) {
+            self.onSubmitted = onSubmitted
+            self.onFailed = onFailed
+        }
     }
 
     private static func sendCommandWhenReady(
         to workspace: Workspace,
+        command: String
+    ) {
+        _ = enqueueCommandDispatch(
+            to: workspace,
+            command: command,
+            onCommandSubmitted: nil
+        )
+    }
+
+    private static func enqueueCommandDispatch(
+        to workspace: Workspace,
         command: String,
+        onCommandSubmitted: CommandDispatchCompletion?
+    ) -> Bool {
+        installCommandDispatchObserversIfNeeded()
+        guard pendingCommandDispatches[workspace.id] == nil else {
+            lifecycleLog(
+                "runner.commandDispatch.rejected workspace=\(workspace.id.uuidString) reason=alreadyPending"
+            )
+            return false
+        }
+        let pending = PendingCommandDispatch(
+            workspace: workspace,
+            command: command,
+            completion: onCommandSubmitted
+        )
+        pendingCommandDispatches[workspace.id] = pending
+        attemptPendingCommandDispatch(pending, attempt: 0)
+        DispatchQueue.main.asyncAfter(deadline: .now() + commandDispatchTimeout) {
+            guard !pending.deliveryStarted else { return }
+            failPendingCommandDispatch(pending, error: .deferredTimeout)
+        }
+        return true
+    }
+
+    private static func installCommandDispatchObserversIfNeeded() {
+        guard !commandDispatchObserversInstalled else { return }
+        commandDispatchObserversInstalled = true
+
+        let center = NotificationCenter.default
+        commandDispatchObservers.append(center.addObserver(
+            forName: .terminalSurfaceDidBecomeReady,
+            object: nil,
+            queue: .main
+        ) { note in
+            MainActor.assumeIsolated {
+                guard let workspaceId = note.userInfo?["workspaceId"] as? UUID else { return }
+                retryPendingCommandDispatch(workspaceId: workspaceId, reason: "surfaceReady")
+            }
+        })
+        for name in [
+            NSApplication.didBecomeActiveNotification,
+            NSApplication.didChangeScreenParametersNotification
+        ] {
+            commandDispatchObservers.append(center.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { _ in
+                MainActor.assumeIsolated {
+                    retryAllPendingCommandDispatches(reason: name.rawValue)
+                }
+            })
+        }
+        workspaceWakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                retryAllPendingCommandDispatches(reason: "workspaceWake")
+            }
+        }
+    }
+
+    private static func retryAllPendingCommandDispatches(reason: String) {
+        for workspaceId in Array(pendingCommandDispatches.keys) {
+            retryPendingCommandDispatch(workspaceId: workspaceId, reason: reason)
+        }
+    }
+
+    private static func retryPendingCommandDispatch(workspaceId: UUID, reason: String) {
+        guard let pending = pendingCommandDispatches[workspaceId],
+              !pending.deliveryStarted else { return }
+        pending.attemptGeneration &+= 1
+        lifecycleLog(
+            "runner.commandDispatch.retry workspace=\(workspaceId.uuidString) reason=\(reason) generation=\(pending.attemptGeneration)"
+        )
+        attemptPendingCommandDispatch(pending, attempt: 0)
+    }
+
+    private static func attemptPendingCommandDispatch(
+        _ pending: PendingCommandDispatch,
         attempt: Int
     ) {
-        guard attempt < commandDispatchMaxAttempts else { return }
+        guard pendingCommandDispatches[pending.workspaceId] === pending,
+              !pending.deliveryStarted else { return }
+        guard let workspace = pending.workspace else {
+            failPendingCommandDispatch(pending, error: .workspaceUnavailable)
+            return
+        }
+        guard attempt < commandDispatchMaxAttempts else {
+            lifecycleLog(
+                "runner.commandDispatch.deferred workspace=\(pending.workspaceId.uuidString) attempts=\(attempt)"
+            )
+            return
+        }
+        let generation = pending.attemptGeneration
         lifecycleLog(
-            "runner.sendCommandWhenReady workspace=\(workspace.id.uuidString) attempt=\(attempt) commandChars=\(command.count)"
+            "runner.sendCommandWhenReady workspace=\(workspace.id.uuidString) attempt=\(attempt) commandChars=\(pending.command.count)"
         )
 
         if let panel = targetTerminalPanel(in: workspace) {
             if panel.surface.surface != nil {
+                pending.deliveryStarted = true
                 lifecycleLog(
                     "runner.sendCommandWhenReady.dispatch workspace=\(workspace.id.uuidString) panel=\(panel.id.uuidString) attempt=\(attempt)"
                 )
-                dispatchShellCommandWhenReady(command, on: panel)
+                dispatchShellCommandWhenReady(
+                    pending.command,
+                    on: panel,
+                    onSubmitted: {
+                        completePendingCommandDispatch(pending)
+                    },
+                    onFailed: { error in
+                        failPendingCommandDispatch(pending, error: error)
+                    }
+                )
                 return
             }
             panel.surface.requestBackgroundSurfaceStartIfNeeded()
@@ -918,14 +1098,36 @@ enum TerminalAgentRunner {
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + commandDispatchPollInterval) {
-            sendCommandWhenReady(to: workspace, command: command, attempt: attempt + 1)
+            guard pending.attemptGeneration == generation else { return }
+            attemptPendingCommandDispatch(pending, attempt: attempt + 1)
         }
+    }
+
+    private static func completePendingCommandDispatch(_ pending: PendingCommandDispatch) {
+        guard pendingCommandDispatches[pending.workspaceId] === pending else { return }
+        pendingCommandDispatches.removeValue(forKey: pending.workspaceId)
+        pending.completion?(.success(()))
+    }
+
+    private static func failPendingCommandDispatch(
+        _ pending: PendingCommandDispatch,
+        error: CommandDispatchError
+    ) {
+        guard pendingCommandDispatches[pending.workspaceId] === pending else { return }
+        pending.attemptGeneration &+= 1
+        pendingCommandDispatches.removeValue(forKey: pending.workspaceId)
+        lifecycleLog(
+            "runner.commandDispatch.failed workspace=\(pending.workspaceId.uuidString) error=\(error.localizedDescription)"
+        )
+        pending.completion?(.failure(error))
     }
 
     static func dispatchShellCommandWhenReady(
         _ command: String,
         on panel: TerminalPanel,
-        enterFallbackDelay: TimeInterval? = nil
+        enterFallbackDelay: TimeInterval? = nil,
+        onSubmitted: (() -> Void)? = nil,
+        onFailed: ((CommandDispatchError) -> Void)? = nil
     ) {
         lifecycleLog(
             "runner.dispatchShellCommandWhenReady panel=\(panel.id.uuidString) commandChars=\(command.count)"
@@ -934,7 +1136,10 @@ enum TerminalAgentRunner {
             command,
             on: panel,
             enterFallbackDelay: enterFallbackDelay,
-            enterGuard: ShellEnterGuard(),
+            enterGuard: ShellEnterGuard(
+                onSubmitted: onSubmitted,
+                onFailed: onFailed
+            ),
             attempt: 0,
             previousVisibleText: nil,
             stableSamples: 0
@@ -951,6 +1156,10 @@ enum TerminalAgentRunner {
         stableSamples: Int
     ) {
         guard attempt < commandDispatchMaxAttempts else {
+            guard panel.surface.surface != nil else {
+                failShellDispatch(enterGuard, error: .terminalUnavailable)
+                return
+            }
             panel.sendText(command)
             sendEnterIfNeeded(on: panel, guard: enterGuard, reason: "shellReadyTimeout")
             return
@@ -1025,6 +1234,10 @@ enum TerminalAgentRunner {
         stableSamples: Int
     ) {
         guard attempt < commandDispatchMaxAttempts else {
+            guard panel.surface.surface != nil else {
+                failShellDispatch(enterGuard, error: .terminalUnavailable)
+                return
+            }
             sendEnterIfNeeded(on: panel, guard: enterGuard, reason: "echoTimeout")
             return
         }
@@ -1104,10 +1317,28 @@ enum TerminalAgentRunner {
         guard enterGuard: ShellEnterGuard,
         reason: String
     ) {
-        guard !enterGuard.didSendEnter else { return }
-        enterGuard.didSendEnter = true
+        guard !enterGuard.didSendEnter, !enterGuard.isFinished else { return }
+        guard panel.surface.surface != nil else {
+            failShellDispatch(enterGuard, error: .terminalUnavailable)
+            return
+        }
         lifecycleLog("runner.shellEnter.send panel=\(panel.id.uuidString) reason=\(reason)")
-        panel.sendInput("\r")
+        guard panel.surface.sendNamedKey("enter") else {
+            failShellDispatch(enterGuard, error: .terminalUnavailable)
+            return
+        }
+        enterGuard.didSendEnter = true
+        enterGuard.isFinished = true
+        enterGuard.onSubmitted?()
+    }
+
+    private static func failShellDispatch(
+        _ enterGuard: ShellEnterGuard,
+        error: CommandDispatchError
+    ) {
+        guard !enterGuard.isFinished else { return }
+        enterGuard.isFinished = true
+        enterGuard.onFailed?(error)
     }
 
     private static func currentVisibleTerminalText(for panel: TerminalPanel) -> String {

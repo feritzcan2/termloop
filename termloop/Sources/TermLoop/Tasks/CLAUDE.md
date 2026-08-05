@@ -7,6 +7,11 @@ Domain layer for the project-scoped, vibe-kanban–style Tasks page. All `TaskRe
 - `TaskRecord` is a binder/projection over the existing `WorkspaceMetadataStore` truth, not a new authoritative store for git, PRs, agents, or branches. Keep it that way.
 - Persistence: `<projectRoot>/.termloop/tasks.json` (`schemaVersion: 1`). Atomic rename + debounce. Lifecycle-critical mutations call `saveNow()`.
 - `AgentRun` is **never** persisted here. Agent rows are projections from `TerminalAgentActivityStore` + `WorkspaceMetadataStore` rendered by UI.
+- Background automation writes `agentStartedAt` only after the launch command is actually submitted to the terminal. An accepted-but-deferred launch is capacity-reserved in memory and remains retryable after restart.
+- Background automation never provisions or launches for completed remote tasks (`.done`, a configured Done-column remote status, or a recognized terminal status). Repair candidates obey the same capped retry policy as newly claimed snapshots.
+- Full reconcile must claim automation candidates before recording the fetched set as observed. Terminal snapshots are observed without being claimed; a first-seen terminal item is claimed only if a later poll observes that it reopened.
+- Automation failures retain bounded counts per stage (`taskSync`, `worktree`, `agentLaunch`) and remain visible separately from the bounded activity feed until that stage succeeds or the remote task becomes terminal. A complete full reconcile prunes failed items that are no longer assigned.
+- Task worktree provisioning preserves an occupied, unregistered destination and chooses a free suffixed sibling path. Never delete an orphan directory automatically; it may contain ignored or untracked user files.
 - The type is named `TaskRecord` (not `Task`) to avoid colliding with Swift's `_Concurrency.Task`. The user-facing concept stays "Task" (UI strings, docs).
 
 ## Single writer

@@ -153,6 +153,26 @@ final class CodexSessionScanner {
         return freshRecentScan(cwds: normalizedCwds, newerThan: newerThan)
     }
 
+    /// Finds the exact post-cutoff transcript containing a durable identifier,
+    /// such as an Ask-To request UUID. `scanRecentUncached` intentionally also
+    /// admits recently modified files, so enforce creation time again here to
+    /// exclude an older source session sharing the helper's cwd.
+    func sessionContaining(
+        text: String,
+        cwd: String,
+        newerThan: Date
+    ) -> CodexSessionMetadata? {
+        let needle = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedCwd = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty, !normalizedCwd.isEmpty else { return nil }
+
+        return scanRecentUncached(cwd: normalizedCwd, newerThan: newerThan)
+            .first { metadata in
+                metadata.creation >= newerThan
+                    && file(metadata.file, contains: needle)
+            }
+    }
+
     private func indexedSessionFileURL(sessionId: String, cwd: String?, forceRebuild: Bool) -> URL? {
         let state = indexedState(forceRebuild: forceRebuild)
         if let cwd {
@@ -459,6 +479,19 @@ final class CodexSessionScanner {
         cache[file] = CacheEntry(mtime: mtime, metadata: metadata)
         cacheLock.unlock()
         return metadata
+    }
+
+    private func file(_ file: URL, contains needle: String) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: file) else { return false }
+        defer { try? handle.close() }
+
+        var iterator = CodexLineIterator(handle: handle)
+        while let line = iterator.next() {
+            if line.range(of: needle, options: [.caseInsensitive]) != nil {
+                return true
+            }
+        }
+        return false
     }
 
     func metadata(sessionId: String, cwd: String?) -> CodexSessionMetadata? {

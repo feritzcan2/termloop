@@ -14,7 +14,7 @@ Read-side truth lives under `TermLoop/Core/` (`TerminalAgentActivityStore`). Don
 | Ordering: `addWorkspace` → `markPendingRestore` → metadata bind → dispatch | `TerminalAgentLifecycle` |
 | `saveCriticalAgentRestoreStateSync` pairing with persisted-session writes | `TerminalAgentLifecycle` |
 | Composition: command build, env, launch plan | `TerminalAgentRunner.prepareLaunch` |
-| Dispatch primitives: hook install, command send, fallback launch | `TerminalAgentRunner.dispatch*` / helpers |
+| Dispatch primitives: hook install, durable in-process command delivery, fallback launch | `TerminalAgentRunner.dispatch*` / helpers |
 
 **Runner has no orchestration entry points.** It only exposes `prepareLaunch`, `dispatchAgentLaunchCommand`, `dispatchRestoredAgentCommand`, `applyWorktreeBinding`, `dispatchFallbackLaunchIfNeeded`, `pendingPlaceholderState`, `writePromptFile`, `installAgentHooks`, plus low-level send/resolve helpers.
 
@@ -45,7 +45,7 @@ but launch composition comes from `prepareNativeForkLaunch(...)` and the new
 workspace records a pending native-fork guard before dispatch so parent-session
 echoes do not bind restore state to the wrong conversation.
 
-**Existing launch (fresh path):** `markPendingRestore` → `dispatchAgentLaunchCommand`.
+**Existing launch (fresh or restore path):** `markPendingRestore` → backend dispatch. Command delivery remains pending across the initial polling window and retries on terminal-surface readiness, display changes, app activation, and wake. A dispatch that still has no terminal after the bounded deadline fails its completion, and a second command may not overwrite an in-flight dispatch for the same workspace. Callers that persist an external "started" state must use the command-submitted callback rather than treating launch acceptance as terminal delivery.
 
 **Batch / in-place restore:** `markPendingRestore` → backend dispatch. Backend comes from `_selectRestoreBackend` only — never write an ad-hoc `if agentId == claudeId` in a third place.
 

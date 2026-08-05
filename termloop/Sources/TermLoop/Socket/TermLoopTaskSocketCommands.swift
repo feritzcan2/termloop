@@ -439,6 +439,8 @@ enum TermLoopTaskSocketCommands {
             return "agent_mismatch"
         case .freshLaunchPayloadRequiresFreshSession:
             return "fresh_launch_payload_requires_fresh_session"
+        case .launchPreparationFailed:
+            return "launch_preparation_failed"
         }
     }
 
@@ -457,6 +459,8 @@ enum TermLoopTaskSocketCommands {
             return "This task workspace has a persisted session for a different agent. Open the existing terminal or start a fresh task workspace."
         case .freshLaunchPayloadRequiresFreshSession:
             return "This task workspace has a persisted agent session, so TermLoop cannot safely send the new prompt without starting a fresh session."
+        case .launchPreparationFailed:
+            return "The agent launch command could not be prepared."
         }
     }
 

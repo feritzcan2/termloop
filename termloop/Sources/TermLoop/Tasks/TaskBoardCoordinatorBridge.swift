@@ -33,7 +33,7 @@ public final class TaskBoardWorktreeProvisioner: TaskBoundWorktreeProvisioning {
         -> TaskWorktreeProvisionResult
     {
         let branch = normalizedBranch(branchHint)
-        guard let path = WorktreeResolver.path(projectFolder: projectRoot.path, branch: branch) else {
+        guard let preferredPath = WorktreeResolver.path(projectFolder: projectRoot.path, branch: branch) else {
             throw TaskLifecycleError.provisionFailed("Could not resolve worktree path.")
         }
         guard AppDelegate.shared?.tabManager != nil else {
@@ -52,6 +52,7 @@ public final class TaskBoardWorktreeProvisioner: TaskBoundWorktreeProvisioning {
             effectivePath = existing.path
             createdWorktree = false
         } else {
+            let path = try availableProvisioningPath(preferredPath)
             if !allowDirty {
                 guard try service.isClean(worktreePath: projectRoot.path) else {
                     throw TaskLifecycleError.provisionFailed(TaskProvisionFailureReason.dirtySourceCheckout)
@@ -83,6 +84,24 @@ public final class TaskBoardWorktreeProvisioner: TaskBoundWorktreeProvisioning {
             branch: branch,
             worktreePath: effectivePath,
             createdWorktree: createdWorktree
+        )
+    }
+
+    private func availableProvisioningPath(_ preferredPath: String) throws -> String {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: preferredPath) else { return preferredPath }
+
+        for suffix in 2...999 {
+            let candidate = "\(preferredPath)-\(suffix)"
+            guard fileManager.fileExists(atPath: candidate) else {
+                NSLog(
+                    "[TaskWorktree] preserving occupied unregistered path preferred=\(preferredPath) fallback=\(candidate)"
+                )
+                return candidate
+            }
+        }
+        throw TaskLifecycleError.provisionFailed(
+            "Could not find a free worktree path next to occupied path \(preferredPath)."
         )
     }
 

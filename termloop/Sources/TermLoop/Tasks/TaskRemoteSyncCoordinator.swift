@@ -204,6 +204,20 @@ public final class TaskRemoteSyncCoordinator: ObservableObject {
         store.settingsSnapshot.remoteSync
     }
 
+    var unresolvedAutomationFailures: [TaskAutomationFailureSummary] {
+        let terminalStorageKeys = Set(store.fileSnapshot().tasks.compactMap { task -> String? in
+            guard task.archivedAt == nil,
+                  task.columnId == .done else {
+                return nil
+            }
+            return task.remoteWorkItem?.storageKey
+        })
+        return TaskAutomationStateStoreProvider
+            .store(projectRoot: store.projectRoot)
+            .unresolvedFailures
+            .filter { !terminalStorageKeys.contains($0.storageKey) }
+    }
+
     public var boardSettings: TaskBoardSettings {
         store.settingsSnapshot
     }
