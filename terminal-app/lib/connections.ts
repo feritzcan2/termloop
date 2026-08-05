@@ -5,6 +5,7 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
+import { clearVoiceAgentConnection } from "./voice-agent-config";
 
 const META_KEY_V2 = "termloop.connections.v2";
 const LEGACY_KEY_V1 = "termloop.connections.v1";
@@ -214,6 +215,7 @@ export async function deleteConnection(id: string): Promise<void> {
   await Promise.all([
     SecureStore.deleteItemAsync(accessTokenSecretKey(id)).catch(() => {}),
     SecureStore.deleteItemAsync(passwordSecretKey(id)).catch(() => {}),
+    clearVoiceAgentConnection(id).catch(() => {}),
   ]);
 }
 
@@ -221,6 +223,7 @@ export async function clearConnectionSecrets(id: string): Promise<void> {
   await Promise.all([
     SecureStore.deleteItemAsync(accessTokenSecretKey(id)).catch(() => {}),
     SecureStore.deleteItemAsync(passwordSecretKey(id)).catch(() => {}),
+    clearVoiceAgentConnection(id).catch(() => {}),
   ]);
 }
 

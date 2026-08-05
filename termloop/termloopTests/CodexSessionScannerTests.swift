@@ -97,6 +97,24 @@ final class CodexSessionScannerTests: XCTestCase {
         )
     }
 
+    func testLatestModelReadsNewestTurnContext() throws {
+        let targetCwd = "/tmp/repo"
+        let url = try writeSession(id: "sid-model", cwd: targetCwd, ageSeconds: 1)
+        try """
+        {"timestamp":"2026-04-19T10:00:01Z","type":"turn_context","payload":{"model":"gpt-5.5"}}
+        {"timestamp":"2026-04-19T10:00:02Z","type":"event_msg","payload":{"type":"task_complete"}}
+        {"timestamp":"2026-04-19T10:00:03Z","type":"turn_context","payload":{"model":"gpt-5.6-terra"}}
+        {"timestamp":"2026-04-19T10:00:04Z","type":"event_msg","payload":{"type":"task_started"}}
+        """.appendLine(to: url)
+
+        let scanner = CodexSessionScanner(codexHome: tempDir)
+
+        XCTAssertEqual(
+            scanner.latestModel(sessionId: "sid-model", cwd: targetCwd),
+            .gpt56Terra
+        )
+    }
+
     func testSessionFileURLResolvesBySessionIdWithoutCwd() throws {
         let targetCwd = "/tmp/repo"
         let target = try writeSession(id: "sid-direct", cwd: targetCwd, ageSeconds: 5)
@@ -107,6 +125,30 @@ final class CodexSessionScannerTests: XCTestCase {
             scanner.sessionFileURL(sessionId: "sid-direct", cwd: nil)?.resolvingSymlinksInPath(),
             target.resolvingSymlinksInPath()
         )
+    }
+
+    func testSessionContainingFindsExactPostCutoffTranscript() throws {
+        let targetCwd = "/tmp/repo"
+        let requestId = UUID().uuidString
+        let matching = try writeSession(id: "sid-matching", cwd: targetCwd, ageSeconds: 10)
+        try """
+        {"timestamp":"2026-04-19T10:00:01Z","type":"event_msg","payload":{"type":"user_message","message":"Request ID: \(requestId)"}}
+        """.appendLine(to: matching)
+        try writeSession(id: "sid-newer-unrelated", cwd: targetCwd, ageSeconds: 1)
+
+        let scanner = CodexSessionScanner(codexHome: tempDir)
+        let recovered = scanner.sessionContaining(
+            text: requestId.lowercased(),
+            cwd: targetCwd,
+            newerThan: Date().addingTimeInterval(-60)
+        )
+
+        XCTAssertEqual(recovered?.sessionId, "sid-matching")
+        XCTAssertNil(scanner.sessionContaining(
+            text: requestId,
+            cwd: targetCwd,
+            newerThan: Date().addingTimeInterval(60)
+        ))
     }
 
     private func writeSession(id: String, cwd: String, ageSeconds: TimeInterval) throws -> URL {

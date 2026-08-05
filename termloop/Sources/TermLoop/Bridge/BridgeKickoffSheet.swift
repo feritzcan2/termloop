@@ -413,6 +413,9 @@ struct AskToSheet: View {
         source == nil
             || !selectedTarget.isRuntimeSupported
             || sourcePrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || source.map {
+                WorkspaceBridgeStore.shared.activeBridge(forWorkspaceId: $0.id) != nil
+            } == true
     }
 
     private func workspaceTitle(_ workspace: Workspace) -> String {

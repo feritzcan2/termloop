@@ -10,6 +10,7 @@ final class TaskAssignedBackgroundSyncScheduler {
     private let tickSeconds: UInt64 = 30
     private let overlapSeconds: TimeInterval = 15 * 60
     private let fullReconcileInterval: TimeInterval = 60 * 60
+    private let activationPollThrottle: TimeInterval = TaskRemoteSyncSettings.minimumBackgroundPollIntervalSeconds
     private var loopTask: Task<Void, Never>?
     private var runningProjectIds = Set<UUID>()
     private var nextDueByProjectId: [UUID: Date] = [:]
@@ -37,6 +38,13 @@ final class TaskAssignedBackgroundSyncScheduler {
 
     func projectDidActivate(_ projectId: UUID?) {
         guard let projectId else { return }
+        guard let store = TaskBoardStoreProvider.shared.store(for: projectId) else { return }
+        let settings = store.settingsSnapshot.remoteSync
+        guard settings.isBackgroundSyncEnabled, settings.isBackgroundAssignedSyncEnabled else { return }
+        if let lastCheckedAt = settings.backgroundLastCheckedAt,
+           Date().timeIntervalSince(lastCheckedAt) < activationPollThrottle {
+            return
+        }
         nextDueByProjectId[projectId] = Date()
         Task { [weak self] in
             await self?.runProjectIfDue(projectId: projectId, reason: "projectDidActivate", force: true)
@@ -92,6 +100,19 @@ final class TaskAssignedBackgroundSyncScheduler {
                 updatedSince: updatedSince,
                 paginate: isBaseline || isFullReconcile
             )
+            let eligibleSnapshots = summary.snapshots.filter { snapshot in
+                guard let localTask = task(for: snapshot, store: store) else { return true }
+                return !isTerminalAutomationTask(localTask, snapshot: snapshot, store: store)
+            }
+            let terminalSnapshots = summary.snapshots.filter { snapshot in
+                guard let localTask = task(for: snapshot, store: store) else { return false }
+                return isTerminalAutomationTask(localTask, snapshot: snapshot, store: store)
+            }
+            resolveCompletedAutomationFailures(
+                terminalSnapshots,
+                stateStore: stateStore,
+                now: summary.syncedAt
+            )
 
             if isBaseline {
                 stateStore.ensureBaselineSeeded(
@@ -100,6 +121,13 @@ final class TaskAssignedBackgroundSyncScheduler {
                     completed: !summary.reachedLimit,
                     now: summary.syncedAt
                 )
+                if !summary.reachedLimit {
+                    stateStore.observeWithoutClaiming(
+                        terminalSnapshots,
+                        scopeKey: scopeKey,
+                        now: summary.syncedAt
+                    )
+                }
                 recordActivity(
                     store: store,
                     level: summary.reachedLimit ? .warning : .success,
@@ -108,30 +136,45 @@ final class TaskAssignedBackgroundSyncScheduler {
                         : "Baseline completed with \(summary.snapshots.count) assigned items."
                 )
             } else if isFullReconcile {
-                stateStore.markFullReconcile(summary.snapshots, scopeKey: scopeKey, now: summary.syncedAt)
-                let retrySnapshots = stateStore.claimNewSnapshots(
-                    summary.snapshots,
+                let claimedSnapshots = stateStore.claimNewSnapshots(
+                    eligibleSnapshots,
                     scopeKey: scopeKey,
                     now: summary.syncedAt
                 )
+                stateStore.observeWithoutClaiming(
+                    terminalSnapshots,
+                    scopeKey: scopeKey,
+                    now: summary.syncedAt
+                )
+                stateStore.markFullReconcile(summary.snapshots, scopeKey: scopeKey, now: summary.syncedAt)
+                if !summary.reachedLimit {
+                    stateStore.pruneFailuresNotSeenInFullReconcile(
+                        observedStorageKeys: Set(summary.snapshots.map { $0.reference.storageKey })
+                    )
+                }
                 let repairSnapshots = automationRepairSnapshots(
-                    summary.snapshots,
-                    excluding: retrySnapshots,
+                    eligibleSnapshots,
+                    excluding: claimedSnapshots,
                     store: store,
                     settings: store.settingsSnapshot.remoteSync,
                     stateStore: stateStore
                 )
-                let automationSnapshots = retrySnapshots + repairSnapshots
+                let automationSnapshots = claimedSnapshots + repairSnapshots
                 recordActivity(
                     store: store,
                     level: automationSnapshots.isEmpty ? .success : .info,
-                    message: "Full reconcile checked \(summary.snapshots.count) items; retry candidates=\(retrySnapshots.count), repair candidates=\(repairSnapshots.count)."
+                    message: "Full reconcile checked \(summary.snapshots.count) items; automation candidates=\(claimedSnapshots.count), repair candidates=\(repairSnapshots.count)."
                 )
                 await processNewSnapshots(automationSnapshots, store: store, settings: store.settingsSnapshot.remoteSync, stateStore: stateStore)
             } else {
-                let newSnapshots = stateStore.claimNewSnapshots(summary.snapshots, scopeKey: scopeKey, now: summary.syncedAt)
+                let newSnapshots = stateStore.claimNewSnapshots(eligibleSnapshots, scopeKey: scopeKey, now: summary.syncedAt)
+                stateStore.observeWithoutClaiming(
+                    terminalSnapshots,
+                    scopeKey: scopeKey,
+                    now: summary.syncedAt
+                )
                 let repairSnapshots = automationRepairSnapshots(
-                    summary.snapshots,
+                    eligibleSnapshots,
                     excluding: newSnapshots,
                     store: store,
                     settings: store.settingsSnapshot.remoteSync,
@@ -192,7 +235,6 @@ final class TaskAssignedBackgroundSyncScheduler {
         NSLog("[TaskAutomation] new assigned count=\(snapshots.count) project=\(store.projectId.uuidString)")
         for snapshot in snapshots {
             let storageKey = snapshot.reference.storageKey
-            stateStore.markTaskCreated(storageKey: storageKey)
             recordActivity(
                 store: store,
                 level: .info,
@@ -210,11 +252,25 @@ final class TaskAssignedBackgroundSyncScheduler {
                 continue
             }
             guard let localTask = task(for: snapshot, store: store) else {
-                stateStore.markFailed(storageKey: storageKey, message: "Local task was not found after sync.")
+                stateStore.markFailed(
+                    storageKey: storageKey,
+                    stage: .taskSync,
+                    message: "Local task was not found after sync."
+                )
                 recordActivity(
                     store: store,
                     level: .error,
                     message: "Local task was not found after sync.",
+                    remoteKey: snapshot.reference.key
+                )
+                continue
+            }
+            stateStore.markTaskCreated(storageKey: storageKey)
+            guard !isTerminalAutomationTask(localTask, snapshot: snapshot, store: store) else {
+                recordActivity(
+                    store: store,
+                    level: .info,
+                    message: "Automation skipped; task is already complete.",
                     remoteKey: snapshot.reference.key
                 )
                 continue
@@ -241,7 +297,11 @@ final class TaskAssignedBackgroundSyncScheduler {
                         remoteKey: snapshot.reference.key
                     )
                 } catch {
-                    stateStore.markFailed(storageKey: storageKey, message: "Auto worktree failed: \(error.localizedDescription)")
+                    stateStore.markFailed(
+                        storageKey: storageKey,
+                        stage: .worktree,
+                        message: "Auto worktree failed: \(error.localizedDescription)"
+                    )
                     NSLog("[TaskAutomation] auto worktree failed remote=\(snapshot.reference.key) error=\(error)")
                     recordActivity(
                         store: store,
@@ -275,6 +335,7 @@ final class TaskAssignedBackgroundSyncScheduler {
 
             do {
                 let refreshedTask = task(for: snapshot, store: store) ?? localTask
+                var reservedWorkspaceId = refreshedTask.workspaceId
                 let taskFilePath = try ensureTaskFilePath(task: refreshedTask, store: store)
                 recordActivity(
                     store: store,
@@ -298,18 +359,54 @@ final class TaskAssignedBackgroundSyncScheduler {
                         ],
                         allowDirty: true,
                         reasonTag: "tasks.background.autoExecute"
-                    )
+                    ),
+                    onCommandSubmitted: { [weak self] result in
+                        guard let self else { return }
+                        switch result {
+                        case .success(let submittedWorkspaceId):
+                            self.autoAgentWorkspaceIds.insert(submittedWorkspaceId)
+                            stateStore.markAgentStarted(
+                                storageKey: storageKey,
+                                workspaceId: submittedWorkspaceId
+                            )
+                            self.recordActivity(
+                                store: store,
+                                level: .success,
+                                message: "Agent launched in workspace \(submittedWorkspaceId.uuidString.prefix(8)).",
+                                remoteKey: snapshot.reference.key
+                            )
+                        case .failure(let error):
+                            if let workspaceId = reservedWorkspaceId {
+                                self.autoAgentWorkspaceIds.remove(workspaceId)
+                            }
+                            stateStore.markFailed(
+                                storageKey: storageKey,
+                                stage: .agentLaunch,
+                                message: "Auto execute failed: \(error.localizedDescription)"
+                            )
+                            self.recordActivity(
+                                store: store,
+                                level: .error,
+                                message: "Auto-execute failed: \(error.localizedDescription)",
+                                remoteKey: snapshot.reference.key
+                            )
+                        }
+                    }
                 )
+                reservedWorkspaceId = workspaceId
                 autoAgentWorkspaceIds.insert(workspaceId)
-                stateStore.markAgentStarted(storageKey: storageKey, workspaceId: workspaceId)
                 recordActivity(
                     store: store,
-                    level: .success,
-                    message: "Agent launched in workspace \(workspaceId.uuidString.prefix(8)).",
+                    level: .info,
+                    message: "Agent launch queued for workspace \(workspaceId.uuidString.prefix(8)).",
                     remoteKey: snapshot.reference.key
                 )
             } catch {
-                stateStore.markFailed(storageKey: storageKey, message: "Auto execute failed: \(error.localizedDescription)")
+                stateStore.markFailed(
+                    storageKey: storageKey,
+                    stage: .agentLaunch,
+                    message: "Auto execute failed: \(error.localizedDescription)"
+                )
                 NSLog("[TaskAutomation] auto execute failed remote=\(snapshot.reference.key) error=\(error)")
                 recordActivity(
                     store: store,
@@ -337,12 +434,21 @@ final class TaskAssignedBackgroundSyncScheduler {
                   let remoteState = remoteStates[storageKey],
                   remoteState.agentStartedAt == nil,
                   remoteState.taskCreatedAt != nil || remoteState.worktreeStartedAt != nil,
-                  let localTask = task(for: snapshot, store: store) else {
+                  let localTask = task(for: snapshot, store: store),
+                  !isTerminalAutomationTask(localTask, snapshot: snapshot, store: store),
+                  stateStore.canAttemptRepair(storageKey: storageKey) else {
                 return false
             }
             let missingWorkspace = localTask.workspaceId == nil
             let missingPath = localTask.worktreePath?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
-            return settings.isAutoCreateWorktreeEnabled && (missingWorkspace || missingPath)
+            if missingWorkspace || missingPath {
+                return settings.isAutoCreateWorktreeEnabled || settings.isAutoExecuteEnabled
+            }
+            guard settings.isAutoExecuteEnabled,
+                  let workspaceId = localTask.workspaceId else {
+                return false
+            }
+            return !TaskAgentLaunchCoordinator.hasActiveAgent(workspaceId: workspaceId)
         }
     }
 
@@ -371,6 +477,49 @@ final class TaskAssignedBackgroundSyncScheduler {
         store.fileSnapshot().tasks.first { task in
             task.archivedAt == nil && task.remoteWorkItem?.representsSameRemoteItem(as: snapshot.reference) == true
         }
+    }
+
+    private func isTerminalAutomationTask(
+        _ task: TaskRecord,
+        snapshot: RemoteWorkItemSnapshot,
+        store: TaskBoardStore
+    ) -> Bool {
+        if task.columnId == .done { return true }
+        guard let status = snapshot.statusLabel?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !status.isEmpty else {
+            return false
+        }
+        if TaskColumnId.fromRemoteStatus(status) == .done { return true }
+        let normalizedStatus = normalizedRemoteStatus(status)
+        let configuredDoneStatuses = store.settingsSnapshot.columns.compactMap { column -> String? in
+            guard column.columnId == .done,
+                  let label = column.remoteStatusLabel else {
+                return nil
+            }
+            return normalizedRemoteStatus(label)
+        }
+        if configuredDoneStatuses.contains(normalizedStatus) { return true }
+        return Self.commonTerminalRemoteStatuses.contains(normalizedStatus)
+    }
+
+    private static let commonTerminalRemoteStatuses: Set<String> = [
+        "cancelled", "canceled", "completed", "fixed", "shipped", "won't do", "wont do"
+    ]
+
+    private func normalizedRemoteStatus(_ status: String) -> String {
+        status
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .lowercased()
+    }
+
+    private func resolveCompletedAutomationFailures(
+        _ snapshots: [RemoteWorkItemSnapshot],
+        stateStore: TaskAutomationStateStore,
+        now: Date
+    ) {
+        let storageKeys = Set(snapshots.map { $0.reference.storageKey })
+        stateStore.resolveCompleted(storageKeys: storageKeys, now: now)
     }
 
     private func ensureTaskFilePath(task: TaskRecord, store: TaskBoardStore) throws -> String {

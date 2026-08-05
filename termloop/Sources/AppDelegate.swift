@@ -3890,6 +3890,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard !didAttemptStartupSessionRestore else { return }
         didAttemptStartupSessionRestore = true
         guard !didHandleExplicitOpenIntentAtStartup else { return }
+        // MARK: termloop-hook
+        TermLoopHooks.completeStartupSessionRestoreIfUnavailable(canRestore: startupSessionSnapshot != nil && contextForMainTerminalWindow(primaryWindow) != nil)
+        // MARK: /termloop-hook
         guard let primaryContext = contextForMainTerminalWindow(primaryWindow) else { return }
 
         let startupSnapshot = startupSessionSnapshot
@@ -3953,6 +3956,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func completeStartupSessionRestore() {
         startupSessionSnapshot = nil
         isApplyingStartupSessionRestore = false
+        // MARK: termloop-hook
+        TermLoopHooks.completeStartupSessionRestore()
+        // MARK: /termloop-hook
         _ = saveSessionSnapshot(includeScrollback: false)
     }
 
@@ -6956,6 +6962,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             startupSessionSnapshot = nil
             didAttemptStartupSessionRestore = true
         }
+        // MARK: termloop-hook
+        TermLoopHooks.completeStartupSessionRestore()
+        // MARK: /termloop-hook
     }
 
     private func externalOpenDirectories(from urls: [URL]) -> [String] {
@@ -10876,6 +10885,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         let normalizedFlags = flags.subtracting([.numericPad, .function, .capsLock])
         let commandPaletteTargetWindow = commandPaletteWindowForShortcutEvent(event)
+        // Self-heal stale palette visibility before treating the palette as
+        // interactive. A missed visible=false sync (window teardown races,
+        // key-window fallback writing to another window) would otherwise make
+        // this branch consume every plain Return in the window until an
+        // Escape press or an app restart.
+        if let commandPaletteTargetWindow {
+            pruneStaleCommandPaletteVisibilityIfNeeded(for: commandPaletteTargetWindow)
+        }
         let commandPaletteShortcutWindow = shouldHandleCommandPaletteShortcutEvent(
             event,
             paletteWindow: commandPaletteTargetWindow

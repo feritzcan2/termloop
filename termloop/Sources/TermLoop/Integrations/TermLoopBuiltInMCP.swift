@@ -8,6 +8,8 @@ enum TermLoopBuiltInMCP {
     static let askToToolName = "ask_to"
     static let replyToRequestToolName = "reply_to_request"
     static let proposeRemoteTaskToolName = "propose_remote_task"
+    static let askToRequestIdEnvironmentKey = "TERMLOOP_ASK_TO_REQUEST_ID"
+    static let askToReplyTokenEnvironmentKey = "TERMLOOP_ASK_TO_REPLY_TOKEN"
 
     static let setRunTargetsToolName = "set_run_targets"
     static let getRunTargetsToolName = "get_run_targets"
@@ -56,7 +58,7 @@ enum TermLoopBuiltInMCP {
             "TERMLOOP_SOCKET": socketPath,
             "TERMLOOP_BUNDLED_CLI_PATH": bundledCLIPath
         ]
-        for key in ["TERMLOOP_ASK_TO_REQUEST_ID", "TERMLOOP_ASK_TO_REPLY_TOKEN"] {
+        for key in [askToRequestIdEnvironmentKey, askToReplyTokenEnvironmentKey] {
             if let value = launchEnvironment[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
                !value.isEmpty {
                 env[key] = value

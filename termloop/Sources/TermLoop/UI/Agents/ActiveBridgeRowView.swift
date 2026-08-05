@@ -54,7 +54,6 @@ struct ActiveBridgeRow: View {
                     BridgeCoordinator.shared.forwardLatestMessage(from: sender, in: bridge)
                 },
                 onStop: {
-                    store.stop(id: bridge.id, reason: .manual)
                     BridgeCoordinator.shared.stop(bridgeId: bridge.id)
                 },
                 onDismiss: {
@@ -75,7 +74,7 @@ struct ActiveBridgeRow: View {
                 core: snapshot,
                 isSelected: isSelected,
                 trailingSlot: .none,
-                dismissBehavior: .confirmClose(onConfirm: {
+                dismissBehavior: .directClose(onClose: {
                     BridgeCoordinator.shared.dismissAndCloseRight(bridgeId: bridge.id)
                 }),
                 onActivate: {

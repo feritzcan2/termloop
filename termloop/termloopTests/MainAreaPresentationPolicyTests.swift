@@ -315,4 +315,95 @@ final class MainAreaPresentationPolicyTests: XCTestCase {
 
         XCTAssertNil(coordinator.snapshotForTesting(windowId: windowId)?.presentation(for: workspaceA))
     }
+
+    func testAutomaticSelectionSkipsHiddenAskToHelperBeforeVisibleWorkspace() {
+        let hiddenHelper = UUID()
+        let selected = MainAreaAutomaticWorkspaceSelectionPolicy.preferredWorkspaceId(
+            activeProjectId: projectA,
+            preferredWorkspaceId: hiddenHelper,
+            candidates: [
+                MainAreaWorkspaceSelectionCandidate(
+                    id: hiddenHelper,
+                    projectId: projectA,
+                    isHiddenFromWorkspaceTree: true
+                ),
+                MainAreaWorkspaceSelectionCandidate(
+                    id: workspaceA,
+                    projectId: projectA,
+                    isHiddenFromWorkspaceTree: false
+                )
+            ]
+        )
+
+        XCTAssertEqual(selected, workspaceA)
+    }
+
+    func testAutomaticSelectionDoesNotFallThroughToAnotherProjectsWorkspace() {
+        let hiddenHelper = UUID()
+        let selected = MainAreaAutomaticWorkspaceSelectionPolicy.preferredWorkspaceId(
+            activeProjectId: projectA,
+            preferredWorkspaceId: hiddenHelper,
+            candidates: [
+                MainAreaWorkspaceSelectionCandidate(
+                    id: hiddenHelper,
+                    projectId: projectA,
+                    isHiddenFromWorkspaceTree: true
+                ),
+                MainAreaWorkspaceSelectionCandidate(
+                    id: workspaceB,
+                    projectId: projectB,
+                    isHiddenFromWorkspaceTree: false
+                )
+            ]
+        )
+
+        XCTAssertNil(selected)
+    }
+
+    func testRepairFallbackChoosesVisibleWorkspaceOutsideActiveProject() {
+        let hiddenHelper = UUID()
+        let selected = MainAreaAutomaticWorkspaceSelectionPolicy.fallbackWorkspaceId(
+            candidates: [
+                MainAreaWorkspaceSelectionCandidate(
+                    id: hiddenHelper,
+                    projectId: projectA,
+                    isHiddenFromWorkspaceTree: true
+                ),
+                MainAreaWorkspaceSelectionCandidate(
+                    id: workspaceB,
+                    projectId: projectB,
+                    isHiddenFromWorkspaceTree: false
+                )
+            ]
+        )
+
+        XCTAssertEqual(selected, workspaceB)
+    }
+
+    func testAdjacentVisibleSelectionContinuesPastHiddenHelper() {
+        let hiddenHelper = UUID()
+        let selected = MainAreaAutomaticWorkspaceSelectionPolicy.adjacentVisibleWorkspaceId(
+            attemptedWorkspaceId: hiddenHelper,
+            previousWorkspaceId: workspaceA,
+            candidates: [
+                MainAreaWorkspaceSelectionCandidate(
+                    id: workspaceA,
+                    projectId: projectA,
+                    isHiddenFromWorkspaceTree: false
+                ),
+                MainAreaWorkspaceSelectionCandidate(
+                    id: hiddenHelper,
+                    projectId: projectA,
+                    isHiddenFromWorkspaceTree: true
+                ),
+                MainAreaWorkspaceSelectionCandidate(
+                    id: workspaceB,
+                    projectId: projectB,
+                    isHiddenFromWorkspaceTree: false
+                )
+            ]
+        )
+
+        XCTAssertEqual(selected, workspaceB)
+    }
 }

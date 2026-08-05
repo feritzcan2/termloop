@@ -71,6 +71,14 @@ enum AskToBridgeLauncher {
             )
         }
 
+        // Reject before launching a helper when the caller should have reused
+        // the existing conversation. The store still validates at commit time,
+        // but this preflight prevents the common conflict path from stranding a
+        // hidden agent process.
+        guard WorkspaceBridgeStore.shared.activeBridge(forWorkspaceId: sourceWorkspaceId) == nil else {
+            throw LaunchError.bridgeRejected
+        }
+
         let bridgeId = UUID()
         let requestId = UUID()
         let askToReplyToken = UUID().uuidString
@@ -147,8 +155,8 @@ enum AskToBridgeLauncher {
                 title: target.defaultWorkspaceTitle,
                 cwd: sourceWorkspace.currentDirectory,
                 baseEnv: [
-                    "TERMLOOP_ASK_TO_REQUEST_ID": requestId.uuidString,
-                    "TERMLOOP_ASK_TO_REPLY_TOKEN": askToReplyToken
+                    TermLoopBuiltInMCP.askToRequestIdEnvironmentKey: requestId.uuidString,
+                    TermLoopBuiltInMCP.askToReplyTokenEnvironmentKey: askToReplyToken
                 ],
                 initialPrompt: plan.resolvedPromptBody ?? "",
                 projectId: sourceProjectId,
@@ -156,7 +164,10 @@ enum AskToBridgeLauncher {
                 systemPrompt: plan.launchSystemInstructions,
                 model: plan.resolvedModel,
                 reasoning: plan.resolvedReasoning,
-                launchProvidedFullContext: plan.launchProvidedFullContext
+                launchProvidedFullContext: plan.launchProvidedFullContext,
+                // Ask-To helpers are internal endpoints. Selecting one makes it
+                // the main-area workspace even though the sidebar hides it.
+                select: false
             )
         } catch {
             BridgeDebugTrace.log(
@@ -206,12 +217,18 @@ enum AskToBridgeLauncher {
                 "askTo.launch bridge-rejected bridge=\(bridgeId.uuidString.prefix(8)) request=\(requestId.uuidString.prefix(8)) " +
                 "source=\(sourceWorkspaceId.uuidString.prefix(8)) helper=\(helperWorkspace.id.uuidString.prefix(8)) target=\(target.agentId)"
             )
+            rollbackUncommittedHelper(helperWorkspace, tabManager: tabManager)
             throw LaunchError.bridgeRejected
         }
+        // addWorkspace saves before helper-only metadata and bridge membership
+        // are stamped. Persist the committed transaction so a fast restart
+        // cannot restore this helper as an ordinary visible workspace.
+        TermLoopHooks.saveCriticalAgentRestoreStateSync()
         BridgeDebugTrace.log(
             "askTo.launch bridge-added bridge=\(bridge.id.uuidString.prefix(8)) request=\(requestId.uuidString.prefix(8)) " +
             "source=\(sourceWorkspaceId.uuidString.prefix(8)) helper=\(helperWorkspace.id.uuidString.prefix(8)) target=\(target.agentId)"
         )
+        BridgeCoordinator.shared.start(tabManager: tabManager)
         BridgeCoordinator.shared.kickoff(bridgeId: bridge.id)
         return Outcome(
             bridgeId: bridge.id,
@@ -288,6 +305,7 @@ enum AskToBridgeLauncher {
                 "askTo.followup appended bridge=\(bridgeId.uuidString.prefix(8)) request=\(requestId.uuidString.prefix(8)) " +
                 "source=\(sourceWorkspaceId.uuidString.prefix(8)) helper=\(bridge.rightWorkspaceId.uuidString.prefix(8)) target=\(target.agentId)"
             )
+            BridgeCoordinator.shared.start(tabManager: tabManager)
             BridgeCoordinator.shared.sendAskToRequest(
                 bridgeId: bridgeId,
                 requestId: requestId
@@ -312,6 +330,24 @@ enum AskToBridgeLauncher {
             BridgeDebugTrace.log("askTo.followup append-reject bridge=\(bridgeId.uuidString.prefix(8)) reason=request-already-open")
             throw LaunchError.requestAlreadyOpen
         }
+    }
+
+    private static func rollbackUncommittedHelper(
+        _ helperWorkspace: Workspace,
+        tabManager: TabManager
+    ) {
+        if tabManager.tabs.contains(where: { $0.id == helperWorkspace.id }) {
+            if tabManager.tabs.count == 1 {
+                _ = tabManager.addWorkspace(
+                    select: true,
+                    eagerLoadTerminal: false,
+                    projectId: ProjectStore.shared.activeProjectId
+                )
+            }
+            tabManager.closeWorkspace(helperWorkspace)
+        }
+        _ = WorkspaceMetadataStore.shared.removeMetadataForId(helperWorkspace.id)
+        TermLoopHooks.saveCriticalAgentRestoreStateSync()
     }
 
     private static func requestMessage(
