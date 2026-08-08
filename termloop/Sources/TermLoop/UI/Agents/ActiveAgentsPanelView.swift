@@ -182,7 +182,7 @@ extension ActiveAgentsPanel {
         let finishedCount = counts.finishedTerminals + counts.finishedBridges
         VStack(spacing: 0) {
             TermLoopSidebarRule()
-            LazyVStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 4) {
                 header(
                     currentBranch: currentBranch,
                     runningCount: runningCount,
@@ -232,7 +232,11 @@ extension ActiveAgentsPanel {
                     mediumHeight: 220,
                     minHeight: 72
                 ) {
-                    LazyVStack(alignment: .leading, spacing: 4) {
+                    // Keep this eager. The list is deliberately small and its
+                    // dynamic ForEach sections change while workspaces restore.
+                    // LazyVStack can livelock in LazySubviewPlacements when
+                    // those row identities update during a layout transaction.
+                    VStack(alignment: .leading, spacing: 4) {
                         terminalAndBridgeRows(renderSnapshot, selection: effectiveSelectionTarget)
                         orphanBridgeRows(renderSnapshot, selection: effectiveSelectionTarget)
                         abilityRows(renderSnapshot, selection: effectiveSelectionTarget)

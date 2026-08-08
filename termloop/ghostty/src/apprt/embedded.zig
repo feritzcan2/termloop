@@ -269,6 +269,25 @@ pub const App = struct {
         comptime action: apprt.Action.Key,
         value: apprt.Action.Value(action),
     ) !bool {
+        // A surface asks for a soft reload when only its conditional config
+        // state changes (for example, after it is attached to a window). The
+        // embedded host already owns the full app config, so apply that config
+        // to the requesting surface directly. Forwarding this request to the
+        // host makes it indistinguishable from an app reload; hosts commonly
+        // answer with ghostty_app_update_config, which needlessly updates every
+        // surface and can create a large UI invalidation storm.
+        //
+        // This mirrors the GTK runtime's target-aware reloadConfig behavior.
+        if (comptime action == .reload_config) {
+            if (value.soft) switch (target) {
+                .app => {},
+                .surface => |surface| {
+                    try surface.updateConfig(&self.config);
+                    return true;
+                },
+            };
+        }
+
         // Special case certain actions before they are sent to the
         // embedded apprt.
         self.performPreAction(target, action, value);
