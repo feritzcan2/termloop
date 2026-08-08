@@ -10,7 +10,7 @@ GHOSTTY_REPO=https://github.com/feritzcan2/ghostty.git
 GHOSTTY_BRANCH=main
 GHOSTTY_COMMIT=08187ef82fa7f5b877f0468257eeabdac8aec74d
 # Git tree key for the exact vendored ghostty source used by GhosttyKit prebuilts.
-GHOSTTY_TREE_KEY=ba3fc7638dbdf56a752d8bb88719e1d4d9b1e88e
+GHOSTTY_TREE_KEY=6be18925c14ae9d2be5b5e4e9ef6d268e18ec888
 GHOSTTY_PATH=termloop/ghostty
 
 BONSPLIT_REPO=https://github.com/feritzcan2/bonsplit.git
