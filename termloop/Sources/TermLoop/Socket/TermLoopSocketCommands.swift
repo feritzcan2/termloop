@@ -92,6 +92,8 @@ enum TermLoopSocketCommands {
         case "push.unregister": return pushUnregister(params)
         case "bridge.ask_to":   return bridgeAskTo(params)
         case "bridge.reply_to_request": return bridgeReplyToRequest(params)
+        case "watch.launch_agent": return WatchAgentSocketCommands.launchAgent(params)
+        case "watch.send_prompt":  return WatchAgentSocketCommands.sendPrompt(params)
         default:
             return nil
         }
@@ -292,12 +294,12 @@ enum TermLoopSocketCommands {
         params[key] as? String
     }
 
-    private static func uuid(_ params: [String: Any], _ key: String) -> UUID? {
+    static func uuid(_ params: [String: Any], _ key: String) -> UUID? {
         guard let s = nonEmptyString(params, key) else { return nil }
         return UUID(uuidString: s)
     }
 
-    private static func nonEmptyString(_ params: [String: Any], _ key: String) -> String? {
+    static func nonEmptyString(_ params: [String: Any], _ key: String) -> String? {
         guard let s = rawString(params, key)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !s.isEmpty else { return nil }
         return s
@@ -965,7 +967,7 @@ enum TermLoopSocketCommands {
         }
     }
 
-    private static func worktreeErrorToV2(_ error: WorktreeError) -> TerminalController.V2CallResult {
+    static func worktreeErrorToV2(_ error: WorktreeError) -> TerminalController.V2CallResult {
         let message = error.errorDescription ?? "\(error)"
         if case let .agentMidTurn(wsId, sessionId) = error {
             return .err(
