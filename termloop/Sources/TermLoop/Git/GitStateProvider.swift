@@ -3,7 +3,11 @@
 
 import Foundation
 
+/// Reads repository/worktree state through `GitCommandRunner`, with pure-path
+/// filesystem fallbacks where a subprocess would be too expensive.
 struct ProcessGitStateProvider {
+    /// Upper bound for the raw `run` helper. Runner-backed calls use the
+    /// per-kind defaults instead.
     var timeout: TimeInterval = 5
 
     func fetchAll(projectRoot: String) throws {

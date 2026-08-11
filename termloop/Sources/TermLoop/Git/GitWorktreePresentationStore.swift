@@ -16,6 +16,8 @@ struct GitWorktreePresentationSnapshot: Equatable {
     var dirtyCount: Int { files.count }
     var isDirty: Bool { !files.isEmpty }
 
+    /// Equality that ignores `fetchedAt`, so a refresh that produced identical
+    /// state does not churn the UI.
     func isPresentationEqual(to other: GitWorktreePresentationSnapshot) -> Bool {
         worktreeRoot == other.worktreeRoot &&
             projectKey == other.projectKey &&

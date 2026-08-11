@@ -17,11 +17,18 @@ final class EventBus: @unchecked Sendable {
         fileprivate let types: Set<String>?
         fileprivate let workspaceIds: Set<UUID>?
         fileprivate let sink: (Event) -> Void
+
         init(id: UUID, types: Set<String>?, workspaceIds: Set<UUID>?, sink: @escaping (Event) -> Void) {
             self.id = id
             self.types = types
             self.workspaceIds = workspaceIds
             self.sink = sink
+        }
+
+        fileprivate func accepts(_ event: Event) -> Bool {
+            if let types, !types.contains(event.type) { return false }
+            if let workspaceIds, !workspaceIds.contains(event.workspaceId) { return false }
+            return true
         }
     }
 
@@ -57,11 +64,7 @@ final class EventBus: @unchecked Sendable {
 
     func publish(_ event: Event) {
         let targets: [SubscriptionHandle] = queue.sync {
-            subscriptions.values.filter { sub in
-                if let types = sub.types, !types.contains(event.type) { return false }
-                if let wsIds = sub.workspaceIds, !wsIds.contains(event.workspaceId) { return false }
-                return true
-            }
+            subscriptions.values.filter { $0.accepts(event) }
         }
         for sub in targets { sub.sink(event) }
     }

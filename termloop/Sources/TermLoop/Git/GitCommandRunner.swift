@@ -17,6 +17,9 @@ import os
 enum GitCommandRunner {
     private static let logger = Logger(subsystem: "com.termloop.git", category: "runner")
 
+    /// Command families the runner knows about. The kind drives the default
+    /// timeout and the telemetry label, so prefer an existing case over
+    /// `genericRead` when a new call site fits one of them.
     enum CommandKind: String {
         case revParse
         case branch

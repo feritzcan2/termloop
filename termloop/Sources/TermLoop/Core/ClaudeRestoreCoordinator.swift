@@ -29,6 +29,7 @@ final class ClaudeRestoreCoordinator {
         subsystem: "com.termloop.fork",
         category: "claude-restore"
     )
+    private static let workspaceIdUserInfoKey = "workspaceId"
     private static let retryDelays: [TimeInterval] = [0.25, 0.75, 1.5, 3.0]
 
     private struct PendingRestoreState {
@@ -166,7 +167,7 @@ final class ClaudeRestoreCoordinator {
     // MARK: - Internals
 
     private func handleSurfaceReady(_ note: Notification) {
-        guard let workspaceId = note.userInfo?["workspaceId"] as? UUID else {
+        guard let workspaceId = note.userInfo?[Self.workspaceIdUserInfoKey] as? UUID else {
             return
         }
 #if DEBUG

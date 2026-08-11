@@ -34,13 +34,17 @@ final class TerminalAgentAttentionMuteStore: ObservableObject {
     /// `isMuted` return true until `updatedAt` advances.
     func mute(workspaceId: UUID, atUpdatedAt updatedAt: Date) {
         mutedUpdatedAtByWorkspace[workspaceId] = updatedAt
-        version &+= 1
+        markChanged()
     }
 
     /// Rare, but: if a workspace is closed or agent restarted, wipe the
     /// entry so a fresh session doesn't inherit a stale mute.
     func clear(workspaceId: UUID) {
         guard mutedUpdatedAtByWorkspace.removeValue(forKey: workspaceId) != nil else { return }
+        markChanged()
+    }
+
+    private func markChanged() {
         version &+= 1
     }
 }
