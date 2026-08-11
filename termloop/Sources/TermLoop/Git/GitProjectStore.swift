@@ -5,6 +5,8 @@ import Combine
 import Foundation
 import os
 
+/// Identity of a git repository, keyed by its standardized common dir so every
+/// worktree of the same repo maps to one key.
 struct GitProjectKey: Hashable, Sendable, CustomStringConvertible {
     let commonDir: String
 

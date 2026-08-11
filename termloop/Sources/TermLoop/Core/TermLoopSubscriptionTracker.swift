@@ -185,7 +185,7 @@ final class TermLoopSubscriptionTracker: @unchecked Sendable {
             sweepSocketByTokenLocked(socket: socket)
             return removed
         }()
-        for h in handles { EventBus.shared.unsubscribe(h) }
+        unsubscribe(handles)
         TermLoopSocketIO.endConnection(socket)
     }
 
@@ -210,7 +210,13 @@ final class TermLoopSubscriptionTracker: @unchecked Sendable {
             sweepSocketByTokenLocked(socket: socket)
             return removed
         }()
-        for h in handles { EventBus.shared.unsubscribe(h) }
+        unsubscribe(handles)
+    }
+
+    private func unsubscribe(_ handles: [EventBus.SubscriptionHandle]) {
+        for handle in handles {
+            EventBus.shared.unsubscribe(handle)
+        }
     }
 
     /// Sweeps every `socketBySubscriptionId` entry whose value equals

@@ -17,6 +17,8 @@ final class GitPresentationInvalidationWatcher {
         let source: DispatchSourceFileSystemObject
     }
 
+    // All mutable state below is guarded by `lock`; the dispatch source
+    // callbacks fire on `queue` and re-enter these tables.
     private let lock = NSLock()
     private var watched: [String: WatchedPath] = [:]
     private var worktreeGitDirCache: [String: String] = [:]

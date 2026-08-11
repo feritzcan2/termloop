@@ -18,6 +18,10 @@ final class PullRequestRepositoryIdentityCache {
     private struct Entry {
         let slugs: [String]
         let fetchedAt: Date
+
+        func isStale(at date: Date, ttl: TimeInterval) -> Bool {
+            date.timeIntervalSince(fetchedAt) > ttl
+        }
     }
 
     /// How long a cached entry is considered fresh. Project remote identity
@@ -36,7 +40,7 @@ final class PullRequestRepositoryIdentityCache {
         lock.lock()
         defer { lock.unlock() }
         guard let entry = cache[directory] else { return nil }
-        if Date().timeIntervalSince(entry.fetchedAt) > ttl {
+        if entry.isStale(at: Date(), ttl: ttl) {
             // Stale — return the stale value so PR lookup still works,
             // but also trigger a background refresh.
             scheduleRefreshLocked(directory: directory)
@@ -77,7 +81,7 @@ final class PullRequestRepositoryIdentityCache {
         guard let entry = cache[directory] else {
             return false
         }
-        if Date().timeIntervalSince(entry.fetchedAt) > ttl {
+        if entry.isStale(at: Date(), ttl: ttl) {
             scheduleRefreshLocked(directory: directory)
             return true
         }
