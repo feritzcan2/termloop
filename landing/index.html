@@ -1,1793 +1,408 @@
-<!DOCTYPE html>
-<html lang="en" class="dark">
+<!doctype html>
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TermLoop — The terminal IDE for your AI agents</title>
-<meta name="description" content="TermLoop is a native macOS terminal for running AI coding agents in parallel. Launch agents, manage worktrees, sync tasks, edit prompts, and coordinate agent workflows.">
-<meta property="og:title" content="TermLoop — The terminal IDE for your AI agents">
-<meta property="og:description" content="Run AI coding agents in parallel with managed worktrees, editable prompts, task sync, MCP collaboration, and your existing Claude or Codex accounts.">
-<meta property="og:type" content="website">
-<link rel="canonical" href="https://termloop.ai/">
-<meta name="theme-color" content="#000000">
-<meta name="twitter:card" content="summary_large_image">
-
-<script>
-  if (window.location.hostname === 'www.termloop.ai') {
-    window.location.replace(
-      'https://termloop.ai' +
-      window.location.pathname +
-      window.location.search +
-      window.location.hash
-    );
-  }
-</script>
-
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@300..600&display=swap" rel="stylesheet">
-
-<style>
-  :root {
-    --bg: #000000;
-    --bg-1: #09090b;     /* zinc-950 */
-    --bg-2: #18181b;     /* zinc-900 */
-    --bg-3: #27272a;     /* zinc-800 */
-    --border: #27272a;   /* zinc-800 */
-    --border-2: #3f3f46; /* zinc-700 */
-    --fg: #fafafa;       /* zinc-50 */
-    --fg-2: #d4d4d8;     /* zinc-300 */
-    --fg-3: #a1a1aa;     /* zinc-400 */
-    --fg-4: #71717a;     /* zinc-500 */
-    --cyan: #06b6d4;     /* cyan-500 */
-    --cyan-2: #22d3ee;   /* cyan-400 */
-    --cyan-3: #67e8f9;   /* cyan-300 */
-    --cyan-dim: #164e63; /* cyan-900 */
-    --purple: #9333ea;   /* purple-600 */
-    --purple-2: #a855f7; /* purple-500 */
-    --purple-3: #c084fc; /* purple-400 */
-    --purple-dim: #581c87;
-    --green: #22c55e;
-    --red: #ef4444;
-    --amber: #f59e0b;
-  }
-
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
-  body {
-    background: var(--bg);
-    color: var(--fg);
-    font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    font-size: 15px;
-    line-height: 1.6;
-    min-height: 100vh;
-    overflow-x: hidden;
-  }
-  ::selection { background: var(--cyan); color: #000; }
-
-  a { color: inherit; text-decoration: none; }
-
-  /* ── GLOBAL BACKGROUND: grid + radial glows ───────────── */
-  body::before {
-    content: '';
-    position: fixed; inset: 0;
-    pointer-events: none; z-index: 0;
-    background-image:
-      linear-gradient(to right, rgba(255,255,255,0.035) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(255,255,255,0.035) 1px, transparent 1px);
-    background-size: 60px 60px;
-    mask-image: radial-gradient(ellipse at top, black 30%, transparent 72%);
-    -webkit-mask-image: radial-gradient(ellipse at top, black 30%, transparent 72%);
-  }
-  body::after {
-    content: '';
-    position: fixed; inset: 0;
-    pointer-events: none; z-index: 0;
-    background:
-      radial-gradient(ellipse 80% 50% at 50% -8%, rgba(6,182,212,0.20), transparent 70%),
-      radial-gradient(ellipse 60% 40% at 90% 10%, rgba(147,51,234,0.16), transparent 70%),
-      radial-gradient(ellipse 70% 40% at 10% 20%, rgba(6,182,212,0.10), transparent 70%);
-  }
-
-  main, header, section, nav, footer { position: relative; z-index: 1; }
-
-  .container {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 0 24px;
-  }
-
-  /* ── NAV ──────────────────────────────────────────────── */
-  nav.top {
-    position: sticky;
-    top: 0;
-    z-index: 50;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    background: rgba(0,0,0,0.65);
-    border-bottom: 1px solid var(--border);
-  }
-  nav.top .inner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    height: 60px;
-  }
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-weight: 600;
-    font-size: 15px;
-    letter-spacing: -0.01em;
-  }
-  .brand .mark {
-    width: 26px; height: 26px;
-    border-radius: 7px;
-    background: linear-gradient(135deg, var(--cyan), var(--purple));
-    display: grid;
-    place-items: center;
-    font-family: 'Geist Mono', monospace;
-    font-weight: 700;
-    font-size: 13px;
-    color: #000;
-    box-shadow: 0 0 24px rgba(6,182,212,0.45);
-  }
-  .nav-links {
-    display: flex;
-    align-items: center;
-    gap: 26px;
-    font-size: 14px;
-    color: var(--fg-3);
-  }
-  .nav-links a:hover { color: var(--fg); }
-  .nav-cta {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 14px;
-    border-radius: 8px;
-    background: var(--fg);
-    color: #000 !important;
-    font-weight: 600;
-    font-size: 13px;
-    transition: transform 0.15s, box-shadow 0.15s;
-  }
-  .nav-cta:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(255,255,255,0.15); }
-
-  /* ── BADGE (small pill) ───────────────────────────────── */
-  .badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 5px 12px 5px 8px;
-    border-radius: 999px;
-    background: rgba(6,182,212,0.08);
-    border: 1px solid rgba(6,182,212,0.25);
-    color: var(--cyan-2);
-    font-family: 'Geist Mono', monospace;
-    font-size: 11.5px;
-    font-weight: 500;
-    letter-spacing: 0.02em;
-  }
-  .badge .ring {
-    width: 7px; height: 7px;
-    border-radius: 50%;
-    background: var(--cyan-2);
-    box-shadow: 0 0 0 0 rgba(6,182,212,0.6);
-    animation: ring 1.8s ease-out infinite;
-  }
-  @keyframes ring {
-    0% { box-shadow: 0 0 0 0 rgba(6,182,212,0.6); }
-    70% { box-shadow: 0 0 0 8px rgba(6,182,212,0); }
-    100% { box-shadow: 0 0 0 0 rgba(6,182,212,0); }
-  }
-
-  /* ── HERO ─────────────────────────────────────────────── */
-  section.hero {
-    padding: 96px 0 72px;
-    text-align: center;
-  }
-  .hero-eyebrow {
-    margin: 0 auto;
-    font-family: 'Geist Mono', monospace;
-    font-size: 12px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--cyan-2);
-  }
-  h1.hero-title {
-    margin: 18px auto 0;
-    max-width: 900px;
-    font-family: 'Geist', sans-serif;
-    font-weight: 500;
-    font-size: clamp(2.6rem, 6vw, 5rem);
-    line-height: 1.02;
-    letter-spacing: -0.035em;
-  }
-  h1.hero-title .grad {
-    background: linear-gradient(120deg, #67e8f9 0%, #22d3ee 30%, #a855f7 65%, #c084fc 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    display: inline-block;
-  }
-  .hero-sub {
-    margin: 24px auto 0;
-    max-width: 620px;
-    font-size: 17px;
-    color: var(--fg-3);
-    line-height: 1.6;
-  }
-  .hero-cta {
-    margin-top: 36px;
-    display: inline-flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    justify-content: center;
-  }
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 22px;
-    border-radius: 10px;
-    font-weight: 600;
-    font-size: 14px;
-    letter-spacing: -0.01em;
-    transition: transform 0.15s, box-shadow 0.15s, background 0.15s, border-color 0.15s;
-    border: 1px solid transparent;
-    cursor: pointer;
-  }
-  .btn-primary {
-    background: var(--fg);
-    color: #000;
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.1), 0 8px 32px rgba(6,182,212,0.25);
-  }
-  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 0 0 1px rgba(255,255,255,0.2), 0 12px 40px rgba(6,182,212,0.35); }
-  .btn-ghost {
-    background: transparent;
-    border-color: var(--border-2);
-    color: var(--fg-2);
-  }
-  .btn-ghost:hover { background: var(--bg-2); border-color: var(--fg-4); color: var(--fg); }
-
-  .trust-row {
-    margin: 42px auto 0;
-    display: flex;
-    justify-content: center;
-    gap: 28px;
-    flex-wrap: wrap;
-    font-family: 'Geist Mono', monospace;
-    font-size: 11.5px;
-    color: var(--fg-4);
-    letter-spacing: 0.02em;
-  }
-  .trust-row span { display: inline-flex; align-items: center; gap: 6px; }
-  .trust-row .dot { color: var(--cyan); }
-
-  /* ── TERMINAL PREVIEW ─────────────────────────────────── */
-  .preview {
-    margin: 64px auto 0;
-    max-width: 980px;
-    border-radius: 14px;
-    overflow: hidden;
-    background: linear-gradient(180deg, #0b0b0e 0%, #050507 100%);
-    border: 1px solid var(--border);
-    box-shadow:
-      0 0 0 1px rgba(6,182,212,0.08),
-      0 40px 80px -20px rgba(0,0,0,0.6),
-      0 0 120px rgba(147,51,234,0.18);
-    position: relative;
-  }
-  .preview::before {
-    content: '';
-    position: absolute;
-    inset: -2px;
-    border-radius: 16px;
-    background: linear-gradient(120deg, rgba(6,182,212,0.4), rgba(147,51,234,0.3));
-    filter: blur(18px);
-    opacity: 0.35;
-    z-index: -1;
-  }
-  .preview-chrome {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border);
-    background: #0a0a0d;
-  }
-  .preview-chrome .dots {
-    display: flex;
-    gap: 6px;
-  }
-  .preview-chrome .dots span {
-    width: 11px; height: 11px;
-    border-radius: 50%;
-    background: var(--bg-3);
-  }
-  .preview-chrome .dots span:nth-child(1) { background: #ff5f56; }
-  .preview-chrome .dots span:nth-child(2) { background: #ffbd2e; }
-  .preview-chrome .dots span:nth-child(3) { background: #27c93f; }
-  .preview-chrome .title {
-    margin: 0 auto;
-    font-family: 'Geist Mono', monospace;
-    font-size: 11.5px;
-    color: var(--fg-4);
-    letter-spacing: 0.03em;
-  }
-  /* ── PIPELINE MOCKUP (promotion sidebar) ──────────────── */
-  .pipeline {
-    display: grid;
-    grid-template-columns: 118px 1fr;
-    background: #07070a;
-    min-height: 600px;
-  }
-  .pipe-rail {
-    position: relative;
-    padding: 14px 0 18px;
-    border-right: 1px solid var(--border);
-    background:
-      linear-gradient(180deg, rgba(34,197,94,0.06) 0%, rgba(6,182,212,0.02) 45%, rgba(147,51,234,0.05) 100%),
-      #06060a;
-    overflow: hidden;
-  }
-  .pipe-loop-svg {
-    display: block;
-    width: 100%;
-    height: 46px;
-    margin-bottom: 4px;
-  }
-  .pipe-track {
-    position: relative;
-    height: calc(100% - 70px);
-    margin: 4px 0 26px;
-  }
-  .pipe-track::before {
-    content: '';
-    position: absolute;
-    left: 50%;
-    top: 0; bottom: 0;
-    width: 2px;
-    transform: translateX(-50%);
-    background: linear-gradient(to top,
-      rgba(6,182,212,0.15) 0%,
-      rgba(6,182,212,0.5) 28%,
-      rgba(147,51,234,0.55) 60%,
-      rgba(34,197,94,0.85) 100%);
-    border-radius: 2px;
-  }
-  .pipe-arrow {
-    position: absolute;
-    left: 50%; top: -2px;
-    width: 10px; height: 10px;
-    border-left: 2px solid var(--green);
-    border-top: 2px solid var(--green);
-    transform: translate(-50%, 0) rotate(45deg);
-    z-index: 2;
-  }
-  .pipe-pulse {
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 9px; height: 9px;
-    border-radius: 50%;
-    background: var(--cyan-3);
-    box-shadow: 0 0 14px var(--cyan-2), 0 0 2px #fff;
-    animation: pipePulse 5.5s cubic-bezier(0.45, 0, 0.15, 1) infinite;
-    z-index: 1;
-  }
-  @keyframes pipePulse {
-    0%   { bottom: 0%;   opacity: 0; }
-    6%   { opacity: 1; }
-    94%  { opacity: 1; }
-    100% { bottom: 100%; opacity: 0; }
-  }
-  .pipe-stop {
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    z-index: 3;
-  }
-  .pipe-stop b {
-    display: block;
-    width: 10px; height: 10px;
-    border-radius: 50%;
-    background: #06060a;
-    border: 1.5px solid var(--cyan-2);
-    box-shadow: 0 0 0 3px rgba(6,182,212,0.12);
-  }
-  .pipe-stop em {
-    font-family: 'Geist Mono', monospace;
-    font-size: 9.5px;
-    font-style: normal;
-    color: var(--fg-4);
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    white-space: nowrap;
-  }
-  .pipe-stop.merged   { top: 2%; }
-  .pipe-stop.merged b {
-    background: var(--green);
-    border-color: var(--green);
-    box-shadow: 0 0 0 3px rgba(34,197,94,0.18), 0 0 12px rgba(34,197,94,0.55);
-  }
-  .pipe-stop.merged em { color: var(--green); }
-  .pipe-stop.open     { top: 34%; }
-  .pipe-stop.open b   { border-color: var(--purple-3); box-shadow: 0 0 0 3px rgba(147,51,234,0.15); }
-  .pipe-stop.open em  { color: var(--purple-3); }
-  .pipe-stop.worktree { top: 64%; }
-  .pipe-stop.active   { top: 94%; }
-  .pipe-stop.active b {
-    background: var(--cyan-3);
-    border-color: var(--cyan-3);
-    animation: activeDot 1.8s ease-in-out infinite;
-  }
-  .pipe-stop.active em { color: var(--cyan-3); }
-  @keyframes activeDot {
-    0%, 100% { box-shadow: 0 0 0 3px rgba(6,182,212,0.25), 0 0 10px rgba(103,232,249,0.5); }
-    50%      { box-shadow: 0 0 0 6px rgba(6,182,212,0.08), 0 0 18px rgba(103,232,249,0.95); }
-  }
-  .pipe-direction {
-    position: absolute;
-    bottom: 2px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-family: 'Geist Mono', monospace;
-    font-size: 9px;
-    letter-spacing: 0.24em;
-    text-transform: uppercase;
-    color: var(--fg-4);
-    white-space: nowrap;
-  }
-
-  .pipe-body {
-    display: flex;
-    flex-direction: column;
-    font-family: 'Geist', sans-serif;
-    font-size: 12.5px;
-    line-height: 1.5;
-    color: var(--fg-2);
-    min-width: 0;
-  }
-  .pipe-section {
-    border-bottom: 1px solid var(--border);
-    padding: 10px 14px 14px;
-    position: relative;
-  }
-  .pipe-section:last-child { border-bottom: none; flex: 1; }
-  .pipe-section::before {
-    content: '';
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    width: 2px;
-  }
-  .pipe-section.merged::before   { background: linear-gradient(to bottom, var(--green), transparent 80%); }
-  .pipe-section.open::before     { background: linear-gradient(to bottom, var(--purple-2), transparent 80%); }
-  .pipe-section.worktree::before { background: linear-gradient(to bottom, var(--cyan-2), transparent 80%); }
-  .pipe-section.active::before   { background: linear-gradient(to bottom, var(--cyan-3), transparent 80%); }
-  .pipe-section-head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 2px 10px;
-    font-family: 'Geist Mono', monospace;
-    font-size: 10.5px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--fg-3);
-  }
-  .pipe-caret { color: var(--fg-4); font-size: 9px; }
-  .pipe-section-title { color: var(--fg-2); font-weight: 500; }
-  .pipe-section-count {
-    margin-left: auto;
-    color: var(--fg-4);
-    font-size: 10px;
-    letter-spacing: 0.1em;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid var(--border);
-    padding: 2px 9px;
-    border-radius: 999px;
-  }
-  .pipe-branch {
-    margin-bottom: 6px;
-    padding: 8px 10px 6px;
-    background: rgba(255,255,255,0.015);
-    border: 1px solid var(--border);
-    border-radius: 7px;
-    transition: border-color 0.2s, background 0.2s;
-    min-width: 0;
-  }
-  .pipe-branch:hover { border-color: rgba(6,182,212,0.3); background: rgba(6,182,212,0.04); }
-  .pipe-branch.collapsed { padding: 6px 10px; opacity: 0.55; }
-  .pipe-branch .branch-head {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-    justify-content: space-between;
-    padding: 2px 0 6px;
-    border-bottom: 1px dashed var(--border);
-    margin-bottom: 4px;
-    min-width: 0;
-  }
-  .pipe-branch.collapsed .branch-head { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-  .branch-name {
-    font-family: 'Geist Mono', monospace;
-    font-size: 11.5px;
-    color: var(--fg);
-    letter-spacing: 0.005em;
-    white-space: nowrap;
-  }
-  .branch-meta {
-    font-family: 'Geist Mono', monospace;
-    font-size: 10px;
-    color: var(--fg-4);
-    letter-spacing: 0.02em;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-width: 0;
-  }
-  .agent-row {
-    display: grid;
-    grid-template-columns: auto auto 1fr auto;
-    align-items: center;
-    gap: 10px;
-    padding: 5px 2px;
-    font-size: 11.5px;
-    min-width: 0;
-  }
-  .agent-row + .agent-row { border-top: 1px dotted rgba(63,63,70,0.45); }
-  .agent-name {
-    font-family: 'Geist Mono', monospace;
-    color: var(--fg-2);
-    font-size: 10.5px;
-    white-space: nowrap;
-  }
-  .agent-name em {
-    font-style: normal;
-    color: var(--fg-4);
-    margin-left: 2px;
-  }
-  .agent-line {
-    color: var(--fg-3);
-    font-size: 11.5px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
-  }
-  .agent-line i {
-    color: var(--fg-4);
-    font-style: italic;
-  }
-  .agent-time {
-    font-family: 'Geist Mono', monospace;
-    font-size: 9.5px;
-    color: var(--fg-4);
-    letter-spacing: 0.04em;
-  }
-
-  /* status chips */
-  .chip {
-    font-family: 'Geist Mono', monospace;
-    font-size: 9.5px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    padding: 2px 8px;
-    border-radius: 999px;
-    border: 1px solid transparent;
-    white-space: nowrap;
-    line-height: 1.5;
-  }
-  .chip.running  { color: var(--amber); background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.3); }
-  .chip.ready    { color: var(--cyan-2); background: rgba(6,182,212,0.08); border-color: rgba(6,182,212,0.32); }
-  .chip.done     { color: var(--green); background: rgba(34,197,94,0.08); border-color: rgba(34,197,94,0.32); }
-  .chip.thinking { color: var(--purple-3); background: rgba(147,51,234,0.1); border-color: rgba(147,51,234,0.35); animation: chipThink 1.8s ease-in-out infinite; }
-  .chip.build    {
-    color: var(--cyan-3);
-    background: rgba(6,182,212,0.06);
-    border-color: rgba(6,182,212,0.25);
-    font-size: 9px;
-    padding: 2px 7px;
-    letter-spacing: 0.04em;
-  }
-  @keyframes chipThink {
-    0%, 100% { opacity: 0.7; }
-    50%      { opacity: 1; }
-  }
-
-  /* status bar at bottom */
-  .pipe-statusbar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 14px;
-    background: #05050a;
-    border-top: 1px solid var(--border);
-    font-family: 'Geist Mono', monospace;
-    font-size: 10.5px;
-    color: var(--fg-4);
-    letter-spacing: 0.03em;
-  }
-  .pipe-stat-tcp b {
-    display: inline-block;
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: var(--green);
-    box-shadow: 0 0 6px var(--green);
-    margin-right: 6px;
-    vertical-align: 1px;
-    animation: tcpPing 2s ease-in-out infinite;
-  }
-  @keyframes tcpPing {
-    0%, 100% { box-shadow: 0 0 6px var(--green), 0 0 0 0 rgba(34,197,94,0.45); }
-    50%      { box-shadow: 0 0 10px var(--green), 0 0 0 5px rgba(34,197,94,0); }
-  }
-  .pipe-stat-sep { color: var(--border-2); }
-  .pipe-stat-phone { color: var(--cyan-2); }
-  .pipe-stat-spacer { flex: 1; }
-  .pipe-stat-meta { color: var(--fg-4); }
-
-  /* ── LOOP EXPLAINER SECTION ───────────────────────────── */
-  section.loop-section {
-    padding: 120px 0 80px;
-    position: relative;
-  }
-  .loop-circuit {
-    margin-top: 56px;
-    position: relative;
-    padding: 0;
-  }
-  .loop-rail-svg {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    z-index: 0;
-  }
-  .loop-rail-svg .rail-dash {
-    stroke-dasharray: 4 7;
-    animation: railFlow 28s linear infinite;
-  }
-  @keyframes railFlow {
-    to { stroke-dashoffset: -220; }
-  }
-  .loop-stages {
-    position: relative;
-    z-index: 1;
-    list-style: none;
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 22px;
-    padding: 44px 40px 72px;
-    counter-reset: stage;
-  }
-  .loop-stage {
-    background: linear-gradient(180deg, var(--bg-1) 0%, #040406 100%);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 22px 22px 20px;
-    position: relative;
-    transition: border-color 0.25s, transform 0.25s, box-shadow 0.25s;
-    opacity: 0;
-    transform: translateY(14px);
-    animation: loopStageIn 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    animation-delay: calc(var(--i) * 0.12s + 0.1s);
-  }
-  @keyframes loopStageIn { to { opacity: 1; transform: translateY(0); } }
-  .loop-stage:hover {
-    border-color: rgba(6,182,212,0.4);
-    transform: translateY(-3px);
-    box-shadow: 0 18px 48px -18px rgba(6,182,212,0.35);
-  }
-  .loop-stage::before {
-    content: '';
-    position: absolute;
-    left: 22px; right: 22px; top: -1px;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, rgba(6,182,212,0.7), transparent);
-    opacity: 0.75;
-  }
-  .loop-stage:nth-child(2)::before { background: linear-gradient(90deg, transparent, rgba(103,232,249,0.7), transparent); }
-  .loop-stage:nth-child(3)::before { background: linear-gradient(90deg, transparent, rgba(168,85,247,0.7), transparent); }
-  .loop-stage:nth-child(4)::before { background: linear-gradient(90deg, transparent, rgba(34,197,94,0.8), transparent); }
-  .loop-num {
-    font-family: 'Geist Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.2em;
-    color: var(--cyan-2);
-    margin-bottom: 14px;
-  }
-  .loop-stage:nth-child(3) .loop-num { color: var(--purple-3); }
-  .loop-stage:nth-child(4) .loop-num { color: var(--green); }
-  .loop-stage-name {
-    font-weight: 500;
-    font-size: 19px;
-    letter-spacing: -0.02em;
-    margin-bottom: 8px;
-  }
-  .loop-stage-desc {
-    color: var(--fg-3);
-    font-size: 13.5px;
-    line-height: 1.55;
-    margin-bottom: 18px;
-  }
-  .loop-stage-desc code {
-    font-family: 'Geist Mono', monospace;
-    font-size: 11.5px;
-    color: var(--cyan-3);
-    background: rgba(6,182,212,0.06);
-    padding: 1px 6px;
-    border-radius: 4px;
-  }
-  .loop-mini {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    background: rgba(0,0,0,0.4);
-    border: 1px dashed var(--border-2);
-    border-radius: 8px;
-    font-family: 'Geist Mono', monospace;
-    font-size: 10.5px;
-  }
-  .loop-mini-name { color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-  .loop-mini-name em { font-style: normal; color: var(--fg-4); }
-  .loop-closing {
-    margin: 20px auto 0;
-    text-align: center;
-    max-width: 640px;
-    color: var(--fg-3);
-    font-size: 15px;
-    font-style: italic;
-  }
-  .loop-closing::before { content: '↻  '; color: var(--cyan-2); font-style: normal; letter-spacing: 0.08em; }
-
-  .loop-proof {
-    margin: 64px auto 0;
-    max-width: 1200px;
-    padding: 0 24px;
-  }
-  .loop-proof-head {
-    max-width: 760px;
-    margin: 0 auto 28px;
-    text-align: center;
-  }
-  .loop-proof-title-h {
-    margin: 12px 0 14px;
-    font-size: clamp(22px, 3.4vw, 32px);
-    font-weight: 600;
-    letter-spacing: -0.02em;
-    color: var(--fg);
-  }
-  .loop-proof-lede {
-    color: var(--fg-2);
-    font-size: 16px;
-    line-height: 1.7;
-    margin: 0;
-  }
-  .loop-proof-lede code {
-    font-family: 'Geist Mono', monospace;
-    font-size: 0.9em;
-    padding: 2px 6px;
-    border-radius: 4px;
-    background: var(--bg-2);
-    border: 1px solid var(--border);
-    color: var(--cyan-3);
-  }
-  .loop-proof-figure { margin: 0; }
-  .loop-proof-frame {
-    position: relative;
-    border: 1px solid var(--border-2);
-    border-radius: 14px;
-    background: linear-gradient(180deg, rgba(34,211,238,0.05), rgba(168,85,247,0.05));
-    overflow: hidden;
-    box-shadow:
-      0 0 0 1px rgba(255,255,255,0.02) inset,
-      0 30px 80px -30px rgba(34,211,238,0.25),
-      0 30px 80px -30px rgba(168,85,247,0.2);
-  }
-  .loop-proof-overlay {
-    position: absolute;
-    bottom: 18px;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 8px 14px;
-    background: rgba(0,0,0,0.62);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 8px;
-    color: var(--fg);
-    font-family: 'Geist Mono', monospace;
-    font-size: 13px;
-    letter-spacing: 0.02em;
-    text-align: center;
-    pointer-events: none;
-    white-space: nowrap;
-    max-width: calc(100% - 32px);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    transition: opacity 0.18s ease;
-  }
-  .loop-proof-overlay:empty { display: none; }
-  @media (max-width: 640px) {
-    .loop-proof-overlay {
-      font-size: 11.5px;
-      padding: 6px 10px;
-      bottom: 10px;
-      max-width: calc(100% - 16px);
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TermLoop — Keep every coding agent in the loop</title>
+  <meta name="description" content="TermLoop is the native control room for Claude Code and Codex. Run parallel agents, isolate work in git worktrees, review changes, and keep sessions moving from desktop or mobile.">
+  <meta property="og:title" content="TermLoop — Keep every coding agent in the loop">
+  <meta property="og:description" content="Tasks, worktrees, real terminals, diffs, and agent coordination in one native workspace.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://termloop.ai/">
+  <meta property="og:image" content="https://termloop.ai/assets/product-tour-poster.jpg">
+  <meta property="og:image:width" content="1600">
+  <meta property="og:image:height" content="900">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://termloop.ai/assets/product-tour-poster.jpg">
+  <meta name="theme-color" content="#101013">
+  <link rel="canonical" href="https://termloop.ai/">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+  <script>
+    if (window.location.hostname === 'www.termloop.ai') {
+      window.location.replace('https://termloop.ai' + window.location.pathname + window.location.search + window.location.hash);
     }
-  }
-  .loop-proof-bar {
-    display: flex; align-items: center; gap: 12px;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
-    background: rgba(0,0,0,0.4);
-  }
-  .loop-proof-dots { display: flex; gap: 6px; }
-  .loop-proof-dots span {
-    width: 10px; height: 10px; border-radius: 50%;
-    background: var(--bg-3);
-  }
-  .loop-proof-dots span:nth-child(1) { background: #ef4444; }
-  .loop-proof-dots span:nth-child(2) { background: #eab308; }
-  .loop-proof-dots span:nth-child(3) { background: #22c55e; }
-  .loop-proof-bar-title {
-    font-family: 'Geist Mono', monospace;
-    font-size: 12px;
-    color: var(--fg-3);
-    letter-spacing: 0.04em;
-  }
-  .loop-proof video {
-    display: block;
-    width: 100%;
-    height: auto;
-    background: #000;
-    cursor: zoom-in;
-  }
-  .loop-proof video:hover { filter: brightness(1.04); }
-  .loop-proof video:fullscreen,
-  .loop-proof video:-webkit-full-screen {
-    cursor: default;
-  }
-  .loop-proof-beats {
-    margin-top: 18px;
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 8px 18px;
-    color: var(--fg-3);
-    font-size: 13px;
-    font-family: 'Geist Mono', monospace;
-    letter-spacing: 0.02em;
-  }
-  .loop-proof-beats span { display: inline-flex; align-items: baseline; gap: 6px; }
-  .loop-proof-beats b {
-    font-weight: 500;
-    color: var(--cyan-2);
-    font-size: 11px;
-    letter-spacing: 0.08em;
-  }
-
-  /* ── MORE INSIDE (screenshot showcase) ────────────────── */
-  section.more { padding: 64px 0 40px; }
-  section.more .section-head { margin-bottom: 48px; }
-  .more-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 48px;
-    align-items: center;
-    margin-bottom: 56px;
-    grid-template-areas: "image text";
-  }
-  .more-row .more-image { grid-area: image; }
-  .more-row .more-text { grid-area: text; }
-  .more-row.reverse { grid-template-areas: "text image"; }
-  .more-row.banner {
-    grid-template-areas: "image image" "text text";
-    grid-template-columns: 1fr;
-    gap: 24px;
-    margin-bottom: 0;
-  }
-  .more-image {
-    border-radius: 14px;
-    border: 1px solid var(--border);
-    overflow: hidden;
-    background: var(--bg-1);
-    box-shadow: 0 30px 80px -40px rgba(0,0,0,0.6);
-  }
-  .more-image img {
-    display: block;
-    width: 100%;
-    height: auto;
-  }
-  .phone-trio {
-    display: flex;
-    gap: 18px;
-    justify-content: center;
-    align-items: flex-start;
-    padding: 0 8px;
-  }
-  .phone-trio img {
-    flex: 1 1 0;
-    max-width: 280px;
-    width: 100%;
-    height: auto;
-    border-radius: 22px;
-    border: 1px solid var(--border-2);
-    background: #000;
-    box-shadow: 0 30px 80px -40px rgba(34,211,238,0.3),
-                0 30px 80px -40px rgba(168,85,247,0.25);
-  }
-  .phone-trio img:nth-child(1) { transform: translateY(12px) rotate(-2deg); }
-  .phone-trio img:nth-child(3) { transform: translateY(12px) rotate(2deg); }
-  @media (max-width: 640px) {
-    .phone-trio { gap: 8px; }
-    .phone-trio img:nth-child(1),
-    .phone-trio img:nth-child(3) { transform: none; }
-  }
-  .more-text { padding: 8px 0; }
-  .more-eyebrow {
-    font-family: 'Geist Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--cyan-2);
-    margin-bottom: 10px;
-  }
-  .more-text h3 {
-    font-size: clamp(20px, 2.4vw, 26px);
-    font-weight: 600;
-    letter-spacing: -0.02em;
-    color: var(--fg);
-    margin-bottom: 12px;
-  }
-  .more-text p {
-    color: var(--fg-2);
-    font-size: 15.5px;
-    line-height: 1.65;
-  }
-  .more-text code {
-    font-family: 'Geist Mono', monospace;
-    font-size: 0.88em;
-    padding: 1px 6px;
-    border-radius: 4px;
-    background: var(--bg-2);
-    border: 1px solid var(--border);
-    color: var(--cyan-3);
-  }
-  @media (max-width: 800px) {
-    .more-row,
-    .more-row.reverse,
-    .more-row.banner {
-      grid-template-areas: "image" "text";
-      grid-template-columns: 1fr;
-      gap: 18px;
-      margin-bottom: 48px;
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --canvas:#101013; --surface:#151519; --surface-2:#1b1b20;
+      --line:#2a2a31; --line-strong:#3b3b45;
+      --text:#f2f1ed; --muted:#a09fa8; --faint:#71717b;
+      --purple:#9b87ff; --purple-soft:#28233e; --mint:#69ddb2;
+      --amber:#efbc6b; --red:#ff807d; --max:1320px; --nav:68px;
     }
-  }
-
-  /* ── SECTION HEADING ──────────────────────────────────── */
-  .eyebrow {
-    font-family: 'Geist Mono', monospace;
-    font-size: 12px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--cyan-2);
-  }
-  h2.section-title {
-    margin-top: 14px;
-    font-weight: 500;
-    font-size: clamp(1.8rem, 3.4vw, 2.8rem);
-    line-height: 1.1;
-    letter-spacing: -0.028em;
-    max-width: 820px;
-  }
-  p.section-sub {
-    margin-top: 16px;
-    max-width: 620px;
-    font-size: 16px;
-    color: var(--fg-3);
-  }
-  .section-head { text-align: center; margin: 0 auto; }
-  .section-head h2, .section-head p { margin-left: auto; margin-right: auto; }
-
-  /* ── FEATURES GRID ────────────────────────────────────── */
-  section.features { padding: 120px 0 40px; }
-  .feature-grid {
-    margin-top: 56px;
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 16px;
-  }
-  .feature-card {
-    background: linear-gradient(180deg, var(--bg-1) 0%, #050507 100%);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 24px;
-    transition: border-color 0.25s, transform 0.25s, box-shadow 0.25s;
-    position: relative;
-    overflow: hidden;
-  }
-  .feature-card::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background: radial-gradient(600px circle at var(--mx, 50%) var(--my, 0%), rgba(6,182,212,0.08), transparent 40%);
-    opacity: 0;
-    transition: opacity 0.3s;
-  }
-  .feature-card:hover {
-    border-color: rgba(6,182,212,0.4);
-    transform: translateY(-2px);
-    box-shadow: 0 16px 48px -16px rgba(6,182,212,0.3);
-  }
-  .feature-card:hover::before { opacity: 1; }
-
-  .feature-card .icon {
-    width: 42px; height: 42px;
-    border-radius: 10px;
-    background: linear-gradient(135deg, rgba(6,182,212,0.12), rgba(147,51,234,0.10));
-    border: 1px solid rgba(6,182,212,0.25);
-    display: grid;
-    place-items: center;
-    color: var(--cyan-2);
-    margin-bottom: 18px;
-  }
-  .feature-card h3 {
-    font-weight: 500;
-    font-size: 17px;
-    letter-spacing: -0.012em;
-    margin-bottom: 8px;
-  }
-  .feature-card p {
-    color: var(--fg-3);
-    font-size: 14px;
-    line-height: 1.6;
-  }
-  .feature-card .meta {
-    margin-top: 16px;
-    padding-top: 14px;
-    border-top: 1px dashed var(--border);
-    font-family: 'Geist Mono', monospace;
-    font-size: 11px;
-    color: var(--fg-4);
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-  .feature-card .meta span::before { content: '●  '; color: var(--cyan); font-size: 8px; vertical-align: 2px; }
-
-  .feature-wide {
-    grid-column: span 3;
-    display: grid;
-    grid-template-columns: 1.2fr 1fr;
-    gap: 32px;
-    align-items: center;
-    padding: 40px;
-  }
-  .feature-wide h3 {
-    font-size: 22px;
-    font-weight: 500;
-    letter-spacing: -0.02em;
-    margin-bottom: 10px;
-  }
-  .feature-wide p { font-size: 15px; color: var(--fg-3); }
-  .feature-wide .mobile-glyph {
-    justify-self: end;
-    position: relative;
-  }
-
-  /* ── HOW IT WORKS ────────────────────────────────────── */
-  section.steps { padding: 100px 0 60px; }
-  .steps-grid {
-    margin-top: 56px;
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 20px;
-    position: relative;
-  }
-  .steps-grid::before {
-    content: '';
-    position: absolute;
-    top: 32px;
-    left: 14%; right: 14%;
-    height: 1px;
-    background: linear-gradient(to right, transparent, rgba(6,182,212,0.4), rgba(147,51,234,0.4), transparent);
-  }
-  .step {
-    text-align: center;
-    padding: 16px;
-    position: relative;
-  }
-  .step .num {
-    width: 56px; height: 56px;
-    border-radius: 50%;
-    margin: 0 auto 20px;
-    background: var(--bg-1);
-    border: 1px solid var(--border-2);
-    display: grid;
-    place-items: center;
-    font-family: 'Geist Mono', monospace;
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--cyan-2);
-    position: relative;
-    z-index: 2;
-    box-shadow: 0 0 0 4px var(--bg), inset 0 0 20px rgba(6,182,212,0.15);
-  }
-  .step h4 {
-    font-weight: 500;
-    font-size: 17px;
-    letter-spacing: -0.012em;
-    margin-bottom: 8px;
-  }
-  .step p { color: var(--fg-3); font-size: 14px; max-width: 34ch; margin: 0 auto; }
-
-  /* ── OSS SECTION ─────────────────────────────────────── */
-  section.oss {
-    padding: 100px 0;
-    text-align: center;
-  }
-  .oss-inner {
-    max-width: 720px; margin: 0 auto;
-    padding: 48px 32px;
-    background: linear-gradient(180deg, var(--bg-1) 0%, #050507 100%);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    position: relative;
-    overflow: hidden;
-  }
-  .oss-inner::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background:
-      radial-gradient(ellipse at top, rgba(6,182,212,0.15), transparent 60%),
-      radial-gradient(ellipse at bottom right, rgba(147,51,234,0.12), transparent 60%);
-    pointer-events: none;
-  }
-  .oss-inner > * { position: relative; }
-  .oss-inner h2 { font-size: clamp(1.8rem, 3vw, 2.4rem); font-weight: 500; letter-spacing: -0.028em; }
-  .oss-inner p { color: var(--fg-3); margin-top: 14px; font-size: 15px; }
-  .oss-cta { margin-top: 28px; display: inline-flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
-
-  /* ── FAQ ────────────────────────────────────────────── */
-  section.faq { padding: 40px 0 100px; }
-  .faq-list {
-    margin-top: 48px;
-    max-width: 760px;
-    margin-left: auto; margin-right: auto;
-    display: flex; flex-direction: column; gap: 10px;
-  }
-  details.q {
-    background: var(--bg-1);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 18px 22px;
-    transition: border-color 0.2s, background 0.2s;
-  }
-  details.q[open] { border-color: rgba(6,182,212,0.35); background: linear-gradient(180deg, var(--bg-1), #050507); }
-  details.q summary {
-    cursor: pointer;
-    list-style: none;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 16px;
-    font-weight: 500;
-    font-size: 15px;
-    letter-spacing: -0.01em;
-  }
-  details.q summary::-webkit-details-marker { display: none; }
-  details.q summary::after {
-    content: '+';
-    color: var(--cyan-2);
-    font-family: 'Geist Mono', monospace;
-    font-size: 18px;
-    font-weight: 400;
-    transition: transform 0.2s;
-  }
-  details.q[open] summary::after { content: '−'; }
-  details.q p {
-    margin-top: 12px;
-    color: var(--fg-3);
-    font-size: 14px;
-    line-height: 1.65;
-  }
-
-  /* ── EMAIL CAPTURE ────────────────────────────────────── */
-  section.notify { padding: 40px 0 120px; }
-  .notify-card {
-    max-width: 720px;
-    margin: 0 auto;
-    padding: 48px 32px;
-    background: linear-gradient(180deg, #0b0b0e 0%, #050507 100%);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    text-align: center;
-    position: relative;
-    overflow: hidden;
-  }
-  .notify-card::before {
-    content: '';
-    position: absolute;
-    inset: -1px;
-    border-radius: 17px;
-    padding: 1px;
-    background: linear-gradient(120deg, rgba(6,182,212,0.4), transparent, rgba(147,51,234,0.35));
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    pointer-events: none;
-  }
-  .notify-card h2 {
-    font-size: clamp(1.6rem, 2.8vw, 2.2rem);
-    font-weight: 500;
-    letter-spacing: -0.028em;
-  }
-  .notify-card p { color: var(--fg-3); margin-top: 12px; font-size: 15px; }
-
-  form.subscribe {
-    margin-top: 28px;
-    display: flex;
-    gap: 8px;
-    max-width: 440px;
-    margin-left: auto; margin-right: auto;
-    background: var(--bg-2);
-    border: 1px solid var(--border-2);
-    border-radius: 12px;
-    padding: 6px;
-    transition: border-color 0.2s, box-shadow 0.2s;
-  }
-  form.subscribe:focus-within {
-    border-color: var(--cyan);
-    box-shadow: 0 0 0 4px rgba(6,182,212,0.15);
-  }
-  form.subscribe input {
-    flex: 1;
-    background: transparent;
-    border: none;
-    color: var(--fg);
-    font: inherit;
-    font-size: 14px;
-    outline: none;
-    padding: 10px 12px;
-    min-width: 0;
-  }
-  form.subscribe input::placeholder { color: var(--fg-4); }
-  form.subscribe button {
-    padding: 10px 18px;
-    background: var(--fg);
-    color: #000;
-    border: none;
-    border-radius: 8px;
-    font: inherit;
-    font-weight: 600;
-    font-size: 13px;
-    cursor: pointer;
-    transition: transform 0.15s, background 0.15s;
-    white-space: nowrap;
-  }
-  form.subscribe button:hover {
-    background: linear-gradient(135deg, var(--cyan), var(--purple-2));
-    color: #000;
-    transform: translateY(-1px);
-  }
-  .notify-status {
-    margin-top: 14px;
-    font-family: 'Geist Mono', monospace;
-    font-size: 12px;
-    color: var(--fg-4);
-    min-height: 1em;
-  }
-
-  /* ── FOOTER ───────────────────────────────────────────── */
-  footer.site {
-    border-top: 1px solid var(--border);
-    padding: 40px 0 32px;
-    color: var(--fg-4);
-    font-size: 13px;
-  }
-  footer.site .inner {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 16px;
-  }
-  footer.site .links {
-    display: flex; gap: 22px;
-  }
-  footer.site .links a:hover { color: var(--fg); }
-  footer.site .copy { font-family: 'Geist Mono', monospace; font-size: 11.5px; letter-spacing: 0.02em; }
-
-  /* ── RESPONSIVE ───────────────────────────────────────── */
-  @media (max-width: 900px) {
-    .nav-links a:not(.nav-cta) { display: none; }
-    section.hero { padding: 64px 0 48px; }
-    .pipeline { grid-template-columns: 72px 1fr; min-height: 520px; }
-    .pipe-loop-svg { height: 40px; }
-    .pipe-stop em { font-size: 8.5px; letter-spacing: 0.1em; }
-    .pipe-direction { font-size: 8px; letter-spacing: 0.16em; }
-    .pipe-section { padding: 8px 10px 12px; }
-    .pipe-branch { padding: 7px 8px 5px; }
-    .pipe-branch .branch-head {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 2px;
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; scroll-padding-top:calc(var(--nav) + 24px); }
+    body {
+      margin:0; min-width:320px; background:var(--canvas); color:var(--text);
+      font-family:"Geist",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      font-size:16px; line-height:1.55; -webkit-font-smoothing:antialiased;
     }
-    .branch-meta { font-size: 9.5px; }
-    .agent-row { grid-template-columns: auto 1fr auto; row-gap: 4px; column-gap: 8px; }
-    .agent-row .agent-name { grid-column: 1 / -1; order: -1; font-size: 10px; }
-    .agent-line { font-size: 11px; }
-    .pipe-statusbar { font-size: 9.5px; gap: 8px; flex-wrap: wrap; }
-    .feature-grid { grid-template-columns: 1fr; }
-    .feature-wide { grid-column: span 1; grid-template-columns: 1fr; padding: 24px; }
-    .steps-grid { grid-template-columns: 1fr; gap: 40px; }
-    .steps-grid::before { display: none; }
-    section.loop-section { padding: 80px 0 56px; }
-    .loop-stages {
-      grid-template-columns: 1fr;
-      gap: 16px;
-      padding: 16px 0 20px;
+    body::before {
+      content:""; position:fixed; inset:0; z-index:-1; pointer-events:none; opacity:.32;
+      background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);
+      background-size:48px 48px; mask-image:linear-gradient(to bottom,#000,transparent 78%);
     }
-    .loop-rail-svg { display: none; }
-    .loop-stage { padding: 20px 20px 18px; }
-    .loop-closing { margin-top: 24px; font-size: 14px; }
-  }
+    a { color:inherit; text-decoration:none; }
+    ::selection { background:var(--purple); color:#0c0c0f; }
+    .shell { width:min(var(--max),calc(100% - 48px)); margin:0 auto; }
+    .eyebrow {
+      margin:0 0 18px; color:var(--purple); font:600 12px "Geist Mono",monospace;
+      letter-spacing:.12em; text-transform:uppercase;
+    }
+    .topbar {
+      position:sticky; top:0; z-index:30; height:var(--nav);
+      border-bottom:1px solid rgba(59,59,69,.72); background:rgba(16,16,19,.88);
+      backdrop-filter:blur(18px);
+    }
+    .topbar-inner { height:100%; display:flex; align-items:center; justify-content:space-between; gap:32px; }
+    .brand { display:inline-flex; align-items:center; gap:11px; font-weight:600; letter-spacing:-.02em; }
+    .brand-mark {
+      width:28px; height:28px; display:grid; place-items:center; border:1px solid var(--line-strong);
+      background:var(--surface-2); color:var(--purple); font:600 18px/1 "Geist Mono",monospace;
+    }
+    .nav-links { display:flex; align-items:center; gap:26px; color:var(--muted); font-size:14px; }
+    .nav-links a:hover,.footer-links a:hover { color:var(--text); }
+    .nav-actions,.hero-actions,.cta-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .button {
+      min-height:40px; display:inline-flex; align-items:center; justify-content:center; gap:8px;
+      padding:0 16px; border:1px solid var(--line-strong); background:var(--surface-2);
+      color:var(--text); font-size:14px; font-weight:600;
+      transition:transform .15s,border-color .15s,background .15s;
+    }
+    .button:hover { transform:translateY(-1px); border-color:#575762; background:#202027; }
+    .button.primary { background:var(--purple); border-color:var(--purple); color:#121016; }
+    .button.primary:hover { background:#ae9eff; border-color:#ae9eff; }
+    .button.small { min-height:36px; padding:0 13px; font-size:13px; }
 
-  @media (prefers-reduced-motion: reduce) {
-    * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
-  }
+    .hero { padding:92px 0 58px; border-bottom:1px solid var(--line); }
+    .hero-grid { display:grid; grid-template-columns:minmax(0,.86fr) minmax(560px,1.35fr); gap:68px; align-items:center; }
+    .hero-copy h1 {
+      max-width:680px; margin:0; font-size:clamp(3.3rem,6vw,6.25rem); font-weight:500;
+      line-height:.95; letter-spacing:-.065em;
+    }
+    .hero-copy h1 span { color:var(--purple); }
+    .lead { max-width:600px; margin:28px 0 0; color:var(--muted); font-size:18px; line-height:1.58; }
+    .hero-actions { margin-top:32px; }
+    .availability { display:flex; flex-wrap:wrap; gap:14px 22px; margin-top:30px; color:var(--faint); font:12px "Geist Mono",monospace; }
+    .availability span { display:inline-flex; align-items:center; gap:8px; }
+    .status-dot { width:7px; height:7px; border-radius:50%; background:var(--mint); box-shadow:0 0 0 4px rgba(105,221,178,.09); }
+    .demo-frame { border:1px solid var(--line-strong); background:#08080a; box-shadow:0 28px 80px rgba(0,0,0,.34); }
+    .demo-bar { height:38px; display:flex; align-items:center; gap:7px; padding:0 13px; border-bottom:1px solid var(--line); background:#17171b; }
+    .demo-bar i { width:9px; height:9px; display:block; border-radius:50%; background:#484851; }
+    .demo-bar i:first-child { background:var(--red); } .demo-bar i:nth-child(2) { background:var(--amber); } .demo-bar i:nth-child(3) { background:var(--mint); }
+    .demo-bar code { margin-left:8px; color:var(--faint); font:11px "Geist Mono",monospace; }
+    .demo-frame video { display:block; width:100%; aspect-ratio:16/9; object-fit:cover; background:#08080a; }
+    .demo-note { display:flex; justify-content:space-between; gap:16px; margin-top:11px; color:var(--faint); font:11px "Geist Mono",monospace; }
+    .demo-note strong { color:var(--mint); font-weight:500; }
 
-  /* ── ENTRY REVEAL ─────────────────────────────────────── */
-  .reveal {
-    opacity: 0;
-    transform: translateY(12px);
-    animation: reveal 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  }
-  @keyframes reveal { to { opacity: 1; transform: translateY(0); } }
-</style>
+    .proof { border-bottom:1px solid var(--line); }
+    .proof-grid { display:grid; grid-template-columns:repeat(4,1fr); }
+    .proof-item { min-height:106px; padding:25px 28px; border-left:1px solid var(--line); }
+    .proof-item:last-child { border-right:1px solid var(--line); }
+    .proof-item b { display:block; margin-bottom:5px; font-size:15px; font-weight:500; }
+    .proof-item span { color:var(--faint); font:12px "Geist Mono",monospace; }
+
+    .model { padding:112px 0; border-bottom:1px solid var(--line); }
+    .section-heading { display:grid; grid-template-columns:.7fr 1.3fr; gap:48px; margin-bottom:54px; }
+    .section-heading h2 { max-width:740px; margin:0; font-size:clamp(2.2rem,4vw,4rem); font-weight:500; line-height:1.03; letter-spacing:-.05em; }
+    .section-heading > p { max-width:650px; margin:4px 0 0; color:var(--muted); font-size:17px; }
+    .model-grid { display:grid; grid-template-columns:repeat(3,1fr); border-block:1px solid var(--line-strong); }
+    .model-card { min-height:286px; padding:32px; border-left:1px solid var(--line); position:relative; }
+    .model-card:last-child { border-right:1px solid var(--line); }
+    .model-card::before { content:""; position:absolute; top:-4px; left:29px; width:7px; height:7px; background:var(--purple); }
+    .model-card:nth-child(2)::before { background:var(--amber); } .model-card:nth-child(3)::before { background:var(--mint); }
+    .model-card .number { color:var(--faint); font:12px "Geist Mono",monospace; }
+    .model-card h3 { margin:58px 0 12px; font-size:25px; font-weight:500; letter-spacing:-.03em; }
+    .model-card p { margin:0; color:var(--muted); }
+    .model-card code { display:block; margin-top:25px; color:var(--faint); font:11px "Geist Mono",monospace; }
+
+    .tour { padding:112px 0 128px; }
+    .tour-layout { display:grid; grid-template-columns:240px minmax(0,1fr); gap:56px; align-items:start; }
+    .feature-nav { position:sticky; top:calc(var(--nav) + 28px); }
+    .feature-nav .nav-title { margin:0 0 18px; color:var(--faint); font:11px "Geist Mono",monospace; letter-spacing:.12em; text-transform:uppercase; }
+    .feature-nav section { margin:0 0 24px; padding-left:17px; border-left:1px solid var(--line); }
+    .feature-nav h3 { margin:0 0 8px; color:var(--muted); font:11px "Geist Mono",monospace; letter-spacing:.08em; text-transform:uppercase; }
+    .feature-nav a { display:block; position:relative; padding:5px 0; color:var(--faint); font-size:13px; transition:color .15s,transform .15s; }
+    .feature-nav a:hover,.feature-nav a.active { color:var(--text); transform:translateX(3px); }
+    .feature-nav a.active::before { content:""; position:absolute; width:5px; height:5px; left:-20px; top:13px; background:var(--purple); }
+    .feature-groups { min-width:0; }
+    .feature-group { margin-bottom:112px; }
+    .feature-group:last-child { margin-bottom:0; }
+    .group-head { display:flex; align-items:end; justify-content:space-between; gap:24px; padding-bottom:18px; border-bottom:1px solid var(--line-strong); }
+    .group-head h2 { margin:0; font-size:34px; font-weight:500; letter-spacing:-.04em; }
+    .group-head span { color:var(--faint); font:11px "Geist Mono",monospace; }
+    .feature-story {
+      display:grid; grid-template-columns:minmax(230px,.62fr) minmax(0,1.38fr); gap:40px;
+      padding:48px 0; border-bottom:1px solid var(--line); scroll-margin-top:calc(var(--nav) + 24px);
+    }
+    .feature-story:nth-of-type(even) { grid-template-columns:minmax(0,1.38fr) minmax(230px,.62fr); }
+    .feature-story:nth-of-type(even) .feature-copy { order:2; } .feature-story:nth-of-type(even) .feature-media { order:1; }
+    .feature-kicker { display:flex; align-items:center; gap:10px; color:var(--purple); font:11px "Geist Mono",monospace; letter-spacing:.08em; text-transform:uppercase; }
+    .feature-kicker::before { content:""; width:18px; height:1px; background:currentColor; }
+    .feature-copy h3 { margin:18px 0 13px; font-size:29px; font-weight:500; line-height:1.08; letter-spacing:-.04em; }
+    .feature-copy p { margin:0; color:var(--muted); font-size:15px; }
+    .feature-meta { display:flex; flex-wrap:wrap; gap:7px; margin-top:22px; }
+    .feature-meta span { padding:5px 8px; border:1px solid var(--line); color:var(--faint); font:10px "Geist Mono",monospace; text-transform:uppercase; letter-spacing:.05em; }
+    .feature-media { min-width:0; align-self:start; }
+    .feature-media .demo-frame { box-shadow:0 18px 54px rgba(0,0,0,.23); }
+    .feature-media .demo-bar { height:31px; } .feature-media .demo-bar i { width:7px; height:7px; }
+
+    .principles { padding:112px 0; border-block:1px solid var(--line); background:var(--surface); }
+    .principles-grid { display:grid; grid-template-columns:1fr 1fr; gap:78px; }
+    .principles h2 { margin:0; max-width:570px; font-size:clamp(2.5rem,4.5vw,4.8rem); font-weight:500; line-height:.98; letter-spacing:-.06em; }
+    .principles-list,.faq-list { border-top:1px solid var(--line-strong); }
+    .principle { display:grid; grid-template-columns:34px 1fr; gap:18px; padding:22px 0; border-bottom:1px solid var(--line); }
+    .principle > span { color:var(--faint); font:11px "Geist Mono",monospace; }
+    .principle h3 { margin:0 0 5px; font-size:16px; font-weight:500; }
+    .principle p { margin:0; color:var(--muted); font-size:14px; }
+    .faq { padding:112px 0; }
+    .faq-grid { display:grid; grid-template-columns:.7fr 1.3fr; gap:64px; }
+    .faq h2 { margin:0; font-size:42px; font-weight:500; line-height:1; letter-spacing:-.05em; }
+    details { border-bottom:1px solid var(--line); }
+    summary { position:relative; padding:24px 45px 24px 0; cursor:pointer; list-style:none; font-weight:500; }
+    summary::-webkit-details-marker { display:none; }
+    summary::after { content:"+"; position:absolute; top:20px; right:4px; color:var(--purple); font:22px "Geist Mono",monospace; }
+    details[open] summary::after { content:"−"; }
+    details p { max-width:760px; margin:-4px 0 25px; color:var(--muted); }
+    .final-cta { padding:58px 0 78px; }
+    .cta-box { display:grid; grid-template-columns:1fr auto; gap:48px; align-items:center; padding:48px; border:1px solid var(--line-strong); background:var(--purple-soft); }
+    .cta-box h2 { margin:0; max-width:780px; font-size:clamp(2rem,4vw,4.1rem); font-weight:500; line-height:1; letter-spacing:-.055em; }
+    .cta-box p { margin:15px 0 0; color:#bbb5cc; }
+    .cta-actions { justify-content:flex-end; }
+    footer { padding:25px 0 40px; border-top:1px solid var(--line); color:var(--faint); font-size:13px; }
+    .footer-inner { display:flex; align-items:center; justify-content:space-between; gap:28px; }
+    .footer-links { display:flex; gap:22px; }
+
+    @media (max-width:1080px) {
+      .hero-grid { grid-template-columns:1fr; } .hero-copy { max-width:820px; }
+      .tour-layout { grid-template-columns:190px minmax(0,1fr); gap:34px; }
+      .feature-story,.feature-story:nth-of-type(even) { grid-template-columns:1fr; }
+      .feature-story:nth-of-type(even) .feature-copy,.feature-story:nth-of-type(even) .feature-media { order:initial; }
+    }
+    @media (max-width:780px) {
+      :root { --nav:60px; } .shell { width:min(100% - 28px,var(--max)); }
+      .nav-links { display:none; } .nav-actions .button:not(.primary) { display:none; }
+      .hero { padding:66px 0 44px; } .hero-grid { gap:42px; }
+      .hero-copy h1 { font-size:clamp(3rem,15vw,5rem); } .lead { font-size:16px; }
+      .demo-note { flex-direction:column; gap:3px; }
+      .proof-grid { grid-template-columns:1fr 1fr; } .proof-item:nth-child(2) { border-right:1px solid var(--line); }
+      .proof-item:nth-child(n+3) { border-top:1px solid var(--line); }
+      .model,.tour,.principles,.faq { padding:76px 0; }
+      .section-heading,.faq-grid,.principles-grid { grid-template-columns:1fr; gap:28px; }
+      .model-grid { grid-template-columns:1fr; }
+      .model-card { min-height:220px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); }
+      .model-card:last-child { border-bottom:0; } .model-card h3 { margin-top:38px; }
+      .tour-layout { display:block; }
+      .feature-nav {
+        position:sticky; top:var(--nav); z-index:15; margin:0 -14px 48px; padding:10px 14px;
+        overflow-x:auto; background:rgba(16,16,19,.95); border-bottom:1px solid var(--line);
+      }
+      .feature-nav .nav-title,.feature-nav h3 { display:none; }
+      .feature-nav section { display:contents; } .feature-nav nav { display:flex; gap:8px; width:max-content; }
+      .feature-nav a { padding:7px 10px; border:1px solid var(--line); white-space:nowrap; }
+      .feature-nav a.active { background:var(--purple-soft); border-color:#514873; transform:none; }
+      .feature-nav a.active::before { display:none; }
+      .feature-group { margin-bottom:76px; } .feature-story { padding:35px 0; gap:25px; }
+      .group-head h2 { font-size:29px; } .principles h2 { font-size:3rem; }
+      .cta-box { grid-template-columns:1fr; padding:30px; } .cta-actions { justify-content:flex-start; }
+      .footer-inner { align-items:flex-start; flex-direction:column; }
+    }
+    @media (max-width:480px) {
+      .topbar .button.primary { padding:0 11px; } .proof-grid { grid-template-columns:1fr; }
+      .proof-item { border-right:1px solid var(--line); border-top:1px solid var(--line); }
+      .proof-item:first-child { border-top:0; } .feature-copy h3 { font-size:25px; }
+      .cta-actions { flex-direction:column; } .cta-actions .button { width:100%; }
+    }
+    @media (prefers-reduced-motion:reduce) {
+      html { scroll-behavior:auto; } *,*::before,*::after { transition:none!important; animation:none!important; }
+    }
+  </style>
 </head>
 <body>
-
-<!-- ═══ NAV ═══ -->
-<nav class="top">
-  <div class="container inner">
-    <a href="#" class="brand">
-      <span class="mark">◎</span>
-      <span>TermLoop</span>
-    </a>
-    <div class="nav-links">
-      <a href="#faq">FAQ</a>
-      <a href="https://github.com/feritzcan2/termloop" class="nav-cta">GitHub →</a>
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="brand" href="#top" aria-label="TermLoop home"><span class="brand-mark" aria-hidden="true">◎</span><span>TermLoop</span></a>
+      <nav class="nav-links" aria-label="Primary navigation"><a href="#model">How it works</a><a href="#features">Features</a><a href="#principles">Principles</a><a href="#faq">FAQ</a></nav>
+      <div class="nav-actions"><a class="button small" href="https://github.com/feritzcan2/termloop" target="_blank" rel="noopener">GitHub ↗</a><a class="button primary small" href="/download">Download</a></div>
     </div>
-  </div>
-</nav>
+  </header>
 
-<!-- ═══ HERO ═══ -->
-<section class="hero">
-  <div class="container">
-    <p class="hero-eyebrow reveal" style="animation-delay: 0.05s">
-      For developers running Claude Code, Codex, Gemini CLI, Aider, Cline — in parallel
-    </p>
-    <h1 class="hero-title reveal" style="animation-delay: 0.15s">
-      The native macOS terminal<br>
-      for <span class="grad">AI coding agents.</span>
-    </h1>
-    <p class="hero-sub reveal" style="animation-delay: 0.3s">
-      Launch agents, manage worktrees, sync tasks, edit prompts, and coordinate multiple agent sessions without losing context.
-      Use your existing Claude and Codex accounts. Open source, native to macOS.
-    </p>
-    <div class="hero-cta reveal" style="animation-delay: 0.4s">
-      <a href="https://github.com/feritzcan2/termloop/releases/latest/download/termloop-macos.dmg" class="btn btn-primary">
-        Download for macOS
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
-      </a>
-      <a href="https://github.com/feritzcan2/termloop" class="btn btn-ghost">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55v-1.92c-3.2.7-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.2-3.09-.12-.29-.52-1.48.11-3.09 0 0 .98-.31 3.2 1.18.93-.26 1.92-.38 2.91-.38.99 0 1.98.13 2.91.38 2.22-1.5 3.19-1.18 3.19-1.18.64 1.61.24 2.8.12 3.09.75.81 1.2 1.84 1.2 3.09 0 4.42-2.69 5.39-5.25 5.68.41.36.78 1.05.78 2.12v3.14c0 .3.21.66.79.55A11.5 11.5 0 0 0 23.5 12C23.5 5.73 18.27.5 12 .5z"/></svg>
-        Star on GitHub
-      </a>
-    </div>
-    <div class="trust-row reveal" style="animation-delay: 0.55s">
-      <span><span class="dot">●</span> Use your subscription</span>
-      <span><span class="dot">●</span> Open source</span>
-      <span><span class="dot">●</span> macOS · iOS</span>
-      <span><span class="dot">●</span> No telemetry</span>
-    </div>
-
-  </div>
-</section>
-
-<!-- ═══ KICKOFF ═══ -->
-<section class="loop-section" id="kickoff">
-  <div class="container">
-    <div class="loop-proof">
-      <div class="loop-proof-head">
-        <div class="eyebrow">Kickoff</div>
-        <h3 class="loop-proof-title-h">All your agents in one tap.</h3>
-        <p class="loop-proof-lede">
-          Quick Actions are saved agent launches — agent, prompt, system prompt,
-          model, permissions, working folder, and launch behavior. One shortcut
-          starts the right agent with the right context.
-        </p>
-      </div>
-      <figure class="loop-proof-figure">
-        <div class="loop-proof-frame">
-          <div class="loop-proof-bar">
-            <div class="loop-proof-dots"><span></span><span></span><span></span></div>
-            <div class="loop-proof-bar-title">termloop · quick action · launch with context</div>
-          </div>
-          <video autoplay muted loop playsinline preload="metadata" aria-label="One Quick Action launches every TermLoop agent at once" data-captions='[{"t":0,"text":"Open Quick Actions"},{"t":4,"text":"One tap"},{"t":9,"text":"Each on its own task"}]'>
-            <source src="/assets/videos/quick-actions.webm" type="video/webm">
-            <source src="/assets/videos/quick-actions.mp4" type="video/mp4">
-          </video>
-          <div class="loop-proof-overlay" aria-live="polite"></div>
+  <main id="top">
+    <section class="hero">
+      <div class="shell hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">Native agent operations</p>
+          <h1>Keep every coding agent <span>in the loop.</span></h1>
+          <p class="lead">TermLoop puts tasks, worktrees, real terminals, diffs, and agent coordination in one native workspace—without replacing Claude Code or Codex.</p>
+          <div class="hero-actions"><a class="button primary" href="/download">Download for macOS ↓</a><a class="button" href="#features">Explore the product →</a></div>
+          <div class="availability"><span><i class="status-dot"></i>Available now</span><span>Open source</span><span>Your subscriptions</span><span>No telemetry</span></div>
         </div>
-        <figcaption class="loop-proof-beats">
-          <span><b>01</b> Open Quick Actions</span>
-          <span><b>02</b> Pick the saved agent</span>
-          <span><b>03</b> Launch with full context</span>
-        </figcaption>
-      </figure>
-    </div>
-  </div>
-</section>
-
-<!-- ═══ THE LOOP ═══ -->
-<section class="loop-section" id="loop">
-  <div class="container">
-    <div class="loop-proof">
-      <div class="loop-proof-head">
-        <div class="eyebrow">See it run</div>
-        <h3 class="loop-proof-title-h">Four agents. Four tasks. One workspace.</h3>
-        <p class="loop-proof-lede">
-          Give multiple agents multiple tasks at once. TermLoop creates isolated
-          <code>worktrees</code>, lets each task run its own dev server or test
-          command, and keeps the work reviewable without mixing local state.
-        </p>
-      </div>
-      <figure class="loop-proof-figure">
-        <div class="loop-proof-frame">
-          <div class="loop-proof-bar">
-            <div class="loop-proof-dots"><span></span><span></span><span></span></div>
-            <div class="loop-proof-bar-title">termloop · 4 agents · 4 worktrees · live previews</div>
+        <div class="hero-visual">
+          <div class="demo-frame">
+            <div class="demo-bar"><i></i><i></i><i></i><code>launchpad · live workspace</code></div>
+            <video autoplay muted loop playsinline preload="metadata" poster="assets/product-tour-poster.jpg" aria-label="A real TermLoop workflow showing tasks, agents, changes, dev server, mobile, and MCP settings"><source src="assets/videos/product-tour.webm" type="video/webm"><source src="assets/videos/product-tour.mp4" type="video/mp4"></video>
           </div>
-          <video autoplay muted loop playsinline preload="metadata" aria-label="Four coding agents working in parallel worktrees with live dev server previews" data-captions='[{"t":0,"text":"Assign multiple tasks"},{"t":4,"text":"Agents work in isolated worktrees"},{"t":9,"text":"Run profiles start"},{"t":13,"text":"Live previews open"},{"t":16,"text":"Review independently"}]'>
-            <source src="/assets/videos/parallel-worktree-agents.webm" type="video/webm">
-            <source src="/assets/videos/parallel-worktree-agents.mp4" type="video/mp4">
-          </video>
-          <div class="loop-proof-overlay" aria-live="polite"></div>
+          <div class="demo-note"><span><strong>Real app.</strong> Real terminals. Real state.</span><span>17 seconds · no concept footage</span></div>
         </div>
-        <figcaption class="loop-proof-beats">
-          <span><b>01</b> Assign multiple tasks</span>
-          <span><b>02</b> Agents work in isolated worktrees</span>
-          <span><b>03</b> Run profiles start</span>
-          <span><b>04</b> Live previews open</span>
-          <span><b>05</b> Review independently</span>
-        </figcaption>
-      </figure>
-    </div>
-  </div>
-</section>
-
-<!-- ═══ ASK-TO ═══ -->
-<section class="loop-section" id="ask-to">
-  <div class="container">
-    <div class="loop-proof">
-      <div class="loop-proof-head">
-        <div class="eyebrow">MCP collaboration</div>
-        <h3 class="loop-proof-title-h">Ask another agent without copy-paste.</h3>
-        <p class="loop-proof-lede">
-          While one agent is implementing, ask Claude, Codex, or another agent
-          for review, UI feedback, edge-case checks, or improvement ideas. The
-          reviewer stays attached, so the main agent can ask again as the work evolves.
-        </p>
       </div>
-      <figure class="loop-proof-figure">
-        <div class="loop-proof-frame">
-          <div class="loop-proof-bar">
-            <div class="loop-proof-dots"><span></span><span></span><span></span></div>
-            <div class="loop-proof-bar-title">termloop · mcp · agent collaboration</div>
-          </div>
-          <video autoplay muted loop playsinline preload="metadata" aria-label="One TermLoop agent asks another for help via the built-in ask_to MCP tool" data-captions='[{"t":0,"text":"Agent prepares the question"},{"t":6,"text":"New agent picks it up"},{"t":9,"text":"Back to the asker"},{"t":12,"text":"Answer arrives"}]'>
-            <source src="/assets/videos/ask-to.webm" type="video/webm">
-            <source src="/assets/videos/ask-to.mp4" type="video/mp4">
-          </video>
-          <div class="loop-proof-overlay" aria-live="polite"></div>
+    </section>
+
+    <section class="proof" aria-label="TermLoop fundamentals"><div class="shell proof-grid">
+      <div class="proof-item"><b>Bring your agents</b><span>Claude Code · Codex</span></div>
+      <div class="proof-item"><b>Keep real Git</b><span>Branches · worktrees · diffs</span></div>
+      <div class="proof-item"><b>See every terminal</b><span>Ghostty-powered PTYs</span></div>
+      <div class="proof-item"><b>Work from anywhere</b><span>Desktop · mobile companion</span></div>
+    </div></section>
+
+    <section class="model" id="model"><div class="shell">
+      <div class="section-heading"><div><p class="eyebrow">The TermLoop model</p><h2>Simple objects. Serious workflows.</h2></div><p>Projects hold the durable scope, Tasks describe work, and Sessions are the live agents and terminals operating inside that Project.</p></div>
+      <div class="model-grid">
+        <article class="model-card"><span class="number">01 / PROJECT</span><h3>One durable scope</h3><p>A repository or folder, its connections, tasks, sessions, and launch configuration—kept together without hiding the filesystem.</p><code>project → tasks + sessions</code></article>
+        <article class="model-card"><span class="number">02 / TASK</span><h3>Work with optional isolation</h3><p>A Task can stay lightweight or get one managed Git worktree when the work needs its own branch and checkout.</p><code>task → 0..1 worktree</code></article>
+        <article class="model-card"><span class="number">03 / SESSION</span><h3>Every process stays visible</h3><p>Claude, Codex, terminals, and dev runs stay Project-scoped. Select them, refresh them, fork context, or coordinate them directly.</p><code>session → agent | terminal | run</code></article>
+      </div>
+    </div></section>
+
+    <section class="tour" id="features"><div class="shell">
+      <div class="section-heading"><div><p class="eyebrow">Product tour</p><h2>From prompt to reviewed change.</h2></div><p>Every demo below was recorded in the real desktop app with real TermLoop Sessions. Use the index like documentation, or scroll through the workflow end to end.</p></div>
+      <div class="tour-layout">
+        <aside class="feature-nav" aria-label="Feature navigation">
+          <p class="nav-title">On this page</p>
+          <nav>
+            <section><h3>Run</h3><a href="#quick-actions">Quick Actions</a><a href="#task-worktrees">Task worktrees</a><a href="#dev-server">Dev server</a></section>
+            <section><h3>Coordinate</h3><a href="#multi-agent">Multi-agent</a><a href="#ask-to">Ask another agent</a><a href="#handoff">Handoff</a><a href="#fork">Fork sessions</a></section>
+            <section><h3>Review</h3><a href="#changes">Changes & notes</a><a href="#task-lifecycle">Task lifecycle</a><a href="#session-refresh">Session refresh</a></section>
+            <section><h3>Operate</h3><a href="#steward">Steward</a><a href="#mobile">Mobile</a><a href="#mcp-prompts">MCP & prompts</a></section>
+          </nav>
+        </aside>
+        <div class="feature-groups">
+          <section class="feature-group" id="run"><header class="group-head"><h2>Run</h2><span>01 — launch and isolate work</span></header>
+            <article class="feature-story" id="quick-actions">
+              <div class="feature-copy"><span class="feature-kicker">01 · Quick Actions</span><h3>Start the right agent with the right context.</h3><p>Open the command palette, compose a free prompt, choose the agent, model, permissions, and reasoning, then launch an inspected Session in seconds.</p><div class="feature-meta"><span>Shift Shift</span><span>Versioned prompt</span><span>Claude / Codex</span></div></div>
+              <div class="feature-media"><div class="demo-frame"><div class="demo-bar"><i></i><i></i><i></i><code>quick action · inspected launch</code></div><video muted loop playsinline preload="metadata" aria-label="TermLoop Quick Action launching a real agent Session"><source src="assets/videos/quick-action.webm" type="video/webm"><source src="assets/videos/quick-action.mp4" type="video/mp4"></video></div></div>
+            </article>
+            <article class="feature-story" id="task-worktrees">
+              <div class="feature-copy"><span class="feature-kicker">02 · Task worktrees</span><h3>Isolation when the task needs it.</h3><p>Create a Task first, then provision one managed worktree when implementation should happen on its own branch. The Task stays useful even without a checkout.</p><div class="feature-meta"><span>Real Git</span><span>Optional worktree</span><span>Safe cleanup</span></div></div>
+              <div class="feature-media"><div class="demo-frame"><div class="demo-bar"><i></i><i></i><i></i><code>task · managed worktree</code></div><video muted loop playsinline preload="metadata" aria-label="Creating and using a managed Task worktree in TermLoop"><source src="assets/videos/task-worktree.webm" type="video/webm"><source src="assets/videos/task-worktree.mp4" type="video/mp4"></video></div></div>
+            </article>
+            <article class="feature-story" id="dev-server">
+              <div class="feature-copy"><span class="feature-kicker">03 · Dev server</span><h3>Define it once. Start it where you work.</h3><p>Save a Project dev-server command and fallback URL, then launch the real process from the Project or its Task worktrees. Its terminal and discovered URLs stay visible.</p><div class="feature-meta"><span>Live process</span><span>Project config</span><span>Preview URLs</span></div></div>
+              <div class="feature-media"><div class="demo-frame"><div class="demo-bar"><i></i><i></i><i></i><code>launchpad preview · :4173</code></div><video muted loop playsinline preload="metadata" aria-label="Configuring and starting a real dev server in TermLoop"><source src="assets/videos/dev-server.webm" type="video/webm"><source src="assets/videos/dev-server.mp4" type="video/mp4"></video></div></div>
+            </article>
+          </section>
+
+          <section class="feature-group" id="coordinate"><header class="group-head"><h2>Coordinate</h2><span>02 — agents working together</span></header>
+            <article class="feature-story" id="multi-agent">
+              <div class="feature-copy"><span class="feature-kicker">04 · Multi-agent</span><h3>One workspace. Several live agents.</h3><p>Run multiple Claude and Codex Sessions across tasks and worktrees. See who is active, which checkout changed, and which terminal needs attention.</p><div class="feature-meta"><span>Parallel Sessions</span><span>Live status</span><span>Shared Project</span></div></div>
+              <div class="feature-media"><div class="demo-frame"><div class="demo-bar"><i></i><i></i><i></i><code>active agents · launchpad</code></div><video muted loop playsinline preload="metadata" aria-label="Several real coding agents running together in TermLoop"><source src="assets/videos/multi-agent.webm" type="video/webm"><source src="assets/videos/multi-agent.mp4" type="video/mp4"></video></div></div>
+            </article>
+            <article class="feature-story" id="ask-to">
+              <div class="feature-copy"><span class="feature-kicker">05 · Ask To</span><h3>Get a second opinion without copy-paste.</h3><p>Ask one agent to consult another provider. TermLoop creates a visible helper Session, preserves the relationship, and returns the answer to the requester.</p><div class="feature-meta"><span>MCP</span><span>Claude ↔ Codex</span><span>Follow-up ready</span></div></div>
+              <div class="feature-media"><div class="demo-frame"><div class="demo-bar"><i></i><i></i><i></i><code>ask_to · release review</code></div><video muted loop playsinline preload="metadata" aria-label="A TermLoop agent consulting a second real agent"><source src="assets/videos/ask-to-v2.webm" type="video/webm"><source src="assets/videos/ask-to-v2.mp4" type="video/mp4"></video></div></div>
+            </article>
+            <article class="feature-story" id="handoff">
+              <div class="feature-copy"><span class="feature-kicker">06 · Handoff</span><h3>Move context to the agent already in the work.</h3><p>Send a visible, composed handoff from one running Project Session to another. The target receives the brief in its own real terminal and continues from there.</p><div class="feature-meta"><span>Visible message</span><span>Running Session</span><span>No clipboard</span></div></div>
+              <div class="feature-media"><div class="demo-frame"><div class="demo-bar"><i></i><i></i><i></i><code>handoff · activity feed</code></div><video muted loop playsinline preload="metadata" aria-label="A real handoff between two running TermLoop agents"><source src="assets/videos/handoff.webm" type="video/webm"><source src="assets/videos/handoff.mp4" type="video/mp4"></video></div></div>
+            </article>
+            <article class="feature-story" id="fork">
+              <div class="feature-copy"><span class="feature-kicker">07 · Session fork</span><h3>Explore another direction in a real terminal.</h3><p>Fork a Session from the sidebar, see the parent-child relationship, and continue in a new Ghostty terminal. The branch in thinking is explicit instead of becoming another anonymous tab.</p><div class="feature-meta"><span>Real terminal</span><span>Visible lineage</span><span>Independent context</span></div></div>
+              <div class="feature-media"><div class="demo-frame"><div class="demo-bar"><i></i><i></i><i></i><code>session fork · onboarding</code></div><video muted loop playsinline preload="metadata" aria-label="Forking a real agent Session from the TermLoop sidebar"><source src="assets/videos/sidebar-fork.webm" type="video/webm"><source src="assets/videos/sidebar-fork.mp4" type="video/mp4"></video></div></div>
+            </article>
+          </section>
+
+          <section class="feature-group" id="review"><header class="group-head"><h2>Review</h2><span>03 — understand and control state</span></header>
+            <article class="feature-story" id="changes">
+              <div class="feature-copy"><span class="feature-kicker">08 · Changes</span><h3>Review the diff where the work happened.</h3><p>Changed-file counts appear on Tasks and active Agents. Open the Git changes view, inspect the real diff, and leave line-level notes for the agent to address.</p><div class="feature-meta"><span>Git diff</span><span>Task counts</span><span>Agent notes</span></div></div>
+              <div class="feature-media"><div class="demo-frame"><div class="demo-bar"><i></i><i></i><i></i><code>changes · onboarding checklist</code></div><video muted loop playsinline preload="metadata" aria-label="Reviewing Git changes and leaving a note for an agent in TermLoop"><source src="assets/videos/changes-review.webm" type="video/webm"><source src="assets/videos/changes-review.mp4" type="video/mp4"></video></div></div>
+            </article>
+            <article class="feature-story" id="task-lifecycle">
+              <div class="feature-copy"><span class="feature-kicker">09 · Task lifecycle</span><h3>Close the work without erasing it.</h3><p>Tasks have a deliberately small lifecycle: open or closed. Close finished work, keep its current state visible, and reopen it when the next change arrives.</p><div class="feature-meta"><span>Open / closed</span><span>Reopen</span><span>State preserved</span></div></div>
+              <div class="feature-media"><div class="demo-frame"><div class="demo-bar"><i></i><i></i><i></i><code>task · close and retain</code></div><video muted loop playsinline preload="metadata" aria-label="Closing a Task and seeing it move to the Closed section"><source src="assets/videos/task-lifecycle.webm" type="video/webm"><source src="assets/videos/task-lifecycle.mp4" type="video/mp4"></video></div></div>
+            </article>
+            <article class="feature-story" id="session-refresh">
+              <div class="feature-copy"><span class="feature-kicker">10 · Session refresh</span><h3>Refresh the display, not the identity.</h3><p>Recover a stale agent display from the Session menu while keeping the same durable Session and process model. Lifecycle actions remain explicit.</p><div class="feature-meta"><span>Stable Session</span><span>Display recovery</span><span>Explicit lifecycle</span></div></div>
+              <div class="feature-media"><div class="demo-frame"><div class="demo-bar"><i></i><i></i><i></i><code>session · refresh display</code></div><video muted loop playsinline preload="metadata" aria-label="Refreshing a real agent display from the Session context menu"><source src="assets/videos/session-refresh.webm" type="video/webm"><source src="assets/videos/session-refresh.mp4" type="video/mp4"></video></div></div>
+            </article>
+          </section>
+
+          <section class="feature-group" id="operate"><header class="group-head"><h2>Operate</h2><span>04 — supervise beyond one terminal</span></header>
+            <article class="feature-story" id="steward">
+              <div class="feature-copy"><span class="feature-kicker">11 · Steward</span><h3>A Project-scoped operator that stays present.</h3><p>Ask the persistent Steward what should ship next, let it coordinate Tasks and Sessions through its constrained tools, and keep the conversation attached to the Project.</p><div class="feature-meta"><span>Persistent</span><span>Project-scoped</span><span>Capability-limited</span></div></div>
+              <div class="feature-media"><div class="demo-frame"><div class="demo-bar"><i></i><i></i><i></i><code>steward · launchpad</code></div><video muted loop playsinline preload="metadata" aria-label="Using the Project Steward in TermLoop"><source src="assets/videos/steward.webm" type="video/webm"><source src="assets/videos/steward.mp4" type="video/mp4"></video></div></div>
+            </article>
+            <article class="feature-story" id="mobile">
+              <div class="feature-copy"><span class="feature-kicker">12 · Mobile companion</span><h3>Check the loop when you leave the desk.</h3><p>Pair your phone, keep Project visibility and terminal input scoped to your computer, and follow long-running agents over your trusted network.</p><div class="feature-meta"><span>QR pairing</span><span>Tailscale ready</span><span>Live terminal</span></div></div>
+              <div class="feature-media"><div class="demo-frame"><div class="demo-bar"><i></i><i></i><i></i><code>mobile · secure pairing</code></div><video muted loop playsinline preload="metadata" aria-label="Pairing TermLoop Mobile with the desktop app"><source src="assets/videos/mobile-connect.webm" type="video/webm"><source src="assets/videos/mobile-connect.mp4" type="video/mp4"></video></div></div>
+            </article>
+            <article class="feature-story" id="mcp-prompts">
+              <div class="feature-copy"><span class="feature-kicker">13 · MCP & prompts</span><h3>Inspect the tools and instructions agents receive.</h3><p>Browse role-scoped MCP tools and the built-in prompt catalog. TermLoop-generated instructions remain visible and editable; provider-managed opaque layers are labeled honestly.</p><div class="feature-meta"><span>Role profiles</span><span>Prompt catalog</span><span>Inspectable</span></div></div>
+              <div class="feature-media"><div class="demo-frame"><div class="demo-bar"><i></i><i></i><i></i><code>application settings · MCP</code></div><video muted loop playsinline preload="metadata" aria-label="Inspecting TermLoop MCP tools and built-in prompts"><source src="assets/videos/mcp-prompts.webm" type="video/webm"><source src="assets/videos/mcp-prompts.mp4" type="video/mp4"></video></div></div>
+            </article>
+          </section>
         </div>
-        <figcaption class="loop-proof-beats">
-          <span><b>01</b> Agent prepares the question</span>
-          <span><b>02</b> New agent picks it up</span>
-          <span><b>03</b> Back to the asker</span>
-          <span><b>04</b> Answer arrives</span>
-        </figcaption>
-      </figure>
-    </div>
-  </div>
-</section>
-
-<!-- ═══ TASK BOARD ═══ -->
-<section class="loop-section" id="tasks">
-  <div class="container">
-    <div class="loop-proof">
-      <div class="loop-proof-head">
-        <div class="eyebrow">Task Board + Remote Sync</div>
-        <h3 class="loop-proof-title-h">Bring remote issues into your local AI board.</h3>
-        <p class="loop-proof-lede">
-          Import Jira, GitHub, or GitLab issues into TermLoop, turn them into
-          local tasks, execute them in managed worktrees, and keep local and
-          remote statuses in sync.
-        </p>
       </div>
-      <figure class="loop-proof-figure">
-        <div class="loop-proof-frame">
-          <div class="loop-proof-bar">
-            <div class="loop-proof-dots"><span></span><span></span><span></span></div>
-            <div class="loop-proof-bar-title">termloop · task board · remote sync</div>
-          </div>
-          <video autoplay muted loop playsinline preload="metadata" aria-label="Task Board syncing remote issues into TermLoop worktrees" data-captions='[{"t":0,"text":"Import remote issues"},{"t":5,"text":"Track them locally"},{"t":10,"text":"Execute in worktrees"},{"t":15,"text":"Sync status back"}]'>
-            <source src="/assets/videos/task-board-remote-sync.webm" type="video/webm">
-            <source src="/assets/videos/task-board-remote-sync.mp4" type="video/mp4">
-          </video>
-          <div class="loop-proof-overlay" aria-live="polite"></div>
-        </div>
-        <figcaption class="loop-proof-beats">
-          <span><b>01</b> Import remote issues</span>
-          <span><b>02</b> Track them locally</span>
-          <span><b>03</b> Execute in worktrees</span>
-          <span><b>04</b> Sync status back</span>
-        </figcaption>
-      </figure>
-    </div>
-  </div>
-</section>
+    </div></section>
 
-<!-- ═══ PROMOTE TO TASK ═══ -->
-<section class="loop-section" id="promote">
-  <div class="container">
-    <div class="loop-proof">
-      <div class="loop-proof-head">
-        <div class="eyebrow">Promote to Task</div>
-        <h3 class="loop-proof-title-h">Turn an agent conversation into real work.</h3>
-        <p class="loop-proof-lede">
-          When a chat with an agent becomes a real issue, ask it to promote the
-          conversation into a task. TermLoop proposes the task, can create a
-          remote issue, moves it into a worktree, and starts implementation.
-        </p>
+    <section class="principles" id="principles"><div class="shell principles-grid">
+      <div><p class="eyebrow">Product principles</p><h2>The terminal stays real. The workflow gets better.</h2></div>
+      <div class="principles-list">
+        <article class="principle"><span>01</span><div><h3>No replacement agent</h3><p>TermLoop launches the Claude and Codex CLIs you already trust and pay for.</p></div></article>
+        <article class="principle"><span>02</span><div><h3>No hidden filesystem</h3><p>Branches, worktrees, processes, and files remain ordinary local resources you can inspect outside the app.</p></div></article>
+        <article class="principle"><span>03</span><div><h3>No mystery prompts</h3><p>TermLoop-authored prompts are visible assets. Secret values stay out of durable state and public evidence.</p></div></article>
+        <article class="principle"><span>04</span><div><h3>No fake coordination</h3><p>Agent-to-agent requests, handoffs, terminals, diffs, and lifecycle changes are real product actions.</p></div></article>
       </div>
-      <figure class="loop-proof-figure">
-        <div class="loop-proof-frame">
-          <div class="loop-proof-bar">
-            <div class="loop-proof-dots"><span></span><span></span><span></span></div>
-            <div class="loop-proof-bar-title">termloop · mcp · promote to task</div>
-          </div>
-          <video autoplay muted loop playsinline preload="metadata" aria-label="Agent promotes an MCP conversation into a TermLoop task" data-captions='[{"t":0,"text":"Conversation becomes a task"},{"t":2,"text":"TermLoop drafts the spec"},{"t":5,"text":"Accept the popup"},{"t":8,"text":"Implementation starts"}]'>
-            <source src="/assets/videos/promote-to-task-mcp.webm" type="video/webm">
-            <source src="/assets/videos/promote-to-task-mcp.mp4" type="video/mp4">
-          </video>
-          <div class="loop-proof-overlay" aria-live="polite"></div>
-        </div>
-        <figcaption class="loop-proof-beats">
-          <span><b>01</b> Conversation becomes a task</span>
-          <span><b>02</b> TermLoop drafts the spec</span>
-          <span><b>03</b> Accept the popup</span>
-          <span><b>04</b> Implementation starts</span>
-        </figcaption>
-      </figure>
-    </div>
-  </div>
-</section>
+    </div></section>
 
-<!-- ═══ MORE INSIDE ═══ -->
-<section class="more" id="more">
-  <div class="container">
-    <div class="section-head">
-      <div class="eyebrow">More inside</div>
-      <h2 class="section-title">Built for serious agent workflows.</h2>
-    </div>
-
-    <div class="more-row">
-      <div class="more-image">
-        <img src="/assets/screenshots/prompts-agents.png" alt="Prompts and Agents editor showing editable templates, prompts, system prompt, model, and permissions">
+    <section class="faq" id="faq"><div class="shell faq-grid">
+      <div><p class="eyebrow">Straight answers</p><h2>Frequently asked.</h2></div>
+      <div class="faq-list">
+        <details open><summary>Which agents does TermLoop support?</summary><p>The first-class agent launch paths are Claude Code and OpenAI Codex, alongside ordinary terminal and dev-run Sessions. TermLoop uses your existing provider sign-ins rather than proxying model traffic.</p></details>
+        <details><summary>Does every Task create a worktree?</summary><p>No. A Task can have zero or one worktree. Create the Task to track work; provision a managed checkout only when branch isolation is useful.</p></details>
+        <details><summary>Can multiple agents write in the same worktree?</summary><p>Yes. TermLoop does not impose a product-level write lease or artificial launch gate. You choose whether agents share a checkout or work in isolated Task worktrees.</p></details>
+        <details><summary>Where do my code and credentials go?</summary><p>Your code remains on your filesystem. Agents connect directly to their providers. TermLoop keeps secrets out of durable product state, logs, URLs, and generated evidence.</p></details>
+        <details><summary>Which desktop platforms are available?</summary><p>The current public desktop download is for macOS. TermLoop Next treats macOS, Linux, and Windows as release gates; broader availability follows verified native builds rather than an untested compatibility claim.</p></details>
+        <details><summary>Is the mobile connection real?</summary><p>Yes. The companion pairs with a running desktop instance for Project visibility and terminal input. The public demo intentionally masks the one-time QR payload.</p></details>
+        <details><summary>Is TermLoop open source?</summary><p>Yes. The public source and releases are available on GitHub, including the terminal and agent-workflow layers.</p></details>
       </div>
-      <div class="more-text">
-        <div class="more-eyebrow">Prompts & Agents</div>
-        <h3>Edit everything the agent receives.</h3>
-        <p>Create custom agents and edit the prompt, system prompt, model, permissions, and launch behavior. No hidden prompt layer.</p>
-      </div>
-    </div>
+    </div></section>
 
-    <div class="more-row reverse">
-      <div class="more-image">
-        <img src="/assets/screenshots/context-bank.png" alt="Context Bank showing nested AGENTS.md and CLAUDE.md files across a project">
-      </div>
-      <div class="more-text">
-        <div class="more-eyebrow">Context Bank</div>
-        <h3>View and edit project context in one place.</h3>
-        <p>TermLoop shows every <code>AGENTS.md</code>, <code>CLAUDE.md</code>, and nested folder-specific instruction file, then keeps the right context synced for agents working in different parts of the repo.</p>
-      </div>
-    </div>
+    <section class="final-cta"><div class="shell"><div class="cta-box">
+      <div><h2>More agents. Less terminal babysitting.</h2><p>Download TermLoop and keep the whole engineering loop visible.</p></div>
+      <div class="cta-actions"><a class="button primary" href="/download">Download for macOS ↓</a><a class="button" href="https://github.com/feritzcan2/termloop" target="_blank" rel="noopener">View source ↗</a></div>
+    </div></div></section>
+  </main>
 
-    <div class="more-row banner">
-      <div class="more-image">
-        <img src="/assets/screenshots/project-rules.png" alt="Project Rules showing one editable skill synced into agent catalogs">
-      </div>
-      <div class="more-text">
-        <div class="more-eyebrow">Project Rules</div>
-        <h3>Manage agent skills once per project.</h3>
-        <p>A single editable rule can sync into each agent's native skill catalog, apply always, on demand, or only in worktrees, and be improved with an agent from inside TermLoop.</p>
-      </div>
-    </div>
+  <footer><div class="shell footer-inner">
+    <span>◎ TermLoop · built for real coding-agent workflows</span>
+    <nav class="footer-links" aria-label="Footer navigation"><a href="#features">Features</a><a href="#faq">FAQ</a><a href="privacy-policy/">Privacy</a><a href="mailto:feritzcan93@gmail.com">Contact</a><a href="https://github.com/feritzcan2/termloop" target="_blank" rel="noopener">GitHub</a></nav>
+    <span>© 2026</span>
+  </div></footer>
 
-    <div class="more-row reverse">
-      <div class="more-image">
-        <img src="/assets/screenshots/claude-accounts.png" alt="Settings panel binding agent accounts per project">
-      </div>
-      <div class="more-text">
-        <div class="more-eyebrow">Multiple agent accounts</div>
-        <h3>Use different Claude and Codex accounts.</h3>
-        <p>Keep work, personal, client, or test agent accounts separate across projects and workflows without constantly switching terminal auth state.</p>
-      </div>
-    </div>
-
-    <div class="more-row banner phone-row">
-      <div class="phone-trio">
-        <img src="/assets/screenshots/mobile/connections.jpg" alt="iOS app pairing screen connecting to a Mac">
-        <img src="/assets/screenshots/mobile/project-list.jpg" alt="iOS app showing the termloop project workspace list">
-        <img src="/assets/screenshots/mobile/agent-session.jpg" alt="Live agent terminal session viewed from the iOS app">
-      </div>
-      <div class="more-text">
-        <div class="more-eyebrow">Phone bridge</div>
-        <h3>Your sessions, in your pocket.</h3>
-        <p>Native iOS client pairs with your Mac over an authenticated TCP socket on your local network. Watch live agent output, switch projects, jump into a session — from the couch, the queue, or another room.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ═══ FAQ ═══ -->
-<section class="faq" id="faq">
-  <div class="container">
-    <div class="section-head">
-      <div class="eyebrow">Questions</div>
-      <h2 class="section-title">Frequently asked.</h2>
-    </div>
-
-    <div class="faq-list">
-      <details class="q">
-        <summary>Do I pay separately for the AI?</summary>
-        <p>No. TermLoop runs the agent CLIs you already use — Claude Code, Codex, Gemini CLI, Aider, Cline. You stay logged in with your existing subscription. TermLoop never proxies your API traffic and adds no billing layer.</p>
-      </details>
-      <details class="q">
-        <summary>Which agents and models can I run?</summary>
-        <p>Anything with a CLI: Claude Code (Anthropic), Codex (OpenAI), Gemini CLI (Google), Aider, Cline, local Ollama, or your own scripts. TermLoop just hands each one a worktree and a pane — it's model-agnostic.</p>
-      </details>
-      <details class="q">
-        <summary>Is TermLoop a fork of something?</summary>
-        <p>TermLoop builds on <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener" style="color: var(--cyan-2); text-decoration: underline; text-decoration-color: rgba(34,211,238,0.3);">cmux</a>, an open-source GPL-3.0 terminal multiplexer by Manaflow. cmux gives us the multiplexer foundation — splits, panes, the renderer. The agent workflow layer, worktree orchestration, ask_to MCP, Context Bank, mobile bridge, and per-project Claude accounts — all of it is what TermLoop adds on top.</p>
-      </details>
-      <details class="q">
-        <summary>Is it really open source?</summary>
-        <p>Yes. The macOS app is a free download and the source is public. Inspect the socket protocol, agent workflow tools, worktree orchestration — everything. No telemetry, no phone-home.</p>
-      </details>
-      <details class="q">
-        <summary>Linux or Windows?</summary>
-        <p>macOS only today. Linux is on the roadmap. Windows isn't, for now — we wanted a native, low-latency UI before we wanted broad reach.</p>
-      </details>
-      <details class="q">
-        <summary>Does the iOS app actually work?</summary>
-        <p>Yes — the iOS client connects to your TermLoop session over an authenticated TCP socket on your local network. It's stable today but still under active development, so expect ongoing iteration. Desktop is the primary surface for now.</p>
-      </details>
-      <details class="q">
-        <summary>What about my code and credentials?</summary>
-        <p>They never leave your machine. Agents call their providers directly with your own subscription. The only network call TermLoop itself makes is checking for app updates, which you can disable.</p>
-      </details>
-    </div>
-  </div>
-</section>
-
-<!-- ═══ FOOTER ═══ -->
-<footer class="site">
-  <div class="container inner">
-    <div class="brand">
-      <span class="mark">◎</span>
-      <span>TermLoop</span>
-    </div>
-    <div class="links">
-      <a href="#faq">FAQ</a>
-      <a href="https://github.com/feritzcan2/termloop">GitHub</a>
-      <a href="mailto:feritzcan93@gmail.com">Contact</a>
-    </div>
-    <div class="copy">© 2026 · termloop.ai</div>
-  </div>
-</footer>
-
-<script>
-  // feature-card hover light follow
-  document.querySelectorAll('.feature-card').forEach(card => {
-    card.addEventListener('mousemove', (e) => {
-      const r = card.getBoundingClientRect();
-      card.style.setProperty('--mx', (e.clientX - r.left) + 'px');
-      card.style.setProperty('--my', (e.clientY - r.top) + 'px');
-    });
-  });
-
-  // Tap-to-fullscreen for demo videos
-  const isIOSLike = () => {
-    const ua = navigator.userAgent || '';
-    return /iPad|iPhone|iPod/.test(ua) ||
-           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  };
-  const enterFullscreen = (video) => {
-    // iOS Safari: prefer the native iOS fullscreen player
-    if (isIOSLike() && typeof video.webkitEnterFullscreen === 'function') {
-      try { video.webkitEnterFullscreen(); return; } catch (_) {}
+  <script>
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const featureVideos = [...document.querySelectorAll('.feature-story video')];
+    if (!reducedMotion && 'IntersectionObserver' in window) {
+      const videoObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && entry.intersectionRatio > .35) entry.target.play().catch(() => {});
+          else entry.target.pause();
+        }
+      }, { threshold:[0,.35,.75] });
+      featureVideos.forEach((video) => videoObserver.observe(video));
     }
-    if (typeof video.requestFullscreen === 'function') {
-      const p = video.requestFullscreen();
-      if (p && typeof p.catch === 'function') {
-        p.catch(() => {
-          if (typeof video.webkitEnterFullscreen === 'function') {
-            try { video.webkitEnterFullscreen(); } catch (_) {}
-          }
-        });
-      }
-      return;
+    const navLinks = [...document.querySelectorAll('.feature-nav a')];
+    const sections = navLinks.map((link) => document.querySelector(link.getAttribute('href'))).filter(Boolean);
+    if ('IntersectionObserver' in window) {
+      const sectionObserver = new IntersectionObserver((entries) => {
+        const visible = entries.filter((entry) => entry.isIntersecting).sort((a,b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (!visible) return;
+        navLinks.forEach((link) => link.classList.toggle('active', link.getAttribute('href') === '#' + visible.target.id));
+      }, { rootMargin:'-18% 0px -62% 0px', threshold:[0,.1,.5] });
+      sections.forEach((section) => sectionObserver.observe(section));
     }
-    if (typeof video.webkitEnterFullscreen === 'function') {
-      try { video.webkitEnterFullscreen(); } catch (_) {}
-    } else if (typeof video.webkitRequestFullscreen === 'function') {
-      video.webkitRequestFullscreen();
-    }
-  };
-  document.querySelectorAll('.loop-proof video').forEach(video => {
-    video.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      enterFullscreen(video);
-    });
-    // iOS sometimes routes through touchend instead of click
-    video.addEventListener('touchend', (e) => {
-      e.preventDefault();
-      enterFullscreen(video);
-    }, { passive: false });
-  });
-
-  // Caption overlays driven by video.currentTime
-  document.querySelectorAll('.loop-proof video[data-captions]').forEach(video => {
-    const overlay = video.parentElement.querySelector('.loop-proof-overlay');
-    if (!overlay) return;
-    let captions;
-    try { captions = JSON.parse(video.dataset.captions); } catch (_) { return; }
-    if (!Array.isArray(captions) || captions.length === 0) return;
-    let lastText = '';
-    const update = () => {
-      const t = video.currentTime;
-      let active = captions[0];
-      for (const c of captions) if (t >= c.t) active = c;
-      if (active.text !== lastText) {
-        overlay.textContent = active.text;
-        lastText = active.text;
-      }
-    };
-    video.addEventListener('timeupdate', update);
-    video.addEventListener('loadedmetadata', update);
-    video.addEventListener('seeked', update);
-    update();
-  });
-</script>
-
+  </script>
 </body>
 </html>
