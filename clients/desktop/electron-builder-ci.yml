@@ -1,0 +1,9 @@
+extends: ./electron-builder.yml
+
+mac:
+  # CI artifacts are validation fixtures, not distributable releases. Keep
+  # them on the certificate-free path even when a self-hosted runner has a
+  # Developer ID certificate in its login keychain.
+  identity: "-"
+  hardenedRuntime: false
+  notarize: false

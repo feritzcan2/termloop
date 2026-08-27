@@ -1,0 +1,16 @@
+/target/
+/node_modules/
+**/node_modules/
+/.pnpm-store/
+/dist/
+**/dist/
+**/out/
+**/.expo/
+/clients/mobile/ios/
+/clients/mobile/android/
+/clients/desktop/native/ghostty-host/build/
+/spikes/ghostty-macos/build/
+**/.termloop-runtime/
+/.termloop-worktrees/
+/artifacts/evidence/
+.DS_Store

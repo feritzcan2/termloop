@@ -1,0 +1,202 @@
+#!/bin/bash
+
+set -euo pipefail
+
+if [[ "$#" -ne 4 ]]; then
+  echo "Usage: stage-termloop-launch-bundle CHECKOUT PROFILE_ROOT INCLUDE_BOOTSTRAP CARGO_TARGET_DIR" >&2
+  exit 2
+fi
+
+checkout="$1"
+profile_root="$2"
+include_bootstrap="$3"
+cargo_target_dir="$4"
+
+if [[ "$checkout" != /* || "$profile_root" != /* || "$cargo_target_dir" != /* ]]; then
+  echo "Launch bundle paths must be absolute." >&2
+  exit 2
+fi
+if [[ "$include_bootstrap" != true && "$include_bootstrap" != false ]]; then
+  echo "INCLUDE_BOOTSTRAP must be true or false." >&2
+  exit 2
+fi
+if [[ ! -d "$checkout" || -L "$checkout" || ! -d "$profile_root" || -L "$profile_root" \
+  || ! -d "$cargo_target_dir" || -L "$cargo_target_dir" ]]; then
+  echo "Launch bundle roots must be existing non-symlink directories." >&2
+  exit 1
+fi
+
+checkout="$(cd "$checkout" && pwd -P)"
+profile_root="$(cd "$profile_root" && pwd -P)"
+cargo_target_dir="$(cd "$cargo_target_dir" && pwd -P)"
+launches_root="$profile_root/launches"
+if [[ -L "$launches_root" ]]; then
+  echo "Refusing symlinked launch bundle root: $launches_root" >&2
+  exit 1
+fi
+mkdir -p "$launches_root"
+chmod 700 "$launches_root"
+if [[ "$(cd "$launches_root" && pwd -P)" != "$launches_root" ]]; then
+  echo "Launch bundle root escaped its profile: $launches_root" >&2
+  exit 1
+fi
+
+server_source="$cargo_target_dir/debug/termloop-server"
+companion_source="$cargo_target_dir/debug/termloop-companion"
+skills_manager_source="$cargo_target_dir/debug/skills-manager-cli"
+desktop_source="$checkout/clients/desktop"
+addon_source="$desktop_source/native/ghostty-host/build/Release/ghostty_host.node"
+ghostty_library_source="$checkout/vendor/ghostty/zig-out/lib/libghostty.dylib"
+ghostty_resources_source="$checkout/vendor/ghostty/zig-out/share/ghostty"
+ws_source="$checkout/node_modules/ws"
+
+required_files=(
+  "$server_source"
+  "$companion_source"
+  "$skills_manager_source"
+  "$desktop_source/package.json"
+  "$addon_source"
+  "$ghostty_library_source"
+  "$checkout/contract/generated/typescript/dist/current.js"
+)
+required_directories=(
+  "$desktop_source/dist"
+  "$ghostty_resources_source"
+  "$ws_source"
+)
+if [[ "$include_bootstrap" == true ]]; then
+  required_files+=(
+    "$checkout/tools/dev/bootstrap-dev-profile.mjs"
+  )
+fi
+for source in "${required_files[@]}"; do
+  if [[ ! -f "$source" ]]; then
+    echo "Launch bundle file is unavailable: $source" >&2
+    exit 1
+  fi
+done
+for source in "${required_directories[@]}"; do
+  if [[ ! -d "$source" ]]; then
+    echo "Launch bundle directory is unavailable: $source" >&2
+    exit 1
+  fi
+done
+
+# Build in a private temporary directory, then publish it at a stable path.
+# macOS TCC associates Automation/Accessibility consent with the executable
+# identity and path.  A fresh bundle.XXXXXX path on every start therefore
+# causes the same development server to ask for permission again.
+bundle="$(mktemp -d "$launches_root/.bundle.XXXXXX")"
+stable_bundle="$launches_root/current"
+previous_bundle="$launches_root/.previous"
+cleanup_incomplete_bundle() {
+  [[ -z "${bundle:-}" || ! -e "$bundle" ]] || rm -rf -- "$bundle"
+}
+trap cleanup_incomplete_bundle EXIT
+
+copy_file() {
+  local source="$1"
+  local destination="$2"
+  mkdir -p "$(dirname "$destination")"
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    cp -c -p "$source" "$destination"
+  else
+    cp -p "$source" "$destination"
+  fi
+}
+
+copy_tree() {
+  local source="$1"
+  local destination="$2"
+  mkdir -p "$destination"
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    cp -c -pRL "$source/." "$destination/"
+  else
+    cp -pRL "$source/." "$destination/"
+  fi
+}
+
+copy_file "$server_source" "$bundle/target/debug/termloop-server"
+copy_file "$companion_source" "$bundle/target/debug/termloop-companion"
+copy_file "$skills_manager_source" "$bundle/target/debug/skills-manager-cli"
+copy_file "$desktop_source/package.json" "$bundle/clients/desktop/package.json"
+copy_tree "$desktop_source/dist" "$bundle/clients/desktop/dist"
+copy_tree "$ws_source" "$bundle/node_modules/ws"
+copy_file "$addon_source" "$bundle/clients/desktop/native/ghostty-host/build/Release/ghostty_host.node"
+# The native addon resolves @rpath from its own directory first. Keep that
+# dependency beside the addon and mirror the development resource layout.
+copy_file "$ghostty_library_source" "$bundle/clients/desktop/native/ghostty-host/build/Release/libghostty.dylib"
+copy_file "$ghostty_library_source" "$bundle/vendor/ghostty/zig-out/lib/libghostty.dylib"
+copy_tree "$ghostty_resources_source" "$bundle/vendor/ghostty/zig-out/share/ghostty"
+copy_file "$checkout/contract/generated/typescript/dist/current.js" "$bundle/contract/generated/typescript/dist/current.js"
+
+if [[ "$include_bootstrap" == true ]]; then
+  copy_file "$checkout/tools/dev/bootstrap-dev-profile.mjs" "$bundle/tools/dev/bootstrap-dev-profile.mjs"
+fi
+
+python3 - "$bundle" "$checkout" <<'PY'
+import hashlib
+import json
+import os
+import pathlib
+import re
+import sys
+
+bundle = pathlib.Path(sys.argv[1])
+checkout = sys.argv[2]
+contract_source = (bundle / "contract/generated/typescript/dist/current.js").read_text()
+identity_match = re.search(r'CONTRACT_IDENTITY = "(sha256:[0-9a-f]{64})"', contract_source)
+if not identity_match:
+    raise SystemExit("launch bundle contract identity is unavailable")
+identity = identity_match.group(1).encode()
+for relative in ("target/debug/termloop-server", "clients/desktop/dist/main.js"):
+    if identity not in (bundle / relative).read_bytes():
+        raise SystemExit(f"launch bundle contract mismatch: {relative}")
+
+artifacts = {}
+for root, directories, files in os.walk(bundle):
+    root_path = pathlib.Path(root)
+    for name in [*directories, *files]:
+        candidate = root_path / name
+        if candidate.is_symlink():
+            raise SystemExit(f"launch bundle contains a symlink: {candidate}")
+    for name in sorted(files):
+        candidate = root_path / name
+        relative = candidate.relative_to(bundle).as_posix()
+        digest = hashlib.sha256()
+        with candidate.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+        artifacts[relative] = {
+            "sha256": digest.hexdigest(),
+            "size": candidate.stat().st_size,
+        }
+
+manifest = {
+    "version": 1,
+    "sourceCheckout": checkout,
+    "artifacts": artifacts,
+}
+output = bundle / "launch-bundle.json"
+with output.open("w") as destination:
+    json.dump(manifest, destination, sort_keys=True, separators=(",", ":"))
+    destination.write("\n")
+PY
+
+find "$bundle" -type d -exec chmod 700 {} +
+find "$bundle" -type f -exec chmod a-w {} +
+
+if [[ -L "$stable_bundle" || -L "$previous_bundle" ]]; then
+  echo "Refusing symlinked launch bundle path." >&2
+  exit 1
+fi
+if [[ -e "$previous_bundle" ]]; then
+  rm -rf -- "$previous_bundle"
+fi
+if [[ -e "$stable_bundle" ]]; then
+  mv "$stable_bundle" "$previous_bundle"
+fi
+mv "$bundle" "$stable_bundle"
+bundle="$stable_bundle"
+trap - EXIT
+printf '%s\n' "$bundle"

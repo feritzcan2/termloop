@@ -1,0 +1,2 @@
+Use the Bash tool exactly once to run `printf 'termloop-signal-spike\n'`. Do not modify files. If permission is unavailable, do not try another tool. Then reply with the single word done.
+

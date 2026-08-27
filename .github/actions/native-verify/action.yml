@@ -1,0 +1,153 @@
+name: Native verification
+description: Run the shared native test, acceptance, smoke, and assembly gate
+
+inputs:
+  artifact-prefix:
+    description: Prefix used to distinguish diagnostic artifacts
+    required: false
+    default: ""
+  upload-unsigned:
+    description: Upload assembled unsigned release inputs
+    required: false
+    default: "false"
+  run-full-gate:
+    description: Run acceptance, smoke, and release assembly after tests
+    required: false
+    default: "true"
+  cache-pnpm:
+    description: Restore and save the pnpm store cache
+    required: false
+    default: "true"
+  upload-evidence:
+    description: Upload native evidence after the run
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      with:
+        version: 10.14.0
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      if: inputs.cache-pnpm == 'true'
+      with:
+        node-version: 22
+        cache: pnpm
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      if: inputs.cache-pnpm != 'true'
+      with:
+        node-version: 22
+    - name: Verify pinned Zig for Ghostty
+      if: runner.os == 'macOS'
+      shell: bash
+      run: test "$(zig version)" = "0.15.2"
+    - name: Install pinned Rust
+      shell: bash
+      run: rustup toolchain install 1.90.0 --profile minimal --component clippy,rustfmt
+    - shell: bash
+      run: pnpm install --frozen-lockfile
+    - name: Install hermetic agent CLI fixtures
+      shell: bash
+      run: |
+        fixture_dir="$RUNNER_TEMP/termloop-agent-cli-fixtures"
+        mkdir -p "$fixture_dir"
+        if [ "$RUNNER_OS" = "Windows" ]; then
+          printf '@echo off\r\nexit /b 0\r\n' > "$fixture_dir/claude.cmd"
+          printf '@echo off\r\nexit /b 0\r\n' > "$fixture_dir/codex.cmd"
+          printf '@echo off\r\nexit /b 0\r\n' > "$fixture_dir/gemini.cmd"
+        else
+          printf '#!/bin/sh\nexit 0\n' > "$fixture_dir/claude"
+          printf '#!/bin/sh\nexit 0\n' > "$fixture_dir/codex"
+          printf '#!/bin/sh\nexit 0\n' > "$fixture_dir/gemini"
+          chmod +x "$fixture_dir/claude" "$fixture_dir/codex" "$fixture_dir/gemini"
+        fi
+        echo "$fixture_dir" >> "$GITHUB_PATH"
+    - name: Build Ghostty native host (macOS)
+      if: inputs.run-full-gate == 'true' && runner.os == 'macOS'
+      shell: bash
+      run: pnpm --filter @termloop/desktop native:ghostty:dev
+    - name: Test (Linux virtual display)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: xvfb-run -a pnpm test
+      env:
+        ELECTRON_DISABLE_SANDBOX: "1"
+        TERMLOOP_NON_UTF_FS: "1"
+    - name: Test (Windows bounded concurrency)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: pnpm test
+      env:
+        RUST_TEST_THREADS: "1"
+    - name: Test (macOS isolated xterm smoke)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: pnpm test
+      env:
+        RUST_TEST_THREADS: "1"
+        TERMLOOP_RUNTIME_FILE: ${{ runner.temp }}/termloop-native-verify-no-runtime.json
+        TERMLOOP_TERMINAL_RENDERER: xterm
+    - name: S0 acceptance (Linux virtual display)
+      if: inputs.run-full-gate == 'true' && runner.os == 'Linux'
+      shell: bash
+      run: xvfb-run -a pnpm acceptance:s0
+      env:
+        ELECTRON_DISABLE_SANDBOX: "1"
+        TERMLOOP_SKIP_AGENT_SPAWN: "1"
+    - name: S0 acceptance
+      if: inputs.run-full-gate == 'true' && runner.os != 'Linux'
+      shell: bash
+      run: pnpm acceptance:s0
+      env:
+        TERMLOOP_SKIP_AGENT_SPAWN: "1"
+    - name: Remote access-plane acceptance
+      if: inputs.run-full-gate == 'true'
+      shell: bash
+      run: pnpm acceptance:access-plane
+    - name: R0 smoke (Linux virtual display)
+      if: inputs.run-full-gate == 'true' && runner.os == 'Linux'
+      shell: bash
+      run: xvfb-run -a pnpm r0:smoke
+      env:
+        ELECTRON_DISABLE_SANDBOX: "1"
+    - name: R0 smoke
+      if: inputs.run-full-gate == 'true' && runner.os != 'Linux'
+      shell: bash
+      run: pnpm r0:smoke
+    - name: Assemble unsigned artifacts
+      if: inputs.run-full-gate == 'true'
+      shell: bash
+      run: |
+        cargo build --release -p termloop-server -p termloop-companion
+        node tools/skills-manager/fetch-cli.mjs --output target/release/skills-manager-cli
+        pnpm --filter @termloop/cli build
+        if [ "$RUNNER_OS" = "macOS" ]; then
+          pnpm --filter @termloop/desktop build
+          pnpm --filter @termloop/desktop exec electron-builder --dir --config electron-builder-ci.yml
+        elif [ "$RUNNER_OS" = "Linux" ] && [ "${{ inputs.upload-unsigned }}" = "true" ]; then
+          pnpm --filter @termloop/desktop package
+        else
+          pnpm --filter @termloop/desktop package:dir
+        fi
+    - name: Verify macOS app bundle integrity
+      if: inputs.run-full-gate == 'true' && runner.os == 'macOS'
+      shell: bash
+      run: codesign --verify --deep --strict --verbose=4 "clients/desktop/out/mac-arm64/TermLoop Next.app"
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      if: always() && inputs.upload-evidence == 'true'
+      with:
+        name: ${{ inputs.artifact-prefix }}evidence-${{ runner.os }}
+        path: artifacts/evidence/
+        retention-days: 1
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      if: inputs.upload-unsigned == 'true'
+      with:
+        name: unsigned-${{ runner.os }}
+        retention-days: 1
+        path: |
+          target/release/termloop-server*
+          target/release/termloop-companion*
+          target/release/skills-manager-cli*
+          clients/cli/dist/
+          clients/desktop/out/

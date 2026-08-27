@@ -1,0 +1,24 @@
+[package]
+name = "termloop-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+axum.workspace = true
+futures-util.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+termloop-contract = { path = "../../contract/generated/rust" }
+termloop-core = { path = "../../modules/core" }
+termloop-platform = { path = "../../modules/platform" }
+termloop-terminal = { path = "../../modules/terminal" }
+
+[dev-dependencies]
+termloop-platform = { path = "../../modules/platform", features = ["test-support"] }

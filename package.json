@@ -1,0 +1,67 @@
+{
+  "name": "termloop-next",
+  "version": "2.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.14.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "eas-build-post-install": "pnpm --filter @termloop/contract build",
+    "codegen": "node tools/codegen/generate.mjs",
+    "contract:drift": "node tools/codegen/generate.mjs --check",
+    "architecture:dag": "node tools/ci/check-dag.mjs",
+    "architecture:boundaries": "node tools/ci/check-boundaries.mjs",
+    "architecture:violation-fixtures": "node tools/ci/test-violation-fixtures.mjs",
+    "architecture:dag-fixtures": "node tools/ci/test-dag-fixtures.mjs",
+    "ci:git-owner": "node tools/ci/check-git-owner.mjs",
+    "ci:provider-owner": "node tools/ci/check-provider-owner.mjs",
+    "check:version": "node tools/release/check-version-sync.mjs",
+    "release:set-version": "node tools/release/set-version.mjs",
+    "rust:check": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings",
+    "check:dev-launcher": "bash -n tools/dev/termloop-dev tools/dev/termloop-dev-supervisor tools/dev/test-termloop-dev",
+    "test:dev-launcher": "bash tools/dev/test-termloop-dev",
+    "check": "pnpm contract:drift && pnpm rust:check && pnpm -r --if-present check && pnpm architecture:dag && pnpm architecture:boundaries && pnpm ci:git-owner && pnpm ci:provider-owner && pnpm check:version && pnpm check:dev-launcher",
+    "test": "cargo test --workspace && pnpm -r --if-present test && pnpm architecture:violation-fixtures && pnpm architecture:dag-fixtures && pnpm test:dev-launcher",
+    "acceptance:s0": "node tests/e2e/s0/acceptance.mjs",
+    "acceptance:f1-session-navigation": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f1/session-navigation.mjs",
+    "acceptance:f1-pane-layout": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f1/pane-layout.mjs",
+    "acceptance:f1-visual-foundation": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f1/visual-foundation.mjs",
+    "acceptance:f1-liveness-push": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f1/liveness-push.mjs",
+    "acceptance:f1-agent-status": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f1/agent-status.mjs",
+    "acceptance:f1-agent-resume": "pnpm --filter @termloop/contract build && pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f1/agent-resume.mjs",
+    "acceptance:f1-ghostty-agent-resume": "pnpm --filter @termloop/desktop native:ghostty:dev && pnpm --filter @termloop/contract build && pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f1/ghostty-agent-resume.mjs",
+    "acceptance:f1-agent-fork": "pnpm --filter @termloop/contract build && cargo build -p termloop-server && node tests/e2e/f1/agent-fork.mjs",
+    "acceptance:f1-project-management": "pnpm --filter @termloop/contract build && pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f1/project-management.mjs",
+    "acceptance:f2-task-current-state": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f2/task-current-state.mjs",
+    "acceptance:f2-branch-binding": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f2/branch-binding.mjs",
+    "acceptance:f2-worktree-provisioning": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f2/worktree-provisioning.mjs",
+    "acceptance:f2-worktree-cleanup": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f2/worktree-cleanup.mjs",
+    "acceptance:f2-destructive-worktree-cleanup": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && TERMLOOP_F2_DESTRUCTIVE=1 TERMLOOP_F2_IDLE_WINDOW_MS=1000 node tests/e2e/f2/worktree-cleanup.mjs",
+    "acceptance:f2-stale-worktree-disposal": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f2/stale-worktree-disposal.mjs",
+    "acceptance:f2-task-launch-repair": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f2/task-launch-repair.mjs",
+    "acceptance:f2-full-file-view": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f2/full-file-view.mjs",
+    "acceptance:f3-github-pr": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f3/github-pr.mjs",
+    "acceptance:f3-azure-devops-pr": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f3/azure-devops-pr.mjs",
+    "acceptance:f3-pull-request-changes": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node tests/e2e/f3/pull-request-changes.mjs",
+    "r0:report": "node spikes/r0-terminal/report.mjs",
+    "r0:smoke": "node tools/ci/run-r0.mjs",
+    "r0:full": "node tools/ci/run-r0.mjs --full --shown",
+    "f1:playwright-spike": "pnpm --filter @termloop/desktop build && cargo build -p termloop-server && node spikes/f1-desktop-foundation/playwright-electron.mjs",
+    "f1:packaged-spike": "pnpm --filter @termloop/desktop package:dir && cargo build -p termloop-server && node spikes/f1-desktop-foundation/playwright-electron.mjs --packaged",
+    "f1:agent-signal-spike": "node spikes/f1-agent-signals/run.mjs",
+    "acceptance:mcp-ask-to": "node tests/e2e/mcp/acceptance.mjs",
+    "acceptance:access-plane": "pnpm --filter @termloop/contract build && cargo build -p termloop-server && node tests/e2e/access-plane.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.55.0",
+    "typescript": "7.0.2",
+    "ws": "8.21.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
+  }
+}

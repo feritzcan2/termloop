@@ -1,0 +1,137 @@
+[
+  {
+    "rule": "UNSAFE_OWNER",
+    "file": "modules/core/src/bad.rs",
+    "content": "unsafe { native_call(); }"
+  },
+  {
+    "rule": "OS_CONDITIONAL_OWNER",
+    "file": "modules/core/src/bad.rs",
+    "content": "#[cfg(target_os = \"macos\")] fn bad() {}"
+  },
+  {
+    "rule": "GIT_SUBPROCESS_OWNER",
+    "file": "modules/core/src/bad.rs",
+    "content": "let request = termloop_platform::CommandRequest::new(\"git\").args([\"status\"]); termloop_platform::run_command(request);"
+  },
+  {
+    "rule": "PROVIDER_NETWORK_OWNER",
+    "file": "modules/core/src/provider.rs",
+    "content": "let request = termloop_platform::CommandRequest::new(\"gh\").args([\"api\"]);"
+  },
+  {
+    "rule": "PROVIDER_NETWORK_OWNER",
+    "file": "apps/server/src/azure.rs",
+    "content": "let request = termloop_platform::CommandRequest::new(\"az\").args([\"repos\"]);"
+  },
+  {
+    "rule": "CLIENT_PRIVILEGE",
+    "file": "clients/desktop/src/bad.ts",
+    "content": "import fs from \"node:fs\";"
+  },
+  {
+    "rule": "COMPANION_PRIVILEGE",
+    "file": "apps/companion/src/bad.rs",
+    "content": "use termloop_core::Core;"
+  },
+  {
+    "rule": "LAUNCH_PROVENANCE",
+    "file": "modules/core/src/bad.rs",
+    "content": "let p = LaunchPayload { body: x };"
+  },
+  {
+    "rule": "DIRECT_AGENT_PROCESS_SPAWN",
+    "file": "modules/core/src/bad.rs",
+    "content": "spawn_tracked_managed_process(\"codex\", &args, cwd, tracker, &env);"
+  },
+  {
+    "rule": "RAW_AGENT_PTY_SPEC",
+    "file": "modules/core/src/bad.rs",
+    "content": "let spec = PtySpawnSpec { id, program: \"claude\".into(), args, cwd, environment };"
+  },
+  {
+    "rule": "GENERATED_AGENT_SETTINGS_OWNER",
+    "file": "apps/server/src/bad.rs",
+    "content": "write_private_file(&runtime.join(\"agent-hooks.json\"), bytes)?;"
+  },
+  {
+    "rule": "LITERAL_AGENT_STARTUP_INPUT",
+    "file": "modules/core/src/bad.rs",
+    "content": "terminal.input(&session_id, b\"hidden system prompt\")?;"
+  },
+  {
+    "rule": "DIRECT_CORE_INPUT_SEQUENCE",
+    "file": "modules/core/src/bad.rs",
+    "content": "terminal.input_atomic_receipted(&session_id, runtime_epoch, prompt.paste_input())?;"
+  },
+  {
+    "rule": "STORE_WRITE_OWNER",
+    "file": "apps/server/src/bad.rs",
+    "content": "store.commit(&CoreWriteAuthority);"
+  },
+  {
+    "rule": "RESUME_REF_PRIVACY",
+    "file": "clients/desktop/src/renderer/bad.ts",
+    "content": "const leaked: ResumeRef = { native_session_id: 'provider-id' };"
+  },
+  {
+    "rule": "TERMINAL_JSON_BYTES",
+    "file": "apps/server/src/bad.ts",
+    "content": "JSON.stringify({ pty_bytes: base64(data) });"
+  },
+  {
+    "rule": "RETIRED_DOMAIN_VOCABULARY",
+    "file": "modules/domain/src/bad.rs",
+    "content": "struct Workspace {}"
+  },
+  {
+    "rule": "RENDERER_TOKEN",
+    "file": "clients/desktop/src/renderer/bad.ts",
+    "content": "const terminalToken = 'secret';"
+  },
+  {
+    "rule": "XTERM_OWNER",
+    "file": "clients/desktop/src/renderer/ui/bad.tsx",
+    "content": "import { Terminal } from '@xterm/xterm';"
+  },
+  {
+    "rule": "REACT_FREE_CLIENT_CORE",
+    "file": "clients/desktop/src/renderer/terminal/bad.ts",
+    "content": "import React from 'react';"
+  },
+  {
+    "rule": "STORE_LIB_OWNER",
+    "file": "clients/desktop/src/renderer/state/projection-store.ts",
+    "content": "import { createStore } from 'zustand/vanilla';"
+  },
+  {
+    "rule": "UI_TRANSPORT_SKIP",
+    "file": "clients/desktop/src/renderer/ui/bad.tsx",
+    "content": "const socket = new WebSocket('ws://127.0.0.1');"
+  },
+  {
+    "rule": "AGENT_TERMINAL_INPUT",
+    "file": "modules/agents/src/bad.rs",
+    "content": "fn infer(event: TerminalEvent) {}"
+  },
+  {
+    "rule": "AMBIENT_ENV_OWNER",
+    "file": "apps/server/src/bad.rs",
+    "content": "let inherited = std::env::vars_os();"
+  },
+  {
+    "rule": "RAW_LAUNCH_ENVIRONMENT",
+    "file": "apps/server/src/bad.rs",
+    "content": "let spec = Spawn { runtime_env: values };"
+  },
+  {
+    "rule": "LAUNCH_ENV_PERSISTENCE",
+    "file": "modules/domain/src/bad.rs",
+    "content": "struct Session { launch_environment: LaunchEnvironment }"
+  },
+  {
+    "rule": "AGENT_TRUST_BYPASS",
+    "file": "modules/invocation/src/bad.rs",
+    "content": "args.push(\"--dangerously-bypass-hook-trust\");"
+  }
+]

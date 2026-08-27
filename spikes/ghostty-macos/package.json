@@ -1,0 +1,19 @@
+{
+  "name": "@termloop/spike-ghostty-macos",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Spike: embed native Ghostty surfaces in an Electron BrowserWindow on macOS with external (fd-based) terminal IO",
+  "scripts": {
+    "install": "node -e \"\"",
+    "build": "node-gyp rebuild",
+    "start": "electron harness/main.js",
+    "evidence": "electron harness/main.js --evidence",
+    "test:modifiers": "electron harness/main.js --modifier-test",
+    "test:clipboard": "electron harness/main.js --clipboard-test"
+  },
+  "devDependencies": {
+    "electron": "43.3.0",
+    "node-addon-api": "^8.5.0",
+    "node-gyp": "^11.4.2"
+  }
+}

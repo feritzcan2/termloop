@@ -1,0 +1,22 @@
+#!/usr/bin/expect -f
+
+log_user 1
+set timeout [lindex $argv 0]
+set command [lrange $argv 1 end]
+spawn -noecho {*}$command
+after 3000
+if {[info exists env(TERMLOOP_SPIKE_INTERACTIVE_INPUT)]} {
+  send -- $env(TERMLOOP_SPIKE_INTERACTIVE_INPUT)
+  send -- "\r"
+}
+expect {
+  timeout {
+    send -- "\003"
+    after 1000
+    send -- "\003"
+    after 500
+    exit 0
+  }
+  eof {}
+}
+exit 0

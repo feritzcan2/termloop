@@ -1,0 +1,70 @@
+{
+  "expo": {
+    "name": "TermLoop",
+    "slug": "termloop-mobile",
+    "version": "2.0.0",
+    "icon": "./assets/icon.png",
+    "orientation": "portrait",
+    "scheme": "termloop",
+    "userInterfaceStyle": "dark",
+    "owner": "feritzcan",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/853cde14-00f1-446b-bd84-410e70663a8e",
+      "requestHeaders": {
+        "expo-channel-name": "termloop-next-production"
+      }
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "ai.termloop.mobile",
+        "buildNumber": "202608231344",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocalNetworkUsageDescription": "TermLoop connects to your Mac over your local network or Tailscale.",
+        "NSMicrophoneUsageDescription": "TermLoop uses the microphone only when you choose to send audio to a TermLoop agent."
+      }
+    },
+    "android": {
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-router",
+      "expo-notifications",
+      "./plugins/with-apns-entitlement",
+      "./plugins/with-watch-target-settings",
+      [
+        "@bacons/apple-targets",
+        {
+          "appleTeamId": "S9QXLS2NJ2"
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Scan a TermLoop pairing QR code or take a photo to send to a TermLoop agent.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Choose a photo to send to a TermLoop agent.",
+          "cameraPermission": "Take a photo to send to a TermLoop agent."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "853cde14-00f1-446b-bd84-410e70663a8e"
+      }
+    }
+  }
+}

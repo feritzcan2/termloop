@@ -1,0 +1,5 @@
+packages:
+  - "contract/generated/typescript"
+  - "clients/*"
+  - "spikes/r0-terminal/desktop"
+  - "spikes/ghostty-macos"

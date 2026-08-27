@@ -1,0 +1,14 @@
+[package]
+name = "termloop-terminal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+portable-pty.workspace = true
+termloop-platform = { path = "../platform" }
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+termloop-platform = { path = "../platform", features = ["test-support"] }

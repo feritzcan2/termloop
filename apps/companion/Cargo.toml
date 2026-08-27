@@ -1,0 +1,13 @@
+[package]
+name = "termloop-companion"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+futures-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+termloop-contract = { path = "../../contract/generated/rust" }
+tokio.workspace = true
+tokio-tungstenite.workspace = true

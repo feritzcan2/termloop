@@ -1,0 +1,83 @@
+appId: dev.termloop.next
+productName: TermLoop Next
+directories:
+  output: out
+files:
+  - dist/**
+  - package.json
+asar: true
+publish:
+  provider: generic
+  url: https://updates.termloop.ai/stable
+  channel: latest
+# Bundled daemon flavor: the Rust daemon and its sibling companion binary are
+# copied outside the asar into <resources>/daemon. The server resolves
+# termloop-companion as a sibling executable, so both must share one directory.
+# Build them first with:
+#   cargo build --release -p termloop-server -p termloop-companion
+mac:
+  artifactName: termloop-desktop-macos-${arch}-${version}.${ext}
+  target:
+    - dmg
+    - zip
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: true
+  extraResources:
+    - from: ../../target/release
+      to: daemon
+      filter:
+        - termloop-server
+        - termloop-companion
+        - skills-manager-cli
+    - from: ../../tools/skills-manager/LICENSE
+      to: licenses/skills-manager-LICENSE
+    - from: native/ghostty-host/build/Release/ghostty_host.node
+      to: native/ghostty-host/ghostty_host.node
+    - from: ../../vendor/ghostty/zig-out/lib/libghostty.dylib
+      to: native/ghostty-host/libghostty.dylib
+    - from: ../../vendor/ghostty/zig-out/share/ghostty
+      to: ghostty
+  icon: src/assets/termloop-main-icon.png
+win:
+  artifactName: termloop-desktop-windows-${arch}-${version}.${ext}
+  target:
+    - nsis
+  icon: src/assets/termloop-main-icon.png
+  extraResources:
+    - from: ../../target/release
+      to: daemon
+      filter:
+        - termloop-server.exe
+        - termloop-companion.exe
+        - skills-manager-cli.exe
+    - from: ../../tools/skills-manager/LICENSE
+      to: licenses/skills-manager-LICENSE
+linux:
+  artifactName: termloop-desktop-linux-${arch}-${version}.${ext}
+  target:
+    - AppImage
+    - deb
+  icon: src/assets/termloop-main-icon.png
+  # Explicit binary name plus a matching StartupWMClass so GNOME/KDE group
+  # taskbar windows correctly despite the spaced productName.
+  executableName: termloop-next
+  desktop:
+    entry:
+      StartupWMClass: termloop-next
+  category: Development
+  maintainer: TermLoop
+  extraResources:
+    - from: ../../target/release
+      to: daemon
+      filter:
+        - termloop-server
+        - termloop-companion
+        - skills-manager-cli
+    - from: ../../tools/skills-manager/LICENSE
+      to: licenses/skills-manager-LICENSE
+deb:
+  packageName: termloop-next
+  artifactName: termloop-desktop-linux-${arch}-${version}.${ext}

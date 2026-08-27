@@ -1,0 +1,113 @@
+{
+  "startedAt": "2026-08-13T22:28:09.092Z",
+  "host": {
+    "macos": "25.5.0",
+    "arch": "arm64",
+    "electron": "43.3.0",
+    "node": "24.18.1",
+    "ghosttyCommit": "a1f190542238e4914632063b743ff442ffc9f3a1",
+    "ghosttyBranch": "termloop-external-io",
+    "zig": "0.15.2",
+    "mode": "shown window (not headless)"
+  },
+  "checks": {
+    "surfacesCreated": {
+      "pass": true,
+      "sizes": [
+        {
+          "rows": 40,
+          "cols": 71,
+          "cellWidthPx": 16,
+          "cellHeightPx": 34,
+          "widthPx": 1156,
+          "heightPx": 1376
+        },
+        {
+          "rows": 40,
+          "cols": 71,
+          "cellWidthPx": 16,
+          "cellHeightPx": 34,
+          "widthPx": 1156,
+          "heightPx": 1376
+        }
+      ]
+    },
+    "outputPath": {
+      "pass": true,
+      "marker": "OUT-mss3ad3t",
+      "screenExcerpt": "TermLoop Ghostty spike — surface 1\nexternal fd IO, no child process. Type to echo.\n\nOUT-mss3ad3t"
+    },
+    "inputPath": {
+      "pass": true,
+      "typed": "IN-mss3adna-日本語-é",
+      "inputSeen": "IN-mss3adna-日本語-é",
+      "note": "marked-text preedit and committed-text NSTextInputClient path"
+    },
+    "echoRoundTrip": {
+      "pass": true,
+      "screenExcerpt": "TermLoop Ghostty spike — surface 2\nexternal fd IO, no child process. Type to echo.\n\nIN-mss3adna-日本語-é"
+    },
+    "kittyKeyboardInput": {
+      "pass": true,
+      "receivedHex": "1b5b39373b3b3937751b5b39373b313a3375",
+      "note": "NSEvent with empty characters property under Kitty report-all flags"
+    },
+    "resizePropagation": {
+      "pass": true,
+      "before": {
+        "rows": 40,
+        "cols": 71,
+        "cellWidthPx": 16,
+        "cellHeightPx": 34,
+        "widthPx": 1156,
+        "heightPx": 1376
+      },
+      "after": {
+        "rows": 12,
+        "cols": 37,
+        "cellWidthPx": 16,
+        "cellHeightPx": 34,
+        "widthPx": 600,
+        "heightPx": 440
+      },
+      "resizeCallback": {
+        "rows": 12,
+        "cols": 37
+      },
+      "note": "native host returned the new grid synchronously; production forwards this to the daemon-owned PTY"
+    },
+    "consumedCredit": {
+      "pass": true,
+      "writtenBytes": 14,
+      "consumedBytes": 14,
+      "note": "callback fires after Termio.processOutput returns; production resolves binary-plane credit promises from this signal"
+    },
+    "noChildProcess": {
+      "pass": true,
+      "childrenBefore": [
+        "97161 Electron Helper",
+        "97162 Electron Helper",
+        "97191 Electron Helper"
+      ],
+      "childrenAfter": [
+        "97161 Electron Helper",
+        "97162 Electron Helper",
+        "97191 Electron Helper"
+      ],
+      "newChildren": []
+    },
+    "overlayHideShow": {
+      "pass": true,
+      "note": "native view hidden+reshown; screen content retained"
+    },
+    "visualCapture": {
+      "neutral": true,
+      "skipped": "capture unavailable: undefined; verify visually via pnpm start"
+    },
+    "teardown": {
+      "pass": true
+    }
+  },
+  "finishedAt": "2026-08-13T22:28:14.584Z",
+  "pass": true
+}

@@ -1,0 +1,15 @@
+[package]
+name = "termloop-store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+termloop-domain = { path = "../domain" }
+termloop-platform = { path = "../platform" }
+thiserror.workspace = true
+
+[dev-dependencies]
+uuid.workspace = true

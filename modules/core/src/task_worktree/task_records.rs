@@ -1,0 +1,434 @@
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use termloop_domain::{IssueLinkProvider, TaskRecord, TaskStatus};
+
+use super::cleanup::{
+    cleanup_operation_json, health_json, presence_json, stale_resolution_operation_json,
+};
+use super::repair::repair_operation_json;
+use crate::{CoreError, CoreRuntime, json_error, required_string, store_error};
+
+pub(crate) const TITLE_LIMIT: usize = 160;
+pub(crate) const BRIEF_LIMIT: usize = 8_000;
+
+#[derive(Debug, Deserialize, Serialize)]
+struct TaskListCursor {
+    version: u8,
+    project_id: String,
+    archive_scope: String,
+    status: Option<String>,
+    state_revision: u64,
+    offset: usize,
+}
+
+fn decode_task_list_cursor(value: &str) -> Result<TaskListCursor, CoreError> {
+    let bytes = URL_SAFE_NO_PAD
+        .decode(value)
+        .map_err(|_| CoreError::InvalidParams("cursor".into()))?;
+    serde_json::from_slice(&bytes).map_err(|_| CoreError::InvalidParams("cursor".into()))
+}
+
+fn encode_task_list_cursor(cursor: &TaskListCursor) -> Result<String, CoreError> {
+    let bytes =
+        serde_json::to_vec(cursor).map_err(|_| CoreError::InvalidParams("cursor".into()))?;
+    let encoded = URL_SAFE_NO_PAD.encode(bytes);
+    if encoded.len() > 256 {
+        return Err(CoreError::InvalidParams("cursor".into()));
+    }
+    Ok(encoded)
+}
+
+impl CoreRuntime {
+    pub fn list_tasks_current(&self, params: Value) -> Result<Value, CoreError> {
+        let project_id = required_string(&params, "projectId")?;
+        if !self.project_exists(&project_id) {
+            return Err(CoreError::NotFound);
+        }
+        let archive_scope = params
+            .get("archiveScope")
+            .and_then(Value::as_str)
+            .unwrap_or("active");
+        if !matches!(archive_scope, "active" | "archived" | "all") {
+            return Err(CoreError::InvalidParams("archiveScope".into()));
+        }
+        let requested = params.get("taskIds").and_then(Value::as_array).map(|ids| {
+            ids.iter()
+                .filter_map(Value::as_str)
+                .collect::<std::collections::HashSet<_>>()
+        });
+        if requested.is_some() && (params.get("cursor").is_some() || params.get("limit").is_some())
+        {
+            return Err(CoreError::InvalidParams("cursor".into()));
+        }
+        let status = params.get("status").and_then(Value::as_str);
+        if status.is_some_and(|status| !matches!(status, "open" | "closed")) {
+            return Err(CoreError::InvalidParams("status".into()));
+        }
+        let cursor = params
+            .get("cursor")
+            .and_then(Value::as_str)
+            .map(decode_task_list_cursor)
+            .transpose()?;
+        if cursor.as_ref().is_some_and(|cursor| {
+            cursor.version != 1
+                || cursor.project_id != project_id
+                || cursor.archive_scope != archive_scope
+                || cursor.status.as_deref() != status
+                || cursor.state_revision != self.state_revision()
+        }) {
+            return Err(CoreError::InvalidParams("cursor".into()));
+        }
+        let mut tasks = self
+            .store
+            .tasks()
+            .iter()
+            .filter(|task| task.project_id == project_id)
+            .filter(|task| match archive_scope {
+                "active" => task.archived_at_epoch_ms.is_none(),
+                "archived" => task.archived_at_epoch_ms.is_some(),
+                _ => true,
+            })
+            .filter(|task| match status {
+                Some("open") => task.status == TaskStatus::Open,
+                Some("closed") => task.status == TaskStatus::Closed,
+                _ => true,
+            })
+            .filter(|task| {
+                requested
+                    .as_ref()
+                    .is_none_or(|ids| ids.contains(task.id.as_str()))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        tasks.sort_by(|left, right| {
+            if archive_scope == "archived" {
+                right
+                    .archived_at_epoch_ms
+                    .cmp(&left.archived_at_epoch_ms)
+                    .then_with(|| left.id.cmp(&right.id))
+            } else {
+                left.rank
+                    .cmp(&right.rank)
+                    .then_with(|| left.id.cmp(&right.id))
+            }
+        });
+        let offset = cursor.as_ref().map_or(0, |cursor| cursor.offset);
+        let limit = params
+            .get("limit")
+            .and_then(Value::as_u64)
+            .map(|limit| usize::try_from(limit).unwrap_or(usize::MAX))
+            .unwrap_or_else(|| {
+                if requested.is_some() {
+                    tasks.len().max(1)
+                } else {
+                    50
+                }
+            });
+        let maximum_limit = if requested.is_some() { 128 } else { 100 };
+        if !(1..=maximum_limit).contains(&limit) || offset > tasks.len() {
+            return Err(CoreError::InvalidParams("limit".into()));
+        }
+        let end = offset.saturating_add(limit).min(tasks.len());
+        let items = tasks[offset..end]
+            .iter()
+            .map(|task| self.task_current_projection(&task.id))
+            .collect::<Result<Vec<_>, _>>()?;
+        let next_cursor = (end < tasks.len())
+            .then(|| {
+                encode_task_list_cursor(&TaskListCursor {
+                    version: 1,
+                    project_id: project_id.to_owned(),
+                    archive_scope: archive_scope.to_owned(),
+                    status: status.map(str::to_owned),
+                    state_revision: self.state_revision(),
+                    offset: end,
+                })
+            })
+            .transpose()?;
+        Ok(json!({
+            "items": items,
+            "next_cursor": next_cursor,
+        }))
+    }
+
+    pub fn task_current_projection(&self, task_id: &str) -> Result<Value, CoreError> {
+        let task = self
+            .store
+            .tasks()
+            .iter()
+            .find(|task| task.id == task_id)
+            .ok_or(CoreError::NotFound)?;
+        let mut value = self.task_projection(task)?;
+        value["worktree_generation"] = json!(task.worktree_generation);
+        if let Some(health) = self.cached_task_worktree_health(task_id) {
+            value["worktree_health"] = health_json(health);
+        }
+        if let Some(presence) = self.cached_task_worktree_presence(task_id) {
+            value["worktree_presence"] = presence_json(presence);
+        }
+        if let Some(operation) = self
+            .store
+            .cleanup_operations()
+            .iter()
+            .find(|operation| operation.task_id == task_id)
+        {
+            value["worktree_cleanup"] = cleanup_operation_json(operation);
+        }
+        if let Some(operation) = self
+            .store
+            .repair_operations()
+            .iter()
+            .find(|operation| operation.task_id == task_id)
+        {
+            value["worktree_repair"] = repair_operation_json(operation);
+        }
+        if let Some(operation) = self
+            .store
+            .stale_resolution_operations()
+            .iter()
+            .find(|operation| operation.task_id == task_id)
+        {
+            value["worktree_stale_resolution"] = stale_resolution_operation_json(operation);
+        }
+        Ok(value)
+    }
+
+    pub(crate) fn create_task(&mut self, params: Value) -> Result<Value, CoreError> {
+        let project_id = required_string(&params, "projectId")?;
+        if !self.project_exists(&project_id) {
+            return Err(CoreError::NotFound);
+        }
+        let worktree_intent = params
+            .get("worktreeIntent")
+            .and_then(Value::as_str)
+            .ok_or_else(|| CoreError::InvalidParams("worktreeIntent".into()))?;
+        if !matches!(worktree_intent, "inherit" | "none" | "provision") {
+            return Err(CoreError::InvalidParams("worktreeIntent".into()));
+        }
+        let agent_id = match params.get("agentId") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(value)) => Some(value.as_str()),
+            _ => return Err(CoreError::InvalidParams("agentId".into())),
+        };
+        if agent_id.is_some_and(|agent_id| {
+            worktree_intent != "provision" || !termloop_domain::agent_id_is_well_formed(agent_id)
+        }) {
+            return Err(CoreError::InvalidParams("agentId".into()));
+        }
+        let title = normalized_required_text(&params, "title", TITLE_LIMIT)?;
+        let brief = normalized_nullable_text(&params, "brief", BRIEF_LIMIT)?;
+        let rank = self
+            .store
+            .tasks()
+            .iter()
+            .filter(|task| task.project_id == project_id)
+            .map(|task| task.rank)
+            .max()
+            .map_or(Ok(0), |rank| {
+                rank.checked_add(1)
+                    .ok_or_else(|| CoreError::Store("Task rank overflow".into()))
+            })?;
+        let now = termloop_platform::current_epoch_ms();
+        let task = TaskRecord {
+            id: termloop_platform::generate_uuid_v4(),
+            project_id,
+            title,
+            brief,
+            status: TaskStatus::Open,
+            archived_at_epoch_ms: None,
+            branch: None,
+            worktree: None,
+            worktree_generation: 0,
+            steward_brief_markdown: String::new(),
+            steward_brief_revision: 1,
+            rank,
+            created_at_epoch_ms: now,
+            updated_at_epoch_ms: now,
+        };
+        self.store
+            .insert_task(&self.write_authority, task.clone())
+            .map_err(store_error)?;
+        self.task_projection(&task)
+    }
+
+    pub(crate) fn list_tasks(&self, params: Value) -> Result<Value, CoreError> {
+        self.list_tasks_current(params)
+    }
+
+    pub(crate) fn rename_task(&mut self, params: Value) -> Result<Value, CoreError> {
+        let task_id = required_string(&params, "taskId")?;
+        self.ensure_task_active(&task_id)?;
+        let title = normalized_required_text(&params, "title", TITLE_LIMIT)?;
+        let task = self
+            .store
+            .rename_task(
+                &self.write_authority,
+                &task_id,
+                title,
+                termloop_platform::current_epoch_ms(),
+            )
+            .map_err(store_error)?;
+        self.task_projection(&task)
+    }
+
+    pub(crate) fn update_task_brief(&mut self, params: Value) -> Result<Value, CoreError> {
+        let task_id = required_string(&params, "taskId")?;
+        self.ensure_task_active(&task_id)?;
+        let brief = normalized_nullable_text(&params, "brief", BRIEF_LIMIT)?;
+        let task = self
+            .store
+            .update_task_brief(
+                &self.write_authority,
+                &task_id,
+                brief,
+                termloop_platform::current_epoch_ms(),
+            )
+            .map_err(store_error)?;
+        self.task_projection(&task)
+    }
+
+    pub(crate) fn close_task(&mut self, params: Value) -> Result<Value, CoreError> {
+        self.change_task_status(params, TaskStatus::Closed)
+    }
+
+    pub(crate) fn reopen_task(&mut self, params: Value) -> Result<Value, CoreError> {
+        self.change_task_status(params, TaskStatus::Open)
+    }
+
+    pub(crate) fn delete_task(&mut self, params: Value) -> Result<Value, CoreError> {
+        let task_id = required_string(&params, "taskId")?;
+        self.ensure_task_active(&task_id)?;
+        if let Some(operation) = self
+            .store
+            .provisioning_operations()
+            .iter()
+            .find(|operation| operation.task_id == task_id)
+        {
+            return Err(CoreError::ProvisioningAlreadyInProgress {
+                operation_id: operation.operation_id.clone(),
+            });
+        }
+        if let Some(operation) = self
+            .store
+            .cleanup_operations()
+            .iter()
+            .find(|operation| operation.task_id == task_id)
+        {
+            return Err(CoreError::CleanupInProgress {
+                task_id,
+                operation_id: operation.operation_id.clone(),
+            });
+        }
+        if let Some(operation) = self
+            .store
+            .repair_operations()
+            .iter()
+            .find(|operation| operation.task_id == task_id)
+        {
+            return Err(CoreError::RepairInProgress {
+                task_id,
+                operation_id: operation.operation_id.clone(),
+            });
+        }
+        if let Some(operation) = self
+            .store
+            .stale_resolution_operations()
+            .iter()
+            .find(|operation| operation.task_id == task_id)
+        {
+            return Err(CoreError::StaleDisposalInProgress {
+                task_id,
+                operation_id: operation.operation_id.clone(),
+            });
+        }
+        let task = self
+            .store
+            .tasks()
+            .iter()
+            .find(|task| task.id == task_id)
+            .ok_or(CoreError::NotFound)?;
+        if task.worktree.is_some() {
+            return Err(CoreError::TaskWorktreeCleanupRequired { task_id });
+        }
+        self.store
+            .delete_task(&self.write_authority, &task_id)
+            .map_err(store_error)?;
+        self.clear_task_worktree_projections(&task_id);
+        Ok(json!({ "taskId": task_id, "deleted": true }))
+    }
+
+    fn change_task_status(
+        &mut self,
+        params: Value,
+        status: TaskStatus,
+    ) -> Result<Value, CoreError> {
+        let task_id = required_string(&params, "taskId")?;
+        self.ensure_task_active(&task_id)?;
+        let task = self
+            .store
+            .set_task_status(
+                &self.write_authority,
+                &task_id,
+                status,
+                termloop_platform::current_epoch_ms(),
+            )
+            .map_err(store_error)?;
+        self.task_projection(&task)
+    }
+
+    pub(crate) fn task_projection(&self, task: &TaskRecord) -> Result<Value, CoreError> {
+        let mut value = serde_json::to_value(task).map_err(json_error)?;
+        value["jira_url"] = self
+            .store
+            .issue_links()
+            .iter()
+            .find(|link| link.task_id == task.id && link.provider == IssueLinkProvider::Jira)
+            .and_then(|link| link.url.as_ref())
+            .map_or(Value::Null, |url| json!(url));
+        // Current protocol always emits the durable generation. It remains optional in
+        // the schema only so a new client can safely detect an older daemon.
+        if let Some(operation) = self
+            .store
+            .provisioning_operations()
+            .iter()
+            .find(|operation| operation.task_id == task.id)
+        {
+            value["worktree_provisioning"] = json!({
+                "operation_id": operation.operation_id,
+                "status": if operation.failure.is_some() { "failed" } else { "running" },
+                "failure": operation.failure.map(|kind| json!({ "kind": kind })),
+            });
+        }
+        Ok(value)
+    }
+}
+
+fn normalized_required_text(params: &Value, key: &str, limit: usize) -> Result<String, CoreError> {
+    let value = required_string(params, key)?;
+    let value = value.trim();
+    if value.chars().next().is_none() || value.chars().count() > limit {
+        return Err(CoreError::InvalidParams(key.into()));
+    }
+    Ok(value.to_owned())
+}
+
+fn normalized_nullable_text(
+    params: &Value,
+    key: &str,
+    limit: usize,
+) -> Result<Option<String>, CoreError> {
+    let Some(value) = params.get(key) else {
+        return Ok(None);
+    };
+    let value = match value {
+        Value::Null => "",
+        Value::String(value) => value,
+        _ => return Err(CoreError::InvalidParams(key.into())),
+    };
+    let value = value.trim();
+    if value.chars().count() > limit {
+        return Err(CoreError::InvalidParams(key.into()));
+    }
+    Ok(value.chars().next().is_some().then(|| value.to_owned()))
+}

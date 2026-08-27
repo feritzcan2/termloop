@@ -1,0 +1,20 @@
+{
+  "cli": {
+    "version": ">= 15.0.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "production": {
+      "distribution": "store",
+      "channel": "termloop-next-production",
+      "autoIncrement": false
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6765898303"
+      }
+    }
+  }
+}

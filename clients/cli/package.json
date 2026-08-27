@@ -1,0 +1,25 @@
+{
+  "name": "@termloop/cli",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "termloopctl": "dist/index.js"
+  },
+  "scripts": {
+    "build": "pnpm --filter @termloop/contract build && tsc",
+    "build:bundle": "pnpm --filter @termloop/contract build && node build-release.mjs",
+    "check": "tsc --noEmit",
+    "test": "pnpm build && node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@termloop/contract": "workspace:*",
+    "ws": "8.21.2"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.2",
+    "@types/ws": "8.18.1",
+    "esbuild": "0.28.1",
+    "typescript": "7.0.2"
+  }
+}

@@ -1,0 +1,710 @@
+// @vitest-environment jsdom
+
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { describe, expect, it } from "vitest";
+import {
+  TaskDetailPanel,
+  pipelineProgressLabel,
+  stepAnswerSource,
+  stepEvidence,
+  stepIsCheckable,
+  stepTiming,
+  taskIdentityFacts,
+  taskPipelineView,
+  type TaskPipelineStep,
+} from "../src/renderer/ui/TaskDetailPanel.js";
+import type {
+  PlaybookDto, PlaybookMilestoneDto, PlaybookRuntimeResult, PlaybookRuntimeStepDto,
+  PlaybookStepProgressDto, RoutineHealthDto,
+} from "@termloop/contract/current";
+import type { Task } from "../src/renderer/model.js";
+
+const NOW = 1_700_000_000_000;
+
+function milestone(overrides: Partial<PlaybookMilestoneDto> = {}): PlaybookMilestoneDto {
+  return {
+    id: "code-done",
+    title: "Did the agent finish the code?",
+    gate: "automatic",
+    routineId: "routine-code",
+    retryDelaySeconds: 600,
+    condition: "The Task branch has commits and no agent is still working.",
+    approver: null,
+    ...overrides,
+  };
+}
+
+function playbook(milestones: PlaybookMilestoneDto[]): PlaybookDto {
+  return {
+    projectId: "project-1",
+    revision: 4,
+    activePipelineName: "Dev PR to production",
+    milestones,
+    savedPipelines: [],
+    updatedAtEpochMs: NOW,
+  };
+}
+
+function progress(overrides: Partial<PlaybookStepProgressDto> = {}): PlaybookStepProgressDto {
+  return {
+    taskId: "task-1",
+    verdict: "passed",
+    evidence: "Branch has 3 commits and no agent is working.",
+    decidedAtEpochMs: NOW - 7_200_000,
+    nextAttemptAtEpochMs: null,
+    ...overrides,
+  };
+}
+
+function runtimeStep(overrides: Partial<PlaybookRuntimeStepDto> = {}): PlaybookRuntimeStepDto {
+  return {
+    milestoneId: "code-done",
+    routineId: "routine-code",
+    waitingTaskIds: [],
+    progress: [],
+    nextAttemptAtEpochMs: null,
+    ...overrides,
+  };
+}
+
+function runtime(steps: PlaybookRuntimeStepDto[], doneTaskIds: string[] = []): PlaybookRuntimeResult {
+  return { activePipelineName: "Dev PR to production", processingTaskId: null, steps, doneTaskIds, stateRevision: 12 };
+}
+
+function routineHealth(overrides: Partial<RoutineHealthDto> = {}): RoutineHealthDto {
+  return {
+    routineId: "routine-review",
+    generation: 1,
+    kind: "custom",
+    triggerMode: "onDemand",
+    name: "Slack review request",
+    contextMarkdown: "",
+    contextRevision: 1,
+    relatedTaskIds: ["task-1"],
+    state: "idle",
+    checkId: null,
+    deadlineEpochMs: null,
+    pingSent: false,
+    pendingTrigger: false,
+    attentionMessage: null,
+    lastSuccessfulReportAtEpochMs: null,
+    lastAttemptAtEpochMs: null,
+    nextDueAtEpochMs: null,
+    ...overrides,
+  };
+}
+
+const ROUTINES = [
+  { id: "routine-code", name: "Code finished", enabled: true },
+  { id: "routine-review", name: "Slack review request", enabled: true },
+  { id: "routine-deploy", name: "Deployment watch", enabled: false },
+];
+
+const THREE_STEPS = [
+  milestone(),
+  milestone({ id: "review-requested", title: "Was Nurguyl asked on Slack to review the PR?", routineId: "routine-review" }),
+  milestone({ id: "deployed", title: "Did the master PR deploy?", routineId: "routine-deploy" }),
+];
+
+function standingRuntime(processingTaskId: string | null = null): PlaybookRuntimeResult {
+  return {
+    ...runtime([
+      runtimeStep({ progress: [progress()] }),
+      runtimeStep({
+        milestoneId: "review-requested",
+        routineId: "routine-review",
+        waitingTaskIds: ["task-1"],
+        progress: [progress({
+          verdict: "waiting",
+          evidence: "No review request seen in the channel.",
+          decidedAtEpochMs: NOW - 600_000,
+          nextAttemptAtEpochMs: NOW + 720_000,
+        })],
+        nextAttemptAtEpochMs: NOW + 720_000,
+      }),
+      runtimeStep({ milestoneId: "deployed", routineId: "routine-deploy" }),
+    ]),
+    processingTaskId,
+  };
+}
+
+describe("a Task's place on the pipeline", () => {
+  it("stands the Task at the question core says it waits on, clearing everything behind it", () => {
+    const view = taskPipelineView(
+      playbook(THREE_STEPS),
+      runtime([
+        runtimeStep({ progress: [progress()] }),
+        runtimeStep({
+          milestoneId: "review-requested",
+          routineId: "routine-review",
+          waitingTaskIds: ["task-1"],
+          progress: [progress({ verdict: "waiting", evidence: "No review request seen in the channel.", decidedAtEpochMs: NOW - 600_000, nextAttemptAtEpochMs: NOW + 720_000 })],
+          nextAttemptAtEpochMs: NOW + 720_000,
+        }),
+        runtimeStep({ milestoneId: "deployed", routineId: "routine-deploy" }),
+      ]),
+      ROUTINES,
+      "task-1",
+    );
+
+    expect(view?.steps.map((step) => step.standing)).toEqual(["passed", "waiting", "ahead"]);
+    expect(view?.placement).toBe("waiting");
+    expect(view?.standingAt).toBe(2);
+    expect(view?.passedCount).toBe(1);
+    expect(pipelineProgressLabel(view!)).toBe("Step 2 of 3");
+  });
+
+  it("keeps each Task's own answers apart when several wait at one question", () => {
+    const view = taskPipelineView(
+      playbook(THREE_STEPS),
+      runtime([
+        runtimeStep({
+          waitingTaskIds: ["task-2", "task-1"],
+          progress: [
+            progress({ taskId: "task-2", verdict: "waiting", evidence: "Task 2 has no commits.", nextAttemptAtEpochMs: NOW + 60_000 }),
+            progress({ taskId: "task-1", verdict: "waiting", evidence: "Task 1 still has an agent working.", nextAttemptAtEpochMs: NOW + 300_000 }),
+          ],
+        }),
+        runtimeStep({ milestoneId: "review-requested", routineId: "routine-review" }),
+        runtimeStep({ milestoneId: "deployed", routineId: "routine-deploy" }),
+      ]),
+      ROUTINES,
+      "task-1",
+    );
+
+    expect(stepEvidence(view!.steps[0]!)).toBe("Task 1 still has an agent working.");
+    expect(stepTiming(view!.steps[0]!, NOW)).toBe("next check in 5m");
+  });
+
+  it("marks a Task core lists as done as having cleared every question", () => {
+    const view = taskPipelineView(
+      playbook(THREE_STEPS),
+      runtime(
+        THREE_STEPS.map((entry) => runtimeStep({
+          milestoneId: entry.id,
+          routineId: entry.routineId,
+          progress: [progress()],
+        })),
+        ["task-1"],
+      ),
+      ROUTINES,
+      "task-1",
+    );
+
+    expect(view?.placement).toBe("done");
+    expect(view?.steps.every((step) => step.standing === "passed")).toBe(true);
+    expect(pipelineProgressLabel(view!)).toBe("Cleared all 3");
+  });
+
+  it("leaves a Task the pipeline no longer walks with only its recorded answers", () => {
+    const view = taskPipelineView(
+      playbook(THREE_STEPS),
+      runtime([
+        runtimeStep({ progress: [progress()] }),
+        runtimeStep({ milestoneId: "review-requested", routineId: "routine-review" }),
+        runtimeStep({ milestoneId: "deployed", routineId: "routine-deploy" }),
+      ]),
+      ROUTINES,
+      "task-1",
+    );
+
+    expect(view?.placement).toBe("away");
+    expect(view?.standingAt).toBeUndefined();
+    expect(view?.steps.map((step) => step.standing)).toEqual(["passed", "ahead", "ahead"]);
+    expect(pipelineProgressLabel(view!)).toBe("1 of 3 cleared");
+  });
+
+  it("draws no ladder at all when the Project is not walking a pipeline", () => {
+    expect(taskPipelineView(null, null, ROUTINES, "task-1")).toBeUndefined();
+    expect(taskPipelineView(playbook([]), null, ROUTINES, "task-1")).toBeUndefined();
+  });
+
+  it("stands a Task at the first question before any Routine has ever answered", () => {
+    const view = taskPipelineView(
+      playbook(THREE_STEPS),
+      runtime([
+        runtimeStep({ waitingTaskIds: ["task-1"] }),
+        runtimeStep({ milestoneId: "review-requested", routineId: "routine-review" }),
+        runtimeStep({ milestoneId: "deployed", routineId: "routine-deploy" }),
+      ]),
+      ROUTINES,
+      "task-1",
+    );
+
+    expect(view?.standingAt).toBe(1);
+    expect(stepEvidence(view!.steps[0]!)).toBe("No completion result recorded for this Task yet.");
+    expect(stepTiming(view!.steps[0]!, NOW)).toBe("checking next");
+  });
+});
+
+describe("what a step tells the reader", () => {
+  function step(overrides: Partial<TaskPipelineStep> = {}): TaskPipelineStep {
+    return {
+      position: 2,
+      milestone: milestone(),
+      standing: "waiting",
+      progress: progress({ verdict: "waiting", nextAttemptAtEpochMs: NOW + 1_800_000 }),
+      routine: { name: "Code finished", enabled: true },
+      ...overrides,
+    };
+  }
+
+  it("looks backwards on a cleared question and forwards on the standing one", () => {
+    expect(stepTiming(step({ standing: "passed", progress: progress() }), NOW)).toBe("cleared 2h ago");
+    expect(stepTiming(step(), NOW)).toBe("next check in 30m");
+    expect(stepTiming(step({ standing: "ahead", progress: undefined }), NOW)).toBeUndefined();
+  });
+
+  it("says a check is imminent rather than counting down past zero", () => {
+    expect(stepTiming(step({ progress: progress({ verdict: "waiting", nextAttemptAtEpochMs: NOW - 1 }) }), NOW))
+      .toBe("checking next");
+  });
+
+  it("names who answers the question, and says so when nobody can", () => {
+    expect(stepAnswerSource(step())).toEqual({ text: "Code finished", blocked: false });
+    expect(stepAnswerSource(step({ routine: { name: "Deployment watch", enabled: false } })))
+      .toEqual({ text: "Deployment watch is off", blocked: true });
+    expect(stepAnswerSource(step({ routine: undefined })))
+      .toEqual({ text: "No completion Routine", blocked: true });
+    expect(stepAnswerSource(step({ milestone: milestone({ gate: "human", approver: "ferit" }) })))
+      .toEqual({ text: "ferit approves this", blocked: false });
+    expect(stepAnswerSource(step({ milestone: milestone({ gate: "human", approver: null }) })))
+      .toEqual({ text: "No approver named", blocked: true });
+  });
+
+  it("offers a manual check only where one would actually run", () => {
+    expect(stepIsCheckable(step())).toBe(true);
+    expect(stepIsCheckable(step({ standing: "passed" }))).toBe(false);
+    expect(stepIsCheckable(step({ standing: "ahead" }))).toBe(false);
+    expect(stepIsCheckable(step({ routine: { name: "Deployment watch", enabled: false } }))).toBe(false);
+    // A human gate waits on a person; there is nothing for TermLoop to run.
+    expect(stepIsCheckable(step({ milestone: milestone({ gate: "human", approver: "ferit" }) }))).toBe(false);
+  });
+
+  it("keeps a cleared question silent when no evidence was recorded", () => {
+    expect(stepEvidence(step({ standing: "passed", progress: undefined }))).toBeUndefined();
+    expect(stepEvidence(step({ standing: "ahead", progress: undefined }))).toBeUndefined();
+  });
+});
+
+describe("the Task's identity chips", () => {
+  function task(overrides: Partial<Task> = {}): Task {
+    return {
+      id: "task-1",
+      project_id: "project-1",
+      title: "Ship the pipeline page",
+      brief: null,
+      jira_url: null,
+      status: "open",
+      archived_at_epoch_ms: null,
+      branch: { name: "task/pipeline-page", repository_path: "/repository" },
+      worktree: { path: "/repository-worktrees/pipeline-page", created_at_epoch_ms: NOW },
+      rank: 1,
+      created_at_epoch_ms: NOW,
+      updated_at_epoch_ms: NOW,
+      ...overrides,
+    } as Task;
+  }
+
+  it("names the branch, the worktree leaf, and the issue in that order", () => {
+    expect(taskIdentityFacts(task({ jira_url: "https://example.atlassian.net/browse/UKIE-42" }))
+      .map((fact) => fact.label))
+      .toEqual(["task/pipeline-page", "pipeline-page", "UKIE-42"]);
+  });
+
+  it("says a Task has no branch rather than leaving the chips empty", () => {
+    expect(taskIdentityFacts(task({ branch: null, worktree: null })).map((fact) => fact.label))
+      .toEqual(["No branch"]);
+  });
+});
+
+describe("the Task detail page on screen", () => {
+  function detailTask(overrides: Partial<Task> = {}): Task {
+    return {
+      id: "task-1",
+      project_id: "project-1",
+      title: "Ship the pipeline page",
+      brief: null,
+      jira_url: null,
+      status: "open",
+      archived_at_epoch_ms: null,
+      branch: { repository_root: "/repository", name: "task/pipeline-page" },
+      worktree: { path: "/worktrees/pipeline-page" },
+      rank: 1,
+      created_at_epoch_ms: NOW,
+      updated_at_epoch_ms: NOW,
+      ...overrides,
+    } as Task;
+  }
+
+  function panelProps(overrides: Record<string, unknown> = {}) {
+    return {
+      task: detailTask(),
+      refreshToken: 0,
+      sessions: [],
+      statusesById: new Map(),
+      reviewReadySessionIds: new Set<string>(),
+      gitHostProjection: undefined,
+      branchCommitSummary: undefined,
+      nowEpochMs: NOW,
+      close: () => {},
+      selectSession: () => {},
+      openChanges: () => {},
+      openExternal: async () => {},
+      openPlaybook: () => {},
+      getPlaybook: async () => ({ playbook: playbook(THREE_STEPS), stateRevision: 12 }),
+      getPlaybookRuntime: async () => standingRuntime(),
+      setPlaybookTaskPosition: async (params: { taskId: string; passedMilestoneCount: number }) => ({
+        ok: true,
+        result: {
+          taskId: params.taskId,
+          passedMilestoneCount: params.passedMilestoneCount,
+          stateRevision: 13,
+        },
+      }),
+      listRoutines: async () => ({
+        configurations: ROUTINES.map((routine) => ({
+          ...routine,
+          projectId: "project-1",
+          workerId: "worker-1",
+          kind: "custom",
+          triggerMode: "onDemand",
+          prompt: "",
+          scheduleIntervalSeconds: 0,
+          generation: 1,
+          contextMarkdown: "",
+          contextRevision: 1,
+          recentSourceKeys: [],
+          relatedTaskIds: [],
+          lastCheckStartedAtEpochMs: null,
+          lastSuccessfulReportAtEpochMs: null,
+          lastAttemptAtEpochMs: null,
+          updatedAtEpochMs: NOW,
+        })),
+        stateRevision: 12,
+      }),
+      listRoutineRuntime: async () => ({
+        health: [], reports: [], reportsTruncated: false, stateRevision: 12,
+      }),
+      runRoutineNow: async () => ({ ok: true }),
+      ...overrides,
+    } as never;
+  }
+
+  async function mount(overrides: Record<string, unknown> = {}) {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => root.render(createElement(TaskDetailPanel, panelProps(overrides))));
+    return {
+      container,
+      async unmount() {
+        await act(async () => root.unmount());
+        container.remove();
+        delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+      },
+    };
+  }
+
+  it("grades the ladder so the standing question is the only open card", async () => {
+    const { container, unmount } = await mount();
+
+    const steps = [...container.querySelectorAll(".td-step")];
+    expect(steps.map((step) => step.className)).toEqual([
+      "td-step passed",
+      "td-step waiting",
+      "td-step ahead",
+      // The destination is the last station on the same spine, still ahead.
+      "td-step terminus ahead",
+    ]);
+    expect(container.querySelector(".td-step.waiting")?.getAttribute("aria-current")).toBe("step");
+    expect(container.querySelector(".td-progress")?.textContent)
+      .toBe("Dev PR to production · Step 2 of 3");
+    expect(container.querySelector(".td-step.waiting .td-evidence")?.textContent)
+      .toBe("No review request seen in the channel.");
+    expect(container.querySelector(".td-step.waiting .td-timing")?.textContent)
+      .toBe("next check in 12m");
+
+    await unmount();
+  });
+
+  it("carries the Task's bindings as separate chips beside its status", async () => {
+    const { container, unmount } = await mount();
+
+    expect([...container.querySelectorAll(".td-chip")].map((chip) => chip.textContent))
+      .toEqual(["task/pipeline-page", "pipeline-page"]);
+    expect(container.querySelector(".td-status")?.textContent).toBe("Open");
+
+    await unmount();
+  });
+
+  it("measures how much of the ladder is already behind the Task", async () => {
+    const { container, unmount } = await mount();
+
+    // Standing at step 2 of 3 means exactly one question is answered.
+    expect(container.querySelector<HTMLElement>(".td-meter i")?.style.width).toBe("33%");
+
+    await unmount();
+  });
+
+  it("names who answers each question, and warns where nobody can", async () => {
+    const { container, unmount } = await mount();
+
+    expect(container.querySelector(".td-step.waiting .td-answers")?.textContent)
+      .toBe("Checked by Slack review request");
+    // A stage still ahead names its judge too, because a Routine that is
+    // switched off will never move this Task and that is worth knowing early.
+    const ahead = container.querySelector(".td-step.ahead .td-answers");
+    expect(ahead?.textContent).toBe("Deployment watch is off");
+    expect(ahead?.className).toContain("blocked");
+
+    await unmount();
+  });
+
+  it("keeps a cleared question's whole recorded answer on the page", async () => {
+    const { container, unmount } = await mount();
+
+    // The sentence itself is the evidence; it is never handed to a tooltip.
+    const cleared = container.querySelector(".td-step.passed .td-evidence");
+    expect(cleared?.textContent).toBe("Branch has 3 commits and no agent is working.");
+    expect(cleared?.getAttribute("title")).toBeNull();
+
+    await unmount();
+  });
+
+  it("runs the standing step's Routine on demand and reloads what it answered", async () => {
+    const asked: Array<[string, string | undefined]> = [];
+    let evidence = "No review request seen in the channel.";
+    const { container, unmount } = await mount({
+      runRoutineNow: async (routineId: string, taskId?: string) => {
+        asked.push([routineId, taskId]);
+        evidence = "Asked Nurguyl to review the dev pull request.";
+        return { ok: true };
+      },
+      getPlaybookRuntime: async () => runtime([
+        runtimeStep({ progress: [progress()] }),
+        runtimeStep({
+          milestoneId: "review-requested",
+          routineId: "routine-review",
+          waitingTaskIds: ["task-1"],
+          progress: [progress({ verdict: "waiting", evidence, nextAttemptAtEpochMs: NOW + 720_000 })],
+          nextAttemptAtEpochMs: NOW + 720_000,
+        }),
+        runtimeStep({ milestoneId: "deployed", routineId: "routine-deploy" }),
+      ]),
+    });
+
+    await act(async () => container.querySelector<HTMLButtonElement>(".td-check-now")!.click());
+
+    expect(asked).toEqual([["routine-review", "task-1"]]);
+    expect(container.querySelector(".td-step.waiting .td-evidence")?.textContent)
+      .toBe("Asked Nurguyl to review the dev pull request.");
+
+    await unmount();
+  });
+
+  it("shows an externally claimed standing Routine as checking", async () => {
+    const { container, unmount } = await mount({
+      getPlaybookRuntime: async () => standingRuntime("task-1"),
+      listRoutineRuntime: async () => ({
+        health: [routineHealth({ state: "checking", checkId: "check-1" })],
+        reports: [],
+        reportsTruncated: false,
+        stateRevision: 13,
+      }),
+    });
+
+    const button = container.querySelector<HTMLButtonElement>(".td-check-now")!;
+    expect(button.textContent).toBe("Checking…");
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("Slack review request is checking this step now");
+
+    await unmount();
+  });
+
+  it("sets the Task to any question and can reset it to the start", async () => {
+    const requested: number[] = [];
+    let passedCount = 1;
+    let stateRevision = 12;
+    const positionedRuntime = () => runtime(THREE_STEPS.map((entry, index) => runtimeStep({
+      milestoneId: entry.id,
+      routineId: entry.routineId,
+      waitingTaskIds: index === passedCount && passedCount < THREE_STEPS.length ? ["task-1"] : [],
+      progress: index < passedCount ? [progress()] : [],
+    })), passedCount === THREE_STEPS.length ? ["task-1"] : []);
+    const { container, unmount } = await mount({
+      getPlaybook: async () => ({ playbook: playbook(THREE_STEPS), stateRevision }),
+      getPlaybookRuntime: async () => ({ ...positionedRuntime(), stateRevision }),
+      listRoutines: async () => ({ configurations: [], stateRevision }),
+      setPlaybookTaskPosition: async (params: { taskId: string; passedMilestoneCount: number }) => {
+        requested.push(params.passedMilestoneCount);
+        passedCount = params.passedMilestoneCount;
+        stateRevision += 1;
+        return {
+          ok: true as const,
+          result: {
+            taskId: params.taskId,
+            passedMilestoneCount: params.passedMilestoneCount,
+            stateRevision,
+          },
+        };
+      },
+    });
+
+    await act(async () => container.querySelector<HTMLButtonElement>(
+      '[aria-label="Set Task at delivery pipeline step 3"]',
+    )!.click());
+    expect(requested).toEqual([2]);
+    expect(container.querySelector(".td-progress")?.textContent)
+      .toBe("Dev PR to production · Step 3 of 3");
+
+    await act(async () => container.querySelector<HTMLButtonElement>(
+      '[aria-label="Set Task at delivery pipeline step 1"]',
+    )!.click());
+    expect(requested).toEqual([2, 0]);
+    expect(container.querySelector(".td-progress")?.textContent)
+      .toBe("Dev PR to production · Step 1 of 3");
+
+    await unmount();
+  });
+
+  it("says the daemon's own refusal instead of failing silently", async () => {
+    const { container, unmount } = await mount({
+      runRoutineNow: async () => { throw new Error("no Task is waiting at this pipeline step right now"); },
+    });
+
+    await act(async () => container.querySelector<HTMLButtonElement>(".td-check-now")!.click());
+
+    expect(container.querySelector(".ap-error")?.textContent)
+      .toBe("no Task is waiting at this pipeline step right now");
+
+    await unmount();
+  });
+
+  it("offers to build a pipeline when the Project has none", async () => {
+    let opened = 0;
+    const { container, unmount } = await mount({
+      getPlaybook: async () => ({ playbook: null, stateRevision: 12 }),
+      openPlaybook: () => { opened += 1; },
+    });
+
+    expect(container.querySelector(".td-spine")).toBeNull();
+    expect(container.querySelector(".td-empty")?.textContent)
+      .toContain("no delivery pipeline yet");
+    await act(async () => container.querySelector<HTMLButtonElement>(".td-open-playbook")!.click());
+    expect(opened).toBe(1);
+
+    await unmount();
+  });
+
+  it("explains why a closed Task has left the pipeline", async () => {
+    const { container, unmount } = await mount({
+      task: detailTask({ status: "closed" }),
+      getPlaybookRuntime: async () => runtime([
+        runtimeStep({ progress: [progress()] }),
+        runtimeStep({ milestoneId: "review-requested", routineId: "routine-review" }),
+        runtimeStep({ milestoneId: "deployed", routineId: "routine-deploy" }),
+      ]),
+    });
+
+    expect(container.querySelector(".td-note")?.textContent).toContain("closed");
+    expect(container.querySelector(".td-check-now")).toBeNull();
+    expect(container.querySelector(".td-progress")?.textContent)
+      .toBe("Dev PR to production · 1 of 3 cleared");
+
+    await unmount();
+  });
+});
+
+describe("the pipeline's destination", () => {
+  it("lights the destination only once every question is answered", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+    const doneRuntime = async () => runtime(
+      THREE_STEPS.map((entry) => runtimeStep({
+        milestoneId: entry.id,
+        routineId: entry.routineId,
+        progress: [progress()],
+      })),
+      ["task-1"],
+    );
+    await act(async () => root.render(createElement(TaskDetailPanel, {
+      task: {
+        id: "task-1", project_id: "project-1", title: "Ship it", brief: null, jira_url: null,
+        status: "open", archived_at_epoch_ms: null,
+        branch: { repository_root: "/repository", name: "task/ship" }, worktree: null,
+        rank: 1, created_at_epoch_ms: NOW, updated_at_epoch_ms: NOW,
+      },
+      refreshToken: 0, sessions: [], statusesById: new Map(), reviewReadySessionIds: new Set(),
+      gitHostProjection: undefined, branchCommitSummary: undefined, nowEpochMs: NOW,
+      close: () => {}, selectSession: () => {}, openChanges: () => {}, openExternal: async () => {},
+      openPlaybook: () => {},
+      getPlaybook: async () => ({ playbook: playbook(THREE_STEPS), stateRevision: 12 }),
+      getPlaybookRuntime: doneRuntime,
+      listRoutines: async () => ({ configurations: [], stateRevision: 12 }),
+      listRoutineRuntime: async () => ({
+        health: [], reports: [], reportsTruncated: false, stateRevision: 12,
+      }),
+      runRoutineNow: async () => ({ ok: true }),
+    } as never)));
+
+    const terminus = container.querySelector(".td-step.terminus")!;
+    expect(terminus.className).toBe("td-step terminus passed");
+    expect(terminus.querySelector(".td-terminus")?.textContent)
+      .toBe("Done — every stage completed");
+    expect(terminus.querySelector<HTMLButtonElement>(".td-set-position")?.disabled).toBe(true);
+    expect(container.querySelector(".td-check-now")).toBeNull();
+
+    await act(async () => root.unmount());
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+});
+
+describe("what makes the page read the daemon again", () => {
+  it("reloads on a playbook invalidation, not on every parent render", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    let reads = 0;
+
+    // Rebuilt on every render, exactly as the composition layer rebuilds them.
+    const render = async (refreshToken: number) => act(async () => root.render(createElement(TaskDetailPanel, {
+      task: {
+        id: "task-1", project_id: "project-1", title: "Ship it", brief: null, jira_url: null,
+        status: "open", archived_at_epoch_ms: null,
+        branch: { repository_root: "/repository", name: "task/ship" }, worktree: null,
+        rank: 1, created_at_epoch_ms: NOW, updated_at_epoch_ms: NOW,
+      },
+      refreshToken, sessions: [], statusesById: new Map(), reviewReadySessionIds: new Set(),
+      gitHostProjection: undefined, branchCommitSummary: undefined, nowEpochMs: NOW,
+      close: () => {}, selectSession: () => {}, openChanges: () => {}, openExternal: async () => {},
+      openPlaybook: () => {},
+      getPlaybook: async () => { reads += 1; return { playbook: playbook(THREE_STEPS), stateRevision: 12 }; },
+      getPlaybookRuntime: async () => runtime([]),
+      listRoutines: async () => ({ configurations: [], stateRevision: 12 }),
+      listRoutineRuntime: async () => ({
+        health: [], reports: [], reportsTruncated: false, stateRevision: 12,
+      }),
+      runRoutineNow: async () => ({ ok: true }),
+    } as never)));
+
+    await render(0);
+    expect(reads).toBe(1);
+    await render(0);
+    await render(0);
+    expect(reads).toBe(1);
+    await render(1);
+    expect(reads).toBe(2);
+
+    await act(async () => root.unmount());
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+});
