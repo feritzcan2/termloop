@@ -440,6 +440,36 @@ describe("production control adapter", () => {
 });
 
 describe("production terminal adapter", () => {
+  it("rejects a silent initial CONNECTING socket so foreground attach can retry", async () => {
+    vi.useFakeTimers();
+    try {
+      const sockets: FakeDataSocket[] = [];
+      const runtime = createProductionRuntime({
+        repository: fixedRepository(saved),
+        controlSocketFactory: () => { throw new Error("control not used"); },
+        terminalSocketFactory: () => {
+          const socket = new FakeDataSocket();
+          sockets.push(socket);
+          return socket;
+        },
+      });
+      const attaching = runtime.terminal.attach(
+        saved.id,
+        { ...fixtureSessions[0]!, id: sessionId, runtime_epoch: 17 },
+        () => {},
+      );
+      const rejected = expect(attaching).rejects.toThrow("Terminal connection failed.");
+      await waitFor(() => sockets.length === 1);
+
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      await rejected;
+      expect(sockets[0]!.closed).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("authenticates, attaches, maps replay/gap/live, and sends binary input", async () => {
     const repository = fixedRepository(saved);
     const sockets: FakeDataSocket[] = [];
@@ -572,6 +602,50 @@ describe("production terminal adapter", () => {
 
       expect(events.slice(-3)).toEqual(["state:connecting", "reset", "state:connected"]);
       expect(decodeFrame(new Uint8Array(sockets[1]!.sent[1] as ArrayBuffer)).kind).toBe(KIND_ATTACH);
+      await attachment.detach();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("replaces a silent CONNECTING socket during automatic reconnect", async () => {
+    vi.useFakeTimers();
+    try {
+      const sockets: FakeDataSocket[] = [];
+      const runtime = createProductionRuntime({
+        repository: fixedRepository(saved),
+        controlSocketFactory: () => { throw new Error("control not used"); },
+        terminalSocketFactory: () => {
+          const socket = new FakeDataSocket();
+          sockets.push(socket);
+          return socket;
+        },
+      });
+      const events: string[] = [];
+      const attaching = runtime.terminal.attach(
+        saved.id,
+        { ...fixtureSessions[0]!, id: sessionId, runtime_epoch: 17 },
+        (event) => events.push(event.type === "state" ? `${event.type}:${event.state}` : event.type),
+      );
+      await waitFor(() => sockets.length === 1);
+      sockets[0]!.open();
+      sockets[0]!.message("TLOK");
+      const attachment = await attaching;
+
+      sockets[0]!.drop();
+      await vi.advanceTimersByTimeAsync(250);
+      expect(sockets).toHaveLength(2);
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(sockets[1]!.closed).toBe(true);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(sockets).toHaveLength(3);
+      sockets[2]!.open();
+      sockets[2]!.message("TLOK");
+      await waitFor(() => events.at(-1) === "state:connected");
+
+      await expect(attachment.input(new TextEncoder().encode("foreground recovered"))).resolves.toBeUndefined();
+      expect(decodeFrame(new Uint8Array(sockets[2]!.sent.at(-1) as ArrayBuffer)).kind).toBe(KIND_INPUT);
       await attachment.detach();
     } finally {
       vi.useRealTimers();

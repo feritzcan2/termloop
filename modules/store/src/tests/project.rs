@@ -51,8 +51,10 @@ fn project_task_automation_is_revision_checked_and_deleted_with_the_project() {
             ProjectTaskAutomationConfiguration {
                 project_id: "project-automation".into(),
                 create_worktree: true,
+                worktree_prefix: "termloop".into(),
                 agent_id: Some("codex".into()),
                 model: Some("gpt-5.6-sol".into()),
+                permission: Some("bypassPermissions".into()),
                 reasoning: Some("high".into()),
                 kickoff_message: Some("Implement and verify this Task.".into()),
             },
@@ -65,8 +67,10 @@ fn project_task_automation_is_revision_checked_and_deleted_with_the_project() {
             ProjectTaskAutomationConfiguration {
                 project_id: "project-automation".into(),
                 create_worktree: false,
+                worktree_prefix: "termloop".into(),
                 agent_id: None,
                 model: None,
+                permission: None,
                 reasoning: None,
                 kickoff_message: None,
             },

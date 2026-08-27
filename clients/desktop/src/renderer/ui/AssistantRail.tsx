@@ -1127,6 +1127,7 @@ export function AssistantRail(props: Props) {
           </span>
         </button>
         <span className="ar-step-actions">
+          {status.tone === "attention" ? <span className="ar-flag attention" title={statusExplanation(status)}>{status.label}</span> : null}
           {step !== undefined ? <span className="ar-step-tools">
             <button type="button" className="ar-action" aria-label={`Move step ${step + 1} up`}
               title="Move step up" disabled={playbookBusy || step === 0}

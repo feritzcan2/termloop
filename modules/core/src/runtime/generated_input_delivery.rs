@@ -16,7 +16,7 @@ const OUTPUT_ACTIVITY_SETTLEMENT_QUIET: Duration = Duration::from_millis(160);
 const OUTPUT_ACTIVITY_SETTLEMENT_TIMEOUT: Duration = Duration::from_secs(3);
 const COMPOSER_RENDER_SETTLEMENT_QUIET: Duration = Duration::from_millis(1_500);
 const COMPOSER_RENDER_SETTLEMENT_TIMEOUT: Duration = Duration::from_secs(10);
-const CODEX_COMPOSER_READY_TIMEOUT: Duration = Duration::from_secs(20);
+const COMPOSER_READY_TIMEOUT: Duration = Duration::from_secs(20);
 const PROTOCOL_REPLY_SETTLEMENT_TIMEOUT: Duration = Duration::from_millis(125);
 const MAX_PROTOCOL_REPLY_SETTLEMENT_WAITS: usize = 8;
 const PROVIDER_ACK_TIMEOUT: Duration = Duration::from_secs(5);
@@ -339,7 +339,11 @@ impl GeneratedInputDeliveryRuntime {
                 return true;
             }
         };
-        let prepared_paste = if settlement == GeneratedInputSettlement::CodexComposerRender {
+        let prepared_paste = if matches!(
+            settlement,
+            GeneratedInputSettlement::ComposerRender
+                | GeneratedInputSettlement::CodexComposerRender
+        ) {
             None
         } else {
             let output_before_paste =
@@ -949,8 +953,11 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
         paste_started,
     } = plan;
     let mut diagnostics = GeneratedInputTransportDiagnostics::default();
-    if settlement == GeneratedInputSettlement::CodexComposerRender {
-        let readiness = wait_for_codex_composer_ready(input_readiness, &cancel_submit);
+    if matches!(
+        settlement,
+        GeneratedInputSettlement::ComposerRender | GeneratedInputSettlement::CodexComposerRender
+    ) {
+        let readiness = wait_for_composer_ready(input_readiness, settlement, &cancel_submit);
         if let Err(failure) = readiness {
             let outcome = if cancel_submit.load(Ordering::Acquire) {
                 GeneratedInputTransportOutcome::Blocked(
@@ -1170,14 +1177,15 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
     result
 }
 
-fn wait_for_codex_composer_ready(
+fn wait_for_composer_ready(
     mut readiness: InputReadinessSnapshot,
+    settlement: GeneratedInputSettlement,
     cancel_submit: &AtomicBool,
 ) -> Result<(), OutputSettlementFailure> {
-    let deadline = termloop_platform::MonotonicDeadline::after(CODEX_COMPOSER_READY_TIMEOUT)
+    let deadline = termloop_platform::MonotonicDeadline::after(COMPOSER_READY_TIMEOUT)
         .map_err(|_| OutputSettlementFailure::InvalidWindow)?;
     loop {
-        if codex_composer_is_ready(readiness.facts()) {
+        if composer_is_ready(settlement, readiness.facts()) {
             return Ok(());
         }
         if cancel_submit.load(Ordering::Acquire) {
@@ -1192,6 +1200,19 @@ fn wait_for_codex_composer_ready(
             Err(OutputSettlementFailure::TimedOut) if deadline.remaining().is_some() => {}
             Err(failure) => return Err(failure),
         }
+    }
+}
+
+fn composer_is_ready(
+    settlement: GeneratedInputSettlement,
+    facts: termloop_terminal::InputReadinessFacts,
+) -> bool {
+    match settlement {
+        GeneratedInputSettlement::CodexComposerRender => codex_composer_is_ready(facts),
+        GeneratedInputSettlement::ComposerRender => {
+            !termloop_platform::host_uses_bracketed_paste_framing() || facts.bracketed_paste_enabled
+        }
+        GeneratedInputSettlement::OutputActivity | GeneratedInputSettlement::ProviderQueue => true,
     }
 }
 
@@ -1363,6 +1384,24 @@ mod tests {
             }),
             !termloop_platform::host_uses_bracketed_paste_framing()
         );
+    }
+
+    #[test]
+    fn claude_readiness_waits_for_the_unix_paste_handshake() {
+        let not_ready = termloop_terminal::InputReadinessFacts::default();
+        let ready = termloop_terminal::InputReadinessFacts {
+            bracketed_paste_enabled: true,
+            ..not_ready
+        };
+
+        assert_eq!(
+            composer_is_ready(GeneratedInputSettlement::ComposerRender, not_ready),
+            !termloop_platform::host_uses_bracketed_paste_framing()
+        );
+        assert!(composer_is_ready(
+            GeneratedInputSettlement::ComposerRender,
+            ready
+        ));
     }
 
     #[test]

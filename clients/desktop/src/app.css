@@ -97,6 +97,8 @@ kbd { padding: 2px 5px; border: 1px solid rgba(255,255,255,.07); border-radius: 
 /* The Project checkout is a drag destination for an Agent leaving a Task
    worktree, so the trigger it names has to say when it is the active target. */
 .project-switcher.session-drop-target .project-trigger { border-color: rgba(124,92,255,.58); background: rgba(124,92,255,.13); }
+.project-trigger-row { display: grid; grid-template-columns: minmax(0,1fr); gap: 5px; }
+.project-trigger-row.with-refresh { grid-template-columns: minmax(0,1fr) 28px; }
 .project-trigger { position: relative; z-index: 1; display: grid; grid-template-columns: 21px minmax(0,1fr) 14px; align-items: center; gap: 7px; width: 100%; height: 32px; padding: 0 7px; border: 1px solid rgba(255,255,255,.09); border-radius: 6px; background: rgba(255,255,255,.05); color: var(--sidebar-text); text-align: left; }
 .project-trigger:hover:not(:disabled), .project-trigger[aria-expanded="true"] { border-color: rgba(255,255,255,.16); background: rgba(255,255,255,.08); }
 .project-trigger-copy, .project-menu-project-copy { display: grid; min-width: 0; gap: 2px; }
@@ -105,6 +107,12 @@ kbd { padding: 2px 5px; border: 1px solid rgba(255,255,255,.07); border-radius: 
 .project-trigger:has(.project-trigger-copy small) { height: 39px; }
 .project-trigger > svg { width: 13px; height: 13px; color: var(--sidebar-dimmer); transition: transform 110ms ease; }
 .project-trigger[aria-expanded="true"] > svg { transform: rotate(180deg); }
+.project-source-refresh { display: grid; place-items: center; width: 28px; height: 39px; padding: 0; border: 1px solid rgba(124,92,255,.3); border-radius: 6px; background: rgba(124,92,255,.1); color: var(--accent-strong); }
+.project-source-refresh:hover:not(:disabled) { border-color: rgba(124,92,255,.55); background: rgba(124,92,255,.2); color: #b9a9ff; }
+.project-source-refresh:focus-visible { outline: 1px solid var(--accent-strong); outline-offset: 1px; }
+.project-source-refresh:disabled { opacity: .6; }
+.project-source-refresh svg { width: 13px; height: 13px; }
+.project-source-refresh.refreshing svg { animation: loading-spin .7s linear infinite; }
 .project-avatar { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 4px; background: linear-gradient(145deg, #6f4de8, #9a6fd8); color: #fff; font: 700 9px/1 var(--font-mono); box-shadow: inset 0 1px rgba(255,255,255,.17); }
 .project-menu-backdrop { position: fixed; z-index: 39; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; background: transparent; cursor: default; }
 .project-menu { position: absolute; z-index: 40; top: calc(100% - 4px); right: 10px; left: 10px; padding: 5px; border: 1px solid #434749; border-radius: 9px; background: rgba(46,51,53,.985); box-shadow: var(--shadow-menu); backdrop-filter: blur(14px); }
@@ -2706,9 +2714,10 @@ button.history-row-main { cursor: pointer; }
 /* The choice block is used on a stage page and inside a dialog, so it carries
    its own field styling instead of inheriting `.dialog-body`. */
 .task-automation-choices > label[for] { display: block; margin: 3px 0 0 3px; color: #636d71; font: 750 9px/1 var(--font-ui); letter-spacing: .13em; text-transform: uppercase; }
-.task-automation-choices > select { width: 100%; height: 30px; padding: 0 9px; border: 1px solid var(--border); border-radius: 7px; outline: 0; background: #1e2224; color: var(--text); font-size: 10.5px; }
-.task-automation-choices > select:focus { border-color: rgba(124,92,255,.5); box-shadow: 0 0 0 3px var(--accent-wash); }
-.task-automation-launch-options { display: grid; grid-template-columns: minmax(0,1.5fr) minmax(110px,1fr); gap: 8px; }
+.task-automation-choices > select, .task-automation-choices > input { width: 100%; height: 30px; padding: 0 9px; border: 1px solid var(--border); border-radius: 7px; outline: 0; background: #1e2224; color: var(--text); font-size: 10.5px; }
+.task-automation-choices > select:focus, .task-automation-choices > input:focus { border-color: rgba(124,92,255,.5); box-shadow: 0 0 0 3px var(--accent-wash); }
+.task-automation-choices > .field-help { margin: -2px 3px 2px; }
+.task-automation-launch-options { display: grid; grid-template-columns: minmax(0,1.4fr) minmax(135px,1fr) minmax(105px,.8fr); gap: 8px; }
 .task-automation-launch-options > label { display: grid; gap: 4px; margin: 0; }
 .task-automation-launch-options > label > span { color: var(--text-muted); font: 750 9px/1 var(--font-ui); letter-spacing: .1em; text-transform: uppercase; }
 .task-automation-launch-options select { width: 100%; height: 30px; padding: 0 9px; border: 1px solid var(--border); border-radius: 7px; outline: 0; background: #1e2224; color: var(--text); font-size: 10.5px; }

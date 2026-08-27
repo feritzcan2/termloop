@@ -1,4 +1,4 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -66,6 +66,7 @@ type ImageSource = "library" | "camera";
 export default function SessionRoute() {
   const { sessionId, connectionId } = useLocalSearchParams<{ sessionId: string; connectionId?: string }>();
   const router = useRouter();
+  const focused = useIsFocused();
   const connections = useConnections();
   const store = useOverview();
   const [draft, setDraft] = useState("");
@@ -92,7 +93,13 @@ export default function SessionRoute() {
   );
   const current = summaries.find((summary) => summary.project.id === session?.project_id);
 
-  const terminal = useTerminalSession(connections.selectedId, session);
+  /// Expo Router retains earlier Session routes in its native stack. Only the
+  /// visible route owns a terminal attachment; returning to a retained Agent then
+  /// creates a clean attachment instead of reviving that screen's stale socket.
+  const terminal = useTerminalSession(
+    focused ? connections.selectedId : undefined,
+    focused ? session : undefined,
+  );
   const stream = streamPresentation[terminal.buffer.stream];
   useEffect(() => {
     if (connectionId !== undefined && connections.selectedId !== connectionId) {

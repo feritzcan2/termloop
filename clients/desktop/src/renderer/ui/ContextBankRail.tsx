@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type { ContextBankCatalogItemDto, ContextBankCatalogResult } from "@termloop/contract/current";
 import { Icon, type IconName } from "./Icon.js";
+import { ContextBankConflictResolver } from "./ContextBankConflictResolver.js";
 import { buildContextBankTree, type ContextBankTreeNode } from "./context-bank-tree.js";
 import { useRailGroups } from "./rail-groups.js";
 
@@ -15,18 +16,20 @@ function fileIcon(file: ContextBankCatalogItemDto): IconName {
   return "fileText";
 }
 
-export function ContextBankRail({ projectOpen, load, refreshToken = 0, selectedFileId, openFile }: {
+export function ContextBankRail({ projectOpen, load, refreshToken = 0, selectedFileId, openFile, resolveConflict }: {
   projectOpen: boolean;
   load(): Promise<ContextBankCatalogResult>;
   refreshToken?: number | undefined;
   selectedFileId: string | undefined;
   openFile(fileId: string): void;
+  resolveConflict(conflictId: string, sourceFileId: string): Promise<ContextBankCatalogResult>;
 }) {
   const [catalog, setCatalog] = useState<ContextBankCatalogResult>();
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const [reloadToken, setReloadToken] = useState(0);
+  const [activeConflictId, setActiveConflictId] = useState<string>();
   const groups = useRailGroups();
 
   useEffect(() => {
@@ -37,6 +40,7 @@ export function ContextBankRail({ projectOpen, load, refreshToken = 0, selectedF
       return;
     }
     let active = true;
+    setActiveConflictId(undefined);
     setCatalog(undefined);
     setLoading(true);
     setError(undefined);
@@ -57,8 +61,12 @@ export function ContextBankRail({ projectOpen, load, refreshToken = 0, selectedF
       file.kind,
       file.symlinkTargetPath ?? "",
     ].join("\n").toLocaleLowerCase("en-US").includes(normalizedQuery));
-    return buildContextBankTree(files, catalog?.projectName ?? "Project");
-  }, [catalog?.files, catalog?.projectName, normalizedQuery]);
+    const visibleFileIds = new Set(files.map((file) => file.id));
+    const conflicts = (catalog?.siblingConflicts ?? []).filter(
+      (conflict) => conflict.fileIds.some((fileId) => visibleFileIds.has(fileId)),
+    );
+    return buildContextBankTree(files, conflicts, catalog?.projectName ?? "Project");
+  }, [catalog?.files, catalog?.projectName, catalog?.siblingConflicts, normalizedQuery]);
 
   const renderNode = (node: ContextBankTreeNode): ReactNode => {
     if (node.kind === "folder") {
@@ -77,6 +85,31 @@ export function ContextBankRail({ projectOpen, load, refreshToken = 0, selectedF
           <span>{node.label}</span>
         </button>
         {collapsed ? null : node.children.map(renderNode)}
+      </div>;
+    }
+
+    if (node.kind === "conflict") {
+      const files = node.conflict.fileIds
+        .map((fileId) => catalog?.files.find((file) => file.id === fileId))
+        .filter((file): file is ContextBankCatalogItemDto => file !== undefined);
+      const active = activeConflictId === node.id;
+      return <div className="context-tree-conflict" key={node.id}>
+        <div className="context-tree-conflict-row" style={{ paddingInlineStart: 21 + node.depth * 12 }}>
+          <Icon name="sparkles" />
+          <span>Sibling instruction files differ.</span>
+          <button type="button" disabled={files.length < 2} onClick={() => setActiveConflictId(active ? undefined : node.id)}>{active ? "Hide" : "Fix…"}</button>
+        </div>
+        {active ? <ContextBankConflictResolver
+          key={node.id}
+          conflict={node.conflict}
+          files={files}
+          resolve={resolveConflict}
+          resolved={(nextCatalog) => {
+            setCatalog(nextCatalog);
+            setActiveConflictId(undefined);
+          }}
+          close={() => setActiveConflictId(undefined)}
+        /> : null}
       </div>;
     }
 

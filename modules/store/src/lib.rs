@@ -50,8 +50,10 @@ use termloop_domain::{
 // moving between existing versions does not append synthetic history. Version
 // 42 adds Jira Task Sources. Version 43 moves provider-neutral Task automation
 // from each source to one Project sidecar. Version 44 adds the source-owned
-// active-Task WIP limit for automatic import.
-const CURRENT_SCHEMA_VERSION: u32 = 45;
+// active-Task WIP limit for automatic import. Version 45 adds explicit Task
+// automation launch options. Version 46 adds the permission selection.
+// Version 47 adds the managed Task branch/worktree prefix.
+const CURRENT_SCHEMA_VERSION: u32 = 47;
 
 pub struct CoreWriteAuthority {
     _private: (),

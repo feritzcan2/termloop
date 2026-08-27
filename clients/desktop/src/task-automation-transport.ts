@@ -13,8 +13,10 @@ export function interactiveTaskCreateParams(
     title,
     brief,
     worktreeIntent: "none",
+    worktreePrefix: null,
     agentId: null,
     model: null,
+    permission: null,
     reasoning: null,
     kickoffMessage: null,
   };

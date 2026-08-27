@@ -67,45 +67,48 @@ static CONTRACT_PATTERN_15: std::sync::LazyLock<regex::Regex> = std::sync::LazyL
     regex::Regex::new("^[A-Za-z_][A-Za-z0-9_]*$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_16: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[a-z](?:[a-z0-9]|-[a-z0-9])*$").expect("generated contract pattern")
+    regex::Regex::new("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_17: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^[a-z](?:[a-z0-9]|-[a-z0-9])*$").expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://(?:github\\.com|dev\\.azure\\.com)/")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z](?:[A-Z0-9]{0,63})-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_20: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_20: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_22: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_22: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_23: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_23: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_24: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_24: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_25: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_25: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_26: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_26: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_27: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https?://").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_27: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_28: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^refs/heads/").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_28: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_29: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^sha256:[0-9a-f]{64}$").expect("generated contract pattern")
 });
 
@@ -133,41 +136,42 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
         "^[A-Za-z0-9_-]{86}$" => CONTRACT_PATTERN_13.is_match(text),
         "^[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_14.is_match(text),
         "^[A-Za-z_][A-Za-z0-9_]*$" => CONTRACT_PATTERN_15.is_match(text),
-        "^[a-z](?:[a-z0-9]|-[a-z0-9])*$" => CONTRACT_PATTERN_16.is_match(text),
-        "^https://(?:github\\.com|dev\\.azure\\.com)/" => CONTRACT_PATTERN_17.is_match(text),
+        "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" => CONTRACT_PATTERN_16.is_match(text),
+        "^[a-z](?:[a-z0-9]|-[a-z0-9])*$" => CONTRACT_PATTERN_17.is_match(text),
+        "^https://(?:github\\.com|dev\\.azure\\.com)/" => CONTRACT_PATTERN_18.is_match(text),
         "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z](?:[A-Z0-9]{0,63})-[1-9][0-9]{0,19}$" => {
-            CONTRACT_PATTERN_18.is_match(text)
-        }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_19.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_20.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_21.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$" => {
             CONTRACT_PATTERN_22.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$" => {
             CONTRACT_PATTERN_23.is_match(text)
         }
-        "^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_24.is_match(text)
         }
-        "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$" => {
+        "^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$" => {
             CONTRACT_PATTERN_25.is_match(text)
         }
-        "^https?://" => CONTRACT_PATTERN_26.is_match(text),
-        "^refs/heads/" => CONTRACT_PATTERN_27.is_match(text),
-        "^sha256:[0-9a-f]{64}$" => CONTRACT_PATTERN_28.is_match(text),
+        "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$" => {
+            CONTRACT_PATTERN_26.is_match(text)
+        }
+        "^https?://" => CONTRACT_PATTERN_27.is_match(text),
+        "^refs/heads/" => CONTRACT_PATTERN_28.is_match(text),
+        "^sha256:[0-9a-f]{64}$" => CONTRACT_PATTERN_29.is_match(text),
         _ => false,
     }
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:7297951ad948618fee9b2e195ae1ac499a2e92a4b5d040efba38ff027894d069";
+    "sha256:7b759c83a53873d4fe090f65427a7f640b518f38d410ceba61904e2218928ebf";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -198,6 +202,7 @@ pub const METHODS: &[&str] = &[
     "contextBank.catalogGet",
     "contextBank.fileGet",
     "contextBank.fileSave",
+    "contextBank.siblingConflictResolve",
     "project.create",
     "project.list",
     "project.taskAutomationGet",
@@ -969,10 +974,14 @@ pub struct ProjectTaskAutomationConfigurationDto {
     pub project_id: String,
     #[serde(rename = "createWorktree")]
     pub create_worktree: bool,
+    #[serde(rename = "worktreePrefix")]
+    pub worktree_prefix: String,
     #[serde(rename = "agentId", deserialize_with = "deserialize_required_nullable")]
     pub agent_id: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub model: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub permission: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub reasoning: Option<String>,
     #[serde(
@@ -997,10 +1006,14 @@ pub struct ProjectTaskAutomationSetParams {
     pub project_id: String,
     #[serde(rename = "createWorktree")]
     pub create_worktree: bool,
+    #[serde(rename = "worktreePrefix")]
+    pub worktree_prefix: String,
     #[serde(rename = "agentId", deserialize_with = "deserialize_required_nullable")]
     pub agent_id: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub model: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub permission: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub reasoning: Option<String>,
     #[serde(
@@ -2602,8 +2615,20 @@ pub struct ContextBankCatalogGetParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct ContextBankSiblingConflictDto {
+    pub id: String,
+    #[serde(rename = "directoryPath")]
+    pub directory_path: String,
+    #[serde(rename = "fileIds")]
+    pub file_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct ContextBankCatalogResult {
     pub files: Vec<ContextBankCatalogItemDto>,
+    #[serde(rename = "siblingConflicts")]
+    pub sibling_conflicts: Vec<ContextBankSiblingConflictDto>,
     pub warnings: Vec<String>,
     #[serde(rename = "projectName")]
     pub project_name: String,
@@ -2629,6 +2654,17 @@ pub struct ContextBankFileSaveParams {
     #[serde(rename = "expectedContentSha256")]
     pub expected_content_sha256: String,
     pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ContextBankSiblingConflictResolveParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "conflictId")]
+    pub conflict_id: String,
+    #[serde(rename = "sourceFileId")]
+    pub source_file_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2675,10 +2711,17 @@ pub struct TaskCreateParams {
     pub brief: Option<String>,
     #[serde(rename = "worktreeIntent")]
     pub worktree_intent: TaskCreateWorktreeIntent,
+    #[serde(
+        rename = "worktreePrefix",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub worktree_prefix: Option<String>,
     #[serde(rename = "agentId", deserialize_with = "deserialize_required_nullable")]
     pub agent_id: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub model: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub permission: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub reasoning: Option<String>,
     #[serde(
@@ -6068,10 +6111,17 @@ pub struct TaskSourceCandidateImportParams {
     pub expected_revision: u64,
     #[serde(rename = "worktreeIntent")]
     pub worktree_intent: TaskCreateWorktreeIntent,
+    #[serde(
+        rename = "worktreePrefix",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub worktree_prefix: Option<String>,
     #[serde(rename = "agentId", deserialize_with = "deserialize_required_nullable")]
     pub agent_id: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub model: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub permission: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub reasoning: Option<String>,
     #[serde(
@@ -7368,6 +7418,7 @@ pub type SkillDefinitionSaveResult = SkillDefinitionDto;
 pub type ContextBankCatalogGetResult = ContextBankCatalogResult;
 pub type ContextBankFileGetResult = ContextBankFileDto;
 pub type ContextBankFileSaveResult = ContextBankFileDto;
+pub type ContextBankSiblingConflictResolveResult = ContextBankCatalogResult;
 pub type ProjectCreateResult = ProjectDto;
 pub type ProjectListParams = EmptyParams;
 pub type ProjectListResult = Vec<ProjectDto>;
@@ -7529,6 +7580,7 @@ fn validate_method(value: &Value) -> bool {
             "contextBank.catalogGet",
             "contextBank.fileGet",
             "contextBank.fileSave",
+            "contextBank.siblingConflictResolve",
             "project.create",
             "project.list",
             "project.taskAutomationGet",
@@ -8888,6 +8940,13 @@ fn validate_project_task_automation_configuration_dto(value: &Value) -> bool {
             && object
                 .get("createWorktree")
                 .is_some_and(|field| field.is_boolean())
+            && object.get("worktreePrefix").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1
+                        && text.chars().count() <= 32
+                        && contract_pattern_matches("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", text)
+                })
+            })
             && object.get("agentId").is_some_and(|field| {
                 (field
                     .as_str()
@@ -8899,6 +8958,11 @@ fn validate_project_task_automation_configuration_dto(value: &Value) -> bool {
                     .as_str()
                     .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
                     || field.is_null())
+            })
+            && object.get("permission").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text)
+                }) || field.is_null())
             })
             && object.get("reasoning").is_some_and(|field| {
                 (field.as_str().is_some_and(|text| {
@@ -8915,8 +8979,10 @@ fn validate_project_task_automation_configuration_dto(value: &Value) -> bool {
                 [
                     "projectId",
                     "createWorktree",
+                    "worktreePrefix",
                     "agentId",
                     "model",
+                    "permission",
                     "reasoning",
                     "kickoffMessage",
                 ]
@@ -8934,6 +9000,9 @@ fn validate_project_task_automation_configuration_dto(value: &Value) -> bool {
                 .get("model")
                 .is_none_or(|field| field.as_str().is_some_and(|text| true))
             && object
+                .get("permission")
+                .is_none_or(|field| field.as_str().is_some_and(|text| true))
+            && object
                 .get("reasoning")
                 .is_none_or(|field| field.as_str().is_some_and(|text| true))
     }))) && ((value.as_object().is_some_and(|object| {
@@ -8944,6 +9013,9 @@ fn validate_project_task_automation_configuration_dto(value: &Value) -> bool {
         object
             .get("model")
             .is_none_or(|field| field == &serde_json::json!(null))
+            && object
+                .get("permission")
+                .is_none_or(|field| field == &serde_json::json!(null))
             && object
                 .get("reasoning")
                 .is_none_or(|field| field == &serde_json::json!(null))
@@ -8996,6 +9068,13 @@ fn validate_project_task_automation_set_params(value: &Value) -> bool {
             && object
                 .get("createWorktree")
                 .is_some_and(|field| field.is_boolean())
+            && object.get("worktreePrefix").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1
+                        && text.chars().count() <= 32
+                        && contract_pattern_matches("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", text)
+                })
+            })
             && object.get("agentId").is_some_and(|field| {
                 (field
                     .as_str()
@@ -9007,6 +9086,11 @@ fn validate_project_task_automation_set_params(value: &Value) -> bool {
                     .as_str()
                     .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
                     || field.is_null())
+            })
+            && object.get("permission").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text)
+                }) || field.is_null())
             })
             && object.get("reasoning").is_some_and(|field| {
                 (field.as_str().is_some_and(|text| {
@@ -9029,8 +9113,10 @@ fn validate_project_task_automation_set_params(value: &Value) -> bool {
                 [
                     "projectId",
                     "createWorktree",
+                    "worktreePrefix",
                     "agentId",
                     "model",
+                    "permission",
                     "reasoning",
                     "kickoffMessage",
                     "expectedRevision",
@@ -9049,6 +9135,9 @@ fn validate_project_task_automation_set_params(value: &Value) -> bool {
                 .get("model")
                 .is_none_or(|field| field.as_str().is_some_and(|text| true))
             && object
+                .get("permission")
+                .is_none_or(|field| field.as_str().is_some_and(|text| true))
+            && object
                 .get("reasoning")
                 .is_none_or(|field| field.as_str().is_some_and(|text| true))
     }))) && ((value.as_object().is_some_and(|object| {
@@ -9059,6 +9148,9 @@ fn validate_project_task_automation_set_params(value: &Value) -> bool {
         object
             .get("model")
             .is_none_or(|field| field == &serde_json::json!(null))
+            && object
+                .get("permission")
+                .is_none_or(|field| field == &serde_json::json!(null))
             && object
                 .get("reasoning")
                 .is_none_or(|field| field == &serde_json::json!(null))
@@ -12788,6 +12880,41 @@ fn validate_context_bank_catalog_get_params(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_context_bank_sibling_conflict_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("id").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
+        }) && object.get("directoryPath").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 4096)
+        }) && object.get("fileIds").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() >= 2
+                    && items.len() <= 3
+                    && json_array_unique(items)
+                    && items.iter().all(|item| {
+                        item.as_str()
+                            .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
+                    })
+            })
+        }) && object
+            .keys()
+            .all(|key| ["id", "directoryPath", "fileIds"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_context_bank_catalog_result(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object.get("files").is_some_and(|field| {
@@ -12796,6 +12923,13 @@ fn validate_context_bank_catalog_result(value: &Value) -> bool {
                     && items
                         .iter()
                         .all(|item| validate_context_bank_catalog_item_dto(item))
+            })
+        }) && object.get("siblingConflicts").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 250
+                    && items
+                        .iter()
+                        .all(|item| validate_context_bank_sibling_conflict_dto(item))
             })
         }) && object.get("warnings").is_some_and(|field| {
             field.as_array().is_some_and(|items| {
@@ -12814,7 +12948,14 @@ fn validate_context_bank_catalog_result(value: &Value) -> bool {
             .get("truncated")
             .is_some_and(|field| field.is_boolean())
             && object.keys().all(|key| {
-                ["files", "warnings", "projectName", "truncated"].contains(&key.as_str())
+                [
+                    "files",
+                    "siblingConflicts",
+                    "warnings",
+                    "projectName",
+                    "truncated",
+                ]
+                .contains(&key.as_str())
             })
     })
 }
@@ -12874,6 +13015,35 @@ fn validate_context_bank_file_save_params(value: &Value) -> bool {
         }) && object.keys().all(|key| {
             ["projectId", "fileId", "expectedContentSha256", "content"].contains(&key.as_str())
         })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_context_bank_sibling_conflict_resolve_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128)
+        }) && object.get("conflictId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
+        }) && object.get("sourceFileId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
+        }) && object
+            .keys()
+            .all(|key| ["projectId", "conflictId", "sourceFileId"].contains(&key.as_str()))
     })
 }
 
@@ -13010,6 +13180,13 @@ fn validate_task_create_params(value: &Value) -> bool {
             && object
                 .get("worktreeIntent")
                 .is_some_and(|field| validate_task_create_worktree_intent(field))
+            && object.get("worktreePrefix").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1
+                        && text.chars().count() <= 32
+                        && contract_pattern_matches("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", text)
+                }) || field.is_null())
+            })
             && object.get("agentId").is_some_and(|field| {
                 (field
                     .as_str()
@@ -13021,6 +13198,11 @@ fn validate_task_create_params(value: &Value) -> bool {
                     .as_str()
                     .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
                     || field.is_null())
+            })
+            && object.get("permission").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text)
+                }) || field.is_null())
             })
             && object.get("reasoning").is_some_and(|field| {
                 (field.as_str().is_some_and(|text| {
@@ -13039,8 +13221,10 @@ fn validate_task_create_params(value: &Value) -> bool {
                     "title",
                     "brief",
                     "worktreeIntent",
+                    "worktreePrefix",
                     "agentId",
                     "model",
+                    "permission",
                     "reasoning",
                     "kickoffMessage",
                 ]
@@ -13048,33 +13232,60 @@ fn validate_task_create_params(value: &Value) -> bool {
             })
     }) && ((!(value.as_object().is_some_and(|object| {
         object
-            .get("agentId")
-            .is_some_and(|field| field.as_str().is_some_and(|text| true))
-    })) || (value.as_object().is_some_and(|object| {
-        object
             .get("worktreeIntent")
-            .is_none_or(|field| field == &serde_json::json!("provision"))
-            && object
-                .get("model")
-                .is_none_or(|field| field.as_str().is_some_and(|text| true))
-            && object
-                .get("reasoning")
-                .is_none_or(|field| field.as_str().is_some_and(|text| true))
+            .is_some_and(|field| field == &serde_json::json!("provision"))
+    })) || (value.as_object().is_some_and(|object| {
+        object.get("worktreePrefix").is_none_or(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 32
+                    && contract_pattern_matches("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", text)
+            })
+        })
     }))) && ((value.as_object().is_some_and(|object| {
         object
-            .get("agentId")
-            .is_some_and(|field| field.as_str().is_some_and(|text| true))
+            .get("worktreeIntent")
+            .is_some_and(|field| field == &serde_json::json!("provision"))
     })) || (value.as_object().is_some_and(|object| {
         object
-            .get("model")
+            .get("worktreePrefix")
             .is_none_or(|field| field == &serde_json::json!(null))
-            && object
-                .get("reasoning")
+    }))))
+        && ((!(value.as_object().is_some_and(|object| {
+            object
+                .get("agentId")
+                .is_some_and(|field| field.as_str().is_some_and(|text| true))
+        })) || (value.as_object().is_some_and(|object| {
+            object
+                .get("worktreeIntent")
+                .is_none_or(|field| field == &serde_json::json!("provision"))
+                && object
+                    .get("model")
+                    .is_none_or(|field| field.as_str().is_some_and(|text| true))
+                && object
+                    .get("permission")
+                    .is_none_or(|field| field.as_str().is_some_and(|text| true))
+                && object
+                    .get("reasoning")
+                    .is_none_or(|field| field.as_str().is_some_and(|text| true))
+        }))) && ((value.as_object().is_some_and(|object| {
+            object
+                .get("agentId")
+                .is_some_and(|field| field.as_str().is_some_and(|text| true))
+        })) || (value.as_object().is_some_and(|object| {
+            object
+                .get("model")
                 .is_none_or(|field| field == &serde_json::json!(null))
-            && object
-                .get("kickoffMessage")
-                .is_none_or(|field| field == &serde_json::json!(null))
-    })))))
+                && object
+                    .get("permission")
+                    .is_none_or(|field| field == &serde_json::json!(null))
+                && object
+                    .get("reasoning")
+                    .is_none_or(|field| field == &serde_json::json!(null))
+                && object
+                    .get("kickoffMessage")
+                    .is_none_or(|field| field == &serde_json::json!(null))
+        })))))
 }
 
 #[allow(
@@ -22539,6 +22750,13 @@ fn validate_task_source_candidate_import_params(value: &Value) -> bool {
             && object
                 .get("worktreeIntent")
                 .is_some_and(|field| validate_task_create_worktree_intent(field))
+            && object.get("worktreePrefix").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1
+                        && text.chars().count() <= 32
+                        && contract_pattern_matches("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", text)
+                }) || field.is_null())
+            })
             && object.get("agentId").is_some_and(|field| {
                 (field
                     .as_str()
@@ -22550,6 +22768,11 @@ fn validate_task_source_candidate_import_params(value: &Value) -> bool {
                     .as_str()
                     .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
                     || field.is_null())
+            })
+            && object.get("permission").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text)
+                }) || field.is_null())
             })
             && object.get("reasoning").is_some_and(|field| {
                 (field.as_str().is_some_and(|text| {
@@ -22570,8 +22793,10 @@ fn validate_task_source_candidate_import_params(value: &Value) -> bool {
                     "expectedObservationSequence",
                     "expectedRevision",
                     "worktreeIntent",
+                    "worktreePrefix",
                     "agentId",
                     "model",
+                    "permission",
                     "reasoning",
                     "kickoffMessage",
                 ]
@@ -22579,33 +22804,60 @@ fn validate_task_source_candidate_import_params(value: &Value) -> bool {
             })
     }) && ((!(value.as_object().is_some_and(|object| {
         object
-            .get("agentId")
-            .is_some_and(|field| field.as_str().is_some_and(|text| true))
-    })) || (value.as_object().is_some_and(|object| {
-        object
             .get("worktreeIntent")
-            .is_none_or(|field| field == &serde_json::json!("provision"))
-            && object
-                .get("model")
-                .is_none_or(|field| field.as_str().is_some_and(|text| true))
-            && object
-                .get("reasoning")
-                .is_none_or(|field| field.as_str().is_some_and(|text| true))
+            .is_some_and(|field| field == &serde_json::json!("provision"))
+    })) || (value.as_object().is_some_and(|object| {
+        object.get("worktreePrefix").is_none_or(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 32
+                    && contract_pattern_matches("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", text)
+            })
+        })
     }))) && ((value.as_object().is_some_and(|object| {
         object
-            .get("agentId")
-            .is_some_and(|field| field.as_str().is_some_and(|text| true))
+            .get("worktreeIntent")
+            .is_some_and(|field| field == &serde_json::json!("provision"))
     })) || (value.as_object().is_some_and(|object| {
         object
-            .get("model")
+            .get("worktreePrefix")
             .is_none_or(|field| field == &serde_json::json!(null))
-            && object
-                .get("reasoning")
+    }))))
+        && ((!(value.as_object().is_some_and(|object| {
+            object
+                .get("agentId")
+                .is_some_and(|field| field.as_str().is_some_and(|text| true))
+        })) || (value.as_object().is_some_and(|object| {
+            object
+                .get("worktreeIntent")
+                .is_none_or(|field| field == &serde_json::json!("provision"))
+                && object
+                    .get("model")
+                    .is_none_or(|field| field.as_str().is_some_and(|text| true))
+                && object
+                    .get("permission")
+                    .is_none_or(|field| field.as_str().is_some_and(|text| true))
+                && object
+                    .get("reasoning")
+                    .is_none_or(|field| field.as_str().is_some_and(|text| true))
+        }))) && ((value.as_object().is_some_and(|object| {
+            object
+                .get("agentId")
+                .is_some_and(|field| field.as_str().is_some_and(|text| true))
+        })) || (value.as_object().is_some_and(|object| {
+            object
+                .get("model")
                 .is_none_or(|field| field == &serde_json::json!(null))
-            && object
-                .get("kickoffMessage")
-                .is_none_or(|field| field == &serde_json::json!(null))
-    })))))
+                && object
+                    .get("permission")
+                    .is_none_or(|field| field == &serde_json::json!(null))
+                && object
+                    .get("reasoning")
+                    .is_none_or(|field| field == &serde_json::json!(null))
+                && object
+                    .get("kickoffMessage")
+                    .is_none_or(|field| field == &serde_json::json!(null))
+        })))))
 }
 
 #[allow(
@@ -26405,6 +26657,11 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<ContextBankFileSaveParams>(params.clone()).is_ok()
                 && validate_context_bank_file_save_params(params)
         }
+        "contextBank.siblingConflictResolve" => {
+            serde_json::from_value::<ContextBankSiblingConflictResolveParams>(params.clone())
+                .is_ok()
+                && validate_context_bank_sibling_conflict_resolve_params(params)
+        }
         "project.create" => {
             serde_json::from_value::<ProjectCreateParams>(params.clone()).is_ok()
                 && validate_project_create_params(params)
@@ -27085,6 +27342,11 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "contextBank.fileSave" => {
             serde_json::from_value::<ContextBankFileSaveResult>(result.clone()).is_ok()
                 && validate_context_bank_file_dto(result)
+        }
+        "contextBank.siblingConflictResolve" => {
+            serde_json::from_value::<ContextBankSiblingConflictResolveResult>(result.clone())
+                .is_ok()
+                && validate_context_bank_catalog_result(result)
         }
         "project.create" => {
             serde_json::from_value::<ProjectCreateResult>(result.clone()).is_ok()

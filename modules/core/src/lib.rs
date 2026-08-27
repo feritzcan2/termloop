@@ -28,7 +28,9 @@ pub use companion_integrations::steward::{
 pub use configuration_version::{
     ConfigurationApplicationEffects, ConfigurationApplicationPlan, target_kind_wire,
 };
-pub use context_bank::{ContextBankCatalogPlan, ContextBankFilePlan};
+pub use context_bank::{
+    ContextBankCatalogPlan, ContextBankFilePlan, ContextBankSiblingConflictPlan,
+};
 pub use error::{
     AgentForkUnavailableReason, CoreError, ProjectDeleteBlocker,
     ProviderHistoryRepairUnavailableReason, TaskAgentStartStage, TaskAgentStartSuggestedAction,

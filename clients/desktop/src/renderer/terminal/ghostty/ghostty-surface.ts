@@ -41,16 +41,21 @@ export class GhosttySurface implements TerminalSurface {
     private readonly bridge: GhosttyBridge,
   ) {}
 
-  mount(container: HTMLElement, _preferWebgl: boolean): void {
+  async mount(container: HTMLElement, _preferWebgl: boolean): Promise<void> {
     if (this.#disposed) return;
     this.#container = container;
     this.#visible = true;
     this.#installGeometryTracking();
-    void this.#ensureCreated().then((surfaceId) => {
-      if (!surfaceId) return;
-      void this.bridge.setVisible(surfaceId, this.#visible);
-      this.#scheduleFrame();
-    });
+    const surfaceId = await this.#ensureCreated();
+    if (!surfaceId || container !== this.#container) return;
+    // Keep the native view hidden until one post-creation frame sync has
+    // measured the fully laid-out pane. TerminalPool awaits this mount before
+    // opening attachment replay, so the first provider repaint and replay use
+    // the same PTY grid instead of relying on a later manual window resize.
+    await this.#syncFrame();
+    if (container !== this.#container) return;
+    await this.bridge.setVisible(surfaceId, this.#visible).catch(() => {});
+    this.#scheduleFrame();
   }
 
   unmount(): void {

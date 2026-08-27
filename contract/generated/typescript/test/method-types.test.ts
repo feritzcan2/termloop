@@ -41,8 +41,10 @@ const taskAutomation: Promise<ProjectTaskAutomationResult> = client.call("projec
 const updatedTaskAutomation: Promise<ProjectTaskAutomationResult> = client.call("project.taskAutomationSet", {
   projectId: "project-1",
   createWorktree: true,
+  worktreePrefix: "termloop",
   agentId: "codex",
   model: "gpt-5.6-sol",
+  permission: "bypassPermissions",
   reasoning: "high",
   kickoffMessage: "Implement and verify.",
   expectedRevision: 1,
@@ -60,8 +62,10 @@ const createdTask: Promise<TaskDto> = client.call("task.create", {
   title: "Build API",
   brief: null,
   worktreeIntent: "inherit",
+  worktreePrefix: null,
   agentId: null,
   model: null,
+  permission: null,
   reasoning: null,
   kickoffMessage: null,
 });
@@ -127,8 +131,10 @@ client.call("task.create", {
   projectId: "project-1",
   title: "Build API",
   worktreeIntent: "provision",
+  worktreePrefix: "termloop",
   agentId: null,
   model: null,
+  permission: null,
   reasoning: null,
   kickoffMessage: null,
 });

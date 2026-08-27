@@ -8,6 +8,7 @@ import {
   agentLaunchDefaults,
   agentChoiceOptions,
   DEFAULT_TASK_KICKOFF_MESSAGE,
+  permissionLabel,
   type ProjectTaskAutomationDraft,
 } from "../project-task-automation.js";
 
@@ -35,6 +36,7 @@ export function WorktreeAgentChoice({ idPrefix, value, busy, agentCapabilities, 
     ? undefined
     : agentCapabilities.find((capability) => capability.agent_id === value.agentId);
   const modelOptions = selectedCapability?.models ?? (value.model ? [value.model] : []);
+  const permissionOptions = selectedCapability?.permissions ?? (value.permission ? [value.permission] : []);
   const reasoningOptions = selectedCapability?.reasoning ?? (value.reasoning ? [value.reasoning] : []);
   return <div className="task-automation-choices">
     <label className="checkbox-row">
@@ -45,7 +47,7 @@ export function WorktreeAgentChoice({ idPrefix, value, busy, agentCapabilities, 
         disabled={busy || startAgent}
         onChange={(event) => change(event.target.checked
           ? { ...value, createWorktree: true }
-          : { createWorktree: false, agentId: null, model: null, reasoning: null, kickoffMessage: null })}
+          : { createWorktree: false, worktreePrefix: value.worktreePrefix, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null })}
       />
       <span><strong>Create worktree</strong><small>{worktreeHint}</small></span>
     </label>
@@ -58,12 +60,24 @@ export function WorktreeAgentChoice({ idPrefix, value, busy, agentCapabilities, 
         onChange={(event) => {
           const agentId = options.find((option) => option.available)?.agentId ?? null;
           change(event.target.checked && agentId
-            ? { createWorktree: true, agentId, ...agentLaunchDefaults(agentCapabilities, agentId), kickoffMessage: null }
-            : { ...value, agentId: null, model: null, reasoning: null, kickoffMessage: null });
+            ? { ...value, createWorktree: true, agentId, ...agentLaunchDefaults(agentCapabilities, agentId), kickoffMessage: null }
+            : { ...value, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null });
         }}
       />
       <span><strong>Start agent</strong><small>{!startAgent && noAgentAvailable ? "No configured agent is currently available." : agentHint}</small></span>
     </label>
+    {value.createWorktree ? <>
+      <label htmlFor={`${idPrefix}-worktree-prefix`}>Branch/worktree prefix</label>
+      <input
+        id={`${idPrefix}-worktree-prefix`}
+        value={value.worktreePrefix}
+        disabled={busy}
+        maxLength={32}
+        spellCheck={false}
+        onChange={(event) => change({ ...value, worktreePrefix: event.target.value })}
+      />
+      <p className="field-help">Branches start with <code>{value.worktreePrefix || "prefix"}/</code>; sibling worktree folders start with <code>{value.worktreePrefix || "prefix"}-</code>.</p>
+    </> : null}
     {startAgent ? <>
       <label htmlFor={`${idPrefix}-agent`}>Agent</label>
       <select id={`${idPrefix}-agent`} value={value.agentId ?? ""} disabled={busy} onChange={(event) => change({
@@ -78,6 +92,11 @@ export function WorktreeAgentChoice({ idPrefix, value, busy, agentCapabilities, 
         <label htmlFor={`${idPrefix}-model`}><span>Model</span>
           <select id={`${idPrefix}-model`} value={value.model ?? ""} disabled={busy} onChange={(event) => change({ ...value, model: event.target.value })}>
             {modelOptions.map((model) => <option key={model} value={model}>{model}</option>)}
+          </select>
+        </label>
+        <label htmlFor={`${idPrefix}-permission`}><span>Permission mode</span>
+          <select id={`${idPrefix}-permission`} value={value.permission ?? ""} disabled={busy} onChange={(event) => change({ ...value, permission: event.target.value as ProjectTaskAutomationDraft["permission"] })}>
+            {permissionOptions.map((permission) => <option key={permission} value={permission}>{permissionLabel(permission)}</option>)}
           </select>
         </label>
         <label htmlFor={`${idPrefix}-reasoning`}><span>Reasoning</span>

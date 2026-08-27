@@ -1379,8 +1379,10 @@ describe("Task rail create flow", () => {
       configuration: {
         projectId: "project-1",
         createWorktree: false,
+        worktreePrefix: "termloop",
         agentId: null,
         model: null,
+        permission: null,
         reasoning: null,
         kickoffMessage: null,
       },
@@ -1417,8 +1419,10 @@ describe("Task rail create flow", () => {
       configuration: {
         projectId: "project-1",
         createWorktree: true,
+        worktreePrefix: "feature",
         agentId: "claude",
         model: "opus[1m]",
+        permission: "bypassPermissions" as const,
         reasoning: "high" as const,
         kickoffMessage: "Implement and verify this Task.",
       },
@@ -1435,9 +1439,9 @@ describe("Task rail create flow", () => {
       ...launchableTask(),
       id: "task-new",
       title: "Fix login redirect",
-      branch: { repository_root: "/repository", name: "task/fix-login-redirect" },
-      worktree: { path: "/task-fix-login-redirect_worktree" },
-      worktree_health: { ...launchableTask().worktree_health!, checked_out_branch: "task/fix-login-redirect" },
+      branch: { repository_root: "/repository", name: "feature/fix-login-redirect" },
+      worktree: { path: "/feature-fix-login-redirect_worktree" },
+      worktree_health: { ...launchableTask().worktree_health!, checked_out_branch: "feature/fix-login-redirect" },
     };
     const { worktree_health: _health, ...awaitingHealthTask } = readyTask;
     const propsWith = (tasks: readonly Task[]): TaskRailProps => ({
@@ -1458,12 +1462,12 @@ describe("Task rail create flow", () => {
     expect(dialog.textContent).toContain("Create a Task");
     /// Before any title exists the proposal is already complete: an automatic
     /// branch name and a folder derived from it, never empty fields.
-    expect(container.querySelector<HTMLInputElement>("#create-branch-name")?.value).toMatch(/^task\/\w+/);
+    expect(container.querySelector<HTMLInputElement>("#create-branch-name")?.value).toMatch(/^feature\/\w+/);
     expect(container.querySelector<HTMLInputElement>("#create-destination-path")?.value).toContain("_worktree");
 
     await act(async () => typeInto(container.querySelector<HTMLInputElement>("#task-title")!, "Fix login redirect"));
     expect(container.querySelector<HTMLInputElement>("#create-branch-name")?.value)
-      .toBe("task/fix-login-redirect");
+      .toBe("feature/fix-login-redirect");
     expect(container.querySelector<HTMLSelectElement>("#create-base-ref")?.value)
       .toBe("refs/heads/main");
 
@@ -1481,10 +1485,10 @@ describe("Task rail create flow", () => {
     expect(provisionTaskWorktree.mock.calls[0]![0]).toMatchObject({
       taskId: "task-new",
       repositoryPath: "/repository",
-      branchName: "task/fix-login-redirect",
+      branchName: "feature/fix-login-redirect",
       branchMode: "create",
       baseRef: "refs/heads/main",
-      destinationPath: "/task-fix-login-redirect_worktree",
+      destinationPath: "/feature-fix-login-redirect_worktree",
     });
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(launchTaskAgent).not.toHaveBeenCalled();
@@ -1501,6 +1505,7 @@ describe("Task rail create flow", () => {
       "task-new",
       "claude",
       "opus[1m]",
+      "bypassPermissions",
       "high",
       "Implement and verify this Task.",
     );

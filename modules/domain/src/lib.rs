@@ -33,7 +33,8 @@ mod companion;
 
 mod project_task_automation;
 pub use project_task_automation::{
-    PROJECT_TASK_AUTOMATION_KICKOFF_MESSAGE_MAX_BYTES, ProjectTaskAutomationConfiguration,
+    PROJECT_TASK_AUTOMATION_KICKOFF_MESSAGE_MAX_BYTES,
+    PROJECT_TASK_AUTOMATION_WORKTREE_PREFIX_DEFAULT, ProjectTaskAutomationConfiguration,
 };
 
 mod playbook;

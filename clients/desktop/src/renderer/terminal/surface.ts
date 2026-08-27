@@ -8,7 +8,7 @@ export type TerminalBufferProbe = {
 };
 
 export type TerminalSurface = {
-  mount(container: HTMLElement, preferWebgl: boolean): void;
+  mount(container: HTMLElement, preferWebgl: boolean): void | Promise<void>;
   unmount(): void;
   write(data: Uint8Array, callback: () => void): void;
   writeln(message: string): void;

@@ -27,6 +27,7 @@ type Entry = {
   attaching: Promise<void> | undefined;
   dimensions: { rows: number; cols: number } | undefined;
   mounted: boolean;
+  mountToken: object | undefined;
   resizeOwner: boolean | undefined;
   measurement: { started: number; resolve(value: number): void; reject(error: Error): void; timeout: ReturnType<typeof setTimeout> } | undefined;
 };
@@ -84,6 +85,7 @@ export class TerminalPool {
           this.#detachAttachment(entry);
         }
         if (runtimeChanged && entry.mounted) {
+          entry.mountToken = undefined;
           entry.surface?.unmount();
           entry.mounted = false;
         } else if (sessionHasAttachableTerminal(next) && entry.mounted) {
@@ -103,6 +105,7 @@ export class TerminalPool {
           attaching: undefined,
           dimensions: undefined,
           mounted: false,
+          mountToken: undefined,
           resizeOwner: undefined,
           measurement: undefined,
         });
@@ -122,8 +125,13 @@ export class TerminalPool {
         },
       );
     }
+    const mountToken = {};
     entry.mounted = true;
-    entry.surface.mount(container, true);
+    entry.mountToken = mountToken;
+    const surface = entry.surface;
+    const mounting = surface.mount(container, true);
+    if (mounting) await mounting;
+    if (!entry.mounted || entry.mountToken !== mountToken || entry.surface !== surface) return;
     entry.surface.setVisible?.(this.#visible);
     if (sessionHasAttachableTerminal(entry.session)) {
       await this.#ensureAttachment(entry);
@@ -133,6 +141,7 @@ export class TerminalPool {
   unmount(sessionId: string): void {
     const entry = this.#entries.get(sessionId);
     if (!entry?.surface || !entry.mounted) return;
+    entry.mountToken = undefined;
     entry.mounted = false;
     entry.surface.unmount();
   }
@@ -253,8 +262,11 @@ export class TerminalPool {
           return;
         }
         entry.attachment = attachment;
-        attachment.onEvent((event) => this.#handleEvent(entry, attachment, event));
+        // MessagePort preserves send order. Put the real pane grid ahead of
+        // onEvent(), which opens output credit and startup replay, so a TUI
+        // cannot paint its first frame at the daemon's placeholder PTY size.
         if (entry.dimensions) attachment.resize(entry.dimensions.rows, entry.dimensions.cols);
+        attachment.onEvent((event) => this.#handleEvent(entry, attachment, event));
       })
       .catch((error) => {
         // A process that ends between the attach request and its validation —
@@ -329,6 +341,7 @@ export class TerminalPool {
     entry.surface?.dispose();
     entry.surface = undefined;
     entry.dimensions = undefined;
+    entry.mountToken = undefined;
     entry.mounted = false;
   }
 

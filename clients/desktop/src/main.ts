@@ -8,6 +8,7 @@ import {
   type ContextBankCatalogGetParams,
   type ContextBankFileGetParams,
   type ContextBankFileSaveParams,
+  type ContextBankSiblingConflictResolveParams,
   type ErrorCode,
   type KeepAwakeSetParams,
   type Method,
@@ -359,6 +360,9 @@ handleIpc("termloop:context-bank-file-get", (_event, params: ContextBankFileGetP
 );
 handleIpc("termloop:context-bank-file-save", (_event, params: ContextBankFileSaveParams) =>
   controlCall("contextBank.fileSave", params),
+);
+handleIpc("termloop:context-bank-sibling-conflict-resolve", (_event, params: ContextBankSiblingConflictResolveParams) =>
+  controlCall("contextBank.siblingConflictResolve", params),
 );
 handleIpc("termloop:project-create", (_event, name: string, folderPath: string) =>
   controlCall("project.create", { name, folderPath }),
@@ -1232,6 +1236,11 @@ handleIpc(
 );
 handleIpc("termloop:connection-profile-list", async (event) => {
   requireMainRenderer(event);
+  return connections.summaries();
+});
+handleIpc("termloop:connection-profile-reconnect", async (event, profileId: string) => {
+  requireMainRenderer(event);
+  await connections.reconnect(profileId);
   return connections.summaries();
 });
 handleIpc("termloop:connection-profile-connect", async (event, input: ConnectionProfileConnectInput) => {

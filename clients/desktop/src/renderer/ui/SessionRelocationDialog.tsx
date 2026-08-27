@@ -141,7 +141,7 @@ export function SessionRelocationDialog({
         setError("This repository has no local branch to create the Task worktree from.");
         return;
       }
-      const proposedBranch = suggestedBranchName(title) || `task/${globalThis.crypto.randomUUID().slice(0, 4)}`;
+      const proposedBranch = suggestedBranchName(title, "task") || `task/${globalThis.crypto.randomUUID().slice(0, 4)}`;
       const branchName = localBranches.some((branch) => branch.name === proposedBranch)
         ? `${proposedBranch}-${globalThis.crypto.randomUUID().slice(0, 4)}`
         : proposedBranch;

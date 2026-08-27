@@ -12,20 +12,36 @@ pub(super) struct TaskAutomationAction {
     project_id: String,
     title: String,
     create_worktree: bool,
+    worktree_prefix: String,
     agent_id: Option<String>,
     model: Option<String>,
+    permission: Option<String>,
     reasoning: Option<String>,
     kickoff_message: Option<String>,
+}
+
+pub(super) struct TaskAutomationSelection {
+    pub(super) worktree_intent: protocol::TaskCreateWorktreeIntent,
+    pub(super) worktree_prefix: Option<String>,
+    pub(super) agent_id: Option<String>,
+    pub(super) model: Option<String>,
+    pub(super) permission: Option<String>,
+    pub(super) reasoning: Option<String>,
+    pub(super) kickoff_message: Option<String>,
 }
 
 pub(super) async fn create_task(params: Value, state: &AppState) -> Result<Value, CoreError> {
     let params = serde_json::from_value::<protocol::TaskCreateParams>(params)
         .expect("validated Task create params");
-    let worktree_intent = params.worktree_intent.clone();
-    let agent_id = params.agent_id.clone();
-    let model = params.model.clone();
-    let reasoning = params.reasoning.clone();
-    let kickoff_message = params.kickoff_message.clone();
+    let selection = TaskAutomationSelection {
+        worktree_intent: params.worktree_intent.clone(),
+        worktree_prefix: params.worktree_prefix.clone(),
+        agent_id: params.agent_id.clone(),
+        model: params.model.clone(),
+        permission: params.permission.clone(),
+        reasoning: params.reasoning.clone(),
+        kickoff_message: params.kickoff_message.clone(),
+    };
     let project_id = params.project_id.clone();
     let (task, action, state_revision) = {
         let mut core = state.core.lock().await;
@@ -34,15 +50,7 @@ pub(super) async fn create_task(params: Value, state: &AppState) -> Result<Value
             serde_json::to_value(params).map_err(|error| CoreError::Store(error.to_string()))?,
         )?;
         let configuration = core.project_task_automation_configuration(&project_id)?;
-        let action = action_from_task(
-            &configuration,
-            &task,
-            worktree_intent,
-            agent_id,
-            model,
-            reasoning,
-            kickoff_message,
-        )?;
+        let action = action_from_task(&configuration, &task, selection)?;
         (task, action, core.state_revision())
     };
     let _ = state.invalidation_requests.try_send(InvalidationRequest {
@@ -102,11 +110,15 @@ pub(super) async fn auto_import_after_refresh(
                 actions.push(action_from_task(
                     &configuration,
                     &imported.task,
-                    protocol::TaskCreateWorktreeIntent::Inherit,
-                    None,
-                    None,
-                    None,
-                    None,
+                    TaskAutomationSelection {
+                        worktree_intent: protocol::TaskCreateWorktreeIntent::Inherit,
+                        worktree_prefix: None,
+                        agent_id: None,
+                        model: None,
+                        permission: None,
+                        reasoning: None,
+                        kickoff_message: None,
+                    },
                 )?);
             }
         }
@@ -126,11 +138,7 @@ fn available_auto_import_slots(limit: u64, active_task_count: u64) -> usize {
 
 pub(super) async fn action_for_task(
     task: &Value,
-    worktree_intent: protocol::TaskCreateWorktreeIntent,
-    agent_id: Option<String>,
-    model: Option<String>,
-    reasoning: Option<String>,
-    kickoff_message: Option<String>,
+    selection: TaskAutomationSelection,
     state: &AppState,
 ) -> Result<TaskAutomationAction, CoreError> {
     let project_id = task
@@ -142,15 +150,7 @@ pub(super) async fn action_for_task(
         .lock()
         .await
         .project_task_automation_configuration(project_id)?;
-    action_from_task(
-        &configuration,
-        task,
-        worktree_intent,
-        agent_id,
-        model,
-        reasoning,
-        kickoff_message,
-    )
+    action_from_task(&configuration, task, selection)
 }
 
 pub(super) fn spawn(actions: Vec<TaskAutomationAction>, state: &AppState) {
@@ -176,11 +176,7 @@ async fn run(actions: Vec<TaskAutomationAction>, state: &AppState) {
 fn action_from_task(
     configuration: &ProjectTaskAutomationConfiguration,
     task: &Value,
-    worktree_intent: protocol::TaskCreateWorktreeIntent,
-    agent_id: Option<String>,
-    model: Option<String>,
-    reasoning: Option<String>,
-    kickoff_message: Option<String>,
+    selection: TaskAutomationSelection,
 ) -> Result<TaskAutomationAction, CoreError> {
     let task_id = task
         .get("id")
@@ -190,21 +186,17 @@ fn action_from_task(
         .get("title")
         .and_then(Value::as_str)
         .ok_or_else(|| CoreError::Store("created Task projection has no title".into()))?;
-    let (create_worktree, agent_id, model, reasoning, kickoff_message) = effective_settings(
-        configuration,
-        worktree_intent,
-        agent_id,
-        model,
-        reasoning,
-        kickoff_message,
-    )?;
+    let (create_worktree, worktree_prefix, agent_id, model, permission, reasoning, kickoff_message) =
+        effective_settings(configuration, selection)?;
     Ok(TaskAutomationAction {
         task_id: task_id.to_owned(),
         project_id: configuration.project_id.clone(),
         title: title.to_owned(),
         create_worktree,
+        worktree_prefix,
         agent_id,
         model,
+        permission,
         reasoning,
         kickoff_message,
     })
@@ -212,35 +204,60 @@ fn action_from_task(
 
 fn effective_settings(
     configuration: &ProjectTaskAutomationConfiguration,
-    worktree_intent: protocol::TaskCreateWorktreeIntent,
-    agent_id: Option<String>,
-    model: Option<String>,
-    reasoning: Option<String>,
-    kickoff_message: Option<String>,
+    selection: TaskAutomationSelection,
 ) -> Result<EffectiveTaskAutomation, CoreError> {
-    match (worktree_intent, agent_id, model, reasoning, kickoff_message) {
-        (protocol::TaskCreateWorktreeIntent::Inherit, None, None, None, None) => Ok((
+    let TaskAutomationSelection {
+        worktree_intent,
+        worktree_prefix,
+        agent_id,
+        model,
+        permission,
+        reasoning,
+        kickoff_message,
+    } = selection;
+    match (
+        worktree_intent,
+        worktree_prefix,
+        agent_id,
+        model,
+        permission,
+        reasoning,
+        kickoff_message,
+    ) {
+        (protocol::TaskCreateWorktreeIntent::Inherit, None, None, None, None, None, None) => Ok((
             configuration.create_worktree,
+            configuration.worktree_prefix.clone(),
             configuration.agent_id.clone(),
             configuration.model.clone(),
+            configuration.permission.clone(),
             configuration.reasoning.clone(),
             configuration.kickoff_message.clone(),
         )),
-        (protocol::TaskCreateWorktreeIntent::None, None, None, None, None) => {
-            Ok((false, None, None, None, None))
-        }
+        (protocol::TaskCreateWorktreeIntent::None, None, None, None, None, None, None) => Ok((
+            false,
+            configuration.worktree_prefix.clone(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )),
         (
             protocol::TaskCreateWorktreeIntent::Provision,
+            Some(worktree_prefix),
             agent_id,
             model,
+            permission,
             reasoning,
             kickoff_message,
         ) => {
             let selection = ProjectTaskAutomationConfiguration {
                 project_id: configuration.project_id.clone(),
                 create_worktree: true,
+                worktree_prefix: worktree_prefix.trim().to_owned(),
                 agent_id: agent_id.map(|value| value.trim().to_owned()),
                 model: model.map(|value| value.trim().to_owned()),
+                permission: permission.map(|value| value.trim().to_owned()),
                 reasoning: reasoning.map(|value| value.trim().to_owned()),
                 kickoff_message: kickoff_message.map(|value| value.trim().to_owned()),
             };
@@ -249,8 +266,10 @@ fn effective_settings(
             }
             Ok((
                 true,
+                selection.worktree_prefix,
                 selection.agent_id,
                 selection.model,
+                selection.permission,
                 selection.reasoning,
                 selection.kickoff_message,
             ))
@@ -261,6 +280,8 @@ fn effective_settings(
 
 type EffectiveTaskAutomation = (
     bool,
+    String,
+    Option<String>,
     Option<String>,
     Option<String>,
     Option<String>,
@@ -291,7 +312,11 @@ async fn provision_worktree(
         .get("repository_root")
         .and_then(Value::as_str)
         .ok_or_else(|| CoreError::InvalidParams("projectId".into()))?;
-    let checkout_names = termloop_core::managed_task_checkout_names(&action.title, &action.task_id);
+    let checkout_names = termloop_core::managed_task_checkout_names(
+        &action.title,
+        &action.task_id,
+        &action.worktree_prefix,
+    );
     let branch_name = checkout_names.branch_name;
     let destination =
         termloop_platform::sibling_directory_path(repository_path, &checkout_names.worktree_leaf)
@@ -335,11 +360,17 @@ async fn launch_agent(
     if !capability.models.iter().any(|candidate| candidate == model) {
         return Err(CoreError::InvalidParams("model".into()));
     }
-    let permission = capability
+    let permission = action
+        .permission
+        .as_deref()
+        .ok_or_else(|| CoreError::InvalidParams("permission".into()))?;
+    if !capability
         .permissions
-        .first()
-        .map(String::as_str)
-        .unwrap_or("default");
+        .iter()
+        .any(|candidate| candidate == permission)
+    {
+        return Err(CoreError::InvalidParams("permission".into()));
+    }
     let reasoning = action
         .reasoning
         .as_deref()
@@ -439,25 +470,33 @@ mod tests {
         let defaults = ProjectTaskAutomationConfiguration {
             project_id: "project-1".into(),
             create_worktree: true,
+            worktree_prefix: "feature".into(),
             agent_id: Some("codex".into()),
             model: Some("gpt-5.6-sol".into()),
+            permission: Some("bypassPermissions".into()),
             reasoning: Some("high".into()),
             kickoff_message: Some("Implement and verify.".into()),
         };
         assert_eq!(
             effective_settings(
                 &defaults,
-                protocol::TaskCreateWorktreeIntent::Inherit,
-                None,
-                None,
-                None,
-                None,
+                TaskAutomationSelection {
+                    worktree_intent: protocol::TaskCreateWorktreeIntent::Inherit,
+                    worktree_prefix: None,
+                    agent_id: None,
+                    model: None,
+                    permission: None,
+                    reasoning: None,
+                    kickoff_message: None,
+                },
             )
             .unwrap(),
             (
                 true,
+                "feature".into(),
                 Some("codex".into()),
                 Some("gpt-5.6-sol".into()),
+                Some("bypassPermissions".into()),
                 Some("high".into()),
                 Some("Implement and verify.".into()),
             )
@@ -465,29 +504,39 @@ mod tests {
         assert_eq!(
             effective_settings(
                 &defaults,
-                protocol::TaskCreateWorktreeIntent::None,
-                None,
-                None,
-                None,
-                None,
+                TaskAutomationSelection {
+                    worktree_intent: protocol::TaskCreateWorktreeIntent::None,
+                    worktree_prefix: None,
+                    agent_id: None,
+                    model: None,
+                    permission: None,
+                    reasoning: None,
+                    kickoff_message: None,
+                },
             )
             .unwrap(),
-            (false, None, None, None, None)
+            (false, "feature".into(), None, None, None, None, None)
         );
         assert_eq!(
             effective_settings(
                 &defaults,
-                protocol::TaskCreateWorktreeIntent::Provision,
-                Some("claude".into()),
-                Some("sonnet".into()),
-                Some("medium".into()),
-                Some("Start with the regression test.".into()),
+                TaskAutomationSelection {
+                    worktree_intent: protocol::TaskCreateWorktreeIntent::Provision,
+                    worktree_prefix: Some("custom".into()),
+                    agent_id: Some("claude".into()),
+                    model: Some("sonnet".into()),
+                    permission: Some("plan".into()),
+                    reasoning: Some("medium".into()),
+                    kickoff_message: Some("Start with the regression test.".into()),
+                },
             )
             .unwrap(),
             (
                 true,
+                "custom".into(),
                 Some("claude".into()),
                 Some("sonnet".into()),
+                Some("plan".into()),
                 Some("medium".into()),
                 Some("Start with the regression test.".into()),
             )

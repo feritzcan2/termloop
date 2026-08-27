@@ -162,6 +162,7 @@ import type {
   ContextBankFileDto,
   ContextBankFileGetParams,
   ContextBankFileSaveParams,
+  ContextBankSiblingConflictResolveParams,
   SkillCatalogGetParams,
   SkillCatalogResult,
   SkillDefinitionDto,
@@ -197,6 +198,7 @@ export type DesktopApi = {
   pickLocalFolder(defaultPath?: string): Promise<string | null>;
   mobileAccessPairing(): Promise<MobileAccessPairingResult>;
   connectionProfileList(): Promise<ConnectionProfileSummary[]>;
+  connectionProfileReconnect(profileId: string): Promise<ConnectionProfileSummary[]>;
   connectionProfileConnect(input: ConnectionProfileConnectInput): Promise<ConnectionProfileConnectResult>;
   connectionProfileSetEnabled(profileId: string, enabled: boolean): Promise<ConnectionProfileSummary[]>;
   connectionProfileRemove(profileId: string): Promise<ConnectionProfileSummary[]>;
@@ -235,6 +237,7 @@ export type DesktopApi = {
   contextBankCatalogGet(params: ContextBankCatalogGetParams): Promise<ContextBankCatalogResult>;
   contextBankFileGet(params: ContextBankFileGetParams): Promise<ContextBankFileDto>;
   contextBankFileSave(params: ContextBankFileSaveParams): Promise<ContextBankFileDto>;
+  contextBankSiblingConflictResolve(params: ContextBankSiblingConflictResolveParams): Promise<ContextBankCatalogResult>;
   projectList(): Promise<Project[]>;
   projectWorktreeSummary(projectId: string): Promise<ProjectWorktreeSummaryDto>;
   projectWorktreeChangeList(projectId: string): Promise<ProjectWorktreeChangeListResult>;

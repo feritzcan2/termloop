@@ -11,13 +11,16 @@ const utf8ByteLength = (value: string): number => new TextEncoder().encode(value
 /// provider import, and any future Task creation path.
 export type ProjectTaskAutomationDraft = {
   createWorktree: boolean;
+  worktreePrefix: string;
   agentId: string | null;
   model: string | null;
+  permission: AgentCapabilityDto["permissions"][number] | null;
   reasoning: AgentCapabilityDto["reasoning"][number] | null;
   kickoffMessage: string | null;
 };
 
 export const PROJECT_TASK_AUTOMATION_KICKOFF_MAX_BYTES = 8_192;
+export const DEFAULT_TASK_WORKTREE_PREFIX = "termloop";
 export const DEFAULT_TASK_KICKOFF_MESSAGE =
   "Work on this Task end to end. Implement the required changes, run focused tests, and continue until it is complete.";
 
@@ -29,8 +32,10 @@ export function projectTaskAutomationDraftFrom(
 ): ProjectTaskAutomationDraft {
   return {
     createWorktree: configuration.createWorktree,
+    worktreePrefix: configuration.worktreePrefix,
     agentId: configuration.agentId,
     model: configuration.model,
+    permission: configuration.permission,
     reasoning: configuration.reasoning,
     kickoffMessage: configuration.kickoffMessage,
   };
@@ -40,14 +45,18 @@ export function projectTaskAutomationDraftFrom(
 /// so a named agent without one is refused next to the control instead of by a
 /// rejected round trip.
 export function projectTaskAutomationError(draft: ProjectTaskAutomationDraft): string | undefined {
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/.test(draft.worktreePrefix)) {
+    return "Use 1–32 lowercase letters, numbers, or single hyphens for the branch/worktree prefix.";
+  }
   if (draft.agentId === null) {
-    return draft.model === null && draft.reasoning === null && draft.kickoffMessage === null
+    return draft.model === null && draft.permission === null && draft.reasoning === null && draft.kickoffMessage === null
       ? undefined
-      : "Model, reasoning, and kickoff message require an agent.";
+      : "Model, permission, reasoning, and kickoff message require an agent.";
   }
   if (!draft.createWorktree) return "Starting an agent requires worktree creation.";
   if (draft.agentId.trim().length === 0 || utf8ByteLength(draft.agentId) > 64) return "Choose a configured agent.";
   if (!draft.model?.trim() || utf8ByteLength(draft.model) > 80) return "Choose a model for the agent.";
+  if (!draft.permission) return "Choose a permission mode for the agent.";
   if (!draft.reasoning) return "Choose a reasoning level for the agent.";
   if (draft.kickoffMessage !== null) {
     if (!draft.kickoffMessage.trim()) return "Enter a kickoff message or turn it off.";
@@ -63,8 +72,10 @@ export function projectTaskAutomationChanged(
   configuration: ProjectTaskAutomationConfigurationDto,
 ): boolean {
   return draft.createWorktree !== configuration.createWorktree
+    || draft.worktreePrefix !== configuration.worktreePrefix
     || draft.agentId !== configuration.agentId
     || draft.model !== configuration.model
+    || draft.permission !== configuration.permission
     || draft.reasoning !== configuration.reasoning
     || draft.kickoffMessage !== configuration.kickoffMessage;
 }
@@ -74,7 +85,7 @@ export function projectTaskAutomationChanged(
 export function taskAutomationSummary(draft: ProjectTaskAutomationDraft, agentName?: string): string {
   if (!draft.createWorktree) return "Task only — no worktree, no agent";
   if (draft.agentId === null) return "Task and worktree — no agent";
-  const selection = [draft.model, draft.reasoning ? `${draft.reasoning} reasoning` : null]
+  const selection = [draft.model, draft.permission ? permissionLabel(draft.permission) : null, draft.reasoning ? `${draft.reasoning} reasoning` : null]
     .filter((value): value is string => value !== null)
     .join(" · ");
   return `Task, worktree, and ${agentName ?? draft.agentId}${selection ? ` · ${selection}` : ""}${draft.kickoffMessage === null ? "" : " · kickoff message"}`;
@@ -89,23 +100,27 @@ export type TaskImportChoice = ProjectTaskAutomationDraft;
 /// act on exactly that choice if the Project default changes meanwhile.
 export function taskCreationIntent(choice: TaskImportChoice): {
   worktreeIntent: TaskCreateWorktreeIntent;
+  worktreePrefix: string | null;
   agentId: string | null;
   model: string | null;
+  permission: AgentCapabilityDto["permissions"][number] | null;
   reasoning: AgentCapabilityDto["reasoning"][number] | null;
   kickoffMessage: string | null;
 } {
   if (!choice.createWorktree || choice.agentId === null) {
     return choice.createWorktree
-      ? { worktreeIntent: "provision", agentId: null, model: null, reasoning: null, kickoffMessage: null }
-      : { worktreeIntent: "none", agentId: null, model: null, reasoning: null, kickoffMessage: null };
+      ? { worktreeIntent: "provision", worktreePrefix: choice.worktreePrefix, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null }
+      : { worktreeIntent: "none", worktreePrefix: null, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null };
   }
-  if (choice.model === null || choice.reasoning === null) {
-    throw new Error("An explicit Task Agent selection requires model and reasoning.");
+  if (choice.model === null || choice.permission === null || choice.reasoning === null) {
+    throw new Error("An explicit Task Agent selection requires model, permission, and reasoning.");
   }
   return {
     worktreeIntent: "provision",
+    worktreePrefix: choice.worktreePrefix,
     agentId: choice.agentId,
     model: choice.model,
+    permission: choice.permission,
     reasoning: choice.reasoning,
     kickoffMessage: choice.kickoffMessage,
   };
@@ -134,12 +149,21 @@ export function defaultAgentId(capabilities: readonly AgentCapabilityDto[]): str
 export function agentLaunchDefaults(
   capabilities: readonly AgentCapabilityDto[],
   agentId: string,
-): Pick<ProjectTaskAutomationDraft, "model" | "reasoning"> {
+): Pick<ProjectTaskAutomationDraft, "model" | "permission" | "reasoning"> {
   const capability = capabilities.find((candidate) => candidate.agent_id === agentId);
   return {
     model: capability?.models[0] ?? "default",
+    permission: capability?.permissions[0] ?? "default",
     reasoning: capability?.reasoning[0] ?? "default",
   };
+}
+
+export function permissionLabel(permission: NonNullable<ProjectTaskAutomationDraft["permission"]>): string {
+  switch (permission) {
+    case "acceptEdits": return "accept edits";
+    case "bypassPermissions": return "bypass permissions";
+    default: return permission;
+  }
 }
 
 export function agentLabel(capabilities: readonly AgentCapabilityDto[], agentId: string | null): string | undefined {

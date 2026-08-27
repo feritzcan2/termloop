@@ -234,6 +234,43 @@ describe("ControlSubscription", () => {
     subscription.stop();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
+
+  it("reconnects immediately when the user refreshes an offline source", async () => {
+    const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("unexpected socket address");
+    let subscriptions = 0;
+    server.on("connection", (socket) => {
+      socket.once("message", (raw) => {
+        subscriptions += 1;
+        const request = JSON.parse(String(raw)) as { id: string };
+        socket.send(JSON.stringify({
+          id: request.id,
+          ok: true,
+          result: { stateRevision: 1, observationSequence: 0 },
+        }));
+      });
+    });
+    const states: string[] = [];
+    const subscription = new ControlSubscription(
+      () => {},
+      undefined,
+      async () => localConnectionConfig(address.port),
+      (state) => states.push(state),
+    );
+    subscription.start();
+    await waitUntil(() => states.at(-1) === "connected");
+    states.length = 0;
+
+    subscription.reconnect();
+    expect(states).toEqual(["connecting"]);
+    await waitUntil(() => subscriptions === 2 && states.at(-1) === "connected");
+
+    expect(states).not.toContain("offline");
+    subscription.stop();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
 });
 
 async function waitUntil(probe: () => boolean): Promise<void> {

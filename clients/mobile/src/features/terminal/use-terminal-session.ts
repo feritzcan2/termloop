@@ -106,7 +106,7 @@ export function useTerminalSession(
   const runtimeEpoch = session?.runtime_epoch;
 
   useEffect(() => {
-    if (!lifecycle.active || connectionId === undefined || sessionId === undefined || runtimeEpoch === undefined) return;
+    if (connectionId === undefined || sessionId === undefined || runtimeEpoch === undefined) return;
     const continuityKey = terminalContinuityKey(connectionId, sessionId, runtimeEpoch);
     const cached = terminalContinuityCache.get(continuityKey);
     let active = true;
@@ -236,7 +236,7 @@ export function useTerminalSession(
       if (open) void open.detach();
       setBuffer(detached);
     };
-  }, [runtime, connectionId, sessionId, runtimeEpoch, lifecycle.active, lifecycle.foregroundRevision, reconnectRevision]);
+  }, [runtime, connectionId, sessionId, runtimeEpoch, reconnectRevision]);
 
   const canSend = buffer.stream === "live" && error === undefined;
 
@@ -270,6 +270,17 @@ export function useTerminalSession(
       }
     });
   }, []);
+
+  useEffect(() => {
+    if (lifecycle.foregroundRevision === 0) return;
+    /// Closing the terminal socket while iOS is already suspending JavaScript can
+    /// leave its native transport alive but unusable. Keep the attachment across
+    /// backgrounding, then replace and authenticate its socket once execution is
+    /// foregrounded again. This also keeps one event closure responsible for the
+    /// connectionLost -> connected transition, so a late cleanup cannot overwrite
+    /// the newly-live composer with a detached state.
+    reconnect();
+  }, [lifecycle.foregroundRevision, reconnect]);
 
   const submit = useCallback((text: string) => {
     const open = attachment.current;

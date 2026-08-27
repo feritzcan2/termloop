@@ -61,15 +61,16 @@ describe("worktree path suggestions", () => {
 
 describe("suggested branch names", () => {
   it("derives a managed branch slug from a plain title", () => {
-    expect(suggestedBranchName("Fix login redirect")).toBe("task/fix-login-redirect");
+    expect(suggestedBranchName("Fix login redirect")).toBe("termloop/fix-login-redirect");
+    expect(suggestedBranchName("Fix login redirect", "feature")).toBe("feature/fix-login-redirect");
   });
 
   it("folds diacritics including Turkish dotless i instead of dropping words", () => {
-    expect(suggestedBranchName("Görev başlığı ışık")).toBe("task/gorev-basligi-isik");
+    expect(suggestedBranchName("Görev başlığı ışık")).toBe("termloop/gorev-basligi-isik");
   });
 
   it("collapses punctuation runs and trims dangling dashes", () => {
-    expect(suggestedBranchName("  Fix: the (weird)   bug!! ")).toBe("task/fix-the-weird-bug");
+    expect(suggestedBranchName("  Fix: the (weird)   bug!! ")).toBe("termloop/fix-the-weird-bug");
   });
 
   it("yields nothing for an untitled or fully symbolic title", () => {
@@ -79,7 +80,7 @@ describe("suggested branch names", () => {
 
   it("caps the slug without ending on a dash", () => {
     const name = suggestedBranchName("a".repeat(40) + " " + "b".repeat(40));
-    expect(name.length).toBeLessThanOrEqual("task/".length + 48);
+    expect(name.length).toBeLessThanOrEqual("termloop/".length + 48);
     expect(name.endsWith("-")).toBe(false);
   });
 });

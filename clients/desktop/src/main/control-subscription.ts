@@ -48,6 +48,23 @@ export class ControlSubscription {
     this.#socket = undefined;
   }
 
+  reconnect(): void {
+    if (this.#stopped) {
+      this.start();
+      return;
+    }
+    this.#generation += 1;
+    if (this.#retry) clearTimeout(this.#retry);
+    this.#retry = undefined;
+    this.#plannedCloseSocket = undefined;
+    const socket = this.#socket;
+    this.#socket = undefined;
+    socket?.close();
+    this.#retryMs = MIN_RETRY_MS;
+    this.onState?.("connecting");
+    void this.#connect(this.#generation);
+  }
+
   setProjectIds(projectIds: readonly string[]): void {
     const next = [...new Set(projectIds)].sort();
     if (next.join("\0") === this.#projectIds.join("\0")) return;

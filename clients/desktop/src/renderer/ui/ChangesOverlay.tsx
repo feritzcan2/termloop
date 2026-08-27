@@ -118,6 +118,15 @@ export function ChangesOverlay({
   sendReviewNotes,
 }: ChangesOverlayProps) {
   const overlayRef = useRef<HTMLElement>(null);
+  // Composition rebuilds these adapters on unrelated projection renders. Keep
+  // effects keyed to the change source while still invoking the newest adapter.
+  const readsRef = useRef({ list, diff, preImage, listCommits, listCommitChanges, commitDiff, listPullRequestChanges, pullRequestDiff });
+  readsRef.current = { list, diff, preImage, listCommits, listCommitChanges, commitDiff, listPullRequestChanges, pullRequestDiff };
+  const initialSourceRef = useRef(initialSource);
+  initialSourceRef.current = initialSource;
+  const initialSourceKey = initialSource.kind === "pullRequest"
+    ? `pullRequest:${pullRequestKey(initialSource.pullRequest)}:${initialSource.freshnessGeneration}`
+    : initialSource.kind;
   const gitHostProjectionRef = useRef(gitHostProjection);
   gitHostProjectionRef.current = gitHostProjection;
   const [localChanges, setLocalChanges] = useState<LocalChangeListResult>();
@@ -154,6 +163,8 @@ export function ChangesOverlay({
   }, []);
 
   const refresh = useCallback(async () => {
+    const { list, listCommits } = readsRef.current;
+    const initialSource = initialSourceRef.current;
     setLoadingSources(true);
     setError(undefined);
     setDiffs(new Map());
@@ -182,7 +193,7 @@ export function ChangesOverlay({
       setError(errorMessage(failure, "Git changes could not be loaded."));
     }
     setLoadingSources(false);
-  }, [hasBranch, hasWorktree, initialSource, list, listCommits, subject.id]);
+  }, [hasBranch, hasWorktree, initialSourceKey, subject.id]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -198,6 +209,7 @@ export function ChangesOverlay({
 
   useEffect(() => {
     if (selectedSource.kind !== "commit" || !commitList || commitChanges.has(selectedSource.commitId)) return;
+    const { listCommitChanges } = readsRef.current;
     let active = true;
     setLoadingSourceKey(sourceKey(selectedSource));
     setError(undefined);
@@ -211,7 +223,7 @@ export function ChangesOverlay({
       })
       .finally(() => { if (active) setLoadingSourceKey(undefined); });
     return () => { active = false; };
-  }, [commitChanges, commitList, listCommitChanges, selectedSource, subject.id]);
+  }, [commitChanges, commitList, selectedSource, subject.id]);
 
   const selectedSourceKey = sourceKey(selectedSource);
   const selectedPullRequestIsCurrent = currentPullRequestSource(selectedSource, gitHostProjection);
@@ -249,6 +261,7 @@ export function ChangesOverlay({
     if (selectedSource.kind !== "pullRequest" || !selectedPullRequestIsCurrent) return;
     const key = selectedSourceKey;
     if (pullRequestChanges.has(key)) return;
+    const { listPullRequestChanges } = readsRef.current;
     let active = true;
     setLoadingSourceKey(key);
     setError(undefined);
@@ -266,7 +279,7 @@ export function ChangesOverlay({
       })
       .finally(() => { if (active) setLoadingSourceKey(undefined); });
     return () => { active = false; };
-  }, [listPullRequestChanges, pullRequestChanges, selectedPullRequestIsCurrent, selectedSource, selectedSourceKey, subject.id]);
+  }, [pullRequestChanges, selectedPullRequestIsCurrent, selectedSource, selectedSourceKey, subject.id]);
 
   const currentCommitChanges = selectedSource.kind === "commit"
     ? commitChanges.get(selectedSource.commitId)
@@ -332,6 +345,7 @@ export function ChangesOverlay({
       setLoadingDiff(false);
       return;
     }
+    const { diff, commitDiff, pullRequestDiff } = readsRef.current;
     const observationId = selectedSource.kind === "local"
       ? localChanges?.observation_id
       : selectedSource.kind === "commit"
@@ -356,7 +370,7 @@ export function ChangesOverlay({
       })
       .finally(() => { if (active) setLoadingDiff(false); });
     return () => { active = false; };
-  }, [commitDiff, commitList?.observation_id, currentPullRequestChanges?.observation_id, diff, diffKey, diffs, localChanges?.observation_id, pullRequestDiff, selected, selectedSource, subject.id]);
+  }, [commitList?.observation_id, currentPullRequestChanges?.observation_id, diffKey, diffs, localChanges?.observation_id, selected, selectedSource, subject.id]);
 
   const selectedDiff = diffKey
     && (selectedSource.kind !== "pullRequest" || selectedPullRequestIsCurrent)
@@ -379,6 +393,7 @@ export function ChangesOverlay({
   useEffect(() => {
     if (!fullFile || !fullFileSupported || !diffKey || !parsed) return;
     if (preImages.has(diffKey)) return;
+    const { preImage } = readsRef.current;
     const observationId = localChanges?.observation_id;
     const entryId = selected?.entry_id;
     if (!observationId || !entryId) return;
@@ -395,7 +410,7 @@ export function ChangesOverlay({
       })
       .finally(() => { if (active) setLoadingPreImage(false); });
     return () => { active = false; };
-  }, [diffKey, fullFile, fullFileSupported, localChanges?.observation_id, parsed, preImage, preImages, selected?.entry_id, subject.id]);
+  }, [diffKey, fullFile, fullFileSupported, localChanges?.observation_id, parsed, preImages, selected?.entry_id, subject.id]);
 
   const fullFileState: FullFileView | undefined = useMemo(() => {
     if (!fullFile || !parsed) return undefined;

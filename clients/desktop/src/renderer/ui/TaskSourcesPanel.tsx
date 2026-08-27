@@ -70,6 +70,7 @@ import {
 } from "../task-sources.js";
 import {
   agentLabel,
+  DEFAULT_TASK_WORKTREE_PREFIX,
   projectTaskAutomationChanged,
   projectTaskAutomationDraftFrom,
   projectTaskAutomationError,
@@ -191,8 +192,10 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
       const saved = await props.actions.setProjectAutomation({
         projectId: props.projectId,
         createWorktree: draft.createWorktree,
+        worktreePrefix: draft.worktreePrefix,
         agentId: draft.agentId,
         model: draft.model,
+        permission: draft.permission,
         reasoning: draft.reasoning,
         kickoffMessage: draft.kickoffMessage,
         expectedRevision: automation.stateRevision,
@@ -662,8 +665,10 @@ export function TaskSourcesPanel(props: TaskSourcesPanelProps) {
                                 ? projectTaskAutomationDraftFrom(automation.configuration)
                                 : {
                                   createWorktree: false,
+                                  worktreePrefix: DEFAULT_TASK_WORKTREE_PREFIX,
                                   agentId: null,
                                   model: null,
+                                  permission: null,
                                   reasoning: null,
                                   kickoffMessage: null,
                                 },

@@ -118,6 +118,14 @@ export class ConnectionRegistry {
     }
   }
 
+  async reconnect(profileId: string): Promise<void> {
+    const entry = await this.#entry(profileId);
+    entry.client?.close();
+    delete entry.client;
+    delete entry.clientIdentity;
+    entry.subscription.reconnect();
+  }
+
   stopProfile(profileId: string): void {
     const entry = this.#entries.get(profileId);
     if (!entry) return;

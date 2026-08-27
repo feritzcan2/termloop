@@ -35,7 +35,8 @@ pub use agent_history_fs::{
 };
 pub use context_bank::{
     ContextBankCatalog, ContextBankCatalogItem, ContextBankError, ContextBankFile,
-    ContextBankFileKind, context_bank_catalog, read_context_bank_file, write_context_bank_file,
+    ContextBankFileKind, ContextBankSiblingConflict, context_bank_catalog, read_context_bank_file,
+    resolve_context_bank_sibling_conflict, write_context_bank_file,
 };
 pub use diagnostic_log::BoundedPrivateLog;
 pub use directory_browser::{

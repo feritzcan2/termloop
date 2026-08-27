@@ -10,7 +10,8 @@ mod worker;
 mod worktree;
 
 pub(super) use context_bank::{
-    get_context_bank_catalog, get_context_bank_file, save_context_bank_file,
+    get_context_bank_catalog, get_context_bank_file, resolve_context_bank_sibling_conflict,
+    save_context_bank_file,
 };
 pub(in crate::app) use git_host::{
     git_host_pull_request_change_list, git_host_pull_request_diff, git_host_pull_request_list,
