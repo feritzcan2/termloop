@@ -227,7 +227,7 @@ mod tests {
         }
         let _terminal_input_mode = termloop_platform::configure_headless_terminal_input_fixture()
             .expect("handoff fixture must configure its PTY input mode");
-        println!(
+        print!(
             "\x1b[?1049h\x1b[?2004h\x1b[?2026h\x1b[20;1H\x1b[K›\
              \x1b[?25h\x1b[20;3H\x1b[?2026l"
         );
