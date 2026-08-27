@@ -15,7 +15,11 @@ pub struct ManagedTaskCheckoutNames {
 /// Deterministic names shared by every TermLoop-owned Task worktree flow.
 /// Keeping the Task ID suffix makes concurrent imports collision-resistant;
 /// ASCII-only bounded leaves stay portable across all release platforms.
-pub fn managed_task_checkout_names(title: &str, task_id: &str) -> ManagedTaskCheckoutNames {
+pub fn managed_task_checkout_names(
+    title: &str,
+    task_id: &str,
+    worktree_prefix: &str,
+) -> ManagedTaskCheckoutNames {
     let slug = managed_task_slug(title);
     let suffix = task_id
         .chars()
@@ -24,8 +28,8 @@ pub fn managed_task_checkout_names(title: &str, task_id: &str) -> ManagedTaskChe
         .collect::<String>();
     let suffix = if suffix.is_empty() { "task" } else { &suffix };
     ManagedTaskCheckoutNames {
-        branch_name: format!("termloop/{slug}-{suffix}"),
-        worktree_leaf: format!("termloop-{slug}-{suffix}_worktree"),
+        branch_name: format!("{worktree_prefix}/{slug}-{suffix}"),
+        worktree_leaf: format!("{worktree_prefix}-{slug}-{suffix}_worktree"),
     }
 }
 
@@ -152,21 +156,25 @@ mod naming_tests {
 
     #[test]
     fn managed_names_are_bounded_portable_deterministic_and_have_a_fallback() {
-        let names = managed_task_checkout_names("  OAuth Callback — Fix!  ", "12345678-abcd");
+        let names = managed_task_checkout_names(
+            "  OAuth Callback — Fix!  ",
+            "12345678-abcd",
+            "termloop",
+        );
         assert_eq!(names.branch_name, "termloop/oauth-callback-fix-12345678");
         assert_eq!(
             names.worktree_leaf,
             "termloop-oauth-callback-fix-12345678_worktree"
         );
         assert!(
-            managed_task_checkout_names(&"A".repeat(100), "id")
+            managed_task_checkout_names(&"A".repeat(100), "id", "termloop")
                 .branch_name
                 .len()
                 <= 52
         );
         assert_eq!(
-            managed_task_checkout_names("🔒", "---").branch_name,
-            "termloop/task-task"
+            managed_task_checkout_names("🔒", "---", "feature").branch_name,
+            "feature/task-task"
         );
     }
 }

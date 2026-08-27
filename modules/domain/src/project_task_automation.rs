@@ -1,12 +1,15 @@
 use crate::agent_id_is_well_formed;
 
 pub const PROJECT_TASK_AUTOMATION_KICKOFF_MESSAGE_MAX_BYTES: usize = 8_192;
+pub const PROJECT_TASK_AUTOMATION_WORKTREE_PREFIX_DEFAULT: &str = "termloop";
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct ProjectTaskAutomationConfiguration {
     pub project_id: String,
     pub create_worktree: bool,
+    #[serde(default = "default_worktree_prefix")]
+    pub worktree_prefix: String,
     pub agent_id: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
@@ -20,7 +23,7 @@ pub struct ProjectTaskAutomationConfiguration {
 
 impl ProjectTaskAutomationConfiguration {
     pub fn is_valid(&self) -> bool {
-        if self.project_id.trim().is_empty() {
+        if self.project_id.trim().is_empty() || !valid_worktree_prefix(&self.worktree_prefix) {
             return false;
         }
         match (
@@ -44,6 +47,26 @@ impl ProjectTaskAutomationConfiguration {
             _ => false,
         }
     }
+}
+
+fn default_worktree_prefix() -> String {
+    PROJECT_TASK_AUTOMATION_WORKTREE_PREFIX_DEFAULT.into()
+}
+
+fn valid_worktree_prefix(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let Some((first, rest)) = bytes.split_first() else {
+        return false;
+    };
+    bytes.len() <= 32
+        && first.is_ascii_lowercase()
+        && rest
+            .iter()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+        && bytes
+            .last()
+            .is_some_and(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        && !bytes.windows(2).any(|pair| pair == b"--")
 }
 
 fn valid_model(value: &str) -> bool {
@@ -81,6 +104,7 @@ mod tests {
         let mut configuration = ProjectTaskAutomationConfiguration {
             project_id: "project-1".into(),
             create_worktree: true,
+            worktree_prefix: "termloop".into(),
             agent_id: Some("codex".into()),
             model: Some("gpt-5.6-sol".into()),
             permission: Some("bypassPermissions".into()),
@@ -95,6 +119,9 @@ mod tests {
         assert!(!configuration.is_valid());
         configuration.agent_id = Some("Codex".into());
         assert!(!configuration.is_valid());
+        configuration.agent_id = Some("codex".into());
+        configuration.worktree_prefix = "feature/team".into();
+        assert!(!configuration.is_valid());
     }
 
     #[test]
@@ -102,6 +129,7 @@ mod tests {
         let mut configuration = ProjectTaskAutomationConfiguration {
             project_id: "project-1".into(),
             create_worktree: true,
+            worktree_prefix: "termloop".into(),
             agent_id: None,
             model: None,
             permission: None,

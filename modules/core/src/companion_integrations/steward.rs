@@ -515,8 +515,11 @@ impl CoreRuntime {
             .iter()
             .find(|task| task.id == task_id && task.project_id == project_id)
             .ok_or(CoreError::CapabilityDenied)?;
-        let checkout_names =
-            crate::task_worktree::managed_task_checkout_names(&task.title, &task.id);
+        let checkout_names = crate::task_worktree::managed_task_checkout_names(
+            &task.title,
+            &task.id,
+            termloop_domain::PROJECT_TASK_AUTOMATION_WORKTREE_PREFIX_DEFAULT,
+        );
         Ok(StewardTaskAgentStartPlan {
             task_id: task.id.clone(),
             title: task.title.clone(),

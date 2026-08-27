@@ -906,6 +906,7 @@ async fn steward_task_command(
             task,
             super::task_automation::TaskAutomationSelection {
                 worktree_intent,
+                worktree_prefix: None,
                 agent_id,
                 model: None,
                 permission: None,

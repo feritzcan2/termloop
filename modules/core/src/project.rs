@@ -14,7 +14,10 @@ use crate::{
 use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::path::PathBuf;
-use termloop_domain::{ProjectRecord, ProjectTaskAutomationConfiguration};
+use termloop_domain::{
+    PROJECT_TASK_AUTOMATION_WORKTREE_PREFIX_DEFAULT, ProjectRecord,
+    ProjectTaskAutomationConfiguration,
+};
 use termloop_gitio::{GitError, GitFailureKind, GitRunner, HeadState, RegisteredPathState};
 use uuid::Uuid;
 
@@ -74,6 +77,7 @@ impl CoreRuntime {
             .unwrap_or_else(|| ProjectTaskAutomationConfiguration {
                 project_id: project_id.to_owned(),
                 create_worktree: false,
+                worktree_prefix: PROJECT_TASK_AUTOMATION_WORKTREE_PREFIX_DEFAULT.into(),
                 agent_id: None,
                 model: None,
                 permission: None,
@@ -100,6 +104,9 @@ impl CoreRuntime {
             .get("createWorktree")
             .and_then(Value::as_bool)
             .ok_or_else(|| CoreError::InvalidParams("createWorktree".into()))?;
+        let worktree_prefix = required_string(&params, "worktreePrefix")?
+            .trim()
+            .to_owned();
         let agent_id = nullable_trimmed_string(&params, "agentId")?;
         let model = nullable_trimmed_string(&params, "model")?;
         let permission = nullable_trimmed_string(&params, "permission")?;
@@ -112,6 +119,7 @@ impl CoreRuntime {
         let configuration = ProjectTaskAutomationConfiguration {
             project_id,
             create_worktree,
+            worktree_prefix,
             agent_id,
             model,
             permission,

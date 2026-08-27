@@ -52,7 +52,8 @@ use termloop_domain::{
 // from each source to one Project sidecar. Version 44 adds the source-owned
 // active-Task WIP limit for automatic import. Version 45 adds explicit Task
 // automation launch options. Version 46 adds the permission selection.
-const CURRENT_SCHEMA_VERSION: u32 = 46;
+// Version 47 adds the managed Task branch/worktree prefix.
+const CURRENT_SCHEMA_VERSION: u32 = 47;
 
 pub struct CoreWriteAuthority {
     _private: (),

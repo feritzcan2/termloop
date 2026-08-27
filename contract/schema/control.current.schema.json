@@ -2154,10 +2154,11 @@
       "x-codegen-name": "ProjectTaskAutomationConfigurationDto",
       "type": "object",
       "additionalProperties": false,
-      "required": ["projectId", "createWorktree", "agentId", "model", "permission", "reasoning", "kickoffMessage"],
+      "required": ["projectId", "createWorktree", "worktreePrefix", "agentId", "model", "permission", "reasoning", "kickoffMessage"],
       "properties": {
         "projectId": { "type": "string", "minLength": 1 },
         "createWorktree": { "type": "boolean" },
+        "worktreePrefix": { "$ref": "#/$defs/taskWorktreePrefix" },
         "agentId": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
         "model": { "type": ["string", "null"], "minLength": 1, "maxLength": 80 },
         "permission": {
@@ -2212,10 +2213,11 @@
       "x-codegen-name": "ProjectTaskAutomationSetParams",
       "type": "object",
       "additionalProperties": false,
-      "required": ["projectId", "createWorktree", "agentId", "model", "permission", "reasoning", "kickoffMessage", "expectedRevision"],
+      "required": ["projectId", "createWorktree", "worktreePrefix", "agentId", "model", "permission", "reasoning", "kickoffMessage", "expectedRevision"],
       "properties": {
         "projectId": { "type": "string", "minLength": 1 },
         "createWorktree": { "type": "boolean" },
+        "worktreePrefix": { "$ref": "#/$defs/taskWorktreePrefix" },
         "agentId": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
         "model": { "type": ["string", "null"], "minLength": 1, "maxLength": 80 },
         "permission": {
@@ -2531,6 +2533,12 @@
         "none",
         "provision"
       ]
+    },
+    "taskWorktreePrefix": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$"
     },
     "taskBranchDto": {
       "x-codegen": true,
@@ -5538,6 +5546,7 @@
         "projectId",
         "title",
         "worktreeIntent",
+        "worktreePrefix",
         "agentId",
         "model",
         "permission",
@@ -5563,6 +5572,12 @@
         },
         "worktreeIntent": {
           "$ref": "#/$defs/taskCreateWorktreeIntent"
+        },
+        "worktreePrefix": {
+          "anyOf": [
+            { "$ref": "#/$defs/taskWorktreePrefix" },
+            { "type": "null" }
+          ]
         },
         "agentId": {
           "type": ["string", "null"],
@@ -5593,6 +5608,11 @@
         }
       },
       "allOf": [
+        {
+          "if": { "properties": { "worktreeIntent": { "const": "provision" } }, "required": ["worktreeIntent"] },
+          "then": { "properties": { "worktreePrefix": { "$ref": "#/$defs/taskWorktreePrefix" } } },
+          "else": { "properties": { "worktreePrefix": { "const": null } } }
+        },
         {
           "if": { "properties": { "agentId": { "type": "string" } }, "required": ["agentId"] },
           "then": {
@@ -13250,7 +13270,7 @@
       "x-codegen-name": "TaskSourceCandidateImportParams",
       "type": "object",
       "additionalProperties": false,
-      "required": ["sourceId", "externalId", "expectedGeneration", "expectedObservationSequence", "expectedRevision", "worktreeIntent", "agentId", "model", "permission", "reasoning", "kickoffMessage"],
+      "required": ["sourceId", "externalId", "expectedGeneration", "expectedObservationSequence", "expectedRevision", "worktreeIntent", "worktreePrefix", "agentId", "model", "permission", "reasoning", "kickoffMessage"],
       "properties": {
         "sourceId": { "type": "string", "minLength": 1, "maxLength": 64 },
         "externalId": { "type": "string", "minLength": 1, "maxLength": 64 },
@@ -13258,6 +13278,12 @@
         "expectedObservationSequence": { "type": "integer", "minimum": 1, "x-rust-type": "u64" },
         "expectedRevision": { "type": "integer", "minimum": 0, "x-rust-type": "u64" },
         "worktreeIntent": { "$ref": "#/$defs/taskCreateWorktreeIntent" },
+        "worktreePrefix": {
+          "anyOf": [
+            { "$ref": "#/$defs/taskWorktreePrefix" },
+            { "type": "null" }
+          ]
+        },
         "agentId": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
         "model": { "type": ["string", "null"], "minLength": 1, "maxLength": 80 },
         "permission": {
@@ -13275,6 +13301,11 @@
         "kickoffMessage": { "type": ["string", "null"], "minLength": 1, "maxLength": 8192 }
       },
       "allOf": [
+        {
+          "if": { "properties": { "worktreeIntent": { "const": "provision" } }, "required": ["worktreeIntent"] },
+          "then": { "properties": { "worktreePrefix": { "$ref": "#/$defs/taskWorktreePrefix" } } },
+          "else": { "properties": { "worktreePrefix": { "const": null } } }
+        },
         {
           "if": { "properties": { "agentId": { "type": "string" } }, "required": ["agentId"] },
           "then": {

@@ -1384,6 +1384,7 @@ fn v42_migration_lifts_unanimous_source_task_automation_to_the_project() {
         &[termloop_domain::ProjectTaskAutomationConfiguration {
             project_id: "project-1".into(),
             create_worktree: true,
+            worktree_prefix: "termloop".into(),
             agent_id: Some("codex".into()),
             model: Some("default".into()),
             permission: Some("default".into()),
@@ -1481,6 +1482,7 @@ fn v44_migration_adds_safe_task_agent_launch_defaults() {
         &[termloop_domain::ProjectTaskAutomationConfiguration {
             project_id: "project-1".into(),
             create_worktree: true,
+            worktree_prefix: "termloop".into(),
             agent_id: Some("codex".into()),
             model: Some("default".into()),
             permission: Some("default".into()),
@@ -1582,6 +1584,7 @@ fn v42_migration_preserves_legacy_default_automation_fields() {
         &[termloop_domain::ProjectTaskAutomationConfiguration {
             project_id: "project-1".into(),
             create_worktree: false,
+            worktree_prefix: "termloop".into(),
             agent_id: None,
             model: None,
             permission: None,

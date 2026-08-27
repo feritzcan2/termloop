@@ -137,6 +137,24 @@ describe("Changes reviewed files", () => {
     expect(container.querySelector(".changes-file-review-progress")?.textContent).toContain("0/3 reviewed");
   });
 
+  it("does not reload when composition rebuilds read adapters", async () => {
+    const list = vi.fn<ChangesOverlayProps["list"]>(async () => changeList("local-1"));
+    const editorProps = props(list);
+    ({ container, root } = await renderEditor(editorProps));
+
+    await act(async () => {
+      root!.render(createElement(ChangesOverlay, {
+        ...editorProps,
+        initialSource: { kind: "local" },
+        list: (...args) => list(...args),
+      }));
+      await Promise.resolve();
+    });
+
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(container.querySelector(".changes-placeholder")?.textContent).not.toBe("Loading changes…");
+  });
+
   it("opens the aggregate branch diff when branch changes are requested", async () => {
     const listCommitChanges = vi.fn<ChangesOverlayProps["listCommitChanges"]>(async (taskId, observationId, commitId) => ({
       task_id: taskId,

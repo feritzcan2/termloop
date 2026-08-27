@@ -12,6 +12,7 @@ pub(super) struct TaskAutomationAction {
     project_id: String,
     title: String,
     create_worktree: bool,
+    worktree_prefix: String,
     agent_id: Option<String>,
     model: Option<String>,
     permission: Option<String>,
@@ -21,6 +22,7 @@ pub(super) struct TaskAutomationAction {
 
 pub(super) struct TaskAutomationSelection {
     pub(super) worktree_intent: protocol::TaskCreateWorktreeIntent,
+    pub(super) worktree_prefix: Option<String>,
     pub(super) agent_id: Option<String>,
     pub(super) model: Option<String>,
     pub(super) permission: Option<String>,
@@ -33,6 +35,7 @@ pub(super) async fn create_task(params: Value, state: &AppState) -> Result<Value
         .expect("validated Task create params");
     let selection = TaskAutomationSelection {
         worktree_intent: params.worktree_intent.clone(),
+        worktree_prefix: params.worktree_prefix.clone(),
         agent_id: params.agent_id.clone(),
         model: params.model.clone(),
         permission: params.permission.clone(),
@@ -109,6 +112,7 @@ pub(super) async fn auto_import_after_refresh(
                     &imported.task,
                     TaskAutomationSelection {
                         worktree_intent: protocol::TaskCreateWorktreeIntent::Inherit,
+                        worktree_prefix: None,
                         agent_id: None,
                         model: None,
                         permission: None,
@@ -182,13 +186,21 @@ fn action_from_task(
         .get("title")
         .and_then(Value::as_str)
         .ok_or_else(|| CoreError::Store("created Task projection has no title".into()))?;
-    let (create_worktree, agent_id, model, permission, reasoning, kickoff_message) =
-        effective_settings(configuration, selection)?;
+    let (
+        create_worktree,
+        worktree_prefix,
+        agent_id,
+        model,
+        permission,
+        reasoning,
+        kickoff_message,
+    ) = effective_settings(configuration, selection)?;
     Ok(TaskAutomationAction {
         task_id: task_id.to_owned(),
         project_id: configuration.project_id.clone(),
         title: title.to_owned(),
         create_worktree,
+        worktree_prefix,
         agent_id,
         model,
         permission,
@@ -203,6 +215,7 @@ fn effective_settings(
 ) -> Result<EffectiveTaskAutomation, CoreError> {
     let TaskAutomationSelection {
         worktree_intent,
+        worktree_prefix,
         agent_id,
         model,
         permission,
@@ -211,25 +224,36 @@ fn effective_settings(
     } = selection;
     match (
         worktree_intent,
+        worktree_prefix,
         agent_id,
         model,
         permission,
         reasoning,
         kickoff_message,
     ) {
-        (protocol::TaskCreateWorktreeIntent::Inherit, None, None, None, None, None) => Ok((
+        (protocol::TaskCreateWorktreeIntent::Inherit, None, None, None, None, None, None) => Ok((
             configuration.create_worktree,
+            configuration.worktree_prefix.clone(),
             configuration.agent_id.clone(),
             configuration.model.clone(),
             configuration.permission.clone(),
             configuration.reasoning.clone(),
             configuration.kickoff_message.clone(),
         )),
-        (protocol::TaskCreateWorktreeIntent::None, None, None, None, None, None) => {
-            Ok((false, None, None, None, None, None))
+        (protocol::TaskCreateWorktreeIntent::None, None, None, None, None, None, None) => {
+            Ok((
+                false,
+                configuration.worktree_prefix.clone(),
+                None,
+                None,
+                None,
+                None,
+                None,
+            ))
         }
         (
             protocol::TaskCreateWorktreeIntent::Provision,
+            Some(worktree_prefix),
             agent_id,
             model,
             permission,
@@ -239,6 +263,7 @@ fn effective_settings(
             let selection = ProjectTaskAutomationConfiguration {
                 project_id: configuration.project_id.clone(),
                 create_worktree: true,
+                worktree_prefix: worktree_prefix.trim().to_owned(),
                 agent_id: agent_id.map(|value| value.trim().to_owned()),
                 model: model.map(|value| value.trim().to_owned()),
                 permission: permission.map(|value| value.trim().to_owned()),
@@ -250,6 +275,7 @@ fn effective_settings(
             }
             Ok((
                 true,
+                selection.worktree_prefix,
                 selection.agent_id,
                 selection.model,
                 selection.permission,
@@ -263,6 +289,7 @@ fn effective_settings(
 
 type EffectiveTaskAutomation = (
     bool,
+    String,
     Option<String>,
     Option<String>,
     Option<String>,
@@ -294,7 +321,11 @@ async fn provision_worktree(
         .get("repository_root")
         .and_then(Value::as_str)
         .ok_or_else(|| CoreError::InvalidParams("projectId".into()))?;
-    let checkout_names = termloop_core::managed_task_checkout_names(&action.title, &action.task_id);
+    let checkout_names = termloop_core::managed_task_checkout_names(
+        &action.title,
+        &action.task_id,
+        &action.worktree_prefix,
+    );
     let branch_name = checkout_names.branch_name;
     let destination =
         termloop_platform::sibling_directory_path(repository_path, &checkout_names.worktree_leaf)
@@ -448,6 +479,7 @@ mod tests {
         let defaults = ProjectTaskAutomationConfiguration {
             project_id: "project-1".into(),
             create_worktree: true,
+            worktree_prefix: "feature".into(),
             agent_id: Some("codex".into()),
             model: Some("gpt-5.6-sol".into()),
             permission: Some("bypassPermissions".into()),
@@ -459,6 +491,7 @@ mod tests {
                 &defaults,
                 TaskAutomationSelection {
                     worktree_intent: protocol::TaskCreateWorktreeIntent::Inherit,
+                    worktree_prefix: None,
                     agent_id: None,
                     model: None,
                     permission: None,
@@ -469,6 +502,7 @@ mod tests {
             .unwrap(),
             (
                 true,
+                "feature".into(),
                 Some("codex".into()),
                 Some("gpt-5.6-sol".into()),
                 Some("bypassPermissions".into()),
@@ -481,6 +515,7 @@ mod tests {
                 &defaults,
                 TaskAutomationSelection {
                     worktree_intent: protocol::TaskCreateWorktreeIntent::None,
+                    worktree_prefix: None,
                     agent_id: None,
                     model: None,
                     permission: None,
@@ -489,13 +524,14 @@ mod tests {
                 },
             )
             .unwrap(),
-            (false, None, None, None, None, None)
+            (false, "feature".into(), None, None, None, None, None)
         );
         assert_eq!(
             effective_settings(
                 &defaults,
                 TaskAutomationSelection {
                     worktree_intent: protocol::TaskCreateWorktreeIntent::Provision,
+                    worktree_prefix: Some("custom".into()),
                     agent_id: Some("claude".into()),
                     model: Some("sonnet".into()),
                     permission: Some("plan".into()),
@@ -506,6 +542,7 @@ mod tests {
             .unwrap(),
             (
                 true,
+                "custom".into(),
                 Some("claude".into()),
                 Some("sonnet".into()),
                 Some("plan".into()),
