@@ -31,7 +31,9 @@ impl Drop for HeadlessTerminalInputFixtureGuard {
 pub fn configure_headless_terminal_input_fixture()
 -> Result<HeadlessTerminalInputFixtureGuard, std::io::Error> {
     #[cfg(windows)]
-    let guard = configure_windows_headless_terminal_input_fixture()?;
+    {
+        configure_windows_headless_terminal_input_fixture()
+    }
     #[cfg(unix)]
     {
         let status = std::process::Command::new("stty")
@@ -42,13 +44,8 @@ pub fn configure_headless_terminal_input_fixture()
                 "headless terminal fixture input setup failed",
             ));
         }
+        Ok(HeadlessTerminalInputFixtureGuard {})
     }
-    Ok(HeadlessTerminalInputFixtureGuard {
-        #[cfg(windows)]
-        input: guard.input,
-        #[cfg(windows)]
-        original_mode: guard.original_mode,
-    })
 }
 
 #[cfg(windows)]
