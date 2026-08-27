@@ -8,6 +8,7 @@ import { ConnectionProvider } from "@/features/connection/connection-store";
 import { NotificationCoordinator } from "@/features/notifications/notification-coordinator";
 import { OverviewProvider } from "@/features/overview/overview-store";
 import { WatchSyncCoordinator } from "@/features/watch/watch-sync-coordinator";
+import { AppLifecycleProvider } from "@/platform/app-lifecycle";
 import { color } from "@/theme/tokens";
 
 /// The native header is off for every route. Each screen renders its own 47pt header
@@ -17,30 +18,32 @@ import { color } from "@/theme/tokens";
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <RuntimeProvider runtime={mobileRuntime}>
-        <ConnectionProvider>
-          <OverviewProvider>
-            <NotificationCoordinator />
-            <WatchSyncCoordinator />
-            <StatusBar style="light" />
-            <Stack
-              screenOptions={{
-                headerShown: false,
-                contentStyle: { backgroundColor: color.bgApp },
-              }}
-            >
-              <Stack.Screen name="index" />
-              <Stack.Screen name="settings" />
-              <Stack.Screen name="pair" options={{ presentation: "modal" }} />
-              <Stack.Screen name="project/[projectId]" />
-              <Stack.Screen name="task/[taskId]" />
-              <Stack.Screen name="launch/[taskId]" options={{ presentation: "modal" }} />
-              <Stack.Screen name="steward/[projectId]" />
-              <Stack.Screen name="session/[sessionId]" />
-            </Stack>
-          </OverviewProvider>
-        </ConnectionProvider>
-      </RuntimeProvider>
+      <AppLifecycleProvider>
+        <RuntimeProvider runtime={mobileRuntime}>
+          <ConnectionProvider>
+            <OverviewProvider>
+              <NotificationCoordinator />
+              <WatchSyncCoordinator />
+              <StatusBar style="light" />
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  contentStyle: { backgroundColor: color.bgApp },
+                }}
+              >
+                <Stack.Screen name="index" />
+                <Stack.Screen name="settings" />
+                <Stack.Screen name="pair" options={{ presentation: "modal" }} />
+                <Stack.Screen name="project/[projectId]" />
+                <Stack.Screen name="task/[taskId]" />
+                <Stack.Screen name="launch/[taskId]" options={{ presentation: "modal" }} />
+                <Stack.Screen name="steward/[projectId]" />
+                <Stack.Screen name="session/[sessionId]" />
+              </Stack>
+            </OverviewProvider>
+          </ConnectionProvider>
+        </RuntimeProvider>
+      </AppLifecycleProvider>
     </SafeAreaProvider>
   );
 }

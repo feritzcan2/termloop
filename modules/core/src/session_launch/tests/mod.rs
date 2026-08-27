@@ -406,6 +406,8 @@ fn pending_generated_input_fixture() {
     let periodic_composer_redraw =
         std::env::var_os("TERMLOOP_TEST_PERIODIC_COMPOSER_REDRAW").is_some();
     let codex_composer_gate = std::env::var_os("TERMLOOP_TEST_CODEX_COMPOSER_READY").is_some();
+    let delayed_paste_ready =
+        std::env::var_os("TERMLOOP_TEST_DELAY_BRACKETED_PASTE_READY").is_some();
 
     let _terminal_input_mode = termloop_platform::configure_headless_terminal_input_fixture()
         .expect("fixture must configure its PTY input mode");
@@ -436,8 +438,13 @@ fn pending_generated_input_fixture() {
         ""
     };
     if termloop_platform::host_uses_bracketed_paste_framing() {
+        let paste_mode = if delayed_paste_ready {
+            ""
+        } else {
+            "\x1b[?2004h"
+        };
         println!(
-            "{alternate_screen}\x1b[?2004h{protocol_queries}TERMLOOP_INITIAL_INPUT_READY{idle_composer_frame}{stale_codex_transcript_frame}"
+            "{alternate_screen}{paste_mode}{protocol_queries}TERMLOOP_INITIAL_INPUT_READY{idle_composer_frame}{stale_codex_transcript_frame}"
         );
     } else {
         println!(
@@ -451,6 +458,11 @@ fn pending_generated_input_fixture() {
             "\x1b[?2026h\x1b[20;1H\x1b[K\x1b[1m›\x1b[0m Ask Codex to do anything \
              TERMLOOP_CODEX_COMPOSER_READY\x1b[?25h\x1b[20;3H\x1b[?2026l"
         );
+        std::io::stdout().flush().unwrap();
+    }
+    if delayed_paste_ready {
+        std::thread::sleep(std::time::Duration::from_millis(750));
+        print!("\x1b[?2004hTERMLOOP_CLAUDE_COMPOSER_READY");
         std::io::stdout().flush().unwrap();
     }
     let expected_paste = termloop_platform::terminal_paste_input(expected.as_bytes());
@@ -1785,6 +1797,10 @@ async fn assert_quick_action_initial_input_delivery(
     if matches!(agent_id, "claude" | "codex") {
         environment = environment.with_explicit("TERMLOOP_TEST_PERIODIC_COMPOSER_REDRAW", "1");
     }
+    if agent_id == "claude" && termloop_platform::host_uses_bracketed_paste_framing() {
+        environment =
+            environment.with_explicit("TERMLOOP_TEST_DELAY_BRACKETED_PASTE_READY", "1");
+    }
     if agent_id == "codex" {
         environment = environment.with_explicit("TERMLOOP_TEST_CODEX_COMPOSER_READY", "1");
     }
@@ -1899,6 +1915,16 @@ async fn assert_quick_action_initial_input_delivery(
         assert!(
             !diagnostics.paste_receipted,
             "Codex startup output must not receive the paste before its composer glyph renders"
+        );
+    } else if agent_id == "claude" && termloop_platform::host_uses_bracketed_paste_framing() {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let diagnostics = runtime
+            .generated_input_deliveries
+            .diagnostics("quick-action-ready", 9)
+            .unwrap();
+        assert!(
+            !diagnostics.paste_receipted,
+            "Claude startup output must not receive the paste before bracketed-paste readiness"
         );
     } else {
         runtime

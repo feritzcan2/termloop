@@ -1,4 +1,11 @@
-import { useEffect, useReducer } from "react";
+import {
+  createContext,
+  createElement,
+  useContext,
+  useEffect,
+  useReducer,
+  type PropsWithChildren,
+} from "react";
 import { AppState } from "react-native";
 
 import { reduceAppLifecycle, type AppLifecycleMachine } from "./app-lifecycle-state";
@@ -8,12 +15,14 @@ export interface AppLifecycleState {
   readonly foregroundRevision: number;
 }
 
+const AppLifecycleContext = createContext<AppLifecycleState | undefined>(undefined);
+
 /**
- * Turns the native app lifecycle into a tiny client-local signal. A foreground
- * revision is useful even when React never observed the intermediate suspended
- * state, and no domain or connection state is persisted here.
+ * Owns the app's one native lifecycle subscription above the navigation stack.
+ * Retained or frozen routes must consume the same foreground revision: a listener
+ * mounted inside each route can miss the resume that should repair its terminal.
  */
-export function useAppLifecycle(): AppLifecycleState {
+export function AppLifecycleProvider({ children }: PropsWithChildren) {
   const [state, dispatch] = useReducer(reduceAppLifecycle, AppState.currentState, (current): AppLifecycleMachine => ({
     active: current !== "background",
     backgrounded: current === "background",
@@ -25,5 +34,13 @@ export function useAppLifecycle(): AppLifecycleState {
     return () => subscription.remove();
   }, []);
 
-  return { active: state.active, foregroundRevision: state.foregroundRevision };
+  return createElement(AppLifecycleContext.Provider, {
+    value: { active: state.active, foregroundRevision: state.foregroundRevision },
+  }, children);
+}
+
+export function useAppLifecycle(): AppLifecycleState {
+  const state = useContext(AppLifecycleContext);
+  if (state === undefined) throw new Error("App lifecycle provider is missing");
+  return state;
 }
