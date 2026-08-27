@@ -38,6 +38,7 @@ import {
 } from "./terminal-frame";
 
 const AUTH_TIMEOUT_MS = 5_000;
+const CONNECT_TIMEOUT_MS = 5_000;
 const FORCE_RECONNECT_TIMEOUT_MS = 12_000;
 const MIN_RECONNECT_MS = 250;
 const MAX_RECONNECT_MS = 2_000;
@@ -537,6 +538,7 @@ async function attachTerminal(
   let authenticated = false;
   let reconnectDelay = MIN_RECONNECT_MS;
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  let connectionTimer: ReturnType<typeof setTimeout> | undefined;
   let authenticationTimer: ReturnType<typeof setTimeout> | undefined;
   let replayTimer: ReturnType<typeof setTimeout> | undefined;
   let replayChunks: Uint8Array[] = [];
@@ -559,6 +561,11 @@ async function attachTerminal(
   const clearAuthenticationTimer = () => {
     if (authenticationTimer !== undefined) clearTimeout(authenticationTimer);
     authenticationTimer = undefined;
+  };
+
+  const clearConnectionTimer = () => {
+    if (connectionTimer !== undefined) clearTimeout(connectionTimer);
+    connectionTimer = undefined;
   };
 
   const clearReplayTimer = () => {
@@ -613,6 +620,7 @@ async function attachTerminal(
     resolveFirst = undefined;
     rejectFirst = undefined;
     detached = true;
+    clearConnectionTimer();
     clearAuthenticationTimer();
     socket?.close();
     reject(new Error(message));
@@ -632,6 +640,7 @@ async function attachTerminal(
     if (socket !== closed) return;
     socket = undefined;
     authenticated = false;
+    clearConnectionTimer();
     clearAuthenticationTimer();
     discardReplay();
     if (resolveFirst !== undefined) failFirst("Terminal connection failed.");
@@ -641,11 +650,27 @@ async function attachTerminal(
   const connect = () => {
     if (detached) return;
     onEvent({ type: "state", state: "connecting" });
-    const next = socketFactory(connection.terminalUrl);
+    let next: DataSocket;
+    try {
+      next = socketFactory(connection.terminalUrl);
+    } catch {
+      if (resolveFirst !== undefined) failFirst("Terminal connection failed.");
+      else scheduleReconnect();
+      return;
+    }
     socket = next;
     next.binaryType = "arraybuffer";
+    connectionTimer = setTimeout(() => {
+      if (socket !== next || detached) return;
+      /// iOS can leave a WebSocket in CONNECTING without ever emitting open,
+      /// error, or close after foregrounding. Treat that silence as a failed
+      /// transport so the bounded reconnect loop can create a new socket.
+      handleClosed(next);
+      next.close();
+    }, CONNECT_TIMEOUT_MS);
     next.onopen = () => {
       if (socket !== next || detached) return;
+      clearConnectionTimer();
       next.send(authenticationBytes(connection.terminalToken));
       authenticationTimer = setTimeout(() => {
         if (resolveFirst !== undefined) failFirst("Terminal authentication timed out.");
@@ -754,6 +779,7 @@ async function attachTerminal(
       const stale = socket;
       socket = undefined;
       authenticated = false;
+      clearConnectionTimer();
       clearAuthenticationTimer();
       discardReplay();
       onEvent({ type: "state", state: "connectionLost" });
@@ -765,6 +791,7 @@ async function attachTerminal(
       if (detached) return;
       detached = true;
       if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
+      clearConnectionTimer();
       clearAuthenticationTimer();
       discardReplay();
       settleReconnectWaiters(new Error("Terminal is detached."));
