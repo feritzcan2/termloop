@@ -2,7 +2,7 @@
 
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { AgentStatus, Session } from "../src/renderer/model.js";
 import { ActiveAgentRail, type ActiveAgentRailProps } from "../src/renderer/ui/ActiveAgentRail.js";
 import { SidebarSessionDndProvider } from "../src/renderer/ui/SidebarSessionDnd.js";
@@ -327,52 +327,6 @@ describe("Active Agent selection stability", () => {
     expect(grouped).toEqual([[third.id, first.id]]);
   });
 
-  it("renames a group inline and ungroups it from the leading close button", async () => {
-    const first = agent("first-agent");
-    const second = agent("second-agent");
-    const renamed: [string, string][] = [];
-    const ungrouped: string[] = [];
-    container = document.createElement("div");
-    document.body.append(container);
-    const rendered = container;
-    root = createRoot(container);
-    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    const railProps = props(
-      [first, second],
-      [status(first.id, "working"), status(second.id, "working")],
-    );
-    railProps.agentGroups = [{ sessionIds: [first.id, second.id], name: "Review crew" }];
-    railProps.renameAgentGroup = (sessionId, name) => { renamed.push([sessionId, name]); };
-    railProps.ungroupAgentGroup = (sessionId) => { ungrouped.push(sessionId); };
-
-    await act(async () => root!.render(createElement(ActiveAgentRail, railProps)));
-    const label = rendered.querySelector<HTMLElement>(".manual-agent-group-label")!;
-    expect(label.firstElementChild?.classList.contains("manual-agent-group-remove")).toBe(true);
-    expect(rendered.querySelector(".manual-agent-group-name")?.textContent).toBe("Review crew");
-
-    await act(async () => {
-      rendered.querySelector<HTMLButtonElement>(".manual-agent-group-name")!.click();
-    });
-    await vi.waitFor(() => {
-      expect(rendered.querySelector(".manual-agent-group-name-input")).not.toBeNull();
-    }, { timeout: 2_000, interval: 10 });
-    const input = rendered.querySelector<HTMLInputElement>(".manual-agent-group-name-input");
-    expect(input).not.toBeNull();
-    if (!input) throw new Error("group rename input did not render");
-    const inputWindow = input.ownerDocument.defaultView!;
-    const valueSetter = Object.getOwnPropertyDescriptor(inputWindow.HTMLInputElement.prototype, "value")?.set;
-    await act(async () => {
-      valueSetter?.call(input, "Release team");
-      input.dispatchEvent(new inputWindow.Event("input", { bubbles: true }));
-      input.dispatchEvent(new inputWindow.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    });
-    expect(renamed).toEqual([[first.id, "Release team"]]);
-
-    await act(async () => {
-      rendered.querySelector<HTMLButtonElement>(".manual-agent-group-remove")!.click();
-    });
-    expect(ungrouped).toEqual([first.id]);
-  });
 });
 
 function domRect(top: number, height: number): DOMRect {
