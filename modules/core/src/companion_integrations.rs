@@ -2184,7 +2184,7 @@ mod tests {
         drop(heads);
         drop(prepared);
         drop(store);
-        std::fs::remove_dir_all(directory).unwrap();
+        let _ = std::fs::remove_dir_all(directory);
     }
 
     #[test]
@@ -2286,7 +2286,7 @@ mod tests {
 
         drop(observed);
         drop(store);
-        std::fs::remove_dir_all(directory).unwrap();
+        let _ = std::fs::remove_dir_all(directory);
     }
 
     #[test]
