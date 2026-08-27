@@ -2,7 +2,7 @@
 
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentStatus, Session } from "../src/renderer/model.js";
 import { ActiveAgentRail, type ActiveAgentRailProps } from "../src/renderer/ui/ActiveAgentRail.js";
 import { SidebarSessionDndProvider } from "../src/renderer/ui/SidebarSessionDnd.js";
@@ -352,8 +352,10 @@ describe("Active Agent selection stability", () => {
 
     await act(async () => {
       rendered.querySelector<HTMLButtonElement>(".manual-agent-group-name")!.click();
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     });
+    await vi.waitFor(() => {
+      expect(rendered.querySelector(".manual-agent-group-name-input")).not.toBeNull();
+    }, { timeout: 2_000, interval: 10 });
     const input = rendered.querySelector<HTMLInputElement>(".manual-agent-group-name-input");
     expect(input).not.toBeNull();
     if (!input) throw new Error("group rename input did not render");
