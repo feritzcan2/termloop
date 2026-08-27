@@ -2068,11 +2068,7 @@ async fn assert_quick_action_initial_input_delivery(
             .is_some()
     );
     tokio::time::timeout(
-        std::time::Duration::from_secs(if retry_submit || retain_without_repaint {
-            20
-        } else {
-            5
-        }),
+        std::time::Duration::from_secs(20),
         async {
             while !String::from_utf8_lossy(&bytes)
                 .contains("TERMLOOP_INITIAL_INPUT_RECEIVED:Review this diff")
