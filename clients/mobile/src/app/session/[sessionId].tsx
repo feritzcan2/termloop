@@ -64,7 +64,7 @@ const keyRow: readonly { key: TerminalKey; glyph: string; name: string }[] = [
 type ImageSource = "library" | "camera";
 
 export default function SessionRoute() {
-  const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
+  const { sessionId, connectionId } = useLocalSearchParams<{ sessionId: string; connectionId?: string }>();
   const router = useRouter();
   const connections = useConnections();
   const store = useOverview();
@@ -74,7 +74,11 @@ export default function SessionRoute() {
   const [imageSending, setImageSending] = useState(false);
   const [fontSizeIndex, setFontSizeIndex] = useState(1);
 
-  const session = store.overview?.sessions.find((candidate) => candidate.id === sessionId);
+  const selectingNotificationConnection = connectionId !== undefined
+    && connections.selectedId !== connectionId;
+  const session = selectingNotificationConnection
+    ? undefined
+    : store.overview?.sessions.find((candidate) => candidate.id === sessionId);
   const status = store.overview?.agentStatuses.find((candidate) => candidate.sessionId === sessionId);
   const changesTaskId = useMemo(() => {
     if (store.overview === undefined || session?.kind !== "Agent") return undefined;
@@ -90,6 +94,11 @@ export default function SessionRoute() {
 
   const terminal = useTerminalSession(connections.selectedId, session);
   const stream = streamPresentation[terminal.buffer.stream];
+  useEffect(() => {
+    if (connectionId !== undefined && connections.selectedId !== connectionId) {
+      connections.select(connectionId);
+    }
+  }, [connectionId, connections.select, connections.selectedId]);
   useEffect(() => {
     if (sessionId) store.dismissReview(sessionId);
   }, [sessionId, store.dismissReview]);
@@ -108,7 +117,7 @@ export default function SessionRoute() {
       <Screen edges={["top", "bottom"]}>
         <ScreenHeader back="Project" title="Session" right={<MockBadge />} />
         <View style={styles.centre}>
-          {store.load === "ready"
+          {store.load === "ready" && !selectingNotificationConnection
             ? <Banner kind="warning" message="This session is no longer in the connected Mac's projection." />
             : <ActivityIndicator color={color.accentStrong} />}
         </View>

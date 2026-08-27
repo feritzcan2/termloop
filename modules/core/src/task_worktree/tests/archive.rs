@@ -324,3 +324,129 @@ fn archived_task_reuses_cleanup_then_deletes_only_its_exact_suspension_cohort() 
             .is_some()
     );
 }
+
+#[test]
+fn closed_task_restores_parked_agent_from_project_after_worktree_removal() {
+    let mut fixture = Fixture::new();
+    let (task_id, destination, proof_id, generation) = provision_cleanup_fixture(&mut fixture);
+    let worktree_cwd = termloop_platform::canonical_existing_directory_path(&destination)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let project_cwd =
+        termloop_platform::canonical_existing_directory_path(&fixture.project_directory)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+    let session_id = "parked-worktree-agent";
+    fixture
+        .runtime
+        .configure_agent_observations(crate::test_agent_observation_transport(
+            fixture.project_directory.join("provider"),
+        ));
+    fixture
+        .runtime
+        .store
+        .insert_session(
+            &fixture.runtime.write_authority,
+            termloop_domain::SessionRecord {
+                id: session_id.into(),
+                project_id: fixture.project_id.clone(),
+                name: Some("Parked worktree agent".into()),
+                kind: termloop_domain::SessionKind::Agent,
+                process: termloop_domain::ProcessDescriptor {
+                    program: "codex".into(),
+                    args: vec![],
+                    cwd: worktree_cwd.clone(),
+                    agent_id: Some("codex".into()),
+                    template_ref: Some("builtin.agent.interactive".into()),
+                    template_version: Some(1),
+                },
+                lifecycle_state: "running".into(),
+                runtime_epoch: 1,
+                archived_at_epoch_ms: None,
+                ask_to_source_session_id: None,
+                run_configuration_id: None,
+                improver_target: None,
+                ask_to_continuation: None,
+                resume_ref: termloop_domain::ResumeRef::for_provider(
+                    termloop_domain::ResumeProvider::Codex,
+                    "00000000-0000-4000-8000-000000000001".into(),
+                ),
+                resume_launch_guard: None,
+                resume_failure: None,
+                launch_selection: termloop_domain::AgentLaunchSelection {
+                    model: "gpt-5.6-sol".into(),
+                    permission: "acceptEdits".into(),
+                    reasoning: "high".into(),
+                },
+            },
+        )
+        .unwrap();
+    let (program, args) = termloop_platform::default_shell();
+    fixture
+        .runtime
+        .terminal
+        .spawn(termloop_terminal::PtySpawnSpec {
+            session_id: session_id.into(),
+            runtime_epoch: 1,
+            program,
+            args,
+            cwd: worktree_cwd,
+            environment: termloop_platform::LaunchEnvironment::os_baseline(),
+            recent_output_replay: false,
+        })
+        .unwrap();
+
+    let preview = fixture
+        .runtime
+        .inspect_task_archive(json!({ "taskId": task_id }))
+        .unwrap();
+    assert_eq!(preview["can_archive"], true);
+    fixture
+        .runtime
+        .archive_task(json!({
+            "taskId": task_id,
+            "operationId": Uuid::new_v4().to_string(),
+            "archiveTicket": preview["archive_ticket"],
+        }))
+        .unwrap();
+    let cleanup = fixture
+        .runtime
+        .inspect_task_worktree_cleanup(json!({ "taskId": task_id }))
+        .unwrap();
+    assert_eq!(cleanup["decision"], "allowed");
+    fixture
+        .runtime
+        .cleanup_task_worktree(cleanup_params(
+            &task_id,
+            &Uuid::new_v4().to_string(),
+            &proof_id,
+            generation,
+        ))
+        .unwrap();
+    let closed = fixture
+        .runtime
+        .finalize_closed_worktree_removal(json!({ "taskId": task_id }))
+        .unwrap();
+    assert_eq!(closed["status"], "closed");
+    assert!(closed["archived_at_epoch_ms"].is_null());
+    assert!(closed["worktree"].is_null());
+    assert_eq!(fixture.runtime.store.sessions()[0].process.cwd, project_cwd);
+    assert_eq!(
+        fixture.runtime.store.task_archive_suspensions()[0].reason,
+        termloop_domain::TaskSuspensionReason::ClosedWorktreeRemoved,
+    );
+
+    let (reopened, resume_session_ids) = fixture
+        .runtime
+        .reopen_task_with_resume_plan(json!({ "taskId": task_id }))
+        .unwrap();
+    assert_eq!(reopened["status"], "open");
+    assert_eq!(resume_session_ids, vec![session_id.to_owned()]);
+    assert!(fixture.runtime.store.task_archive_suspensions().is_empty());
+    assert_eq!(
+        fixture.runtime.store.sessions()[0].resume_failure,
+        Some(termloop_domain::ResumeFailureReason::DaemonInterrupted),
+    );
+}

@@ -31,7 +31,7 @@ on:
 
 concurrency:
   group: >-
-    termloop-next-native-diagnostic-${{ github.ref }}-${{ inputs.windows }}-${{ inputs.ubuntu }}-${{ inputs.macos }}-${{ inputs.scope }}
+    termloop-native-diagnostic-${{ github.ref }}-${{ inputs.windows }}-${{ inputs.ubuntu }}-${{ inputs.macos }}-${{ inputs.scope }}
   cancel-in-progress: true
 
 jobs:
@@ -68,7 +68,7 @@ jobs:
 
   macos:
     if: inputs.macos
-    runs-on: [self-hosted, macOS, ARM64, termloop-next-macos]
+    runs-on: [self-hosted, macOS, ARM64, termloop-macos]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

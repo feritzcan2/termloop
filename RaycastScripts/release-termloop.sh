@@ -2,12 +2,12 @@
 
 # Required parameters:
 # @raycast.schemaVersion 1
-# @raycast.title Release TermLoop Next
+# @raycast.title Release TermLoop
 # @raycast.mode fullOutput
 
 # Optional parameters:
 # @raycast.icon 🚀
-# @raycast.packageName TermLoop Next
+# @raycast.packageName TermLoop
 # @raycast.needsConfirmation true
 # @raycast.refreshTime 0
 
@@ -39,7 +39,7 @@ for command in git gh python3; do
 done
 
 if [[ ! -d "$REPO_DIR/.git" ]]; then
-  echo "TermLoop Next repository not found: $REPO_DIR"
+  echo "TermLoop repository not found: $REPO_DIR"
   exit 1
 fi
 

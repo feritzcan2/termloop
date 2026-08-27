@@ -1,4 +1,4 @@
-# TermLoop Next
+# TermLoop
 
 Cross-platform, terminal-first TermLoop rewrite.
 

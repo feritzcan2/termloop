@@ -54,6 +54,7 @@ impl CoreRuntime {
             "task.rename" => self.rename_task(params),
             "task.updateBrief" => self.update_task_brief(params),
             "task.close" => self.close_task(params),
+            "task.finalizeClosedWorktreeRemoval" => self.finalize_closed_worktree_removal(params),
             "task.reopen" => self.reopen_task(params),
             "task.delete" => self.delete_task(params),
             "task.deleteArchived" => self.delete_archived_task(params),

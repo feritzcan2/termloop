@@ -1,4 +1,4 @@
-# TermLoop Next agent rules
+# TermLoop agent rules
 
 These rules apply to the whole repository. Read this file and the nearest local
 `AGENTS.md` before editing. Source code, schemas, tests, and these local rules
@@ -41,8 +41,8 @@ boundary; it may not weaken a root invariant.
   `/Users/feritzcan/Projects/bmadworkflowtest/termloop` as an optional,
   read-only reference for visual UI and existing feature discovery.
 - Consult it only when useful or when the user asks for comparison. Its
-  architecture and domain model are not authoritative for TermLoop Next.
-- Do not modify it unless explicitly requested, and never make TermLoop Next
+  architecture and domain model are not authoritative for TermLoop.
+- Do not modify it unless explicitly requested, and never make TermLoop
   code or tests depend on that local path.
 
 ## Dependency and ownership rules

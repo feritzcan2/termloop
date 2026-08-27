@@ -1082,7 +1082,7 @@ describe("Task rail row anatomy", () => {
 
 describe("Task rail first-run UX", () => {
   it("tabs active Tasks individually and keeps closed Tasks in the original combined list", async () => {
-    const active = launchableTask();
+    const active = { ...launchableTask(), brief: "Keep the selected Task context visible in the sidebar." };
     const closed = { ...launchableTask(), id: "task-closed", title: "Finished Task", status: "closed" as const };
     const olderClosed = { ...launchableTask(), id: "task-older-closed", title: "Older finished Task", status: "closed" as const };
     const container = document.createElement("div");
@@ -1098,6 +1098,9 @@ describe("Task rail first-run UX", () => {
     expect(container.querySelector('[data-task-tab-id="task-1"]')).not.toBeNull();
     expect(container.querySelector('.task-list [data-task-id="task-1"]')).not.toBeNull();
     expect(container.querySelector('.task-list [data-task-id="task-closed"]')).toBeNull();
+    expect(container.querySelector(".task-group.focused")).not.toBeNull();
+    expect(container.querySelector(".task-focus-brief")?.textContent).toContain("selected Task context");
+    expect(container.querySelector(".task-focus-facts")?.textContent).toContain("Ready to run agents");
 
     await act(async () => closedTab.click());
     expect(activeTab.getAttribute("aria-selected")).toBe("false");
@@ -1107,6 +1110,8 @@ describe("Task rail first-run UX", () => {
     expect(container.querySelector('.task-list [data-task-id="task-1"]')).toBeNull();
     expect(container.querySelector('.task-list [data-task-id="task-closed"]')).not.toBeNull();
     expect(container.querySelector('.task-list [data-task-id="task-older-closed"]')).not.toBeNull();
+    expect(container.querySelector(".task-group.focused")).toBeNull();
+    expect(container.querySelector(".task-focus-facts")).toBeNull();
 
     await act(async () => root.unmount());
     container.remove();
@@ -1137,6 +1142,84 @@ describe("Task rail first-run UX", () => {
     await act(async () => root.render(createElement(TaskRail, props)));
     expect(container.querySelector('[data-task-tab-id="task-2"]')?.getAttribute("aria-selected")).toBe("true");
     expect(container.querySelector('.task-list [data-task-id="task-2"]')).not.toBeNull();
+
+    await act(async () => root.unmount());
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+
+  it("creates from the fixed leading button and closes an active Task from its tab", async () => {
+    const setTaskClosed = vi.fn(async () => {});
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => root.render(createElement(TaskRail, {
+      ...railProps(),
+      setTaskClosed,
+    })));
+
+    const create = container.querySelector<HTMLButtonElement>('.task-item-tab-bar > [aria-label="Create Task"]');
+    const close = container.querySelector<HTMLButtonElement>('.task-item-tab-close[aria-label="Close Compact launchers"]');
+    expect(create).not.toBeNull();
+    expect(close).not.toBeNull();
+    await act(async () => close!.click());
+    expect(setTaskClosed).toHaveBeenCalledWith("task-1", true);
+
+    await act(async () => create!.click());
+    expect(document.querySelector(".task-create-dialog")?.textContent).toContain("Create a Task");
+
+    await act(async () => root.unmount());
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+
+  it("favorites from the hover action, moves favorites left, and remembers them", async () => {
+    const first = launchableTask();
+    const second = { ...launchableTask(), id: "task-favorite", title: "Favorite candidate" };
+    const container = document.createElement("div");
+    document.body.append(container);
+    let root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const props = { ...railProps({ tasks: [first, second] }), projectId: "favorite-project" };
+    await act(async () => root.render(createElement(TaskRail, props)));
+
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Favorite Favorite candidate"]')!.click());
+    expect([...container.querySelectorAll<HTMLElement>("[data-task-tab-id]")].map((tab) => tab.dataset.taskTabId))
+      .toEqual(["task-favorite", "task-1"]);
+    expect(container.querySelector('[aria-label="Unfavorite Favorite candidate"]')?.getAttribute("aria-pressed")).toBe("true");
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(createElement(TaskRail, props)));
+    expect([...container.querySelectorAll<HTMLElement>("[data-task-tab-id]")].map((tab) => tab.dataset.taskTabId))
+      .toEqual(["task-favorite", "task-1"]);
+
+    await act(async () => root.unmount());
+    window.localStorage.removeItem("termloop.taskFavorite.v1");
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+
+  it("renames an active Task inline after a tab double click", async () => {
+    const task = launchableTask();
+    const updateTask = vi.fn(async () => undefined);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => root.render(createElement(TaskRail, { ...railProps({ task }), updateTask })));
+
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-task-tab-id="task-1"]')!
+      .dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    const input = container.querySelector<HTMLInputElement>('[aria-label="Rename Compact launchers"]')!;
+    expect(input.value).toBe("Compact launchers");
+    await act(async () => typeInto(input, "Renamed from tab"));
+    await act(async () => {
+      input.blur();
+      await Promise.resolve();
+    });
+    expect(updateTask).toHaveBeenCalledWith("task-1", "Renamed from tab", task.brief);
 
     await act(async () => root.unmount());
     container.remove();

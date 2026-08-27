@@ -28,6 +28,16 @@ pub struct TaskArchiveSuspension {
     pub prior_lifecycle_state: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prior_resume_failure: Option<ResumeFailureReason>,
+    #[serde(default)]
+    pub reason: TaskSuspensionReason,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TaskSuspensionReason {
+    #[default]
+    Archived,
+    ClosedWorktreeRemoved,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

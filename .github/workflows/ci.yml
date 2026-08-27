@@ -8,13 +8,13 @@ on:
   pull_request:
 
 concurrency:
-  group: termloop-next-ci-${{ github.workflow }}-${{ github.ref }}
+  group: termloop-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   preflight:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, macOS, ARM64, termloop-next-macos]
+    runs-on: [self-hosted, macOS, ARM64, termloop-macos]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -47,10 +47,17 @@ jobs:
         run: |
           set -euo pipefail
           rustup target add x86_64-unknown-linux-gnu x86_64-pc-windows-msvc
-          for target in x86_64-unknown-linux-gnu x86_64-pc-windows-msvc; do
-            CARGO_TARGET_DIR="$RUNNER_TEMP/termloop-preflight-$target" \
-              cargo clippy --workspace --all-targets --target "$target" -- -D warnings
-          done
+          command -v x86_64-linux-gnu-gcc >/dev/null
+          test "$(cargo xwin --version)" = "cargo-xwin-xwin 0.23.1"
+          test -x /opt/homebrew/opt/llvm@20/bin/clang-cl
+          command -v ninja >/dev/null
+          CARGO_TARGET_DIR="$RUNNER_TEMP/termloop-preflight-x86_64-unknown-linux-gnu" \
+            cargo clippy --workspace --all-targets --target x86_64-unknown-linux-gnu -- -D warnings
+          PATH="/opt/homebrew/opt/llvm@20/bin:$PATH" \
+            cargo xwin clippy --workspace --all-targets \
+              --target x86_64-pc-windows-msvc \
+              --target-dir "$RUNNER_TEMP/termloop-preflight-x86_64-pc-windows-msvc" \
+              -- -D warnings
 
   verify:
     needs: preflight
@@ -59,7 +66,7 @@ jobs:
       matrix:
         include:
           - os: macos-15
-            runner: '["self-hosted", "macOS", "ARM64", "termloop-next-macos"]'
+            runner: '["self-hosted", "macOS", "ARM64", "termloop-macos"]'
           - os: ubuntu-24.04
             runner: '["ubuntu-24.04"]'
           - os: windows-2025

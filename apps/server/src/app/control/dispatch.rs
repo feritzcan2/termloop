@@ -412,6 +412,30 @@ async fn restore_task(params: Value, state: &AppState) -> Result<Value, termloop
         .filter_map(Value::as_str)
         .map(str::to_owned)
         .collect::<Vec<_>>();
+    resume_task_sessions(session_ids, state).await;
+    Ok(result)
+}
+
+async fn reopen_task(params: Value, state: &AppState) -> Result<Value, termloop_core::CoreError> {
+    let (result, session_ids, state_revision) = {
+        let mut core = state.core.lock().await;
+        let (result, session_ids) = core.reopen_task_with_resume_plan(params)?;
+        (result, session_ids, core.state_revision())
+    };
+    let _ = state.invalidation_requests.try_send(InvalidationRequest {
+        topics: vec![
+            ProjectionTopic::Task,
+            ProjectionTopic::Session,
+            ProjectionTopic::AgentStatus,
+        ],
+        state_revision,
+        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
+    });
+    resume_task_sessions(session_ids, state).await;
+    Ok(result)
+}
+
+async fn resume_task_sessions(session_ids: Vec<String>, state: &AppState) {
     for session_id in session_ids {
         let preview =
             match preview_resume_agent_session(json!({ "sessionId": session_id }), state).await {
@@ -431,7 +455,6 @@ async fn restore_task(params: Value, state: &AppState) -> Result<Value, termloop
         )
         .await;
     }
-    Ok(result)
 }
 
 async fn restore_archived_session(
@@ -1422,6 +1445,7 @@ async fn dispatch_inner(
             "project.restartRun" => launch_project_run(request.params, true, state).await,
             "task.archive" => archive_task(request.params, state).await,
             "task.restore" => restore_task(request.params, state).await,
+            "task.reopen" => reopen_task(request.params, state).await,
             "session.terminate" => terminate_session(request.params, state).await,
             "session.previewResumeAgent" => {
                 preview_resume_agent_session(request.params, state).await

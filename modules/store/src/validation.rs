@@ -1,9 +1,10 @@
 use termloop_domain::{
     COMPANION_TRANSCRIPT_HARD_BYTES, COMPANION_TRANSCRIPT_HARD_MESSAGES, IssueLinkProvider,
     SessionKind, SessionRelocationStage, SessionRelocationTarget, TASK_STEWARD_BRIEF_MAX_BYTES,
-    TaskStatus, WorktreeCleanupBlocker, WorktreeCleanupFailure, WorktreeCleanupMode,
-    WorktreeCleanupOperation, WorktreeCleanupReceipt, WorktreeStaleResolutionFailure,
-    WorktreeStaleResolutionOperation, WorktreeStaleResolutionReceipt,
+    TaskStatus, TaskSuspensionReason, WorktreeCleanupBlocker, WorktreeCleanupFailure,
+    WorktreeCleanupMode, WorktreeCleanupOperation, WorktreeCleanupReceipt,
+    WorktreeStaleResolutionFailure, WorktreeStaleResolutionOperation,
+    WorktreeStaleResolutionReceipt,
 };
 
 use super::{
@@ -533,11 +534,22 @@ fn archive_records_are_invalid(state: &CurrentState) -> bool {
                 session.is_none_or(|session| {
                     !state.tasks.iter().any(|task| {
                         task.project_id == session.project_id
-                            && task.archived_at_epoch_ms == Some(suspension.archived_at_epoch_ms)
                             && suspension
                                 .task_id
                                 .as_ref()
                                 .is_none_or(|task_id| task_id == &task.id)
+                            && match suspension.reason {
+                                TaskSuspensionReason::Archived => {
+                                    task.archived_at_epoch_ms
+                                        == Some(suspension.archived_at_epoch_ms)
+                                }
+                                TaskSuspensionReason::ClosedWorktreeRemoved => {
+                                    suspension.task_id.as_deref() == Some(task.id.as_str())
+                                        && task.archived_at_epoch_ms.is_none()
+                                        && task.status == TaskStatus::Closed
+                                        && task.worktree.is_none()
+                                }
+                            }
                     })
                 }) || state.task_archive_suspensions[index + 1..]
                     .iter()

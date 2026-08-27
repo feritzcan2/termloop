@@ -546,6 +546,14 @@
         "$ref": "#/$defs/taskDto"
       }
     },
+    "task.finalizeClosedWorktreeRemoval": {
+      "params": {
+        "$ref": "#/$defs/taskIdParams"
+      },
+      "result": {
+        "$ref": "#/$defs/taskDto"
+      }
+    },
     "task.reopen": {
       "params": {
         "$ref": "#/$defs/taskIdParams"
@@ -1378,6 +1386,7 @@
         "task.rename",
         "task.updateBrief",
         "task.close",
+        "task.finalizeClosedWorktreeRemoval",
         "task.reopen",
         "task.delete",
         "task.deleteArchived",

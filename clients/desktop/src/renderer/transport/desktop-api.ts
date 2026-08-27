@@ -269,6 +269,7 @@ export type DesktopApi = {
   taskRename(taskId: string, title: string): Promise<Task>;
   taskUpdateBrief(taskId: string, brief: string | null): Promise<Task>;
   taskClose(taskId: string): Promise<Task>;
+  taskFinalizeClosedWorktreeRemoval(taskId: string): Promise<Task>;
   taskInspectArchive(taskId: string): Promise<TaskArchivePreviewDto>;
   taskArchive(taskId: string, archiveTicket: string): Promise<TaskArchiveResultDto>;
   taskAbandonArchive(taskId: string, operationId: string): Promise<TaskArchiveAbandonResultDto>;

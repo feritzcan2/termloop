@@ -59,6 +59,7 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   taskRename: "termloop:task-rename",
   taskUpdateBrief: "termloop:task-update-brief",
   taskClose: "termloop:task-close",
+  taskFinalizeClosedWorktreeRemoval: "termloop:task-finalize-closed-worktree-removal",
   taskInspectArchive: "termloop:task-inspect-archive",
   taskArchive: "termloop:task-archive",
   taskAbandonArchive: "termloop:task-abandon-archive",

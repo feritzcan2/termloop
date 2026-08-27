@@ -28,6 +28,7 @@ export type TaskDeleteOrchestration = {
   forgetStale(params: TaskForgetStaleWorktreeParams): Promise<TaskControlDesktopResult<Task>>;
   discardStale(params: TaskDiscardStaleWorktreeParams): Promise<TaskControlDesktopResult<Task>>;
   deleteTask(): Promise<unknown>;
+  completion?: "delete" | "close";
   freshId(): string;
   errorMessage(error: unknown): string;
 };
@@ -56,6 +57,12 @@ function cleanupIntent(current: Preview): {
 }
 
 export async function orchestrateTaskDelete(input: TaskDeleteOrchestration): Promise<TaskDeleteWorktreeResult> {
+  const closesTask = input.completion === "close";
+  const completedResult = (): TaskDeleteWorktreeResult => closesTask
+    ? { status: "completed", message: "Worktree removed and Task closed. Parked Agents will restore when the Task is reopened." }
+    : retainedDescriptors > 0
+      ? { status: "completed", message: `${retainedDescriptors} stopped Session descriptor${retainedDescriptors === 1 ? " was" : "s were"} retained.` }
+      : { status: "completed" };
   const reviewRequired = (preview: Preview, message: string): TaskDeleteWorktreeResult => ({
     status: "reviewRequired",
     preview,
@@ -80,6 +87,9 @@ export async function orchestrateTaskDelete(input: TaskDeleteOrchestration): Pro
     }
 
     if (input.review.kind === "forgetStaleBinding") {
+      if (closesTask) {
+        return reviewRequired(preview, "Choose permanent folder deletion to remove the worktree and close this Task.");
+      }
       if (preview.stale_resolution.forget_status !== "available"
         || !preview.target_path) {
         return reviewRequired(preview, "The stale binding can no longer be forgotten. Review the fresh inspection.");
@@ -190,9 +200,7 @@ export async function orchestrateTaskDelete(input: TaskDeleteOrchestration): Pro
       worktreeRemoved = true;
       await input.deleteTask();
       await input.refresh();
-      return retainedDescriptors > 0
-        ? { status: "completed", message: `${retainedDescriptors} stopped Session descriptor${retainedDescriptors === 1 ? " was" : "s were"} retained.` }
-        : { status: "completed" };
+      return completedResult();
     }
 
     if (input.review.kind !== "cleanup") {
@@ -281,7 +289,7 @@ export async function orchestrateTaskDelete(input: TaskDeleteOrchestration): Pro
         await input.refresh();
         return {
           status: "failed",
-          message: "Worktree cleanup is still running. Wait for it to finish before deleting the Task.",
+          message: `Worktree cleanup is still running. Wait for it to finish before ${closesTask ? "closing" : "deleting"} the Task.`,
         };
       }
     } catch (cleanupError) {
@@ -300,9 +308,7 @@ export async function orchestrateTaskDelete(input: TaskDeleteOrchestration): Pro
     worktreeRemoved = true;
     await input.deleteTask();
     await input.refresh();
-    return retainedDescriptors > 0
-      ? { status: "completed", message: `${retainedDescriptors} stopped Session descriptor${retainedDescriptors === 1 ? " was" : "s were"} retained.` }
-      : { status: "completed" };
+    return completedResult();
   } catch (error) {
     try {
       await input.refresh();
@@ -312,7 +318,7 @@ export async function orchestrateTaskDelete(input: TaskDeleteOrchestration): Pro
     return {
       status: "failed",
       message: worktreeRemoved
-        ? `The worktree was removed, but the Task could not be deleted: ${message}`
+        ? `The worktree was removed, but the Task could not be ${closesTask ? "closed" : "deleted"}: ${message}`
         : bindingForgotten
           ? `The stale binding was forgotten and the folder was kept, but the Task could not be deleted: ${message}`
           : message,

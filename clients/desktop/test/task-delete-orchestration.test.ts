@@ -140,6 +140,27 @@ function harness(initialPreview: TaskWorktreeCleanupPreviewDto) {
 }
 
 describe("Task delete orchestration", () => {
+  it("finishes worktree removal by closing while retaining parked Agent descriptors", async () => {
+    const initial = preview([]);
+    const { input, calls } = harness(initial);
+    input.completion = "close";
+    const result = await orchestrateTaskDelete(input);
+    expect(result).toEqual({
+      status: "completed",
+      message: "Worktree removed and Task closed. Parked Agents will restore when the Task is reopened.",
+    });
+    expect(calls).toEqual({ terminate: 0, close: 0, cleanup: 1, forget: 0, discard: 0, delete: 1 });
+  });
+
+  it("refuses keep-folder stale resolution when the requested outcome removes the worktree", async () => {
+    const initial = stalePreview("available");
+    const { input, calls } = harness(initial);
+    input.completion = "close";
+    input.review = { preview: initial, kind: "forgetStaleBinding" };
+    expect(await orchestrateTaskDelete(input)).toMatchObject({ status: "reviewRequired" });
+    expect(calls).toEqual({ terminate: 0, close: 0, cleanup: 0, forget: 0, discard: 0, delete: 0 });
+  });
+
   it("continues combined deletion when an alternate checkout has no core identity blockers", async () => {
     const initial = preview(["sessionAttached"]);
     const { input, calls } = harness(initial);

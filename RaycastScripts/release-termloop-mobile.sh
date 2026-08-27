@@ -7,7 +7,7 @@
 
 # Optional parameters:
 # @raycast.icon 🚀
-# @raycast.packageName TermLoop Next
+# @raycast.packageName TermLoop
 # @raycast.needsConfirmation true
 # @raycast.refreshTime 0
 
@@ -65,7 +65,7 @@ for command in git node pnpm python3 xcodebuild plutil security codesign; do
 done
 
 if [[ ! -f "$MOBILE_PACKAGE" || ! -f "$APP_CONFIG" ]]; then
-  echo "TermLoop Next mobile source not found under: $MOBILE_DIR"
+  echo "TermLoop mobile source not found under: $MOBILE_DIR"
   exit 1
 fi
 
@@ -77,12 +77,12 @@ fi
 
 branch="$(git -C "$REPO_DIR" branch --show-current)"
 if [[ "$branch" != "main" ]]; then
-  echo "Release requires the designated TermLoop Next main checkout; current branch is '$branch'."
+  echo "Release requires the designated TermLoop main checkout; current branch is '$branch'."
   exit 1
 fi
 
 if [[ -n "$(git -C "$REPO_DIR" status --porcelain)" ]]; then
-  echo "Release requires a clean TermLoop Next main checkout."
+  echo "Release requires a clean TermLoop main checkout."
   git -C "$REPO_DIR" status --short
   exit 1
 fi
@@ -142,7 +142,7 @@ pnpm --filter @termloop/mobile test
 pnpm --filter @termloop/mobile export:ios
 
 if [[ -n "$(git -C "$REPO_DIR" status --porcelain)" ]]; then
-  echo "TermLoop Next changed while the release verification was running."
+  echo "TermLoop changed while the release verification was running."
   git -C "$REPO_DIR" status --short
   exit 1
 fi

@@ -36,6 +36,10 @@ try {
       title: taskTitle,
       brief: null,
       worktreeIntent: "none",
+      agentId: null,
+      model: null,
+      reasoning: null,
+      kickoffMessage: null,
     });
   }
   if (!task) throw new Error(`development Task is missing: ${taskTitle}`);

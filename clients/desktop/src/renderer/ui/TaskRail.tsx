@@ -20,6 +20,7 @@ import { isProjectRelocationDragCandidate, isTaskRelocationDragCandidate, useOpt
 import { readWorktreeParentPath, writeWorktreeParentPath } from "../worktree-parent-memory.js";
 import { readTaskCollapsed, writeTaskCollapsed } from "../task-collapse-memory.js";
 import { readTaskTabSelection, writeTaskTabSelection, type TaskTabStatus } from "../task-tab-memory.js";
+import { readFavoriteTaskIds, writeFavoriteTaskIds } from "../task-favorite-memory.js";
 import { AgentPlanDisclosure } from "./AgentPlanDisclosure.js";
 import { RunSessionLine, TaskRunLaunchers, runCommandsBySessionId, runtimesBySessionId } from "./TaskRuns.js";
 import type { RunImprovement } from "./TaskRuns.js";
@@ -150,15 +151,15 @@ function taskSessionGroupsByActivity(
     : group);
 }
 
-/// Live work floats: a Task with at least one live agent sorts ahead of quiet
-/// Tasks, loudest first, using the same activity ranking as the row's agent
-/// dots. Quiet Tasks keep their stored order, and the sort is stable so two
-/// equally loud Tasks never swap places on a status refresh.
+/// Favorites form the leading group. Within favorite and ordinary groups, live
+/// work floats loudest-first using the same activity ranking as the row's agent
+/// dots. Equal entries retain their durable order.
 export function openTasksByActivity(
   tasks: readonly Task[],
   sessionsById: ReadonlyMap<string, Session>,
   statusesById: ReadonlyMap<string, AgentStatus>,
   reviewReadySessionIds: ReadonlySet<string>,
+  favoriteTaskIds: ReadonlySet<string> = new Set(),
 ): Task[] {
   const quiet = Number.MAX_SAFE_INTEGER;
   const priority = (task: Task): number => {
@@ -169,10 +170,12 @@ export function openTasksByActivity(
       : agentGroupActivityPriority(liveAgents, statusesById, reviewReadySessionIds);
   };
   return tasks
-    .map((task, index) => ({ task, index, priority: priority(task) }))
-    .sort((left, right) => left.priority === right.priority
-      ? left.index - right.index
-      : left.priority - right.priority)
+    .map((task, index) => ({ task, index, priority: priority(task), favorite: favoriteTaskIds.has(task.id) }))
+    .sort((left, right) => left.favorite !== right.favorite
+      ? left.favorite ? -1 : 1
+      : left.priority === right.priority
+        ? left.index - right.index
+        : left.priority - right.priority)
     .map((entry) => entry.task);
 }
 
@@ -272,6 +275,8 @@ export type TaskRailProps = {
 export function TaskRail(props: TaskRailProps) {
   const [selectedTab, setSelectedTab] = useState<TaskListTab>("active");
   const [selectedTaskIds, setSelectedTaskIds] = useState<Partial<Record<TaskListTab, string>>>(() => rememberedTaskTabs(props.projectId));
+  const [favoriteTaskIds, setFavoriteTaskIds] = useState<ReadonlySet<string>>(() => readFavoriteTaskIds(props.projectId));
+  const [renamingTaskTab, setRenamingTaskTab] = useState<{ taskId: string; title: string; busy: boolean; error: string | undefined }>();
   const taskListId = useId();
   const taskTabsRef = useRef<HTMLDivElement>(null);
   const [editor, setEditor] = useState<EditorState>();
@@ -321,6 +326,7 @@ export function TaskRail(props: TaskRailProps) {
     props.sessionsById,
     props.statusesById,
     props.reviewReadySessionIds,
+    favoriteTaskIds,
   );
   const closedTasks = props.tasks.filter((task) => task.status === "closed");
   const taskTabPresentationById = useMemo(() => new Map(props.tasks.map((task) => {
@@ -341,7 +347,7 @@ export function TaskRail(props: TaskRailProps) {
     menu || editor || currentDeleteTarget || bindTarget || provisionTarget || cleanupTarget ||
     repairTarget || archiveTarget,
   );
-  const renderTask = (task: Task) => (
+  const renderTask = (task: Task, focused = false) => (
     <TaskGroup
       key={`${props.projectId ?? "unknown"}:${task.id}`}
       projectId={props.projectId}
@@ -386,12 +392,15 @@ export function TaskRail(props: TaskRailProps) {
       deleting={props.deletingTaskIds.has(task.id)}
       provisioning={props.provisioningTaskIds?.has(task.id) ?? false}
       nowEpochMs={nowEpochMs}
+      focused={focused}
     />
   );
 
   useEffect(() => {
     setSelectedTab("active");
     setSelectedTaskIds(rememberedTaskTabs(props.projectId));
+    setFavoriteTaskIds(readFavoriteTaskIds(props.projectId));
+    setRenamingTaskTab(undefined);
     setEditor(undefined);
     setMenu(undefined);
     setDeleteTarget(undefined);
@@ -486,6 +495,30 @@ export function TaskRail(props: TaskRailProps) {
     setSelectedTaskIds((current) => ({ ...current, [status]: taskId }));
     writeTaskTabSelection(props.projectId, status, taskId);
   }, [props.projectId]);
+  const toggleTaskFavorite = useCallback((taskId: string) => {
+    setFavoriteTaskIds((current) => {
+      const next = new Set(current);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      writeFavoriteTaskIds(props.projectId, next);
+      return next;
+    });
+  }, [props.projectId]);
+  const commitTaskTabRename = async (task: Task) => {
+    if (!renamingTaskTab || renamingTaskTab.taskId !== task.id || renamingTaskTab.busy) return;
+    const title = renamingTaskTab.title.trim();
+    if (!title || title === task.title) {
+      setRenamingTaskTab(undefined);
+      return;
+    }
+    setRenamingTaskTab((current) => current?.taskId === task.id ? { ...current, busy: true, error: undefined } : current);
+    const failure = await props.updateTask(task.id, title, task.brief);
+    if (failure) {
+      setRenamingTaskTab((current) => current?.taskId === task.id ? { ...current, busy: false, error: failure } : current);
+    } else {
+      setRenamingTaskTab(undefined);
+    }
+  };
   useEffect(() => {
     if (!selectedTask || selectedTaskIds.active === selectedTask.id) return;
     selectTask("active", selectedTask.id);
@@ -517,34 +550,68 @@ export function TaskRail(props: TaskRailProps) {
       </div>
         <div id={taskListId} className="task-status-panel" role="tabpanel" aria-label={`${selectedTab === "active" ? "Active" : "Closed"} Tasks`}>
           {selectedTab === "active" && openTasks.length > 0 ? (
-            <div ref={taskTabsRef} className="task-item-tabs" role="tablist" aria-label="Active Task selection">
-              {openTasks.map((task, index) => {
+            <div className="task-item-tab-bar">
+              <button type="button" className="task-tab-create" aria-label="Create Task" title="Create Task" disabled={props.disabled} onClick={() => setEditor({ mode: "create" })}><Icon name="add" /></button>
+              <div ref={taskTabsRef} className="task-item-tabs" role="tablist" aria-label="Active Task selection">
+                {openTasks.map((task, index) => {
                 const selected = task.id === selectedTask?.id;
+                const favorite = favoriteTaskIds.has(task.id);
+                const renaming = renamingTaskTab?.taskId === task.id;
                 const presentation = taskTabPresentationById.get(task.id);
                 const state = presentation?.attention?.label ?? (presentation?.liveAgentCount ? `${presentation.liveAgentCount} live ${presentation.liveAgentCount === 1 ? "agent" : "agents"}` : undefined);
-                return <button
-                  key={task.id}
-                  type="button"
-                  role="tab"
-                  id={`${taskListId}-task-${index}`}
-                  aria-controls={`${taskListId}-selected-task`}
-                  data-task-tab-id={task.id}
-                  data-tone={presentation?.tone}
-                  aria-selected={selected}
-                  aria-label={`${task.title}${state ? `, ${state}` : ""}`}
-                  title={`${task.title}${state ? ` · ${state}` : ""}`}
-                  tabIndex={selected ? 0 : -1}
-                  className={selected ? "selected" : undefined}
-                  onKeyDown={(event) => selectTaskByKeyboard(event, index)}
-                  onClick={() => selectTask("active", task.id)}
-                ><i className={`task-tab-dot ${presentation?.tone ?? "quiet"}`} aria-hidden="true" /><span>{task.title}</span>{presentation?.attention?.tone === "attention" ? <i className="task-tab-attention" aria-hidden="true" /> : null}</button>;
+                return <div key={task.id} className={`task-item-tab${selected ? " selected" : ""}${favorite ? " favorited" : ""}`} data-tone={presentation?.tone}>
+                  {renaming ? <input
+                    autoFocus
+                    id={`${taskListId}-task-${index}`}
+                    className="task-item-tab-rename"
+                    data-task-tab-id={task.id}
+                    value={renamingTaskTab.title}
+                    maxLength={160}
+                    disabled={renamingTaskTab.busy}
+                    aria-label={`Rename ${task.title}`}
+                    aria-invalid={Boolean(renamingTaskTab.error)}
+                    title={renamingTaskTab.error ?? "Enter to save · Escape to cancel"}
+                    onFocus={(event) => event.currentTarget.select()}
+                    onChange={(event) => setRenamingTaskTab((current) => current?.taskId === task.id ? { ...current, title: event.target.value, error: undefined } : current)}
+                    onClick={(event) => event.stopPropagation()}
+                    onBlur={() => { void commitTaskTabRename(task); }}
+                    onKeyDown={(event) => {
+                      event.stopPropagation();
+                      if (event.key === "Enter") event.currentTarget.blur();
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        setRenamingTaskTab(undefined);
+                      }
+                    }}
+                  /> : <button
+                    type="button"
+                    role="tab"
+                    id={`${taskListId}-task-${index}`}
+                    aria-controls={`${taskListId}-selected-task`}
+                    data-task-tab-id={task.id}
+                    data-tone={presentation?.tone}
+                    aria-selected={selected}
+                    aria-label={`${task.title}${state ? `, ${state}` : ""}`}
+                    title={`${task.title}${state ? ` · ${state}` : ""}`}
+                    tabIndex={selected ? 0 : -1}
+                    className="task-item-tab-select"
+                    onKeyDown={(event) => selectTaskByKeyboard(event, index)}
+                    onContextMenu={(event) => { event.preventDefault(); openMenu(task, event.clientX, event.clientY, event.currentTarget); }}
+                    onClick={() => selectTask("active", task.id)}
+                    onDoubleClick={(event) => { event.preventDefault(); selectTask("active", task.id); setRenamingTaskTab({ taskId: task.id, title: task.title, busy: false, error: undefined }); }}
+                  ><i className={`task-tab-dot ${presentation?.tone ?? "quiet"}`} aria-hidden="true" /><span>{task.title}</span>{presentation?.attention?.tone === "attention" ? <i className="task-tab-attention" aria-hidden="true" /> : null}</button>
+                  }
+                  <button type="button" className="task-item-tab-favorite" aria-label={`${favorite ? "Unfavorite" : "Favorite"} ${task.title}`} aria-pressed={favorite} title={favorite ? "Remove from favorites" : "Favorite Task"} onClick={() => toggleTaskFavorite(task.id)}><Icon name="star" /></button>
+                  <button type="button" className="task-item-tab-close" aria-label={`Close ${task.title}`} title="Close Task" disabled={props.disabled || props.deletingTaskIds.has(task.id)} onClick={() => { void props.setTaskClosed(task.id, true); }}><Icon name="close" /></button>
+                </div>;
               })}
+              </div>
             </div>
           ) : null}
           <div id={`${taskListId}-selected-task`} role={selectedTab === "active" ? "tabpanel" : undefined} aria-labelledby={selectedTab === "active" && selectedTask ? `${taskListId}-task-${openTasks.indexOf(selectedTask)}` : undefined}>
           <div className="task-list" role="list" aria-label={`${selectedTab === "active" ? "Active" : "Closed"} Tasks`}>
-          {selectedTab === "active" && selectedTask ? renderTask(selectedTask) : null}
-          {selectedTab === "closed" ? closedTasks.map(renderTask) : null}
+          {selectedTab === "active" && selectedTask ? renderTask(selectedTask, true) : null}
+          {selectedTab === "closed" ? closedTasks.map((task) => renderTask(task)) : null}
           {/* A first-ever visitor gets the one-sentence model and the primary
               action; anyone with existing closed or archived Tasks already
               knows it and gets the quiet line back. */}
@@ -580,7 +647,7 @@ export function TaskRail(props: TaskRailProps) {
             )}
             <MenuButton icon="archive" label="Archive Task" detail="Park safe context and remove it from active work" action={() => perform(() => setArchiveTarget(menuTask))} />
             <div className="context-menu-divider" />
-            <MenuButton icon="trash" label={menuTask.worktree ? "Delete Task and worktree" : "Delete Task"} detail={menuTask.worktree ? "Stop attached Sessions, cleanup, then delete" : "Remove its current record"} danger action={() => perform(() => setDeleteTarget(menuTask))} />
+            <MenuButton icon="trash" label={menuTask.worktree ? "Delete Task and worktree" : "Delete Task"} detail={menuTask.worktree ? "Park Agents, remove checkout, then close Task" : "Remove its current record"} danger action={() => perform(() => setDeleteTarget(menuTask))} />
           </div>
         </div>
       ) : null}
@@ -621,6 +688,7 @@ export function TaskRail(props: TaskRailProps) {
         task={currentDeleteTarget}
         inspect={props.inspectTaskWorktreeCleanup}
         close={() => setDeleteTarget(undefined)}
+        closeAfterWorktreeRemoval={Boolean(currentDeleteTarget.worktree)}
         remove={(review) => { void props.deleteTaskAndWorktree(currentDeleteTarget.id, review); }}
       /> : null}
       </OverlayPortal>
@@ -709,6 +777,7 @@ type TaskGroupProps = {
   deleting: boolean;
   provisioning: boolean;
   nowEpochMs: number;
+  focused: boolean;
 };
 
 /// One Task rendered as the legacy worktree group: a quiet header line, then the
@@ -844,7 +913,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
     <div
       ref={relocationDrop.setNodeRef}
       role="listitem"
-      className={`task-group${relocationDrop.isOver ? " session-drop-target" : ""}`}
+      className={`task-group${props.focused ? " focused" : ""}${relocationDrop.isOver ? " session-drop-target" : ""}`}
       data-task-stage={stage.id}
       data-disclosed={!collapsed && !props.deleting ? "true" : undefined}
       data-session-drop-target={task.status === "open" && task.archived_at_epoch_ms === null && !props.deleting ? task.id : undefined}
@@ -883,7 +952,10 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         >
           <span className="task-headline">
             <i className={`task-dot ${taskRowTone(stage, attention)}`} aria-hidden="true" />
-            <strong className="task-title">{task.title}</strong>
+            {props.focused ? <span className="task-focus-copy">
+              <strong className="task-title">{task.title}</strong>
+              {task.brief ? <small className="task-focus-brief">{task.brief}</small> : null}
+            </span> : <strong className="task-title">{task.title}</strong>}
           </span>
         </button>
         {/* One dot per live agent, loudest first, capped so the title keeps its
@@ -931,6 +1003,10 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         openIntegration={openIntegration}
         openIssue={() => { if (task.jira_url) void props.openExternal(task.jira_url); }}
       />
+      {props.focused && !props.deleting ? <dl className="task-focus-facts">
+        <div><dt>Status</dt><dd className={attention?.tone}>{attention ? `${attention.label} — ${attention.agent}` : stage.summary}</dd></div>
+        <div><dt>Checkout</dt><dd title={task.worktree?.path ?? "No worktree created"}>{task.worktree ? basename(task.worktree.path) : "Not created"}</dd></div>
+      </dl> : null}
       {action ? (
         action.kind === "nextStep" ? (
           <button

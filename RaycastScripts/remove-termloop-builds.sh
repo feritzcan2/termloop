@@ -2,17 +2,17 @@
 
 # Required parameters:
 # @raycast.schemaVersion 1
-# @raycast.title Remove TermLoop Next Builds
+# @raycast.title Remove TermLoop Builds
 # @raycast.mode fullOutput
 
 # Optional parameters:
 # @raycast.icon 🧹
-# @raycast.packageName TermLoop Next
+# @raycast.packageName TermLoop
 # @raycast.needsConfirmation false
 # @raycast.argument1 { "type": "text", "placeholder": "blank = clean, dry = preview, all = also release output", "optional": true }
 
 # Documentation:
-# @raycast.description Delete TermLoop Next build artifacts EXCEPT the main checkout's current build. Keeps target/debug's live output so the main app never needs a full rebuild, but prunes superseded incremental compiler caches and boots out dead per-profile launchd registrations. Skips anything currently running.
+# @raycast.description Delete TermLoop build artifacts EXCEPT the main checkout's current build. Keeps target/debug's live output so the main app never needs a full rebuild, but prunes superseded incremental compiler caches and boots out dead per-profile launchd registrations. Skips anything currently running.
 # @raycast.author feritzcan
 
 set -euo pipefail
@@ -24,6 +24,7 @@ export LC_ALL="en_US.UTF-8"
 
 SCRIPT_DIR="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 CHECKOUT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+# Keep the existing support root so installed builds retain their profiles and state.
 SUPPORT="$HOME/Library/Application Support/termloop-next"
 PROFILES_DIR="$SUPPORT/profiles"
 LAUNCHES_DIR="$SUPPORT/launches"
@@ -56,7 +57,7 @@ case "$MODE" in
 esac
 
 if [ ! -d "$CHECKOUT" ]; then
-  echo "TermLoop Next checkout not found: $CHECKOUT" >&2
+  echo "TermLoop checkout not found: $CHECKOUT" >&2
   exit 1
 fi
 
@@ -178,7 +179,7 @@ main_build_in_progress() {
   pgrep -f "incremental=$CHECKOUT/target/debug/incremental" >/dev/null 2>&1
 }
 
-echo "TermLoop Next build cleanup (mode: $MODE)"
+echo "TermLoop build cleanup (mode: $MODE)"
 echo "Protected: the main checkout's current build output in $CHECKOUT/target/debug"
 echo "Pruned there: only incremental caches already superseded by a newer one"
 echo

@@ -3,7 +3,7 @@
 mod archive;
 pub use archive::{
     SessionArchiveOperation, SessionArchiveOperationState, TaskArchiveOperation,
-    TaskArchiveOperationState, TaskArchiveSuspension, TaskArchiveTarget,
+    TaskArchiveOperationState, TaskArchiveSuspension, TaskArchiveTarget, TaskSuspensionReason,
 };
 
 mod configuration_version;

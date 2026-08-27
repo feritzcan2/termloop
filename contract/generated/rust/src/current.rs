@@ -167,7 +167,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:aab765cdc309e7309ededf5fb44d3159f5bc3775afea1e27838a5c342207339b";
+    "sha256:f5f33da6be8448b37910f278e3f17a5f275665ece5f927caa5da073f0169b013";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -233,6 +233,7 @@ pub const METHODS: &[&str] = &[
     "task.rename",
     "task.updateBrief",
     "task.close",
+    "task.finalizeClosedWorktreeRemoval",
     "task.reopen",
     "task.delete",
     "task.deleteArchived",
@@ -7301,6 +7302,8 @@ pub type TaskRenameResult = TaskDto;
 pub type TaskUpdateBriefResult = TaskDto;
 pub type TaskCloseParams = TaskIdParams;
 pub type TaskCloseResult = TaskDto;
+pub type TaskFinalizeClosedWorktreeRemovalParams = TaskIdParams;
+pub type TaskFinalizeClosedWorktreeRemovalResult = TaskDto;
 pub type TaskReopenParams = TaskIdParams;
 pub type TaskReopenResult = TaskDto;
 pub type TaskDeleteParams = TaskIdParams;
@@ -7459,6 +7462,7 @@ fn validate_method(value: &Value) -> bool {
             "task.rename",
             "task.updateBrief",
             "task.close",
+            "task.finalizeClosedWorktreeRemoval",
             "task.reopen",
             "task.delete",
             "task.deleteArchived",
@@ -26157,6 +26161,11 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<TaskCloseParams>(params.clone()).is_ok()
                 && validate_task_id_params(params)
         }
+        "task.finalizeClosedWorktreeRemoval" => {
+            serde_json::from_value::<TaskFinalizeClosedWorktreeRemovalParams>(params.clone())
+                .is_ok()
+                && validate_task_id_params(params)
+        }
         "task.reopen" => {
             serde_json::from_value::<TaskReopenParams>(params.clone()).is_ok()
                 && validate_task_id_params(params)
@@ -26826,6 +26835,11 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         }
         "task.close" => {
             serde_json::from_value::<TaskCloseResult>(result.clone()).is_ok()
+                && validate_task_dto(result)
+        }
+        "task.finalizeClosedWorktreeRemoval" => {
+            serde_json::from_value::<TaskFinalizeClosedWorktreeRemovalResult>(result.clone())
+                .is_ok()
                 && validate_task_dto(result)
         }
         "task.reopen" => {

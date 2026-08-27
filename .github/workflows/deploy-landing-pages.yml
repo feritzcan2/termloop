@@ -14,7 +14,7 @@ permissions:
   deployments: write
 
 concurrency:
-  group: termloop-next-landing-pages-${{ github.ref }}
+  group: termloop-landing-pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

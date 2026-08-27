@@ -2,11 +2,17 @@ import * as Application from "expo-application";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 
 import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
+import {
+  notificationDestination,
+  resolveNotificationConnectionId,
+  type NotificationDestination,
+} from "@/features/notifications/notification-navigation";
+import { useOverview } from "@/features/overview/overview-store";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -20,8 +26,11 @@ Notifications.setNotificationHandler({
 export function NotificationCoordinator() {
   const runtime = useMobileRuntime();
   const connections = useConnections();
+  const overview = useOverview();
   const router = useRouter();
+  const lastResponse = Notifications.useLastNotificationResponse();
   const handledResponse = useRef<string | undefined>(undefined);
+  const [pendingDestination, setPendingDestination] = useState<NotificationDestination | undefined>();
 
   useEffect(() => {
     if (Platform.OS !== "ios" || runtime.kind !== "production") return;
@@ -62,30 +71,50 @@ export function NotificationCoordinator() {
   }, [runtime, connections.selected?.id, connections.selected?.availability]);
 
   useEffect(() => {
-    const open = (response: Notifications.NotificationResponse | null) => {
-      if (!response) return;
-      const identifier = response.notification.request.identifier;
-      if (handledResponse.current === identifier) return;
-      const data = response.notification.request.content.data ?? {};
-      const connectionId = typeof data.connectionId === "string" ? data.connectionId : undefined;
-      const sessionId = typeof data.sessionId === "string" ? data.sessionId : undefined;
-      const chatProjectId = typeof data.chatProjectId === "string" ? data.chatProjectId : undefined;
-      if (!connectionId || (!sessionId && !chatProjectId)) return;
-      handledResponse.current = identifier;
+    if (!lastResponse) return;
+    const identifier = lastResponse.notification.request.identifier;
+    if (handledResponse.current === identifier) return;
+    const destination = notificationDestination(lastResponse.notification.request.content.data);
+    if (destination === undefined) return;
+    handledResponse.current = identifier;
+    if (destination.connectionId !== undefined) connections.select(destination.connectionId);
+    setPendingDestination(destination);
+    void Notifications.clearLastNotificationResponseAsync();
+  }, [connections.select, lastResponse]);
+
+  useEffect(() => {
+    if (pendingDestination === undefined) return;
+    const scopes = connections.connections.map((connection) => {
+      const projection = overview.byConnection.get(connection.id)?.overview;
+      return {
+        connectionId: connection.id,
+        sessionIds: projection?.sessions.map(({ id }) => id) ?? [],
+        projectIds: projection?.projects.map(({ id }) => id) ?? [],
+      };
+    });
+    const connectionId = resolveNotificationConnectionId(pendingDestination, scopes);
+    if (connectionId === undefined) return;
+    if (connections.selectedId !== connectionId) {
       connections.select(connectionId);
-      if (chatProjectId) {
-        // The phone does not have a Steward chat route yet. Land on the exact
-        // Project instead of trying to open the synthetic Watch chat Session ID.
-        router.navigate({ pathname: "/project/[projectId]", params: { projectId: chatProjectId } });
-      } else if (sessionId) {
-        router.navigate({ pathname: "/session/[sessionId]", params: { sessionId } });
-      }
-      void Notifications.setBadgeCountAsync(0);
-    };
-    void Notifications.getLastNotificationResponseAsync().then(open);
-    const subscription = Notifications.addNotificationResponseReceivedListener(open);
-    return () => subscription.remove();
-  }, [connections.select, router]);
+      return;
+    }
+
+    if (pendingDestination.kind === "steward") {
+      // The phone does not have a Steward chat route yet. Land on the exact
+      // Project instead of trying to open the synthetic Watch chat Session ID.
+      router.navigate({
+        pathname: "/project/[projectId]",
+        params: { projectId: pendingDestination.projectId, connectionId },
+      });
+    } else {
+      router.navigate({
+        pathname: "/session/[sessionId]",
+        params: { sessionId: pendingDestination.sessionId, connectionId },
+      });
+    }
+    setPendingDestination(undefined);
+    void Notifications.setBadgeCountAsync(0);
+  }, [connections.connections, connections.select, connections.selectedId, overview.byConnection, pendingDestination, router]);
 
   return null;
 }

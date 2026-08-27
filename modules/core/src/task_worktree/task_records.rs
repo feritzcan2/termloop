@@ -1,7 +1,7 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use termloop_domain::{IssueLinkProvider, TaskRecord, TaskStatus};
+use termloop_domain::{IssueLinkProvider, TaskRecord, TaskStatus, TaskSuspensionReason};
 
 use super::cleanup::{
     cleanup_operation_json, health_json, presence_json, stale_resolution_operation_json,
@@ -293,7 +293,62 @@ impl CoreRuntime {
     }
 
     pub(crate) fn reopen_task(&mut self, params: Value) -> Result<Value, CoreError> {
-        self.change_task_status(params, TaskStatus::Open)
+        self.reopen_task_with_resume_plan(params)
+            .map(|(result, _)| result)
+    }
+
+    pub fn reopen_task_with_resume_plan(
+        &mut self,
+        params: Value,
+    ) -> Result<(Value, Vec<String>), CoreError> {
+        let task_id = required_string(&params, "taskId")?;
+        self.ensure_task_active(&task_id)?;
+        let has_suspended_sessions =
+            self.store
+                .task_archive_suspensions()
+                .iter()
+                .any(|suspension| {
+                    suspension.task_id.as_deref() == Some(task_id.as_str())
+                        && suspension.reason == TaskSuspensionReason::ClosedWorktreeRemoved
+                });
+        if has_suspended_sessions {
+            let (task, resume_session_ids) = self
+                .store
+                .reopen_task_with_suspended_sessions(
+                    &self.write_authority,
+                    &task_id,
+                    termloop_platform::current_epoch_ms(),
+                )
+                .map_err(store_error)?;
+            return Ok((self.task_projection(&task)?, resume_session_ids));
+        }
+        let task = self
+            .store
+            .set_task_status(
+                &self.write_authority,
+                &task_id,
+                TaskStatus::Open,
+                termloop_platform::current_epoch_ms(),
+            )
+            .map_err(store_error)?;
+        Ok((self.task_projection(&task)?, Vec::new()))
+    }
+
+    pub(crate) fn finalize_closed_worktree_removal(
+        &mut self,
+        params: Value,
+    ) -> Result<Value, CoreError> {
+        let task_id = required_string(&params, "taskId")?;
+        let task = self
+            .store
+            .finalize_archived_task_as_closed_after_worktree_removal(
+                &self.write_authority,
+                &task_id,
+                termloop_platform::current_epoch_ms(),
+            )
+            .map_err(store_error)?;
+        self.clear_task_worktree_projections(&task_id);
+        self.task_projection(&task)
     }
 
     pub(crate) fn delete_task(&mut self, params: Value) -> Result<Value, CoreError> {

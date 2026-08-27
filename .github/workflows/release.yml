@@ -65,7 +65,7 @@ jobs:
       matrix:
         include:
           - runner: macos-15
-            runs-on: '["self-hosted", "macOS", "ARM64", "termloop-next-macos"]'
+            runs-on: '["self-hosted", "macOS", "ARM64", "termloop-macos"]'
             os: macos
             arch: universal
             archive: tar.gz

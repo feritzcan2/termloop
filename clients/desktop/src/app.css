@@ -290,13 +290,32 @@ kbd { padding: 2px 5px; border: 1px solid rgba(255,255,255,.07); border-radius: 
 .task-list-tabs button:focus-visible { outline: 1px solid var(--accent-strong); outline-offset: 1px; }
 .task-list-tabs button.selected { background: var(--accent-wash); color: var(--accent-strong); }
 .task-status-panel { min-width: 0; }
-.task-item-tabs { display: flex; min-width: 0; margin-top: 5px; padding: 0 10px 5px; gap: 3px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; scroll-snap-type: x proximity; }
+.task-item-tab-bar { display: flex; min-width: 0; align-items: center; gap: 4px; margin-top: 5px; padding: 0 10px 5px; }
+.task-tab-create { display: grid; flex: 0 0 27px; width: 27px; height: 27px; place-items: center; padding: 0; border: 1px solid rgba(255,255,255,.07); border-radius: 6px; background: rgba(255,255,255,.025); color: var(--sidebar-dimmer); }
+.task-tab-create:hover { border-color: rgba(124,92,255,.3); background: var(--accent-wash); color: var(--sidebar-text); }
+.task-tab-create:focus-visible { outline: 1px solid var(--accent-strong); outline-offset: -1px; }
+.task-tab-create svg { width: 13px; height: 13px; }
+.task-item-tabs { display: flex; min-width: 0; gap: 3px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; scroll-snap-type: x proximity; }
 .task-item-tabs::-webkit-scrollbar { display: none; }
-.task-item-tabs button { position: relative; display: grid; grid-template-columns: 7px minmax(44px,1fr) 5px; flex: 0 0 auto; align-items: center; gap: 5px; min-width: 76px; max-width: 142px; height: 27px; padding: 0 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--sidebar-dimmer); text-align: left; scroll-snap-align: nearest; }
-.task-item-tabs button:hover { border-color: rgba(255,255,255,.06); background: rgba(255,255,255,.035); color: var(--sidebar-text); }
-.task-item-tabs button:focus-visible { outline: 1px solid var(--accent-strong); outline-offset: -1px; }
-.task-item-tabs button.selected { border-color: rgba(124,92,255,.24); background: var(--accent-wash); color: var(--sidebar-text); }
-.task-item-tabs button > span { min-width: 0; overflow: hidden; font: 600 9.5px/1 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
+.task-item-tab { position: relative; flex: 0 0 auto; min-width: 76px; max-width: 142px; height: 27px; border: 1px solid transparent; border-radius: 6px; color: var(--sidebar-dimmer); scroll-snap-align: nearest; }
+.task-item-tab:hover { border-color: rgba(255,255,255,.06); background: rgba(255,255,255,.035); color: var(--sidebar-text); }
+.task-item-tab.selected { border-color: rgba(124,92,255,.24); background: var(--accent-wash); color: var(--sidebar-text); }
+.task-item-tab-select { display: grid; grid-template-columns: 7px minmax(44px,1fr) 5px; align-items: center; gap: 5px; width: 100%; height: 100%; padding: 0 8px; border: 0; border-radius: inherit; background: transparent; color: inherit; text-align: left; }
+.task-item-tab-select:focus-visible { outline: 1px solid var(--accent-strong); outline-offset: -1px; }
+.task-item-tab-select > span { min-width: 0; overflow: hidden; font: 600 9.5px/1 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
+.task-item-tab-rename { width: 100%; height: 100%; padding: 0 42px 0 8px; border: 0; border-radius: inherit; outline: 1px solid var(--accent-strong); outline-offset: -1px; background: rgba(0,0,0,.16); color: var(--sidebar-text); font: 600 9.5px/1 var(--font-ui); }
+.task-item-tab-rename[aria-invalid="true"] { outline-color: var(--danger); }
+.task-item-tab.favorited .task-item-tab-select { padding-right: 42px; }
+.task-item-tab:hover .task-item-tab-select, .task-item-tab:focus-within .task-item-tab-select { padding-right: 42px; }
+.task-item-tab-favorite, .task-item-tab-close { position: absolute; z-index: 1; top: 4px; display: grid; width: 18px; height: 18px; place-items: center; padding: 0; border: 0; border-radius: 4px; background: color-mix(in srgb, var(--sidebar-bg) 82%, transparent); color: var(--sidebar-dimmer); opacity: 0; pointer-events: none; }
+.task-item-tab-favorite { right: 21px; }
+.task-item-tab-close { right: 3px; }
+.task-item-tab:hover .task-item-tab-favorite, .task-item-tab:hover .task-item-tab-close, .task-item-tab:focus-within .task-item-tab-favorite, .task-item-tab:focus-within .task-item-tab-close { opacity: 1; pointer-events: auto; }
+.task-item-tab-favorite[aria-pressed="true"] { color: var(--accent-strong); opacity: .8; pointer-events: auto; }
+.task-item-tab-favorite[aria-pressed="true"] svg { fill: currentColor; }
+.task-item-tab-favorite:hover, .task-item-tab-close:hover { background: rgba(255,255,255,.1); color: var(--sidebar-text); }
+.task-item-tab-favorite:focus-visible, .task-item-tab-close:focus-visible { outline: 1px solid var(--accent-strong); }
+.task-item-tab-favorite svg, .task-item-tab-close svg { width: 11px; height: 11px; }
 .task-tab-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sidebar-dimmer); }
 .task-tab-dot.working { background: var(--agent-status-working); }
 .task-tab-dot.review { background: var(--agent-status-review); }
@@ -313,6 +332,8 @@ kbd { padding: 2px 5px; border: 1px solid rgba(255,255,255,.07); border-radius: 
    the frame away and a long list of collapsed Tasks stays a flat ledger. */
 .task-group[data-disclosed] { margin-right: 4px; margin-left: 4px; padding: 2px 3px 4px; border: 1px solid var(--rule); border-radius: 9px; background: rgba(255,255,255,.016); }
 .task-group[data-disclosed] + .task-group, .task-group + .task-group[data-disclosed] { margin-top: 5px; }
+.task-group.focused { margin: 1px 8px 7px; padding: 8px 8px 10px; border: 1px solid rgba(255,255,255,.075); border-radius: 10px; background: linear-gradient(180deg, rgba(255,255,255,.028), rgba(255,255,255,.012)); }
+.task-group.focused[data-disclosed] { margin: 1px 8px 7px; padding: 8px 8px 10px; }
 .task-row { display: grid; grid-template-columns: 14px minmax(0,1fr) auto; align-items: start; }
 .task-toggle { width: 14px; height: 27px; }
 .task-toggle svg { width: 11px; height: 11px; }
@@ -324,6 +345,9 @@ kbd { padding: 2px 5px; border: 1px solid rgba(255,255,255,.07); border-radius: 
 .task-item.closed { opacity: .5; }
 .task-item.closed .task-title { text-decoration: line-through; text-decoration-color: var(--sidebar-dimmer); }
 .task-headline { display: flex; min-width: 0; flex: 1; align-items: center; gap: 7px; }
+.task-focus-copy { display: grid; min-width: 0; flex: 1; gap: 3px; }
+.task-focus-copy .task-title { overflow: visible; font-size: 14px; line-height: 1.25; text-overflow: clip; white-space: normal; }
+.task-focus-brief { display: -webkit-box; overflow: hidden; color: var(--sidebar-dim); font: 10.5px/1.4 var(--font-ui); -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 /* One dot answers "what does this Task want" for the whole row; the same tone
    vocabulary as `.row-rail` (see `renderer/row-tone.ts`), rendered as a point
    so every row spends the same three pixels on it. */
@@ -380,6 +404,14 @@ kbd { padding: 2px 5px; border: 1px solid rgba(255,255,255,.07); border-radius: 
    land on 15px of glyph. */
 .task-signal { display: inline-flex; min-width: 0; max-width: 100%; min-height: 20px; align-items: center; overflow: hidden; border: 0; padding: 0; background: transparent; color: var(--sidebar-dim); font: 10px/1.5 var(--font-mono); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .task-meta .task-signal { flex: 0 1 auto; }
+.task-group.focused .task-meta { padding: 3px 5px 0 30px; }
+.task-focus-facts { display: grid; gap: 5px; margin: 7px 5px 3px 30px; padding: 7px 8px; border: 1px solid rgba(255,255,255,.05); border-radius: 7px; background: rgba(0,0,0,.08); }
+.task-focus-facts > div { display: grid; min-width: 0; grid-template-columns: 48px minmax(0,1fr); align-items: baseline; gap: 7px; }
+.task-focus-facts dt { color: var(--sidebar-dimmer); font: 700 8px/1.35 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.task-focus-facts dd { min-width: 0; margin: 0; overflow: hidden; color: var(--sidebar-dim); font: 9.5px/1.4 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
+.task-focus-facts dd.attention { color: var(--agent-status-awaiting); }
+.task-focus-facts dd.review { color: var(--agent-status-review); }
+.task-focus-facts dd.working { color: var(--agent-status-working); }
 button.task-signal { cursor: pointer; }
 button.task-signal:hover { color: var(--sidebar-text); text-decoration: underline; text-underline-offset: 2px; }
 .task-signal.quiet { color: var(--sidebar-dim); }
@@ -416,6 +448,8 @@ button.task-signal.issue:hover { color: var(--warning); }
 .task-children { position: relative; display: grid; gap: 1px; margin: 1px 0 0 17px; padding-left: 8px; }
 .task-children:empty { display: none; }
 .task-children::before { content: ""; position: absolute; top: 1px; bottom: 13px; left: 0; width: 1px; background: linear-gradient(180deg, rgba(124,92,255,.4), rgba(124,92,255,.08)); }
+.task-group.focused .task-children { margin: 8px 0 0; padding: 8px 0 0; border-top: 1px solid rgba(255,255,255,.055); }
+.task-group.focused .task-children::before { display: none; }
 .task-pr-list { display: flex; min-width: 0; flex-direction: column; gap: 2px; padding: 2px 7px 4px; }
 .task-pr-actions { display: flex; min-width: 0; align-items: center; gap: 5px; }
 .task-pr-actions .task-pr { flex: 1; min-width: 0; }

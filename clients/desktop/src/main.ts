@@ -714,6 +714,9 @@ handleIpc("termloop:task-update-brief", (_event, taskId: string, brief: string |
 handleIpc("termloop:task-close", (_event, taskId: string) =>
   controlCall("task.close", { taskId }),
 );
+handleIpc("termloop:task-finalize-closed-worktree-removal", (_event, taskId: string) =>
+  controlCall("task.finalizeClosedWorktreeRemoval", { taskId }),
+);
 handleIpc("termloop:task-inspect-archive", (_event, taskId: string) =>
   controlCall("task.inspectArchive", { taskId }),
 );
