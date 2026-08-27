@@ -182,20 +182,36 @@ mod tests {
     ) {
         let mut bytes = Vec::new();
         let mut answered_cursor_position_queries = 0;
+        let mut response_show_cursor_baseline = None;
         tokio::time::timeout(Duration::from_secs(15), async {
-            while !bytes
-                .windows(b"\x1b[?2026l".len())
-                .any(|window| window == b"\x1b[?2026l")
-            {
+            loop {
                 if let TerminalEvent::Output(chunk) = output.recv().await.unwrap() {
                     bytes.extend(chunk);
                     let observed_queries = bytes
                         .windows(b"\x1b[6n".len())
                         .filter(|window| *window == b"\x1b[6n")
                         .count();
+                    let show_cursor_count = bytes
+                        .windows(b"\x1b[?25h".len())
+                        .filter(|window| *window == b"\x1b[?25h")
+                        .count();
                     while answered_cursor_position_queries < observed_queries {
+                        response_show_cursor_baseline.get_or_insert(show_cursor_count);
                         terminal.input_user(session_id, 17, b"\x1b[1;1R").unwrap();
                         answered_cursor_position_queries += 1;
+                    }
+                    let fixture_ready = bytes
+                        .windows(b"\x1b[?2026l".len())
+                        .any(|window| window == b"\x1b[?2026l");
+                    let response_consumed = response_show_cursor_baseline.is_none_or(|baseline| {
+                        bytes
+                            .windows(b"\x1b[?25h".len())
+                            .filter(|window| *window == b"\x1b[?25h")
+                            .count()
+                            > baseline
+                    });
+                    if fixture_ready && response_consumed {
+                        break;
                     }
                 }
             }

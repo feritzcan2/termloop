@@ -25,6 +25,63 @@ fn append_headless_output_and_answer_cursor_queries(
     }
 }
 
+fn read_headless_fixture_input(input: &mut impl std::io::Read, expected: &[u8]) {
+    if !cfg!(windows) {
+        let mut observed = vec![0_u8; expected.len()];
+        input
+            .read_exact(&mut observed)
+            .expect("headless fixture input closed before the expected sequence");
+        assert_eq!(observed, expected);
+        return;
+    }
+
+    let mut observed = Vec::with_capacity(expected.len());
+    while observed.len() < expected.len() {
+        let mut byte = [0_u8; 1];
+        input
+            .read_exact(&mut byte)
+            .expect("headless fixture input closed before the expected sequence");
+        if byte[0] != 0x1b {
+            observed.push(byte[0]);
+            continue;
+        }
+
+        let mut control = vec![byte[0]];
+        while control.len() < 32 {
+            input
+                .read_exact(&mut byte)
+                .expect("headless fixture input closed inside a control sequence");
+            control.push(byte[0]);
+            if control.len() >= 3 && (0x40..=0x7e).contains(&byte[0]) {
+                break;
+            }
+        }
+        if is_cursor_position_response(&control) {
+            continue;
+        }
+        observed.extend(control);
+    }
+    assert_eq!(observed, expected);
+}
+
+fn is_cursor_position_response(bytes: &[u8]) -> bool {
+    let Some(body) = bytes
+        .strip_prefix(b"\x1b[")
+        .and_then(|bytes| bytes.strip_suffix(b"R"))
+    else {
+        return false;
+    };
+    let mut fields = body.split(|byte| *byte == b';');
+    let row = fields.next();
+    let column = fields.next();
+    fields.next().is_none()
+        && [row, column].into_iter().all(|field| {
+            field.is_some_and(|field| {
+                !field.is_empty() && field.iter().all(|byte| byte.is_ascii_digit())
+            })
+        })
+}
+
 #[test]
 fn running_persistent_assistant_restart_preserves_closed_mcp_role() {
     let root = std::env::temp_dir().join(format!(
@@ -315,7 +372,7 @@ fn pending_generated_input_fixture() {
     if std::env::var_os("TERMLOOP_TEST_PENDING_INITIAL_INPUT").is_none() {
         return;
     }
-    use std::io::{Read, Write};
+    use std::io::Write;
 
     let expected = std::env::var("TERMLOOP_TEST_EXPECTED_INITIAL_INPUT")
         .expect("pending input fixture requires exact expected content");
@@ -371,9 +428,7 @@ fn pending_generated_input_fixture() {
     }
     let expected_paste = termloop_platform::terminal_paste_input(expected.as_bytes());
     let mut input = std::io::stdin().lock();
-    let mut pasted = vec![0_u8; expected_paste.len()];
-    input.read_exact(&mut pasted).unwrap();
-    assert_eq!(pasted, expected_paste);
+    read_headless_fixture_input(&mut input, &expected_paste);
     let submitted = expected;
     // Claude and Codex show the text cursor after rendering pasted composer
     // content. The periodic branch mirrors a multiline Codex composer that
@@ -420,27 +475,20 @@ fn pending_generated_input_fixture() {
                 b"\x1b[<0;12;8m".as_slice(),
                 b"\x1b[I".as_slice(),
             ] {
-                let mut reply = vec![0_u8; expected_reply.len()];
-                input.read_exact(&mut reply).unwrap();
-                assert_eq!(reply, expected_reply);
+                read_headless_fixture_input(&mut input, expected_reply);
             }
         }
     }
     if std::env::var_os("TERMLOOP_TEST_INTERLEAVED_USER_INPUT").is_some() {
-        let mut interleaved = [0_u8; 3];
-        input.read_exact(&mut interleaved).unwrap();
-        assert_eq!(interleaved, *b"\x1b[D");
+        read_headless_fixture_input(&mut input, b"\x1b[D");
     }
-    let mut submit = [0_u8; 1];
-    input.read_exact(&mut submit).unwrap();
-    assert_eq!(submit, [b'\r']);
+    read_headless_fixture_input(&mut input, b"\r");
     if std::env::var_os("TERMLOOP_TEST_RETAIN_FIRST_SUBMIT").is_some() {
         println!(
             "\x1b[?2026h\x1b[36;1H\x1b[K\x1b[1m›\x1b[0m retained prompt\x1b[?25h\x1b[36;3H\x1b[?2026lTERMLOOP_PROMPT_RETAINED"
         );
         std::io::stdout().flush().unwrap();
-        input.read_exact(&mut submit).unwrap();
-        assert_eq!(submit, [b'\r']);
+        read_headless_fixture_input(&mut input, b"\r");
     } else if std::env::var_os("TERMLOOP_TEST_RETAIN_WITHOUT_REPAINT").is_some() {
         std::thread::sleep(std::time::Duration::from_secs(6));
     }
