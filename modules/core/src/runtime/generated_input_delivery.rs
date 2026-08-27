@@ -870,6 +870,7 @@ fn manual_recovery_is_attributed(
     ) && submission_content_unchanged(delivery, activity)
 }
 
+#[derive(Debug)]
 pub struct GeneratedInputRuntimeEvent {
     session_id: String,
     runtime_epoch: u64,
@@ -888,6 +889,7 @@ impl GeneratedInputRuntimeEvent {
     }
 }
 
+#[derive(Debug)]
 enum GeneratedInputTransportOutcome {
     Submitted,
     SubmitRetried,
@@ -1069,13 +1071,13 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
         | GeneratedInputSettlement::CodexComposerRender
             if !termloop_platform::host_uses_bracketed_paste_framing() =>
         {
-            // ConPTY emits a normalized screen diff and may remove redundant
-            // cursor-visibility markers. Post-flush activity followed by
-            // quiet or a completed synchronized frame is the native causal
-            // settlement proof for its unframed paste path.
-            output_after_flush.wait_for_settlement(
-                OUTPUT_ACTIVITY_SETTLEMENT_QUIET,
-                OUTPUT_ACTIVITY_SETTLEMENT_TIMEOUT,
+            // ConPTY emits synchronized-output boundaries before its later
+            // normalized screen diff. Require that diff to become quiet or a
+            // normalized composer surface to stabilize; the boundary alone
+            // must not race Enter ahead of client input.
+            output_after_flush.wait_for_normalized_composer_render_settlement(
+                COMPOSER_RENDER_SETTLEMENT_QUIET,
+                COMPOSER_RENDER_SETTLEMENT_TIMEOUT,
             )
         }
         GeneratedInputSettlement::ComposerRender

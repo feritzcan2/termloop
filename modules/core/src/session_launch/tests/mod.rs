@@ -1946,9 +1946,13 @@ async fn assert_quick_action_initial_input_delivery(
     .await
     .unwrap_or_else(|_| {
         panic!(
-            "quick-action fixture did not render paste; state={:?} failure={:?} output={}",
+            "quick-action fixture did not render paste; state={:?} failure={:?} readiness={:?} queued_event={:?} output={}",
             runtime.generated_input_delivery_state("quick-action-ready", 9),
             runtime.generated_input_delivery_failure("quick-action-ready", 9),
+            terminal
+                .input_readiness_snapshot("quick-action-ready", 9)
+                .map(|snapshot| snapshot.facts()),
+            generated_input_events.try_recv().ok(),
             bounded_headless_fixture_output(&bytes),
         )
     });
@@ -2026,9 +2030,13 @@ async fn assert_quick_action_initial_input_delivery(
     .await
     .unwrap_or_else(|_| {
         panic!(
-            "quick-action fixture did not receive submit; state={:?} failure={:?} output={}",
+            "quick-action fixture did not receive submit; state={:?} failure={:?} readiness={:?} queued_event={:?} output={}",
             runtime.generated_input_delivery_state("quick-action-ready", 9),
             runtime.generated_input_delivery_failure("quick-action-ready", 9),
+            terminal
+                .input_readiness_snapshot("quick-action-ready", 9)
+                .map(|snapshot| snapshot.facts()),
+            generated_input_events.try_recv().ok(),
             bounded_headless_fixture_output(&bytes),
         )
     });

@@ -323,9 +323,13 @@ mod tests {
             .recv_timeout(Duration::from_secs(15))
             .unwrap_or_else(|_| {
                 panic!(
-                    "handoff delivery did not emit a transport event; state={:?} failure={:?}",
+                    "handoff delivery did not emit a transport event; state={:?} failure={:?} readiness={:?}",
                     runtime.generated_input_delivery_state(session_id, 17),
                     runtime.generated_input_delivery_failure(session_id, 17),
+                    runtime
+                        .terminal
+                        .input_readiness_snapshot(session_id, 17)
+                        .map(|snapshot| snapshot.facts()),
                 )
             });
         assert!(runtime.record_generated_input_runtime_event(event).unwrap());
