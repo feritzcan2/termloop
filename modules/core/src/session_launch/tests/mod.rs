@@ -26,7 +26,7 @@ fn append_headless_output_and_answer_cursor_queries(
 }
 
 fn read_headless_fixture_input(input: &mut impl std::io::Read, expected: &[u8]) {
-    if !cfg!(windows) {
+    if termloop_platform::host_uses_bracketed_paste_framing() {
         let mut observed = vec![0_u8; expected.len()];
         input
             .read_exact(&mut observed)
@@ -494,19 +494,20 @@ fn pending_generated_input_fixture() {
         }
     }
     let interleaved_user_input = std::env::var_os("TERMLOOP_TEST_INTERLEAVED_USER_INPUT").is_some();
-    let windows_submit_already_consumed = if interleaved_user_input && cfg!(windows) {
-        let observed = read_windows_headless_fixture_input(&mut input, b"\x1b[D\r".len());
-        assert!(
-            observed == b"\x1b[D\r" || observed == b"\r\x1b[D",
-            "Windows fixture must receive one user edit and one generated submit"
-        );
-        true
-    } else {
-        if interleaved_user_input {
-            read_headless_fixture_input(&mut input, b"\x1b[D");
-        }
-        false
-    };
+    let windows_submit_already_consumed =
+        if interleaved_user_input && !termloop_platform::host_uses_bracketed_paste_framing() {
+            let observed = read_windows_headless_fixture_input(&mut input, b"\x1b[D\r".len());
+            assert!(
+                observed == b"\x1b[D\r" || observed == b"\r\x1b[D",
+                "Windows fixture must receive one user edit and one generated submit"
+            );
+            true
+        } else {
+            if interleaved_user_input {
+                read_headless_fixture_input(&mut input, b"\x1b[D");
+            }
+            false
+        };
     if !windows_submit_already_consumed {
         read_headless_fixture_input(&mut input, b"\r");
     }
