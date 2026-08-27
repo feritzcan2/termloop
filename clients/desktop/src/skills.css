@@ -1,6 +1,11 @@
-.skill-settings-trigger { display: inline-flex; flex: none; align-items: center; gap: 5px; height: 22px; padding: 0 7px; border: 1px solid rgba(102,179,255,.24); border-radius: 6px; background: rgba(102,179,255,.07); color: #8ebde8; font: 700 9px/1 var(--font-mono); letter-spacing: .06em; }
-.skill-settings-trigger > span { width: 5px; height: 5px; border-radius: 50%; background: #66b3ff; box-shadow: 0 0 7px rgba(102,179,255,.65); }
+.skill-settings-trigger, .context-settings-trigger { display: inline-flex; flex: none; align-items: center; gap: 5px; height: 22px; padding: 0 7px; border: 1px solid; border-radius: 6px; font: 700 9px/1 var(--font-mono); }
+.skill-settings-trigger > span, .context-settings-trigger > span { width: 5px; height: 5px; border-radius: 50%; }
+.skill-settings-trigger { border-color: rgba(102,179,255,.24); background: rgba(102,179,255,.07); color: #8ebde8; letter-spacing: .06em; }
+.skill-settings-trigger > span { background: #66b3ff; box-shadow: 0 0 7px rgba(102,179,255,.65); }
 .skill-settings-trigger:hover, .skill-settings-trigger[aria-pressed="true"] { border-color: rgba(102,179,255,.48); background: rgba(102,179,255,.14); color: #c7e4ff; }
+.context-settings-trigger { border-color: rgba(92,201,149,.25); background: rgba(92,201,149,.07); color: #83cbaa; letter-spacing: .05em; }
+.context-settings-trigger > span { background: #5cc995; box-shadow: 0 0 7px rgba(92,201,149,.55); }
+.context-settings-trigger:hover, .context-settings-trigger[aria-pressed="true"] { border-color: rgba(92,201,149,.5); background: rgba(92,201,149,.14); color: #c8f4dc; }
 
 .skills-rail, .settings-rail { display: flex; flex-direction: column; min-width: 0; padding: 8px 8px 12px; }
 .skills-rail-toolbar, .settings-rail-toolbar { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 5px; }
@@ -87,6 +92,44 @@ button.skill-chip.on:not(:disabled):hover { border-color: rgba(225,117,126,.55);
 .stage-editor-source { flex: 1; min-height: 0; margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 9px; outline: 0; background: #1a1e20; color: var(--text-secondary); font: 11px/1.65 var(--font-mono); resize: none; scrollbar-color: #555c60 transparent; white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: hidden; tab-size: 2; }
 .stage-editor-source:focus { border-color: rgba(102,179,255,.45); box-shadow: 0 0 0 3px rgba(102,179,255,.07); }
 .stage-editor-source[readonly] { opacity: .75; }
+
+.context-bank-warning { display: flex; align-items: flex-start; gap: 5px; margin: 8px 2px 0; color: var(--warning); font-size: 8.5px; line-height: 1.4; }
+.context-bank-warning svg { flex: none; width: 11px; height: 11px; margin-top: 1px; }
+.context-tree { margin: 8px -2px 0; padding: 5px 0; border-top: 1px solid rgba(255,255,255,.045); border-bottom: 1px solid rgba(255,255,255,.035); background: rgba(0,0,0,.08); }
+.context-tree-folder { display: contents; }
+.context-tree-folder-row, .context-tree-file { display: flex; width: 100%; min-width: 0; align-items: center; border: 0; background: transparent; color: #7c8689; text-align: left; cursor: pointer; }
+.context-tree-folder-row { gap: 5px; min-height: 22px; padding: 3px 7px; }
+.context-tree-folder-row:hover, .context-tree-file:hover { background: rgba(255,255,255,.04); color: var(--text-secondary); }
+.context-tree-folder-row > i { width: 0; height: 0; flex: none; border-top: 3px solid transparent; border-bottom: 3px solid transparent; border-left: 4px solid currentColor; transform: rotate(90deg); transition: transform 120ms ease; }
+.context-tree-folder-row[aria-expanded="false"] > i { transform: rotate(0deg); }
+.context-tree-folder-row > svg { width: 11px; height: 11px; flex: none; opacity: .72; }
+.context-tree-folder-row > span { min-width: 0; overflow: hidden; color: var(--text-secondary); font: 600 9.5px/1.1 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.context-tree-folder-row.root { margin-bottom: 2px; border-bottom: 1px solid rgba(255,255,255,.045); color: #909a9d; }
+.context-tree-folder-row.root > span { font-size: 9px; font-weight: 750; letter-spacing: .065em; text-transform: uppercase; }
+.context-tree-file { gap: 5px; min-height: 24px; padding: 3px 7px; }
+.context-tree-file.selected { background: rgba(255,255,255,.075); box-shadow: inset 2px 0 #5cc995; color: var(--text); }
+.context-tree-file-icon { width: 11px; height: 11px; flex: none; color: #7b8588; }
+.context-tree-file-icon.claude { color: #c6845d; }
+.context-tree-file-icon.agents { color: #75aedd; }
+.context-tree-file-icon.gemini { color: #9b89d8; }
+.context-tree-file > strong { flex: none; color: var(--text-secondary); font: 650 9.5px/1 var(--font-mono); }
+.context-tree-file:hover > strong, .context-tree-file.selected > strong { color: var(--text); }
+.context-tree-link { display: flex; min-width: 0; align-items: center; gap: 3px; overflow: hidden; color: #667174; font: 8px/1 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.context-tree-link svg { width: 9px; height: 9px; flex: none; color: #5cc995; }
+.context-tree-capacity { display: flex; flex: none; align-items: center; gap: 6px; margin-left: auto; color: #707a7d; font: 7.5px/1 var(--font-mono); }
+.context-tree-capacity > i { width: 34px; height: 3px; overflow: hidden; border-radius: 2px; background: rgba(255,255,255,.07); }
+.context-tree-capacity > i > b { display: block; height: 100%; border-radius: inherit; background: #3b86c4; }
+.context-tree-capacity.near-limit { color: #c99655; }
+.context-tree-capacity.near-limit > i > b { background: #d58c3f; }
+.context-tree-capacity.over-limit { color: var(--danger); }
+.context-tree-capacity.over-limit > i > b { background: var(--danger); }
+.context-capacity { flex: none; padding: 3px 5px; border: 1px solid var(--border-strong); border-radius: 999px; color: #768084; font: 700 7.5px/1 var(--font-mono); }
+.context-capacity.over-limit { border-color: rgba(225,117,126,.45); color: var(--danger); }
+.context-editor-notice { display: flex; flex: none; align-items: center; gap: 6px; margin: 9px 0 0; color: var(--warning); font-size: 9px; }
+.context-editor-notice svg { width: 12px; height: 12px; }
+.context-editor-notice code { color: inherit; font: 8.5px/1 var(--font-mono); }
+.context-editor-footer { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 10px; margin-top: 9px; color: #6f797c; font-size: 9px; }
+.context-capacity.large { padding: 4px 8px; font-size: 8px; }
 
 /* Rail groups and rows shared by the MCP and Prompts rails. Skills keeps its
    own folder class names and inherits the same head rules below. */

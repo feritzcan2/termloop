@@ -157,6 +157,11 @@ import type {
   SessionRelocationPreviewDto,
   SessionRepairProviderHistoryResult,
   SessionHistoryListResult,
+  ContextBankCatalogGetParams,
+  ContextBankCatalogResult,
+  ContextBankFileDto,
+  ContextBankFileGetParams,
+  ContextBankFileSaveParams,
   SkillCatalogGetParams,
   SkillCatalogResult,
   SkillDefinitionDto,
@@ -227,6 +232,9 @@ export type DesktopApi = {
   skillDeploymentSet(params: SkillDeploymentSetParams): Promise<SkillCatalogResult>;
   skillDefinitionGet(params: SkillDefinitionGetParams): Promise<SkillDefinitionDto>;
   skillDefinitionSave(params: SkillDefinitionSaveParams): Promise<SkillDefinitionDto>;
+  contextBankCatalogGet(params: ContextBankCatalogGetParams): Promise<ContextBankCatalogResult>;
+  contextBankFileGet(params: ContextBankFileGetParams): Promise<ContextBankFileDto>;
+  contextBankFileSave(params: ContextBankFileSaveParams): Promise<ContextBankFileDto>;
   projectList(): Promise<Project[]>;
   projectWorktreeSummary(projectId: string): Promise<ProjectWorktreeSummaryDto>;
   projectWorktreeChangeList(projectId: string): Promise<ProjectWorktreeChangeListResult>;

@@ -167,7 +167,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:f5f33da6be8448b37910f278e3f17a5f275665ece5f927caa5da073f0169b013";
+    "sha256:7297951ad948618fee9b2e195ae1ac499a2e92a4b5d040efba38ff027894d069";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -195,6 +195,9 @@ pub const METHODS: &[&str] = &[
     "skill.deploymentSet",
     "skill.definitionGet",
     "skill.definitionSave",
+    "contextBank.catalogGet",
+    "contextBank.fileGet",
+    "contextBank.fileSave",
     "project.create",
     "project.list",
     "project.taskAutomationGet",
@@ -2556,6 +2559,102 @@ pub struct ProjectionInvalidatedPayload {
     pub observation_sequence: u64,
     #[serde(rename = "entityScopes", skip_serializing_if = "Option::is_none")]
     pub entity_scopes: Option<Vec<TaskProjectionEntityScopeDto>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ContextBankFileKind {
+    #[serde(rename = "claude")]
+    Claude,
+    #[serde(rename = "agents")]
+    Agents,
+    #[serde(rename = "gemini")]
+    Gemini,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ContextBankCatalogItemDto {
+    pub id: String,
+    #[serde(rename = "relativePath")]
+    pub relative_path: String,
+    pub kind: ContextBankFileKind,
+    #[serde(rename = "lineCount")]
+    pub line_count: u64,
+    #[serde(rename = "lineLimit")]
+    pub line_limit: u64,
+    #[serde(rename = "overLimit")]
+    pub over_limit: bool,
+    #[serde(rename = "isSymlink")]
+    pub is_symlink: bool,
+    #[serde(
+        rename = "symlinkTargetPath",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub symlink_target_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ContextBankCatalogGetParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ContextBankCatalogResult {
+    pub files: Vec<ContextBankCatalogItemDto>,
+    pub warnings: Vec<String>,
+    #[serde(rename = "projectName")]
+    pub project_name: String,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ContextBankFileGetParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "fileId")]
+    pub file_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ContextBankFileSaveParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "fileId")]
+    pub file_id: String,
+    #[serde(rename = "expectedContentSha256")]
+    pub expected_content_sha256: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ContextBankFileDto {
+    #[serde(rename = "fileId")]
+    pub file_id: String,
+    #[serde(rename = "relativePath")]
+    pub relative_path: String,
+    pub path: String,
+    pub kind: ContextBankFileKind,
+    pub content: String,
+    #[serde(rename = "contentSha256")]
+    pub content_sha256: String,
+    #[serde(rename = "lineCount")]
+    pub line_count: u64,
+    #[serde(rename = "lineLimit")]
+    pub line_limit: u64,
+    #[serde(rename = "isSymlink")]
+    pub is_symlink: bool,
+    #[serde(
+        rename = "symlinkTargetPath",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub symlink_target_path: Option<String>,
+    pub editable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -7266,6 +7365,9 @@ pub type SkillCatalogGetResult = SkillCatalogResult;
 pub type SkillDeploymentSetResult = SkillCatalogResult;
 pub type SkillDefinitionGetResult = SkillDefinitionDto;
 pub type SkillDefinitionSaveResult = SkillDefinitionDto;
+pub type ContextBankCatalogGetResult = ContextBankCatalogResult;
+pub type ContextBankFileGetResult = ContextBankFileDto;
+pub type ContextBankFileSaveResult = ContextBankFileDto;
 pub type ProjectCreateResult = ProjectDto;
 pub type ProjectListParams = EmptyParams;
 pub type ProjectListResult = Vec<ProjectDto>;
@@ -7424,6 +7526,9 @@ fn validate_method(value: &Value) -> bool {
             "skill.deploymentSet",
             "skill.definitionGet",
             "skill.definitionSave",
+            "contextBank.catalogGet",
+            "contextBank.fileGet",
+            "contextBank.fileSave",
             "project.create",
             "project.list",
             "project.taskAutomationGet",
@@ -12571,6 +12676,285 @@ fn validate_projection_invalidated_payload(value: &Value) -> bool {
             ]
             .contains(&key.as_str())
         })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_context_bank_file_kind(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| ["claude", "agents", "gemini"].contains(&text))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_context_bank_catalog_item_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("id").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
+        }) && object.get("relativePath").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 4096)
+        }) && object
+            .get("kind")
+            .is_some_and(|field| validate_context_bank_file_kind(field))
+            && object.get("lineCount").is_some_and(|field| {
+                field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                        && (number.as_u64().is_some_and(|number| number <= 1000000_u64))
+                })
+            })
+            && object.get("lineLimit").is_some_and(|field| {
+                field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 1_u64))
+                        && (number.as_u64().is_some_and(|number| number <= 1000000_u64))
+                })
+            })
+            && object
+                .get("overLimit")
+                .is_some_and(|field| field.is_boolean())
+            && object
+                .get("isSymlink")
+                .is_some_and(|field| field.is_boolean())
+            && object.get("symlinkTargetPath").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() <= 4096)
+                    || field.is_null())
+            })
+            && object.keys().all(|key| {
+                [
+                    "id",
+                    "relativePath",
+                    "kind",
+                    "lineCount",
+                    "lineLimit",
+                    "overLimit",
+                    "isSymlink",
+                    "symlinkTargetPath",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_context_bank_catalog_get_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128)
+        }) && object
+            .keys()
+            .all(|key| ["projectId"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_context_bank_catalog_result(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("files").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 500
+                    && items
+                        .iter()
+                        .all(|item| validate_context_bank_catalog_item_dto(item))
+            })
+        }) && object.get("warnings").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 16
+                    && items.iter().all(|item| {
+                        item.as_str().is_some_and(|text| {
+                            text.chars().count() >= 1 && text.chars().count() <= 400
+                        })
+                    })
+            })
+        }) && object.get("projectName").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 120)
+        }) && object
+            .get("truncated")
+            .is_some_and(|field| field.is_boolean())
+            && object.keys().all(|key| {
+                ["files", "warnings", "projectName", "truncated"].contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_context_bank_file_get_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128)
+        }) && object.get("fileId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
+        }) && object
+            .keys()
+            .all(|key| ["projectId", "fileId"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_context_bank_file_save_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128)
+        }) && object.get("fileId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
+        }) && object.get("expectedContentSha256").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
+        }) && object.get("content").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() <= 524288 && text.len() <= 524288)
+        }) && object.keys().all(|key| {
+            ["projectId", "fileId", "expectedContentSha256", "content"].contains(&key.as_str())
+        })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_context_bank_file_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("fileId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
+        }) && object.get("relativePath").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 4096)
+        }) && object.get("path").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 4096)
+        }) && object
+            .get("kind")
+            .is_some_and(|field| validate_context_bank_file_kind(field))
+            && object.get("content").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() <= 524288 && text.len() <= 524288)
+            })
+            && object.get("contentSha256").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
+            })
+            && object.get("lineCount").is_some_and(|field| {
+                field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                        && (number.as_u64().is_some_and(|number| number <= 1000000_u64))
+                })
+            })
+            && object.get("lineLimit").is_some_and(|field| {
+                field.as_number().is_some_and(|number| {
+                    (number.as_i64().is_some() || number.as_u64().is_some())
+                        && (number.as_u64().is_some_and(|number| number >= 1_u64))
+                        && (number.as_u64().is_some_and(|number| number <= 1000000_u64))
+                })
+            })
+            && object
+                .get("isSymlink")
+                .is_some_and(|field| field.is_boolean())
+            && object.get("symlinkTargetPath").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() <= 4096)
+                    || field.is_null())
+            })
+            && object
+                .get("editable")
+                .is_some_and(|field| field.is_boolean())
+            && object.keys().all(|key| {
+                [
+                    "fileId",
+                    "relativePath",
+                    "path",
+                    "kind",
+                    "content",
+                    "contentSha256",
+                    "lineCount",
+                    "lineLimit",
+                    "isSymlink",
+                    "symlinkTargetPath",
+                    "editable",
+                ]
+                .contains(&key.as_str())
+            })
     })
 }
 
@@ -26009,6 +26393,18 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<SkillDefinitionSaveParams>(params.clone()).is_ok()
                 && validate_skill_definition_save_params(params)
         }
+        "contextBank.catalogGet" => {
+            serde_json::from_value::<ContextBankCatalogGetParams>(params.clone()).is_ok()
+                && validate_context_bank_catalog_get_params(params)
+        }
+        "contextBank.fileGet" => {
+            serde_json::from_value::<ContextBankFileGetParams>(params.clone()).is_ok()
+                && validate_context_bank_file_get_params(params)
+        }
+        "contextBank.fileSave" => {
+            serde_json::from_value::<ContextBankFileSaveParams>(params.clone()).is_ok()
+                && validate_context_bank_file_save_params(params)
+        }
         "project.create" => {
             serde_json::from_value::<ProjectCreateParams>(params.clone()).is_ok()
                 && validate_project_create_params(params)
@@ -26677,6 +27073,18 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "skill.definitionSave" => {
             serde_json::from_value::<SkillDefinitionSaveResult>(result.clone()).is_ok()
                 && validate_skill_definition_dto(result)
+        }
+        "contextBank.catalogGet" => {
+            serde_json::from_value::<ContextBankCatalogGetResult>(result.clone()).is_ok()
+                && validate_context_bank_catalog_result(result)
+        }
+        "contextBank.fileGet" => {
+            serde_json::from_value::<ContextBankFileGetResult>(result.clone()).is_ok()
+                && validate_context_bank_file_dto(result)
+        }
+        "contextBank.fileSave" => {
+            serde_json::from_value::<ContextBankFileSaveResult>(result.clone()).is_ok()
+                && validate_context_bank_file_dto(result)
         }
         "project.create" => {
             serde_json::from_value::<ProjectCreateResult>(result.clone()).is_ok()

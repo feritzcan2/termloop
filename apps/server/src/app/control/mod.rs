@@ -899,7 +899,13 @@ mod tests {
         assert!(!read_only_method("task.dismissWorktreeProvisioning"));
         // Catalog reads invoke the bundled manager process, and deployment
         // changes provider files. Neither surface belongs to a narrow client.
-        for method in ["skill.catalogGet", "skill.deploymentSet"] {
+        for method in [
+            "skill.catalogGet",
+            "skill.deploymentSet",
+            "contextBank.catalogGet",
+            "contextBank.fileGet",
+            "contextBank.fileSave",
+        ] {
             assert!(scope_allows_method(ClientScope::Full, method));
             assert!(!scope_allows_method(ClientScope::ReadOnly, method));
             assert!(!scope_allows_method(ClientScope::Companion, method));

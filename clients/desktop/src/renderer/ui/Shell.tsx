@@ -35,6 +35,8 @@ import { PromptPanel } from "./PromptPanel.js";
 import { PromptsRail } from "./PromptsRail.js";
 import { SkillEditorPanel } from "./SkillEditorPanel.js";
 import { SkillsRail } from "./SkillsRail.js";
+import { ContextBankEditorPanel } from "./ContextBankEditorPanel.js";
+import { ContextBankRail } from "./ContextBankRail.js";
 import { KeepAwakePanel } from "./KeepAwakePanel.js";
 import type { McpSettingsMutationResult } from "../mcp-settings.js";
 import { AssistantRail, isAssistantSession, type AssistantSelection } from "./AssistantRail.js";
@@ -165,6 +167,13 @@ export type ShellProps = {
     expectedContentSha256: string,
     content: string,
   ): Promise<import("@termloop/contract/current").SkillDefinitionDto>;
+  loadContextBankCatalog(): Promise<import("@termloop/contract/current").ContextBankCatalogResult>;
+  loadContextBankFile(fileId: string): Promise<import("@termloop/contract/current").ContextBankFileDto>;
+  saveContextBankFile(
+    fileId: string,
+    expectedContentSha256: string,
+    content: string,
+  ): Promise<import("@termloop/contract/current").ContextBankFileDto>;
   loadKeepAwake(): Promise<KeepAwakeStatusResult>;
   setKeepAwake(params: KeepAwakeSetParams): Promise<KeepAwakeStatusResult>;
   keepAwakeRefreshToken: number;
@@ -319,11 +328,12 @@ export function openImproverSession(
 
 /// Which list owns the sidebar. Skills, MCP, and Prompts are peers of the
 /// Workspace rail rather than dialogs, so the tab row above them never moves.
-export type RailMode = "workspace" | "skills" | "mcp" | "prompts";
+export type RailMode = "workspace" | "skills" | "context" | "mcp" | "prompts";
 
 /// The page currently covering the terminal stage, addressed by what it edits.
 export type StagePage =
   | { kind: "skill"; id: string }
+  | { kind: "contextFile"; id: string }
   | { kind: "mcpTool"; id: string }
   | { kind: "prompt"; id: string }
   | { kind: "taskSources" };
@@ -471,6 +481,7 @@ export function Shell(props: ShellProps) {
     setImproverSetup({ kind: "run", projectId, target });
   }, []);
   const [railMode, setRailMode] = useState<RailMode>("workspace");
+  const [contextBankRefreshToken, setContextBankRefreshToken] = useState(0);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("agents");
   const [activeAgentFavorites, setActiveAgentFavorites] = useState(readActiveAgentFavorites);
   const [activeAgentActivityMemory, setActiveAgentActivityMemory] = useState(readActiveAgentActivityMemory);
@@ -1206,6 +1217,7 @@ export function Shell(props: ShellProps) {
               <button className="mcp-settings-trigger" type="button" aria-pressed={railMode === "mcp"} onClick={() => toggleRail("mcp")}><span aria-hidden="true" /><strong>MCP</strong></button>
               <button className="prompt-settings-trigger" type="button" aria-pressed={railMode === "prompts"} onClick={() => toggleRail("prompts")}><span aria-hidden="true" /><strong>Prompts</strong></button>
               <button className="skill-settings-trigger" type="button" aria-pressed={railMode === "skills"} onClick={() => toggleRail("skills")}><span aria-hidden="true" /><strong>Skills</strong></button>
+              <button className="context-settings-trigger" type="button" aria-pressed={railMode === "context"} onClick={() => toggleRail("context")}><span aria-hidden="true" /><strong>Context</strong></button>
             </div>
             <div className="brand-actions"><button className="icon-button quiet" title="Command palette" aria-label="Open command palette" aria-keyshortcuts="Control+Shift+P Meta+Shift+P" onClick={openCommandPalette}><Icon name="search" /></button><button className="icon-button quiet" title="Add Project" aria-label="Add Project" onClick={props.openProjectDialog}><Icon name="add" /></button></div>
           </header>
@@ -1287,6 +1299,12 @@ export function Shell(props: ShellProps) {
               )
               : undefined}
             disabled={disabled}
+          /> : railMode === "context" ? <ContextBankRail
+            projectOpen={Boolean(props.selectedProject)}
+            load={props.loadContextBankCatalog}
+            refreshToken={contextBankRefreshToken}
+            selectedFileId={stagePage?.kind === "contextFile" ? stagePage.id : undefined}
+            openFile={(fileId) => openStagePage({ kind: "contextFile", id: fileId })}
           /> : railMode === "mcp" ? <McpRail
             settings={mcpLibrary.value}
             error={mcpLibrary.error}
@@ -1593,6 +1611,13 @@ export function Shell(props: ShellProps) {
               load={props.loadSkillDefinition}
               save={props.saveSkillDefinition}
               versions={props.settingsImprovement}
+              close={() => setStagePage(undefined)}
+            /> : stagePage?.kind === "contextFile" ? <ContextBankEditorPanel
+              key={stagePage.id}
+              fileId={stagePage.id}
+              load={props.loadContextBankFile}
+              save={props.saveContextBankFile}
+              onSaved={() => setContextBankRefreshToken((current) => current + 1)}
               close={() => setStagePage(undefined)}
             /> : stagePage?.kind === "mcpTool" ? (stageMcpTool && mcpLibrary.value ? <McpToolPanel
               key={stageMcpTool.name}
