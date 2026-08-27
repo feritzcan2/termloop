@@ -1065,8 +1065,12 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
     let output_observed_before_flush_receipt =
         output_after_flush.sequence() > output_before_paste.sequence();
     let settlement = match settlement {
+        // A child can consume the paste and finish its composer render before
+        // the PTY writer reports the later flush receipt, especially through
+        // Windows ConPTY. Keep the render baseline causally before the paste;
+        // the receipt above still independently proves write and flush.
         GeneratedInputSettlement::ComposerRender
-        | GeneratedInputSettlement::CodexComposerRender => output_after_flush
+        | GeneratedInputSettlement::CodexComposerRender => output_before_paste
             .wait_for_composer_render_settlement(
                 COMPOSER_RENDER_SETTLEMENT_QUIET,
                 COMPOSER_RENDER_SETTLEMENT_TIMEOUT,
