@@ -300,8 +300,11 @@ describe("Active Agent selection stability", () => {
 
     await act(async () => {
       rendered.querySelector<HTMLButtonElement>(".manual-agent-group-name")!.click();
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     });
-    const input = rendered.querySelector<HTMLInputElement>(".manual-agent-group-name-input")!;
+    const input = rendered.querySelector<HTMLInputElement>(".manual-agent-group-name-input");
+    expect(input).not.toBeNull();
+    if (!input) throw new Error("group rename input did not render");
     const inputWindow = input.ownerDocument.defaultView!;
     const valueSetter = Object.getOwnPropertyDescriptor(inputWindow.HTMLInputElement.prototype, "value")?.set;
     await act(async () => {
