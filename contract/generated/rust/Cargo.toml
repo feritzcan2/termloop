@@ -1,0 +1,17 @@
+[package]
+name = "termloop-contract"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# Keep all hand-authored conformance cases in one binary so a generated contract
+# change does not relink every file under tests/ as a separate crate.
+autotests = false
+
+[[test]]
+name = "current"
+path = "tests/current.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+regex.workspace = true

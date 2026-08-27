@@ -1,0 +1,14 @@
+[package]
+name = "termloop-gitio"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+test-support = []
+
+[dependencies]
+termloop-platform = { path = "../platform" }
+
+[dev-dependencies]
+termloop-platform = { path = "../platform", features = ["test-support"] }

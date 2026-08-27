@@ -1,0 +1,6 @@
+# Force LF on checkout everywhere so Windows checkouts (core.autocrlf=true)
+# keep generated-contract drift checks, shell scripts, and byte-exact
+# comparisons stable across platforms.
+* text=auto eol=lf
+
+*.ttf binary

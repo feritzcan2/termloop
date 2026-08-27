@@ -1,0 +1,1464 @@
+import { randomUUID, timingSafeEqual } from "node:crypto";
+import { execFile } from "node:child_process";
+import { chmod, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, truncate, unlink, writeFile } from "node:fs/promises";
+import http from "node:http";
+import path from "node:path";
+import { WebSocket, WebSocketServer } from "ws";
+import {
+  apnsPayload,
+  attentionTransitions,
+  isStewardOrWorkerSession,
+  loadApnsProvider,
+  macDesktopRecentlyActive,
+  nextStatusMap,
+  pendingStewardDecisionNotifications,
+  retainCurrentAttention,
+  sendApns,
+  stewardTranscriptNotifications,
+  upsertPushDevice,
+  withNotificationPreview,
+} from "./mobile-access-push.mjs";
+import {
+  WATCH_PATCH_ENTRY_LIMIT,
+  parseWatchTarget,
+  patchTextOf,
+  promptSessionName,
+  validatePairCode,
+  watchChatMessageOf,
+  watchProjectWorktreeOf,
+  watchSessionOf,
+  watchTaskOf,
+  watchTaskWorktreeOf,
+} from "./mobile-access-watch.mjs";
+import {
+  sendTerminalInput,
+  validWatchReply,
+  WATCH_REPLY_MAX_CHARS,
+} from "./mobile-access-terminal-input.mjs";
+import { readTerminalNotificationPreview } from "./mobile-access-terminal-preview.mjs";
+import {
+  ensureTranscriber,
+  transcribeAudioFile,
+  validVoiceUpload,
+  voiceUploadLimitBytes,
+} from "./mobile-access-transcribe.mjs";
+
+const MOBILE_API_VERSION = 1;
+const LOG_LIMIT_BYTES = 4 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const IMAGE_RETENTION_MS = 24 * 60 * 60 * 1_000;
+const IMAGE_MEDIA_TYPES = new Map([
+  ["image/jpeg", "jpg"],
+  ["image/png", "png"],
+  ["image/webp", "webp"],
+]);
+/// The daemon's own read-only scope. These reach upstream on the read-only
+/// token, so the gateway cannot turn a phone into a writer by accident.
+const MOBILE_CONTROL_METHODS = new Set([
+  "system.version",
+  "project.list",
+  "session.list",
+  "agent.statusList",
+  "agent.capabilityList",
+  "task.list",
+]);
+/// Methods outside the daemon's read-only scope that a paired phone may still
+/// reach, each named individually and routed on the full token exactly as the
+/// Watch chat paths already are. A phone already holds terminal-input authority
+/// over every running Agent, so the boundary here is not "reads only" — it is
+/// "this exact list": a Task's bounded worktree snapshot and patches, the delivery
+/// pipeline it sits on, its position on it, one inspected Agent launch, and the
+/// Steward conversation. Nothing else in the contract becomes reachable, and every
+/// entry is still gated by core's own commands and safety gates on arrival.
+const MOBILE_FULL_CONTROL_METHODS = new Set([
+  // Worktree content reads are full-control in the daemon contract. Keeping
+  // them named here gives the phone a bounded review surface without exposing
+  // any broader Git or filesystem authority.
+  "task.worktreeChangeList",
+  "task.worktreeDiff",
+  "task.worktreePreImage",
+  "playbook.get",
+  "playbook.runtime",
+  "playbook.taskPositionSet",
+  "routine.configurationList",
+  "routine.runNow",
+  "task.previewAgent",
+  "task.launchAgent",
+  "session.previewAgent",
+  "session.launchAgent",
+  "session.rename",
+  "companion.transcriptList",
+  "companion.transcriptAppend",
+  "companion.suggestionAccept",
+  "companion.proposalRespond",
+]);
+let controlRequestSequence = 0;
+const upstreamControlConnections = new Map();
+const MAX_UPSTREAM_CONTROL_IN_FLIGHT = 128;
+
+const configFile = process.argv[2];
+if (!configFile) throw new Error("usage: mobile-access-gateway <config-file>");
+const config = validateConfig(JSON.parse(await readFile(configFile, "utf8")));
+await boundLog();
+const sockets = new Set();
+const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 4 * 1024 * 1024 });
+
+const server = http.createServer(async (request, response) => {
+  if (request.url === "/health") {
+    response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+    response.end(JSON.stringify({ ready: true }));
+    return;
+  }
+  if (request.method === "POST" && request.url === "/push/register") {
+    await registerPushDevice(request, response);
+    return;
+  }
+  if (request.method === "POST" && safePathname(request.url) === "/session/image") {
+    await uploadSessionImage(request, response);
+    return;
+  }
+  if (request.method === "POST" && request.url === "/watch/pair") {
+    await watchPair(request, response);
+    return;
+  }
+  if (request.method === "GET" && safePathname(request.url) === "/watch/credential") {
+    watchCredential(request, response);
+    return;
+  }
+  if (request.method === "GET" && safePathname(request.url) === "/watch/worktrees") {
+    await watchWorktrees(request, response);
+    return;
+  }
+  if (request.method === "GET" && safePathname(request.url) === "/watch/patches") {
+    await watchPatches(request, response);
+    return;
+  }
+  if (request.method === "GET" && safePathname(request.url) === "/watch/status") {
+    await watchStatus(request, response);
+    return;
+  }
+  if (request.method === "GET" && safePathname(request.url) === "/watch/tasks") {
+    await watchTasks(request, response);
+    return;
+  }
+  if (request.method === "GET" && safePathname(request.url) === "/watch/chat") {
+    await watchChatList(request, response);
+    return;
+  }
+  if (request.method === "POST" && request.url === "/watch/chat") {
+    await watchChatSend(request, response);
+    return;
+  }
+  if (request.method === "POST" && request.url === "/watch/steward-action") {
+    await watchStewardAction(request, response);
+    return;
+  }
+  if (request.method === "POST" && safePathname(request.url) === "/watch/voice") {
+    await watchVoiceSend(request, response);
+    return;
+  }
+  if (request.method === "POST" && request.url === "/watch/reply") {
+    await watchReply(request, response);
+    return;
+  }
+  if (request.method === "POST" && safePathname(request.url) === "/watch/reply-voice") {
+    await watchVoiceReply(request, response);
+    return;
+  }
+  if (request.method === "POST" && safePathname(request.url) === "/watch/transcribe") {
+    await watchTranscribe(request, response);
+    return;
+  }
+  if (request.method === "POST" && request.url === "/watch/task-agent") {
+    await watchTaskAgent(request, response);
+    return;
+  }
+  if (request.method === "POST" && request.url === "/watch/project-agent") {
+    await watchProjectAgent(request, response);
+    return;
+  }
+  if (request.method === "POST" && safePathname(request.url) === "/watch/project-agent-voice") {
+    await watchProjectAgentVoice(request, response);
+    return;
+  }
+  response.writeHead(404).end();
+});
+
+server.on("upgrade", (request, socket, head) => {
+  const pathname = safePathname(request.url);
+  if (pathname !== "/control" && pathname !== "/terminal") {
+    socket.destroy();
+    return;
+  }
+  websocketServer.handleUpgrade(request, socket, head, (client) => {
+    sockets.add(client);
+    client.once("close", () => sockets.delete(client));
+    if (pathname === "/control") acceptControl(client);
+    else acceptTerminal(client);
+  });
+});
+
+server.listen(config.port, "127.0.0.1", () => {
+  // A restart loop is otherwise indistinguishable from a silent gateway, so
+  // record the one fact every diagnosis starts from. Never log credentials.
+  process.stdout.write(`${new Date().toISOString()} gateway listening pid=${process.pid} port=${config.port}\n`);
+});
+if (config.push !== undefined) startAttentionMonitor();
+// Compile the wrist transcriber before the first request needs it: a cold
+// compile costs ~20s, longer than the watch is willing to wait for a reply.
+ensureTranscriber(path.dirname(configFile)).catch(() => {
+  // The first transcription request will retry the build and surface failure.
+});
+
+// The supervisor holds this file open in append mode, so truncating in place is
+// safe: later writes resume at the new end. A crash loop restarts the process,
+// which is exactly when this bound gets re-applied.
+async function boundLog() {
+  if (config.logFile === undefined) return;
+  try {
+    if ((await stat(config.logFile)).size > LOG_LIMIT_BYTES) await truncate(config.logFile, 0);
+  } catch { /* A missing or unreadable log must never stop mobile access. */ }
+}
+
+async function registerPushDevice(request, response) {
+  if (config.push === undefined) return json(response, 404, { registered: false });
+  const authorization = request.headers.authorization ?? "";
+  const bearer = authorization.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
+  const authorized = constantTimeEqual(bearer, config.controlToken)
+    || (config.watchToken !== undefined && constantTimeEqual(bearer, config.watchToken));
+  if (!authorized) {
+    return json(response, 401, { registered: false });
+  }
+  try {
+    const body = JSON.parse(await readBody(request, 4096));
+    const current = await readPushDevices();
+    const next = upsertPushDevice(current, body);
+    await writeFile(config.push.devicesFile, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+    await chmod(config.push.devicesFile, 0o600);
+    return json(response, 200, { registered: true });
+  } catch {
+    return json(response, 400, { registered: false });
+  }
+}
+
+/// Images are deliberately not terminal frames: the terminal plane remains raw
+/// PTY bytes only. The owner-authenticated gateway stages the bytes in the
+/// target Session's ignored runtime directory, then the phone sends that relative
+/// path as ordinary user input to the already-running agent.
+async function uploadSessionImage(request, response) {
+  if (!ownerAuthorized(request)) return json(response, 401, { uploaded: false });
+  const sessionId = new URL(request.url, "http://127.0.0.1").searchParams.get("sessionId") ?? "";
+  if (!validSessionId(sessionId)) return json(response, 400, { uploaded: false });
+  const mediaType = request.headers["content-type"]?.split(";", 1)[0]?.toLowerCase() ?? "";
+  const extension = IMAGE_MEDIA_TYPES.get(mediaType);
+  if (extension === undefined) return json(response, 415, { uploaded: false });
+  try {
+    const bytes = await readBytes(request, MAX_IMAGE_BYTES);
+    if (bytes.length === 0) return json(response, 400, { uploaded: false });
+    const runtime = await currentRuntime();
+    const sessions = await callCurrentControl(runtime, "session.list", {});
+    const session = Array.isArray(sessions)
+      ? sessions.find((candidate) => candidate?.id === sessionId)
+      : undefined;
+    if (session?.kind !== "Agent" || session.lifecycle_state !== "running"
+      || typeof session?.process?.cwd !== "string") {
+      return json(response, 409, { uploaded: false });
+    }
+    const directory = await attachmentDirectory(session.process.cwd);
+    await pruneAttachments(directory);
+    const fileName = `${randomUUID()}.${extension}`;
+    const temporary = path.join(directory, `.${fileName}.uploading`);
+    const destination = path.join(directory, fileName);
+    await writeFile(temporary, bytes, { mode: 0o600, flag: "wx" });
+    await rename(temporary, destination);
+    return json(response, 201, {
+      uploaded: true,
+      attachmentPath: path.posix.join(".termloop-runtime", "mobile-attachments", fileName),
+    });
+  } catch {
+    return json(response, 503, { uploaded: false });
+  }
+}
+
+function ownerAuthorized(request) {
+  const authorization = request.headers.authorization ?? "";
+  return authorization.startsWith("Bearer ")
+    && constantTimeEqual(authorization.slice("Bearer ".length), config.controlToken);
+}
+
+function validSessionId(value) {
+  return /^[A-Za-z0-9-]{1,128}$/.test(value);
+}
+
+async function attachmentDirectory(cwd) {
+  const root = await realpath(cwd);
+  const runtimeDirectory = path.join(root, ".termloop-runtime");
+  await mkdir(runtimeDirectory, { recursive: true, mode: 0o700 });
+  const runtimeInfo = await lstat(runtimeDirectory);
+  if (!runtimeInfo.isDirectory() || runtimeInfo.isSymbolicLink()) throw new Error("invalid runtime directory");
+  const directory = path.join(runtimeDirectory, "mobile-attachments");
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const info = await lstat(directory);
+  if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("invalid attachment directory");
+  return directory;
+}
+
+async function pruneAttachments(directory) {
+  const before = Date.now() - IMAGE_RETENTION_MS;
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const target = path.join(directory, entry.name);
+    try {
+      if ((await stat(target)).mtimeMs < before) await unlink(target);
+    } catch { /* A concurrent upload may have completed its cleanup first. */ }
+  }
+}
+
+const watchPairFile = path.join(path.dirname(configFile), "watch-pair.json");
+
+async function watchPair(request, response) {
+  if (config.watchToken === undefined) return json(response, 404, { paired: false });
+  try {
+    const body = JSON.parse(await readBody(request, 512));
+    let stored;
+    try {
+      stored = JSON.parse(await readFile(watchPairFile, "utf8"));
+    } catch {
+      stored = undefined;
+    }
+    if (!validatePairCode(stored, body?.code)) return json(response, 401, { paired: false });
+    await rm(watchPairFile, { force: true });
+    return json(response, 200, { paired: true, token: config.watchToken });
+  } catch {
+    return json(response, 400, { paired: false });
+  }
+}
+
+// A paired phone provisions its companion watch silently: the phone proves the
+// full mobile credential and receives the watch-scoped token to forward over
+// WatchConnectivity. The six-digit /watch/pair code remains the phone-less
+// fallback for standalone watch installs.
+function watchCredential(request, response) {
+  if (config.watchToken === undefined) return json(response, 404, { paired: false });
+  const authorization = request.headers.authorization ?? "";
+  const bearer = authorization.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
+  if (!constantTimeEqual(bearer, config.controlToken)) return json(response, 401, { paired: false });
+  return json(response, 200, { paired: true, token: config.watchToken });
+}
+
+function watchAuthorized(request) {
+  const authorization = request.headers.authorization ?? "";
+  return config.watchToken !== undefined
+    && authorization.startsWith("Bearer ")
+    && constantTimeEqual(authorization.slice("Bearer ".length), config.watchToken);
+}
+
+function controlCaller(runtime, token) {
+  return (method, params) => callCurrentControl(runtime, method, params ?? {}, token);
+}
+
+// The daemon gates task.worktreeChangeList/Diff behind the full-control scope,
+// so those two read methods use the discovery file's full token; every other
+// facade call stays on the read-only credential like the rest of the gateway.
+async function watchWorktrees(request, response) {
+  if (!watchAuthorized(request)) return json(response, 401, {});
+  try {
+    const runtime = await currentRuntime();
+    if (runtime.fullToken === undefined) return json(response, 503, { error: "TermLoop is unavailable" });
+    const readOnly = controlCaller(runtime, runtime.readOnlyToken);
+    const full = controlCaller(runtime, runtime.fullToken);
+    const worktrees = [];
+    for (const project of await readOnly("project.list", {})) {
+      try {
+        const changes = await full("project.worktreeChangeList", { projectId: project.id });
+        if (changes.entries.length > 0) worktrees.push(watchProjectWorktreeOf(project, changes));
+      } catch { /* Project checkout may be unavailable; keep the rest. */ }
+      const page = await readOnly("task.list", { projectId: project.id, archiveScope: "active" });
+      for (const task of page.items) {
+        if (task.status !== "open" || !task.worktree) continue;
+        try {
+          const changes = await full("task.worktreeChangeList", { taskId: task.id });
+          if (changes.entries.length > 0) worktrees.push(watchTaskWorktreeOf(task, changes));
+        } catch { /* Worktree may be mid-provisioning; keep the rest. */ }
+      }
+    }
+    return json(response, 200, { worktrees });
+  } catch {
+    return json(response, 503, { error: "TermLoop is unavailable" });
+  }
+}
+
+async function watchPatches(request, response) {
+  if (!watchAuthorized(request)) return json(response, 401, {});
+  const target = parseWatchTarget(new URL(request.url, "http://127.0.0.1").searchParams.get("wt"));
+  if (!target) return json(response, 400, { error: "invalid worktree target" });
+  try {
+    const runtime = await currentRuntime();
+    if (runtime.fullToken === undefined) return json(response, 503, { error: "TermLoop is unavailable" });
+    const full = controlCaller(runtime, runtime.fullToken);
+    const changes = target.scope === "task"
+      ? await full("task.worktreeChangeList", { taskId: target.id })
+      : await full("project.worktreeChangeList", { projectId: target.id });
+    const observationId = changes.observation_id;
+    const files = [];
+    for (const entry of changes.entries.slice(0, WATCH_PATCH_ENTRY_LIMIT)) {
+      let text;
+      try {
+        const diff = target.scope === "task"
+          ? await full("task.worktreeDiff", { taskId: target.id, observationId, entryId: entry.entry_id })
+          : await full("project.worktreeDiff", { projectId: target.id, observationId, entryId: entry.entry_id });
+        text = patchTextOf(diff);
+      } catch {
+        text = "(diff unavailable)";
+      }
+      files.push({ path: entry.display_path, patch: text });
+    }
+    if (changes.entries.length > WATCH_PATCH_ENTRY_LIMIT) {
+      files.push({ path: "…", patch: `(${changes.entries.length - WATCH_PATCH_ENTRY_LIMIT} more files not shown)` });
+    }
+    return json(response, 200, { files });
+  } catch {
+    return json(response, 503, { error: "TermLoop is unavailable" });
+  }
+}
+
+async function watchStatus(request, response) {
+  if (!watchAuthorized(request)) return json(response, 401, {});
+  try {
+    const runtime = await currentRuntime();
+    const readOnly = controlCaller(runtime, runtime.readOnlyToken);
+    const [projects, sessions, statuses] = await Promise.all([
+      readOnly("project.list", {}),
+      readOnly("session.list", {}),
+      readOnly("agent.statusList", {}),
+    ]);
+    const statusesBySession = new Map(statuses.map((entry) => [entry.sessionId, entry.status]));
+    const agents = sessions
+      .filter((session) => session.kind === "Agent"
+        && session.lifecycle_state === "running"
+        && !isStewardOrWorkerSession(session))
+      .map((session) => watchSessionOf(session, statusesBySession));
+    return json(response, 200, {
+      projects: projects.map((project) => ({ id: project.id, name: project.name })),
+      sessions: agents,
+    });
+  } catch {
+    return json(response, 503, { error: "TermLoop is unavailable" });
+  }
+}
+
+async function watchTasks(request, response) {
+  if (!watchAuthorized(request)) return json(response, 401, {});
+  try {
+    const runtime = await currentRuntime();
+    const readOnly = controlCaller(runtime, runtime.readOnlyToken);
+    const tasks = [];
+    for (const project of await readOnly("project.list", {})) {
+      const page = await readOnly("task.list", { projectId: project.id, archiveScope: "active" });
+      for (const task of page.items) {
+        if (task.status === "open") tasks.push(watchTaskOf(task, project.name));
+      }
+    }
+    return json(response, 200, { tasks });
+  } catch {
+    return json(response, 503, { error: "TermLoop is unavailable" });
+  }
+}
+
+async function watchChatList(request, response) {
+  if (!watchAuthorized(request)) return json(response, 401, {});
+  const projectId = new URL(request.url, "http://127.0.0.1").searchParams.get("project") ?? "";
+  if (!/^[A-Za-z0-9-]{1,64}$/.test(projectId)) return json(response, 400, { error: "invalid project" });
+  try {
+    const runtime = await currentRuntime();
+    if (runtime.fullToken === undefined) return json(response, 503, { error: "TermLoop is unavailable" });
+    const full = controlCaller(runtime, runtime.fullToken);
+    const result = await full("companion.transcriptList", { projectId, limit: 30 });
+    return json(response, 200, { messages: result.messages.map(watchChatMessageOf) });
+  } catch {
+    return json(response, 503, { error: "TermLoop is unavailable" });
+  }
+}
+
+/// A watch chat message is an ordinary Companion transcript append: the
+/// daemon's built-in chat wake brings the Steward up exactly as it does for
+/// the desktop chat. The attention monitor watches every Project transcript,
+/// so later Steward replies reach the Watch even when the request began on
+/// another client or arrived after the watch app left the foreground.
+async function watchChatSend(request, response) {
+  if (!watchAuthorized(request)) return json(response, 401, {});
+  try {
+    const body = JSON.parse(await readBody(request, 64 * 1024));
+    const projectId = typeof body?.projectId === "string" ? body.projectId : "";
+    const content = typeof body?.content === "string" ? body.content.trim() : "";
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(projectId) || content.length === 0 || content.length > 8192) {
+      return json(response, 400, { error: "invalid chat message" });
+    }
+    const message = await appendStewardMessage(projectId, content);
+    return json(response, 200, { message });
+  } catch {
+    return json(response, 503, { error: "TermLoop is unavailable" });
+  }
+}
+
+async function appendStewardMessage(projectId, content) {
+  const runtime = await currentRuntime();
+  if (runtime.fullToken === undefined) throw new Error("TermLoop is unavailable");
+  const full = controlCaller(runtime, runtime.fullToken);
+  const result = await full("companion.transcriptAppend", { projectId, content });
+  return watchChatMessageOf(result.message);
+}
+
+async function watchStewardAction(request, response) {
+  if (!watchAuthorized(request)) return json(response, 401, {});
+  try {
+    const body = JSON.parse(await readBody(request, 4096));
+    const projectId = typeof body?.projectId === "string" ? body.projectId : "";
+    const messageId = typeof body?.messageId === "string" ? body.messageId : "";
+    const action = typeof body?.action === "string" ? body.action : "";
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(projectId)
+      || messageId.length === 0 || messageId.length > 256
+      || !["approve", "decline", "accept"].includes(action)) {
+      return json(response, 400, { error: "invalid steward action" });
+    }
+    const runtime = await currentRuntime();
+    if (runtime.fullToken === undefined) return json(response, 503, { error: "TermLoop is unavailable" });
+    const full = controlCaller(runtime, runtime.fullToken);
+    const result = action === "accept"
+      ? await full("companion.suggestionAccept", { projectId, suggestionMessageId: messageId })
+      : await full("companion.proposalRespond", {
+        projectId,
+        proposalMessageId: messageId,
+        decision: action,
+      });
+    return json(response, 200, { message: watchChatMessageOf(result.message) });
+  } catch (cause) {
+    const code = cause instanceof UpstreamControlError ? cause.controlError?.code : undefined;
+    return json(response, code === "conflict" ? 409 : 503, {
+      error: code === "conflict" ? "This Steward request is no longer pending" : "TermLoop is unavailable",
+    });
+  }
+}
+
+/// Wrist audio, transcribed by this Mac's own on-device speech recognition and
+/// appended to the Steward transcript. The recording never leaves the machine
+/// the daemon already runs on, and the temporary file is removed on every path.
+async function watchVoiceSend(request, response) {
+  if (!watchAuthorized(request)) return json(response, 401, {});
+  const projectId = new URL(request.url, "http://127.0.0.1").searchParams.get("project") ?? "";
+  if (!/^[A-Za-z0-9-]{1,64}$/.test(projectId)) return json(response, 400, { error: "invalid project" });
+  let audio;
+  try {
+    audio = await readBinaryBody(request, voiceUploadLimitBytes);
+  } catch {
+    return json(response, 413, { error: "recording too large" });
+  }
+  if (!validVoiceUpload(request.headers["content-type"], audio.length)) {
+    return json(response, 400, { error: "invalid recording" });
+  }
+  const runtimeDir = path.dirname(configFile);
+  const audioFile = path.join(runtimeDir, `watch-voice-${randomUUID()}.m4a`);
+  let status = 503;
+  let payload = { error: "transcription unavailable" };
+  try {
+    await writeFile(audioFile, audio, { mode: 0o600 });
+    const { text } = await transcribeAudioFile(runtimeDir, audioFile);
+    if (text.length === 0) {
+      status = 422;
+      payload = { error: "no speech recognized" };
+    } else {
+      const message = await appendStewardMessage(projectId, text.slice(0, 8192));
+      status = 200;
+      payload = { transcript: text, message };
+    }
+  } catch {
+    // Keep the generic response and remove the recording before replying.
+  } finally {
+    await rm(audioFile, { force: true });
+  }
+  return json(response, status, payload);
+}
+
+async function watchReply(request, response) {
+  if (!watchAuthorized(request)) return json(response, 401, {});
+  try {
+    const body = JSON.parse(await readBody(request, 64 * 1024));
+    if (!validWatchReply(body)) return json(response, 400, { error: "invalid reply" });
+    const runtime = await currentRuntime();
+    const delivered = await sendTerminalInput(WebSocket, runtime.terminalUrl, runtime.terminalToken, body);
+    return json(response, delivered ? 200 : 503, { delivered });
+  } catch {
+    return json(response, 503, { delivered: false });
+  }
+}
+
+async function watchVoiceReply(request, response) {
+  if (!watchAuthorized(request)) return json(response, 401, {});
+  const url = new URL(request.url, "http://127.0.0.1");
+  const sessionId = url.searchParams.get("session") ?? "";
+  const runtimeEpoch = Number(url.searchParams.get("epoch"));
+  if (!/^[A-Za-z0-9-]{1,128}$/.test(sessionId)
+    || !Number.isSafeInteger(runtimeEpoch) || runtimeEpoch < 0) {
+    return json(response, 400, { error: "invalid reply target" });
+  }
+  const transcription = await transcribeWatchRequest(request);
+  if (transcription.status !== 200) return json(response, transcription.status, { error: transcription.error });
+  try {
+    const runtime = await currentRuntime();
+    const delivered = await sendTerminalInput(WebSocket, runtime.terminalUrl, runtime.terminalToken, {
+      sessionId,
+      runtimeEpoch,
+      text: transcription.text,
+    });
+    // The transcript rides along so the watch can show what was (or was not)
+    // delivered without a second transcription pass.
+    return json(response, delivered ? 200 : 503, { delivered, transcript: transcription.text });
+  } catch {
+    return json(response, 503, { delivered: false });
+  }
+}
+
+/// Transcribe-only: the watch shows the recognized text before anything is
+/// sent, so the user reads exactly what a later launch or reply will deliver.
+/// One content-free outcome line per request: transcription failures are
+/// otherwise invisible from the wrist, and this is the only evidence of them.
+async function watchTranscribe(request, response) {
+  if (!watchAuthorized(request)) return json(response, 401, {});
+  const startedAt = Date.now();
+  const transcription = await transcribeWatchRequest(request);
+  process.stdout.write(`${new Date().toISOString()} watch transcribe status=${transcription.status} ms=${Date.now() - startedAt}\n`);
+  if (transcription.status !== 200) return json(response, transcription.status, { error: transcription.error });
+  return json(response, 200, { transcript: transcription.text });
+}
+
+async function transcribeWatchRequest(request) {
+  let audio;
+  try {
+    audio = await readBinaryBody(request, voiceUploadLimitBytes);
+  } catch {
+    return { status: 413, error: "recording too large" };
+  }
+  if (!validVoiceUpload(request.headers["content-type"], audio.length)) {
+    return { status: 400, error: "invalid recording" };
+  }
+  const runtimeDir = path.dirname(configFile);
+  const audioFile = path.join(runtimeDir, `watch-voice-${randomUUID()}.m4a`);
+  try {
+    await writeFile(audioFile, audio, { mode: 0o600 });
+    const { text } = await transcribeAudioFile(runtimeDir, audioFile);
+    if (text.length === 0) {
+      return { status: 422, error: "no speech recognized" };
+    }
+    return { status: 200, text };
+  } catch {
+    return { status: 503, error: "transcription unavailable" };
+  } finally {
+    await rm(audioFile, { force: true });
+  }
+}
+
+/// Watch task launches follow the same inspected-manifest path as every other
+/// TermLoop-controlled launch: preview resolves the invocation-owned manifest
+/// and ticket, launch consumes that exact ticket.
+async function watchTaskAgent(request, response) {
+  if (!watchAuthorized(request)) return json(response, 401, {});
+  try {
+    const body = JSON.parse(await readBody(request, 4096));
+    const taskId = typeof body?.taskId === "string" ? body.taskId : "";
+    const agentId = body?.agentId === "codex" ? "codex" : "claude";
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(taskId)) return json(response, 400, { error: "invalid task" });
+    const runtime = await currentRuntime();
+    if (runtime.fullToken === undefined) return json(response, 503, { error: "TermLoop is unavailable" });
+    const full = controlCaller(runtime, runtime.fullToken);
+    const preview = await full("task.previewAgent", { taskId, agentId });
+    const session = await full("task.launchAgent", { taskId, agentId, launchTicket: preview.launch_ticket });
+    return json(response, 200, { sessionId: session.id, name: session.name });
+  } catch {
+    return json(response, 503, { error: "launch failed" });
+  }
+}
+
+/// Project launches use the Project's current canonical folder from Core rather
+/// than accepting a filesystem path from the watch. The resolved identity and
+/// folder then travel through the same inspected preview ticket as every other
+/// TermLoop-controlled launch.
+async function watchProjectAgent(request, response) {
+  if (!watchAuthorized(request)) return json(response, 401, {});
+  try {
+    const body = JSON.parse(await readBody(request, 64 * 1024));
+    const projectId = typeof body?.projectId === "string" ? body.projectId : "";
+    const agentId = body?.agentId === "codex" ? "codex" : "claude";
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(projectId)) {
+      return json(response, 400, { error: "invalid project" });
+    }
+    // Optional confirmed prompt text: the watch transcribes first so the user
+    // sees the exact words, then this launch delivers those exact words.
+    const prompt = body?.prompt;
+    if (prompt !== undefined
+      && (typeof prompt !== "string" || prompt.trim().length === 0 || prompt.length > WATCH_REPLY_MAX_CHARS)) {
+      return json(response, 400, { error: "invalid prompt" });
+    }
+    const runtime = await currentRuntime();
+    if (runtime.fullToken === undefined) {
+      return json(response, 503, { error: "TermLoop is unavailable" });
+    }
+    const readOnly = controlCaller(runtime, runtime.readOnlyToken);
+    const projects = await readOnly("project.list", {});
+    const project = projects.find((candidate) => candidate.id === projectId);
+    if (project === undefined || typeof project.folder_path !== "string" || project.folder_path.length === 0) {
+      return json(response, 404, { error: "project not found" });
+    }
+    const full = controlCaller(runtime, runtime.fullToken);
+    const launchTarget = { projectId, cwd: project.folder_path, agentId };
+    const preview = await full("session.previewAgent", launchTarget);
+    const launchedSession = await full("session.launchAgent", {
+      ...launchTarget,
+      launchTicket: preview.launch_ticket,
+    });
+    const session = await namePromptedSession(full, launchedSession, prompt);
+    const result = {
+      sessionId: session.id,
+      name: session.name,
+      runtimeEpoch: session.runtime_epoch,
+    };
+    if (prompt !== undefined) {
+      result.promptDelivered = await sendTerminalInput(WebSocket, runtime.terminalUrl, runtime.terminalToken, {
+        sessionId: session.id,
+        runtimeEpoch: session.runtime_epoch,
+        text: prompt,
+      });
+    }
+    return json(response, 200, result);
+  } catch {
+    return json(response, 503, { error: "launch failed" });
+  }
+}
+
+async function watchProjectAgentVoice(request, response) {
+  if (!watchAuthorized(request)) return json(response, 401, {});
+  const url = new URL(request.url, "http://127.0.0.1");
+  const projectId = url.searchParams.get("project") ?? "";
+  const agentId = url.searchParams.get("agent") === "codex" ? "codex" : "claude";
+  if (!/^[A-Za-z0-9-]{1,64}$/.test(projectId)) {
+    return json(response, 400, { error: "invalid project" });
+  }
+  const transcription = await transcribeWatchRequest(request);
+  if (transcription.status !== 200) return json(response, transcription.status, { error: transcription.error });
+  try {
+    const runtime = await currentRuntime();
+    if (runtime.fullToken === undefined) {
+      return json(response, 503, { error: "TermLoop is unavailable" });
+    }
+    const readOnly = controlCaller(runtime, runtime.readOnlyToken);
+    const projects = await readOnly("project.list", {});
+    const project = projects.find((candidate) => candidate.id === projectId);
+    if (project === undefined || typeof project.folder_path !== "string" || project.folder_path.length === 0) {
+      return json(response, 404, { error: "project not found" });
+    }
+    const full = controlCaller(runtime, runtime.fullToken);
+    const launchTarget = { projectId, cwd: project.folder_path, agentId };
+    const preview = await full("session.previewAgent", launchTarget);
+    const launchedSession = await full("session.launchAgent", {
+      ...launchTarget,
+      launchTicket: preview.launch_ticket,
+    });
+    const session = await namePromptedSession(full, launchedSession, transcription.text);
+    const promptDelivered = await sendTerminalInput(
+      WebSocket,
+      runtime.terminalUrl,
+      runtime.terminalToken,
+      { sessionId: session.id, runtimeEpoch: session.runtime_epoch, text: transcription.text },
+    );
+    // runtimeEpoch lets the watch retry an unconfirmed prompt through
+    // /watch/reply-voice against this exact session instead of relaunching,
+    // and the transcript shows the user the exact delivered words.
+    return json(response, 200, {
+      sessionId: session.id,
+      name: session.name,
+      runtimeEpoch: session.runtime_epoch,
+      promptDelivered,
+      transcript: transcription.text,
+    });
+  } catch {
+    return json(response, 503, { error: "launch failed" });
+  }
+}
+
+async function namePromptedSession(full, session, prompt) {
+  const name = promptSessionName(prompt);
+  if (name === null) return session;
+  try {
+    return await full("session.rename", { sessionId: session.id, name });
+  } catch {
+    // Launch already succeeded. Keep that exact Session recoverable instead of
+    // reporting a launch failure that could make the user start a duplicate.
+    return session;
+  }
+}
+
+function startAttentionMonitor() {
+  let polling = false;
+  let initialized = false;
+  let previous = new Map();
+  let pending = new Map();
+  let stewardSequences = new Map();
+  // Per-device APNs acceptance is retained only while its exact decision is
+  // pending. A Watch registering after the proposal was created still receives
+  // it, without repeatedly alerting devices that already accepted the push.
+  let deliveredStewardDecisions = new Map();
+  let lastStewardPollAt = 0;
+
+  const pollSteward = async (runtime) => {
+    if (Date.now() - lastStewardPollAt < 5_000 || runtime.fullToken === undefined) return;
+    const projects = await callCurrentControl(runtime, "project.list", {});
+    const full = controlCaller(runtime, runtime.fullToken);
+    const messagesByProject = new Map();
+    await Promise.all(projects.map(async (project) => {
+      try {
+        const transcript = await full("companion.transcriptList", { projectId: project.id, limit: 100 });
+        messagesByProject.set(project.id, transcript.messages);
+      } catch {
+        // One unavailable Project must not suppress Steward decisions from
+        // every other Project. Its cursor stays unchanged and retries.
+      }
+    }));
+    const stewardChanges = stewardTranscriptNotifications(stewardSequences, projects, messagesByProject);
+    stewardSequences = stewardChanges.nextSequences;
+    const pendingDecisions = pendingStewardDecisionNotifications(projects, messagesByProject);
+    const pendingDecisionIds = new Set(pendingDecisions.map(({ stewardMessageId }) => stewardMessageId));
+    deliveredStewardDecisions = new Map(
+      [...deliveredStewardDecisions].filter(([messageId]) => pendingDecisionIds.has(messageId)),
+    );
+    // Steward is the user's wrist control plane. Unlike terminal attention,
+    // these notifications are never suppressed while the Mac is active.
+    const notifications = new Map();
+    for (const notification of stewardChanges.notifications) {
+      notifications.set(notification.stewardMessageId ?? `${notification.sessionId}:${notification.kind}`, notification);
+    }
+    for (const notification of pendingDecisions) {
+      notifications.set(notification.stewardMessageId, notification);
+    }
+    for (const notification of notifications.values()) {
+      if (pendingDecisionIds.has(notification.stewardMessageId)) {
+        const deliveredDevices = deliveredStewardDecisions.get(notification.stewardMessageId) ?? new Set();
+        const acceptedDevices = await deliverPush(notification, deliveredDevices);
+        deliveredStewardDecisions.set(
+          notification.stewardMessageId,
+          new Set([...deliveredDevices, ...acceptedDevices]),
+        );
+      } else {
+        await deliverPush(notification);
+      }
+    }
+    lastStewardPollAt = Date.now();
+  };
+
+  const pollAgentAttention = async (runtime) => {
+    const [sessions, statuses] = await Promise.all([
+      callCurrentControl(runtime, "session.list", {}),
+      callCurrentControl(runtime, "agent.statusList", {}),
+    ]);
+    if (!Array.isArray(sessions) || !Array.isArray(statuses)) {
+      throw new Error("mobile attention projections are unavailable");
+    }
+    if (initialized) {
+      for (const notification of attentionTransitions(previous, statuses, sessions)) {
+        pending.set(notification.sessionId, notification);
+      }
+      pending = retainCurrentAttention(pending, statuses);
+      if (!(await desktopRecentlyActive())) {
+        for (const notification of pending.values()) {
+          const preview = await readTerminalNotificationPreview(runtime, notification);
+          await deliverPush(withNotificationPreview(notification, preview));
+        }
+        pending.clear();
+      }
+    }
+    previous = nextStatusMap(statuses);
+    initialized = true;
+  };
+
+  const poll = async () => {
+    if (polling) return;
+    polling = true;
+    try {
+      const runtime = await currentRuntime();
+      // Keep the two channels fail-independent. A broken terminal projection,
+      // preview, or desktop-presence check cannot delay a Steward decision.
+      try { await pollSteward(runtime); } catch { /* Retry on the next bounded poll. */ }
+      try { await pollAgentAttention(runtime); } catch { /* Retry on the next bounded poll. */ }
+    } catch {
+      // The daemon or network may be restarting. The next bounded poll retries.
+    } finally {
+      polling = false;
+    }
+  };
+  void poll();
+  const timer = setInterval(poll, 2_000);
+  timer.unref();
+}
+
+function desktopRecentlyActive() {
+  if (config.hostPlatform !== "darwin") return Promise.resolve(false);
+  return new Promise((resolve) => {
+    execFile(
+      "/usr/sbin/ioreg",
+      ["-r", "-c", "IOHIDSystem", "-d", "1"],
+      { encoding: "utf8", timeout: 1_000, maxBuffer: 256 * 1024 },
+      (error, stdout) => resolve(error === null && macDesktopRecentlyActive(stdout)),
+    );
+  });
+}
+
+async function deliverPush(notification, skipDeviceTokens = new Set()) {
+  let provider;
+  try { provider = await loadApnsProvider(config.push.apnsConfigFile); } catch { return new Set(); }
+  const current = await readPushDevices();
+  const devices = current.devices ?? [];
+  const retained = [];
+  const accepted = new Set();
+  for (const device of devices) {
+    if (skipDeviceTokens.has(device.deviceToken)) {
+      retained.push(device);
+      continue;
+    }
+    const result = await sendApns(provider, device, apnsPayload(notification, config.push.connectionId));
+    if (result.ok) accepted.add(device.deviceToken);
+    if (!["BadDeviceToken", "DeviceTokenNotForTopic", "Unregistered"].includes(result.reason)) {
+      retained.push(device);
+    }
+  }
+  if (retained.length !== devices.length) {
+    await writeFile(config.push.devicesFile, `${JSON.stringify({ version: 1, devices: retained }, null, 2)}\n`, { mode: 0o600 });
+    await chmod(config.push.devicesFile, 0o600);
+  }
+  return accepted;
+}
+
+async function readPushDevices() {
+  try {
+    const value = JSON.parse(await readFile(config.push.devicesFile, "utf8"));
+    return value?.version === 1 && Array.isArray(value.devices) ? value : { version: 1, devices: [] };
+  } catch {
+    return { version: 1, devices: [] };
+  }
+}
+
+async function acceptControl(client) {
+  const first = await firstMessage(client);
+  if (first === undefined || first.isBinary) return refuse(client, "invalid control request");
+  let request;
+  try {
+    request = JSON.parse(first.data.toString("utf8"));
+  } catch {
+    return refuse(client, "invalid control request");
+  }
+  if (!constantTimeEqual(request?.token, config.controlToken)) {
+    return refuse(client, "invalid credential");
+  }
+
+  if (Object.hasOwn(request, "mobileApiVersion")) {
+    client.on("message", (data, isBinary) => {
+      if (isBinary) return mobileControlResponse(client, "invalid", false, undefined, {
+        code: "invalidMessage",
+        message: "Mobile control requests must be JSON text.",
+      });
+      let next;
+      try { next = JSON.parse(data.toString("utf8")); } catch {
+        return mobileControlResponse(client, "invalid", false, undefined, {
+          code: "invalidMessage",
+          message: "Mobile control request is invalid.",
+        });
+      }
+      if (!constantTimeEqual(next?.token, config.controlToken)) {
+        return mobileControlResponse(client, typeof next?.id === "string" ? next.id : "invalid", false, undefined, {
+          code: "unauthenticated",
+          message: "Mobile control credential is invalid.",
+        });
+      }
+      void acceptMobileControl(client, next);
+    });
+    void acceptMobileControl(client, request);
+    return;
+  }
+
+  let runtime;
+  try {
+    runtime = await currentRuntime();
+  } catch {
+    return unavailable(client);
+  }
+  const clientProtocolVersion = request.protocolVersion;
+  request.token = runtime.readOnlyToken;
+  request.protocolVersion = runtime.protocolVersion;
+  const upstream = new WebSocket(runtime.controlUrl, { maxPayload: 4 * 1024 * 1024 });
+  bridge(
+    client,
+    upstream,
+    () => upstream.send(JSON.stringify(request)),
+    (data, isBinary) => legacyControlResponse(data, isBinary, request.method, clientProtocolVersion),
+  );
+}
+
+async function acceptMobileControl(client, request) {
+  const id = typeof request.id === "string" && request.id.length > 0 && request.id.length <= 128
+    ? request.id
+    : undefined;
+  const readOnlyMethod = MOBILE_CONTROL_METHODS.has(request.method);
+  const fullMethod = MOBILE_FULL_CONTROL_METHODS.has(request.method);
+  if (id === undefined || request.mobileApiVersion !== MOBILE_API_VERSION
+    || !(readOnlyMethod || fullMethod)
+    || !isRecord(request.params)) {
+    return mobileControlResponse(client, id ?? "invalid", false, undefined, {
+      code: request.mobileApiVersion === MOBILE_API_VERSION ? "methodNotFound" : "unsupportedMobileApi",
+      message: request.mobileApiVersion === MOBILE_API_VERSION
+        ? "This method is not available to TermLoop Mobile."
+        : "This TermLoop Mobile API version is not supported.",
+    });
+  }
+  try {
+    const runtime = await currentRuntime();
+    // A discovery file without the full credential keeps every read working and
+    // refuses only the named full-token methods, the same way the Watch reads do.
+    if (fullMethod && runtime.fullToken === undefined) {
+      return mobileControlResponse(client, id, false, undefined, {
+        code: "unauthenticated",
+        message: "This Mac did not publish a credential for this action.",
+      });
+    }
+    const result = await callCurrentControl(
+      runtime,
+      request.method,
+      request.params,
+      fullMethod ? runtime.fullToken : runtime.readOnlyToken,
+    );
+    return mobileControlResponse(client, id, true, result);
+  } catch (cause) {
+    const error = cause instanceof UpstreamControlError
+      ? cause.controlError
+      : { code: "operationFailed", message: "TermLoop is restarting. Try again shortly." };
+    return mobileControlResponse(client, id, false, undefined, error);
+  }
+}
+
+async function acceptTerminal(client) {
+  const first = await firstMessage(client);
+  if (first === undefined || !first.isBinary) return refuse(client, "invalid terminal authentication");
+  const expected = Buffer.concat([Buffer.from("TL01"), Buffer.from(config.terminalToken)]);
+  if (!constantTimeBufferEqual(first.data, expected)) return refuse(client, "invalid credential");
+
+  let runtime;
+  try {
+    runtime = await currentRuntime();
+  } catch {
+    return unavailable(client);
+  }
+  const upstream = new WebSocket(runtime.terminalUrl, { maxPayload: 4 * 1024 * 1024 });
+  bridge(client, upstream, () => {
+    upstream.send(Buffer.concat([Buffer.from("TL01"), Buffer.from(runtime.terminalToken)]));
+  });
+}
+
+function bridge(client, upstream, onOpen, transformDownstream) {
+  let opened = false;
+  upstream.once("open", () => {
+    opened = true;
+    onOpen();
+    client.on("message", (data, isBinary) => {
+      if (upstream.readyState === WebSocket.OPEN) upstream.send(data, { binary: isBinary });
+    });
+  });
+  upstream.on("message", (data, isBinary) => {
+    if (client.readyState !== WebSocket.OPEN) return;
+    const next = transformDownstream?.(data, isBinary) ?? { data, isBinary };
+    client.send(next.data, { binary: next.isBinary });
+  });
+  upstream.once("error", () => {
+    upstream.terminate();
+    unavailable(client);
+  });
+  upstream.once("close", (code) => {
+    if (client.readyState === WebSocket.OPEN) client.close(safeCloseCode(code), "upstream closed");
+  });
+  client.once("close", () => {
+    if (upstream.readyState === WebSocket.OPEN || upstream.readyState === WebSocket.CONNECTING) {
+      // This legacy raw bridge owns a dedicated upstream connection. Once the
+      // downstream closes no response has a consumer, so release it immediately.
+      upstream.terminate();
+    }
+  });
+  setTimeout(() => {
+    if (!opened && upstream.readyState === WebSocket.CONNECTING) {
+      upstream.terminate();
+      unavailable(client);
+    }
+  }, 5_000).unref();
+}
+
+function callCurrentControl(runtime, method, params, token = runtime.readOnlyToken) {
+  const role = constantTimeEqual(token, runtime.readOnlyToken) ? "readOnly" : "full";
+  let connection = upstreamControlConnections.get(role);
+  if (connection === undefined || !connection.matches(runtime, token)) {
+    connection?.close();
+    connection = new CurrentControlConnection(runtime, token);
+    upstreamControlConnections.set(role, connection);
+  }
+  return connection.call(method, params);
+}
+
+class CurrentControlConnection {
+  #socket;
+  #connecting;
+  #generation = 0;
+  #pending = new Map();
+
+  constructor(runtime, token) {
+    this.runtime = runtime;
+    this.token = token;
+  }
+
+  matches(runtime, token) {
+    return this.runtime.controlUrl === runtime.controlUrl
+      && this.runtime.protocolVersion === runtime.protocolVersion
+      && constantTimeEqual(this.token, token);
+  }
+
+  call(method, params) {
+    if (this.#pending.size >= MAX_UPSTREAM_CONTROL_IN_FLIGHT) {
+      return Promise.reject(new UpstreamControlError({
+        code: "serviceBusy",
+        message: "Too many gateway control requests are in flight.",
+      }));
+    }
+    const id = `mobile-gateway-${++controlRequestSequence}`;
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        if (!this.#pending.delete(id)) return;
+        this.#cancel(id);
+        reject(new Error("control request timed out"));
+      }, 5_000);
+      timeout.unref();
+      this.#pending.set(id, { resolve, reject, timeout });
+      Promise.resolve().then(() => this.#connected()).then((socket) => {
+        if (!this.#pending.has(id)) return;
+        try {
+          socket.send(JSON.stringify({
+            id,
+            protocolVersion: this.runtime.protocolVersion,
+            token: this.token,
+            method,
+            params,
+          }));
+        } catch {
+          socket.terminate();
+          this.#disconnect(this.#generation, new Error("control connection failed"));
+        }
+      }).catch(() => {
+        const pending = this.#pending.get(id);
+        if (pending === undefined) return;
+        this.#pending.delete(id);
+        clearTimeout(pending.timeout);
+        pending.reject(new Error("control connection failed"));
+      });
+    });
+  }
+
+  close() {
+    const socket = this.#socket;
+    this.#generation += 1;
+    this.#socket = undefined;
+    this.#connecting = undefined;
+    this.#rejectPending(new Error("control connection closed"));
+    socket?.terminate();
+  }
+
+  #connected() {
+    if (this.#socket !== undefined) return Promise.resolve(this.#socket);
+    if (this.#connecting !== undefined) return this.#connecting;
+    const generation = ++this.#generation;
+    const socket = new WebSocket(this.runtime.controlUrl, { maxPayload: 4 * 1024 * 1024 });
+    this.#connecting = new Promise((resolve, reject) => {
+      let opened = false;
+      socket.once("open", () => {
+        if (generation !== this.#generation) {
+          socket.terminate();
+          reject(new Error("control connection superseded"));
+          return;
+        }
+        opened = true;
+        this.#socket = socket;
+        this.#connecting = undefined;
+        resolve(socket);
+      });
+      socket.on("message", (data, isBinary) => this.#receive(generation, data, isBinary));
+      socket.once("error", () => {
+        if (!opened) reject(new Error("control connection failed"));
+        this.#disconnect(generation, new Error("control connection failed"));
+        socket.terminate();
+      });
+      socket.once("close", () => {
+        if (!opened) reject(new Error("control connection closed"));
+        this.#disconnect(generation, new Error("control connection closed"));
+      });
+    });
+    return this.#connecting;
+  }
+
+  #receive(generation, data, isBinary) {
+    if (generation !== this.#generation) return;
+    if (isBinary) {
+      const socket = this.#socket;
+      this.#disconnect(generation, new Error("binary control response"));
+      socket?.terminate();
+      return;
+    }
+    let response;
+    try { response = JSON.parse(data.toString("utf8")); } catch {
+      const socket = this.#socket;
+      this.#disconnect(generation, new Error("invalid control response"));
+      socket?.terminate();
+      return;
+    }
+    if (!isRecord(response)) {
+      const socket = this.#socket;
+      this.#disconnect(generation, new Error("invalid control response"));
+      socket?.terminate();
+      return;
+    }
+    if (typeof response.id !== "string") return;
+    const pending = this.#pending.get(response.id);
+    if (pending === undefined) return;
+    this.#pending.delete(response.id);
+    clearTimeout(pending.timeout);
+    if (response.ok === true) {
+      pending.resolve(response.result);
+      return;
+    }
+    const error = isRecord(response.error)
+      ? {
+        code: typeof response.error.code === "string" ? response.error.code : "operationFailed",
+        message: typeof response.error.message === "string"
+          ? response.error.message
+          : "TermLoop could not complete the request.",
+      }
+      : { code: "operationFailed", message: "TermLoop could not complete the request." };
+    pending.reject(new UpstreamControlError(error));
+  }
+
+  #cancel(requestId) {
+    if (this.#socket?.readyState !== WebSocket.OPEN) return;
+    try {
+      this.#socket.send(JSON.stringify({
+        id: `mobile-gateway-cancel-${++controlRequestSequence}`,
+        protocolVersion: this.runtime.protocolVersion,
+        token: this.token,
+        method: "control.cancel",
+        params: { requestId },
+      }));
+    } catch {
+      const socket = this.#socket;
+      this.#disconnect(this.#generation, new Error("control connection failed"));
+      socket?.terminate();
+    }
+  }
+
+  #disconnect(generation, error) {
+    if (generation !== this.#generation) return;
+    this.#generation += 1;
+    this.#socket = undefined;
+    this.#connecting = undefined;
+    this.#rejectPending(error);
+  }
+
+  #rejectPending(error) {
+    const pending = [...this.#pending.values()];
+    this.#pending.clear();
+    for (const request of pending) {
+      clearTimeout(request.timeout);
+      request.reject(error);
+    }
+  }
+}
+
+class UpstreamControlError extends Error {
+  constructor(controlError) {
+    super(controlError.message);
+    this.controlError = controlError;
+  }
+}
+
+function mobileControlResponse(client, id, ok, result, error) {
+  if (client.readyState !== WebSocket.OPEN) return;
+  client.send(JSON.stringify(ok ? { id, ok: true, result } : { id, ok: false, error }));
+}
+
+function legacyControlResponse(data, isBinary, method, clientProtocolVersion) {
+  if (isBinary || method !== "system.version" || typeof clientProtocolVersion !== "string") {
+    return { data, isBinary };
+  }
+  try {
+    const response = JSON.parse(data.toString("utf8"));
+    if (response?.ok === true && isRecord(response.result)) {
+      response.result.protocolVersion = clientProtocolVersion;
+      return { data: Buffer.from(JSON.stringify(response)), isBinary: false };
+    }
+  } catch { /* Forward the daemon response unchanged. */ }
+  return { data, isBinary };
+}
+
+async function currentRuntime() {
+  const value = JSON.parse(await readFile(config.runtimeFile, "utf8"));
+  const control = endpoint(value.controlUrl, "/control");
+  const terminal = endpoint(value.terminalUrl, "/terminal");
+  if (control.port !== terminal.port) throw new Error("runtime endpoints differ");
+  return {
+    controlUrl: control.href,
+    terminalUrl: terminal.href,
+    protocolVersion: requiredString(value.protocolVersion),
+    readOnlyToken: requiredString(value.readOnlyToken),
+    terminalToken: requiredString(value.terminalToken),
+    // Present in real discovery files; optional so credential-free fixtures
+    // and older daemons keep the proxy paths working. Watch worktree reads
+    // need it and answer 503 without it.
+    fullToken: typeof value.token === "string" && value.token.length > 0 ? value.token : undefined,
+  };
+}
+
+function firstMessage(socket) {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => resolve(undefined), 5_000);
+    socket.once("message", (data, isBinary) => {
+      clearTimeout(timeout);
+      resolve({ data: rawBuffer(data), isBinary });
+    });
+    socket.once("close", () => {
+      clearTimeout(timeout);
+      resolve(undefined);
+    });
+  });
+}
+
+function validateConfig(value) {
+  if ((value?.version !== 1 && value?.version !== 2)
+    || !Number.isInteger(value.port) || value.port < 1024 || value.port > 65535) {
+    throw new Error("mobile access gateway config is invalid");
+  }
+  const result = {
+    port: value.port,
+    hostPlatform: value.hostPlatform === "linux" ? "linux" : "darwin",
+    runtimeFile: requiredString(value.runtimeFile),
+    controlToken: boundedToken(value.controlToken),
+    terminalToken: boundedToken(value.terminalToken),
+  };
+  if (value.version === 2) {
+    result.push = {
+      connectionId: requiredString(value.connectionId),
+      devicesFile: requiredString(value.pushDevicesFile),
+      apnsConfigFile: requiredString(value.apnsConfigFile),
+    };
+  }
+  if (value.watchToken !== undefined) result.watchToken = boundedToken(value.watchToken);
+  // Absent on Linux, where the service manager owns retention.
+  if (typeof value.logFile === "string" && value.logFile.length > 0) result.logFile = value.logFile;
+  return result;
+}
+
+function readBody(request, maxBytes) {
+  return readBinaryBody(request, maxBytes).then((buffer) => buffer.toString("utf8"));
+}
+
+function readBinaryBody(request, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    request.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > maxBytes) { reject(new Error("request too large")); request.destroy(); }
+      else chunks.push(chunk);
+    });
+    request.on("end", () => resolve(Buffer.concat(chunks)));
+    request.on("error", reject);
+  });
+}
+
+function readBytes(request, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    request.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > maxBytes) { reject(new Error("request too large")); request.destroy(); }
+      else chunks.push(chunk);
+    });
+    request.on("end", () => resolve(Buffer.concat(chunks)));
+    request.on("error", reject);
+  });
+}
+
+function json(response, status, body) {
+  response.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
+  response.end(JSON.stringify(body));
+}
+
+function endpoint(value, pathname) {
+  const url = new URL(requiredString(value));
+  if (url.protocol !== "ws:" || url.hostname !== "127.0.0.1" || url.pathname !== pathname
+    || !url.port || url.username || url.password || url.search || url.hash) {
+    throw new Error("runtime endpoint is not the expected loopback WebSocket");
+  }
+  return url;
+}
+
+function boundedToken(value) {
+  const token = requiredString(value);
+  if (token.length < 32 || token.length > 256) throw new Error("gateway token is invalid");
+  return token;
+}
+
+function requiredString(value) {
+  if (typeof value !== "string" || value.length === 0) throw new Error("required string is missing");
+  return value;
+}
+
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function constantTimeEqual(value, expected) {
+  return typeof value === "string" && constantTimeBufferEqual(Buffer.from(value), Buffer.from(expected));
+}
+
+function constantTimeBufferEqual(left, right) {
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+function rawBuffer(value) {
+  if (Buffer.isBuffer(value)) return value;
+  if (Array.isArray(value)) return Buffer.concat(value);
+  return Buffer.from(value);
+}
+
+function safePathname(value) {
+  try { return new URL(value ?? "/", "http://127.0.0.1").pathname; } catch { return ""; }
+}
+
+function refuse(socket, reason) {
+  if (socket.readyState === WebSocket.OPEN) socket.close(1008, reason);
+}
+
+function unavailable(socket) {
+  if (socket.readyState === WebSocket.OPEN) socket.close(1013, "TermLoop is starting");
+}
+
+function safeCloseCode(code) {
+  return code >= 1000 && code !== 1005 && code !== 1006 && code < 5000 ? code : 1012;
+}
+
+function shutdown() {
+  for (const socket of sockets) socket.close(1001, "gateway restarting");
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 1_000).unref();
+}
+
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);

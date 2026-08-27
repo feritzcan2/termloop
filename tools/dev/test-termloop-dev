@@ -1,0 +1,412 @@
+#!/bin/bash
+
+set -euo pipefail
+
+case "$(uname -s)" in
+  Darwin|Linux) ;;
+  *)
+    echo "UNMEASURED: the persistent development launcher supports macOS and Linux only."
+    exit 0
+    ;;
+esac
+
+root="$(cd "$(dirname "$0")/../.." && pwd -P)"
+launcher="$root/tools/dev/termloop-dev"
+supervisor="$root/tools/dev/termloop-dev-supervisor"
+bundle_stager="$root/tools/dev/stage-termloop-launch-bundle"
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  termloop_state_root="$HOME/Library/Application Support/termloop-next"
+else
+  termloop_state_root="${XDG_STATE_HOME:-$HOME/.local/state}/termloop-next"
+fi
+primary_checkout=""
+linked_checkout=""
+fixture_worktree_parent=""
+while IFS= read -r candidate; do
+  if [[ -z "$primary_checkout" && -d "$candidate/.git" ]]; then
+    primary_checkout="$candidate"
+  fi
+  if [[ -z "$linked_checkout" && -f "$candidate/.git" && "$candidate" == "$root" ]]; then
+    linked_checkout="$candidate"
+  fi
+done < <(git -C "$root" worktree list --porcelain | sed -n 's/^worktree //p')
+
+if [[ -z "$linked_checkout" ]]; then
+  while IFS= read -r candidate; do
+    if [[ -f "$candidate/.git" ]]; then
+      linked_checkout="$candidate"
+      break
+    fi
+  done < <(git -C "$root" worktree list --porcelain | sed -n 's/^worktree //p')
+fi
+
+if [[ -z "$primary_checkout" ]]; then
+  echo "A primary worktree is required for the launcher fixture." >&2
+  exit 1
+fi
+
+if [[ -z "$linked_checkout" ]]; then
+  fixture_worktree_parent="$(mktemp -d)"
+  linked_checkout="$fixture_worktree_parent/linked"
+  git -C "$root" worktree add --detach "$linked_checkout" HEAD >/dev/null
+  trap 'git -C "$root" worktree remove --force "$linked_checkout" >/dev/null 2>&1 || true; rm -rf "$fixture_worktree_parent"' EXIT
+fi
+
+main_status="$($launcher status --checkout "$primary_checkout")"
+linked_status="$($launcher status --checkout "$linked_checkout")"
+grep -q '^Profile: main$' <<<"$main_status"
+grep -q "^State: $termloop_state_root$" <<<"$main_status"
+grep -q '^Supervisor: ' <<<"$main_status"
+agent_main_error="$(mktemp)"
+if env TERMLOOP_MCP_TOKEN=fixture CODEX_THREAD_ID=fixture \
+  "$launcher" start --checkout "$primary_checkout" --main 2>"$agent_main_error"; then
+  echo "Launcher allowed an agent environment to start the human-owned main profile." >&2
+  exit 1
+fi
+grep -q '^Refusing to start the human-owned main profile from an agent environment\.$' "$agent_main_error"
+rm -f "$agent_main_error"
+agent_override_error="$(mktemp)"
+if "$launcher" status --checkout "$primary_checkout" --main --allow-agent-main 2>"$agent_override_error"; then
+  echo "Launcher accepted --allow-agent-main outside a main start/restart." >&2
+  exit 1
+fi
+grep -q '^--allow-agent-main is valid only with start/restart --main\.$' "$agent_override_error"
+rm -f "$agent_override_error"
+linked_profile="$(sed -n 's/^Profile: //p' <<<"$linked_status")"
+grep -q "termloop-next/profiles/$linked_profile/state$" <<<"$linked_status"
+if ! grep -q '^Daemon: stopped$' <<<"$linked_status" || ! grep -q '^Desktop: stopped$' <<<"$linked_status"; then
+  echo "Linked profile $linked_profile must be stopped before running this fixture." >&2
+  exit 1
+fi
+grep -q '^Supervisor: stopped$' <<<"$linked_status"
+
+[[ -x "$supervisor" ]]
+[[ -x "$bundle_stager" ]]
+supervisor_error="$(mktemp)"
+if env -i PATH="/usr/bin:/bin" "$supervisor" 2>"$supervisor_error"; then
+  echo "Supervisor accepted missing exact launch configuration." >&2
+  exit 1
+fi
+grep -q '^Missing supervisor environment:' "$supervisor_error"
+rm -f "$supervisor_error"
+
+prune_home="$(mktemp -d)"
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  prune_profiles="$prune_home/Library/Application Support/termloop-next/profiles"
+else
+  prune_profiles="$prune_home/state/termloop-next/profiles"
+fi
+mkdir -p "$prune_profiles"
+for prune_fixture in stale-0000000000000001 fresh-0000000000000002 keepnewest-0000000000000003; do
+  mkdir -p "$prune_profiles/$prune_fixture/state" "$prune_profiles/$prune_fixture/cargo-target/debug"
+  printf '%s\n' "$root" > "$prune_profiles/$prune_fixture/checkout.path"
+  printf 'blob\n' > "$prune_profiles/$prune_fixture/cargo-target/debug/blob"
+done
+mkdir -p "$prune_profiles/notaprofile-0000000000000004" "$prune_home/outside-victim"
+printf 'precious\n' > "$prune_home/outside-victim/keep.txt"
+ln -s "$prune_home/outside-victim" "$prune_profiles/symlinked-0000000000000005"
+find "$prune_profiles/stale-0000000000000001" "$prune_profiles/notaprofile-0000000000000004" \
+  -exec touch -t 202001010900 {} +
+find "$prune_profiles/keepnewest-0000000000000003" -exec touch -t 202101010900 {} +
+
+prune_env=(env HOME="$prune_home" XDG_STATE_HOME="$prune_home/state")
+prune_preview="$("${prune_env[@]}" "$launcher" prune --older-than 7 --keep 1)"
+grep -q '^PROFILE|SUPERVISOR|IDLE_DAYS|SIZE_MIB|ACTION$' <<<"$prune_preview"
+grep -q '^fresh-0000000000000002|stopped|0|[0-9]*|keep:recent$' <<<"$prune_preview"
+grep -q '^keepnewest-0000000000000003|stopped|[0-9]*|[0-9]*|keep:newest$' <<<"$prune_preview"
+grep -q '^stale-0000000000000001|stopped|[0-9]*|[0-9]*|prune$' <<<"$prune_preview"
+grep -q '^Preview only\. Re-run with --apply to delete\.$' <<<"$prune_preview"
+! grep -q 'symlinked-0000000000000005' <<<"$prune_preview"
+[[ -d "$prune_profiles/stale-0000000000000001" ]]
+
+prune_legacy_preview="$("${prune_env[@]}" "$launcher" prune --older-than 7 --keep 1 --legacy-builds)"
+grep -q '^keepnewest-0000000000000003|stopped|[0-9]*|[0-9]*|legacy-build$' <<<"$prune_legacy_preview"
+[[ -d "$prune_profiles/keepnewest-0000000000000003/cargo-target" ]]
+
+prune_guard_error="$(mktemp)"
+if "${prune_env[@]}" "$launcher" prune --profile main 2>"$prune_guard_error"; then
+  echo "prune accepted the human-owned main profile." >&2
+  exit 1
+fi
+grep -q '^prune never targets the human-owned main profile\.$' "$prune_guard_error"
+if "${prune_env[@]}" "$launcher" prune --checkout "$root" 2>"$prune_guard_error"; then
+  echo "prune accepted a checkout selection argument." >&2
+  exit 1
+fi
+grep -q '^prune accepts only --profile, --older-than, --keep, --legacy-builds, and --apply\.$' "$prune_guard_error"
+if "$launcher" status --apply 2>"$prune_guard_error"; then
+  echo "Launcher accepted --apply outside prune." >&2
+  exit 1
+fi
+grep -q '^--apply is valid only with prune\.$' "$prune_guard_error"
+rm -f "$prune_guard_error"
+
+prune_applied="$("${prune_env[@]}" "$launcher" prune --profile stale-0000000000000001 --apply)"
+grep -q '^Freed: [0-9]* MiB across 1 profiles$' <<<"$prune_applied"
+[[ ! -e "$prune_profiles/stale-0000000000000001" ]]
+[[ -d "$prune_profiles/fresh-0000000000000002" ]]
+[[ -d "$prune_profiles/keepnewest-0000000000000003" ]]
+
+prune_refusal="$prune_home/refusal.error"
+"${prune_env[@]}" "$launcher" prune --profile notaprofile-0000000000000004 --apply >/dev/null 2>"$prune_refusal"
+grep -q '^Refusing to delete a directory without launcher profile leaves:' "$prune_refusal"
+[[ -d "$prune_profiles/notaprofile-0000000000000004" ]]
+[[ -f "$prune_home/outside-victim/keep.txt" ]]
+rm -rf -- "$prune_home"
+
+runtime="$termloop_state_root/profiles/$linked_profile/runtime"
+record="$runtime/desktop-owner/current.process"
+mkdir -p "$(dirname "$record")"
+
+backup_dir="$(mktemp -d)"
+bundle_fixture_root="$(mktemp -d)"
+fixture_pid=""
+launch_fixture_launches=""
+launch_fixture_bundle_baseline=""
+launch_fixture_bundle_record=""
+launch_fixture_bundle_record_baseline=""
+launch_fixture_bundle_record_existed=false
+cleanup() {
+  if [[ -n "${launch_fixture_profile:-}" ]]; then
+    "$launcher" stop-profile --profile "$launch_fixture_profile" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$fixture_pid" ]]; then
+    kill -TERM "$fixture_pid" 2>/dev/null || true
+    wait "$fixture_pid" 2>/dev/null || true
+  fi
+  rm -f "$record" "$record.stale"
+  [[ ! -e "$backup_dir/current.process" ]] || mv "$backup_dir/current.process" "$record"
+  [[ ! -e "$backup_dir/current.process.stale" ]] || mv "$backup_dir/current.process.stale" "$record.stale"
+  rmdir "$backup_dir"
+  rm -rf -- "$bundle_fixture_root"
+  if [[ -n "$launch_fixture_launches" && -d "$launch_fixture_launches" ]]; then
+    while IFS= read -r candidate; do
+      [[ -n "$candidate" ]] || continue
+      if ! grep -Fqx "$candidate" <<<"$launch_fixture_bundle_baseline"; then
+        chmod -R u+w "$candidate" 2>/dev/null || true
+        rm -rf -- "$candidate"
+      fi
+    done < <(find "$launch_fixture_launches" -maxdepth 1 -type d \( -name 'bundle.*' -o -name '.bundle.*' -o -name '.previous' -o -name 'current' \) -print)
+  fi
+  if [[ -n "$launch_fixture_bundle_record" ]]; then
+    if [[ "$launch_fixture_bundle_record_existed" == true ]]; then
+      printf '%s\n' "$launch_fixture_bundle_record_baseline" > "$launch_fixture_bundle_record"
+      chmod 600 "$launch_fixture_bundle_record"
+    else
+      rm -f "$launch_fixture_bundle_record"
+    fi
+  fi
+  if [[ -n "$fixture_worktree_parent" ]]; then
+    git -C "$root" worktree remove --force "$linked_checkout" >/dev/null 2>&1 || true
+    rmdir "$fixture_worktree_parent" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+[[ ! -e "$record" ]] || mv "$record" "$backup_dir/current.process"
+[[ ! -e "$record.stale" ]] || mv "$record.stale" "$backup_dir/current.process.stale"
+
+sleep 30 &
+fixture_pid=$!
+printf 'v1\n%s\nunix:not-the-fixture-process\n' "$fixture_pid" > "$record"
+
+$launcher stop --checkout "$linked_checkout" >/dev/null
+kill -0 "$fixture_pid"
+
+[[ -f "$record.stale" ]]
+
+bundle_fixture_checkout="$bundle_fixture_root/checkout"
+bundle_fixture_profile="$bundle_fixture_root/profile"
+bundle_fixture_cargo_target="$bundle_fixture_root/cargo-target"
+mkdir -p \
+  "$bundle_fixture_cargo_target/debug" \
+  "$bundle_fixture_checkout/clients/desktop/dist" \
+  "$bundle_fixture_checkout/clients/desktop/native/ghostty-host/build/Release" \
+  "$bundle_fixture_checkout/vendor/ghostty/zig-out/lib" \
+  "$bundle_fixture_checkout/vendor/ghostty/zig-out/share/ghostty" \
+  "$bundle_fixture_checkout/contract/generated/typescript/dist" \
+  "$bundle_fixture_checkout/node_modules/ws" \
+  "$bundle_fixture_profile"
+fixture_contract_identity='sha256:0000000000000000000000000000000000000000000000000000000000000000'
+printf 'server-v1 %s\n' "$fixture_contract_identity" > "$bundle_fixture_cargo_target/debug/termloop-server"
+printf 'companion-v1\n' > "$bundle_fixture_cargo_target/debug/termloop-companion"
+printf 'skills-manager-v1\n' > "$bundle_fixture_cargo_target/debug/skills-manager-cli"
+printf '{"main":"dist/main.js"}\n' > "$bundle_fixture_checkout/clients/desktop/package.json"
+printf 'desktop-v1 %s\n' "$fixture_contract_identity" > "$bundle_fixture_checkout/clients/desktop/dist/main.js"
+printf 'addon-v1\n' > "$bundle_fixture_checkout/clients/desktop/native/ghostty-host/build/Release/ghostty_host.node"
+printf 'library-v1\n' > "$bundle_fixture_checkout/vendor/ghostty/zig-out/lib/libghostty.dylib"
+printf 'resource-v1\n' > "$bundle_fixture_checkout/vendor/ghostty/zig-out/share/ghostty/resource.txt"
+printf 'export const CONTRACT_IDENTITY = "%s";\n' "$fixture_contract_identity" > "$bundle_fixture_checkout/contract/generated/typescript/dist/current.js"
+printf '{"name":"ws"}\n' > "$bundle_fixture_checkout/node_modules/ws/package.json"
+chmod +x \
+  "$bundle_fixture_cargo_target/debug/termloop-server" \
+  "$bundle_fixture_cargo_target/debug/termloop-companion" \
+  "$bundle_fixture_cargo_target/debug/skills-manager-cli"
+fixture_bundle="$($bundle_stager "$bundle_fixture_checkout" "$bundle_fixture_profile" false "$bundle_fixture_cargo_target")"
+[[ "$fixture_bundle" == "$bundle_fixture_profile/launches/current" ]]
+[[ -x "$fixture_bundle/target/debug/termloop-server" ]]
+[[ -f "$fixture_bundle/target/debug/termloop-companion" ]]
+[[ -x "$fixture_bundle/target/debug/skills-manager-cli" ]]
+[[ -f "$fixture_bundle/clients/desktop/dist/main.js" ]]
+[[ -f "$fixture_bundle/clients/desktop/native/ghostty-host/build/Release/libghostty.dylib" ]]
+[[ -f "$fixture_bundle/vendor/ghostty/zig-out/share/ghostty/resource.txt" ]]
+[[ -f "$fixture_bundle/node_modules/ws/package.json" ]]
+[[ -f "$fixture_bundle/launch-bundle.json" ]]
+fixture_bundle_digest="$(shasum -a 256 "$fixture_bundle/target/debug/termloop-server" | awk '{print $1}')"
+printf 'server-v2\n' > "$bundle_fixture_cargo_target/debug/termloop-server"
+[[ "$(shasum -a 256 "$fixture_bundle/target/debug/termloop-server" | awk '{print $1}')" == "$fixture_bundle_digest" ]]
+[[ "$(stat -f '%i' "$bundle_fixture_cargo_target/debug/termloop-server" 2>/dev/null || stat -c '%i' "$bundle_fixture_cargo_target/debug/termloop-server")" != \
+   "$(stat -f '%i' "$fixture_bundle/target/debug/termloop-server" 2>/dev/null || stat -c '%i' "$fixture_bundle/target/debug/termloop-server")" ]]
+bundle_mismatch_error="$bundle_fixture_root/mismatch.error"
+if "$bundle_stager" "$bundle_fixture_checkout" "$bundle_fixture_profile" false "$bundle_fixture_cargo_target" > /dev/null 2>"$bundle_mismatch_error"; then
+  echo "Launch bundle accepted mismatched server and desktop contracts." >&2
+  exit 1
+fi
+grep -q '^launch bundle contract mismatch:' "$bundle_mismatch_error"
+[[ "$(find "$bundle_fixture_profile/launches" -maxdepth 1 -type d -name 'current' | wc -l | tr -d ' ')" == "1" ]]
+
+run_launch_cycle=false
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  run_launch_cycle=true
+elif [[ "$(uname -s)" == "Linux" ]]; then
+  if command -v systemctl >/dev/null 2>&1 \
+    && systemctl --user show-environment >/dev/null 2>&1 \
+    && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+    run_launch_cycle=true
+  else
+    echo "Skipping persistent launch cycle: Linux requires a systemd user manager and a graphical session (DISPLAY or WAYLAND_DISPLAY)."
+  fi
+else
+  echo "Skipping persistent launch cycle: unsupported platform $(uname -s)."
+fi
+
+if [[ "$run_launch_cycle" == true ]]; then
+  launch_fixture_tag="launcher-fixture"
+  launch_fixture_profile="$($launcher status --checkout "$root" --tag "$launch_fixture_tag" | sed -n 's/^Profile: //p')"
+  "$launcher" stop-profile --profile "$launch_fixture_profile" >/dev/null 2>&1 || true
+  launch_fixture_profile_root="$termloop_state_root/profiles/$launch_fixture_profile"
+  launch_fixture_launches="$launch_fixture_profile_root/launches"
+  launch_fixture_bundle_baseline="$(find "$launch_fixture_launches" -maxdepth 1 -type d -name 'bundle.*' -print 2>/dev/null || true)"
+  launch_fixture_bundle_record="$launch_fixture_profile_root/runtime/dev-launch-bundle.path"
+  if [[ -f "$launch_fixture_bundle_record" ]]; then
+    launch_fixture_bundle_record_existed=true
+    launch_fixture_bundle_record_baseline="$(sed -n '1p' "$launch_fixture_bundle_record")"
+  fi
+  launch_output="$($launcher start --checkout "$root" --tag "$launch_fixture_tag")"
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    grep -q '^TermLoop started minimized\.$' <<<"$launch_output"
+  else
+    grep -q '^TermLoop opened\.$' <<<"$launch_output"
+  fi
+  grep -q '^Supervisor: ready$' <<<"$launch_output"
+  grep -q '^Build: current$' <<<"$launch_output"
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    grep -q '^Runtime: pinned$' <<<"$launch_output"
+    launch_fixture_plist="$launch_fixture_profile_root/runtime/dev-launch-agent.plist"
+    [[ "$(plutil -extract SoftResourceLimits.NumberOfFiles raw -o - "$launch_fixture_plist")" == "4096" ]]
+    [[ "$(plutil -extract HardResourceLimits.NumberOfFiles raw -o - "$launch_fixture_plist")" == "4096" ]]
+    launch_bundle_server="$(plutil -extract EnvironmentVariables.TERMLOOP_DEV_SERVER_BINARY raw -o - "$launch_fixture_plist")"
+    launch_bundle_desktop="$(plutil -extract EnvironmentVariables.TERMLOOP_DEV_DESKTOP_CWD raw -o - "$launch_fixture_plist")"
+    [[ "$launch_bundle_server" == "$launch_fixture_profile_root/launches/current/target/debug/termloop-server" ]]
+    [[ "$launch_bundle_desktop" == "$launch_fixture_profile_root/launches/current/clients/desktop" ]]
+    [[ ! -e "$launch_fixture_profile_root/cargo-target" ]]
+    [[ -x "$root/target/dev-profiles/debug/termloop-server" ]]
+    [[ "$(stat -f '%i' "$root/target/dev-profiles/debug/termloop-server")" != "$(stat -f '%i' "$launch_bundle_server")" ]]
+    [[ "$(stat -f '%i' "$root/clients/desktop/dist/main.js")" != "$(stat -f '%i' "$launch_bundle_desktop/dist/main.js")" ]]
+    launch_job="$(launchctl print "gui/$(id -u)/com.termloop.next.dev.$launch_fixture_profile")"
+    grep -q 'maxfiles (soft) => 4096' <<<"$launch_job"
+    grep -q 'maxfiles (hard) => 4096' <<<"$launch_job"
+  fi
+  dev_project="$HOME/Projects/termloop-dev-sandbox"
+  [[ "$(git -C "$dev_project" rev-parse --show-toplevel)" == "$dev_project" ]]
+  git -C "$dev_project" rev-parse --verify HEAD >/dev/null
+  bootstrap_state="$(node "$root/tools/dev/bootstrap-dev-profile.mjs" \
+    --runtime "$termloop_state_root/profiles/$launch_fixture_profile/runtime/runtime.json" \
+    --project-name "TermLoop Dev Sandbox" \
+    --project-dir "$dev_project" \
+    --task-title "Sandbox Task" \
+    --inspect)"
+  python3 - "$dev_project" "$bootstrap_state" <<'PY'
+import json
+import sys
+
+expected_path = sys.argv[1]
+state = json.loads(sys.argv[2])
+assert state["project"]["folder_path"] == expected_path
+assert state["task"]["title"] == "Sandbox Task"
+assert state["task"]["status"] == "open"
+assert state["steward"]["enabled"] is False
+PY
+  launch_status="$($launcher status --checkout "$root" --tag "$launch_fixture_tag")"
+  grep -q '^Supervisor: ready$' <<<"$launch_status"
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    grep -q '^Runtime: pinned$' <<<"$launch_status"
+  else
+    grep -q '^Runtime: unavailable$' <<<"$launch_status"
+  fi
+  launch_daemon_pid="$(sed -n 's/^Daemon: //p' <<<"$launch_status")"
+  launch_desktop_pid="$(sed -n 's/^Desktop: //p' <<<"$launch_status")"
+  [[ "$launch_daemon_pid" =~ ^[0-9]+$ ]]
+  [[ "$launch_desktop_pid" =~ ^[0-9]+$ ]]
+  launchd_terminal_renderer="xterm"
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    [[ "$(ps -p "$launch_daemon_pid" -o command=)" == "$launch_bundle_server" ]]
+    launch_desktop_images="$(lsof -p "$launch_desktop_pid" 2>/dev/null)"
+    grep -Fq "$launch_bundle_desktop/native/ghostty-host/build/Release/libghostty.dylib" <<<"$launch_desktop_images"
+
+    failed_restart_error="$bundle_fixture_root/failed-restart.error"
+    if env PATH="/usr/bin:/bin" "$launcher" restart --checkout "$root" --tag "$launch_fixture_tag" > /dev/null 2>"$failed_restart_error"; then
+      echo "Launcher restart unexpectedly succeeded without the build toolchain." >&2
+      exit 1
+    fi
+    preserved_status="$($launcher status --checkout "$root" --tag "$launch_fixture_tag")"
+    grep -q '^Supervisor: ready$' <<<"$preserved_status"
+    [[ "$(sed -n 's/^Daemon: //p' <<<"$preserved_status")" == "$launch_daemon_pid" ]]
+    [[ "$(sed -n 's/^Desktop: //p' <<<"$preserved_status")" == "$launch_desktop_pid" ]]
+
+    restarted_output="$($launcher restart --checkout "$root" --tag "$launch_fixture_tag")"
+    grep -q '^Supervisor: ready$' <<<"$restarted_output"
+    grep -q '^Runtime: pinned$' <<<"$restarted_output"
+    grep -q '^Build: current$' <<<"$restarted_output"
+    restarted_status="$($launcher status --checkout "$root" --tag "$launch_fixture_tag")"
+    restarted_daemon_pid="$(sed -n 's/^Daemon: //p' <<<"$restarted_status")"
+    restarted_desktop_pid="$(sed -n 's/^Desktop: //p' <<<"$restarted_status")"
+    restarted_bundle_server="$(plutil -extract EnvironmentVariables.TERMLOOP_DEV_SERVER_BINARY raw -o - "$launch_fixture_plist")"
+    restarted_bundle_desktop="$(plutil -extract EnvironmentVariables.TERMLOOP_DEV_DESKTOP_CWD raw -o - "$launch_fixture_plist")"
+    [[ "$restarted_daemon_pid" =~ ^[0-9]+$ && "$restarted_daemon_pid" != "$launch_daemon_pid" ]]
+    [[ "$restarted_desktop_pid" =~ ^[0-9]+$ && "$restarted_desktop_pid" != "$launch_desktop_pid" ]]
+    [[ "$restarted_bundle_server" != "$launch_bundle_server" ]]
+    [[ "$(ps -p "$restarted_daemon_pid" -o command=)" == "$restarted_bundle_server" ]]
+    restarted_desktop_images="$(lsof -p "$restarted_desktop_pid" 2>/dev/null)"
+    grep -Fq "$restarted_bundle_desktop/native/ghostty-host/build/Release/libghostty.dylib" <<<"$restarted_desktop_images"
+    launch_daemon_pid="$restarted_daemon_pid"
+    launch_desktop_pid="$restarted_desktop_pid"
+
+    launchd_terminal_renderer="$(launchctl getenv TERMLOOP_TERMINAL_RENDERER 2>/dev/null || true)"
+  fi
+  if [[ "$(uname -s)" == "Darwin" && "$launchd_terminal_renderer" != "xterm" ]]; then
+    launch_desktop_images="$(lsof -p "$launch_desktop_pid" 2>/dev/null)"
+    grep -q 'libghostty\.dylib' <<<"$launch_desktop_images"
+  fi
+  kill -TERM "$launch_desktop_pid"
+  for _attempt in {1..200}; do
+    launch_status="$($launcher status --checkout "$root" --tag "$launch_fixture_tag")"
+    grep -q '^Supervisor: exited$' <<<"$launch_status" && break
+    sleep 0.1
+  done
+  grep -q '^Supervisor: exited$' <<<"$launch_status"
+  recovered_output="$($launcher start --checkout "$root" --tag "$launch_fixture_tag")"
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    grep -q '^TermLoop started minimized\.$' <<<"$recovered_output"
+  else
+    grep -q '^TermLoop opened\.$' <<<"$recovered_output"
+  fi
+  grep -q '^Supervisor: ready$' <<<"$recovered_output"
+  "$launcher" stop-profile --profile "$launch_fixture_profile" >/dev/null
+  stopped_status="$($launcher status --checkout "$root" --tag "$launch_fixture_tag")"
+  grep -q '^Supervisor: stopped$' <<<"$stopped_status"
+  grep -q '^Daemon: stopped$' <<<"$stopped_status"
+  grep -q '^Desktop: stopped$' <<<"$stopped_status"
+  launch_fixture_profile=""
+fi
+
+echo "TERMLOOP_DEV_PROFILE_FIXTURE_OK"

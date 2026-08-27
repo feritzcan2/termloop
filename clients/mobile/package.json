@@ -1,0 +1,49 @@
+{
+  "name": "@termloop/mobile",
+  "version": "2.0.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "pnpm --filter @termloop/contract build && expo start",
+    "android": "pnpm --filter @termloop/contract build && expo start --android",
+    "ios": "pnpm --filter @termloop/contract build && expo start --ios",
+    "mobile-access": "node scripts/mobile-access.mjs",
+    "pair-code": "node scripts/pair-code.mjs",
+    "watch-pair-code": "node scripts/watch-pair-code.mjs",
+    "eas-build-post-install": "pnpm --filter @termloop/contract build",
+    "release:ota": "eas update --channel termloop-next-production --environment production --non-interactive --message 'TermLoop Mobile update'",
+    "check": "tsc --noEmit",
+    "test": "pnpm --filter @termloop/contract build && vitest run",
+    "export:ios": "pnpm --filter @termloop/contract build && expo export --platform ios"
+  },
+  "dependencies": {
+    "@termloop/contract": "workspace:*",
+    "expo": "~57.0.12",
+    "expo-application": "~57.0.2",
+    "expo-camera": "~57.0.3",
+    "expo-constants": "~57.0.10",
+    "expo-image-picker": "~57.0.10",
+    "expo-linking": "~57.0.5",
+    "expo-notifications": "~57.0.10",
+    "expo-router": "~57.0.12",
+    "expo-secure-store": "~57.0.1",
+    "expo-status-bar": "~57.0.1",
+    "expo-updates": "~57.0.14",
+    "react": "19.2.3",
+    "react-native": "0.86.2",
+    "react-native-diff-view": "1.1.2",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.0",
+    "react-native-worklets": "0.10.1",
+    "ws": "8.21.2"
+  },
+  "devDependencies": {
+    "@bacons/apple-targets": "5.0.0",
+    "@react-native/metro-config": "0.86.2",
+    "@types/react": "~19.2.2",
+    "esbuild": "0.28.1",
+    "qrcode-terminal": "^0.12.0",
+    "typescript": "~6.0.3",
+    "vitest": "3.2.4"
+  }
+}

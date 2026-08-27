@@ -1,0 +1,264 @@
+#!/bin/bash
+
+set -euo pipefail
+
+required_environment=(
+  TERMLOOP_DEV_CHECKOUT
+  TERMLOOP_DEV_SERVER_BINARY
+  TERMLOOP_DEV_ELECTRON_BINARY
+  TERMLOOP_DEV_DESKTOP_CWD
+  TERMLOOP_DEV_DAEMON_RECORD
+  TERMLOOP_DEV_DESKTOP_RECORD
+  TERMLOOP_DEV_READY_FILE
+  TERMLOOP_RUNTIME_FILE
+  TERMLOOP_DEV_SERVER_LOG
+  TERMLOOP_DEV_DESKTOP_LOG
+  TERMLOOP_DEV_PYTHON_BINARY
+  TERMLOOP_DEV_EXPECTED_PATH
+  TERMLOOP_DEV_EXPECTED_LOCALE
+)
+for variable_name in "${required_environment[@]}"; do
+  if [[ -z "${!variable_name:-}" ]]; then
+    echo "Missing supervisor environment: $variable_name" >&2
+    exit 2
+  fi
+done
+if [[ "${PATH:-}" != "$TERMLOOP_DEV_EXPECTED_PATH" ]]; then
+  echo "Supervisor PATH does not match the launcher snapshot." >&2
+  exit 1
+fi
+if [[ "${LC_ALL:-${LANG:-}}" != "$TERMLOOP_DEV_EXPECTED_LOCALE" ]]; then
+  echo "Supervisor locale does not match the launcher snapshot." >&2
+  exit 1
+fi
+
+checkout="$TERMLOOP_DEV_CHECKOUT"
+server_binary="$TERMLOOP_DEV_SERVER_BINARY"
+electron_binary="$TERMLOOP_DEV_ELECTRON_BINARY"
+desktop_cwd="$TERMLOOP_DEV_DESKTOP_CWD"
+daemon_record="$TERMLOOP_DEV_DAEMON_RECORD"
+desktop_record="$TERMLOOP_DEV_DESKTOP_RECORD"
+ready_file="$TERMLOOP_DEV_READY_FILE"
+runtime_file="$TERMLOOP_RUNTIME_FILE"
+server_log="$TERMLOOP_DEV_SERVER_LOG"
+desktop_log="$TERMLOOP_DEV_DESKTOP_LOG"
+python_binary="$TERMLOOP_DEV_PYTHON_BINARY"
+profile_tag="${TERMLOOP_DEV_PROFILE_TAG:-}"
+
+if [[ -n "$profile_tag" ]]; then
+  for variable_name in \
+    TERMLOOP_DEV_NODE_BINARY \
+    TERMLOOP_DEV_BOOTSTRAP_ENTRY \
+    TERMLOOP_DEV_PROJECT_NAME \
+    TERMLOOP_DEV_PROJECT_DIR \
+    TERMLOOP_DEV_TASK_TITLE; do
+    if [[ -z "${!variable_name:-}" ]]; then
+      echo "Missing tagged-profile bootstrap environment: $variable_name" >&2
+      exit 2
+    fi
+  done
+  if [[ ! -x "$TERMLOOP_DEV_NODE_BINARY" || ! -f "$TERMLOOP_DEV_BOOTSTRAP_ENTRY" ]]; then
+    echo "Tagged-profile bootstrap executable is unavailable." >&2
+    exit 1
+  fi
+fi
+
+for executable in "$server_binary" "$electron_binary" "$python_binary"; do
+  if [[ ! -x "$executable" ]]; then
+    echo "Supervisor executable is unavailable: $executable" >&2
+    exit 1
+  fi
+done
+if [[ ! -d "$checkout" || ! -d "$desktop_cwd" ]]; then
+  echo "Supervisor checkout disappeared; leaving the profile stopped for explicit stop-profile cleanup." >&2
+  exit 0
+fi
+
+umask 077
+server_pid=""
+desktop_pid=""
+desktop_identity=""
+
+process_identity() {
+  local pid="$1"
+  if [[ "$(uname -s)" == "Linux" && -d /proc ]]; then
+    # Match the daemon's and launcher's Linux identity form exactly.
+    if [[ -r "/proc/$pid/stat" ]]; then
+      "$python_binary" - "$pid" <<'PY' || true
+import pathlib
+import sys
+
+value = pathlib.Path(f"/proc/{sys.argv[1]}/stat").read_text()
+suffix = value.rsplit(')', 1)[1].split()
+if suffix[0] != 'Z':
+    print(f"linux:{suffix[19]}")
+PY
+    fi
+    return 0
+  fi
+  ps -p "$pid" -o state= -o lstart= 2>/dev/null | "$python_binary" -c '
+import sys
+parts = sys.stdin.read().split()
+if parts and parts[0] != "Z" and len(parts) > 1:
+    print("unix:" + " ".join(parts[1:]))
+' || true
+}
+
+read_owned_pid() {
+  local record="$1"
+  [[ -f "$record" ]] || return 1
+  local version pid identity extra
+  { read -r version; read -r pid; read -r identity; read -r extra || true; } < "$record"
+  [[ "$version" == "v1" && "$pid" =~ ^[0-9]+$ && -n "$identity" && -z "$extra" ]] || return 1
+  [[ "$(process_identity "$pid")" == "$identity" ]] || return 1
+  printf '%s\n' "$pid"
+}
+
+discovery_pid() {
+  "$python_binary" - "$runtime_file" 2>/dev/null <<'PY' || true
+import json
+import sys
+
+with open(sys.argv[1]) as source:
+    print(json.load(source).get("pid", ""))
+PY
+}
+
+descendant_pids() {
+  "$python_binary" - "$1" <<'PY' || true
+import subprocess
+import sys
+
+root = int(sys.argv[1])
+rows = subprocess.check_output(["ps", "-axo", "pid=,ppid="], text=True).splitlines()
+children = {}
+for row in rows:
+    pid, parent = map(int, row.split())
+    children.setdefault(parent, []).append(pid)
+result = []
+def visit(parent):
+    for child in children.get(parent, []):
+        visit(child)
+        result.append(child)
+visit(root)
+print(" ".join(map(str, result)))
+PY
+}
+
+stop_child() {
+  local pid="$1"
+  local attempts="$2"
+  local terminate_descendants_first="$3"
+  [[ -n "$pid" ]] || return 0
+  local descendants
+  descendants="$(descendant_pids "$pid")"
+  if [[ "$terminate_descendants_first" == true && -n "$descendants" ]]; then
+    # shellcheck disable=SC2086
+    kill -TERM $descendants 2>/dev/null || true
+  fi
+  kill -TERM "$pid" 2>/dev/null || true
+  for ((_attempt = 1; _attempt <= attempts; _attempt++)); do
+    kill -0 "$pid" 2>/dev/null || return 0
+    sleep 0.1
+  done
+  descendants="$(descendant_pids "$pid")"
+  if [[ -n "$descendants" ]]; then
+    # shellcheck disable=SC2086
+    kill -KILL $descendants 2>/dev/null || true
+  fi
+  kill -KILL "$pid" 2>/dev/null || true
+}
+
+remove_desktop_record() {
+  [[ -n "$desktop_pid" && -n "$desktop_identity" && -f "$desktop_record" ]] || return 0
+  local version recorded_pid recorded_identity extra
+  { read -r version; read -r recorded_pid; read -r recorded_identity; read -r extra || true; } < "$desktop_record"
+  if [[ "$version" == "v1" && "$recorded_pid" == "$desktop_pid" && "$recorded_identity" == "$desktop_identity" && -z "$extra" ]]; then
+    rm -f "$desktop_record"
+  fi
+}
+
+cleanup() {
+  trap - EXIT TERM INT HUP
+  stop_child "$desktop_pid" 50 true
+  # Preserve the daemon's existing bounded graceful shutdown so it can close
+  # owned PTYs/provider processes before any exact descendant force-kill.
+  stop_child "$server_pid" 1800 false
+  [[ -z "$desktop_pid" ]] || wait "$desktop_pid" 2>/dev/null || true
+  [[ -z "$server_pid" ]] || wait "$server_pid" 2>/dev/null || true
+  remove_desktop_record
+  rm -f "$ready_file"
+}
+
+handle_stop() {
+  cleanup
+  exit 0
+}
+
+trap cleanup EXIT
+trap handle_stop TERM INT HUP
+
+cd "$checkout"
+"$server_binary" >>"$server_log" 2>&1 </dev/null &
+server_pid=$!
+
+daemon_ready=false
+for _attempt in {1..1200}; do
+  if [[ "$(discovery_pid)" == "$server_pid" && "$(read_owned_pid "$daemon_record" || true)" == "$server_pid" ]]; then
+    daemon_ready=true
+    break
+  fi
+  if [[ -z "$(process_identity "$server_pid")" ]]; then
+    wait "$server_pid" 2>/dev/null || true
+    server_pid=""
+    echo "TermLoop daemon exited before discovery became ready." >&2
+    exit 1
+  fi
+  sleep 0.1
+done
+if [[ "$daemon_ready" != true ]]; then
+  echo "Timed out waiting for TermLoop daemon discovery." >&2
+  exit 1
+fi
+
+if [[ -n "$profile_tag" ]]; then
+  "$TERMLOOP_DEV_NODE_BINARY" "$TERMLOOP_DEV_BOOTSTRAP_ENTRY" \
+    --runtime "$runtime_file" \
+    --project-name "$TERMLOOP_DEV_PROJECT_NAME" \
+    --project-dir "$TERMLOOP_DEV_PROJECT_DIR" \
+    --task-title "$TERMLOOP_DEV_TASK_TITLE" >/dev/null
+fi
+
+cd "$desktop_cwd"
+rm -f "$ready_file"
+"$electron_binary" . >>"$desktop_log" 2>&1 </dev/null &
+desktop_pid=$!
+desktop_identity="$(process_identity "$desktop_pid")"
+if [[ -z "$desktop_identity" ]]; then
+  wait "$desktop_pid" 2>/dev/null || true
+  desktop_pid=""
+  echo "TermLoop desktop exited before its identity was recorded." >&2
+  exit 1
+fi
+desktop_record_tmp="${desktop_record}.tmp.$$"
+printf 'v1\n%s\n%s\n' "$desktop_pid" "$desktop_identity" > "$desktop_record_tmp"
+mv -f "$desktop_record_tmp" "$desktop_record"
+
+while true; do
+  if [[ ! -d "$checkout" ]]; then
+    echo "Supervisor checkout disappeared; stopping the exact owned children." >&2
+    exit 0
+  fi
+  if ! kill -0 "$server_pid" 2>/dev/null; then
+    wait "$server_pid" 2>/dev/null || true
+    server_pid=""
+    echo "TermLoop daemon exited while the desktop was running." >&2
+    exit 1
+  fi
+  if ! kill -0 "$desktop_pid" 2>/dev/null; then
+    wait "$desktop_pid" 2>/dev/null || true
+    desktop_pid=""
+    exit 0
+  fi
+  sleep 0.5
+done

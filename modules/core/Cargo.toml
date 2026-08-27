@@ -1,0 +1,28 @@
+[package]
+name = "termloop-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+base64.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+tokio.workspace = true
+termloop-domain = { path = "../domain" }
+termloop-store = { path = "../store" }
+termloop-gitio = { path = "../gitio" }
+termloop-providers = { path = "../providers" }
+termloop-agents = { path = "../agents" }
+termloop-invocation = { path = "../invocation" }
+termloop-terminal = { path = "../terminal" }
+termloop-observability = { path = "../observability" }
+termloop-llm = { path = "../llm" }
+termloop-platform = { path = "../platform" }
+
+[dev-dependencies]
+termloop-gitio = { path = "../gitio", features = ["test-support"] }
+termloop-platform = { path = "../platform", features = ["test-support"] }

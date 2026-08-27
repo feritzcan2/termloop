@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://termloop.dev/schema/access.v1.schema.json",
+  "title": "TermLoop device access protocol v1",
+  "type": "object",
+  "x-access-proof-transcript": "tl-access-v1|{serverFingerprint}|{channel}|{nonce}",
+  "x-access-messages": {
+    "server.challenge": { "$ref": "#/$defs/accessChallenge" },
+    "client.authenticate": { "$ref": "#/$defs/accessAuthenticate" },
+    "server.authenticated": { "$ref": "#/$defs/accessAuthenticated" },
+    "server.pairChallenge": { "$ref": "#/$defs/accessPairChallenge" },
+    "client.enroll": { "$ref": "#/$defs/accessEnroll" },
+    "server.enrolled": { "$ref": "#/$defs/accessEnrolled" },
+    "client.pairExchange": { "$ref": "#/$defs/accessPairExchange" },
+    "server.paired": { "$ref": "#/$defs/accessPaired" },
+    "server.error": { "$ref": "#/$defs/accessProtocolError" },
+    "client.forwardOpen": { "$ref": "#/$defs/accessForwardOpen" },
+    "server.forwardOpened": { "$ref": "#/$defs/accessForwardOpened" }
+  },
+  "$defs": {
+    "accessChannel": {
+      "x-codegen": true,
+      "x-codegen-name": "AccessChannel",
+      "type": "string",
+      "enum": ["control", "terminal", "forward"]
+    },
+    "accessDeviceScope": {
+      "x-codegen": true,
+      "x-codegen-name": "AccessDeviceScope",
+      "type": "string",
+      "enum": ["full", "readOnly"]
+    },
+    "accessChallenge": {
+      "x-codegen": true,
+      "x-codegen-name": "AccessChallenge",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "protocolVersion", "controlProtocolVersion", "channel", "nonce", "serverFingerprint"],
+      "properties": {
+        "kind": { "const": "challenge" },
+        "protocolVersion": { "type": "string", "x-access-protocol-identity": true },
+        "controlProtocolVersion": { "type": "string", "x-contract-identity": true },
+        "channel": { "$ref": "#/$defs/accessChannel" },
+        "nonce": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" },
+        "serverFingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "accessAuthenticate": {
+      "x-codegen": true,
+      "x-codegen-name": "AccessAuthenticate",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "protocolVersion", "deviceId", "signature"],
+      "properties": {
+        "kind": { "const": "authenticate" },
+        "protocolVersion": { "type": "string", "x-access-protocol-identity": true },
+        "deviceId": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+        "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+      }
+    },
+    "accessAuthenticated": {
+      "x-codegen": true,
+      "x-codegen-name": "AccessAuthenticated",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "protocolVersion", "deviceId", "scope", "connectionToken"],
+      "properties": {
+        "kind": { "const": "authenticated" },
+        "protocolVersion": { "type": "string", "x-access-protocol-identity": true },
+        "deviceId": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+        "scope": { "$ref": "#/$defs/accessDeviceScope" },
+        "connectionToken": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "accessPairChallenge": {
+      "x-codegen": true,
+      "x-codegen-name": "AccessPairChallenge",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "protocolVersion", "serverFingerprint"],
+      "properties": {
+        "kind": { "const": "pairChallenge" },
+        "protocolVersion": { "type": "string", "x-access-protocol-identity": true },
+        "serverFingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "accessPairExchange": {
+      "x-codegen": true,
+      "x-codegen-name": "AccessPairExchange",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "protocolVersion", "pairingCode", "publicKey", "serverFingerprint"],
+      "properties": {
+        "kind": { "const": "pairExchange" },
+        "protocolVersion": { "type": "string", "x-access-protocol-identity": true },
+        "pairingCode": { "type": "string", "pattern": "^[A-Z2-9]{4}-[A-Z2-9]{4}$" },
+        "publicKey": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" },
+        "serverFingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "accessEnroll": {
+      "x-codegen": true,
+      "x-codegen-name": "AccessEnroll",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "protocolVersion", "deviceName", "publicKey", "serverFingerprint"],
+      "properties": {
+        "kind": { "const": "enroll" },
+        "protocolVersion": { "type": "string", "x-access-protocol-identity": true },
+        "deviceName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "publicKey": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" },
+        "serverFingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "accessEnrolled": {
+      "x-codegen": true,
+      "x-codegen-name": "AccessEnrolled",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "protocolVersion", "deviceId", "scope", "serverFingerprint"],
+      "properties": {
+        "kind": { "const": "enrolled" },
+        "protocolVersion": { "type": "string", "x-access-protocol-identity": true },
+        "deviceId": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+        "scope": { "$ref": "#/$defs/accessDeviceScope" },
+        "serverFingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "accessPaired": {
+      "x-codegen": true,
+      "x-codegen-name": "AccessPaired",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "protocolVersion", "deviceId", "scope", "serverFingerprint"],
+      "properties": {
+        "kind": { "const": "paired" },
+        "protocolVersion": { "type": "string", "x-access-protocol-identity": true },
+        "deviceId": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+        "scope": { "$ref": "#/$defs/accessDeviceScope" },
+        "serverFingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "accessProtocolError": {
+      "x-codegen": true,
+      "x-codegen-name": "AccessProtocolError",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "protocolVersion", "code", "message"],
+      "properties": {
+        "kind": { "const": "error" },
+        "protocolVersion": { "type": "string", "x-access-protocol-identity": true },
+        "code": {
+          "type": "string",
+          "enum": ["invalidMessage", "unsupportedVersion", "pairingDenied", "enrollmentDenied", "unauthenticated", "revoked", "forwardDenied"]
+        },
+        "message": { "type": "string", "minLength": 1, "maxLength": 200 }
+      }
+    },
+    "accessForwardOpen": {
+      "x-codegen": true,
+      "x-codegen-name": "AccessForwardOpen",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "protocolVersion", "port"],
+      "properties": {
+        "kind": { "const": "forwardOpen" },
+        "protocolVersion": { "type": "string", "x-access-protocol-identity": true },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535, "x-rust-type": "u16" }
+      }
+    },
+    "accessForwardOpened": {
+      "x-codegen": true,
+      "x-codegen-name": "AccessForwardOpened",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "protocolVersion", "port"],
+      "properties": {
+        "kind": { "const": "forwardOpened" },
+        "protocolVersion": { "type": "string", "x-access-protocol-identity": true },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535, "x-rust-type": "u16" }
+      }
+    }
+  }
+}

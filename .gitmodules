@@ -1,0 +1,4 @@
+[submodule "vendor/ghostty"]
+	path = vendor/ghostty
+	url = https://github.com/feritzcan2/ghostty.git
+	shallow = true

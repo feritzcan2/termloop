@@ -1,0 +1,20 @@
+{
+  "name": "@termloop/contract",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./current": {
+      "types": "./src/current.ts",
+      "default": "./dist/current.js"
+    }
+  },
+  "scripts": {
+    "check": "tsc --noEmit && tsc -p tsconfig.type-tests.json",
+    "build": "tsc",
+    "test": "pnpm build && node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

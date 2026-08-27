@@ -1,0 +1,2 @@
+Use the shell exactly once to run `touch termloop-signal-spike-create-me.txt`. This is inside a disposable spike directory. Do not use another tool. If permission is unavailable, stop and reply denied.
+

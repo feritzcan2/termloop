@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TermLoop — Keep every coding agent in the loop</title>
+  <meta name="description" content="TermLoop is the native control room for Claude Code and Codex. Run parallel agents, isolate work in git worktrees, review changes, and keep sessions moving from desktop or mobile.">
+  <meta property="og:title" content="TermLoop — Keep every coding agent in the loop">
+  <meta property="og:description" content="Tasks, worktrees, real terminals, diffs, and agent coordination in one native workspace.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://termloop.ai/">
+  <meta property="og:image" content="https://termloop.ai/assets/product-tour-poster.jpg">
+  <meta property="og:image:width" content="1600">
+  <meta property="og:image:height" content="900">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://termloop.ai/assets/product-tour-poster.jpg">
+  <meta name="theme-color" content="#0a0d13">
+  <link rel="canonical" href="https://termloop.ai/">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..700&amp;family=Instrument+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+  <script>
+    if (window.location.hostname === 'www.termloop.ai') {
+      window.location.replace('https://termloop.ai' + window.location.pathname + window.location.search + window.location.hash);
+    }
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink:#0a0d13; --panel:#10141c; --panel-2:#151b26; --titlebar:#141926;
+      --line:#1e2534; --line-strong:#2d3950;
+      --text:#e7eaf3; --muted:#98a2b8; --faint:#657089;
+      --amber:#f0b860; --amber-bright:#ffd28a; --amber-dim:rgba(240,184,96,.14);
+      --add:#56c687; --del:#e5645f; --blue:#7fa9f5;
+      --max:1240px; --nav:64px; --r:12px;
+      --display:"Bricolage Grotesque","Instrument Sans",sans-serif;
+      --body:"Instrument Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; scroll-padding-top:calc(var(--nav) + 24px); }
+    body {
+      margin:0; min-width:320px; background:var(--ink); color:var(--text);
+      font-family:var(--body); font-size:16px; line-height:1.6;
+      -webkit-font-smoothing:antialiased;
+    }
+    body::before {
+      content:""; position:fixed; inset:0 0 auto; height:520px; z-index:-1; pointer-events:none;
+      background:radial-gradient(58% 100% at 50% 0%, rgba(240,184,96,.05), transparent 70%);
+    }
+    a { color:inherit; text-decoration:none; }
+    ::selection { background:var(--amber); color:#141008; }
+    :focus-visible { outline:2px solid var(--amber); outline-offset:3px; border-radius:4px; }
+    .shell { width:min(var(--max),calc(100% - 48px)); margin:0 auto; }
+    .prompt-line {
+      display:flex; align-items:center; gap:10px; margin:0 0 20px;
+      color:var(--faint); font:500 12.5px/1 var(--mono); letter-spacing:.02em;
+    }
+    .prompt-line::before { content:"❯"; color:var(--amber); font-weight:600; }
+
+    /* ---- top bar ---- */
+    .topbar {
+      position:sticky; top:0; z-index:30; height:var(--nav);
+      border-bottom:1px solid var(--line); background:rgba(10,13,19,.82);
+      backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+    }
+    .topbar-inner { height:100%; display:flex; align-items:center; justify-content:space-between; gap:32px; }
+    .brand { display:inline-flex; align-items:center; gap:10px; font-weight:600; letter-spacing:-.015em; font-size:16.5px; }
+    .brand-mark {
+      width:27px; height:27px; display:grid; place-items:center; border-radius:7px;
+      border:1px solid var(--line-strong); background:var(--panel-2);
+      color:var(--amber); font:600 13px/1 var(--mono);
+    }
+    .nav-links { display:flex; align-items:center; gap:26px; color:var(--muted); font-size:14px; font-weight:500; }
+    .nav-links a:hover,.footer-links a:hover { color:var(--text); }
+    .nav-actions,.hero-actions,.cta-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .button {
+      min-height:40px; display:inline-flex; align-items:center; justify-content:center; gap:8px;
+      padding:0 17px; border:1px solid var(--line-strong); border-radius:9px;
+      background:var(--panel-2); color:var(--text); font-family:var(--body);
+      font-size:14px; font-weight:600; cursor:pointer;
+      transition:border-color .15s,background .15s,color .15s;
+    }
+    .button:hover { border-color:#48587a; background:#1b2231; }
+    .button.primary {
+      background:var(--amber); border-color:var(--amber); color:#181206;
+      box-shadow:0 0 0 1px rgba(240,184,96,.2),0 6px 22px rgba(240,184,96,.14);
+    }
+    .button.primary:hover { background:var(--amber-bright); border-color:var(--amber-bright); }
+    .button.small { min-height:35px; padding:0 13px; font-size:13px; border-radius:8px; }
+
+    /* ---- hero ---- */
+    .hero { padding:88px 0 0; }
+    .hero-copy { max-width:840px; }
+    .hero-copy h1 {
+      margin:0; font-family:var(--display); font-size:clamp(2.9rem,6.4vw,5.4rem);
+      font-weight:560; line-height:1.02; letter-spacing:-.028em;
+      font-variation-settings:"opsz" 96;
+    }
+    .hero-copy h1 em { font-style:normal; color:var(--amber); }
+    .cursor {
+      display:inline-block; width:.48em; height:.82em; margin-left:.1em;
+      background:var(--amber); border-radius:2px; vertical-align:baseline;
+      transform:translateY(.06em); animation:blink 1.15s steps(1) infinite;
+    }
+    @keyframes blink { 50% { opacity:0; } }
+    .lead { max-width:640px; margin:26px 0 0; color:var(--muted); font-size:18px; line-height:1.6; }
+    .hero-actions { margin-top:32px; }
+    .availability { display:flex; flex-wrap:wrap; gap:12px 24px; margin-top:28px; color:var(--faint); font:12.5px var(--mono); }
+    .availability span { display:inline-flex; align-items:center; gap:8px; }
+    .status-dot { width:7px; height:7px; border-radius:50%; background:var(--add); box-shadow:0 0 0 4px rgba(86,198,135,.1); }
+
+    /* ---- terminal frame ---- */
+    .term {
+      border:1px solid var(--line-strong); border-radius:var(--r); background:#070a0f;
+      overflow:hidden;
+    }
+    .term-bar {
+      height:40px; display:flex; align-items:center; gap:8px; padding:0 14px;
+      border-bottom:1px solid var(--line); background:var(--titlebar);
+    }
+    .term-bar i { width:11px; height:11px; display:block; border-radius:50%; background:#39415a; }
+    .term-bar i:nth-child(1) { background:#e5645f; }
+    .term-bar i:nth-child(2) { background:#e9b64d; }
+    .term-bar i:nth-child(3) { background:#56c687; }
+    .term-bar code { margin-left:10px; color:var(--faint); font:500 12px var(--mono); }
+    .term-bar .term-right { margin-left:auto; color:var(--faint); font:11px var(--mono); }
+    .term video { display:block; width:100%; aspect-ratio:16/9; object-fit:cover; background:#070a0f; }
+
+    .hero-demo { margin-top:64px; }
+    .hero-demo .term {
+      border-radius:var(--r) var(--r) 0 0; border-bottom:0;
+      box-shadow:0 -1px 0 rgba(240,184,96,.12),0 34px 90px rgba(0,0,0,.5);
+    }
+    .statusbar {
+      display:grid; grid-template-columns:auto repeat(4,1fr);
+      border:1px solid var(--line-strong); border-radius:0 0 var(--r) var(--r);
+      background:var(--panel); font:12px var(--mono); overflow:hidden;
+    }
+    .statusbar .cell { padding:14px 18px; border-left:1px solid var(--line); min-width:0; }
+    .statusbar .cell b { display:block; margin-bottom:3px; color:var(--text); font-weight:500; font-size:12.5px; }
+    .statusbar .cell span { color:var(--faint); letter-spacing:.01em; }
+    .statusbar .session-tag {
+      display:flex; align-items:center; padding:14px 16px;
+      background:var(--amber); color:#181206; font-weight:600;
+    }
+    .statusbar .ok { color:var(--add); }
+
+    /* ---- sections ---- */
+    .section { padding:118px 0; border-bottom:1px solid var(--line); }
+    .section-heading { display:grid; grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr); gap:48px; align-items:end; margin-bottom:56px; }
+    .section-heading h2 {
+      margin:0; font-family:var(--display); font-size:clamp(2.1rem,3.8vw,3.4rem);
+      font-weight:560; line-height:1.05; letter-spacing:-.024em;
+    }
+    .section-heading > p { max-width:560px; margin:0 0 6px; color:var(--muted); font-size:16.5px; justify-self:end; }
+
+    /* ---- model ---- */
+    .model-layout { display:grid; grid-template-columns:minmax(300px,.9fr) minmax(0,1.1fr); gap:56px; align-items:start; }
+    .tree-panel {
+      position:sticky; top:calc(var(--nav) + 28px);
+      border:1px solid var(--line-strong); border-radius:var(--r); background:var(--panel);
+      padding:22px 24px; font:13px/2 var(--mono); color:var(--muted); overflow-x:auto;
+    }
+    .tree-panel .cmd { color:var(--faint); display:block; margin-bottom:8px; }
+    .tree-panel .cmd::before { content:"❯ "; color:var(--amber); }
+    .tree-panel .t-root { color:var(--amber); font-weight:600; }
+    .tree-panel .t-task { color:var(--add); }
+    .tree-panel .t-session { color:var(--blue); }
+    .tree-panel .t-dim { color:var(--faint); }
+    .model-cards { display:grid; gap:14px; }
+    .model-card {
+      border:1px solid var(--line); border-radius:var(--r); background:var(--panel);
+      padding:26px 28px; display:grid; grid-template-columns:14px 1fr; gap:18px;
+    }
+    .model-card .tick { width:9px; height:17px; border-radius:2px; margin-top:5px; background:var(--amber); }
+    .model-card:nth-child(2) .tick { background:var(--add); }
+    .model-card:nth-child(3) .tick { background:var(--blue); }
+    .model-card .label { color:var(--faint); font:500 11.5px var(--mono); letter-spacing:.09em; text-transform:uppercase; }
+    .model-card h3 { margin:7px 0 8px; font-family:var(--display); font-size:21px; font-weight:560; letter-spacing:-.015em; }
+    .model-card p { margin:0; color:var(--muted); font-size:15px; }
+    .model-card code { display:block; margin-top:14px; color:var(--faint); font:12px var(--mono); }
+
+    /* ---- tour ---- */
+    .tour { padding:118px 0 128px; border-bottom:1px solid var(--line); }
+    .tour-layout { display:grid; grid-template-columns:236px minmax(0,1fr); gap:60px; align-items:start; }
+    .feature-nav { position:sticky; top:calc(var(--nav) + 28px); font-family:var(--mono); }
+    .feature-nav .nav-title { margin:0 0 18px; color:var(--faint); font-size:11px; letter-spacing:.14em; text-transform:uppercase; }
+    .feature-nav section { margin:0 0 22px; }
+    .feature-nav h3 { margin:0 0 7px; color:var(--muted); font-size:11.5px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; }
+    .feature-nav h3::before { content:"▾ "; color:var(--faint); }
+    .feature-nav a {
+      display:block; position:relative; padding:4.5px 0 4.5px 18px;
+      color:var(--faint); font-size:12.5px; border-left:1px solid var(--line);
+      transition:color .15s,border-color .15s;
+    }
+    .feature-nav a:hover { color:var(--text); }
+    .feature-nav a.active { color:var(--amber); border-left-color:var(--amber); }
+    .feature-groups { min-width:0; }
+    .feature-group { margin-bottom:104px; }
+    .feature-group:last-child { margin-bottom:0; }
+    .group-head { display:flex; align-items:baseline; justify-content:space-between; gap:24px; padding-bottom:16px; border-bottom:1px solid var(--line-strong); }
+    .group-head h2 { margin:0; font-family:var(--display); font-size:30px; font-weight:560; letter-spacing:-.02em; }
+    .group-head span { color:var(--faint); font:11.5px var(--mono); }
+    .feature-story {
+      display:grid; grid-template-columns:minmax(230px,.58fr) minmax(0,1.42fr); gap:44px;
+      padding:52px 0; border-bottom:1px solid var(--line); scroll-margin-top:calc(var(--nav) + 24px);
+    }
+    .feature-story:nth-of-type(even) { grid-template-columns:minmax(0,1.42fr) minmax(230px,.58fr); }
+    .feature-story:nth-of-type(even) .feature-copy { order:2; }
+    .feature-story:nth-of-type(even) .feature-media { order:1; }
+    .will-reveal { opacity:0; transform:translateY(16px); transition:opacity .55s ease,transform .55s ease; }
+    .will-reveal.revealed { opacity:1; transform:none; }
+    .feature-kicker { color:var(--amber); font:500 12px var(--mono); letter-spacing:.03em; }
+    .feature-kicker::before { content:"❯ "; opacity:.85; }
+    .feature-copy h3 { margin:16px 0 12px; font-family:var(--display); font-size:26px; font-weight:560; line-height:1.12; letter-spacing:-.02em; }
+    .feature-copy p { margin:0; color:var(--muted); font-size:15px; }
+    .feature-meta { display:flex; flex-wrap:wrap; gap:7px; margin-top:20px; }
+    .feature-meta span {
+      padding:4px 9px; border:1px solid var(--line); border-radius:6px;
+      color:var(--faint); font:11px var(--mono); letter-spacing:.02em;
+    }
+    .feature-media { min-width:0; align-self:start; }
+    .feature-media .term { box-shadow:0 18px 54px rgba(0,0,0,.32); }
+    .feature-media .term-bar { height:33px; }
+    .feature-media .term-bar i { width:9px; height:9px; }
+
+    /* ---- principles ---- */
+    .principles { background:var(--panel); }
+    .principles-grid { display:grid; grid-template-columns:1fr 1.1fr; gap:72px; align-items:start; }
+    .principles h2 {
+      margin:0; max-width:520px; font-family:var(--display);
+      font-size:clamp(2.3rem,4.2vw,3.8rem); font-weight:560; line-height:1.03; letter-spacing:-.026em;
+    }
+    .principles h2 em { font-style:normal; color:var(--amber); }
+    .principles-list { border-top:1px solid var(--line-strong); }
+    .principle { padding:24px 0; border-bottom:1px solid var(--line); }
+    .principle .flag { display:block; margin:0 0 8px; color:var(--amber); font:600 13.5px var(--mono); }
+    .principle p { margin:0; max-width:560px; color:var(--muted); font-size:15px; }
+
+    /* ---- faq ---- */
+    .faq-grid { display:grid; grid-template-columns:.75fr 1.25fr; gap:64px; }
+    .faq h2 { margin:0; font-family:var(--display); font-size:clamp(2rem,3.4vw,3rem); font-weight:560; line-height:1.05; letter-spacing:-.022em; }
+    .faq-list { border-top:1px solid var(--line-strong); }
+    details { border-bottom:1px solid var(--line); }
+    summary { position:relative; padding:22px 40px 22px 26px; cursor:pointer; list-style:none; font-weight:600; font-size:15.5px; }
+    summary::-webkit-details-marker { display:none; }
+    summary::before {
+      content:"❯"; position:absolute; left:0; top:22px; color:var(--amber);
+      font:600 14px var(--mono); transition:transform .18s ease; transform-origin:45% 55%;
+    }
+    details[open] summary::before { transform:rotate(90deg); }
+    details p { max-width:700px; margin:-6px 0 24px; padding-left:26px; color:var(--muted); font-size:15px; }
+
+    /* ---- final cta ---- */
+    .final-cta { padding:96px 0 88px; }
+    .cta-box {
+      position:relative; overflow:hidden; display:grid; grid-template-columns:1fr auto;
+      gap:48px; align-items:center; padding:56px;
+      border:1px solid var(--line-strong); border-radius:16px; background:var(--panel);
+    }
+    .cta-box::before {
+      content:""; position:absolute; inset:0; pointer-events:none;
+      background:radial-gradient(70% 130% at 8% 0%, var(--amber-dim), transparent 62%);
+    }
+    .cta-box > div { position:relative; }
+    .cta-box .prompt-line { margin-bottom:14px; }
+    .cta-box h2 {
+      margin:0; max-width:640px; font-family:var(--display);
+      font-size:clamp(2rem,3.8vw,3.4rem); font-weight:560; line-height:1.04; letter-spacing:-.024em;
+    }
+    .cta-box p { margin:16px 0 0; color:var(--muted); font-size:16px; }
+    .cta-actions { justify-content:flex-end; }
+
+    footer { padding:26px 0 42px; color:var(--faint); font-size:13px; }
+    .footer-inner { display:flex; align-items:center; justify-content:space-between; gap:28px; }
+    .footer-inner .brand-line { font:12px var(--mono); }
+    .footer-inner .brand-line b { color:var(--muted); font-weight:500; }
+    .footer-links { display:flex; gap:22px; }
+
+    @media (max-width:1080px) {
+      .tour-layout { grid-template-columns:196px minmax(0,1fr); gap:36px; }
+      .feature-story,.feature-story:nth-of-type(even) { grid-template-columns:1fr; gap:26px; }
+      .feature-story:nth-of-type(even) .feature-copy,.feature-story:nth-of-type(even) .feature-media { order:initial; }
+      .model-layout { grid-template-columns:1fr; }
+      .tree-panel { position:static; }
+      .statusbar { grid-template-columns:auto 1fr 1fr; }
+      .statusbar .cell:nth-child(n+4) { border-top:1px solid var(--line); }
+      .statusbar .session-tag { grid-row:span 2; }
+    }
+    @media (max-width:780px) {
+      :root { --nav:58px; }
+      .shell { width:min(100% - 28px,var(--max)); }
+      .nav-links { display:none; }
+      .nav-actions .button:not(.primary) { display:none; }
+      .hero { padding-top:62px; }
+      .hero-copy h1 { font-size:clamp(2.6rem,12vw,4rem); }
+      .lead { font-size:16px; }
+      .hero-demo { margin-top:44px; }
+      .statusbar { grid-template-columns:1fr 1fr; font-size:11.5px; }
+      .statusbar .session-tag { grid-column:span 2; grid-row:auto; padding:11px 16px; }
+      .statusbar .cell { border-top:0; padding:12px 14px; }
+      .statusbar .cell:nth-child(n+4) { border-top:1px solid var(--line); }
+      .section,.tour { padding:76px 0; }
+      .section-heading,.faq-grid,.principles-grid { grid-template-columns:1fr; gap:24px; }
+      .section-heading > p { justify-self:start; margin:0; }
+      .tour-layout { display:block; }
+      .feature-nav {
+        position:sticky; top:var(--nav); z-index:15; margin:0 -14px 44px; padding:10px 14px;
+        overflow-x:auto; background:rgba(10,13,19,.94); border-bottom:1px solid var(--line);
+        backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+      }
+      .feature-nav .nav-title,.feature-nav h3 { display:none; }
+      .feature-nav section { display:contents; }
+      .feature-nav nav { display:flex; gap:8px; width:max-content; }
+      .feature-nav a { padding:7px 11px; border:1px solid var(--line); border-radius:7px; border-left-width:1px; white-space:nowrap; }
+      .feature-nav a.active { background:var(--amber-dim); border-color:rgba(240,184,96,.5); color:var(--amber); }
+      .feature-group { margin-bottom:72px; }
+      .feature-story { padding:36px 0; }
+      .group-head h2 { font-size:26px; }
+      .cta-box { grid-template-columns:1fr; padding:34px 28px; }
+      .cta-actions { justify-content:flex-start; }
+      .footer-inner { align-items:flex-start; flex-direction:column; gap:16px; }
+    }
+    @media (max-width:480px) {
+      .statusbar { grid-template-columns:1fr; }
+      .statusbar .cell { border-left:0; border-top:1px solid var(--line); }
+      .statusbar .session-tag { grid-column:auto; }
+      .feature-copy h3 { font-size:23px; }
+      .cta-actions { flex-direction:column; align-items:stretch; }
+      .cta-actions .button { width:100%; }
+    }
+    @media (prefers-reduced-motion:reduce) {
+      html { scroll-behavior:auto; }
+      *,*::before,*::after { transition:none!important; animation:none!important; }
+      .will-reveal { opacity:1; transform:none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="brand" href="#top" aria-label="TermLoop home"><span class="brand-mark" aria-hidden="true">❯_</span><span>TermLoop</span></a>
+      <nav class="nav-links" aria-label="Primary navigation"><a href="#model">How it works</a><a href="#features">Product tour</a><a href="#principles">Principles</a><a href="#faq">FAQ</a></nav>
+      <div class="nav-actions"><a class="button small" href="https://github.com/feritzcan2/termloop" target="_blank" rel="noopener">GitHub ↗</a><a class="button primary small" href="/download">Download</a></div>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="shell">
+        <div class="hero-copy">
+          <p class="prompt-line">termloop · native control room for coding agents</p>
+          <h1>Keep every coding agent <em>in the loop</em><span class="cursor" aria-hidden="true"></span></h1>
+          <p class="lead">TermLoop puts tasks, worktrees, real terminals, diffs, and agent coordination in one native workspace—without replacing Claude Code or Codex.</p>
+          <div class="hero-actions"><a class="button primary" href="/download">Download for macOS ↓</a><a class="button" href="#features">Watch it work →</a></div>
+          <div class="availability"><span><i class="status-dot"></i>available now</span><span>open source</span><span>your subscriptions</span><span>no telemetry</span></div>
+        </div>
+        <div class="hero-demo">
+          <div class="term">
+            <div class="term-bar"><i></i><i></i><i></i><code>termloop — launchpad</code><span class="term-right">live capture · 17s</span></div>
+            <video autoplay muted loop playsinline preload="metadata" poster="assets/product-tour-poster.jpg" aria-label="A real TermLoop workflow showing tasks, agents, changes, dev server, mobile, and MCP settings"><source src="assets/videos/product-tour.webm" type="video/webm"><source src="assets/videos/product-tour.mp4" type="video/mp4"></video>
+          </div>
+          <div class="statusbar" role="group" aria-label="TermLoop fundamentals">
+            <span class="session-tag">real app · real state</span>
+            <div class="cell"><b>bring your agents</b><span>claude code · codex <i class="ok">✓</i></span></div>
+            <div class="cell"><b>keep real git</b><span>branches · worktrees · diffs</span></div>
+            <div class="cell"><b>see every terminal</b><span>ghostty-powered ptys</span></div>
+            <div class="cell"><b>work from anywhere</b><span>desktop · mobile companion</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="model"><div class="shell">
+      <div class="section-heading"><div><p class="prompt-line">tree project</p><h2>Simple objects. Serious workflows.</h2></div><p>Projects hold the durable scope, Tasks describe work, and Sessions are the live agents and terminals operating inside that Project.</p></div>
+      <div class="model-layout">
+        <div class="tree-panel" aria-hidden="true"><span class="cmd">tree ~/projects/your-repo</span><span class="t-root">project/</span><br>├── <span class="t-task">tasks</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="t-dim">open | closed · 0..1 worktree each</span><br>│&nbsp;&nbsp;&nbsp;├── <span class="t-task">fix-onboarding</span>&nbsp;<span class="t-dim">· worktree: feat/onboarding</span><br>│&nbsp;&nbsp;&nbsp;└── <span class="t-task">ship-mobile-qr</span>&nbsp;<span class="t-dim">· no worktree</span><br>└── <span class="t-session">sessions</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="t-dim">live, project-scoped</span><br>&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="t-session">claude</span>&nbsp;&nbsp;<span class="t-dim">· implementing fix-onboarding</span><br>&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="t-session">codex</span>&nbsp;&nbsp;&nbsp;<span class="t-dim">· reviewing the diff</span><br>&nbsp;&nbsp;&nbsp;&nbsp;└── <span class="t-session">dev run</span>&nbsp;<span class="t-dim">· vite on :4173</span></div>
+        <div class="model-cards">
+          <article class="model-card"><span class="tick" aria-hidden="true"></span><div><span class="label">project</span><h3>One durable scope</h3><p>A repository or folder, its connections, tasks, sessions, and launch configuration—kept together without hiding the filesystem.</p><code>project → tasks + sessions</code></div></article>
+          <article class="model-card"><span class="tick" aria-hidden="true"></span><div><span class="label">task</span><h3>Work with optional isolation</h3><p>A Task can stay lightweight or get one managed Git worktree when the work needs its own branch and checkout.</p><code>task → 0..1 worktree</code></div></article>
+          <article class="model-card"><span class="tick" aria-hidden="true"></span><div><span class="label">session</span><h3>Every process stays visible</h3><p>Claude, Codex, terminals, and dev runs stay Project-scoped. Select them, refresh them, fork context, or coordinate them directly.</p><code>session → agent | terminal | run</code></div></article>
+        </div>
+      </div>
+    </div></section>
+
+    <section class="tour" id="features"><div class="shell">
+      <div class="section-heading"><div><p class="prompt-line">product tour</p><h2>From prompt to reviewed change.</h2></div><p>Every demo below was recorded in the real desktop app with real TermLoop Sessions. Use the index like documentation, or scroll through the workflow end to end.</p></div>
+      <div class="tour-layout">
+        <aside class="feature-nav" aria-label="Feature navigation">
+          <p class="nav-title">On this page</p>
+          <nav>
+            <section><h3>Run</h3><a href="#quick-actions">Quick Actions</a><a href="#task-worktrees">Task worktrees</a><a href="#dev-server">Dev server</a></section>
+            <section><h3>Coordinate</h3><a href="#multi-agent">Multi-agent</a><a href="#ask-to">Ask another agent</a><a href="#handoff">Handoff</a><a href="#fork">Fork sessions</a></section>
+            <section><h3>Review</h3><a href="#changes">Changes & notes</a><a href="#task-lifecycle">Task lifecycle</a><a href="#session-refresh">Session refresh</a></section>
+            <section><h3>Operate</h3><a href="#steward">Steward</a><a href="#mobile">Mobile</a><a href="#mcp-prompts">MCP & prompts</a></section>
+          </nav>
+        </aside>
+        <div class="feature-groups">
+          <section class="feature-group" id="run"><header class="group-head"><h2>Run</h2><span>01 — launch and isolate work</span></header>
+            <article class="feature-story" id="quick-actions">
+              <div class="feature-copy"><span class="feature-kicker">quick actions</span><h3>Start the right agent with the right context.</h3><p>Open the command palette, compose a free prompt, choose the agent, model, permissions, and reasoning, then launch an inspected Session in seconds.</p><div class="feature-meta"><span>shift shift</span><span>versioned prompt</span><span>claude / codex</span></div></div>
+              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>quick action · inspected launch</code></div><video muted loop playsinline preload="metadata" aria-label="TermLoop Quick Action launching a real agent Session"><source src="assets/videos/quick-action.webm" type="video/webm"><source src="assets/videos/quick-action.mp4" type="video/mp4"></video></div></div>
+            </article>
+            <article class="feature-story" id="task-worktrees">
+              <div class="feature-copy"><span class="feature-kicker">task worktrees</span><h3>Isolation when the task needs it.</h3><p>Create a Task first, then provision one managed worktree when implementation should happen on its own branch. The Task stays useful even without a checkout.</p><div class="feature-meta"><span>real git</span><span>optional worktree</span><span>safe cleanup</span></div></div>
+              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>task · managed worktree</code></div><video muted loop playsinline preload="metadata" aria-label="Creating and using a managed Task worktree in TermLoop"><source src="assets/videos/task-worktree.webm" type="video/webm"><source src="assets/videos/task-worktree.mp4" type="video/mp4"></video></div></div>
+            </article>
+            <article class="feature-story" id="dev-server">
+              <div class="feature-copy"><span class="feature-kicker">dev server</span><h3>Define it once. Start it where you work.</h3><p>Save a Project dev-server command and fallback URL, then launch the real process from the Project or its Task worktrees. Its terminal and discovered URLs stay visible.</p><div class="feature-meta"><span>live process</span><span>project config</span><span>preview urls</span></div></div>
+              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>launchpad preview · :4173</code></div><video muted loop playsinline preload="metadata" aria-label="Configuring and starting a real dev server in TermLoop"><source src="assets/videos/dev-server.webm" type="video/webm"><source src="assets/videos/dev-server.mp4" type="video/mp4"></video></div></div>
+            </article>
+          </section>
+
+          <section class="feature-group" id="coordinate"><header class="group-head"><h2>Coordinate</h2><span>02 — agents working together</span></header>
+            <article class="feature-story" id="multi-agent">
+              <div class="feature-copy"><span class="feature-kicker">multi-agent</span><h3>One workspace. Several live agents.</h3><p>Run multiple Claude and Codex Sessions across tasks and worktrees. See who is active, which checkout changed, and which terminal needs attention.</p><div class="feature-meta"><span>parallel sessions</span><span>live status</span><span>shared project</span></div></div>
+              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>active agents · launchpad</code></div><video muted loop playsinline preload="metadata" aria-label="Several real coding agents running together in TermLoop"><source src="assets/videos/multi-agent.webm" type="video/webm"><source src="assets/videos/multi-agent.mp4" type="video/mp4"></video></div></div>
+            </article>
+            <article class="feature-story" id="ask-to">
+              <div class="feature-copy"><span class="feature-kicker">ask to</span><h3>Get a second opinion without copy-paste.</h3><p>Ask one agent to consult another provider. TermLoop creates a visible helper Session, preserves the relationship, and returns the answer to the requester.</p><div class="feature-meta"><span>mcp</span><span>claude ↔ codex</span><span>follow-up ready</span></div></div>
+              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>ask_to · release review</code></div><video muted loop playsinline preload="metadata" aria-label="A TermLoop agent consulting a second real agent"><source src="assets/videos/ask-to-v2.webm" type="video/webm"><source src="assets/videos/ask-to-v2.mp4" type="video/mp4"></video></div></div>
+            </article>
+            <article class="feature-story" id="handoff">
+              <div class="feature-copy"><span class="feature-kicker">handoff</span><h3>Move context to the agent already in the work.</h3><p>Send a visible, composed handoff from one running Project Session to another. The target receives the brief in its own real terminal and continues from there.</p><div class="feature-meta"><span>visible message</span><span>running session</span><span>no clipboard</span></div></div>
+              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>handoff · activity feed</code></div><video muted loop playsinline preload="metadata" aria-label="A real handoff between two running TermLoop agents"><source src="assets/videos/handoff.webm" type="video/webm"><source src="assets/videos/handoff.mp4" type="video/mp4"></video></div></div>
+            </article>
+            <article class="feature-story" id="fork">
+              <div class="feature-copy"><span class="feature-kicker">session fork</span><h3>Explore another direction in a real terminal.</h3><p>Fork a Session from the sidebar, see the parent-child relationship, and continue in a new Ghostty terminal. The branch in thinking is explicit instead of becoming another anonymous tab.</p><div class="feature-meta"><span>real terminal</span><span>visible lineage</span><span>independent context</span></div></div>
+              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>session fork · onboarding</code></div><video muted loop playsinline preload="metadata" aria-label="Forking a real agent Session from the TermLoop sidebar"><source src="assets/videos/sidebar-fork.webm" type="video/webm"><source src="assets/videos/sidebar-fork.mp4" type="video/mp4"></video></div></div>
+            </article>
+          </section>
+
+          <section class="feature-group" id="review"><header class="group-head"><h2>Review</h2><span>03 — understand and control state</span></header>
+            <article class="feature-story" id="changes">
+              <div class="feature-copy"><span class="feature-kicker">changes</span><h3>Review the diff where the work happened.</h3><p>Changed-file counts appear on Tasks and active Agents. Open the Git changes view, inspect the real diff, and leave line-level notes for the agent to address.</p><div class="feature-meta"><span>git diff</span><span>task counts</span><span>agent notes</span></div></div>
+              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>changes · onboarding checklist</code></div><video muted loop playsinline preload="metadata" aria-label="Reviewing Git changes and leaving a note for an agent in TermLoop"><source src="assets/videos/changes-review.webm" type="video/webm"><source src="assets/videos/changes-review.mp4" type="video/mp4"></video></div></div>
+            </article>
+            <article class="feature-story" id="task-lifecycle">
+              <div class="feature-copy"><span class="feature-kicker">task lifecycle</span><h3>Close the work without erasing it.</h3><p>Tasks have a deliberately small lifecycle: open or closed. Close finished work, keep its current state visible, and reopen it when the next change arrives.</p><div class="feature-meta"><span>open / closed</span><span>reopen</span><span>state preserved</span></div></div>
+              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>task · close and retain</code></div><video muted loop playsinline preload="metadata" aria-label="Closing a Task and seeing it move to the Closed section"><source src="assets/videos/task-lifecycle.webm" type="video/webm"><source src="assets/videos/task-lifecycle.mp4" type="video/mp4"></video></div></div>
+            </article>
+            <article class="feature-story" id="session-refresh">
+              <div class="feature-copy"><span class="feature-kicker">session refresh</span><h3>Refresh the display, not the identity.</h3><p>Recover a stale agent display from the Session menu while keeping the same durable Session and process model. Lifecycle actions remain explicit.</p><div class="feature-meta"><span>stable session</span><span>display recovery</span><span>explicit lifecycle</span></div></div>
+              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>session · refresh display</code></div><video muted loop playsinline preload="metadata" aria-label="Refreshing a real agent display from the Session context menu"><source src="assets/videos/session-refresh.webm" type="video/webm"><source src="assets/videos/session-refresh.mp4" type="video/mp4"></video></div></div>
+            </article>
+          </section>
+
+          <section class="feature-group" id="operate"><header class="group-head"><h2>Operate</h2><span>04 — supervise beyond one terminal</span></header>
+            <article class="feature-story" id="steward">
+              <div class="feature-copy"><span class="feature-kicker">steward</span><h3>A Project-scoped operator that stays present.</h3><p>Ask the persistent Steward what should ship next, let it coordinate Tasks and Sessions through its constrained tools, and keep the conversation attached to the Project.</p><div class="feature-meta"><span>persistent</span><span>project-scoped</span><span>capability-limited</span></div></div>
+              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>steward · launchpad</code></div><video muted loop playsinline preload="metadata" aria-label="Using the Project Steward in TermLoop"><source src="assets/videos/steward.webm" type="video/webm"><source src="assets/videos/steward.mp4" type="video/mp4"></video></div></div>
+            </article>
+            <article class="feature-story" id="mobile">
+              <div class="feature-copy"><span class="feature-kicker">mobile companion</span><h3>Check the loop when you leave the desk.</h3><p>Pair your phone, keep Project visibility and terminal input scoped to your computer, and follow long-running agents over your trusted network.</p><div class="feature-meta"><span>qr pairing</span><span>tailscale ready</span><span>live terminal</span></div></div>
+              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>mobile · secure pairing</code></div><video muted loop playsinline preload="metadata" aria-label="Pairing TermLoop Mobile with the desktop app"><source src="assets/videos/mobile-connect.webm" type="video/webm"><source src="assets/videos/mobile-connect.mp4" type="video/mp4"></video></div></div>
+            </article>
+            <article class="feature-story" id="mcp-prompts">
+              <div class="feature-copy"><span class="feature-kicker">mcp &amp; prompts</span><h3>Inspect the tools and instructions agents receive.</h3><p>Browse role-scoped MCP tools and the built-in prompt catalog. TermLoop-generated instructions remain visible and editable; provider-managed opaque layers are labeled honestly.</p><div class="feature-meta"><span>role profiles</span><span>prompt catalog</span><span>inspectable</span></div></div>
+              <div class="feature-media"><div class="term"><div class="term-bar"><i></i><i></i><i></i><code>application settings · MCP</code></div><video muted loop playsinline preload="metadata" aria-label="Inspecting TermLoop MCP tools and built-in prompts"><source src="assets/videos/mcp-prompts.webm" type="video/webm"><source src="assets/videos/mcp-prompts.mp4" type="video/mp4"></video></div></div>
+            </article>
+          </section>
+        </div>
+      </div>
+    </div></section>
+
+    <section class="section principles" id="principles"><div class="shell principles-grid">
+      <div><p class="prompt-line">product principles</p><h2>The terminal stays <em>real</em>. The workflow gets better.</h2></div>
+      <div class="principles-list">
+        <article class="principle"><h3 class="flag">--no-replacement-agent</h3><p>TermLoop launches the Claude and Codex CLIs you already trust and pay for. It never proxies or imitates them.</p></article>
+        <article class="principle"><h3 class="flag">--no-hidden-filesystem</h3><p>Branches, worktrees, processes, and files remain ordinary local resources you can inspect outside the app.</p></article>
+        <article class="principle"><h3 class="flag">--no-mystery-prompts</h3><p>TermLoop-authored prompts are visible assets. Secret values stay out of durable state and public evidence.</p></article>
+        <article class="principle"><h3 class="flag">--no-fake-coordination</h3><p>Agent-to-agent requests, handoffs, terminals, diffs, and lifecycle changes are real product actions.</p></article>
+      </div>
+    </div></section>
+
+    <section class="section faq" id="faq"><div class="shell faq-grid">
+      <div><p class="prompt-line">straight answers</p><h2>Frequently asked.</h2></div>
+      <div class="faq-list">
+        <details open><summary>Which agents does TermLoop support?</summary><p>The first-class agent launch paths are Claude Code and OpenAI Codex, alongside ordinary terminal and dev-run Sessions. TermLoop uses your existing provider sign-ins rather than proxying model traffic.</p></details>
+        <details><summary>Does every Task create a worktree?</summary><p>No. A Task can have zero or one worktree. Create the Task to track work; provision a managed checkout only when branch isolation is useful.</p></details>
+        <details><summary>Can multiple agents write in the same worktree?</summary><p>Yes. TermLoop does not impose a product-level write lease or artificial launch gate. You choose whether agents share a checkout or work in isolated Task worktrees.</p></details>
+        <details><summary>Where do my code and credentials go?</summary><p>Your code remains on your filesystem. Agents connect directly to their providers. TermLoop keeps secrets out of durable product state, logs, URLs, and generated evidence.</p></details>
+        <details><summary>Which desktop platforms are available?</summary><p>The current public desktop download is for macOS. TermLoop Next treats macOS, Linux, and Windows as release gates; broader availability follows verified native builds rather than an untested compatibility claim.</p></details>
+        <details><summary>Is the mobile connection real?</summary><p>Yes. The companion pairs with a running desktop instance for Project visibility and terminal input. The public demo intentionally masks the one-time QR payload.</p></details>
+        <details><summary>Is TermLoop open source?</summary><p>Yes. The public source and releases are available on GitHub, including the terminal and agent-workflow layers.</p></details>
+      </div>
+    </div></section>
+
+    <section class="final-cta"><div class="shell"><div class="cta-box">
+      <div><p class="prompt-line">ready when you are</p><h2>More agents. Less terminal babysitting.</h2><p>Download TermLoop and keep the whole engineering loop visible.</p></div>
+      <div class="cta-actions"><a class="button primary" href="/download">Download for macOS ↓</a><a class="button" href="https://github.com/feritzcan2/termloop" target="_blank" rel="noopener">View source ↗</a></div>
+    </div></div></section>
+  </main>
+
+  <footer><div class="shell footer-inner">
+    <span class="brand-line">❯ <b>termloop</b> · built for real coding-agent workflows</span>
+    <nav class="footer-links" aria-label="Footer navigation"><a href="#features">Features</a><a href="#faq">FAQ</a><a href="privacy-policy/">Privacy</a><a href="mailto:feritzcan93@gmail.com">Contact</a><a href="https://github.com/feritzcan2/termloop" target="_blank" rel="noopener">GitHub</a></nav>
+    <span>© 2026</span>
+  </div></footer>
+
+  <script>
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const featureStories = [...document.querySelectorAll('.feature-story')];
+    const featureVideos = [...document.querySelectorAll('.feature-story video')];
+    if (!reducedMotion && 'IntersectionObserver' in window) {
+      const videoObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && entry.intersectionRatio > .35) entry.target.play().catch(() => {});
+          else entry.target.pause();
+        }
+      }, { threshold:[0,.35,.75] });
+      featureVideos.forEach((video) => videoObserver.observe(video));
+
+      featureStories.forEach((story) => story.classList.add('will-reveal'));
+      const revealObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) { entry.target.classList.add('revealed'); revealObserver.unobserve(entry.target); }
+        }
+      }, { rootMargin:'0px 0px -8% 0px', threshold:.08 });
+      featureStories.forEach((story) => revealObserver.observe(story));
+    }
+    const navLinks = [...document.querySelectorAll('.feature-nav a')];
+    const sections = navLinks.map((link) => document.querySelector(link.getAttribute('href'))).filter(Boolean);
+    let scrollSpyFrame;
+    const updateFeatureNav = () => {
+      scrollSpyFrame = undefined;
+      const focusLine = Math.min(window.innerHeight * .42, 420);
+      let activeSection = sections[0];
+      for (const section of sections) {
+        if (section.getBoundingClientRect().top > focusLine) break;
+        activeSection = section;
+      }
+      navLinks.forEach((link) => link.classList.toggle('active', link.getAttribute('href') === '#' + activeSection?.id));
+    };
+    const scheduleFeatureNavUpdate = () => {
+      if (scrollSpyFrame) return;
+      scrollSpyFrame = requestAnimationFrame(updateFeatureNav);
+    };
+    window.addEventListener('scroll', scheduleFeatureNavUpdate, { passive:true });
+    window.addEventListener('resize', scheduleFeatureNavUpdate);
+    window.addEventListener('hashchange', scheduleFeatureNavUpdate);
+    updateFeatureNav();
+  </script>
+</body>
+</html>

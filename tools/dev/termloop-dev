@@ -1,0 +1,1553 @@
+#!/bin/bash
+
+set -euo pipefail
+
+action="${1:-start}"
+if [[ "$action" == "start" || "$action" == "stop" || "$action" == "restart" || "$action" == "status" || "$action" == "list" || "$action" == "stop-profile" || "$action" == "prune" ]]; then
+  [[ $# -gt 0 ]] && shift
+else
+  echo "Usage: tools/dev/termloop-dev {start|stop|restart|status} [--checkout PATH] [--tag FEATURE | --main [--reuse-build] [--allow-agent-main]]" >&2
+  echo "       tools/dev/termloop-dev list" >&2
+  echo "       tools/dev/termloop-dev stop-profile --profile PROFILE" >&2
+  echo "       tools/dev/termloop-dev prune [--profile PROFILE] [--older-than DAYS] [--keep COUNT] [--legacy-builds] [--apply]" >&2
+  exit 2
+fi
+
+required_commands=(git python3)
+if [[ "$action" == "start" || "$action" == "restart" ]]; then
+  required_commands+=(cargo pnpm node)
+fi
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  required_commands+=(launchctl osascript)
+elif [[ "$(uname -s)" == "Linux" && ("$action" == "start" || "$action" == "restart") ]]; then
+  required_commands+=(systemctl)
+fi
+for command_name in "${required_commands[@]}"; do
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    echo "Required command not found: $command_name" >&2
+    exit 1
+  fi
+done
+
+checkout=""
+profile_tag=""
+profile_override=""
+use_main=false
+reuse_build=false
+allow_agent_main=false
+prune_older_than_days=3
+prune_keep_count=2
+prune_apply=false
+prune_legacy_builds=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --checkout)
+      if [[ $# -lt 2 || -z "${2:-}" ]]; then
+        echo "--checkout requires a non-empty path." >&2
+        exit 2
+      fi
+      checkout="${2:-}"
+      shift 2
+      ;;
+    --tag)
+      if [[ $# -lt 2 || -z "${2:-}" ]]; then
+        echo "--tag requires a non-empty feature tag." >&2
+        exit 2
+      fi
+      profile_tag="${2:-}"
+      shift 2
+      ;;
+    --main)
+      use_main=true
+      shift
+      ;;
+    --reuse-build)
+      reuse_build=true
+      shift
+      ;;
+    --allow-agent-main)
+      allow_agent_main=true
+      shift
+      ;;
+    --profile)
+      if [[ $# -lt 2 || -z "${2:-}" ]]; then
+        echo "--profile requires a non-empty exact profile name." >&2
+        exit 2
+      fi
+      profile_override="$2"
+      shift 2
+      ;;
+    --older-than)
+      if [[ "$action" != "prune" || $# -lt 2 || ! "${2:-}" =~ ^[0-9]{1,4}$ ]]; then
+        echo "--older-than requires prune and a whole number of days." >&2
+        exit 2
+      fi
+      prune_older_than_days="$2"
+      shift 2
+      ;;
+    --keep)
+      if [[ "$action" != "prune" || $# -lt 2 || ! "${2:-}" =~ ^[0-9]{1,4}$ ]]; then
+        echo "--keep requires prune and a whole number of profiles." >&2
+        exit 2
+      fi
+      prune_keep_count="$2"
+      shift 2
+      ;;
+    --apply)
+      if [[ "$action" != "prune" ]]; then
+        echo "--apply is valid only with prune." >&2
+        exit 2
+      fi
+      prune_apply=true
+      shift
+      ;;
+    --legacy-builds)
+      if [[ "$action" != "prune" ]]; then
+        echo "--legacy-builds is valid only with prune." >&2
+        exit 2
+      fi
+      prune_legacy_builds=true
+      shift
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+launcher_os="$(uname -s)"
+
+profiles_root_path() {
+  if [[ "$launcher_os" == "Darwin" ]]; then
+    printf '%s\n' "$HOME/Library/Application Support/termloop-next/profiles"
+  else
+    printf '%s\n' "${XDG_STATE_HOME:-$HOME/.local/state}/termloop-next/profiles"
+  fi
+}
+
+systemd_unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+
+systemd_unit_name_for_profile() {
+  printf 'termloop-next-dev-%s.service\n' "$1"
+}
+
+systemd_user_manager_available() {
+  command -v systemctl >/dev/null 2>&1 || return 1
+  systemctl --user show-environment >/dev/null 2>&1
+}
+
+systemd_unit_active_state() {
+  systemctl --user show --property ActiveState --value "$1" 2>/dev/null || true
+}
+
+supervisor_state_for_profile() {
+  local candidate_profile="$1"
+  local candidate_state="stopped"
+  if [[ "$launcher_os" == "Darwin" ]] && launchctl print "gui/$(id -u)/com.termloop.next.dev.$candidate_profile" >/dev/null 2>&1; then
+    candidate_state="exited"
+    launchctl print "gui/$(id -u)/com.termloop.next.dev.$candidate_profile" 2>/dev/null | \
+      awk '$1 == "state" && $2 == "=" { exit($3 == "running" ? 0 : 1) } END { if (NR == 0) exit 1 }' && \
+      candidate_state="running"
+  elif [[ "$launcher_os" == "Linux" && -f "$systemd_unit_dir/$(systemd_unit_name_for_profile "$candidate_profile")" ]] && systemd_user_manager_available; then
+    candidate_state="exited"
+    case "$(systemd_unit_active_state "$(systemd_unit_name_for_profile "$candidate_profile")")" in
+      active|activating|reloading) candidate_state="running" ;;
+    esac
+  fi
+  printf '%s\n' "$candidate_state"
+}
+
+if [[ "$action" == "list" ]]; then
+  if [[ -n "$checkout" || -n "$profile_tag" || -n "$profile_override" || "$use_main" == true || "$reuse_build" == true || "$allow_agent_main" == true ]]; then
+    echo "list accepts no profile-selection arguments." >&2
+    exit 2
+  fi
+  profiles_root="$(profiles_root_path)"
+  echo "PROFILE|SUPERVISOR|CHECKOUT"
+  if [[ -d "$profiles_root" ]]; then
+    for candidate in "$profiles_root"/*; do
+      [[ -d "$candidate" ]] || continue
+      candidate_profile="$(basename "$candidate")"
+      candidate_checkout="missing"
+      [[ ! -f "$candidate/checkout.path" ]] || candidate_checkout="$(sed -n '1p' "$candidate/checkout.path")"
+      candidate_state="$(supervisor_state_for_profile "$candidate_profile")"
+      printf '%s|%s|%s\n' "$candidate_profile" "$candidate_state" "$candidate_checkout"
+    done
+  fi
+  exit 0
+fi
+
+profile_last_use_epoch() {
+  python3 - "$1" <<'PY'
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+latest = 0.0
+try:
+    latest = root.stat().st_mtime
+except OSError:
+    pass
+try:
+    entries = list(root.iterdir())
+except OSError:
+    entries = []
+for entry in entries:
+    try:
+        latest = max(latest, entry.stat().st_mtime)
+    except OSError:
+        continue
+    if entry.is_dir() and not entry.is_symlink() and entry.name in {"runtime", "logs", "state", "desktop"}:
+        try:
+            children = list(entry.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            try:
+                latest = max(latest, child.stat().st_mtime)
+            except OSError:
+                continue
+print(int(latest))
+PY
+}
+
+remove_pruned_directory() {
+  local target="$1"
+  local leaf="$2"
+  local expected_parent="$3"
+  local resolved_parent=""
+  if [[ ! "$leaf" =~ ^[a-z0-9][a-z0-9._-]{0,80}$ || "$leaf" == "main" ]]; then
+    echo "Refusing to delete an unexpected profile leaf: $leaf" >&2
+    return 1
+  fi
+  if [[ -L "$target" || ! -d "$target" ]]; then
+    echo "Refusing to delete a non-directory or symlinked profile path: $target" >&2
+    return 1
+  fi
+  resolved_parent="$(cd "$target/.." && pwd -P)"
+  if [[ "$resolved_parent" != "$expected_parent" ]]; then
+    echo "Refusing to delete outside the profiles root: $target" >&2
+    return 1
+  fi
+  if [[ ! -e "$target/checkout.path" && ! -d "$target/state" && ! -d "$target/runtime" && ! -d "$target/logs" && ! -d "$target/cargo-target" ]]; then
+    echo "Refusing to delete a directory without launcher profile leaves: $target" >&2
+    return 1
+  fi
+  rm -rf -- "$target"
+}
+
+if [[ "$action" == "prune" ]]; then
+  if [[ -n "$checkout" || -n "$profile_tag" || "$use_main" == true || "$reuse_build" == true || "$allow_agent_main" == true ]]; then
+    echo "prune accepts only --profile, --older-than, --keep, --legacy-builds, and --apply." >&2
+    exit 2
+  fi
+  if [[ -n "$profile_override" && ! "$profile_override" =~ ^[a-z0-9][a-z0-9._-]{0,80}$ ]]; then
+    echo "prune --profile requires an exact generated profile name." >&2
+    exit 2
+  fi
+  if [[ "$profile_override" == "main" ]]; then
+    echo "prune never targets the human-owned main profile." >&2
+    exit 2
+  fi
+  profiles_root="$(profiles_root_path)"
+  if [[ -L "$profiles_root" ]]; then
+    echo "Refusing to prune a symlinked profiles root: $profiles_root" >&2
+    exit 1
+  fi
+  if [[ ! -d "$profiles_root" ]]; then
+    echo "PROFILE|SUPERVISOR|IDLE_DAYS|SIZE_MIB|ACTION"
+    echo "Reclaimable: 0 MiB across 0 profiles"
+    exit 0
+  fi
+  profiles_root="$(cd "$profiles_root" && pwd -P)"
+  launcher_self="$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")"
+  prune_now_epoch="$(date +%s)"
+  prune_names=()
+  prune_states=()
+  prune_idles=()
+  prune_sizes=()
+  prune_epochs=()
+  prune_verdicts=()
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] || continue
+    candidate_profile="$(basename "$candidate")"
+    [[ "$candidate_profile" =~ ^[a-z0-9][a-z0-9._-]{0,80}$ ]] || continue
+    [[ "$candidate_profile" != "main" ]] || continue
+    if [[ -n "$profile_override" && "$candidate_profile" != "$profile_override" ]]; then
+      continue
+    fi
+    candidate_state="$(supervisor_state_for_profile "$candidate_profile")"
+    candidate_epoch="$(profile_last_use_epoch "$candidate")"
+    candidate_idle=$(( (prune_now_epoch - candidate_epoch) / 86400 ))
+    (( candidate_idle >= 0 )) || candidate_idle=0
+    candidate_size="$(du -sk "$candidate" 2>/dev/null | awk 'END {print $1 + 0}')"
+    if [[ "$candidate_state" == "running" ]]; then
+      candidate_verdict="keep:running"
+    elif [[ -n "$profile_override" ]]; then
+      candidate_verdict="candidate"
+    elif (( candidate_idle < prune_older_than_days )); then
+      candidate_verdict="keep:recent"
+    else
+      candidate_verdict="candidate"
+    fi
+    prune_names+=("$candidate_profile")
+    prune_states+=("$candidate_state")
+    prune_idles+=("$candidate_idle")
+    prune_sizes+=("$candidate_size")
+    prune_epochs+=("$candidate_epoch")
+    prune_verdicts+=("$candidate_verdict")
+  done < <(find "$profiles_root" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort)
+
+  if [[ -z "$profile_override" ]] && (( prune_keep_count > 0 )) && (( ${#prune_names[@]} > 0 )); then
+    kept_recent=0
+    while IFS='|' read -r _kept_epoch kept_index; do
+      [[ -n "$kept_index" ]] || continue
+      (( kept_recent < prune_keep_count )) || break
+      prune_verdicts[$kept_index]="keep:newest"
+      kept_recent=$((kept_recent + 1))
+    done < <(
+      for index in "${!prune_names[@]}"; do
+        if [[ "${prune_verdicts[$index]}" == "candidate" ]]; then
+          printf '%s|%s\n' "${prune_epochs[$index]}" "$index"
+        fi
+      done | sort -t'|' -k1,1nr
+    )
+  fi
+
+  echo "PROFILE|SUPERVISOR|IDLE_DAYS|SIZE_MIB|ACTION"
+  prune_total_kib=0
+  prune_target_count=0
+  if (( ${#prune_names[@]} > 0 )); then
+    for index in "${!prune_names[@]}"; do
+      row_action="${prune_verdicts[$index]}"
+      [[ "$row_action" != "candidate" ]] || row_action="prune"
+      printf '%s|%s|%s|%s|%s\n' \
+        "${prune_names[$index]}" "${prune_states[$index]}" "${prune_idles[$index]}" \
+        "$(( prune_sizes[index] / 1024 ))" "$row_action"
+      if [[ "$row_action" == "prune" ]]; then
+        prune_total_kib=$(( prune_total_kib + prune_sizes[index] ))
+        prune_target_count=$(( prune_target_count + 1 ))
+      fi
+    done
+  fi
+
+  prune_legacy_paths=()
+  if [[ "$prune_legacy_builds" == true ]] && (( ${#prune_names[@]} > 0 )); then
+    for index in "${!prune_names[@]}"; do
+      case "${prune_verdicts[$index]}" in
+        keep:recent|keep:newest) ;;
+        *) continue ;;
+      esac
+      legacy_target="$profiles_root/${prune_names[$index]}/cargo-target"
+      if [[ -d "$legacy_target" && ! -L "$legacy_target" ]]; then
+        legacy_size="$(du -sk "$legacy_target" 2>/dev/null | awk 'END {print $1 + 0}')"
+        printf '%s|%s|%s|%s|%s\n' \
+          "${prune_names[$index]}" "${prune_states[$index]}" "${prune_idles[$index]}" \
+          "$(( legacy_size / 1024 ))" "legacy-build"
+        prune_total_kib=$(( prune_total_kib + legacy_size ))
+        prune_legacy_paths+=("$legacy_target")
+      fi
+    done
+  fi
+
+  prune_orphan_labels=()
+  prune_orphan_units=()
+  if [[ "$launcher_os" == "Darwin" ]]; then
+    while IFS= read -r orphan_label; do
+      [[ -n "$orphan_label" ]] || continue
+      orphan_profile="${orphan_label#com.termloop.next.dev.}"
+      [[ "$orphan_profile" != "$orphan_label" ]] || continue
+      [[ "$orphan_profile" != "main" ]] || continue
+      [[ ! -d "$profiles_root/$orphan_profile" ]] || continue
+      [[ "$(supervisor_state_for_profile "$orphan_profile")" != "running" ]] || continue
+      if [[ -n "$profile_override" && "$orphan_profile" != "$profile_override" ]]; then
+        continue
+      fi
+      printf '%s|%s|%s|%s|%s\n' "$orphan_profile" "registered" "-" "0" "unregister"
+      prune_orphan_labels+=("$orphan_label")
+    done < <(launchctl list 2>/dev/null | awk '{print $3}' | grep '^com\.termloop\.next\.dev\.' || true)
+  elif [[ "$launcher_os" == "Linux" && -d "$systemd_unit_dir" ]]; then
+    while IFS= read -r orphan_unit_path; do
+      [[ -n "$orphan_unit_path" ]] || continue
+      orphan_unit="$(basename "$orphan_unit_path")"
+      orphan_profile="${orphan_unit#termloop-next-dev-}"
+      orphan_profile="${orphan_profile%.service}"
+      [[ -n "$orphan_profile" && "$orphan_profile" != "main" ]] || continue
+      [[ ! -d "$profiles_root/$orphan_profile" ]] || continue
+      [[ "$(supervisor_state_for_profile "$orphan_profile")" != "running" ]] || continue
+      if [[ -n "$profile_override" && "$orphan_profile" != "$profile_override" ]]; then
+        continue
+      fi
+      printf '%s|%s|%s|%s|%s\n' "$orphan_profile" "registered" "-" "0" "unregister"
+      prune_orphan_units+=("$orphan_unit")
+    done < <(find "$systemd_unit_dir" -maxdepth 1 -name 'termloop-next-dev-*.service' -print 2>/dev/null | sort)
+  fi
+
+  if [[ "$prune_apply" == false ]]; then
+    printf 'Reclaimable: %s MiB across %s profiles\n' "$(( prune_total_kib / 1024 ))" "$prune_target_count"
+    echo "Preview only. Re-run with --apply to delete."
+    exit 0
+  fi
+
+  prune_freed_kib=0
+  prune_removed_count=0
+  if (( ${#prune_names[@]} > 0 )); then
+    for index in "${!prune_names[@]}"; do
+      [[ "${prune_verdicts[$index]}" == "candidate" ]] || continue
+      prune_profile="${prune_names[$index]}"
+      "$launcher_self" stop-profile --profile "$prune_profile" >/dev/null 2>&1 || true
+      if [[ "$(supervisor_state_for_profile "$prune_profile")" == "running" ]]; then
+        echo "Skipped $prune_profile: supervisor is still running." >&2
+        continue
+      fi
+      if remove_pruned_directory "$profiles_root/$prune_profile" "$prune_profile" "$profiles_root"; then
+        prune_freed_kib=$(( prune_freed_kib + prune_sizes[index] ))
+        prune_removed_count=$(( prune_removed_count + 1 ))
+      fi
+    done
+  fi
+  if (( ${#prune_legacy_paths[@]} > 0 )); then
+    for legacy_target in "${prune_legacy_paths[@]}"; do
+      legacy_size="$(du -sk "$legacy_target" 2>/dev/null | awk 'END {print $1 + 0}')"
+      if [[ -d "$legacy_target" && ! -L "$legacy_target" && "$(basename "$legacy_target")" == "cargo-target" ]]; then
+        rm -rf -- "$legacy_target"
+        prune_freed_kib=$(( prune_freed_kib + legacy_size ))
+      fi
+    done
+  fi
+  if (( ${#prune_orphan_labels[@]} > 0 )); then
+    for orphan_label in "${prune_orphan_labels[@]}"; do
+      launchctl bootout "gui/$(id -u)/$orphan_label" >/dev/null 2>&1 || true
+    done
+  fi
+  if (( ${#prune_orphan_units[@]} > 0 )); then
+    for orphan_unit in "${prune_orphan_units[@]}"; do
+      systemctl --user disable --now "$orphan_unit" >/dev/null 2>&1 || true
+      rm -f -- "$systemd_unit_dir/$orphan_unit"
+    done
+    systemctl --user daemon-reload >/dev/null 2>&1 || true
+  fi
+  printf 'Freed: %s MiB across %s profiles\n' "$(( prune_freed_kib / 1024 ))" "$prune_removed_count"
+  exit 0
+fi
+
+explicit_profile=false
+if [[ "$action" == "stop-profile" ]]; then
+  if [[ ! "$profile_override" =~ ^[a-z0-9][a-z0-9._-]{0,80}$ || -n "$checkout" || -n "$profile_tag" || "$use_main" == true || "$reuse_build" == true || "$allow_agent_main" == true ]]; then
+    echo "stop-profile requires only --profile with an exact generated profile name." >&2
+    exit 2
+  fi
+  explicit_profile=true
+  profile="$profile_override"
+  profile_root="$(profiles_root_path)/$profile"
+  checkout="missing"
+  [[ ! -f "$profile_root/checkout.path" ]] || checkout="$(sed -n '1p' "$profile_root/checkout.path")"
+fi
+
+if [[ "$explicit_profile" == false ]]; then
+  checkout="${checkout:-$(pwd -P)}"
+  checkout="$(cd "$checkout" && pwd -P)"
+  checkout="$(git -C "$checkout" rev-parse --show-toplevel)"
+  checkout="$(cd "$checkout" && pwd -P)"
+fi
+
+if [[ "$use_main" == true && -n "$profile_tag" ]]; then
+  echo "--main and --tag cannot be used together." >&2
+  exit 2
+fi
+if [[ "$reuse_build" == true && ("$use_main" == false || ("$action" != "start" && "$action" != "restart")) ]]; then
+  echo "--reuse-build is valid only with start/restart --main." >&2
+  exit 2
+fi
+if [[ "$allow_agent_main" == true && ("$use_main" == false || ("$action" != "start" && "$action" != "restart")) ]]; then
+  echo "--allow-agent-main is valid only with start/restart --main." >&2
+  exit 2
+fi
+if [[ "$use_main" == true && ! -d "$checkout/.git" ]]; then
+  echo "--main is valid only for the primary checkout: $checkout" >&2
+  exit 2
+fi
+if [[ ("$action" == "start" || "$action" == "restart") && "$use_main" == false && -z "$profile_tag" ]]; then
+  echo "Persistent start/restart requires --tag FEATURE. Use --main only for the human-owned primary app." >&2
+  exit 2
+fi
+if [[ ("$action" == "start" || "$action" == "restart") && "$use_main" == true && "$allow_agent_main" == false \
+  && (-n "${CODEX_THREAD_ID:-}" || -n "${CLAUDECODE:-}" || -n "${TERMLOOP_MCP_TOKEN:-}") ]]; then
+  echo "Refusing to start the human-owned main profile from an agent environment." >&2
+  echo "Use a tagged profile, or pass --allow-agent-main only when the user explicitly requested main-profile operation." >&2
+  exit 2
+fi
+
+if [[ "$explicit_profile" == true ]]; then
+  state_dir="$profile_root/state"
+  runtime_dir="$profile_root/runtime"
+  desktop_dir="$profile_root/desktop"
+  log_dir="$profile_root/logs"
+elif [[ "$use_main" == true || (-z "$profile_tag" && -d "$checkout/.git") ]]; then
+  profile="main"
+  if [[ "$launcher_os" == "Darwin" ]]; then
+    profile_root="$HOME/Library/Application Support/termloop-next"
+    state_dir="$profile_root"
+    runtime_dir="$profile_root"
+    desktop_dir="$HOME/Library/Application Support/@termloop/desktop"
+    log_dir="$HOME/Library/Logs/TermLoop Next/main"
+  else
+    profile_root="${XDG_STATE_HOME:-$HOME/.local/state}/termloop-next"
+    state_dir="$profile_root"
+    if [[ -n "${XDG_RUNTIME_DIR:-}" ]]; then
+      runtime_dir="$XDG_RUNTIME_DIR/termloop-next"
+    else
+      runtime_dir="${TMPDIR:-/tmp}/termloop-next-$(id -u)/termloop-next"
+    fi
+    desktop_dir="${XDG_CONFIG_HOME:-$HOME/.config}/@termloop/desktop"
+    log_dir="$profile_root/logs/main"
+  fi
+else
+  profile="$(python3 - "$checkout" "$profile_tag" <<'PY'
+import pathlib
+import re
+import sys
+
+checkout = pathlib.Path(sys.argv[1])
+requested = sys.argv[2]
+if requested:
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,47}', requested):
+        raise SystemExit('Feature tag must match [A-Za-z0-9][A-Za-z0-9._-]{0,47}')
+    label = requested.lower()
+else:
+    label = ''.join(c.lower() if c.isascii() and (c.isalnum() or c in '-_') else '-' for c in checkout.name).strip('-') or 'checkout'
+value = 0xcbf29ce484222325
+for byte in str(checkout).encode():
+    value = ((value ^ byte) * 0x100000001b3) & 0xffffffffffffffff
+print(f"{label}-{value:016x}")
+PY
+)"
+  profile_root="$(profiles_root_path)/$profile"
+  state_dir="$profile_root/state"
+  runtime_dir="$profile_root/runtime"
+  desktop_dir="$profile_root/desktop"
+  log_dir="$profile_root/logs"
+fi
+
+runtime_file="$runtime_dir/runtime.json"
+daemon_record="$runtime_dir/daemon-owner/current.process"
+desktop_record="$runtime_dir/desktop-owner/current.process"
+server_log="$log_dir/server.log"
+desktop_log="$log_dir/desktop.log"
+supervisor_log="$log_dir/supervisor.log"
+desktop_ready_file="$runtime_dir/desktop.ready.json"
+supervisor_script="$checkout/tools/dev/termloop-dev-supervisor"
+launch_agent_plist="$runtime_dir/dev-launch-agent.plist"
+launch_manifest="$runtime_dir/dev-launch-manifest.json"
+launch_bundle_record="$runtime_dir/dev-launch-bundle.path"
+checkout_record="$profile_root/checkout.path"
+launchd_label="com.termloop.next.dev.$profile"
+launchd_domain="gui/$(id -u)"
+launchd_target="$launchd_domain/$launchd_label"
+bundle_stager="$checkout/tools/dev/stage-termloop-launch-bundle"
+skills_manager_fetcher="$checkout/tools/skills-manager/fetch-cli.mjs"
+systemd_unit_name="$(systemd_unit_name_for_profile "$profile")"
+systemd_unit_file="$systemd_unit_dir/$systemd_unit_name"
+if [[ "$launcher_os" == "Darwin" ]]; then
+  supervision_label="LaunchAgent"
+  launch_artifact="$launch_agent_plist"
+else
+  supervision_label="systemd unit"
+  launch_artifact="$systemd_unit_file"
+fi
+dev_project_name=""
+dev_project_dir=""
+dev_task_title=""
+bootstrap_entry=""
+source_bootstrap_entry=""
+node_binary=""
+
+if [[ -n "$profile_tag" ]]; then
+  dev_project_name="TermLoop Dev Sandbox"
+  dev_project_dir="$HOME/Projects/termloop-dev-sandbox"
+  dev_task_title="Sandbox Task"
+  source_bootstrap_entry="$checkout/tools/dev/bootstrap-dev-profile.mjs"
+  bootstrap_entry="$source_bootstrap_entry"
+  node_binary="$(command -v node)"
+fi
+
+export TERMLOOP_RUNTIME_DIR="$runtime_dir"
+export TERMLOOP_STATE_DIR="$state_dir"
+export TERMLOOP_RUNTIME_FILE="$runtime_file"
+export TERMLOOP_DESKTOP_USER_DATA_DIR="$desktop_dir"
+export TERMLOOP_DEV_PROFILE_TAG="$profile_tag"
+
+if [[ -n "$profile_tag" ]]; then
+  # Tagged profiles of one checkout build byte-identical binaries, so they share a
+  # single Cargo target directory. It stays outside the developer's target/debug so
+  # a profile build never invalidates the primary checkout's warm artifacts, and it
+  # replaces the retired per-profile cargo-target that cost a full cold build and
+  # roughly two gigabytes for every new tag.
+  cargo_target_dir="$checkout/target/dev-profiles"
+else
+  cargo_target_dir="$checkout/target"
+fi
+
+process_identity() {
+  local pid="$1"
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    ps -p "$pid" -o state= -o lstart= 2>/dev/null | python3 -c '
+import sys
+parts = sys.stdin.read().split()
+if parts and not parts[0].startswith("Z") and len(parts) > 1:
+    print("unix:" + " ".join(parts[1:]))
+' || true
+    return
+  fi
+  if [[ "$launcher_os" == "Linux" && -r "/proc/$pid/stat" ]]; then
+    python3 - "$pid" <<'PY'
+import pathlib
+import sys
+
+value = pathlib.Path(f"/proc/{sys.argv[1]}/stat").read_text()
+suffix = value.rsplit(')', 1)[1].split()
+if suffix[0] != 'Z':
+    print(f"linux:{suffix[19]}")
+PY
+    return
+  fi
+  return 1
+}
+
+read_owned_process() {
+  local record="$1"
+  [[ -f "$record" ]] || return 1
+  local version pid identity extra
+  { read -r version; read -r pid; read -r identity; read -r extra || true; } < "$record"
+  [[ "$version" == "v1" && "$pid" =~ ^[0-9]+$ && -n "$identity" && -z "$extra" ]] || return 1
+  [[ "$(process_identity "$pid" || true)" == "$identity" ]] || return 1
+  printf '%s\n%s\n' "$pid" "$identity"
+}
+
+read_owned_pid() {
+  local owned
+  owned="$(read_owned_process "$1")" || return 1
+  printf '%s\n' "${owned%%$'\n'*}"
+}
+
+archive_process_record() {
+  local record="$1"
+  if [[ -e "$record" ]]; then
+    mv -f "$record" "$record.stale"
+  fi
+}
+
+discovery_pid() {
+  python3 - "$runtime_file" 2>/dev/null <<'PY' || true
+import json
+import sys
+
+with open(sys.argv[1]) as source:
+    print(json.load(source).get("pid", ""))
+PY
+}
+
+descendant_pids() {
+  python3 - "$1" <<'PY' || true
+import subprocess
+import sys
+
+root = int(sys.argv[1])
+rows = subprocess.check_output(["ps", "-axo", "pid=,ppid="], text=True).splitlines()
+children = {}
+for row in rows:
+    pid, parent = map(int, row.split())
+    children.setdefault(parent, []).append(pid)
+result = []
+def visit(parent):
+    for child in children.get(parent, []):
+        visit(child)
+        result.append(child)
+visit(root)
+print(" ".join(map(str, result)))
+PY
+}
+
+stop_recorded_process() {
+  local record="$1"
+  local owned pid expected_identity
+  owned="$(read_owned_process "$record" || true)"
+  if [[ -z "$owned" ]]; then
+    archive_process_record "$record"
+    return 0
+  fi
+  pid="${owned%%$'\n'*}"
+  expected_identity="${owned#*$'\n'}"
+  local descendants
+  descendants="$(descendant_pids "$pid")"
+  if [[ "$record" != "$daemon_record" && -n "$descendants" ]]; then
+    # shellcheck disable=SC2086
+    kill -TERM $descendants 2>/dev/null || true
+  fi
+  kill -TERM "$pid" 2>/dev/null || true
+  local attempts=50
+  [[ "$record" == "$daemon_record" ]] && attempts=1800
+  for ((_attempt = 1; _attempt <= attempts; _attempt++)); do
+    if [[ "$(process_identity "$pid" || true)" != "$expected_identity" ]]; then
+      archive_process_record "$record"
+      return 0
+    fi
+    sleep 0.1
+  done
+  if [[ -n "$descendants" ]]; then
+    # shellcheck disable=SC2086
+    kill -KILL $descendants 2>/dev/null || true
+  fi
+  kill -KILL "$pid" 2>/dev/null || true
+  archive_process_record "$record"
+}
+
+force_stop_recorded_process() {
+  local record="$1"
+  local owned pid expected_identity descendants
+  owned="$(read_owned_process "$record" || true)"
+  if [[ -z "$owned" ]]; then
+    archive_process_record "$record"
+    return 0
+  fi
+  pid="${owned%%$'\n'*}"
+  expected_identity="${owned#*$'\n'}"
+  descendants="$(descendant_pids "$pid")"
+  if [[ -n "$descendants" ]]; then
+    # shellcheck disable=SC2086
+    kill -KILL $descendants 2>/dev/null || true
+  fi
+  kill -KILL "$pid" 2>/dev/null || true
+  # launchd-owned processes can remain observable after SIGKILL while macOS
+  # tears down their process group and unloads the job. Keep the exact identity
+  # fence, but allow a bounded ten-second reap window before reporting failure.
+  for _attempt in {1..500}; do
+    if [[ "$(process_identity "$pid" || true)" != "$expected_identity" ]]; then
+      archive_process_record "$record"
+      return 0
+    fi
+    sleep 0.02
+  done
+  echo "Exact owned process $pid remained after force stop." >&2
+  return 1
+}
+
+launchd_job_loaded() {
+  [[ "$(uname -s)" == "Darwin" ]] || return 1
+  local attempt
+  for attempt in 1 2 3; do
+    if launchctl print "$launchd_target" >/dev/null 2>&1; then
+      return 0
+    fi
+    [[ "$attempt" == "3" ]] || sleep 0.05
+  done
+  return 1
+}
+
+launchd_job_running() {
+  launchctl print "$launchd_target" 2>/dev/null | awk '
+    $1 == "state" && $2 == "=" { exit($3 == "running" ? 0 : 1) }
+    END { if (NR == 0) exit 1 }
+  '
+}
+
+systemd_job_loaded() {
+  [[ "$launcher_os" == "Linux" ]] || return 1
+  [[ -f "$systemd_unit_file" ]] || return 1
+  systemd_user_manager_available
+}
+
+systemd_job_running() {
+  case "$(systemd_unit_active_state "$systemd_unit_name")" in
+    active|activating|reloading) return 0 ;;
+  esac
+  return 1
+}
+
+supervisor_job_loaded() {
+  if [[ "$launcher_os" == "Darwin" ]]; then
+    launchd_job_loaded
+  else
+    systemd_job_loaded
+  fi
+}
+
+supervisor_job_running() {
+  if [[ "$launcher_os" == "Darwin" ]]; then
+    launchd_job_running
+  else
+    systemd_job_running
+  fi
+}
+
+desktop_ready_pid() {
+  python3 - "$desktop_ready_file" 2>/dev/null <<'PY' || true
+import json
+import sys
+
+with open(sys.argv[1]) as source:
+    value = json.load(source)
+if value.get("version") == 1 and isinstance(value.get("pid"), int):
+    print(value["pid"])
+PY
+}
+
+activate_desktop_window() {
+  local pid="$1"
+  osascript - "$pid" <<'APPLESCRIPT' >/dev/null
+on run argv
+  set targetPid to item 1 of argv as integer
+  tell application "System Events"
+    set matches to every process whose unix id is targetPid
+    if (count of matches) is 0 then error "desktop process is unavailable"
+    set targetProcess to item 1 of matches
+    if (count of windows of targetProcess) is 0 then error "desktop window is unavailable"
+    repeat 30 times
+      try
+        perform action "AXRaise" of window 1 of targetProcess
+      end try
+      set frontmost of targetProcess to true
+      delay 0.1
+      if frontmost of targetProcess is true then return
+    end repeat
+    error "desktop activation failed"
+  end tell
+end run
+APPLESCRIPT
+}
+
+activate_desktop_window_linux() {
+  local pid="$1"
+  local window_id
+  if command -v wmctrl >/dev/null 2>&1; then
+    window_id="$(wmctrl -lp 2>/dev/null | awk -v pid="$pid" '$3 == pid { print $1; exit }')"
+    if [[ -n "$window_id" ]] && wmctrl -ia "$window_id" >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+  if command -v xdotool >/dev/null 2>&1; then
+    if xdotool search --pid "$pid" windowactivate >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+archive_invalid_record() {
+  local record="$1"
+  if [[ -e "$record" && -z "$(read_owned_pid "$record" || true)" ]]; then
+    archive_process_record "$record"
+  fi
+}
+
+prepare_private_log() {
+  local log_file="$1"
+  if [[ -L "$log_file" ]]; then
+    echo "Refusing symlinked profile log: $log_file" >&2
+    return 1
+  fi
+  rm -f "${log_file}.previous"
+  if [[ -f "$log_file" ]]; then
+    mv "$log_file" "${log_file}.previous"
+    chmod 600 "${log_file}.previous"
+  fi
+  : > "$log_file"
+  chmod 600 "$log_file"
+}
+
+write_launch_manifest() {
+  local artifacts=(
+    "$source_server_binary"
+    "$source_companion_binary"
+    "$source_skills_manager_binary"
+    "$checkout/clients/desktop/dist/main.js"
+    "$checkout/contract/generated/typescript/dist/current.js"
+    "$supervisor_script"
+    "$bundle_stager"
+    "$skills_manager_fetcher"
+  )
+  [[ -z "$source_bootstrap_entry" ]] || artifacts+=(
+    "$source_bootstrap_entry"
+  )
+  python3 - "$launch_manifest" "$checkout" "${artifacts[@]}" <<'PY'
+import hashlib
+import json
+import os
+import sys
+
+output, checkout, *artifacts = sys.argv[1:]
+value = {"version": 1, "checkout": checkout, "artifacts": {}}
+for artifact in artifacts:
+    with open(artifact, "rb") as source:
+        digest = hashlib.sha256(source.read()).hexdigest()
+    value["artifacts"][artifact] = {"sha256": digest, "size": os.path.getsize(artifact)}
+temporary = output + ".tmp"
+with open(temporary, "w") as destination:
+    json.dump(value, destination, sort_keys=True, separators=(",", ":"))
+    destination.write("\n")
+os.chmod(temporary, 0o600)
+os.replace(temporary, output)
+PY
+}
+
+prepare_dev_project() {
+  [[ -n "$dev_project_dir" ]] || return 0
+  if [[ -L "$dev_project_dir" ]]; then
+    echo "Refusing symlinked development Project path: $dev_project_dir" >&2
+    return 1
+  fi
+  mkdir -p "$dev_project_dir"
+  if git -C "$dev_project_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    local repository_root
+    repository_root="$(git -C "$dev_project_dir" rev-parse --show-toplevel)"
+    repository_root="$(cd "$repository_root" && pwd -P)"
+    if [[ "$repository_root" != "$(cd "$dev_project_dir" && pwd -P)" ]]; then
+      echo "Development Project path belongs to another Git repository: $dev_project_dir" >&2
+      return 1
+    fi
+  else
+    if [[ -n "$(ls -A "$dev_project_dir")" ]]; then
+      echo "Development Project path is non-empty and is not a Git repository: $dev_project_dir" >&2
+      return 1
+    fi
+    git init --quiet --initial-branch=main "$dev_project_dir"
+  fi
+  if ! git -C "$dev_project_dir" rev-parse --verify HEAD >/dev/null 2>&1; then
+    git -C "$dev_project_dir" \
+      -c user.name="TermLoop Dev" \
+      -c user.email="dev@termloop.local" \
+      -c commit.gpgSign=false \
+      commit --quiet --allow-empty -m "Initialize development sandbox"
+  fi
+}
+
+launch_manifest_status() {
+  python3 - "$launch_manifest" 2>/dev/null <<'PY' || true
+import hashlib
+import json
+import os
+import sys
+
+try:
+    with open(sys.argv[1]) as source:
+        value = json.load(source)
+    if value.get("version") != 1 or not value.get("artifacts"):
+        raise ValueError()
+    for artifact, expected in value["artifacts"].items():
+        with open(artifact, "rb") as source:
+            digest = hashlib.sha256(source.read()).hexdigest()
+        if digest != expected.get("sha256") or os.path.getsize(artifact) != expected.get("size"):
+            print("drifted")
+            break
+    else:
+        print("current")
+except Exception:
+    print("unavailable")
+PY
+}
+
+launch_bundle_status() {
+  python3 - "$launch_bundle_record" "$profile_root" 2>/dev/null <<'PY' || true
+import json
+import os
+import pathlib
+import sys
+
+record = pathlib.Path(sys.argv[1])
+profile_root = pathlib.Path(sys.argv[2]).resolve()
+try:
+    lines = record.read_text().splitlines()
+    if len(lines) != 1:
+        raise ValueError()
+    bundle = pathlib.Path(lines[0]).resolve(strict=True)
+    if bundle.parent != profile_root / "launches" or bundle.name != "current":
+        raise ValueError()
+    manifest = json.loads((bundle / "launch-bundle.json").read_text())
+    if manifest.get("version") != 1 or not manifest.get("artifacts"):
+        raise ValueError()
+    for relative in (
+        "target/debug/termloop-server",
+        "target/debug/termloop-companion",
+        "target/debug/skills-manager-cli",
+        "clients/desktop/dist/main.js",
+        "clients/desktop/native/ghostty-host/build/Release/ghostty_host.node",
+    ):
+        candidate = bundle / relative
+        if candidate.is_symlink() or not candidate.is_file():
+            raise ValueError()
+    print("pinned")
+except Exception:
+    print("unavailable")
+PY
+}
+
+stop_profile() {
+  local stop_mode="${1:-graceful}"
+  if [[ "$stop_mode" == "force" ]]; then
+    if supervisor_job_loaded; then
+      if supervisor_job_running; then
+        # Give the daemon one short chance to snapshot its bounded Agent
+        # restart handoff before forcefully retiring the exact process tree.
+        # This avoids turning an ordinary restart into crash recovery while
+        # keeping restart latency bounded when shutdown is wedged.
+        if [[ "$launcher_os" == "Darwin" ]]; then
+          launchctl kill SIGTERM "$launchd_target" >/dev/null 2>&1 || true
+        else
+          systemctl --user kill --kill-who=main --signal=TERM "$systemd_unit_name" >/dev/null 2>&1 || true
+        fi
+        for _attempt in {1..20}; do
+          [[ ! -e "$runtime_dir/agent-restart-handoff.json" ]] || break
+          sleep 0.05
+        done
+        if supervisor_job_running; then
+          if [[ "$launcher_os" == "Darwin" ]]; then
+            launchctl kill SIGKILL "$launchd_target" >/dev/null 2>&1 || true
+          else
+            systemctl --user kill --kill-who=all --signal=KILL "$systemd_unit_name" >/dev/null 2>&1 || true
+          fi
+        fi
+      fi
+      if [[ "$launcher_os" == "Darwin" ]]; then
+        launchctl bootout "$launchd_target" >/dev/null 2>&1 || true
+      else
+        systemctl --user stop "$systemd_unit_name" >/dev/null 2>&1 || true
+        systemctl --user disable "$systemd_unit_name" >/dev/null 2>&1 || true
+        rm -f "$systemd_unit_file"
+        systemctl --user daemon-reload >/dev/null 2>&1 || true
+        systemctl --user reset-failed "$systemd_unit_name" >/dev/null 2>&1 || true
+      fi
+    fi
+    force_stop_recorded_process "$desktop_record"
+    force_stop_recorded_process "$daemon_record"
+    if supervisor_job_loaded || [[ -n "$(read_owned_pid "$daemon_record" || true)" || -n "$(read_owned_pid "$desktop_record" || true)" ]]; then
+      echo "TermLoop $supervision_label or an exact owned process remained after force stop." >&2
+      return 1
+    fi
+    archive_invalid_record "$desktop_record"
+    archive_invalid_record "$daemon_record"
+    return 0
+  fi
+  if supervisor_job_loaded; then
+    if supervisor_job_running; then
+      # Signal the exact supervisor before bootout/stop so its daemon child
+      # retains the pre-existing 180-second graceful shutdown window. launchd
+      # clamps a job's ExitTimeOut to 60 seconds and the systemd unit carries
+      # TimeoutStopSec=60, so bootout/stop alone cannot provide this window.
+      if [[ "$launcher_os" == "Darwin" ]]; then
+        launchctl kill SIGTERM "$launchd_target"
+      else
+        systemctl --user kill --kill-who=main --signal=TERM "$systemd_unit_name" >/dev/null 2>&1 || true
+      fi
+    fi
+    for _attempt in {1..1850}; do
+      local daemon_pid desktop_pid
+      daemon_pid="$(read_owned_pid "$daemon_record" || true)"
+      desktop_pid="$(read_owned_pid "$desktop_record" || true)"
+      if ! supervisor_job_running && [[ -z "$daemon_pid" && -z "$desktop_pid" ]]; then
+        break
+      fi
+      sleep 0.1
+    done
+    if [[ "$launcher_os" == "Darwin" ]]; then
+      launchctl bootout "$launchd_target" >/dev/null 2>&1 || true
+    else
+      systemctl --user stop "$systemd_unit_name" >/dev/null 2>&1 || true
+      systemctl --user disable "$systemd_unit_name" >/dev/null 2>&1 || true
+      rm -f "$systemd_unit_file"
+      systemctl --user daemon-reload >/dev/null 2>&1 || true
+      systemctl --user reset-failed "$systemd_unit_name" >/dev/null 2>&1 || true
+    fi
+    for _attempt in {1..2000}; do
+      daemon_pid="$(read_owned_pid "$daemon_record" || true)"
+      desktop_pid="$(read_owned_pid "$desktop_record" || true)"
+      if ! supervisor_job_loaded && [[ -z "$daemon_pid" && -z "$desktop_pid" ]]; then
+        break
+      fi
+      sleep 0.1
+    done
+    if supervisor_job_loaded || [[ -n "$(read_owned_pid "$daemon_record" || true)" || -n "$(read_owned_pid "$desktop_record" || true)" ]]; then
+      echo "TermLoop $supervision_label or an exact owned process remained after stop." >&2
+      return 1
+    fi
+    archive_invalid_record "$desktop_record"
+    archive_invalid_record "$daemon_record"
+    return 0
+  fi
+  # Only a profile without a rendered launch artifact may use the revision-2
+  # direct-PID migration path. A transient launchctl/systemctl probe must never
+  # cause a supervised process tree to be managed as a legacy profile.
+  if [[ -e "$launch_artifact" ]]; then
+    if [[ -n "$(read_owned_pid "$daemon_record" || true)" || -n "$(read_owned_pid "$desktop_record" || true)" ]]; then
+      echo "$supervision_label state could not be confirmed; refusing legacy process management for profile $profile." >&2
+      return 1
+    fi
+    archive_invalid_record "$desktop_record"
+    archive_invalid_record "$daemon_record"
+    return 0
+  fi
+  # Migration path for profiles started by revision 2 before launchd ownership.
+  stop_recorded_process "$desktop_record"
+  stop_recorded_process "$daemon_record"
+}
+
+show_status() {
+  local daemon_pid desktop_pid supervisor_status build_status runtime_status
+  daemon_pid="$(read_owned_pid "$daemon_record" || true)"
+  desktop_pid="$(read_owned_pid "$desktop_record" || true)"
+  supervisor_status="stopped"
+  if supervisor_job_loaded; then
+    supervisor_status="exited"
+    supervisor_job_running && supervisor_status="starting"
+    if [[ -n "$daemon_pid" && -n "$desktop_pid" && "$(desktop_ready_pid)" == "$desktop_pid" ]]; then
+      supervisor_status="ready"
+    fi
+  elif [[ -n "$daemon_pid" || -n "$desktop_pid" ]]; then
+    supervisor_status="legacy"
+  fi
+  build_status="$(launch_manifest_status)"
+  runtime_status="$(launch_bundle_status)"
+  echo "Profile: $profile"
+  echo "Checkout: $checkout"
+  echo "State: $state_dir"
+  echo "Supervisor: $supervisor_status"
+  echo "Runtime: ${runtime_status:-unavailable}"
+  echo "Build: ${build_status:-unavailable}"
+  echo "Daemon: ${daemon_pid:-stopped}"
+  echo "Desktop: ${desktop_pid:-stopped}"
+}
+
+if [[ "$action" == "status" ]]; then
+  show_status
+  exit 0
+fi
+if [[ "$action" == "stop" || "$action" == "stop-profile" ]]; then
+  stop_profile
+  show_status
+  exit 0
+fi
+if [[ "$action" == "start" ]]; then
+  existing_daemon="$(read_owned_pid "$daemon_record" || true)"
+  existing_desktop="$(read_owned_pid "$desktop_record" || true)"
+  if supervisor_job_loaded && ! supervisor_job_running && [[ -z "$existing_daemon" && -z "$existing_desktop" ]]; then
+    stop_profile
+  elif supervisor_job_loaded || [[ -n "$existing_daemon" || -n "$existing_desktop" ]]; then
+    echo "Profile $profile is already running; use restart." >&2
+    show_status >&2
+    exit 1
+  fi
+fi
+
+if [[ "$launcher_os" != "Darwin" && "$launcher_os" != "Linux" ]]; then
+  echo "Persistent development supervision is supported on macOS and Linux only; refusing an unsupervised start." >&2
+  exit 1
+fi
+if [[ "$launcher_os" == "Linux" ]] && ! systemd_user_manager_available; then
+  echo "systemd user manager is unavailable: 'systemctl --user' must work, which requires a systemd user session with XDG_RUNTIME_DIR and its session D-Bus; refusing an unsupervised start." >&2
+  exit 1
+fi
+
+mkdir -p "$state_dir" "$runtime_dir" "$desktop_dir" "$log_dir" "$(dirname "$desktop_record")"
+chmod 700 "$state_dir" "$runtime_dir" "$desktop_dir" "$log_dir" "$(dirname "$desktop_record")"
+prepare_dev_project
+
+cd "$checkout"
+source_server_binary="$cargo_target_dir/debug/termloop-server"
+source_companion_binary="$cargo_target_dir/debug/termloop-companion"
+source_skills_manager_binary="$cargo_target_dir/debug/skills-manager-cli"
+if [[ "$reuse_build" == false ]]; then
+  CARGO_TARGET_DIR="$cargo_target_dir" cargo build -p termloop-server -p termloop-companion
+  node "$skills_manager_fetcher" --output "$source_skills_manager_binary"
+fi
+for executable in "$source_server_binary" "$source_companion_binary" "$source_skills_manager_binary"; do
+  if [[ ! -x "$executable" ]]; then
+    echo "Reusable TermLoop executable is unavailable: $executable" >&2
+    exit 1
+  fi
+done
+if [[ "$reuse_build" == true ]]; then
+  echo "Reusing existing main build artifacts."
+fi
+
+if [[ ! -x "$supervisor_script" ]]; then
+  echo "TermLoop development supervisor is not executable." >&2
+  exit 1
+fi
+if [[ "$launcher_os" == "Darwin" ]]; then
+  if [[ "$reuse_build" == false ]]; then
+    if [[ ! -x "$checkout/clients/desktop/node_modules/.bin/node-gyp" || \
+          ! -e "$checkout/clients/desktop/node_modules/node-addon-api" ]]; then
+      pnpm install --frozen-lockfile
+    fi
+    pnpm --filter @termloop/desktop native:ghostty:dev
+  else
+    for artifact in \
+      "$checkout/clients/desktop/native/ghostty-host/build/Release/ghostty_host.node" \
+      "$checkout/vendor/ghostty/zig-out/lib/libghostty.dylib" \
+      "$checkout/vendor/ghostty/zig-out/share/ghostty"; do
+      if [[ ! -e "$artifact" ]]; then
+        echo "Reusable TermLoop desktop artifact is unavailable: $artifact" >&2
+        exit 1
+      fi
+    done
+  fi
+fi
+if [[ "$reuse_build" == false ]]; then
+  pnpm --filter @termloop/desktop build
+else
+  for artifact in \
+    "$checkout/clients/desktop/dist/main.js" \
+    "$checkout/clients/desktop/dist/preload.cjs" \
+    "$checkout/clients/desktop/dist/terminal-gateway.js" \
+    "$checkout/clients/desktop/dist/renderer.js" \
+    "$checkout/clients/desktop/dist/index.html"; do
+    if [[ ! -e "$artifact" ]]; then
+      echo "Reusable TermLoop desktop artifact is unavailable: $artifact" >&2
+      exit 1
+    fi
+  done
+fi
+
+server_binary="$source_server_binary"
+companion_binary="$source_companion_binary"
+desktop_cwd="$checkout/clients/desktop"
+if [[ "$launcher_os" == "Darwin" ]]; then
+  if [[ ! -x "$bundle_stager" ]]; then
+    echo "TermLoop launch bundle stager is unavailable: $bundle_stager" >&2
+    exit 1
+  fi
+  include_bootstrap=false
+  [[ -z "$profile_tag" ]] || include_bootstrap=true
+  launch_bundle="$($bundle_stager "$checkout" "$profile_root" "$include_bootstrap" "$cargo_target_dir")"
+  server_binary="$launch_bundle/target/debug/termloop-server"
+  companion_binary="$launch_bundle/target/debug/termloop-companion"
+  desktop_cwd="$launch_bundle/clients/desktop"
+  if [[ -n "$source_bootstrap_entry" ]]; then
+    bootstrap_entry="$launch_bundle/tools/dev/bootstrap-dev-profile.mjs"
+  fi
+  for executable in "$server_binary" "$companion_binary" "$launch_bundle/target/debug/skills-manager-cli"; do
+    if [[ ! -x "$executable" ]]; then
+      echo "Pinned TermLoop executable is unavailable: $executable" >&2
+      exit 1
+    fi
+  done
+fi
+if [[ -n "$bootstrap_entry" ]]; then
+  if [[ ! -f "$bootstrap_entry" || ! -x "$node_binary" ]]; then
+    echo "TermLoop tagged-profile bootstrap artifacts are unavailable." >&2
+    exit 1
+  fi
+fi
+electron_binary="$(cd "$checkout/clients/desktop" && node -e 'process.stdout.write(require("electron"))')"
+python_binary="$(command -v python3)"
+if [[ ! -x "$electron_binary" ]]; then
+  echo "TermLoop Electron binary was not resolved." >&2
+  exit 1
+fi
+if [[ "$action" == "restart" ]]; then
+  stop_profile force
+fi
+if [[ "$launcher_os" == "Darwin" ]]; then
+  launch_bundle_record_tmp="${launch_bundle_record}.tmp.$$"
+  printf '%s\n' "$launch_bundle" > "$launch_bundle_record_tmp"
+  chmod 600 "$launch_bundle_record_tmp"
+  mv -f "$launch_bundle_record_tmp" "$launch_bundle_record"
+fi
+prepare_private_log "$server_log"
+prepare_private_log "$desktop_log"
+prepare_private_log "$supervisor_log"
+checkout_record_tmp="${checkout_record}.tmp.$$"
+printf '%s\n' "$checkout" > "$checkout_record_tmp"
+chmod 600 "$checkout_record_tmp"
+mv -f "$checkout_record_tmp" "$checkout_record"
+write_launch_manifest
+
+if [[ "$launcher_os" == "Darwin" ]]; then
+  plist_tmp="${launch_agent_plist}.tmp.$$"
+  python3 - "$plist_tmp" "$launchd_label" "$supervisor_script" "$checkout" "$supervisor_log" \
+    "$state_dir" "$runtime_dir" "$runtime_file" "$desktop_dir" "$profile_tag" \
+    "$server_binary" "$electron_binary" "$desktop_cwd" "$daemon_record" \
+    "$desktop_record" "$desktop_ready_file" "$server_log" "$desktop_log" "$python_binary" \
+    "$node_binary" "$bootstrap_entry" "$dev_project_name" "$dev_project_dir" "$dev_task_title" \
+    "${PATH:-}" "${LANG:-en_US.UTF-8}" "${LC_ALL:-${LANG:-en_US.UTF-8}}" "${SHELL:-/bin/sh}" <<'PY'
+import plistlib
+import sys
+
+(
+    output,
+    label,
+    supervisor,
+    checkout,
+    supervisor_log,
+    state_dir,
+    runtime_dir,
+    runtime_file,
+    desktop_dir,
+    profile_tag,
+    server_binary,
+    electron_binary,
+    desktop_cwd,
+    daemon_record,
+    desktop_record,
+    ready_file,
+    server_log,
+    desktop_log,
+    python_binary,
+    node_binary,
+    bootstrap_entry,
+    dev_project_name,
+    dev_project_dir,
+    dev_task_title,
+    launch_path,
+    lang,
+    lc_all,
+    shell,
+) = sys.argv[1:]
+value = {
+    "Label": label,
+    "ProgramArguments": [supervisor],
+    "WorkingDirectory": checkout,
+    "RunAtLoad": True,
+    "ThrottleInterval": 10,
+    "ExitTimeOut": 60,
+    "ProcessType": "Interactive",
+    "SoftResourceLimits": {"NumberOfFiles": 4096},
+    "HardResourceLimits": {"NumberOfFiles": 4096},
+    "StandardOutPath": supervisor_log,
+    "StandardErrorPath": supervisor_log,
+    "EnvironmentVariables": {
+        "TERMLOOP_STATE_DIR": state_dir,
+        "TERMLOOP_RUNTIME_DIR": runtime_dir,
+        "TERMLOOP_RUNTIME_FILE": runtime_file,
+        "TERMLOOP_DESKTOP_USER_DATA_DIR": desktop_dir,
+        "TERMLOOP_DEV_PROFILE_TAG": profile_tag,
+        "TERMLOOP_DEV_CHECKOUT": checkout,
+        "TERMLOOP_DEV_SERVER_BINARY": server_binary,
+        "TERMLOOP_DEV_ELECTRON_BINARY": electron_binary,
+        "TERMLOOP_DEV_DESKTOP_CWD": desktop_cwd,
+        "TERMLOOP_DEV_DAEMON_RECORD": daemon_record,
+        "TERMLOOP_DEV_DESKTOP_RECORD": desktop_record,
+        "TERMLOOP_DEV_READY_FILE": ready_file,
+        "TERMLOOP_DEV_SERVER_LOG": server_log,
+        "TERMLOOP_DEV_DESKTOP_LOG": desktop_log,
+        "TERMLOOP_DEV_PYTHON_BINARY": python_binary,
+        "TERMLOOP_DEV_NODE_BINARY": node_binary,
+        "TERMLOOP_DEV_BOOTSTRAP_ENTRY": bootstrap_entry,
+        "TERMLOOP_DEV_PROJECT_NAME": dev_project_name,
+        "TERMLOOP_DEV_PROJECT_DIR": dev_project_dir,
+        "TERMLOOP_DEV_TASK_TITLE": dev_task_title,
+        "TERMLOOP_DEV_EXPECTED_PATH": launch_path,
+        "TERMLOOP_DEV_EXPECTED_LOCALE": lc_all,
+        "PATH": launch_path,
+        "LANG": lang,
+        "LC_ALL": lc_all,
+        "SHELL": shell,
+    },
+}
+with open(output, "wb") as destination:
+    plistlib.dump(value, destination, sort_keys=True)
+PY
+  chmod 600 "$plist_tmp"
+  mv -f "$plist_tmp" "$launch_agent_plist"
+  if ! launchctl bootstrap "$launchd_domain" "$launch_agent_plist"; then
+    echo "TermLoop LaunchAgent failed to load for profile $profile." >&2
+    exit 1
+  fi
+else
+  mkdir -p "$systemd_unit_dir"
+  unit_tmp="${systemd_unit_file}.tmp.$$"
+  python3 - "$unit_tmp" "$supervisor_script" "$checkout" "$supervisor_log" \
+    "$state_dir" "$runtime_dir" "$runtime_file" "$desktop_dir" "$profile_tag" \
+    "$server_binary" "$electron_binary" "$desktop_cwd" "$daemon_record" \
+    "$desktop_record" "$desktop_ready_file" "$server_log" "$desktop_log" "$python_binary" \
+    "$node_binary" "$bootstrap_entry" "$dev_project_name" "$dev_project_dir" "$dev_task_title" \
+    "${PATH:-}" "${LANG:-en_US.UTF-8}" "${LC_ALL:-${LANG:-en_US.UTF-8}}" "${SHELL:-/bin/sh}" \
+    "${DISPLAY:-}" "${WAYLAND_DISPLAY:-}" "${XAUTHORITY:-}" "${XDG_RUNTIME_DIR:-}" \
+    "${ELECTRON_DISABLE_SANDBOX:-}" <<'PY'
+import sys
+
+(
+    output,
+    supervisor,
+    checkout,
+    supervisor_log,
+    state_dir,
+    runtime_dir,
+    runtime_file,
+    desktop_dir,
+    profile_tag,
+    server_binary,
+    electron_binary,
+    desktop_cwd,
+    daemon_record,
+    desktop_record,
+    ready_file,
+    server_log,
+    desktop_log,
+    python_binary,
+    node_binary,
+    bootstrap_entry,
+    dev_project_name,
+    dev_project_dir,
+    dev_task_title,
+    launch_path,
+    lang,
+    lc_all,
+    shell,
+    display,
+    wayland_display,
+    xauthority,
+    xdg_runtime_dir,
+    electron_disable_sandbox,
+) = sys.argv[1:]
+
+
+def unit_path(value):
+    # Only systemd specifier expansion applies to path-typed settings.
+    return value.replace("%", "%%")
+
+
+def unit_quoted(value):
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
+    return f'"{escaped}"'
+
+
+environment = [
+    ("TERMLOOP_STATE_DIR", state_dir),
+    ("TERMLOOP_RUNTIME_DIR", runtime_dir),
+    ("TERMLOOP_RUNTIME_FILE", runtime_file),
+    ("TERMLOOP_DESKTOP_USER_DATA_DIR", desktop_dir),
+    ("TERMLOOP_DEV_PROFILE_TAG", profile_tag),
+    ("TERMLOOP_DEV_CHECKOUT", checkout),
+    ("TERMLOOP_DEV_SERVER_BINARY", server_binary),
+    ("TERMLOOP_DEV_ELECTRON_BINARY", electron_binary),
+    ("TERMLOOP_DEV_DESKTOP_CWD", desktop_cwd),
+    ("TERMLOOP_DEV_DAEMON_RECORD", daemon_record),
+    ("TERMLOOP_DEV_DESKTOP_RECORD", desktop_record),
+    ("TERMLOOP_DEV_READY_FILE", ready_file),
+    ("TERMLOOP_DEV_SERVER_LOG", server_log),
+    ("TERMLOOP_DEV_DESKTOP_LOG", desktop_log),
+    ("TERMLOOP_DEV_PYTHON_BINARY", python_binary),
+    ("TERMLOOP_DEV_NODE_BINARY", node_binary),
+    ("TERMLOOP_DEV_BOOTSTRAP_ENTRY", bootstrap_entry),
+    ("TERMLOOP_DEV_PROJECT_NAME", dev_project_name),
+    ("TERMLOOP_DEV_PROJECT_DIR", dev_project_dir),
+    ("TERMLOOP_DEV_TASK_TITLE", dev_task_title),
+    ("TERMLOOP_DEV_EXPECTED_PATH", launch_path),
+    ("TERMLOOP_DEV_EXPECTED_LOCALE", lc_all),
+    ("PATH", launch_path),
+    ("LANG", lang),
+    ("LC_ALL", lc_all),
+    ("SHELL", shell),
+]
+for name, value in (
+    ("DISPLAY", display),
+    ("WAYLAND_DISPLAY", wayland_display),
+    ("XAUTHORITY", xauthority),
+    ("XDG_RUNTIME_DIR", xdg_runtime_dir),
+    ("ELECTRON_DISABLE_SANDBOX", electron_disable_sandbox),
+):
+    if value:
+        environment.append((name, value))
+
+lines = [
+    "[Unit]",
+    "Description=TermLoop Next development supervisor",
+    "StartLimitIntervalSec=60",
+    "StartLimitBurst=3",
+    "",
+    "[Service]",
+    "Type=exec",
+    f"ExecStart={unit_quoted(supervisor)}",
+    f"WorkingDirectory={unit_path(checkout)}",
+    f"StandardOutput=append:{unit_path(supervisor_log)}",
+    f"StandardError=append:{unit_path(supervisor_log)}",
+    "Restart=on-failure",
+    "RestartSec=10",
+    "TimeoutStopSec=60",
+    "KillMode=mixed",
+]
+lines.extend(
+    f"Environment={unit_quoted(f'{name}={value}')}" for name, value in environment
+)
+with open(output, "w") as destination:
+    destination.write("\n".join(lines) + "\n")
+PY
+  chmod 600 "$unit_tmp"
+  mv -f "$unit_tmp" "$systemd_unit_file"
+  systemctl --user daemon-reload
+  if ! systemctl --user restart "$systemd_unit_name"; then
+    echo "TermLoop systemd unit failed to start for profile $profile." >&2
+    exit 1
+  fi
+fi
+
+ready_daemon=""
+ready_desktop=""
+for _attempt in {1..1200}; do
+  discovered_pid="$(discovery_pid)"
+  ready_daemon="$(read_owned_pid "$daemon_record" || true)"
+  ready_desktop="$(read_owned_pid "$desktop_record" || true)"
+  if [[ -n "$ready_daemon" && "$discovered_pid" == "$ready_daemon" && -n "$ready_desktop" && "$(desktop_ready_pid)" == "$ready_desktop" ]]; then
+    break
+  fi
+  if ! supervisor_job_loaded; then
+    echo "TermLoop $supervision_label exited before readiness for profile $profile." >&2
+    tail -n 20 "$supervisor_log" 2>/dev/null || true
+    exit 1
+  fi
+  if (( _attempt > 10 )) && ! supervisor_job_running; then
+    stop_profile >/dev/null 2>&1 || true
+    echo "TermLoop supervisor exited before readiness for profile $profile." >&2
+    tail -n 20 "$supervisor_log" 2>/dev/null || true
+    tail -n 20 "$desktop_log" 2>/dev/null || true
+    exit 1
+  fi
+  if [[ "$_attempt" == "150" ]]; then
+    echo "Waiting for TermLoop daemon and desktop window readiness for profile ${profile}…"
+  fi
+  sleep 0.1
+done
+if [[ -z "$ready_daemon" || "$(discovery_pid)" != "$ready_daemon" || -z "$ready_desktop" || "$(desktop_ready_pid)" != "$ready_desktop" ]]; then
+  stop_profile >/dev/null 2>&1 || true
+  echo "Timed out waiting for TermLoop profile $profile readiness." >&2
+  tail -n 20 "$supervisor_log" 2>/dev/null || true
+  tail -n 20 "$desktop_log" 2>/dev/null || true
+  exit 1
+fi
+stable_samples=0
+for _attempt in {1..70}; do
+  if [[ "$(read_owned_pid "$daemon_record" || true)" == "$ready_daemon" && "$(read_owned_pid "$desktop_record" || true)" == "$ready_desktop" && "$(desktop_ready_pid)" == "$ready_desktop" ]]; then
+    stable_samples=$((stable_samples + 1))
+    [[ "$stable_samples" == "20" ]] && break
+  else
+    # Atomic owner/ready-file replacement can expose a short gap even though
+    # the same exact processes remain healthy. Require consecutive stable
+    # samples instead of failing on the first transient observation.
+    stable_samples=0
+  fi
+  sleep 0.1
+done
+if [[ "$stable_samples" != "20" ]]; then
+  stop_profile >/dev/null 2>&1 || true
+  echo "TermLoop profile $profile did not remain stable during readiness." >&2
+  exit 1
+fi
+if [[ "$launcher_os" == "Darwin" ]]; then
+  if [[ -z "$profile_tag" ]]; then
+    if ! activate_desktop_window "$ready_desktop"; then
+      echo "Warning: TermLoop is ready but macOS did not grant window activation; activate it manually." >&2
+    fi
+    echo "TermLoop opened."
+  else
+    echo "TermLoop started minimized."
+  fi
+else
+  if ! activate_desktop_window_linux "$ready_desktop"; then
+    echo "Warning: TermLoop is ready but no window activation tool succeeded (install wmctrl or xdotool); activate it manually." >&2
+  fi
+  echo "TermLoop opened."
+fi
+show_status
+echo "Logs: $log_dir"
+exit 0

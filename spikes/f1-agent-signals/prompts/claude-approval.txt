@@ -1,0 +1,2 @@
+Use the Bash tool exactly once to run `rm -f termloop-signal-spike-delete-me.txt`. This file is inside the disposable spike directory. Do not use another tool. If permission is unavailable, stop and reply denied.
+

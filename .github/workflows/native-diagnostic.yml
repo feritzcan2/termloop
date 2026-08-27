@@ -1,0 +1,82 @@
+name: native-diagnostic
+
+run-name: Native diagnostic (${{ github.sha }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      windows:
+        description: Run Windows native verification
+        required: true
+        type: boolean
+        default: true
+      ubuntu:
+        description: Run Ubuntu/Linux native verification
+        required: true
+        type: boolean
+        default: false
+      macos:
+        description: Run macOS native verification
+        required: true
+        type: boolean
+        default: false
+      scope:
+        description: Run tests only or the complete native gate
+        required: true
+        type: choice
+        options:
+          - tests
+          - full
+        default: tests
+
+concurrency:
+  group: >-
+    termloop-next-native-diagnostic-${{ github.ref }}-${{ inputs.windows }}-${{ inputs.ubuntu }}-${{ inputs.macos }}-${{ inputs.scope }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    if: inputs.windows
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/native-verify
+        with:
+          artifact-prefix: diagnostic-
+          run-full-gate: ${{ inputs.scope == 'full' && 'true' || 'false' }}
+          cache-pnpm: "false"
+          upload-evidence: ${{ inputs.scope == 'full' && 'true' || 'false' }}
+
+  ubuntu:
+    if: inputs.ubuntu
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/native-verify
+        with:
+          artifact-prefix: diagnostic-
+          run-full-gate: ${{ inputs.scope == 'full' && 'true' || 'false' }}
+          cache-pnpm: "false"
+          upload-evidence: ${{ inputs.scope == 'full' && 'true' || 'false' }}
+          upload-unsigned: ${{ inputs.scope == 'full' && 'true' || 'false' }}
+
+  macos:
+    if: inputs.macos
+    runs-on: [self-hosted, macOS, ARM64, termloop-next-macos]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/native-verify
+        with:
+          artifact-prefix: diagnostic-
+          run-full-gate: ${{ inputs.scope == 'full' && 'true' || 'false' }}
+          cache-pnpm: "false"
+          upload-evidence: ${{ inputs.scope == 'full' && 'true' || 'false' }}

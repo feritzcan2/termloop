@@ -1,0 +1,75 @@
+name: ci
+
+on:
+  workflow_dispatch:
+  push:
+    branches-ignore:
+      - main
+  pull_request:
+
+concurrency:
+  group: termloop-next-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, macOS, ARM64, termloop-next-macos]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Install pinned Rust
+        shell: bash
+        run: rustup toolchain install 1.90.0 --profile minimal --component clippy,rustfmt
+      - run: pnpm install --frozen-lockfile
+      - name: Install hermetic agent CLI fixtures
+        shell: bash
+        run: |
+          fixture_dir="$RUNNER_TEMP/termloop-agent-cli-fixtures"
+          mkdir -p "$fixture_dir"
+          printf '#!/bin/sh\nexit 0\n' > "$fixture_dir/claude"
+          printf '#!/bin/sh\nexit 0\n' > "$fixture_dir/codex"
+          printf '#!/bin/sh\nexit 0\n' > "$fixture_dir/gemini"
+          chmod +x "$fixture_dir/claude" "$fixture_dir/codex" "$fixture_dir/gemini"
+          echo "$fixture_dir" >> "$GITHUB_PATH"
+      - name: Static validation
+        run: pnpm check
+      - name: Cross-target Linux and Windows lint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add x86_64-unknown-linux-gnu x86_64-pc-windows-msvc
+          for target in x86_64-unknown-linux-gnu x86_64-pc-windows-msvc; do
+            CARGO_TARGET_DIR="$RUNNER_TEMP/termloop-preflight-$target" \
+              cargo clippy --workspace --all-targets --target "$target" -- -D warnings
+          done
+
+  verify:
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            runner: '["self-hosted", "macOS", "ARM64", "termloop-next-macos"]'
+          - os: ubuntu-24.04
+            runner: '["ubuntu-24.04"]'
+          - os: windows-2025
+            runner: '["windows-2025"]'
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/native-verify
+        with:
+          upload-unsigned: "true"

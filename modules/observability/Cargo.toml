@@ -1,0 +1,9 @@
+[package]
+name = "termloop-observability"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+termloop-gitio = { path = "../gitio" }
+termloop-platform = { path = "../platform" }

@@ -1,0 +1,283 @@
+{
+  "schema": "termloop.f1-agent-signals.v1",
+  "generatedAt": "2026-08-08T19:59:22.745Z",
+  "host": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "node": "v23.6.0"
+  },
+  "status": "MIXED",
+  "decision": "Only part of the required signal surface was observed. F1-03B must preserve explicit unknown states and limit product claims to the observed agent/event combinations.",
+  "claude": {
+    "version": "2.1.226 (Claude Code)",
+    "run": {
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 6006,
+      "error": null,
+      "jsonEventTypes": [
+        "assistant",
+        "rate_limit_event",
+        "result",
+        "system",
+        "user"
+      ],
+      "stderrCategory": "empty",
+      "tuiCategory": "permission"
+    },
+    "approvalRun": {
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 29557,
+      "error": null,
+      "jsonEventTypes": [],
+      "stderrCategory": "empty",
+      "tuiCategory": "non-empty"
+    },
+    "summary": {
+      "counts": {
+        "PostToolUse": 1,
+        "PreToolUse": 1,
+        "SessionEnd": 1,
+        "SessionStart": 1,
+        "Stop": 1,
+        "UserPromptSubmit": 1
+      },
+      "correlationObserved": true,
+      "awaitingInputObservable": false,
+      "awaitingSignals": []
+    },
+    "awaitingInputObservable": false,
+    "events": [
+      {
+        "recordedAtEpochMs": 1786219098820,
+        "agent": "claude",
+        "scenario": "lifecycle",
+        "hookEventName": "SessionStart",
+        "hasNativeSessionId": true,
+        "hasTurnId": false,
+        "toolName": null,
+        "notificationType": null,
+        "permissionMode": null,
+        "correlationSessionMatches": true,
+        "endpointIsLoopback": true,
+        "tokenPresent": true
+      },
+      {
+        "recordedAtEpochMs": 1786219098874,
+        "agent": "claude",
+        "scenario": "lifecycle",
+        "hookEventName": "UserPromptSubmit",
+        "hasNativeSessionId": true,
+        "hasTurnId": false,
+        "toolName": null,
+        "notificationType": null,
+        "permissionMode": "default",
+        "correlationSessionMatches": true,
+        "endpointIsLoopback": true,
+        "tokenPresent": true
+      },
+      {
+        "recordedAtEpochMs": 1786219101662,
+        "agent": "claude",
+        "scenario": "lifecycle",
+        "hookEventName": "PreToolUse",
+        "hasNativeSessionId": true,
+        "hasTurnId": false,
+        "toolName": "Bash",
+        "notificationType": null,
+        "permissionMode": "default",
+        "correlationSessionMatches": true,
+        "endpointIsLoopback": true,
+        "tokenPresent": true
+      },
+      {
+        "recordedAtEpochMs": 1786219102475,
+        "agent": "claude",
+        "scenario": "lifecycle",
+        "hookEventName": "PostToolUse",
+        "hasNativeSessionId": true,
+        "hasTurnId": false,
+        "toolName": "Bash",
+        "notificationType": null,
+        "permissionMode": "default",
+        "correlationSessionMatches": true,
+        "endpointIsLoopback": true,
+        "tokenPresent": true
+      },
+      {
+        "recordedAtEpochMs": 1786219103887,
+        "agent": "claude",
+        "scenario": "lifecycle",
+        "hookEventName": "Stop",
+        "hasNativeSessionId": true,
+        "hasTurnId": false,
+        "toolName": null,
+        "notificationType": null,
+        "permissionMode": "default",
+        "correlationSessionMatches": true,
+        "endpointIsLoopback": true,
+        "tokenPresent": true
+      },
+      {
+        "recordedAtEpochMs": 1786219103929,
+        "agent": "claude",
+        "scenario": "lifecycle",
+        "hookEventName": "SessionEnd",
+        "hasNativeSessionId": true,
+        "hasTurnId": false,
+        "toolName": null,
+        "notificationType": null,
+        "permissionMode": null,
+        "correlationSessionMatches": true,
+        "endpointIsLoopback": true,
+        "tokenPresent": true
+      }
+    ]
+  },
+  "codex": {
+    "version": "codex-cli 0.147.0",
+    "run": {
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 11107,
+      "error": null,
+      "jsonEventTypes": [
+        "item.completed",
+        "item.started",
+        "thread.started",
+        "turn.completed",
+        "turn.started"
+      ],
+      "stderrCategory": "non-empty",
+      "tuiCategory": "trust"
+    },
+    "approvalRun": {
+      "durationMs": 17524,
+      "error": null,
+      "approval": {
+        "method": "item/commandExecution/requestApproval",
+        "observedAtEpochMs": 1786219159353,
+        "latencyFromStartMs": 14246,
+        "hasThreadId": true,
+        "hasTurnId": true
+      },
+      "methods": [
+        "account/rateLimits/updated",
+        "item/agentMessage/delta",
+        "item/commandExecution/requestApproval",
+        "item/completed",
+        "item/started",
+        "mcpServer/startupStatus/updated",
+        "remoteControl/status/changed",
+        "serverRequest/resolved",
+        "thread/started",
+        "thread/status/changed",
+        "thread/tokenUsage/updated",
+        "turn/completed",
+        "turn/started"
+      ],
+      "stderrCategory": "error-related"
+    },
+    "summary": {
+      "counts": {
+        "PostToolUse": 1,
+        "PreToolUse": 1,
+        "SessionEnd": 1,
+        "SessionStart": 1,
+        "Stop": 1,
+        "UserPromptSubmit": 1
+      },
+      "correlationObserved": true,
+      "awaitingInputObservable": false,
+      "awaitingSignals": []
+    },
+    "awaitingInputObservable": true,
+    "events": [
+      {
+        "recordedAtEpochMs": 1786219136834,
+        "agent": "codex",
+        "scenario": "lifecycle",
+        "hookEventName": "SessionStart",
+        "hasNativeSessionId": true,
+        "hasTurnId": false,
+        "toolName": null,
+        "notificationType": null,
+        "permissionMode": "bypassPermissions",
+        "correlationSessionMatches": true,
+        "endpointIsLoopback": true,
+        "tokenPresent": true
+      },
+      {
+        "recordedAtEpochMs": 1786219136869,
+        "agent": "codex",
+        "scenario": "lifecycle",
+        "hookEventName": "UserPromptSubmit",
+        "hasNativeSessionId": true,
+        "hasTurnId": true,
+        "toolName": null,
+        "notificationType": null,
+        "permissionMode": "bypassPermissions",
+        "correlationSessionMatches": true,
+        "endpointIsLoopback": true,
+        "tokenPresent": true
+      },
+      {
+        "recordedAtEpochMs": 1786219141482,
+        "agent": "codex",
+        "scenario": "lifecycle",
+        "hookEventName": "PreToolUse",
+        "hasNativeSessionId": true,
+        "hasTurnId": true,
+        "toolName": "Bash",
+        "notificationType": null,
+        "permissionMode": "bypassPermissions",
+        "correlationSessionMatches": true,
+        "endpointIsLoopback": true,
+        "tokenPresent": true
+      },
+      {
+        "recordedAtEpochMs": 1786219141601,
+        "agent": "codex",
+        "scenario": "lifecycle",
+        "hookEventName": "PostToolUse",
+        "hasNativeSessionId": true,
+        "hasTurnId": true,
+        "toolName": "Bash",
+        "notificationType": null,
+        "permissionMode": "bypassPermissions",
+        "correlationSessionMatches": true,
+        "endpointIsLoopback": true,
+        "tokenPresent": true
+      },
+      {
+        "recordedAtEpochMs": 1786219142783,
+        "agent": "codex",
+        "scenario": "lifecycle",
+        "hookEventName": "Stop",
+        "hasNativeSessionId": true,
+        "hasTurnId": true,
+        "toolName": null,
+        "notificationType": null,
+        "permissionMode": "bypassPermissions",
+        "correlationSessionMatches": true,
+        "endpointIsLoopback": true,
+        "tokenPresent": true
+      },
+      {
+        "recordedAtEpochMs": 1786219142829,
+        "agent": "codex",
+        "scenario": "lifecycle",
+        "hookEventName": "SessionEnd",
+        "hasNativeSessionId": true,
+        "hasTurnId": false,
+        "toolName": null,
+        "notificationType": null,
+        "permissionMode": null,
+        "correlationSessionMatches": true,
+        "endpointIsLoopback": true,
+        "tokenPresent": true
+      }
+    ]
+  }
+}

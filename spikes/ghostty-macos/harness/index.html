@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'unsafe-inline'" />
+    <title>Ghostty spike</title>
+    <style>
+      body {
+        margin: 0;
+        background: #1e2325;
+        color: #d8dee9;
+        font: 13px -apple-system, sans-serif;
+        user-select: none;
+      }
+      header {
+        height: 48px;
+        padding: 8px 16px;
+        box-sizing: border-box;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        background: #24292b;
+      }
+      button {
+        background: #3a4145;
+        color: #d8dee9;
+        border: none;
+        border-radius: 6px;
+        padding: 6px 12px;
+      }
+      #overlay {
+        position: fixed;
+        inset: 64px 16px 16px 16px;
+        background: rgba(20, 24, 26, 0.85);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        border-radius: 8px;
+        z-index: 10;
+      }
+      .note { opacity: 0.6 }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>TermLoop × Ghostty spike</strong>
+      <button id="toggle">Toggle overlay (occludes left surface)</button>
+      <button id="focus0">Focus left</button>
+      <button id="focus1">Focus right</button>
+      <span class="note">native Ghostty NSViews render below this DOM chrome</span>
+    </header>
+    <div id="overlay">React-style DOM overlay — native view hidden while visible</div>
+    <script src="./renderer.js"></script>
+  </body>
+</html>
