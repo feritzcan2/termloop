@@ -8,6 +8,8 @@ pub fn host_uses_bracketed_paste_framing() -> bool {
 /// Configures the child side of a headless PTY fixture so tests can observe
 /// paste framing and the submit key as exact byte boundaries.
 pub fn configure_headless_terminal_input_fixture() -> Result<(), std::io::Error> {
+    #[cfg(windows)]
+    configure_windows_headless_terminal_input_fixture()?;
     #[cfg(unix)]
     {
         let status = std::process::Command::new("stty")
@@ -18,6 +20,45 @@ pub fn configure_headless_terminal_input_fixture() -> Result<(), std::io::Error>
                 "headless terminal fixture input setup failed",
             ));
         }
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn configure_windows_headless_terminal_input_fixture() -> Result<(), std::io::Error> {
+    use windows_sys::Win32::System::Console::{
+        ENABLE_ECHO_INPUT, ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT,
+        ENABLE_VIRTUAL_TERMINAL_INPUT, GetConsoleMode, STD_INPUT_HANDLE, SetConsoleMode,
+    };
+
+    // ConPTY starts the synthetic child in cooked console mode. Real agent
+    // TUIs switch to VT/raw input before TermLoop delivers generated text;
+    // mirror that setup so the fixture can observe the unframed paste and the
+    // later Enter write as separate boundaries.
+    let input = unsafe {
+        // SAFETY: GetStdHandle reads the process-owned standard-input handle
+        // and does not dereference caller memory.
+        windows_sys::Win32::System::Console::GetStdHandle(STD_INPUT_HANDLE)
+    };
+    let mut mode = 0_u32;
+    if unsafe {
+        // SAFETY: `input` is the live process standard-input handle and `mode`
+        // is valid writable storage for the duration of the call.
+        GetConsoleMode(input, &mut mode)
+    } == 0
+    {
+        return Err(std::io::Error::last_os_error());
+    }
+    let raw_mode = (mode | ENABLE_VIRTUAL_TERMINAL_INPUT)
+        & !(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT);
+    if unsafe {
+        // SAFETY: `input` was accepted by GetConsoleMode and `raw_mode`
+        // contains only documented console input flags.
+        SetConsoleMode(input, raw_mode)
+    } == 0
+    {
+        return Err(std::io::Error::last_os_error());
     }
     Ok(())
 }
