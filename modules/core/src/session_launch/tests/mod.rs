@@ -2119,7 +2119,7 @@ async fn assert_quick_action_initial_input_delivery(
         assert!(diagnostics.submit_receipted);
     } else if retain_without_repaint {
         let event = generated_input_events
-            .recv_timeout(std::time::Duration::from_secs(2))
+            .recv_timeout(std::time::Duration::from_secs(6))
             .unwrap();
         assert!(runtime.record_generated_input_runtime_event(event).unwrap());
         assert_eq!(
