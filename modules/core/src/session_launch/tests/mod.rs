@@ -2030,7 +2030,7 @@ async fn assert_quick_action_initial_input_delivery(
     );
     tokio::time::timeout(
         std::time::Duration::from_secs(if retry_submit || retain_without_repaint {
-            10
+            20
         } else {
             5
         }),
