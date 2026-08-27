@@ -7,6 +7,7 @@ import { agentActivityPriority } from "../session-presentation.js";
 import { DoubleShiftDetector, keyboardPlatform, matchesShellShortcut, nativeProjectShortcutIndex, nativeShellCommandId, projectShortcutIndex, projectShortcutLabel, shellShortcutsBlocked, showsWindowDragRegion, type ShellCommand, type ShellShortcutId } from "../command-surface.js";
 import { Icon } from "./Icon.js";
 import { ProjectCheckoutHeader } from "./ProjectCheckoutHeader.js";
+import { ProjectSourceRefreshButton } from "./ProjectSourceRefreshButton.js";
 import { SessionRail } from "./SessionRail.js";
 import { SessionContextMenu, type SessionAgentActions, type SessionMenuState, type SessionRunDevServer } from "./SessionRow.js";
 import { TaskRail, askToHelpersForSources, taskAttachedSessionIds, taskSessions } from "./TaskRail.js";
@@ -136,6 +137,7 @@ export type ShellProps = {
   agentCapabilities: readonly AgentCapabilityDto[];
   connection: ConnectionState;
   connectionMessage: string | undefined;
+  reconnectSource(profileId: string): Promise<void>;
   isPackaged: boolean;
   errorLog: readonly ErrorLogEntry[];
   clearErrorLog(): void;
@@ -240,7 +242,7 @@ export type ShellProps = {
   previewQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", prompt: string, attachmentIds: string[]): Promise<QuickActionPreviewResult>;
   launchQuickAction(projectId: string, agentId: string, model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", prompt: string, attachmentIds: string[], launchTicket: string): Promise<string | undefined>;
   launchTaskTerminal(taskId: string): Promise<string | undefined>;
-  launchTaskAgent(taskId: string, agentId: string, model?: string, reasoning?: AgentCapabilityDto["reasoning"][number], kickoffMessage?: string): Promise<string | undefined>;
+  launchTaskAgent(taskId: string, agentId: string, model?: string, permission?: AgentCapabilityDto["permissions"][number], reasoning?: AgentCapabilityDto["reasoning"][number], kickoffMessage?: string): Promise<string | undefined>;
   runImprovement: RunImprovement;
   settingsImprovement: ConfigurationVersionActions & {
     start(target: SettingsImproverTarget, selection?: QuickActionAgentSelection, options?: { fresh?: boolean }): Promise<string | undefined>;
@@ -872,6 +874,7 @@ export function Shell(props: ShellProps) {
     setImproverSetup(undefined);
   }, [props.selectedProject?.id]);
   const selectedSourceOffline = props.selectedProject?.connectionState === "offline";
+  const selectedConnectionProfileId = props.selectedProject?.connectionProfileId ?? "local";
   const disabled = !props.selectedProject || props.connection !== "connected" || selectedSourceOffline;
   const archived = useArchivedTasks({
     projectId: props.selectedProject?.id,
@@ -1226,32 +1229,40 @@ export function Shell(props: ShellProps) {
               ? { changes: { summary: props.projectWorktreeSummary, open: () => setChangesPresentation({ kind: "project" }) } }
               : {})}
           >
-            <button
-              ref={projectTriggerRef}
-              id="project"
-              className="project-trigger"
-              type="button"
-              aria-label="Current Project"
-              aria-haspopup="menu"
-              aria-expanded={projectMenuOpen}
-              data-selected-project-id={props.selectedProject?.id ?? ""}
-              disabled={props.projects.length === 0}
-              onClick={() => setProjectMenuOpen((open) => !open)}
-              onKeyDown={(event) => {
-                if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-                event.preventDefault();
-                setProjectMenuOpen(true);
-              }}
-            >
-              <span className="project-avatar" aria-hidden="true">{props.selectedProject?.name.slice(0, 1).toUpperCase() ?? "–"}</span>
-              <span className="project-trigger-copy">
-                <strong id="project-title">{props.selectedProject?.name ?? "No Project"}</strong>
-                {props.selectedProject?.connectionProfileName && props.projects.some((project) => project.connectionProfileId !== "local")
-                  ? <small>{props.selectedProject.connectionProfileName}{selectedSourceOffline ? " · Offline" : ""}</small>
-                  : null}
-              </span>
-              <Icon name="chevronDown" />
-            </button>
+            <div className={`project-trigger-row${selectedSourceOffline ? " with-refresh" : ""}`}>
+              <button
+                ref={projectTriggerRef}
+                id="project"
+                className="project-trigger"
+                type="button"
+                aria-label="Current Project"
+                aria-haspopup="menu"
+                aria-expanded={projectMenuOpen}
+                data-selected-project-id={props.selectedProject?.id ?? ""}
+                disabled={props.projects.length === 0}
+                onClick={() => setProjectMenuOpen((open) => !open)}
+                onKeyDown={(event) => {
+                  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+                  event.preventDefault();
+                  setProjectMenuOpen(true);
+                }}
+              >
+                <span className="project-avatar" aria-hidden="true">{props.selectedProject?.name.slice(0, 1).toUpperCase() ?? "–"}</span>
+                <span className="project-trigger-copy">
+                  <strong id="project-title">{props.selectedProject?.name ?? "No Project"}</strong>
+                  {props.selectedProject?.connectionProfileName && props.projects.some((project) => project.connectionProfileId !== "local")
+                    ? <small>{props.selectedProject.connectionProfileName}{selectedSourceOffline ? " · Offline" : ""}</small>
+                    : null}
+                </span>
+                <Icon name="chevronDown" />
+              </button>
+              {selectedSourceOffline && props.selectedProject ? (
+                <ProjectSourceRefreshButton
+                  sourceName={props.selectedProject.connectionProfileName ?? props.selectedProject.name}
+                  refresh={() => props.reconnectSource(selectedConnectionProfileId)}
+                />
+              ) : null}
+            </div>
           </ProjectCheckoutHeader>
           <WorkspaceViewSwitch
             view={workspaceView}

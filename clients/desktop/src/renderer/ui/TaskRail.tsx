@@ -242,7 +242,7 @@ export type TaskRailProps = {
   detailTaskId: string | undefined;
   agentCapabilities: readonly AgentCapabilityDto[];
   launchTaskTerminal(taskId: string): Promise<string | undefined>;
-  launchTaskAgent(taskId: string, agentId: string, model?: string, reasoning?: AgentCapabilityDto["reasoning"][number], kickoffMessage?: string): Promise<string | undefined>;
+  launchTaskAgent(taskId: string, agentId: string, model?: string, permission?: AgentCapabilityDto["permissions"][number], reasoning?: AgentCapabilityDto["reasoning"][number], kickoffMessage?: string): Promise<string | undefined>;
   runImprovement: RunImprovement;
   setupRunImprovement(projectId: string, target: RunConfigurationImproverTarget): void;
   saveRunConfiguration(params: RunConfigurationCreateParams | RunConfigurationUpdateParams): Promise<RunConfigurationDto | string>;
@@ -429,6 +429,7 @@ export function TaskRail(props: TaskRailProps) {
               taskId,
               start.agentId,
               start.model,
+              start.permission,
               start.reasoning,
               start.kickoffMessage ?? undefined,
             );

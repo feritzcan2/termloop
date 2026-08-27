@@ -96,14 +96,17 @@ describe("GhosttySurface", () => {
     const { bridge } = fakeBridge();
     const resizes: Array<[number, number]> = [];
     const surface = new GhosttySurface(() => {}, (rows, cols) => resizes.push([rows, cols]), bridge);
-    surface.mount(container(), false);
-    await flush();
+    await surface.mount(container(), false);
     animationFrames.splice(0).forEach((callback) => callback(0));
     await flush();
     animationFrames.splice(0).forEach((callback) => callback(0));
     await flush();
 
     expect(bridge.create).toHaveBeenCalledWith({ x: 10, y: 20, width: 640, height: 480 });
+    expect(bridge.setFrame).toHaveBeenCalledWith(7, 10, 20, 640, 480);
+    expect(vi.mocked(bridge.setFrame).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(bridge.setVisible).mock.invocationCallOrder[0]!,
+    );
     // One grid, so the Session's PTY is never sized to a placeholder pane and
     // the agent never repaints for a width the surface will not keep.
     expect(resizes).toEqual([[30, 100]]);

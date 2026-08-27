@@ -367,14 +367,16 @@ describe("Project New Task automation", () => {
     createWorktree: true,
     agentId: "codex" as string | null,
     model: "gpt-5.6-sol" as string | null,
+    permission: "bypassPermissions" as const,
     reasoning: "high" as const,
     kickoffMessage: "Implement and verify." as string | null,
   };
-  const off = { createWorktree: false, agentId: null, model: null, reasoning: null, kickoffMessage: null } as const;
+  const off = { createWorktree: false, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null } as const;
   const on = {
     createWorktree: true,
     agentId: "codex",
     model: "gpt-5.6-sol",
+    permission: "bypassPermissions" as const,
     reasoning: "high" as const,
     kickoffMessage: "Implement and verify.",
   };
@@ -388,6 +390,7 @@ describe("Project New Task automation", () => {
     expect(projectTaskAutomationError(off)).toBeUndefined();
     expect(projectTaskAutomationError({ ...on, createWorktree: false })).toMatch(/requires worktree/);
     expect(projectTaskAutomationError({ ...on, agentId: "x".repeat(65) })).toMatch(/configured agent/);
+    expect(projectTaskAutomationError({ ...on, permission: null })).toMatch(/permission mode/);
     expect(projectTaskAutomationError({ ...on, kickoffMessage: " " })).toMatch(/kickoff message/);
   });
 
@@ -395,7 +398,7 @@ describe("Project New Task automation", () => {
     expect(taskAutomationSummary(off)).toMatch(/Task only/);
     expect(taskAutomationSummary({ ...off, createWorktree: true })).toMatch(/no agent/);
     expect(taskAutomationSummary(on, "Codex"))
-      .toBe("Task, worktree, and Codex · gpt-5.6-sol · high reasoning · kickoff message");
+      .toBe("Task, worktree, and Codex · gpt-5.6-sol · bypass permissions · high reasoning · kickoff message");
   });
 
   it("sends a resolved one-shot intent instead of inheriting the Project default", () => {
@@ -404,15 +407,16 @@ describe("Project New Task automation", () => {
         worktreeIntent: "provision",
         agentId: "codex",
         model: "gpt-5.6-sol",
+        permission: "bypassPermissions",
         reasoning: "high",
         kickoffMessage: "Implement and verify.",
       });
     expect(taskCreationIntent({ ...off, createWorktree: true }))
-      .toEqual({ worktreeIntent: "provision", agentId: null, model: null, reasoning: null, kickoffMessage: null });
+      .toEqual({ worktreeIntent: "provision", agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null });
     // Unchecked worktree drops the agent with it: the daemon rejects an agent
     // without one, and "none" must never smuggle a Project default back in.
     expect(taskCreationIntent({ ...on, createWorktree: false }))
-      .toEqual({ worktreeIntent: "none", agentId: null, model: null, reasoning: null, kickoffMessage: null });
+      .toEqual({ worktreeIntent: "none", agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null });
   });
 
   it("keeps a chosen but unavailable agent visible in the picker", () => {

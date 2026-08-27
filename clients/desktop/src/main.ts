@@ -1234,6 +1234,11 @@ handleIpc("termloop:connection-profile-list", async (event) => {
   requireMainRenderer(event);
   return connections.summaries();
 });
+handleIpc("termloop:connection-profile-reconnect", async (event, profileId: string) => {
+  requireMainRenderer(event);
+  await connections.reconnect(profileId);
+  return connections.summaries();
+});
 handleIpc("termloop:connection-profile-connect", async (event, input: ConnectionProfileConnectInput) => {
   requireMainRenderer(event);
   const result = await connectionProfiles().connect(input);

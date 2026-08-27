@@ -632,6 +632,7 @@ pub(super) async fn candidate_import(params: Value, state: &AppState) -> Result<
                 params.worktree_intent,
                 params.agent_id,
                 params.model,
+                params.permission,
                 params.reasoning,
                 params.kickoff_message,
                 state,

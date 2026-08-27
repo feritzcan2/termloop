@@ -1381,6 +1381,7 @@ describe("Task rail create flow", () => {
         createWorktree: false,
         agentId: null,
         model: null,
+        permission: null,
         reasoning: null,
         kickoffMessage: null,
       },
@@ -1419,6 +1420,7 @@ describe("Task rail create flow", () => {
         createWorktree: true,
         agentId: "claude",
         model: "opus[1m]",
+        permission: "bypassPermissions" as const,
         reasoning: "high" as const,
         kickoffMessage: "Implement and verify this Task.",
       },
@@ -1501,6 +1503,7 @@ describe("Task rail create flow", () => {
       "task-new",
       "claude",
       "opus[1m]",
+      "bypassPermissions",
       "high",
       "Implement and verify this Task.",
     );

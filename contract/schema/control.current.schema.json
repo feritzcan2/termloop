@@ -2145,12 +2145,18 @@
       "x-codegen-name": "ProjectTaskAutomationConfigurationDto",
       "type": "object",
       "additionalProperties": false,
-      "required": ["projectId", "createWorktree", "agentId", "model", "reasoning", "kickoffMessage"],
+      "required": ["projectId", "createWorktree", "agentId", "model", "permission", "reasoning", "kickoffMessage"],
       "properties": {
         "projectId": { "type": "string", "minLength": 1 },
         "createWorktree": { "type": "boolean" },
         "agentId": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
         "model": { "type": ["string", "null"], "minLength": 1, "maxLength": 80 },
+        "permission": {
+          "anyOf": [
+            { "type": "string", "enum": ["default", "acceptEdits", "plan", "bypassPermissions"] },
+            { "type": "null" }
+          ]
+        },
         "reasoning": {
           "anyOf": [
             { "type": "string", "enum": ["default", "low", "medium", "high", "xhigh", "max"] },
@@ -2166,12 +2172,14 @@
             "properties": {
               "createWorktree": { "const": true },
               "model": { "type": "string" },
+              "permission": { "type": "string" },
               "reasoning": { "type": "string" }
             }
           },
           "else": {
             "properties": {
               "model": { "const": null },
+              "permission": { "const": null },
               "reasoning": { "const": null },
               "kickoffMessage": { "const": null }
             }
@@ -2195,12 +2203,18 @@
       "x-codegen-name": "ProjectTaskAutomationSetParams",
       "type": "object",
       "additionalProperties": false,
-      "required": ["projectId", "createWorktree", "agentId", "model", "reasoning", "kickoffMessage", "expectedRevision"],
+      "required": ["projectId", "createWorktree", "agentId", "model", "permission", "reasoning", "kickoffMessage", "expectedRevision"],
       "properties": {
         "projectId": { "type": "string", "minLength": 1 },
         "createWorktree": { "type": "boolean" },
         "agentId": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
         "model": { "type": ["string", "null"], "minLength": 1, "maxLength": 80 },
+        "permission": {
+          "anyOf": [
+            { "type": "string", "enum": ["default", "acceptEdits", "plan", "bypassPermissions"] },
+            { "type": "null" }
+          ]
+        },
         "reasoning": {
           "anyOf": [
             { "type": "string", "enum": ["default", "low", "medium", "high", "xhigh", "max"] },
@@ -2217,12 +2231,14 @@
             "properties": {
               "createWorktree": { "const": true },
               "model": { "type": "string" },
+              "permission": { "type": "string" },
               "reasoning": { "type": "string" }
             }
           },
           "else": {
             "properties": {
               "model": { "const": null },
+              "permission": { "const": null },
               "reasoning": { "const": null },
               "kickoffMessage": { "const": null }
             }
@@ -5480,6 +5496,7 @@
         "worktreeIntent",
         "agentId",
         "model",
+        "permission",
         "reasoning",
         "kickoffMessage"
       ],
@@ -5513,6 +5530,12 @@
           "minLength": 1,
           "maxLength": 80
         },
+        "permission": {
+          "anyOf": [
+            { "type": "string", "enum": ["default", "acceptEdits", "plan", "bypassPermissions"] },
+            { "type": "null" }
+          ]
+        },
         "reasoning": {
           "anyOf": [
             { "type": "string", "enum": ["default", "low", "medium", "high", "xhigh", "max"] },
@@ -5532,12 +5555,14 @@
             "properties": {
               "worktreeIntent": { "const": "provision" },
               "model": { "type": "string" },
+              "permission": { "type": "string" },
               "reasoning": { "type": "string" }
             }
           },
           "else": {
             "properties": {
               "model": { "const": null },
+              "permission": { "const": null },
               "reasoning": { "const": null },
               "kickoffMessage": { "const": null }
             }
@@ -13181,7 +13206,7 @@
       "x-codegen-name": "TaskSourceCandidateImportParams",
       "type": "object",
       "additionalProperties": false,
-      "required": ["sourceId", "externalId", "expectedGeneration", "expectedObservationSequence", "expectedRevision", "worktreeIntent", "agentId", "model", "reasoning", "kickoffMessage"],
+      "required": ["sourceId", "externalId", "expectedGeneration", "expectedObservationSequence", "expectedRevision", "worktreeIntent", "agentId", "model", "permission", "reasoning", "kickoffMessage"],
       "properties": {
         "sourceId": { "type": "string", "minLength": 1, "maxLength": 64 },
         "externalId": { "type": "string", "minLength": 1, "maxLength": 64 },
@@ -13191,6 +13216,12 @@
         "worktreeIntent": { "$ref": "#/$defs/taskCreateWorktreeIntent" },
         "agentId": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
         "model": { "type": ["string", "null"], "minLength": 1, "maxLength": 80 },
+        "permission": {
+          "anyOf": [
+            { "type": "string", "enum": ["default", "acceptEdits", "plan", "bypassPermissions"] },
+            { "type": "null" }
+          ]
+        },
         "reasoning": {
           "anyOf": [
             { "type": "string", "enum": ["default", "low", "medium", "high", "xhigh", "max"] },
@@ -13206,12 +13237,14 @@
             "properties": {
               "worktreeIntent": { "const": "provision" },
               "model": { "type": "string" },
+              "permission": { "type": "string" },
               "reasoning": { "type": "string" }
             }
           },
           "else": {
             "properties": {
               "model": { "const": null },
+              "permission": { "const": null },
               "reasoning": { "const": null },
               "kickoffMessage": { "const": null }
             }

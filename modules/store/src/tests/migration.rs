@@ -1386,6 +1386,7 @@ fn v42_migration_lifts_unanimous_source_task_automation_to_the_project() {
             create_worktree: true,
             agent_id: Some("codex".into()),
             model: Some("default".into()),
+            permission: Some("default".into()),
             reasoning: Some("default".into()),
             kickoff_message: None,
         }]
@@ -1482,6 +1483,7 @@ fn v44_migration_adds_safe_task_agent_launch_defaults() {
             create_worktree: true,
             agent_id: Some("codex".into()),
             model: Some("default".into()),
+            permission: Some("default".into()),
             reasoning: Some("default".into()),
             kickoff_message: None,
         }]
@@ -1498,8 +1500,55 @@ fn v44_migration_adds_safe_task_agent_launch_defaults() {
         "default"
     );
     assert_eq!(
+        persisted["project_task_automation_configurations"][0]["permission"],
+        "default"
+    );
+    assert_eq!(
         persisted["project_task_automation_configurations"][0]["kickoffMessage"],
         serde_json::Value::Null
+    );
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn v45_migration_adds_safe_task_agent_permission_defaults() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-task-automation-v45-{}-{}.json",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&serde_json::json!({
+            "schema_version": 45,
+            "revision": 7,
+            "projects": [{"id":"project-1","name":"Project","folder_path":"/tmp/project"}],
+            "task_source_configurations": [],
+            "project_task_automation_configurations": [{
+                "projectId": "project-1",
+                "createWorktree": true,
+                "agentId": "codex",
+                "model": "gpt-5.6-sol",
+                "reasoning": "high",
+                "kickoffMessage": null
+            }],
+            "sessions": []
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let store = Store::open(&path).unwrap();
+    assert_eq!(
+        store.project_task_automation_configurations()[0].permission,
+        Some("default".into())
+    );
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(persisted["schema_version"], CURRENT_SCHEMA_VERSION);
+    assert_eq!(
+        persisted["project_task_automation_configurations"][0]["permission"],
+        "default"
     );
     let _ = std::fs::remove_file(path);
 }
@@ -1535,6 +1584,7 @@ fn v42_migration_preserves_legacy_default_automation_fields() {
             create_worktree: false,
             agent_id: None,
             model: None,
+            permission: None,
             reasoning: None,
             kickoff_message: None,
         }]

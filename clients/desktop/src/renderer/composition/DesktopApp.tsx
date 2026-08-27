@@ -1064,6 +1064,7 @@ export function DesktopApp() {
     taskId: string,
     agentId: string,
     model?: string,
+    permission?: AgentCapabilityDto["permissions"][number],
     reasoning?: AgentCapabilityDto["reasoning"][number],
     kickoffMessage?: string,
   ) => {
@@ -1078,7 +1079,7 @@ export function DesktopApp() {
         taskId,
         agentId,
         model ?? preset.model,
-        preset.permission,
+        permission ?? preset.permission,
         reasoning ?? preset.reasoning,
         kickoffMessage,
       );
@@ -2021,6 +2022,14 @@ export function DesktopApp() {
       agentCapabilities={agentCapabilities}
       connection={projection.connection}
       connectionMessage={projection.message}
+      reconnectSource={async (profileId) => {
+        try {
+          await desktopApi.connectionProfileReconnect(profileId);
+        } catch (error) {
+          projectionStore.setMessage(controlErrorMessage(error));
+          throw error;
+        }
+      }}
       isPackaged={isPackaged}
       errorLog={projection.errorLog}
       clearErrorLog={() => projectionStore.clearErrorLog()}

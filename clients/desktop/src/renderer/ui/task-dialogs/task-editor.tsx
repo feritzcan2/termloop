@@ -21,6 +21,7 @@ export type TaskStartSelection = "terminal" | {
   kind: "agent";
   agentId: string;
   model: string;
+  permission: AgentCapabilityDto["permissions"][number];
   reasoning: AgentCapabilityDto["reasoning"][number];
   kickoffMessage: string | null;
 };
@@ -129,6 +130,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
       const selectedAgent = configuration.createWorktree
         && configuration.agentId
         && configuration.model
+        && configuration.permission
         && configuration.reasoning
         && flow.agentCapabilities.some((capability) => capability.available && capability.agent_id === configuration.agentId)
         ? configuration.agentId
@@ -137,6 +139,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
         kind: "agent",
         agentId: selectedAgent,
         model: configuration.model!,
+        permission: configuration.permission!,
         reasoning: configuration.reasoning!,
         kickoffMessage: configuration.kickoffMessage,
       } : undefined);
@@ -239,6 +242,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
               kind: "agent",
               agentId: start,
               model: defaults.model ?? "default",
+              permission: defaults.permission ?? "default",
               reasoning: defaults.reasoning ?? "default",
               kickoffMessage: null,
             };

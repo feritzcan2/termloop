@@ -76,6 +76,7 @@ impl CoreRuntime {
                 create_worktree: false,
                 agent_id: None,
                 model: None,
+                permission: None,
                 reasoning: None,
                 kickoff_message: None,
             }))
@@ -101,6 +102,7 @@ impl CoreRuntime {
             .ok_or_else(|| CoreError::InvalidParams("createWorktree".into()))?;
         let agent_id = nullable_trimmed_string(&params, "agentId")?;
         let model = nullable_trimmed_string(&params, "model")?;
+        let permission = nullable_trimmed_string(&params, "permission")?;
         let reasoning = nullable_trimmed_string(&params, "reasoning")?;
         let kickoff_message = nullable_trimmed_string(&params, "kickoffMessage")?;
         let expected_revision = params
@@ -112,6 +114,7 @@ impl CoreRuntime {
             create_worktree,
             agent_id,
             model,
+            permission,
             reasoning,
             kickoff_message,
         };
@@ -688,6 +691,7 @@ mod tests {
                 "createWorktree": true,
                 "agentId": "codex",
                 "model": "gpt-5.6-sol",
+                "permission": "bypassPermissions",
                 "reasoning": "high",
                 "kickoffMessage": "Implement and verify this Task.",
                 "expectedRevision": revision,
@@ -695,6 +699,7 @@ mod tests {
             .unwrap();
         assert_eq!(updated["configuration"]["agentId"], "codex");
         assert_eq!(updated["configuration"]["model"], "gpt-5.6-sol");
+        assert_eq!(updated["configuration"]["permission"], "bypassPermissions");
         assert_eq!(updated["configuration"]["reasoning"], "high");
         assert_eq!(
             updated["configuration"]["kickoffMessage"],
@@ -706,6 +711,7 @@ mod tests {
                 "createWorktree": false,
                 "agentId": null,
                 "model": null,
+                "permission": null,
                 "reasoning": null,
                 "kickoffMessage": null,
                 "expectedRevision": revision,

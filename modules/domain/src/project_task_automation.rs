@@ -11,6 +11,8 @@ pub struct ProjectTaskAutomationConfiguration {
     #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]
+    pub permission: Option<String>,
+    #[serde(default)]
     pub reasoning: Option<String>,
     #[serde(default)]
     pub kickoff_message: Option<String>,
@@ -24,13 +26,15 @@ impl ProjectTaskAutomationConfiguration {
         match (
             self.agent_id.as_deref(),
             self.model.as_deref(),
+            self.permission.as_deref(),
             self.reasoning.as_deref(),
         ) {
-            (None, None, None) => self.kickoff_message.is_none(),
-            (Some(agent_id), Some(model), Some(reasoning)) => {
+            (None, None, None, None) => self.kickoff_message.is_none(),
+            (Some(agent_id), Some(model), Some(permission), Some(reasoning)) => {
                 self.create_worktree
                     && agent_id_is_well_formed(agent_id)
                     && valid_model(model)
+                    && valid_permission(permission)
                     && valid_reasoning(reasoning)
                     && self
                         .kickoff_message
@@ -53,6 +57,13 @@ fn valid_reasoning(value: &str) -> bool {
     )
 }
 
+fn valid_permission(value: &str) -> bool {
+    matches!(
+        value,
+        "default" | "acceptEdits" | "plan" | "bypassPermissions"
+    )
+}
+
 fn valid_kickoff_message(value: &str) -> bool {
     !value.trim().is_empty()
         && value.len() <= PROJECT_TASK_AUTOMATION_KICKOFF_MESSAGE_MAX_BYTES
@@ -72,6 +83,7 @@ mod tests {
             create_worktree: true,
             agent_id: Some("codex".into()),
             model: Some("gpt-5.6-sol".into()),
+            permission: Some("bypassPermissions".into()),
             reasoning: Some("high".into()),
             kickoff_message: Some("Implement the Task and run focused tests.".into()),
         };
@@ -92,6 +104,7 @@ mod tests {
             create_worktree: true,
             agent_id: None,
             model: None,
+            permission: None,
             reasoning: None,
             kickoff_message: None,
         };
@@ -100,9 +113,13 @@ mod tests {
         assert!(!configuration.is_valid());
         configuration.agent_id = Some("codex".into());
         configuration.model = Some("default".into());
+        configuration.permission = Some("default".into());
         configuration.reasoning = Some("ultra".into());
         assert!(!configuration.is_valid());
         configuration.reasoning = Some("max".into());
+        configuration.permission = Some("unrestricted".into());
+        assert!(!configuration.is_valid());
+        configuration.permission = Some("plan".into());
         configuration.kickoff_message = Some("unsafe\u{1b}message".into());
         assert!(!configuration.is_valid());
     }

@@ -197,6 +197,7 @@ export type DesktopApi = {
   pickLocalFolder(defaultPath?: string): Promise<string | null>;
   mobileAccessPairing(): Promise<MobileAccessPairingResult>;
   connectionProfileList(): Promise<ConnectionProfileSummary[]>;
+  connectionProfileReconnect(profileId: string): Promise<ConnectionProfileSummary[]>;
   connectionProfileConnect(input: ConnectionProfileConnectInput): Promise<ConnectionProfileConnectResult>;
   connectionProfileSetEnabled(profileId: string, enabled: boolean): Promise<ConnectionProfileSummary[]>;
   connectionProfileRemove(profileId: string): Promise<ConnectionProfileSummary[]>;

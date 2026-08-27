@@ -167,7 +167,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:7297951ad948618fee9b2e195ae1ac499a2e92a4b5d040efba38ff027894d069";
+    "sha256:f1add764fc2a7a0e24fa96d9ff6e6d5ec286501f6c3f06b173ed609c30812a64";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -974,6 +974,8 @@ pub struct ProjectTaskAutomationConfigurationDto {
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub model: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub permission: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
     pub reasoning: Option<String>,
     #[serde(
         rename = "kickoffMessage",
@@ -1001,6 +1003,8 @@ pub struct ProjectTaskAutomationSetParams {
     pub agent_id: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub model: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub permission: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub reasoning: Option<String>,
     #[serde(
@@ -2679,6 +2683,8 @@ pub struct TaskCreateParams {
     pub agent_id: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub model: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub permission: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub reasoning: Option<String>,
     #[serde(
@@ -6073,6 +6079,8 @@ pub struct TaskSourceCandidateImportParams {
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub model: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub permission: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
     pub reasoning: Option<String>,
     #[serde(
         rename = "kickoffMessage",
@@ -8900,6 +8908,11 @@ fn validate_project_task_automation_configuration_dto(value: &Value) -> bool {
                     .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
                     || field.is_null())
             })
+            && object.get("permission").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text)
+                }) || field.is_null())
+            })
             && object.get("reasoning").is_some_and(|field| {
                 (field.as_str().is_some_and(|text| {
                     ["default", "low", "medium", "high", "xhigh", "max"].contains(&text)
@@ -8917,6 +8930,7 @@ fn validate_project_task_automation_configuration_dto(value: &Value) -> bool {
                     "createWorktree",
                     "agentId",
                     "model",
+                    "permission",
                     "reasoning",
                     "kickoffMessage",
                 ]
@@ -8934,6 +8948,9 @@ fn validate_project_task_automation_configuration_dto(value: &Value) -> bool {
                 .get("model")
                 .is_none_or(|field| field.as_str().is_some_and(|text| true))
             && object
+                .get("permission")
+                .is_none_or(|field| field.as_str().is_some_and(|text| true))
+            && object
                 .get("reasoning")
                 .is_none_or(|field| field.as_str().is_some_and(|text| true))
     }))) && ((value.as_object().is_some_and(|object| {
@@ -8944,6 +8961,9 @@ fn validate_project_task_automation_configuration_dto(value: &Value) -> bool {
         object
             .get("model")
             .is_none_or(|field| field == &serde_json::json!(null))
+            && object
+                .get("permission")
+                .is_none_or(|field| field == &serde_json::json!(null))
             && object
                 .get("reasoning")
                 .is_none_or(|field| field == &serde_json::json!(null))
@@ -9008,6 +9028,11 @@ fn validate_project_task_automation_set_params(value: &Value) -> bool {
                     .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
                     || field.is_null())
             })
+            && object.get("permission").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text)
+                }) || field.is_null())
+            })
             && object.get("reasoning").is_some_and(|field| {
                 (field.as_str().is_some_and(|text| {
                     ["default", "low", "medium", "high", "xhigh", "max"].contains(&text)
@@ -9031,6 +9056,7 @@ fn validate_project_task_automation_set_params(value: &Value) -> bool {
                     "createWorktree",
                     "agentId",
                     "model",
+                    "permission",
                     "reasoning",
                     "kickoffMessage",
                     "expectedRevision",
@@ -9049,6 +9075,9 @@ fn validate_project_task_automation_set_params(value: &Value) -> bool {
                 .get("model")
                 .is_none_or(|field| field.as_str().is_some_and(|text| true))
             && object
+                .get("permission")
+                .is_none_or(|field| field.as_str().is_some_and(|text| true))
+            && object
                 .get("reasoning")
                 .is_none_or(|field| field.as_str().is_some_and(|text| true))
     }))) && ((value.as_object().is_some_and(|object| {
@@ -9059,6 +9088,9 @@ fn validate_project_task_automation_set_params(value: &Value) -> bool {
         object
             .get("model")
             .is_none_or(|field| field == &serde_json::json!(null))
+            && object
+                .get("permission")
+                .is_none_or(|field| field == &serde_json::json!(null))
             && object
                 .get("reasoning")
                 .is_none_or(|field| field == &serde_json::json!(null))
@@ -13022,6 +13054,11 @@ fn validate_task_create_params(value: &Value) -> bool {
                     .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
                     || field.is_null())
             })
+            && object.get("permission").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text)
+                }) || field.is_null())
+            })
             && object.get("reasoning").is_some_and(|field| {
                 (field.as_str().is_some_and(|text| {
                     ["default", "low", "medium", "high", "xhigh", "max"].contains(&text)
@@ -13041,6 +13078,7 @@ fn validate_task_create_params(value: &Value) -> bool {
                     "worktreeIntent",
                     "agentId",
                     "model",
+                    "permission",
                     "reasoning",
                     "kickoffMessage",
                 ]
@@ -13058,6 +13096,9 @@ fn validate_task_create_params(value: &Value) -> bool {
                 .get("model")
                 .is_none_or(|field| field.as_str().is_some_and(|text| true))
             && object
+                .get("permission")
+                .is_none_or(|field| field.as_str().is_some_and(|text| true))
+            && object
                 .get("reasoning")
                 .is_none_or(|field| field.as_str().is_some_and(|text| true))
     }))) && ((value.as_object().is_some_and(|object| {
@@ -13068,6 +13109,9 @@ fn validate_task_create_params(value: &Value) -> bool {
         object
             .get("model")
             .is_none_or(|field| field == &serde_json::json!(null))
+            && object
+                .get("permission")
+                .is_none_or(|field| field == &serde_json::json!(null))
             && object
                 .get("reasoning")
                 .is_none_or(|field| field == &serde_json::json!(null))
@@ -22551,6 +22595,11 @@ fn validate_task_source_candidate_import_params(value: &Value) -> bool {
                     .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 80)
                     || field.is_null())
             })
+            && object.get("permission").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    ["default", "acceptEdits", "plan", "bypassPermissions"].contains(&text)
+                }) || field.is_null())
+            })
             && object.get("reasoning").is_some_and(|field| {
                 (field.as_str().is_some_and(|text| {
                     ["default", "low", "medium", "high", "xhigh", "max"].contains(&text)
@@ -22572,6 +22621,7 @@ fn validate_task_source_candidate_import_params(value: &Value) -> bool {
                     "worktreeIntent",
                     "agentId",
                     "model",
+                    "permission",
                     "reasoning",
                     "kickoffMessage",
                 ]
@@ -22589,6 +22639,9 @@ fn validate_task_source_candidate_import_params(value: &Value) -> bool {
                 .get("model")
                 .is_none_or(|field| field.as_str().is_some_and(|text| true))
             && object
+                .get("permission")
+                .is_none_or(|field| field.as_str().is_some_and(|text| true))
+            && object
                 .get("reasoning")
                 .is_none_or(|field| field.as_str().is_some_and(|text| true))
     }))) && ((value.as_object().is_some_and(|object| {
@@ -22599,6 +22652,9 @@ fn validate_task_source_candidate_import_params(value: &Value) -> bool {
         object
             .get("model")
             .is_none_or(|field| field == &serde_json::json!(null))
+            && object
+                .get("permission")
+                .is_none_or(|field| field == &serde_json::json!(null))
             && object
                 .get("reasoning")
                 .is_none_or(|field| field == &serde_json::json!(null))

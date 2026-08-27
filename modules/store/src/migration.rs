@@ -454,6 +454,7 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
             migrate_v42_to_v43_value(&mut value)?;
             migrate_v43_to_v44_value(&mut value)?;
             migrate_v44_to_v45_value(&mut value)?;
+            migrate_v45_to_v46_value(&mut value)?;
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             sanitize_resume_metadata(&mut state);
@@ -463,6 +464,7 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
         43 => {
             migrate_v43_to_v44_value(&mut value)?;
             migrate_v44_to_v45_value(&mut value)?;
+            migrate_v45_to_v46_value(&mut value)?;
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             sanitize_resume_metadata(&mut state);
@@ -471,6 +473,15 @@ pub(super) fn decode_and_migrate_state(bytes: &[u8]) -> Result<(CurrentState, bo
         }
         44 => {
             migrate_v44_to_v45_value(&mut value)?;
+            migrate_v45_to_v46_value(&mut value)?;
+            let mut state: CurrentState =
+                serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
+            sanitize_resume_metadata(&mut state);
+            validate_current_state(&state)?;
+            Ok((state, true))
+        }
+        45 => {
+            migrate_v45_to_v46_value(&mut value)?;
             let mut state: CurrentState =
                 serde_json::from_value(value).map_err(|error| StoreError::Io(error.to_string()))?;
             sanitize_resume_metadata(&mut state);
@@ -984,6 +995,12 @@ fn migrate_v43_to_v44_without_sources(state: &mut CurrentState) {
 
 fn migrate_v44_to_v45_without_automation(state: &mut CurrentState) {
     debug_assert!(state.project_task_automation_configurations.is_empty());
+    state.schema_version = 45;
+    migrate_v45_to_v46_without_automation(state);
+}
+
+fn migrate_v45_to_v46_without_automation(state: &mut CurrentState) {
+    debug_assert!(state.project_task_automation_configurations.is_empty());
     state.schema_version = CURRENT_SCHEMA_VERSION;
 }
 
@@ -1039,6 +1056,7 @@ fn migrate_v42_to_v43_value(value: &mut serde_json::Value) -> Result<(), StoreEr
                     create_worktree: first.0,
                     agent_id: first.1.clone(),
                     model: first.1.as_ref().map(|_| "default".into()),
+                    permission: first.1.as_ref().map(|_| "default".into()),
                     reasoning: first.1.as_ref().map(|_| "default".into()),
                     kickoff_message: None,
                 })
@@ -1049,6 +1067,7 @@ fn migrate_v42_to_v43_value(value: &mut serde_json::Value) -> Result<(), StoreEr
                         "createWorktree": configuration.create_worktree,
                         "agentId": configuration.agent_id,
                         "model": configuration.model,
+                        "permission": configuration.permission,
                         "reasoning": configuration.reasoning,
                         "kickoffMessage": configuration.kickoff_message,
                     })
@@ -1121,6 +1140,37 @@ fn migrate_v44_to_v45_value(value: &mut serde_json::Value) -> Result<(), StoreEr
                 },
             );
             configuration.insert("kickoffMessage".into(), serde_json::Value::Null);
+        }
+    }
+    object.insert("schema_version".into(), serde_json::json!(45));
+    Ok(())
+}
+
+fn migrate_v45_to_v46_value(value: &mut serde_json::Value) -> Result<(), StoreError> {
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| StoreError::Io("state root must be an object".into()))?;
+    if let Some(configurations) = object
+        .get_mut("project_task_automation_configurations")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for configuration in configurations {
+            let configuration = configuration.as_object_mut().ok_or_else(|| {
+                StoreError::Io(
+                    "project_task_automation_configurations record must be an object".into(),
+                )
+            })?;
+            let starts_agent = configuration
+                .get("agentId")
+                .is_some_and(serde_json::Value::is_string);
+            configuration.insert(
+                "permission".into(),
+                if starts_agent {
+                    serde_json::json!("default")
+                } else {
+                    serde_json::Value::Null
+                },
+            );
         }
     }
     object.insert(

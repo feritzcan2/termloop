@@ -45,7 +45,9 @@ class FakeAttachment implements TerminalAttachmentLike {
   focuses = 0;
   inputs: string[] = [];
   acceptInput = true;
+  operations: string[] = [];
   onEvent(listener: (event: AttachmentEvent) => void): () => void {
+    this.operations.push("listen");
     this.listener = listener;
     return () => { this.listener = undefined; };
   }
@@ -54,7 +56,10 @@ class FakeAttachment implements TerminalAttachmentLike {
     this.inputs.push(data);
     return true;
   }
-  resize(rows: number, cols: number): void { this.resizes.push({ rows, cols }); }
+  resize(rows: number, cols: number): void {
+    this.operations.push("resize");
+    this.resizes.push({ rows, cols });
+  }
   focus(): void { this.focuses += 1; }
   acknowledge(bytes: number, startupReplay: boolean): void {
     this.acknowledged += bytes;
@@ -165,6 +170,76 @@ describe("TerminalPool", () => {
     await pool.mount(value.id, {} as HTMLElement);
 
     expect(attachment.resizes).toEqual([{ rows: 61, cols: 154 }]);
+    expect(attachment.operations.slice(0, 2)).toEqual(["resize", "listen"]);
+  });
+
+  it("waits for an asynchronous initial surface measurement before attaching", async () => {
+    const attachment = new FakeAttachment();
+    const value = session("023e4567-e89b-12d3-a456-426614174010");
+    let finishMount!: () => void;
+    let attachCalls = 0;
+    const pool = new TerminalPool(
+      (_onInput, onResize) => ({
+        mount: () => new Promise<void>((resolve) => {
+          finishMount = () => {
+            onResize(47, 132);
+            resolve();
+          };
+        }),
+        unmount: () => {},
+        write: (_data, callback) => callback(),
+        writeln: () => {},
+        focus: () => {},
+        probe: () => undefined,
+        dispose: () => {},
+      }),
+      async () => {
+        attachCalls += 1;
+        return attachment;
+      },
+    );
+    pool.reconcile([value]);
+
+    const mounted = pool.mount(value.id, {} as HTMLElement);
+    await Promise.resolve();
+    expect(attachCalls).toBe(0);
+
+    finishMount();
+    await mounted;
+
+    expect(attachCalls).toBe(1);
+    expect(attachment.resizes).toEqual([{ rows: 47, cols: 132 }]);
+    expect(attachment.operations.slice(0, 2)).toEqual(["resize", "listen"]);
+  });
+
+  it("does not attach after an asynchronous mount was superseded", async () => {
+    const value = session("023e4567-e89b-12d3-a456-426614174011");
+    let finishMount!: () => void;
+    let attachCalls = 0;
+    const pool = new TerminalPool(
+      () => ({
+        mount: () => new Promise<void>((resolve) => { finishMount = resolve; }),
+        unmount: () => {},
+        write: (_data, callback) => callback(),
+        writeln: () => {},
+        focus: () => {},
+        probe: () => undefined,
+        dispose: () => {},
+      }),
+      async () => {
+        attachCalls += 1;
+        return new FakeAttachment();
+      },
+    );
+    pool.reconcile([value]);
+
+    const mounted = pool.mount(value.id, {} as HTMLElement);
+    await Promise.resolve();
+    pool.unmount(value.id);
+    finishMount();
+    await mounted;
+
+    expect(attachCalls).toBe(0);
   });
 
   it("submits bounded programmatic input only to a mounted running Session", async () => {

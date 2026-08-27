@@ -909,6 +909,7 @@ async fn steward_task_command(
             None,
             None,
             None,
+            None,
             state,
         )
         .await
