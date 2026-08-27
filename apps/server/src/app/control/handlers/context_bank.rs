@@ -63,6 +63,37 @@ pub(in crate::app) async fn save_context_bank_file(
     .map_err(|_| CoreError::Terminal("Context Bank file worker stopped unexpectedly".into()))?
 }
 
+pub(in crate::app) async fn resolve_context_bank_sibling_conflict(
+    params: Value,
+    state: &AppState,
+) -> Result<Value, CoreError> {
+    let params =
+        serde_json::from_value::<protocol::ContextBankSiblingConflictResolveParams>(params)
+            .expect("validated Context Bank sibling conflict params");
+    let plan = {
+        let core = state.core.lock().await;
+        core.plan_context_bank_sibling_conflict(
+            &params.project_id,
+            &params.conflict_id,
+            &params.source_file_id,
+        )?
+    };
+    tokio::task::spawn_blocking(move || {
+        termloop_platform::resolve_context_bank_sibling_conflict(
+            plan.catalog().project_directory(),
+            plan.catalog().project_name(),
+            plan.conflict_id(),
+            plan.source_file_id(),
+        )
+        .map_err(context_bank_error)
+        .and_then(serialize)
+    })
+    .await
+    .map_err(|_| {
+        CoreError::Terminal("Context Bank reconciliation worker stopped unexpectedly".into())
+    })?
+}
+
 async fn observe_catalog(plan: ContextBankCatalogPlan) -> Result<Value, CoreError> {
     tokio::task::spawn_blocking(move || {
         termloop_platform::context_bank_catalog(plan.project_directory(), plan.project_name())

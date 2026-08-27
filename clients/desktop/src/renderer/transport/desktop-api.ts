@@ -162,6 +162,7 @@ import type {
   ContextBankFileDto,
   ContextBankFileGetParams,
   ContextBankFileSaveParams,
+  ContextBankSiblingConflictResolveParams,
   SkillCatalogGetParams,
   SkillCatalogResult,
   SkillDefinitionDto,
@@ -236,6 +237,7 @@ export type DesktopApi = {
   contextBankCatalogGet(params: ContextBankCatalogGetParams): Promise<ContextBankCatalogResult>;
   contextBankFileGet(params: ContextBankFileGetParams): Promise<ContextBankFileDto>;
   contextBankFileSave(params: ContextBankFileSaveParams): Promise<ContextBankFileDto>;
+  contextBankSiblingConflictResolve(params: ContextBankSiblingConflictResolveParams): Promise<ContextBankCatalogResult>;
   projectList(): Promise<Project[]>;
   projectWorktreeSummary(projectId: string): Promise<ProjectWorktreeSummaryDto>;
   projectWorktreeChangeList(projectId: string): Promise<ProjectWorktreeChangeListResult>;

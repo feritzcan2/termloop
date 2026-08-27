@@ -10,7 +10,12 @@ import { ContextBankRail } from "../src/renderer/ui/ContextBankRail.js";
 const catalog: ContextBankCatalogResult = {
   projectName: "TermLoop",
   truncated: false,
-  warnings: ["Project root has sibling agent instruction files with different content."],
+  warnings: [],
+  siblingConflicts: [{
+    id: "d".repeat(64),
+    directoryPath: "apps/server",
+    fileIds: ["b".repeat(64), "c".repeat(64)],
+  }],
   files: [
     {
       id: "a".repeat(64),
@@ -68,6 +73,7 @@ describe("Context Bank rail", () => {
       load: async () => catalog,
       selectedFileId: undefined,
       openFile: vi.fn(),
+      resolveConflict: vi.fn(),
     })));
     await act(async () => undefined);
 
@@ -80,7 +86,8 @@ describe("Context Bank rail", () => {
     expect(container.querySelector(".context-tree-capacity.over-limit")?.textContent).toContain("121/100");
     expect(container.textContent).toContain("→ apps/server/AGENTS.md");
     expect(container.querySelector<HTMLElement>('[title="42 of 200 recommended lines"] i b')?.style.width).toBe("21%");
-    expect(container.querySelector(".context-bank-warning")?.textContent).toContain("different content");
+    expect(container.querySelector(".context-bank-warning")).toBeNull();
+    expect(container.querySelector(".context-tree-conflict-row")?.textContent).toContain("Sibling instruction files differ");
   });
 
   it("opens the selected opaque file identity", async () => {
@@ -90,6 +97,7 @@ describe("Context Bank rail", () => {
       load: async () => catalog,
       selectedFileId: "a".repeat(64),
       openFile,
+      resolveConflict: vi.fn(),
     })));
     await act(async () => undefined);
 
@@ -104,6 +112,7 @@ describe("Context Bank rail", () => {
       load: async () => catalog,
       selectedFileId: undefined,
       openFile: vi.fn(),
+      resolveConflict: vi.fn(),
     })));
     await act(async () => undefined);
 
@@ -121,6 +130,27 @@ describe("Context Bank rail", () => {
     expect(container.querySelector(".context-tree-file")?.textContent).toContain("GEMINI.md");
   });
 
+  it("chooses a source file and resolves only the inline sibling conflict", async () => {
+    const resolveConflict = vi.fn().mockResolvedValue({ ...catalog, siblingConflicts: [] });
+    await act(async () => root.render(createElement(ContextBankRail, {
+      projectOpen: true,
+      load: async () => catalog,
+      selectedFileId: undefined,
+      openFile: vi.fn(),
+      resolveConflict,
+    })));
+    await act(async () => undefined);
+
+    await act(async () => container.querySelector<HTMLButtonElement>(".context-tree-conflict-row button")?.click());
+    const gemini = [...container.querySelectorAll<HTMLButtonElement>(".context-conflict-sources button")]
+      .find((button) => button.textContent?.includes("GEMINI.md"));
+    await act(async () => gemini?.click());
+    await act(async () => container.querySelector<HTMLButtonElement>(".context-conflict-resolver .danger-button")?.click());
+
+    expect(resolveConflict).toHaveBeenCalledWith("d".repeat(64), "c".repeat(64));
+    expect(container.querySelector(".context-tree-conflict-row")).toBeNull();
+  });
+
   it("does not scan without a selected Project", async () => {
     const load = vi.fn();
     await act(async () => root.render(createElement(ContextBankRail, {
@@ -128,6 +158,7 @@ describe("Context Bank rail", () => {
       load,
       selectedFileId: undefined,
       openFile: vi.fn(),
+      resolveConflict: vi.fn(),
     })));
     expect(load).not.toHaveBeenCalled();
     expect(container.textContent).toContain("Open a Project");

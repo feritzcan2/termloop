@@ -176,6 +176,10 @@ export type ShellProps = {
     expectedContentSha256: string,
     content: string,
   ): Promise<import("@termloop/contract/current").ContextBankFileDto>;
+  resolveContextBankSiblingConflict(
+    conflictId: string,
+    sourceFileId: string,
+  ): Promise<import("@termloop/contract/current").ContextBankCatalogResult>;
   loadKeepAwake(): Promise<KeepAwakeStatusResult>;
   setKeepAwake(params: KeepAwakeSetParams): Promise<KeepAwakeStatusResult>;
   keepAwakeRefreshToken: number;
@@ -1316,6 +1320,7 @@ export function Shell(props: ShellProps) {
             refreshToken={contextBankRefreshToken}
             selectedFileId={stagePage?.kind === "contextFile" ? stagePage.id : undefined}
             openFile={(fileId) => openStagePage({ kind: "contextFile", id: fileId })}
+            resolveConflict={props.resolveContextBankSiblingConflict}
           /> : railMode === "mcp" ? <McpRail
             settings={mcpLibrary.value}
             error={mcpLibrary.error}

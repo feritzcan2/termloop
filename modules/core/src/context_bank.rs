@@ -40,6 +40,27 @@ impl ContextBankFilePlan {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextBankSiblingConflictPlan {
+    catalog: ContextBankCatalogPlan,
+    conflict_id: String,
+    source_file_id: String,
+}
+
+impl ContextBankSiblingConflictPlan {
+    pub fn catalog(&self) -> &ContextBankCatalogPlan {
+        &self.catalog
+    }
+
+    pub fn conflict_id(&self) -> &str {
+        &self.conflict_id
+    }
+
+    pub fn source_file_id(&self) -> &str {
+        &self.source_file_id
+    }
+}
+
 impl CoreRuntime {
     pub fn plan_context_bank_catalog(
         &self,
@@ -62,17 +83,38 @@ impl CoreRuntime {
         project_id: &str,
         file_id: &str,
     ) -> Result<ContextBankFilePlan, CoreError> {
-        if file_id.len() != 64
-            || !file_id
-                .bytes()
-                .all(|value| value.is_ascii_digit() || matches!(value, b'a'..=b'f'))
-        {
-            return Err(CoreError::InvalidParams("fileId".into()));
-        }
+        validate_opaque_sha256(file_id, "fileId")?;
         Ok(ContextBankFilePlan {
             catalog: self.plan_context_bank_catalog(project_id)?,
             file_id: file_id.to_owned(),
         })
+    }
+
+    pub fn plan_context_bank_sibling_conflict(
+        &self,
+        project_id: &str,
+        conflict_id: &str,
+        source_file_id: &str,
+    ) -> Result<ContextBankSiblingConflictPlan, CoreError> {
+        validate_opaque_sha256(conflict_id, "conflictId")?;
+        validate_opaque_sha256(source_file_id, "sourceFileId")?;
+        Ok(ContextBankSiblingConflictPlan {
+            catalog: self.plan_context_bank_catalog(project_id)?,
+            conflict_id: conflict_id.to_owned(),
+            source_file_id: source_file_id.to_owned(),
+        })
+    }
+}
+
+fn validate_opaque_sha256(value: &str, field: &'static str) -> Result<(), CoreError> {
+    if value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        Ok(())
+    } else {
+        Err(CoreError::InvalidParams(field.into()))
     }
 }
 
@@ -149,6 +191,20 @@ mod tests {
             .plan_context_bank_file(project_id, &"a".repeat(64))
             .unwrap();
         assert_eq!(plan.file_id(), "a".repeat(64));
+
+        let conflict = runtime
+            .plan_context_bank_sibling_conflict(project_id, &"b".repeat(64), &"c".repeat(64))
+            .unwrap();
+        assert_eq!(conflict.conflict_id(), "b".repeat(64));
+        assert_eq!(conflict.source_file_id(), "c".repeat(64));
+        assert!(matches!(
+            runtime.plan_context_bank_sibling_conflict(
+                project_id,
+                &"B".repeat(64),
+                &"c".repeat(64),
+            ),
+            Err(CoreError::InvalidParams(field)) if field == "conflictId"
+        ));
 
         drop(runtime);
         let _ = std::fs::remove_file(state_path);

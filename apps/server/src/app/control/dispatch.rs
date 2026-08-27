@@ -34,12 +34,12 @@ use super::handlers::{
     project_list_local_branches, project_worktree_change_list, project_worktree_diff,
     project_worktree_pre_image, project_worktree_summary, provision_task_worktree,
     relocate_agent_session, repair_provider_history, repair_task_worktree,
-    resolve_stale_task_worktree, restart_agent_session, restart_agents_for_client_launch,
-    restore_deleted_session, resume_agent_session, save_context_bank_file, save_skill_definition,
-    session_history_preview, set_skill_deployment, set_steward_configuration,
-    task_branch_commit_change_list, task_branch_commit_diff, task_branch_commit_list,
-    task_branch_commit_summary_list, task_worktree_change_list, task_worktree_diff,
-    task_worktree_pre_image, terminate_session, update_worker_configuration,
+    resolve_context_bank_sibling_conflict, resolve_stale_task_worktree, restart_agent_session,
+    restart_agents_for_client_launch, restore_deleted_session, resume_agent_session,
+    save_context_bank_file, save_skill_definition, session_history_preview, set_skill_deployment,
+    set_steward_configuration, task_branch_commit_change_list, task_branch_commit_diff,
+    task_branch_commit_list, task_branch_commit_summary_list, task_worktree_change_list,
+    task_worktree_diff, task_worktree_pre_image, terminate_session, update_worker_configuration,
 };
 use super::{
     ClientScope, ConnectionOrigin, constant_time_equal, origin_allows_method, scope_allows_method,
@@ -783,6 +783,9 @@ async fn dispatch_inner(
             "contextBank.catalogGet" => get_context_bank_catalog(request.params, state).await,
             "contextBank.fileGet" => get_context_bank_file(request.params, state).await,
             "contextBank.fileSave" => save_context_bank_file(request.params, state).await,
+            "contextBank.siblingConflictResolve" => {
+                resolve_context_bank_sibling_conflict(request.params, state).await
+            }
             "system.shutdown" => {
                 // Reply success first: the notifier is scheduled behind a
                 // short grace delay so the response reaches the requesting

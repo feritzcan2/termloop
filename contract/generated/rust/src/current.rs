@@ -167,7 +167,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:f1add764fc2a7a0e24fa96d9ff6e6d5ec286501f6c3f06b173ed609c30812a64";
+    "sha256:7ce6a9c386874df16b7e82d643d6c9e41747ce28317d0ec71d96239005799f26";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -198,6 +198,7 @@ pub const METHODS: &[&str] = &[
     "contextBank.catalogGet",
     "contextBank.fileGet",
     "contextBank.fileSave",
+    "contextBank.siblingConflictResolve",
     "project.create",
     "project.list",
     "project.taskAutomationGet",
@@ -2606,8 +2607,20 @@ pub struct ContextBankCatalogGetParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct ContextBankSiblingConflictDto {
+    pub id: String,
+    #[serde(rename = "directoryPath")]
+    pub directory_path: String,
+    #[serde(rename = "fileIds")]
+    pub file_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct ContextBankCatalogResult {
     pub files: Vec<ContextBankCatalogItemDto>,
+    #[serde(rename = "siblingConflicts")]
+    pub sibling_conflicts: Vec<ContextBankSiblingConflictDto>,
     pub warnings: Vec<String>,
     #[serde(rename = "projectName")]
     pub project_name: String,
@@ -2633,6 +2646,17 @@ pub struct ContextBankFileSaveParams {
     #[serde(rename = "expectedContentSha256")]
     pub expected_content_sha256: String,
     pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ContextBankSiblingConflictResolveParams {
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "conflictId")]
+    pub conflict_id: String,
+    #[serde(rename = "sourceFileId")]
+    pub source_file_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -7376,6 +7400,7 @@ pub type SkillDefinitionSaveResult = SkillDefinitionDto;
 pub type ContextBankCatalogGetResult = ContextBankCatalogResult;
 pub type ContextBankFileGetResult = ContextBankFileDto;
 pub type ContextBankFileSaveResult = ContextBankFileDto;
+pub type ContextBankSiblingConflictResolveResult = ContextBankCatalogResult;
 pub type ProjectCreateResult = ProjectDto;
 pub type ProjectListParams = EmptyParams;
 pub type ProjectListResult = Vec<ProjectDto>;
@@ -7537,6 +7562,7 @@ fn validate_method(value: &Value) -> bool {
             "contextBank.catalogGet",
             "contextBank.fileGet",
             "contextBank.fileSave",
+            "contextBank.siblingConflictResolve",
             "project.create",
             "project.list",
             "project.taskAutomationGet",
@@ -12820,6 +12846,41 @@ fn validate_context_bank_catalog_get_params(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_context_bank_sibling_conflict_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("id").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
+        }) && object.get("directoryPath").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 4096)
+        }) && object.get("fileIds").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() >= 2
+                    && items.len() <= 3
+                    && json_array_unique(items)
+                    && items.iter().all(|item| {
+                        item.as_str()
+                            .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
+                    })
+            })
+        }) && object
+            .keys()
+            .all(|key| ["id", "directoryPath", "fileIds"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_context_bank_catalog_result(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object.get("files").is_some_and(|field| {
@@ -12828,6 +12889,13 @@ fn validate_context_bank_catalog_result(value: &Value) -> bool {
                     && items
                         .iter()
                         .all(|item| validate_context_bank_catalog_item_dto(item))
+            })
+        }) && object.get("siblingConflicts").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() <= 250
+                    && items
+                        .iter()
+                        .all(|item| validate_context_bank_sibling_conflict_dto(item))
             })
         }) && object.get("warnings").is_some_and(|field| {
             field.as_array().is_some_and(|items| {
@@ -12846,7 +12914,14 @@ fn validate_context_bank_catalog_result(value: &Value) -> bool {
             .get("truncated")
             .is_some_and(|field| field.is_boolean())
             && object.keys().all(|key| {
-                ["files", "warnings", "projectName", "truncated"].contains(&key.as_str())
+                [
+                    "files",
+                    "siblingConflicts",
+                    "warnings",
+                    "projectName",
+                    "truncated",
+                ]
+                .contains(&key.as_str())
             })
     })
 }
@@ -12906,6 +12981,35 @@ fn validate_context_bank_file_save_params(value: &Value) -> bool {
         }) && object.keys().all(|key| {
             ["projectId", "fileId", "expectedContentSha256", "content"].contains(&key.as_str())
         })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_context_bank_sibling_conflict_resolve_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("projectId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 128)
+        }) && object.get("conflictId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
+        }) && object.get("sourceFileId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| contract_pattern_matches("^[0-9a-f]{64}$", text))
+        }) && object
+            .keys()
+            .all(|key| ["projectId", "conflictId", "sourceFileId"].contains(&key.as_str()))
     })
 }
 
@@ -26461,6 +26565,11 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<ContextBankFileSaveParams>(params.clone()).is_ok()
                 && validate_context_bank_file_save_params(params)
         }
+        "contextBank.siblingConflictResolve" => {
+            serde_json::from_value::<ContextBankSiblingConflictResolveParams>(params.clone())
+                .is_ok()
+                && validate_context_bank_sibling_conflict_resolve_params(params)
+        }
         "project.create" => {
             serde_json::from_value::<ProjectCreateParams>(params.clone()).is_ok()
                 && validate_project_create_params(params)
@@ -27141,6 +27250,11 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "contextBank.fileSave" => {
             serde_json::from_value::<ContextBankFileSaveResult>(result.clone()).is_ok()
                 && validate_context_bank_file_dto(result)
+        }
+        "contextBank.siblingConflictResolve" => {
+            serde_json::from_value::<ContextBankSiblingConflictResolveResult>(result.clone())
+                .is_ok()
+                && validate_context_bank_catalog_result(result)
         }
         "project.create" => {
             serde_json::from_value::<ProjectCreateResult>(result.clone()).is_ok()

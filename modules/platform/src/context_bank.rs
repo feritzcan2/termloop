@@ -71,8 +71,17 @@ pub struct ContextBankCatalogItem {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ContextBankSiblingConflict {
+    pub id: String,
+    pub directory_path: String,
+    pub file_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ContextBankCatalog {
     pub files: Vec<ContextBankCatalogItem>,
+    pub sibling_conflicts: Vec<ContextBankSiblingConflict>,
     pub warnings: Vec<String>,
     pub project_name: String,
     pub truncated: bool,
@@ -108,6 +117,10 @@ pub enum ContextBankError {
     ContentTooLarge,
     #[error("Context Bank can read only UTF-8 instruction files")]
     InvalidUtf8,
+    #[error(
+        "Context Bank could not restore every sibling after a failed reconciliation; inspect the affected folder before retrying"
+    )]
+    ConflictRollbackFailed,
     #[error(transparent)]
     Platform(#[from] PlatformError),
     #[error(transparent)]
@@ -135,13 +148,7 @@ pub fn context_bank_catalog(
     project_root: &Path,
     project_name: &str,
 ) -> Result<ContextBankCatalog, ContextBankError> {
-    let scan = scan(project_root)?;
-    Ok(ContextBankCatalog {
-        files: scan.files.into_iter().map(|file| file.item).collect(),
-        warnings: scan.warnings,
-        project_name: project_name.to_owned(),
-        truncated: scan.truncated,
-    })
+    Ok(catalog_from_scan(scan(project_root)?, project_name))
 }
 
 pub fn read_context_bank_file(
@@ -186,6 +193,101 @@ pub fn write_context_bank_file(
     file.item.line_count = line_count(content);
     file.item.over_limit = file.item.line_count > file.item.line_limit;
     Ok(file_definition(file))
+}
+
+pub fn resolve_context_bank_sibling_conflict(
+    project_root: &Path,
+    project_name: &str,
+    conflict_id: &str,
+    source_file_id: &str,
+) -> Result<ContextBankCatalog, ContextBankError> {
+    let initial_scan = scan(project_root)?;
+    let conflict = sibling_conflicts(&initial_scan.files)
+        .into_iter()
+        .find(|conflict| conflict.id == conflict_id)
+        .ok_or(ContextBankError::StaleFile)?;
+    if !conflict
+        .file_ids
+        .iter()
+        .any(|file_id| file_id == source_file_id)
+    {
+        return Err(ContextBankError::FileNotFound);
+    }
+
+    let source = initial_scan
+        .files
+        .iter()
+        .find(|file| file.item.id == source_file_id)
+        .ok_or(ContextBankError::FileNotFound)?;
+    let source_content = source.content.clone();
+    let member_ids = conflict
+        .file_ids
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let members = initial_scan
+        .files
+        .iter()
+        .filter(|file| member_ids.contains(file.item.id.as_str()))
+        .collect::<Vec<_>>();
+
+    for file in &members {
+        let current = read_utf8_bounded(&file.canonical_path)?;
+        if sha256_hex(&current) != file.content_sha256 {
+            return Err(ContextBankError::StaleFile);
+        }
+    }
+
+    let mut replacements = BTreeMap::<PathBuf, String>::new();
+    for file in members {
+        if file.canonical_path == source.canonical_path || file.content == source_content {
+            continue;
+        }
+        if !file.editable {
+            return Err(ContextBankError::ReadOnly);
+        }
+        replacements
+            .entry(file.canonical_path.clone())
+            .or_insert_with(|| file.content.clone());
+    }
+
+    let mut written = Vec::<(PathBuf, String)>::new();
+    for (path, original) in replacements {
+        if let Err(error) =
+            atomic_replace_file_preserving_permissions(&path, source_content.as_bytes())
+        {
+            let mut restored = true;
+            for (written_path, written_original) in written.iter().rev() {
+                if atomic_replace_file_preserving_permissions(
+                    written_path,
+                    written_original.as_bytes(),
+                )
+                .is_err()
+                {
+                    restored = false;
+                }
+            }
+            return if restored {
+                Err(ContextBankError::Platform(error))
+            } else {
+                Err(ContextBankError::ConflictRollbackFailed)
+            };
+        }
+        written.push((path, original));
+    }
+
+    Ok(catalog_from_scan(scan(project_root)?, project_name))
+}
+
+fn catalog_from_scan(scan: Scan, project_name: &str) -> ContextBankCatalog {
+    let sibling_conflicts = sibling_conflicts(&scan.files);
+    ContextBankCatalog {
+        files: scan.files.into_iter().map(|file| file.item).collect(),
+        sibling_conflicts,
+        warnings: scan.warnings,
+        project_name: project_name.to_owned(),
+        truncated: scan.truncated,
+    }
 }
 
 fn scan(project_root: &Path) -> Result<Scan, ContextBankError> {
@@ -410,7 +512,6 @@ fn scan(project_root: &Path) -> Result<Scan, ContextBankError> {
     }
 
     files.sort_by(|left, right| left.item.relative_path.cmp(&right.item.relative_path));
-    add_integrity_warnings(&files, &mut warnings);
     if truncated {
         push_warning(
             &mut warnings,
@@ -424,22 +525,7 @@ fn scan(project_root: &Path) -> Result<Scan, ContextBankError> {
     })
 }
 
-fn add_integrity_warnings(files: &[ScannedFile], warnings: &mut Vec<String>) {
-    for file in files.iter().filter(|file| file.item.is_symlink) {
-        let target = file
-            .item
-            .symlink_target_path
-            .as_deref()
-            .unwrap_or("its target");
-        push_warning(
-            warnings,
-            format!(
-                "{} is a symlink to {target}; edits preserve the link and update its in-Project target.",
-                file.item.relative_path
-            ),
-        );
-    }
-
+fn sibling_conflicts(files: &[ScannedFile]) -> Vec<ContextBankSiblingConflict> {
     let mut by_directory: BTreeMap<String, Vec<&ScannedFile>> = BTreeMap::new();
     for file in files {
         let directory = Path::new(&file.item.relative_path)
@@ -449,6 +535,7 @@ fn add_integrity_warnings(files: &[ScannedFile], warnings: &mut Vec<String>) {
             .replace('\\', "/");
         by_directory.entry(directory).or_default().push(file);
     }
+    let mut conflicts = Vec::new();
     for (directory, siblings) in by_directory {
         let kinds = siblings
             .iter()
@@ -459,17 +546,28 @@ fn add_integrity_warnings(files: &[ScannedFile], warnings: &mut Vec<String>) {
             .map(|file| file.content_sha256.as_str())
             .collect::<BTreeSet<_>>();
         if kinds.len() > 1 && contents.len() > 1 {
-            let scope = if directory.is_empty() {
-                "Project root"
+            let directory_path = if directory.is_empty() {
+                "."
             } else {
                 &directory
             };
-            push_warning(
-                warnings,
-                format!("{scope} has sibling agent instruction files with different content."),
-            );
+            let mut identity = format!("context-bank-conflict\0{directory_path}");
+            let mut file_ids = Vec::with_capacity(siblings.len());
+            for file in siblings {
+                identity.push('\0');
+                identity.push_str(&file.item.id);
+                identity.push('\0');
+                identity.push_str(&file.content_sha256);
+                file_ids.push(file.item.id.clone());
+            }
+            conflicts.push(ContextBankSiblingConflict {
+                id: sha256_hex(&identity),
+                directory_path: directory_path.to_owned(),
+                file_ids,
+            });
         }
     }
+    conflicts
 }
 
 fn file_definition(file: ScannedFile) -> ContextBankFile {
@@ -571,6 +669,7 @@ mod tests {
         assert_eq!(catalog.files[0].line_limit, 200);
         assert_eq!(catalog.files[1].relative_path, "apps/server/CLAUDE.md");
         assert_eq!(catalog.files[1].line_limit, 100);
+        assert!(catalog.sibling_conflicts.is_empty());
         assert!(!catalog.truncated);
 
         fs::remove_dir_all(root).unwrap();
@@ -618,19 +717,84 @@ mod tests {
     }
 
     #[test]
-    fn reports_divergent_sibling_instructions() {
+    fn reports_and_resolves_divergent_sibling_instructions() {
         let root = fixture();
         fs::write(root.join("AGENTS.md"), "agents\n").unwrap();
         fs::write(root.join("CLAUDE.md"), "claude\n").unwrap();
+        fs::write(root.join("GEMINI.md"), "gemini\n").unwrap();
 
         let catalog = context_bank_catalog(&root, "Fixture").unwrap();
-        assert!(
-            catalog
-                .warnings
-                .iter()
-                .any(|warning| warning.contains("different content"))
+        assert_eq!(catalog.sibling_conflicts.len(), 1);
+        assert_eq!(catalog.sibling_conflicts[0].directory_path, ".");
+        assert_eq!(catalog.sibling_conflicts[0].file_ids.len(), 3);
+        assert!(catalog.warnings.is_empty());
+        let conflict_id = catalog.sibling_conflicts[0].id.clone();
+        let source_id = catalog
+            .files
+            .iter()
+            .find(|file| file.relative_path == "AGENTS.md")
+            .unwrap()
+            .id
+            .clone();
+
+        let resolved =
+            resolve_context_bank_sibling_conflict(&root, "Fixture", &conflict_id, &source_id)
+                .unwrap();
+        assert!(resolved.sibling_conflicts.is_empty());
+        assert_eq!(
+            fs::read_to_string(root.join("CLAUDE.md")).unwrap(),
+            "agents\n"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("GEMINI.md")).unwrap(),
+            "agents\n"
         );
 
+        fs::write(root.join("CLAUDE.md"), "different again\n").unwrap();
+        let stale_catalog = context_bank_catalog(&root, "Fixture").unwrap();
+        let stale_conflict_id = stale_catalog.sibling_conflicts[0].id.clone();
+        fs::write(root.join("AGENTS.md"), "changed after scan\n").unwrap();
+        assert!(matches!(
+            resolve_context_bank_sibling_conflict(&root, "Fixture", &stale_conflict_id, &source_id,),
+            Err(ContextBankError::StaleFile)
+        ));
+        assert_eq!(
+            fs::read_to_string(root.join("CLAUDE.md")).unwrap(),
+            "different again\n"
+        );
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_a_read_only_conflict_before_overwriting_any_sibling() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = fixture();
+        fs::write(root.join("AGENTS.md"), "source\n").unwrap();
+        fs::write(root.join("CLAUDE.md"), "read only\n").unwrap();
+        fs::write(root.join("GEMINI.md"), "must stay unchanged\n").unwrap();
+        fs::set_permissions(root.join("CLAUDE.md"), fs::Permissions::from_mode(0o440)).unwrap();
+
+        let catalog = context_bank_catalog(&root, "Fixture").unwrap();
+        let conflict = &catalog.sibling_conflicts[0];
+        let source_id = &catalog
+            .files
+            .iter()
+            .find(|file| file.relative_path == "AGENTS.md")
+            .unwrap()
+            .id;
+        assert!(matches!(
+            resolve_context_bank_sibling_conflict(&root, "Fixture", &conflict.id, source_id,),
+            Err(ContextBankError::ReadOnly)
+        ));
+        assert_eq!(
+            fs::read_to_string(root.join("GEMINI.md")).unwrap(),
+            "must stay unchanged\n"
+        );
+
+        fs::set_permissions(root.join("CLAUDE.md"), fs::Permissions::from_mode(0o640)).unwrap();
         fs::remove_dir_all(root).unwrap();
     }
 

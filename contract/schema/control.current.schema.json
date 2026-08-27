@@ -259,6 +259,14 @@
         "$ref": "#/$defs/contextBankFileDto"
       }
     },
+    "contextBank.siblingConflictResolve": {
+      "params": {
+        "$ref": "#/$defs/contextBankSiblingConflictResolveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/contextBankCatalogResult"
+      }
+    },
     "project.create": {
       "params": {
         "$ref": "#/$defs/projectCreateParams"
@@ -1375,6 +1383,7 @@
         "contextBank.catalogGet",
         "contextBank.fileGet",
         "contextBank.fileSave",
+        "contextBank.siblingConflictResolve",
         "project.create",
         "project.list",
         "project.taskAutomationGet",
@@ -5399,17 +5408,40 @@
         "projectId": { "type": "string", "minLength": 1, "maxLength": 128 }
       }
     },
+    "contextBankSiblingConflictDto": {
+      "x-codegen": true,
+      "x-codegen-name": "ContextBankSiblingConflictDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "directoryPath", "fileIds"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "directoryPath": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "fileIds": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
     "contextBankCatalogResult": {
       "x-codegen": true,
       "x-codegen-name": "ContextBankCatalogResult",
       "type": "object",
       "additionalProperties": false,
-      "required": ["files", "warnings", "projectName", "truncated"],
+      "required": ["files", "siblingConflicts", "warnings", "projectName", "truncated"],
       "properties": {
         "files": {
           "type": "array",
           "maxItems": 500,
           "items": { "$ref": "#/$defs/contextBankCatalogItemDto" }
+        },
+        "siblingConflicts": {
+          "type": "array",
+          "maxItems": 250,
+          "items": { "$ref": "#/$defs/contextBankSiblingConflictDto" }
         },
         "warnings": {
           "type": "array",
@@ -5442,6 +5474,18 @@
         "fileId": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "expectedContentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "content": { "type": "string", "maxLength": 524288, "x-utf8-max-bytes": 524288 }
+      }
+    },
+    "contextBankSiblingConflictResolveParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ContextBankSiblingConflictResolveParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "conflictId", "sourceFileId"],
+      "properties": {
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "conflictId": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "sourceFileId": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
     },
     "contextBankFileDto": {

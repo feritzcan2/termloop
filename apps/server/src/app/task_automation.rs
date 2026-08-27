@@ -197,15 +197,16 @@ fn action_from_task(
         .get("title")
         .and_then(Value::as_str)
         .ok_or_else(|| CoreError::Store("created Task projection has no title".into()))?;
-    let (create_worktree, agent_id, model, permission, reasoning, kickoff_message) = effective_settings(
-        configuration,
-        worktree_intent,
-        agent_id,
-        model,
-        permission,
-        reasoning,
-        kickoff_message,
-    )?;
+    let (create_worktree, agent_id, model, permission, reasoning, kickoff_message) =
+        effective_settings(
+            configuration,
+            worktree_intent,
+            agent_id,
+            model,
+            permission,
+            reasoning,
+            kickoff_message,
+        )?;
     Ok(TaskAutomationAction {
         task_id: task_id.to_owned(),
         project_id: configuration.project_id.clone(),
@@ -228,7 +229,14 @@ fn effective_settings(
     reasoning: Option<String>,
     kickoff_message: Option<String>,
 ) -> Result<EffectiveTaskAutomation, CoreError> {
-    match (worktree_intent, agent_id, model, permission, reasoning, kickoff_message) {
+    match (
+        worktree_intent,
+        agent_id,
+        model,
+        permission,
+        reasoning,
+        kickoff_message,
+    ) {
         (protocol::TaskCreateWorktreeIntent::Inherit, None, None, None, None, None) => Ok((
             configuration.create_worktree,
             configuration.agent_id.clone(),

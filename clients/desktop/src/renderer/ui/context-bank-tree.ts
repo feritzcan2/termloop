@@ -1,4 +1,4 @@
-import type { ContextBankCatalogItemDto } from "@termloop/contract/current";
+import type { ContextBankCatalogItemDto, ContextBankSiblingConflictDto } from "@termloop/contract/current";
 
 export type ContextBankTreeNode =
   | {
@@ -13,19 +13,27 @@ export type ContextBankTreeNode =
     id: string;
     depth: number;
     file: ContextBankCatalogItemDto;
+  }
+  | {
+    kind: "conflict";
+    id: string;
+    depth: number;
+    conflict: ContextBankSiblingConflictDto;
   };
 
 type Directory = {
   children: Map<string, Directory>;
   files: ContextBankCatalogItemDto[];
+  conflicts: ContextBankSiblingConflictDto[];
 };
 
 function directory(): Directory {
-  return { children: new Map(), files: [] };
+  return { children: new Map(), files: [], conflicts: [] };
 }
 
 export function buildContextBankTree(
   files: readonly ContextBankCatalogItemDto[],
+  conflicts: readonly ContextBankSiblingConflictDto[],
   projectName: string,
 ): ContextBankTreeNode[] {
   if (!files.length) return [];
@@ -44,6 +52,19 @@ export function buildContextBankTree(
     }
     current.files.push(file);
   }
+  for (const conflict of conflicts) {
+    const parts = conflict.directoryPath === "." ? [] : conflict.directoryPath.split("/").filter(Boolean);
+    let current = root;
+    for (const part of parts) {
+      let child = current.children.get(part);
+      if (!child) {
+        child = directory();
+        current.children.set(part, child);
+      }
+      current = child;
+    }
+    current.conflicts.push(conflict);
+  }
 
   return [{
     kind: "folder",
@@ -61,7 +82,7 @@ function convertDirectory(source: Directory, parentId: string, depth: number): C
   for (const [name, child] of folders) {
     let label = name;
     let current = child;
-    while (!current.files.length && current.children.size === 1) {
+    while (!current.files.length && !current.conflicts.length && current.children.size === 1) {
       const [nextName, nextChild] = current.children.entries().next().value as [string, Directory];
       label += `/${nextName}`;
       current = nextChild;
@@ -78,5 +99,8 @@ function convertDirectory(source: Directory, parentId: string, depth: number): C
 
   const files = [...source.files].sort((left, right) => left.relativePath.localeCompare(right.relativePath, "en-US"));
   for (const file of files) nodes.push({ kind: "file", id: file.id, depth, file });
+  for (const conflict of source.conflicts) {
+    nodes.push({ kind: "conflict", id: conflict.id, depth, conflict });
+  }
   return nodes;
 }

@@ -1999,6 +1999,14 @@ export function DesktopApp() {
       content,
     });
   }, [selectedSourceApi, skillProjectId]);
+  const resolveContextBankSiblingConflict = useCallback((conflictId: string, sourceFileId: string) => {
+    if (!skillProjectId) return Promise.reject(new Error("The Context Bank Project is no longer selected."));
+    return selectedSourceApi.contextBankSiblingConflictResolve({
+      projectId: skillProjectId,
+      conflictId,
+      sourceFileId,
+    });
+  }, [selectedSourceApi, skillProjectId]);
 
   return (<>
     <Shell
@@ -2068,6 +2076,7 @@ export function DesktopApp() {
       loadContextBankCatalog={loadContextBankCatalog}
       loadContextBankFile={loadContextBankFile}
       saveContextBankFile={saveContextBankFile}
+      resolveContextBankSiblingConflict={resolveContextBankSiblingConflict}
       loadKeepAwake={selectedSourceApi.keepAwakeGet}
       setKeepAwake={selectedSourceApi.keepAwakeSet}
       keepAwakeRefreshToken={keepAwakeRefreshToken}
