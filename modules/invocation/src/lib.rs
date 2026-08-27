@@ -131,7 +131,7 @@ const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const WORKER_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.worker.executor",
-    version: 15,
+    version: 16,
     authored_body: include_str!("../../../resources/prompts/builtin.worker.executor.md"),
 };
 
@@ -167,7 +167,7 @@ const CI_PR_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const STEP_CHECK_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.tracker.step-check",
-    version: 6,
+    version: 7,
     authored_body: include_str!("../../../resources/prompts/builtin.tracker.step-check.md"),
 };
 
@@ -3815,7 +3815,7 @@ mod tests {
             (
                 ExecutorRole::StepCheckTracker,
                 "builtin.tracker.step-check",
-                6,
+                7,
             ),
             (ExecutorRole::CustomTracker, "builtin.tracker.custom", 4),
         ];
@@ -4589,6 +4589,11 @@ mod tests {
             assert_eq!(instructions.kind, "providerInstructions");
             assert!(instructions.content.contains("Configured Worker prompt"));
             assert!(instructions.content.contains("Configured System prompt"));
+            assert!(
+                instructions
+                    .content
+                    .contains("task_agent_transcript_tail_read")
+            );
             match agent_id {
                 "codex" => assert!(worker.args().iter().any(|argument| {
                     argument.starts_with("developer_instructions=")
@@ -5967,7 +5972,7 @@ mod tests {
     #[test]
     fn pipeline_prompts_treat_a_step_title_as_a_label_not_a_yes_no_contract() {
         let worker = executor_prompt(ExecutorRole::Worker).unwrap();
-        assert_eq!(worker.provenance().template_version, 15);
+        assert_eq!(worker.provenance().template_version, 16);
         assert!(
             worker
                 .authored_preview()
@@ -5990,7 +5995,7 @@ mod tests {
         );
 
         let step = tracker_assignment_prompt(ExecutorRole::StepCheckTracker).unwrap();
-        assert_eq!(step.provenance().template_version, 6);
+        assert_eq!(step.provenance().template_version, 7);
         assert!(step.delivered_preview().contains("Its `title` is a label"));
         assert!(
             step.delivered_preview()

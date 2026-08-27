@@ -482,7 +482,8 @@ function ActiveAgentRow({ session, source, props, sessionsById, details }: {
     draggable.setNodeRef(node);
     droppable.setNodeRef(node);
   }, [draggable.setNodeRef, droppable.setNodeRef]);
-  const dropPlacement = sidebarDnd?.sessionDropTarget?.sessionId === session.id
+  const dropPlacement = sidebarDnd?.sessionDropTarget?.surface !== "group"
+    && sidebarDnd?.sessionDropTarget?.sessionId === session.id
     ? sidebarDnd.sessionDropTarget.placement
     : undefined;
   const projectedSource = props.detachedRelationshipSessionIds?.has(session.id) ? undefined : source

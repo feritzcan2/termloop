@@ -1,4 +1,7 @@
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use axum::Json;
 use axum::body::Bytes;
@@ -11,8 +14,9 @@ use termloop_contract::current::{
     McpStewardAgentMessageParams, McpStewardBriefUpdateParams, McpStewardSystemPromptUpdateParams,
     McpStewardTaskAgentStartParams, McpStewardTaskCreateParams, McpStewardTaskIdParams,
     McpStewardTaskRenameParams, McpStewardTaskSetJiraUrlParams, McpStewardTaskUpdateBriefParams,
-    ProjectionTopic, ReplyToRequestParams, RoutineFindingResolveParams, SendToAgentParams,
-    WorkerRoutineCompleteParams, WorkerRoutineProblemParams, WorkerStepVerdictsParams,
+    McpTaskAgentTranscriptTailReadParams, ProjectionTopic, ReplyToRequestParams,
+    RoutineFindingResolveParams, SendToAgentParams, WorkerRoutineCompleteParams,
+    WorkerRoutineProblemParams, WorkerStepVerdictsParams,
 };
 use tokio::time::{Duration, Instant};
 
@@ -349,6 +353,16 @@ async fn tool_call_inner(
                 .agent_status_projection_for_executor(project_id),
         ),
         (
+            termloop_core::session_launch::AgentMcpRole::Worker { project_id, .. },
+            "task_agent_transcript_tail_read",
+        ) => {
+            let params: McpTaskAgentTranscriptTailReadParams = serde_json::from_value(arguments)
+                .expect("generated MCP validation precedes decoding");
+            text_result(
+                read_task_agent_transcript_tail(project_id, params.task_id.as_str(), state).await,
+            )
+        }
+        (
             termloop_core::session_launch::AgentMcpRole::Steward { project_id },
             "routine_report_read",
         ) => text_result(
@@ -667,7 +681,7 @@ fn role_instructions(role: &termloop_core::session_launch::AgentMcpRole) -> &'st
             "Authenticated Project Steward profile. Follow the visible versioned Steward and wake prompts; the exposed MCP tools enforce Project scope and mutation authority."
         }
         termloop_core::session_launch::AgentMcpRole::Worker { .. } => {
-            "Authenticated Project Worker profile. Follow the visible versioned Worker and wake prompts; the exposed MCP tools enforce Routine reporting scope. Workers cannot contact Task Agents."
+            "Authenticated Project Worker profile. Follow the visible versioned Worker and wake prompts; the exposed MCP tools enforce Routine reporting scope. Use task_agent_transcript_tail_read when Task completion evidence depends on recent developer Agent reports. Workers cannot contact Task Agents."
         }
         termloop_core::session_launch::AgentMcpRole::Helper {
             request_id: Some(_),
@@ -717,6 +731,47 @@ async fn read_pull_requests(
         )
         .await,
     )
+}
+
+async fn read_task_agent_transcript_tail(
+    project_id: &str,
+    task_id: &str,
+    state: &AppState,
+) -> Result<Value, termloop_core::CoreError> {
+    let outcome = state.core.lock().await.plan_session_history_list(json!({
+        "projectId": project_id,
+        "force": true,
+        "fillCache": true,
+    }))?;
+    if let termloop_core::session_launch::SessionHistoryListPlanOutcome::Observe(plan) = outcome {
+        let cancellation = Arc::new(AtomicBool::new(false));
+        let _cancel_on_drop = McpHistoryScanCancellation(cancellation.clone());
+        let observed = tokio::task::spawn_blocking(move || plan.observe(&cancellation))
+            .await
+            .map_err(|error| {
+                termloop_core::CoreError::Terminal(format!(
+                    "Task Agent transcript scan failed: {error}"
+                ))
+            })?;
+        state
+            .core
+            .lock()
+            .await
+            .complete_session_history_list(observed)?;
+    }
+    state
+        .core
+        .lock()
+        .await
+        .task_agent_transcript_tail_projection_for_executor(project_id, task_id)
+}
+
+struct McpHistoryScanCancellation(Arc<AtomicBool>);
+
+impl Drop for McpHistoryScanCancellation {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Release);
+    }
 }
 
 async fn steward_suggest(
@@ -1648,6 +1703,8 @@ mod tests {
         assert!(!tool_names(&steward).contains(&"ask_to"));
         assert!(!tool_names(&steward).contains(&"worker_complete_routine"));
         assert!(tool_names(&worker).contains(&"worker_complete_routine"));
+        assert!(tool_names(&worker).contains(&"task_agent_transcript_tail_read"));
+        assert!(!tool_names(&steward).contains(&"task_agent_transcript_tail_read"));
         assert!(!tool_names(&worker).contains(&"send_to_agent"));
         assert!(tool_names(&worker).contains(&"worker_report_routine_problem"));
         assert!(!tool_names(&worker).contains(&"ask_to"));
@@ -1788,6 +1845,14 @@ mod tests {
         assert!(!protocol::validate_mcp_tool_params(
             "task_set_jira_url",
             &json!({ "taskId": "task-1", "jiraUrl": "TERM-42" })
+        ));
+        assert!(protocol::validate_mcp_tool_params(
+            "task_agent_transcript_tail_read",
+            &json!({ "taskId": "task-1" })
+        ));
+        assert!(!protocol::validate_mcp_tool_params(
+            "task_agent_transcript_tail_read",
+            &json!({ "taskId": "task-1", "sessionId": "session-1" })
         ));
         assert!(protocol::validate_mcp_tool_params(
             "steward_system_prompt_update",

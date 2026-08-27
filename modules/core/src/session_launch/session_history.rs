@@ -15,6 +15,7 @@ const RECENT_CANDIDATES_PER_PROVIDER: usize = 20;
 const FULL_CANDIDATES_PER_PROVIDER: usize = 200;
 const MAX_CACHED_HISTORY: usize = 100;
 const MAX_CACHED_PROJECTS: usize = 32;
+const MAX_TASK_AGENT_TAIL_SESSIONS: usize = 8;
 
 pub enum SessionHistoryListPlanOutcome {
     Current(Value),
@@ -349,6 +350,141 @@ impl CoreRuntime {
         }))
     }
 
+    /// Returns only bounded provider-authored message tails for ordinary Agent
+    /// Sessions whose current Project-scoped cwd projects into this Task's
+    /// worktree. Session identity remains Project-scoped; this is a derived
+    /// evidence view, not Task parentage or a durable transcript.
+    pub fn task_agent_transcript_tail_projection_for_executor(
+        &self,
+        project_id: &str,
+        task_id: &str,
+    ) -> Result<Value, CoreError> {
+        let task = self
+            .store
+            .tasks()
+            .iter()
+            .find(|task| task.id == task_id && task.project_id == project_id)
+            .ok_or(CoreError::NotFound)?;
+        let Some(worktree) = task.worktree.as_ref() else {
+            return Ok(task_agent_tail_unavailable(
+                task_id,
+                "taskWorktreeUnavailable",
+            ));
+        };
+        let Ok(worktree_key) = crate::task_worktree::comparison_key(Path::new(&worktree.path))
+        else {
+            return Ok(task_agent_tail_unavailable(
+                task_id,
+                "taskWorktreeUnreadable",
+            ));
+        };
+        let assistant_session_ids = self
+            .store
+            .steward_configurations()
+            .iter()
+            .filter(|configuration| configuration.project_id == project_id)
+            .filter_map(|configuration| configuration.executor_session_id.as_deref())
+            .chain(
+                self.store
+                    .worker_configurations()
+                    .iter()
+                    .filter(|configuration| configuration.project_id == project_id)
+                    .filter_map(|configuration| configuration.executor_session_id.as_deref()),
+            )
+            .collect::<std::collections::HashSet<_>>();
+        let cached = self.session_history.projects.get(project_id);
+        let mut sessions = self
+            .store
+            .sessions()
+            .iter()
+            .filter(|session| {
+                session.project_id == project_id
+                    && session.kind == termloop_domain::SessionKind::Agent
+                    && session.ask_to_source_session_id.is_none()
+                    && session.improver_target.is_none()
+                    && !assistant_session_ids.contains(session.id.as_str())
+                    && crate::task_worktree::comparison_key(Path::new(&session.process.cwd))
+                        .is_ok_and(|session_key| worktree_key.contains_or_equals(&session_key))
+            })
+            .map(|session| {
+                let conversation = session.resume_ref.as_ref().and_then(|resume_ref| {
+                    cached.and_then(|cached| {
+                        cached.managed_entries.iter().find(|entry| {
+                            entry.session_id == session.id
+                                && &entry.conversation.resume_ref == resume_ref
+                        })
+                    })
+                });
+                let updated_at_epoch_ms = conversation
+                    .map(|entry| entry.conversation.updated_at_epoch_ms)
+                    .unwrap_or(0);
+                let value = if let Some(entry) = conversation {
+                    json!({
+                        "sessionId": session.id,
+                        "status": "available",
+                        "provider": entry.conversation.agent_id,
+                        "updatedAtEpochMs": entry.conversation.updated_at_epoch_ms,
+                        "messages": entry.conversation.tail_messages.iter().map(|message| json!({
+                            "role": match message.role {
+                                AgentHistoryPreviewRole::User => "user",
+                                AgentHistoryPreviewRole::Assistant => "assistant",
+                            },
+                            "text": message.text,
+                        })).collect::<Vec<_>>(),
+                    })
+                } else {
+                    json!({
+                        "sessionId": session.id,
+                        "status": "unavailable",
+                        "provider": session.process.agent_id,
+                        "updatedAtEpochMs": null,
+                        "messages": [],
+                    })
+                };
+                (updated_at_epoch_ms, session.id.as_str(), value)
+            })
+            .collect::<Vec<_>>();
+        sessions.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(right.1)));
+        let session_limit_reached = sessions.len() > MAX_TASK_AGENT_TAIL_SESSIONS;
+        sessions.truncate(MAX_TASK_AGENT_TAIL_SESSIONS);
+        let sessions = sessions
+            .into_iter()
+            .map(|(_, _, value)| value)
+            .collect::<Vec<_>>();
+        let available = sessions
+            .iter()
+            .any(|session| session["status"] == "available");
+        let Some(cached) = cached else {
+            return Ok(json!({
+                "taskId": task_id,
+                "status": "unavailable",
+                "reason": "historyNotScanned",
+                "sessions": sessions,
+                "sessionLimitReached": session_limit_reached,
+                "candidateLimitReached": false,
+            }));
+        };
+        Ok(json!({
+            "taskId": task_id,
+            "status": if available { "available" } else { "unavailable" },
+            "reason": if sessions.is_empty() {
+                Some("noTaskAgentSessions")
+            } else if available {
+                None
+            } else {
+                Some("transcriptUnavailable")
+            },
+            "sessions": sessions,
+            "sessionLimitReached": session_limit_reached,
+            "candidateLimitReached": cached.truncated,
+            "scanIssues": {
+                "discoveryUnavailable": cached.issues.discovery_unavailable,
+                "sourceUnreadable": cached.issues.source_unreadable,
+                "sourceUnrecognized": cached.issues.source_unrecognized,
+            },
+        }))
+    }
+
     pub fn plan_session_history_resume(
         &mut self,
         params: &Value,
@@ -543,6 +679,17 @@ fn unavailable_history_preview(provider: &str) -> Value {
     })
 }
 
+fn task_agent_tail_unavailable(task_id: &str, reason: &str) -> Value {
+    json!({
+        "taskId": task_id,
+        "status": "unavailable",
+        "reason": reason,
+        "sessions": [],
+        "sessionLimitReached": false,
+        "candidateLimitReached": false,
+    })
+}
+
 fn issue_counts(issues: &[AgentHistoryScanIssue]) -> HistoryIssueCounts {
     let mut counts = HistoryIssueCounts::default();
     for issue in issues {
@@ -581,9 +728,12 @@ mod tests {
     use super::*;
     use termloop_agents::{AgentHistoryPreviewMessage, AgentHistoryPreviewRole};
     use termloop_domain::{
-        ProcessDescriptor, ResumeProvider, ResumeRef, SessionKind, SessionRecord,
+        ManagedWorktreeProof, NormalizedWorktreeSpec, ProcessDescriptor, ProvisioningBranchMode,
+        ProvisioningStage, ResumeProvider, ResumeRef, SessionKind, SessionRecord,
+        TaskBranchBinding, TaskRecord, TaskStatus, TaskWorktreeBinding,
+        WorktreeProvisioningOperation,
     };
-    use termloop_store::Store;
+    use termloop_store::{BeginProvisioningOutcome, ProvisioningCommit, Store};
     use termloop_terminal::TerminalService;
     use uuid::Uuid;
 
@@ -635,12 +785,227 @@ mod tests {
                 role: AgentHistoryPreviewRole::User,
                 text: "Inspect the release pipeline".into(),
             }],
+            tail_messages: vec![
+                AgentHistoryPreviewMessage {
+                    role: AgentHistoryPreviewRole::User,
+                    text: "Please finish the release pipeline".into(),
+                },
+                AgentHistoryPreviewMessage {
+                    role: AgentHistoryPreviewRole::Assistant,
+                    text: "Implemented it; focused tests passed.".into(),
+                },
+            ],
             source,
             source_modified_at_epoch_ms: slices.modified_at_epoch_ms,
             source_size_bytes: slices.size_bytes,
             source_window_sha256: slices.window_sha256,
         };
         (runtime, project_id, native_id, root, conversation)
+    }
+
+    #[test]
+    fn task_agent_tail_is_scoped_to_ordinary_sessions_in_the_task_worktree() {
+        let (mut runtime, project_id, _native_id, root, mut conversation) = fixture();
+        let worktree = root.join("task-worktree");
+        std::fs::create_dir_all(&worktree).unwrap();
+        let worktree = worktree.to_string_lossy().into_owned();
+        let task_id = "task-with-agent";
+        runtime
+            .store
+            .insert_task(
+                &runtime.write_authority,
+                TaskRecord {
+                    id: task_id.into(),
+                    project_id: project_id.clone(),
+                    title: "Finish release pipeline".into(),
+                    brief: None,
+                    status: TaskStatus::Open,
+                    archived_at_epoch_ms: None,
+                    branch: None,
+                    worktree: None,
+                    worktree_generation: 0,
+                    steward_brief_markdown: String::new(),
+                    steward_brief_revision: 1,
+                    rank: 1,
+                    created_at_epoch_ms: 1,
+                    updated_at_epoch_ms: 1,
+                },
+            )
+            .unwrap();
+        let repository_root = root.to_string_lossy().into_owned();
+        let operation_id = "provision-task-agent-tail";
+        let spec = NormalizedWorktreeSpec {
+            version: 1,
+            repository_root: repository_root.clone(),
+            repository_common_dir: format!("{repository_root}/.git"),
+            destination_path: worktree.clone(),
+            branch_name: "task/release".into(),
+            branch_mode: ProvisioningBranchMode::Create,
+            base_ref: Some("refs/heads/main".into()),
+            base_oid: Some("a".repeat(40)),
+        };
+        assert!(matches!(
+            runtime
+                .store
+                .begin_task_worktree_provisioning(
+                    &runtime.write_authority,
+                    WorktreeProvisioningOperation {
+                        operation_id: operation_id.into(),
+                        task_id: task_id.into(),
+                        project_id: project_id.clone(),
+                        spec: spec.clone(),
+                        stage: ProvisioningStage::Reserved,
+                        created_branch_ref: false,
+                        failure: None,
+                        started_at_epoch_ms: 2,
+                        updated_at_epoch_ms: 2,
+                    },
+                )
+                .unwrap(),
+            BeginProvisioningOutcome::Started(_)
+        ));
+        runtime
+            .store
+            .advance_task_worktree_provisioning(
+                &runtime.write_authority,
+                task_id,
+                operation_id,
+                ProvisioningStage::WorktreeAdded,
+                true,
+                3,
+            )
+            .unwrap();
+        runtime
+            .store
+            .commit_task_worktree_provisioning(
+                &runtime.write_authority,
+                task_id,
+                operation_id,
+                ProvisioningCommit {
+                    branch: TaskBranchBinding {
+                        repository_root: repository_root.clone(),
+                        name: "task/release".into(),
+                    },
+                    worktree: TaskWorktreeBinding {
+                        path: worktree.clone(),
+                    },
+                    proof: ManagedWorktreeProof {
+                        task_id: task_id.into(),
+                        operation_id: operation_id.into(),
+                        worktree_generation: 0,
+                        normalized_spec_version: 1,
+                        normalized_spec: spec,
+                        repository_common_dir: format!("{repository_root}/.git"),
+                        registered_worktree_path: worktree.clone(),
+                        branch_ref: "refs/heads/task/release".into(),
+                    },
+                    updated_at_epoch_ms: 4,
+                },
+            )
+            .unwrap();
+        runtime
+            .store
+            .clear_task_worktree_provisioning(&runtime.write_authority, task_id, operation_id)
+            .unwrap();
+        conversation.cwd = worktree.clone();
+        let session_id = "task-agent-session";
+        runtime
+            .store
+            .insert_session(
+                &runtime.write_authority,
+                SessionRecord {
+                    id: session_id.into(),
+                    project_id: project_id.clone(),
+                    name: Some("Developer".into()),
+                    kind: SessionKind::Agent,
+                    process: ProcessDescriptor {
+                        program: "claude".into(),
+                        args: Vec::new(),
+                        cwd: worktree.clone(),
+                        agent_id: Some("claude".into()),
+                        template_ref: Some("builtin.agent.task-kickoff".into()),
+                        template_version: Some(7),
+                    },
+                    launch_selection: Default::default(),
+                    lifecycle_state: "running".into(),
+                    runtime_epoch: 1,
+                    archived_at_epoch_ms: None,
+                    ask_to_source_session_id: None,
+                    run_configuration_id: None,
+                    improver_target: None,
+                    ask_to_continuation: None,
+                    resume_ref: Some(conversation.resume_ref.clone()),
+                    resume_launch_guard: None,
+                    resume_failure: None,
+                },
+            )
+            .unwrap();
+        runtime
+            .store
+            .insert_session(
+                &runtime.write_authority,
+                SessionRecord {
+                    id: "helper-in-task-worktree".into(),
+                    project_id: project_id.clone(),
+                    name: Some("Helper".into()),
+                    kind: SessionKind::Agent,
+                    process: ProcessDescriptor {
+                        program: "claude".into(),
+                        args: Vec::new(),
+                        cwd: worktree,
+                        agent_id: Some("claude".into()),
+                        template_ref: Some("builtin.agent.ask-to-helper".into()),
+                        template_version: Some(1),
+                    },
+                    launch_selection: Default::default(),
+                    lifecycle_state: "running".into(),
+                    runtime_epoch: 1,
+                    archived_at_epoch_ms: None,
+                    ask_to_source_session_id: Some(session_id.into()),
+                    run_configuration_id: None,
+                    improver_target: None,
+                    ask_to_continuation: None,
+                    resume_ref: None,
+                    resume_launch_guard: None,
+                    resume_failure: None,
+                },
+            )
+            .unwrap();
+        let plan = match runtime
+            .plan_session_history_list(json!({
+                "projectId": project_id,
+                "force": true,
+                "fillCache": true,
+            }))
+            .unwrap()
+        {
+            SessionHistoryListPlanOutcome::Observe(plan) => plan,
+            SessionHistoryListPlanOutcome::Current(_) => panic!("forced list must scan"),
+        };
+        runtime
+            .complete_session_history_list(ObservedSessionHistoryScan {
+                plan,
+                scan: AgentHistoryScan {
+                    conversations: vec![conversation],
+                    issues: Vec::new(),
+                    candidate_limit_reached: false,
+                },
+            })
+            .unwrap();
+
+        let tail = runtime
+            .task_agent_transcript_tail_projection_for_executor(&project_id, task_id)
+            .unwrap();
+        assert_eq!(tail["status"], "available");
+        assert_eq!(tail["sessions"].as_array().unwrap().len(), 1);
+        assert_eq!(tail["sessions"][0]["sessionId"], session_id);
+        assert_eq!(
+            tail["sessions"][0]["messages"][1]["text"],
+            "Implemented it; focused tests passed."
+        );
+        assert!(!tail.to_string().contains("helper-in-task-worktree"));
+        assert!(!tail.to_string().contains("provider-history"));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

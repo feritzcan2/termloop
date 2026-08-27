@@ -21,7 +21,12 @@ import { sessionLabel } from "../model.js";
 import { Icon } from "./Icon.js";
 
 export type SessionDropPlacement = "before" | "after" | "on";
-export type SessionDropTarget = { kind: "session"; sessionId: string; placement: SessionDropPlacement };
+export type SessionDropTarget = {
+  kind: "session";
+  sessionId: string;
+  placement: SessionDropPlacement;
+  surface?: "row" | "group";
+};
 export type TaskDropTarget = { kind: "task"; taskId: string };
 export type ProjectDropTarget = { kind: "project" };
 export type SplitDropTarget = { kind: "split"; paneId: string; direction: SplitDirection; placement: SplitPlacement };
@@ -30,7 +35,9 @@ type SidebarDropTarget = SessionDropTarget | TaskDropTarget | ProjectDropTarget 
 const sidebarPointerWithin: CollisionDetection = (args) => {
   const collisions = pointerWithin(args);
   const sessionIndex = collisions.findIndex((collision) =>
-    args.droppableContainers.find((container) => container.id === collision.id)?.data.current?.kind === "session"
+    ["session", "agentGroup"].includes(
+      args.droppableContainers.find((container) => container.id === collision.id)?.data.current?.kind,
+    )
   );
   if (sessionIndex > 0) {
     return [collisions[sessionIndex]!, ...collisions.filter((_, index) => index !== sessionIndex)];
@@ -238,6 +245,12 @@ function resolveDropTarget(
     if (typeof paneId !== "string") return undefined;
     const split = splitDropPlacement(event);
     return { kind: "split", paneId, ...split };
+  }
+  if (event.over.data.current?.kind === "agentGroup") {
+    const sessionId = event.over.data.current.sessionId;
+    return typeof sessionId === "string"
+      ? { kind: "session", sessionId, placement: "on", surface: "group" }
+      : undefined;
   }
   const sessionId = typeof event.over.data.current?.sessionId === "string"
     ? event.over.data.current.sessionId

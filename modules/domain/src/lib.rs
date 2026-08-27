@@ -95,6 +95,8 @@ pub enum McpToolName {
     TaskRead,
     #[serde(rename = "agent_status_read")]
     AgentStatusRead,
+    #[serde(rename = "task_agent_transcript_tail_read")]
+    TaskAgentTranscriptTailRead,
     #[serde(rename = "pull_request_read")]
     PullRequestRead,
     #[serde(rename = "routine_report_read", alias = "tracker_report_read")]
@@ -155,13 +157,14 @@ pub enum McpToolName {
 }
 
 impl McpToolName {
-    pub const ALL: [Self; 31] = [
+    pub const ALL: [Self; 32] = [
         Self::AskTo,
         Self::SendToAgent,
         Self::ReplyToRequest,
         Self::ProjectRead,
         Self::TaskRead,
         Self::AgentStatusRead,
+        Self::TaskAgentTranscriptTailRead,
         Self::PullRequestRead,
         Self::RoutineReportRead,
         Self::CompanionTranscriptRead,
@@ -197,6 +200,7 @@ impl McpToolName {
             Self::ProjectRead => "project_read",
             Self::TaskRead => "task_read",
             Self::AgentStatusRead => "agent_status_read",
+            Self::TaskAgentTranscriptTailRead => "task_agent_transcript_tail_read",
             Self::PullRequestRead => "pull_request_read",
             Self::RoutineReportRead => "routine_report_read",
             Self::CompanionTranscriptRead => "companion_transcript_read",
@@ -237,6 +241,7 @@ impl std::str::FromStr for McpToolName {
             "project_read" => Ok(Self::ProjectRead),
             "task_read" => Ok(Self::TaskRead),
             "agent_status_read" => Ok(Self::AgentStatusRead),
+            "task_agent_transcript_tail_read" => Ok(Self::TaskAgentTranscriptTailRead),
             "pull_request_read" => Ok(Self::PullRequestRead),
             "routine_report_read" | "tracker_report_read" => Ok(Self::RoutineReportRead),
             "companion_transcript_read" => Ok(Self::CompanionTranscriptRead),
@@ -1356,6 +1361,7 @@ mod tests {
                 "project_read",
                 "task_read",
                 "agent_status_read",
+                "task_agent_transcript_tail_read",
                 "pull_request_read",
                 "routine_report_read",
                 "companion_transcript_read",

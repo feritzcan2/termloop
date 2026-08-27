@@ -17,6 +17,8 @@ const MAX_HEAD_BYTES: usize = 256 * 1024;
 const MAX_TAIL_BYTES: usize = 256 * 1024;
 const MAX_PREVIEW_MESSAGES: usize = 3;
 const MAX_PREVIEW_CHARS: usize = 480;
+const MAX_TAIL_MESSAGES: usize = 12;
+const MAX_TAIL_MESSAGE_CHARS: usize = 1024;
 const MAX_TITLE_CHARS: usize = 120;
 const MAX_CWD_BYTES: usize = 4096;
 const MAX_BRANCH_BYTES: usize = 255;
@@ -44,6 +46,10 @@ pub struct DiscoveredAgentConversation {
     pub model: Option<String>,
     pub updated_at_epoch_ms: u64,
     pub preview_messages: Vec<AgentHistoryPreviewMessage>,
+    /// Bounded normalized user/assistant tail for an explicitly authorized
+    /// same-Project Task evidence read. Provider payloads and identities stay
+    /// private to the daemon.
+    pub tail_messages: Vec<AgentHistoryPreviewMessage>,
     pub source: BoundedHistoryFile,
     pub source_modified_at_epoch_ms: u64,
     pub source_size_bytes: u64,
@@ -62,6 +68,7 @@ impl std::fmt::Debug for DiscoveredAgentConversation {
             .field("model", &self.model)
             .field("updated_at_epoch_ms", &self.updated_at_epoch_ms)
             .field("preview_count", &self.preview_messages.len())
+            .field("tail_count", &self.tail_messages.len())
             .field("source", &self.source)
             .finish()
     }
@@ -210,6 +217,7 @@ struct ConversationAccumulator {
     explicit_title: Option<String>,
     first_user_title: Option<String>,
     preview_messages: VecDeque<AgentHistoryPreviewMessage>,
+    tail_messages: VecDeque<AgentHistoryPreviewMessage>,
     rejected: bool,
 }
 
@@ -387,6 +395,7 @@ fn finish(
         model: accumulator.model,
         updated_at_epoch_ms: slices.modified_at_epoch_ms,
         preview_messages: accumulator.preview_messages.into_iter().collect(),
+        tail_messages: accumulator.tail_messages.into_iter().collect(),
         source: source.clone(),
         source_modified_at_epoch_ms: slices.modified_at_epoch_ms,
         source_size_bytes: slices.size_bytes,
@@ -429,16 +438,35 @@ fn push_preview(
     role: AgentHistoryPreviewRole,
     text: String,
 ) {
-    let text = truncate_chars(&normalize_text(&text), MAX_PREVIEW_CHARS);
-    if text.is_empty() {
+    let normalized = normalize_text(&text);
+    if normalized.is_empty() {
         return;
     }
+    let text = truncate_chars(&normalized, MAX_PREVIEW_CHARS);
     if accumulator.preview_messages.len() == MAX_PREVIEW_MESSAGES {
         accumulator.preview_messages.pop_front();
     }
     accumulator
         .preview_messages
         .push_back(AgentHistoryPreviewMessage { role, text });
+
+    let tail_text = truncate_chars(&normalized, MAX_TAIL_MESSAGE_CHARS);
+    if accumulator
+        .tail_messages
+        .back()
+        .is_some_and(|message| message.role == role && message.text == tail_text)
+    {
+        return;
+    }
+    if accumulator.tail_messages.len() == MAX_TAIL_MESSAGES {
+        accumulator.tail_messages.pop_front();
+    }
+    accumulator
+        .tail_messages
+        .push_back(AgentHistoryPreviewMessage {
+            role,
+            text: tail_text,
+        });
 }
 
 fn message_text(value: Option<&Value>) -> Option<String> {
@@ -488,7 +516,19 @@ fn non_empty_normalized(value: &str) -> Option<String> {
 }
 
 fn normalize_text(value: &str) -> String {
-    value.split_whitespace().collect::<Vec<_>>().join(" ")
+    value
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn truncate_chars(value: &str, max_chars: usize) -> String {
@@ -567,8 +607,52 @@ mod tests {
         assert_eq!(parsed.branch.as_deref(), Some("main"));
         assert_eq!(parsed.model.as_deref(), Some("claude-sonnet-5"));
         assert_eq!(parsed.preview_messages.len(), 2);
+        assert_eq!(parsed.tail_messages.len(), 2);
         assert!(!format!("{parsed:?}").contains("019f1dae"));
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn transcript_tail_is_bounded_and_deduplicates_adjacent_provider_projections() {
+        let cwd = std::env::temp_dir()
+            .join("project")
+            .to_string_lossy()
+            .into_owned();
+        let mut lines = vec![
+            serde_json::json!({
+                "type": "session_meta",
+                "payload": {"id": "thread-1", "cwd": cwd, "thread_source": "user"}
+            })
+            .to_string(),
+        ];
+        for index in 0..14 {
+            let message = format!("Agent result {index}");
+            lines.push(
+                serde_json::json!({
+                    "type": "event_msg",
+                    "payload": {"type": "agent_message", "message": message}
+                })
+                .to_string(),
+            );
+            lines.push(
+                serde_json::json!({
+                    "type": "response_item",
+                    "payload": {"type": "message", "role": "assistant", "content": message}
+                })
+                .to_string(),
+            );
+        }
+        let (candidate, slices, root) = source("codex", &lines.join("\n"));
+        let parsed = parse_codex(&candidate, &slices).unwrap();
+        assert_eq!(parsed.tail_messages.len(), MAX_TAIL_MESSAGES);
+        assert_eq!(parsed.tail_messages[0].text, "Agent result 2");
+        assert_eq!(parsed.tail_messages[11].text, "Agent result 13");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn transcript_text_drops_control_characters_before_projection() {
+        assert_eq!(normalize_text("done\0with\nchecks"), "done with checks");
     }
 
     #[test]

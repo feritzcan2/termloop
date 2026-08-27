@@ -30,6 +30,8 @@ test("MCP role definitions are generated and excluded from control methods", () 
   assert.ok(!MCP_STEWARD_TOOLS.includes("task_agent_launch"));
   assert.ok(!MCP_STEWARD_TOOLS.includes("ask_to"));
   assert.ok(MCP_WORKER_TOOLS.includes("worker_get_next_routine"));
+  assert.ok(MCP_WORKER_TOOLS.includes("task_agent_transcript_tail_read"));
+  assert.ok(!MCP_STEWARD_TOOLS.includes("task_agent_transcript_tail_read"));
   assert.ok(!MCP_WORKER_TOOLS.includes("send_to_agent"));
   assert.ok(MCP_WORKER_TOOLS.includes("worker_complete_routine"));
   assert.ok(MCP_WORKER_TOOLS.includes("worker_report_routine_problem"));

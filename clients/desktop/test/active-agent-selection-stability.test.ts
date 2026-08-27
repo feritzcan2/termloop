@@ -275,6 +275,58 @@ describe("Active Agent selection stability", () => {
     expect(grouped).toEqual([[source.id, target.id]]);
   });
 
+  it("adds another Agent by dropping it on an existing group", async () => {
+    const first = agent("first-agent");
+    const second = agent("second-agent");
+    const third = agent("third-agent");
+    const grouped: [string, string][] = [];
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    HTMLElement.prototype.scrollIntoView = () => {};
+    const originalBoundingRect = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
+      if (this.getAttribute("data-session-drop-target") === third.id) return domRect(80, 40);
+      if (this.getAttribute("data-agent-group-drop-target") === first.id) return domRect(20, 20);
+      return originalBoundingRect.call(this);
+    };
+    restoreBoundingRect = () => { HTMLElement.prototype.getBoundingClientRect = originalBoundingRect; };
+    const railProps = props(
+      [first, second, third],
+      [status(first.id, "working"), status(second.id, "working"), status(third.id, "working")],
+    );
+    railProps.agentGroups = [{ sessionIds: [first.id, second.id] }];
+
+    await act(async () => root!.render(createElement(
+      SidebarSessionDndProvider,
+      {
+        sessions: [first, second, third],
+        reorderSession: () => false,
+        groupAgentSessions: (sessionId: string, targetSessionId: string) => {
+          grouped.push([sessionId, targetSessionId]);
+          return true;
+        },
+        children: createElement(ActiveAgentRail, railProps),
+      },
+    )));
+
+    const thirdButton = container.querySelector<HTMLElement>(`[data-session-id="${third.id}"]`)!;
+    await act(async () => {
+      thirdButton.dispatchEvent(pointerEvent("pointerdown", 10, 90));
+      document.dispatchEvent(pointerEvent("pointermove", 10, 96));
+    });
+    await act(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      document.dispatchEvent(pointerEvent("pointermove", 10, 30));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
+    expect(container.querySelector(".manual-agent-group.drop-on")).not.toBeNull();
+    await act(async () => { document.dispatchEvent(pointerEvent("pointerup", 10, 30)); });
+
+    expect(grouped).toEqual([[third.id, first.id]]);
+  });
+
   it("renames a group inline and ungroups it from the leading close button", async () => {
     const first = agent("first-agent");
     const second = agent("second-agent");

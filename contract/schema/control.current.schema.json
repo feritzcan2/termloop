@@ -1780,6 +1780,7 @@
         "project_read",
         "task_read",
         "agent_status_read",
+        "task_agent_transcript_tail_read",
         "pull_request_read",
         "routine_report_read",
         "companion_transcript_read",
@@ -1885,8 +1886,8 @@
           "items": {
             "$ref": "#/$defs/mcpToolSettingsDto"
           },
-          "minItems": 31,
-          "maxItems": 31,
+          "minItems": 32,
+          "maxItems": 32,
           "uniqueItems": true
         }
       }

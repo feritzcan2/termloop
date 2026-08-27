@@ -20,6 +20,8 @@
   secrets in argv, print tokens, or embed them in URLs.
 - Expose only methods permitted by the client's capability scope and surface
   typed protocol errors without inventing domain meaning.
+- Archive commands remain one-to-one with inspect/archive/abandon/restore/context
+  control methods; the CLI never skips preview tickets or synthesizes recovery.
 - Streaming terminal data remains binary and backpressure-aware.
 - Output intended for scripts is stable, explicit, and separate from human
   diagnostics.

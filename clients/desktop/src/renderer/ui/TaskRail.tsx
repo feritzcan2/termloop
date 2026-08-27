@@ -1052,7 +1052,8 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
                   <Fragment key={source.id}>
                     <TaskSessionRow
                       session={source}
-                      dropPlacement={sidebarDnd?.sessionDropTarget?.sessionId === source.id
+                      dropPlacement={sidebarDnd?.sessionDropTarget?.surface !== "group"
+                        && sidebarDnd?.sessionDropTarget?.sessionId === source.id
                         ? sidebarDnd.sessionDropTarget.placement
                         : undefined}
                     >{({ dragAttributes, dragListeners }) => <>

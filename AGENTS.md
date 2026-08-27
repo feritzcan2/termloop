@@ -12,9 +12,6 @@ boundary; it may not weaken a root invariant.
   Task does not imply provisioning a worktree.
 - Session is Project-scoped. Task presence and Active Agents are projections;
   Sessions are not children of Tasks.
-- `Workspace`, `Run`, `Attempt`, durable Task history, stored `blocked`, and a
-  stored Active Agent entity are retired concepts. Do not recreate them under a
-  new name.
 - Users may launch multiple write-capable agents in one worktree. Engineering
   file ownership is not a product write lease: never add launch gating, file
   locking, or agent-git serialization to enforce developer coordination.
@@ -28,19 +25,11 @@ boundary; it may not weaken a root invariant.
   affected code boundary and its focused verification.
 - Repository documentation is intentionally not maintained. Agents do not need
   a documentation preflight before coding.
-- Do not create decision records, proposals, implementation plans, Task packets,
-  completion dashboards, handoff documents, or documentation-only follow-ups
-  unless the user explicitly asks for that artifact.
+
 - When documentation disagrees with code, schemas, tests, or `AGENTS.md`, follow
   the executable sources and mention the mismatch briefly; do not pause the
   requested implementation to repair documentation.
-- Keep process diagnostics context-safe. Do not print complete process argv or
-  environments for Agents, providers, daemons, or Electron: they may contain
-  generated prompts, MCP configuration, credentials, and many thousands of
-  irrelevant tokens. Prefer bounded fields such as PID, PPID, elapsed time,
-  state, CPU, and executable name. If arguments are essential, select only the
-  exact non-secret fields needed and redact or omit every prompt, token, URL
-  credential, environment value, and unrelated argument.
+
 
 ## CROSS PLATFORM
 
@@ -87,39 +76,15 @@ boundary; it may not weaken a root invariant.
   when its intent is clear; stop for direction only when it cannot be resolved
   without risking local work.
 
-## Legacy TermLoop reference
-
-- The legacy app is available at
-  `/Users/feritzcan/Projects/bmadworkflowtest/termloop` as an optional,
-  read-only reference for visual UI and existing feature discovery.
-- Consult it only when useful or when the user asks for comparison. Its
-  architecture and domain model are not authoritative for TermLoop.
-- Do not modify it unless explicitly requested, and never make TermLoop
-  code or tests depend on that local path.
-
 ## Dependency and ownership rules
 
 - Work only in paths needed by the user request. Preserve unrelated or
   pre-existing changes; never reset or overwrite another agent's work.
-- One implementation agent owns a module or declared `core` sub-boundary at a
-  time. Coordinate a cross-module change as separately reviewable slices.
-- Changes to module ownership or DAG direction; authentication, authorization,
-  credentials, process/filesystem/Git/destructive-action/renderer authority;
-  durable-state lifecycle, migration, data-loss semantics, product invariants;
-  and wire strategy, identity, framing, contract selection, or fallback-decoding
-  policy may proceed when they are explicitly within the current user request.
-  Mention the affected boundary and impact in the final response. No separate
-  proposal or documentation step is required.
-- Ordinary pre-v1 evolution of the active schema includes additive methods, DTO
-  or projection fields, typed errors, enum values, validation constraints, and
-  fixes. It requires schema-first generation, exact server/client rollout, and
-  drift and behavior tests.
 - Do not create `common/`, `shared/`, or `utils/`. Pure shared concepts belong
   in `domain`; OS primitives belong in `platform`; otherwise keep code with its
   owner.
 - Generated source is never hand-edited. Change its schema or generator and
   regenerate it.
-- Production code cannot depend on `spikes/**`.
 
 ## Cross-cutting invariants
 

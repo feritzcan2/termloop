@@ -42,6 +42,9 @@
   current-generation requeue on process-start failure.
 - Never await or block on Git/provider/process work while holding the serialized
   core lock. Plan under lock, execute outside it, then re-lock and apply.
+- Archive/restore dispatch must preserve that plan/observe/apply rule, publish
+  Task+Session+Agent invalidation, and map archive conflicts from generated
+  typed details without server-owned lifecycle policy.
 - The same boundary applies to stale-worktree observation and recursive removal;
   server maps the generated command but owns no eligibility policy.
 - Control JSON never carries PTY bytes. Terminal data uses bounded binary frames.

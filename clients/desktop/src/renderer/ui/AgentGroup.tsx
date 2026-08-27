@@ -1,7 +1,9 @@
+import { useDroppable } from "@dnd-kit/core";
 import { Fragment, useEffect, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import type { AgentGroupLayout } from "../../layout/model.js";
 import type { Session } from "../model.js";
 import { askToSessionGroups, type AskToSessionGroup } from "./SessionRow.js";
+import { useOptionalSidebarSessionDnd } from "./SidebarSessionDnd.js";
 
 export type AgentSessionCluster = {
   key: string;
@@ -80,12 +82,23 @@ export function AgentGroupFrame({ cluster, compact = false, renameGroup, ungroup
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(cluster.manualGroup?.name ?? "");
+  const locatorSessionId = cluster.groups[0]?.source.id;
+  const sidebarDnd = useOptionalSidebarSessionDnd();
+  const groupDrop = useDroppable({
+    id: `${compact ? "task" : "active"}-agent-group-target:${locatorSessionId ?? cluster.key}`,
+    data: { kind: "agentGroup", sessionId: locatorSessionId },
+    disabled: !cluster.manuallyGrouped
+      || !locatorSessionId
+      || !sidebarDnd
+      || Boolean(sidebarDnd.draggedSession && cluster.manualGroup?.sessionIds.includes(sidebarDnd.draggedSession.id)),
+  });
   useEffect(() => {
     if (!editing) setDraft(cluster.manualGroup?.name ?? "");
   }, [cluster.manualGroup?.name, editing]);
   if (!cluster.manuallyGrouped) return <Fragment>{children}</Fragment>;
   const count = agentSessionClusterMembers(cluster).length;
-  const locatorSessionId = cluster.groups[0]?.source.id;
+  const groupDropActive = sidebarDnd?.sessionDropTarget?.surface === "group"
+    && cluster.manualGroup?.sessionIds.includes(sidebarDnd.sessionDropTarget.sessionId);
   const visibleName = cluster.manualGroup?.name ?? "GROUP";
   const commitName = () => {
     if (locatorSessionId) renameGroup?.(locatorSessionId, draft);
@@ -103,13 +116,17 @@ export function AgentGroupFrame({ cluster, compact = false, renameGroup, ungroup
   };
   return (
     <div
-      className={`manual-agent-group${compact ? " compact" : ""}`}
+      className={`manual-agent-group${compact ? " compact" : ""}${groupDropActive ? " drop-on" : ""}`}
       role="group"
       aria-label={`${cluster.manualGroup?.name ? `${cluster.manualGroup.name}, ` : ""}Agent group with ${count} agents`}
       data-agent-group="manual"
       data-agent-group-size={count}
     >
-      <div className="manual-agent-group-label">
+      <div
+        ref={groupDrop.setNodeRef}
+        className="manual-agent-group-label"
+        data-agent-group-drop-target={locatorSessionId}
+      >
         <button
           className="manual-agent-group-remove"
           type="button"
