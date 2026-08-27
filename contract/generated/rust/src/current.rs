@@ -171,7 +171,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:1edd38b7a14d3c9dcf9e2f290c29720824a15b5860645a458440853a408666e8";
+    "sha256:7b759c83a53873d4fe090f65427a7f640b518f38d410ceba61904e2218928ebf";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -975,7 +975,7 @@ pub struct ProjectTaskAutomationConfigurationDto {
     #[serde(rename = "createWorktree")]
     pub create_worktree: bool,
     #[serde(rename = "worktreePrefix")]
-    pub worktree_prefix: TaskWorktreePrefix,
+    pub worktree_prefix: String,
     #[serde(rename = "agentId", deserialize_with = "deserialize_required_nullable")]
     pub agent_id: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
@@ -1007,7 +1007,7 @@ pub struct ProjectTaskAutomationSetParams {
     #[serde(rename = "createWorktree")]
     pub create_worktree: bool,
     #[serde(rename = "worktreePrefix")]
-    pub worktree_prefix: TaskWorktreePrefix,
+    pub worktree_prefix: String,
     #[serde(rename = "agentId", deserialize_with = "deserialize_required_nullable")]
     pub agent_id: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
@@ -2715,7 +2715,7 @@ pub struct TaskCreateParams {
         rename = "worktreePrefix",
         deserialize_with = "deserialize_required_nullable"
     )]
-    pub worktree_prefix: Option<TaskWorktreePrefix>,
+    pub worktree_prefix: Option<String>,
     #[serde(rename = "agentId", deserialize_with = "deserialize_required_nullable")]
     pub agent_id: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
@@ -6115,7 +6115,7 @@ pub struct TaskSourceCandidateImportParams {
         rename = "worktreePrefix",
         deserialize_with = "deserialize_required_nullable"
     )]
-    pub worktree_prefix: Option<TaskWorktreePrefix>,
+    pub worktree_prefix: Option<String>,
     #[serde(rename = "agentId", deserialize_with = "deserialize_required_nullable")]
     pub agent_id: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
@@ -8940,9 +8940,13 @@ fn validate_project_task_automation_configuration_dto(value: &Value) -> bool {
             && object
                 .get("createWorktree")
                 .is_some_and(|field| field.is_boolean())
-            && object
-                .get("worktreePrefix")
-                .is_some_and(|field| validate_task_worktree_prefix(field))
+            && object.get("worktreePrefix").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1
+                        && text.chars().count() <= 32
+                        && contract_pattern_matches("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", text)
+                })
+            })
             && object.get("agentId").is_some_and(|field| {
                 (field
                     .as_str()
@@ -9064,9 +9068,13 @@ fn validate_project_task_automation_set_params(value: &Value) -> bool {
             && object
                 .get("createWorktree")
                 .is_some_and(|field| field.is_boolean())
-            && object
-                .get("worktreePrefix")
-                .is_some_and(|field| validate_task_worktree_prefix(field))
+            && object.get("worktreePrefix").is_some_and(|field| {
+                field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1
+                        && text.chars().count() <= 32
+                        && contract_pattern_matches("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", text)
+                })
+            })
             && object.get("agentId").is_some_and(|field| {
                 (field
                     .as_str()
@@ -9458,23 +9466,6 @@ fn validate_task_create_worktree_intent(value: &Value) -> bool {
     value
         .as_str()
         .is_some_and(|text| ["inherit", "none", "provision"].contains(&text))
-}
-
-#[allow(
-    dead_code,
-    unused_comparisons,
-    unused_parens,
-    unused_variables,
-    clippy::absurd_extreme_comparisons,
-    clippy::len_zero,
-    clippy::redundant_closure
-)]
-fn validate_task_worktree_prefix(value: &Value) -> bool {
-    value.as_str().is_some_and(|text| {
-        text.chars().count() >= 1
-            && text.chars().count() <= 32
-            && contract_pattern_matches("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", text)
-    })
 }
 
 #[allow(
@@ -13189,9 +13180,13 @@ fn validate_task_create_params(value: &Value) -> bool {
             && object
                 .get("worktreeIntent")
                 .is_some_and(|field| validate_task_create_worktree_intent(field))
-            && object
-                .get("worktreePrefix")
-                .is_some_and(|field| (validate_task_worktree_prefix(field) || field.is_null()))
+            && object.get("worktreePrefix").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1
+                        && text.chars().count() <= 32
+                        && contract_pattern_matches("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", text)
+                }) || field.is_null())
+            })
             && object.get("agentId").is_some_and(|field| {
                 (field
                     .as_str()
@@ -13240,9 +13235,13 @@ fn validate_task_create_params(value: &Value) -> bool {
             .get("worktreeIntent")
             .is_some_and(|field| field == &serde_json::json!("provision"))
     })) || (value.as_object().is_some_and(|object| {
-        object
-            .get("worktreePrefix")
-            .is_none_or(|field| validate_task_worktree_prefix(field))
+        object.get("worktreePrefix").is_none_or(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 32
+                    && contract_pattern_matches("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", text)
+            })
+        })
     }))) && ((value.as_object().is_some_and(|object| {
         object
             .get("worktreeIntent")
@@ -22751,9 +22750,13 @@ fn validate_task_source_candidate_import_params(value: &Value) -> bool {
             && object
                 .get("worktreeIntent")
                 .is_some_and(|field| validate_task_create_worktree_intent(field))
-            && object
-                .get("worktreePrefix")
-                .is_some_and(|field| (validate_task_worktree_prefix(field) || field.is_null()))
+            && object.get("worktreePrefix").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    text.chars().count() >= 1
+                        && text.chars().count() <= 32
+                        && contract_pattern_matches("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", text)
+                }) || field.is_null())
+            })
             && object.get("agentId").is_some_and(|field| {
                 (field
                     .as_str()
@@ -22804,9 +22807,13 @@ fn validate_task_source_candidate_import_params(value: &Value) -> bool {
             .get("worktreeIntent")
             .is_some_and(|field| field == &serde_json::json!("provision"))
     })) || (value.as_object().is_some_and(|object| {
-        object
-            .get("worktreePrefix")
-            .is_none_or(|field| validate_task_worktree_prefix(field))
+        object.get("worktreePrefix").is_none_or(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 32
+                    && contract_pattern_matches("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", text)
+            })
+        })
     }))) && ((value.as_object().is_some_and(|object| {
         object
             .get("worktreeIntent")

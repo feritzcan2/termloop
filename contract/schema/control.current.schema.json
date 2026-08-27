@@ -2158,7 +2158,7 @@
       "properties": {
         "projectId": { "type": "string", "minLength": 1 },
         "createWorktree": { "type": "boolean" },
-        "worktreePrefix": { "$ref": "#/$defs/taskWorktreePrefix" },
+        "worktreePrefix": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" },
         "agentId": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
         "model": { "type": ["string", "null"], "minLength": 1, "maxLength": 80 },
         "permission": {
@@ -2217,7 +2217,7 @@
       "properties": {
         "projectId": { "type": "string", "minLength": 1 },
         "createWorktree": { "type": "boolean" },
-        "worktreePrefix": { "$ref": "#/$defs/taskWorktreePrefix" },
+        "worktreePrefix": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" },
         "agentId": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
         "model": { "type": ["string", "null"], "minLength": 1, "maxLength": 80 },
         "permission": {
@@ -5569,7 +5569,7 @@
         },
         "worktreePrefix": {
           "anyOf": [
-            { "$ref": "#/$defs/taskWorktreePrefix" },
+            { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" },
             { "type": "null" }
           ]
         },
@@ -5604,7 +5604,7 @@
       "allOf": [
         {
           "if": { "properties": { "worktreeIntent": { "const": "provision" } }, "required": ["worktreeIntent"] },
-          "then": { "properties": { "worktreePrefix": { "$ref": "#/$defs/taskWorktreePrefix" } } },
+          "then": { "properties": { "worktreePrefix": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" } } },
           "else": { "properties": { "worktreePrefix": { "const": null } } }
         },
         {
@@ -13274,7 +13274,7 @@
         "worktreeIntent": { "$ref": "#/$defs/taskCreateWorktreeIntent" },
         "worktreePrefix": {
           "anyOf": [
-            { "$ref": "#/$defs/taskWorktreePrefix" },
+            { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" },
             { "type": "null" }
           ]
         },
@@ -13297,7 +13297,7 @@
       "allOf": [
         {
           "if": { "properties": { "worktreeIntent": { "const": "provision" } }, "required": ["worktreeIntent"] },
-          "then": { "properties": { "worktreePrefix": { "$ref": "#/$defs/taskWorktreePrefix" } } },
+          "then": { "properties": { "worktreePrefix": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" } } },
           "else": { "properties": { "worktreePrefix": { "const": null } } }
         },
         {

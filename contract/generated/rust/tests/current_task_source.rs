@@ -207,7 +207,8 @@ fn task_source_methods_are_strict_and_only_reads_join_read_only_scope() {
         &json!({
             "sourceId":"source-1", "externalId":"10042",
             "expectedGeneration":1, "expectedObservationSequence":1,
-            "expectedRevision":1, "worktreeIntent":"provision", "agentId":"codex",
+            "expectedRevision":1, "worktreeIntent":"provision",
+            "worktreePrefix":"termloop", "agentId":"codex",
             "model":"gpt-5.6-sol", "permission":"bypassPermissions",
             "reasoning":"high", "kickoffMessage":"Implement and verify."
         })
@@ -217,7 +218,8 @@ fn task_source_methods_are_strict_and_only_reads_join_read_only_scope() {
         &json!({
             "sourceId":"source-1", "externalId":"10042",
             "expectedGeneration":1, "expectedObservationSequence":1,
-            "expectedRevision":1, "worktreeIntent":"none", "agentId":null,
+            "expectedRevision":1, "worktreeIntent":"none",
+            "worktreePrefix":null, "agentId":null,
             "model":null, "permission":null, "reasoning":null, "kickoffMessage":null
         })
     ));
@@ -226,7 +228,8 @@ fn task_source_methods_are_strict_and_only_reads_join_read_only_scope() {
         &json!({
             "sourceId":"source-1", "externalId":"10042",
             "expectedGeneration":1, "expectedObservationSequence":1,
-            "expectedRevision":1, "worktreeIntent":"none", "agentId":"codex",
+            "expectedRevision":1, "worktreeIntent":"none",
+            "worktreePrefix":null, "agentId":"codex",
             "model":"gpt-5.6-sol", "permission":"bypassPermissions",
             "reasoning":"high", "kickoffMessage":null
         })
