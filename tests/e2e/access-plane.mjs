@@ -424,13 +424,18 @@ async function startServer() {
   let stderr = "";
   child.stderr.on("data", (chunk) => { stderr = `${stderr}${String(chunk)}`.slice(-4_000); });
   const runtime = await waitUntil(async () => {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(
+        `daemon exited before discovery (code ${child.exitCode ?? "none"}, signal ${child.signalCode ?? "none"}): ${stderr}`,
+      );
+    }
     try {
       const record = JSON.parse(await readFile(runtimeFile, "utf8"));
       return record.pid === child.pid ? record : undefined;
     } catch {
       return undefined;
     }
-  }, 10_000, () => `daemon discovery did not appear: ${stderr}`);
+  }, 30_000, () => `daemon discovery did not appear: ${stderr}`);
   return [child, runtime];
 }
 
