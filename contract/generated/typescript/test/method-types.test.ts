@@ -43,6 +43,7 @@ const updatedTaskAutomation: Promise<ProjectTaskAutomationResult> = client.call(
   createWorktree: true,
   agentId: "codex",
   model: "gpt-5.6-sol",
+  permission: "bypassPermissions",
   reasoning: "high",
   kickoffMessage: "Implement and verify.",
   expectedRevision: 1,
@@ -62,6 +63,7 @@ const createdTask: Promise<TaskDto> = client.call("task.create", {
   worktreeIntent: "inherit",
   agentId: null,
   model: null,
+  permission: null,
   reasoning: null,
   kickoffMessage: null,
 });
@@ -129,6 +131,7 @@ client.call("task.create", {
   worktreeIntent: "provision",
   agentId: null,
   model: null,
+  permission: null,
   reasoning: null,
   kickoffMessage: null,
 });
