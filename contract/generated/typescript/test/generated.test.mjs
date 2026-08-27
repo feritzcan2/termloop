@@ -36,7 +36,10 @@ test("generated validator rejects cross-provider Git-host identities", () => {
 test("generated current contract surface is stable", () => {
   assert.match(CONTRACT_IDENTITY, /^sha256:[0-9a-f]{64}$/);
   assert.match(ACCESS_PROTOCOL_IDENTITY, /^sha256:[0-9a-f]{64}$/);
-  assert.deepEqual(METHODS, ["system.version","system.capabilities","system.ping","system.defaultProjectsRoot","system.browseDirectory","attachment.beginUpload","system.shutdown","system.keepAwake.get","system.keepAwake.set","access.status","access.enable","access.disable","access.pairCreate","access.deviceList","access.deviceRevoke","control.subscribe","control.cancel","mcp.toolSettingsGet","mcp.toolDescriptionUpdate","mcp.toolDescriptionReset","skill.catalogGet","skill.deploymentSet","skill.definitionGet","skill.definitionSave","project.create","project.list","project.taskAutomationGet","project.taskAutomationSet","project.worktreeSummary","project.worktreeChangeList","project.worktreeDiff","project.worktreePreImage","project.listLocalBranches","project.updateDetails","project.delete","task.create","task.list","task.inspectArchive","task.archive","task.abandonArchive","task.restore","task.archivedContext","task.worktreeChangeList","task.worktreeDiff","task.worktreePreImage","task.branchCommitSummaryList","task.branchCommitList","task.branchCommitChangeList","task.branchCommitDiff","task.bindBranch","task.provisionWorktree","task.inspectWorktreeRepair","task.inspectWorktreeCleanup","task.repairWorktree","task.cleanupWorktree","task.forgetStaleWorktree","task.discardStaleWorktree","task.dismissWorktreeRepair","task.dismissWorktreeProvisioning","task.rename","task.updateBrief","task.close","task.finalizeClosedWorktreeRemoval","task.reopen","task.delete","task.deleteArchived","task.launchTerminal","task.previewAgent","task.launchAgent","task.startRun","task.restartRun","project.startRun","project.restartRun","session.launchTerminal","session.previewAgent","session.launchAgent","session.forkAgent","session.repairProviderHistory","session.historyList","session.historyPreview","session.previewHistoryResumeAgent","session.resumeHistoryAgent","session.requestAskTo","session.requestHandoverTo","quickAction.preview","quickAction.launch","session.list","session.listArchived","session.listDeleted","session.inspectArchive","session.archive","session.restoreArchived","session.deleteArchived","session.restoreDeleted","session.rename","session.terminate","session.previewResumeAgent","session.resumeAgent","session.restartAgent","session.previewRelocateAgentToTask","session.relocateAgentToTask","session.previewRelocateAgentToProject","session.relocateAgentToProject","session.restartAgentsForClientLaunch","session.close","agent.capabilityList","agent.statusList","agent.observe","steward.configurationGet","steward.configurationSet","steward.configurationDelete","worker.configurationList","worker.configurationCreate","worker.configurationUpdate","worker.configurationDelete","runConfiguration.list","runConfiguration.create","runConfiguration.update","runConfiguration.delete","runConfiguration.improvePreview","runConfiguration.improveLaunch","assistantPrompt.improvePreview","assistantPrompt.improveLaunch","settings.improvePreview","settings.improveLaunch","configuration.versionList","configuration.versionRestore","run.runtimeList","routine.configurationList","routine.configurationCreate","routine.configurationUpdate","routine.contextUpdate","routine.configurationDelete","routine.runtimeList","routine.runNow","taskSource.list","taskSource.boardList","taskSource.boardListStored","taskSource.statusList","taskSource.statusListStored","taskSource.create","taskSource.update","taskSource.credentialsSet","taskSource.delete","taskSource.refresh","taskSource.candidateList","taskSource.candidateImport","taskSource.candidateIgnore","taskSource.candidateUnignore","playbook.get","playbook.update","playbook.taskPositionSet","playbook.runtime","companion.transcriptAppend","companion.proposalRespond","companion.suggestionAccept","companion.transcriptList","companion.transcriptClear","companion.wakeNext","companion.stewardWake","gitHost.pullRequestList","gitHost.pullRequestChangeList","gitHost.pullRequestDiff"]);
+  const contextBankMethods = METHODS.filter((method) => method.startsWith("contextBank."));
+  assert.deepEqual(METHODS.filter((method) => !method.startsWith("contextBank.")), ["system.version","system.capabilities","system.ping","system.defaultProjectsRoot","system.browseDirectory","attachment.beginUpload","system.shutdown","system.keepAwake.get","system.keepAwake.set","access.status","access.enable","access.disable","access.pairCreate","access.deviceList","access.deviceRevoke","control.subscribe","control.cancel","mcp.toolSettingsGet","mcp.toolDescriptionUpdate","mcp.toolDescriptionReset","skill.catalogGet","skill.deploymentSet","skill.definitionGet","skill.definitionSave","project.create","project.list","project.taskAutomationGet","project.taskAutomationSet","project.worktreeSummary","project.worktreeChangeList","project.worktreeDiff","project.worktreePreImage","project.listLocalBranches","project.updateDetails","project.delete","task.create","task.list","task.inspectArchive","task.archive","task.abandonArchive","task.restore","task.archivedContext","task.worktreeChangeList","task.worktreeDiff","task.worktreePreImage","task.branchCommitSummaryList","task.branchCommitList","task.branchCommitChangeList","task.branchCommitDiff","task.bindBranch","task.provisionWorktree","task.inspectWorktreeRepair","task.inspectWorktreeCleanup","task.repairWorktree","task.cleanupWorktree","task.forgetStaleWorktree","task.discardStaleWorktree","task.dismissWorktreeRepair","task.dismissWorktreeProvisioning","task.rename","task.updateBrief","task.close","task.finalizeClosedWorktreeRemoval","task.reopen","task.delete","task.deleteArchived","task.launchTerminal","task.previewAgent","task.launchAgent","task.startRun","task.restartRun","project.startRun","project.restartRun","session.launchTerminal","session.previewAgent","session.launchAgent","session.forkAgent","session.repairProviderHistory","session.historyList","session.historyPreview","session.previewHistoryResumeAgent","session.resumeHistoryAgent","session.requestAskTo","session.requestHandoverTo","quickAction.preview","quickAction.launch","session.list","session.listArchived","session.listDeleted","session.inspectArchive","session.archive","session.restoreArchived","session.deleteArchived","session.restoreDeleted","session.rename","session.terminate","session.previewResumeAgent","session.resumeAgent","session.restartAgent","session.previewRelocateAgentToTask","session.relocateAgentToTask","session.previewRelocateAgentToProject","session.relocateAgentToProject","session.restartAgentsForClientLaunch","session.close","agent.capabilityList","agent.statusList","agent.observe","steward.configurationGet","steward.configurationSet","steward.configurationDelete","worker.configurationList","worker.configurationCreate","worker.configurationUpdate","worker.configurationDelete","runConfiguration.list","runConfiguration.create","runConfiguration.update","runConfiguration.delete","runConfiguration.improvePreview","runConfiguration.improveLaunch","assistantPrompt.improvePreview","assistantPrompt.improveLaunch","settings.improvePreview","settings.improveLaunch","configuration.versionList","configuration.versionRestore","run.runtimeList","routine.configurationList","routine.configurationCreate","routine.configurationUpdate","routine.contextUpdate","routine.configurationDelete","routine.runtimeList","routine.runNow","taskSource.list","taskSource.boardList","taskSource.boardListStored","taskSource.statusList","taskSource.statusListStored","taskSource.create","taskSource.update","taskSource.credentialsSet","taskSource.delete","taskSource.refresh","taskSource.candidateList","taskSource.candidateImport","taskSource.candidateIgnore","taskSource.candidateUnignore","playbook.get","playbook.update","playbook.taskPositionSet","playbook.runtime","companion.transcriptAppend","companion.proposalRespond","companion.suggestionAccept","companion.transcriptList","companion.transcriptClear","companion.wakeNext","companion.stewardWake","gitHost.pullRequestList","gitHost.pullRequestChangeList","gitHost.pullRequestDiff"]);
+  assert.deepEqual(contextBankMethods, ["contextBank.catalogGet", "contextBank.fileGet", "contextBank.fileSave"]);
+  assert.deepEqual(METHODS.slice(24, 27), contextBankMethods);
   assert.deepEqual(EVENTS, ["projection.invalidated"]);
   assert.ok(READ_ONLY_METHODS.includes("control.subscribe"));
   assert.ok(READ_ONLY_METHODS.includes("control.cancel"));
@@ -145,6 +148,55 @@ test("generated current contract surface is stable", () => {
     true,
   );
   assert.equal(validateMethodResult("system.keepAwake.set", { ...keepAwakeStatus, mode: "sometimes" }), false);
+});
+
+test("Context Bank projections are strict, bounded, and full-control only", () => {
+  const catalog = {
+    projectName: "TermLoop",
+    truncated: false,
+    warnings: [],
+    files: [{
+      id: "a".repeat(64),
+      relativePath: "apps/server/AGENTS.md",
+      kind: "agents",
+      lineCount: 42,
+      lineLimit: 100,
+      overLimit: false,
+      isSymlink: false,
+      symlinkTargetPath: null,
+    }],
+  };
+  assert.equal(validateMethodResult("contextBank.catalogGet", catalog), true);
+  assert.equal(validateMethodResult("contextBank.catalogGet", {
+    ...catalog,
+    files: [{ ...catalog.files[0], id: "/project/AGENTS.md" }],
+  }), false);
+  assert.equal(validateMethodResult("contextBank.catalogGet", {
+    ...catalog,
+    files: [{ ...catalog.files[0], unknown: true }],
+  }), false);
+
+  const file = {
+    fileId: "a".repeat(64),
+    relativePath: "apps/server/AGENTS.md",
+    path: "/project/apps/server/AGENTS.md",
+    kind: "agents",
+    content: "# Server rules\n",
+    contentSha256: "b".repeat(64),
+    lineCount: 2,
+    lineLimit: 100,
+    isSymlink: false,
+    symlinkTargetPath: null,
+    editable: true,
+  };
+  assert.equal(validateMethodResult("contextBank.fileGet", file), true);
+  assert.equal(validateMethodResult("contextBank.fileSave", file), true);
+  assert.equal(validateMethodResult("contextBank.fileGet", { ...file, kind: "cursor" }), false);
+  assert.equal(validateMethodResult("contextBank.fileSave", { ...file, content: "x".repeat(524289) }), false);
+  for (const method of ["contextBank.catalogGet", "contextBank.fileGet", "contextBank.fileSave"]) {
+    assert.ok(!READ_ONLY_METHODS.includes(method));
+    assert.ok(!COMPANION_METHODS.includes(method));
+  }
 });
 
 test("MCP tool settings projection is closed, bounded, and revisioned", () => {

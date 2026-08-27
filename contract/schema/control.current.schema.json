@@ -235,6 +235,30 @@
         "$ref": "#/$defs/skillDefinitionDto"
       }
     },
+    "contextBank.catalogGet": {
+      "params": {
+        "$ref": "#/$defs/contextBankCatalogGetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/contextBankCatalogResult"
+      }
+    },
+    "contextBank.fileGet": {
+      "params": {
+        "$ref": "#/$defs/contextBankFileGetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/contextBankFileDto"
+      }
+    },
+    "contextBank.fileSave": {
+      "params": {
+        "$ref": "#/$defs/contextBankFileSaveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/contextBankFileDto"
+      }
+    },
     "project.create": {
       "params": {
         "$ref": "#/$defs/projectCreateParams"
@@ -1348,6 +1372,9 @@
         "skill.deploymentSet",
         "skill.definitionGet",
         "skill.definitionSave",
+        "contextBank.catalogGet",
+        "contextBank.fileGet",
+        "contextBank.fileSave",
         "project.create",
         "project.list",
         "project.taskAutomationGet",
@@ -5321,6 +5348,104 @@
           },
           "maxItems": 3
         }
+      }
+    },
+    "contextBankFileKind": {
+      "x-codegen": true,
+      "x-codegen-name": "ContextBankFileKind",
+      "type": "string",
+      "enum": ["claude", "agents", "gemini"]
+    },
+    "contextBankCatalogItemDto": {
+      "x-codegen": true,
+      "x-codegen-name": "ContextBankCatalogItemDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "relativePath", "kind", "lineCount", "lineLimit", "overLimit", "isSymlink", "symlinkTargetPath"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "relativePath": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "kind": { "$ref": "#/$defs/contextBankFileKind" },
+        "lineCount": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "lineLimit": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "overLimit": { "type": "boolean" },
+        "isSymlink": { "type": "boolean" },
+        "symlinkTargetPath": { "type": ["string", "null"], "maxLength": 4096 }
+      }
+    },
+    "contextBankCatalogGetParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ContextBankCatalogGetParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId"],
+      "properties": {
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "contextBankCatalogResult": {
+      "x-codegen": true,
+      "x-codegen-name": "ContextBankCatalogResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files", "warnings", "projectName", "truncated"],
+      "properties": {
+        "files": {
+          "type": "array",
+          "maxItems": 500,
+          "items": { "$ref": "#/$defs/contextBankCatalogItemDto" }
+        },
+        "warnings": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "type": "string", "minLength": 1, "maxLength": 400 }
+        },
+        "projectName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "truncated": { "type": "boolean" }
+      }
+    },
+    "contextBankFileGetParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ContextBankFileGetParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "fileId"],
+      "properties": {
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "fileId": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "contextBankFileSaveParams": {
+      "x-codegen": true,
+      "x-codegen-name": "ContextBankFileSaveParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "fileId", "expectedContentSha256", "content"],
+      "properties": {
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "fileId": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "expectedContentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "content": { "type": "string", "maxLength": 524288, "x-utf8-max-bytes": 524288 }
+      }
+    },
+    "contextBankFileDto": {
+      "x-codegen": true,
+      "x-codegen-name": "ContextBankFileDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fileId", "relativePath", "path", "kind", "content", "contentSha256", "lineCount", "lineLimit", "isSymlink", "symlinkTargetPath", "editable"],
+      "properties": {
+        "fileId": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "relativePath": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "path": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "kind": { "$ref": "#/$defs/contextBankFileKind" },
+        "content": { "type": "string", "maxLength": 524288, "x-utf8-max-bytes": 524288 },
+        "contentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "lineCount": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "lineLimit": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "isSymlink": { "type": "boolean" },
+        "symlinkTargetPath": { "type": ["string", "null"], "maxLength": 4096 },
+        "editable": { "type": "boolean" }
       }
     },
     "projectCreateParams": {

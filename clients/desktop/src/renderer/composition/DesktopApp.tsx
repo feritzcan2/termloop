@@ -1981,6 +1981,23 @@ export function DesktopApp() {
     }),
     [selectedSourceApi, skillProjectId],
   );
+  const loadContextBankCatalog = useCallback(() => {
+    if (!skillProjectId) return Promise.reject(new Error("Open a Project to view its Context Bank."));
+    return selectedSourceApi.contextBankCatalogGet({ projectId: skillProjectId });
+  }, [selectedSourceApi, skillProjectId]);
+  const loadContextBankFile = useCallback((fileId: string) => {
+    if (!skillProjectId) return Promise.reject(new Error("The Context Bank Project is no longer selected."));
+    return selectedSourceApi.contextBankFileGet({ projectId: skillProjectId, fileId });
+  }, [selectedSourceApi, skillProjectId]);
+  const saveContextBankFile = useCallback((fileId: string, expectedContentSha256: string, content: string) => {
+    if (!skillProjectId) return Promise.reject(new Error("The Context Bank Project is no longer selected."));
+    return selectedSourceApi.contextBankFileSave({
+      projectId: skillProjectId,
+      fileId,
+      expectedContentSha256,
+      content,
+    });
+  }, [selectedSourceApi, skillProjectId]);
 
   return (<>
     <Shell
@@ -2039,6 +2056,9 @@ export function DesktopApp() {
       setSkillDeployment={setSkillDeployment}
       loadSkillDefinition={loadSkillDefinition}
       saveSkillDefinition={saveSkillDefinition}
+      loadContextBankCatalog={loadContextBankCatalog}
+      loadContextBankFile={loadContextBankFile}
+      saveContextBankFile={saveContextBankFile}
       loadKeepAwake={selectedSourceApi.keepAwakeGet}
       setKeepAwake={selectedSourceApi.keepAwakeSet}
       keepAwakeRefreshToken={keepAwakeRefreshToken}

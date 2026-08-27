@@ -2,6 +2,7 @@
 
 pub mod companion_integrations;
 mod configuration_version;
+mod context_bank;
 mod error;
 mod keep_awake;
 pub mod mcp_settings;
@@ -27,6 +28,7 @@ pub use companion_integrations::steward::{
 pub use configuration_version::{
     ConfigurationApplicationEffects, ConfigurationApplicationPlan, target_kind_wire,
 };
+pub use context_bank::{ContextBankCatalogPlan, ContextBankFilePlan};
 pub use error::{
     AgentForkUnavailableReason, CoreError, ProjectDeleteBlocker,
     ProviderHistoryRepairUnavailableReason, TaskAgentStartStage, TaskAgentStartSuggestedAction,
