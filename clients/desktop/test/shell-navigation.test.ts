@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import {
+  AssistantTerminalHost,
   dismissChangesBeforeNavigation,
   openImproverSession,
   openWorkspaceSession,
@@ -106,6 +109,37 @@ describe("Shell Session recovery", () => {
       lifecycle_state: "running",
       resume_failure_reason: null,
     })).toBe(false);
+  });
+
+  it("offers provider-history repair inside Steward and Worker terminal hosts", () => {
+    const markup = renderToStaticMarkup(createElement(AssistantTerminalHost, {
+      sessionId: failedAgent.id,
+      session: {
+        ...failedAgent,
+        resume_failure_reason: "providerHistoryDamaged",
+        retryable: false,
+      },
+      bindTerminalHost: () => undefined,
+      resumeSession: async () => undefined,
+      repairProviderHistory: () => undefined,
+    }));
+
+    expect(markup).toContain("data-session-recovery-state=\"resumeFailed\"");
+    expect(markup).toContain("Repair history");
+    expect(markup).toContain("provider conversation history is damaged");
+  });
+
+  it("offers Retry inside Steward and Worker terminal hosts for retryable failures", () => {
+    const markup = renderToStaticMarkup(createElement(AssistantTerminalHost, {
+      sessionId: failedAgent.id,
+      session: { ...failedAgent, retryable: true },
+      bindTerminalHost: () => undefined,
+      resumeSession: async () => undefined,
+      repairProviderHistory: () => undefined,
+    }));
+
+    expect(markup).toContain(">Retry</button>");
+    expect(markup).not.toContain("Repair history");
   });
 });
 

@@ -38,7 +38,7 @@
 - A fresh acknowledged destructive cleanup may atomically replace any failed
   cleanup journal for the same exact Task/proof/generation/path only after new
   observation passes every current safety gate. An active journal remains
-  non-supersedable, and fresh safe intent cannot replace a failed journal.
+  non-supersedable.
 - Multiple write-capable agents in one worktree remain allowed. Presence,
   writer count, Active Agents, blocked/attention, health, and PRs are projections.
 - PR composition keeps the durable Task branch, bounded exact-worktree branch
@@ -58,6 +58,12 @@
 - CCP-0016 stale binding forget is record-only. Its separate recursive disposal
   command is journaled, explicitly acknowledged, exact-path reserved, and must
   revalidate Git, Session, protected-path, and leaf identity gates before removal.
+- Recursive stale disposal is permitted only for an exact Task-recorded orphaned
+  directory with its managed tuple, or for a generation-zero legacy binding
+  freshly proven to be the Task branch's exact registered checkout. If
+  protected-path, repository-registration, Session, Task-tuple, or leaf-identity
+  safety cannot be proven, deletion fails closed; the UI describes stale
+  contents as unverified.
 - Launch accepts only a valid provenance-bearing payload from `invocation`.
 - Native fork is a named Session command derived from a live source Session; it
   derives the bounded `<source display name> fork-1` child name, creates no

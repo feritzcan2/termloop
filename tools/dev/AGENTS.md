@@ -12,8 +12,9 @@
   and both processes survived the stability gate. Confirm a later independent
   `status` reports `Supervisor: ready` and `Build: current`. Window activation
   is best effort because macOS Accessibility permission may be unavailable.
-- `--main` is human-only unless the user explicitly asks an agent to operate the
-  main profile. Never substitute it for a missing feature tag.
+- `--main` is human-only. Agents must never start, restart, or stop it, even when
+  the user asks for validation intended for `main`. Never substitute it for a
+  missing feature tag.
 - Stop only with the same checkout and tag. Never use global `pkill`, basename
   matching, repository-prefix scans, or signals based on an unverified PID.
 - Multiple feature tags may intentionally run against one checkout; each has

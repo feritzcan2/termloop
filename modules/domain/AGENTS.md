@@ -13,6 +13,7 @@
 
 ## Invariants
 
+- Project is the durable top-level product scope.
 - Task status is only `open | closed`; its worktree is optional, and a worktree
   binding implies a branch binding.
 - IssueLink is a provider-neutral sidecar value; never add provider or remote
