@@ -463,7 +463,9 @@ fn pending_generated_input_fixture() {
     // exercises marker-plus-global-quiescence.
     if periodic_composer_redraw {
         print!(
-            "TERMLOOP_INITIAL_INPUT_VISIBLE:{submitted}\x1b[?2026h\x1b[18;1H\x1b[Kcomposer top\x1b[19;1H\x1b[Kcomposer body\x1b[20;1H\x1b[K>\x1b[?25h\x1b[20;3H\x1b[?2026l"
+            "\x1b[1;1HTERMLOOP_INITIAL_INPUT_VISIBLE:{submitted}\x1b[K\
+             \x1b[?2026h\x1b[18;1H\x1b[Kcomposer top\x1b[19;1H\x1b[Kcomposer body\
+             \x1b[20;1H\x1b[K>\x1b[?25h\x1b[20;3H\x1b[?2026l"
         );
         std::io::stdout().flush().unwrap();
         std::thread::spawn(|| {
