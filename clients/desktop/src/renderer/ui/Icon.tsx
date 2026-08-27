@@ -1,9 +1,9 @@
 import type { ReactNode, SVGProps } from "react";
 
 export type IconName =
-  | "add" | "agent" | "arrowLeft" | "arrowRight" | "claude" | "codex"
+  | "add" | "agent" | "arrowLeft" | "arrowRight" | "claude" | "codex" | "fileGear" | "fileText"
   | "chevronDown" | "circle" | "close" | "copy" | "edit" | "external" | "focus" | "folder" | "grip"
-  | "history" | "mcp" | "more" | "panelDown" | "panelRight" | "play" | "search" | "stop" | "task" | "terminal"
+  | "history" | "link" | "mcp" | "more" | "panelDown" | "panelRight" | "play" | "search" | "stop" | "task" | "terminal"
   | "archive" | "branch" | "fork" | "reopen" | "restart" | "sparkles" | "star" | "trash";
 
 export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconName }) {
@@ -30,12 +30,15 @@ const paths: Record<IconName, ReactNode> = {
   copy: <><rect x="6" y="6" width="10" height="10" rx="2" /><path d="M4 13H3.5A1.5 1.5 0 0 1 2 11.5v-8A1.5 1.5 0 0 1 3.5 2h8A1.5 1.5 0 0 1 13 3.5V4" /></>,
   edit: <><path d="m12.5 4.5 3 3-8.5 8.5-3.5.5.5-3.5zM11 6l3 3" /></>,
   external: <><path d="M11 4h5v5M15.5 4.5 9 11M14 11.5V16H4V6h4.5" /></>,
+  fileGear: <><path d="M5 2.5h6l4 4V17H5zM11 2.5v4h4" /><circle cx="10" cy="12" r="2" /><path d="M10 8.8v1M10 14v1M6.8 12h1M12.2 12h1M7.8 9.8l.7.7M11.5 13.5l.7.7M12.2 9.8l-.7.7M8.5 13.5l-.7.7" /></>,
+  fileText: <><path d="M5 2.5h6l4 4V17H5zM11 2.5v4h4M7.5 10h5M7.5 13h5" /></>,
   play: <><path d="M7 4.6v10.8L15.4 10z" /></>,
   focus: <><path d="M7 3H3v4M13 3h4v4M17 13v4h-4M7 17H3v-4" /></>,
   fork: <><circle cx="5" cy="4" r="2" /><circle cx="15" cy="7" r="2" /><circle cx="15" cy="15" r="2" /><path d="M5 6v5c0 2 2 4 4 4h4M7 9h2c2 0 4-2 4-4" /></>,
   folder: <><path d="M2.5 6.5h6l1.5-2h7.5v11h-15z" /></>,
   grip: <><circle cx="7" cy="6" r=".8" fill="currentColor" stroke="none" /><circle cx="13" cy="6" r=".8" fill="currentColor" stroke="none" /><circle cx="7" cy="10" r=".8" fill="currentColor" stroke="none" /><circle cx="13" cy="10" r=".8" fill="currentColor" stroke="none" /><circle cx="7" cy="14" r=".8" fill="currentColor" stroke="none" /><circle cx="13" cy="14" r=".8" fill="currentColor" stroke="none" /></>,
   history: <><path d="M3.5 9.8a6.5 6.5 0 1 0 2-4.7" /><path d="M3.5 4.2v4h4M10 6.5V10l2.4 1.6" /></>,
+  link: <><path d="m8 12 4-4M6.5 13.5l-1 1a2.8 2.8 0 0 1-4-4l2-2a2.8 2.8 0 0 1 4 0M13.5 6.5l1-1a2.8 2.8 0 0 1 4 4l-2 2a2.8 2.8 0 0 1-4 0" /></>,
   mcp: <><circle cx="5" cy="10" r="2" /><circle cx="15" cy="5" r="2" /><circle cx="15" cy="15" r="2" /><path d="M7 10h3a3 3 0 0 0 3-3M10 10a3 3 0 0 1 3 3" /></>,
   more: <><circle cx="4.5" cy="10" r="1.1" fill="currentColor" stroke="none" /><circle cx="10" cy="10" r="1.1" fill="currentColor" stroke="none" /><circle cx="15.5" cy="10" r="1.1" fill="currentColor" stroke="none" /></>,
   panelDown: <><rect x="2.5" y="3" width="15" height="14" rx="2" /><path d="M2.5 10h15" /></>,

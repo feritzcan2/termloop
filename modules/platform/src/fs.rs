@@ -555,6 +555,101 @@ pub fn atomic_replace_private_file(path: &Path, bytes: &[u8]) -> Result<(), Plat
     Ok(())
 }
 
+/// Atomically replaces one existing ordinary user file while preserving the
+/// destination's permissions. This is for Project-owned source/configuration
+/// files; private TermLoop state must continue to use
+/// [`atomic_replace_private_file`]. Symlinks must be resolved and bounded by
+/// the caller before invoking this primitive.
+#[allow(unsafe_code)]
+pub fn atomic_replace_file_preserving_permissions(
+    path: &Path,
+    bytes: &[u8],
+) -> Result<(), PlatformError> {
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "replacement target is not a regular file",
+        )
+        .into());
+    }
+    let parent = path
+        .parent()
+        .ok_or(PlatformError::RuntimeDirectoryUnavailable)?;
+    let mut temp_name = path
+        .file_name()
+        .ok_or(PlatformError::RuntimeDirectoryUnavailable)?
+        .to_os_string();
+    temp_name.push(format!(".termloop-tmp-{}", crate::generate_opaque_id()));
+    let temp = parent.join(temp_name);
+
+    #[cfg(unix)]
+    {
+        use std::fs::OpenOptions;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        let mut options = OpenOptions::new();
+        options
+            .create_new(true)
+            .write(true)
+            .mode(metadata.permissions().mode());
+        let mut file = options.open(&temp)?;
+        if let Err(error) = io::Write::write_all(&mut file, bytes)
+            .and_then(|()| file.set_permissions(metadata.permissions()))
+            .and_then(|()| file.sync_all())
+        {
+            let _ = fs::remove_file(&temp);
+            return Err(error.into());
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        use std::fs::OpenOptions;
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temp)?;
+        if let Err(error) = io::Write::write_all(&mut file, bytes).and_then(|()| file.sync_all()) {
+            let _ = fs::remove_file(&temp);
+            return Err(error.into());
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    if let Err(error) = fs::rename(&temp, path) {
+        let _ = fs::remove_file(&temp);
+        return Err(error.into());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::{REPLACEFILE_WRITE_THROUGH, ReplaceFileW};
+
+        let destination: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+        let replacement: Vec<u16> = temp.as_os_str().encode_wide().chain(Some(0)).collect();
+        // SAFETY: Both owned buffers are null-terminated UTF-16 paths and live
+        // for the duration of ReplaceFileW. Optional pointer arguments are null.
+        let replaced = unsafe {
+            ReplaceFileW(
+                destination.as_ptr(),
+                replacement.as_ptr(),
+                std::ptr::null(),
+                REPLACEFILE_WRITE_THROUGH,
+                std::ptr::null(),
+                std::ptr::null(),
+            )
+        };
+        if replaced == 0 {
+            let error = io::Error::last_os_error();
+            let _ = fs::remove_file(&temp);
+            return Err(error.into());
+        }
+    }
+
+    Ok(())
+}
+
 /// Creates an exclusive private sibling backup and atomically replaces the
 /// source only while its complete bytes still equal the caller's observation.
 /// The returned backup is intentionally retained after success.

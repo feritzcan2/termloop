@@ -2,6 +2,7 @@
 
 mod access_crypto;
 mod agent_history_fs;
+mod context_bank;
 #[cfg(test)]
 mod dev_profile_identity;
 mod diagnostic_log;
@@ -32,6 +33,10 @@ pub use agent_history_fs::{
     BoundedHistoryFile, BoundedHistoryFileSlices, discover_bounded_history_files,
     discover_bounded_history_files_cancellable, read_bounded_history_file_slices,
 };
+pub use context_bank::{
+    ContextBankCatalog, ContextBankCatalogItem, ContextBankError, ContextBankFile,
+    ContextBankFileKind, context_bank_catalog, read_context_bank_file, write_context_bank_file,
+};
 pub use diagnostic_log::BoundedPrivateLog;
 pub use directory_browser::{
     BrowsedDirectory, BrowsedDirectoryEntry, BrowsedDirectoryKind, browse_directory,
@@ -41,10 +46,11 @@ pub use env::{
     LaunchEnvironment, gemini_cli_system_defaults_path, gemini_cli_system_defaults_source_present,
 };
 pub use fs::{
-    SweptDirectory, atomic_replace_private_file, backup_and_atomic_replace_private_file,
-    create_private_file, read_bounded_file, read_bounded_file_if_present,
-    read_file_tail_if_present, remove_dir_if_empty, remove_file_if_present, runtime_directory,
-    state_directory, sweep_directory_files, take_bounded_file, write_private_file,
+    SweptDirectory, atomic_replace_file_preserving_permissions, atomic_replace_private_file,
+    backup_and_atomic_replace_private_file, create_private_file, read_bounded_file,
+    read_bounded_file_if_present, read_file_tail_if_present, remove_dir_if_empty,
+    remove_file_if_present, runtime_directory, state_directory, sweep_directory_files,
+    take_bounded_file, write_private_file,
 };
 pub use keep_awake::{
     KeepAwakeError, KeepAwakeHold, KeepAwakeOverride, KeepAwakeRequest, keep_awake_overrides,

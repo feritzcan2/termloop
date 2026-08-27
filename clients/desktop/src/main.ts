@@ -5,6 +5,9 @@ import path from "node:path";
 import {
   TermLoopControlError,
   type CallArgs,
+  type ContextBankCatalogGetParams,
+  type ContextBankFileGetParams,
+  type ContextBankFileSaveParams,
   type ErrorCode,
   type KeepAwakeSetParams,
   type Method,
@@ -347,6 +350,15 @@ handleIpc("termloop:skill-definition-get", (_event, params: SkillDefinitionGetPa
 );
 handleIpc("termloop:skill-definition-save", (_event, params: SkillDefinitionSaveParams) =>
   controlCall("skill.definitionSave", params),
+);
+handleIpc("termloop:context-bank-catalog-get", (_event, params: ContextBankCatalogGetParams) =>
+  controlCall("contextBank.catalogGet", params),
+);
+handleIpc("termloop:context-bank-file-get", (_event, params: ContextBankFileGetParams) =>
+  controlCall("contextBank.fileGet", params),
+);
+handleIpc("termloop:context-bank-file-save", (_event, params: ContextBankFileSaveParams) =>
+  controlCall("contextBank.fileSave", params),
 );
 handleIpc("termloop:project-create", (_event, name: string, folderPath: string) =>
   controlCall("project.create", { name, folderPath }),
