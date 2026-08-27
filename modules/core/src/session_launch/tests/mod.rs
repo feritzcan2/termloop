@@ -26,7 +26,7 @@ fn append_headless_output_and_answer_cursor_queries(
 }
 
 fn read_headless_fixture_input(input: &mut impl std::io::Read, expected: &[u8]) {
-    if !cfg!(windows) {
+    if termloop_platform::host_uses_bracketed_paste_framing() {
         let mut observed = vec![0_u8; expected.len()];
         input
             .read_exact(&mut observed)
@@ -70,6 +70,19 @@ fn read_windows_headless_fixture_input(
         observed.extend(control);
     }
     observed
+}
+
+fn read_windows_headless_fixture_submit(input: &mut impl std::io::Read) {
+    loop {
+        let observed = read_windows_headless_fixture_input(input, 1);
+        if observed == b"\r" {
+            return;
+        }
+        assert_eq!(
+            observed, b"\x1b[D",
+            "Windows fixture received unexpected input before generated submit"
+        );
+    }
 }
 
 fn is_cursor_position_response(bytes: &[u8]) -> bool {
@@ -434,7 +447,7 @@ fn pending_generated_input_fixture() {
     std::io::stdout().flush().unwrap();
     if codex_composer_gate {
         std::thread::sleep(std::time::Duration::from_millis(750));
-        println!(
+        print!(
             "\x1b[?2026h\x1b[20;1H\x1b[K\x1b[1m›\x1b[0m Ask Codex to do anything \
              TERMLOOP_CODEX_COMPOSER_READY\x1b[?25h\x1b[20;3H\x1b[?2026l"
         );
@@ -449,7 +462,7 @@ fn pending_generated_input_fixture() {
     // grows upward while its final cursor stays fixed; the ordinary branch
     // exercises marker-plus-global-quiescence.
     if periodic_composer_redraw {
-        println!(
+        print!(
             "TERMLOOP_INITIAL_INPUT_VISIBLE:{submitted}\x1b[?2026h\x1b[18;1H\x1b[Kcomposer top\x1b[19;1H\x1b[Kcomposer body\x1b[20;1H\x1b[K>\x1b[?25h\x1b[20;3H\x1b[?2026l"
         );
         std::io::stdout().flush().unwrap();
@@ -494,20 +507,16 @@ fn pending_generated_input_fixture() {
         }
     }
     let interleaved_user_input = std::env::var_os("TERMLOOP_TEST_INTERLEAVED_USER_INPUT").is_some();
-    let windows_submit_already_consumed = if interleaved_user_input && cfg!(windows) {
-        let observed = read_windows_headless_fixture_input(&mut input, b"\x1b[D\r".len());
-        assert!(
-            observed == b"\x1b[D\r" || observed == b"\r\x1b[D",
-            "Windows fixture must receive one user edit and one generated submit"
-        );
-        true
+    if interleaved_user_input && !termloop_platform::host_uses_bracketed_paste_framing() {
+        // ConPTY may consume the encoded cursor edit as a console action
+        // instead of exposing its escape bytes to the child. The fixture's
+        // generated-delivery assertion is the receipted Enter; tolerate the
+        // optional edit sequence without requiring it to become child input.
+        read_windows_headless_fixture_submit(&mut input);
     } else {
         if interleaved_user_input {
             read_headless_fixture_input(&mut input, b"\x1b[D");
         }
-        false
-    };
-    if !windows_submit_already_consumed {
         read_headless_fixture_input(&mut input, b"\r");
     }
     if std::env::var_os("TERMLOOP_TEST_RETAIN_FIRST_SUBMIT").is_some() {
