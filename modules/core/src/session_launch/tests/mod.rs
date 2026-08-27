@@ -4,6 +4,90 @@ use termloop_domain::{IssueLink, IssueLinkProvider, IssueLinkSyncAuthority, Resu
 use termloop_store::Store;
 use termloop_terminal::TerminalService;
 
+fn append_headless_output_and_answer_cursor_queries(
+    terminal: &TerminalService,
+    session_id: &str,
+    runtime_epoch: u64,
+    bytes: &mut Vec<u8>,
+    answered_queries: &mut usize,
+    chunk: Vec<u8>,
+) {
+    bytes.extend(chunk);
+    let observed_queries = bytes
+        .windows(b"\x1b[6n".len())
+        .filter(|window| *window == b"\x1b[6n")
+        .count();
+    while *answered_queries < observed_queries {
+        terminal
+            .input_user(session_id, runtime_epoch, b"\x1b[1;1R")
+            .expect("headless fixture must accept its cursor-position response");
+        *answered_queries += 1;
+    }
+}
+
+fn read_headless_fixture_input(input: &mut impl std::io::Read, expected: &[u8]) {
+    if !cfg!(windows) {
+        let mut observed = vec![0_u8; expected.len()];
+        input
+            .read_exact(&mut observed)
+            .expect("headless fixture input closed before the expected sequence");
+        assert_eq!(observed, expected);
+        return;
+    }
+
+    let mut observed = Vec::with_capacity(expected.len());
+    while observed.len() < expected.len() {
+        let mut byte = [0_u8; 1];
+        input
+            .read_exact(&mut byte)
+            .expect("headless fixture input closed before the expected sequence");
+        if byte[0] != 0x1b {
+            observed.push(byte[0]);
+            continue;
+        }
+
+        let mut control = vec![byte[0]];
+        while control.len() < 32 {
+            input
+                .read_exact(&mut byte)
+                .expect("headless fixture input closed inside a control sequence");
+            control.push(byte[0]);
+            if control.len() >= 3 && (0x40..=0x7e).contains(&byte[0]) {
+                break;
+            }
+        }
+        if is_cursor_position_response(&control) {
+            continue;
+        }
+        observed.extend(control);
+    }
+    assert_eq!(observed, expected);
+}
+
+fn is_cursor_position_response(bytes: &[u8]) -> bool {
+    let Some(body) = bytes
+        .strip_prefix(b"\x1b[")
+        .and_then(|bytes| bytes.strip_suffix(b"R"))
+    else {
+        return false;
+    };
+    let mut fields = body.split(|byte| *byte == b';');
+    let row = fields.next();
+    let column = fields.next();
+    fields.next().is_none()
+        && [row, column].into_iter().all(|field| {
+            field.is_some_and(|field| {
+                !field.is_empty() && field.iter().all(|byte| byte.is_ascii_digit())
+            })
+        })
+}
+
+fn bounded_headless_fixture_output(bytes: &[u8]) -> String {
+    const MAX_DIAGNOSTIC_BYTES: usize = 4 * 1024;
+    let start = bytes.len().saturating_sub(MAX_DIAGNOSTIC_BYTES);
+    String::from_utf8_lossy(&bytes[start..]).into_owned()
+}
+
 #[test]
 fn running_persistent_assistant_restart_preserves_closed_mcp_role() {
     let root = std::env::temp_dir().join(format!(
@@ -294,7 +378,7 @@ fn pending_generated_input_fixture() {
     if std::env::var_os("TERMLOOP_TEST_PENDING_INITIAL_INPUT").is_none() {
         return;
     }
-    use std::io::{Read, Write};
+    use std::io::Write;
 
     let expected = std::env::var("TERMLOOP_TEST_EXPECTED_INITIAL_INPUT")
         .expect("pending input fixture requires exact expected content");
@@ -302,7 +386,7 @@ fn pending_generated_input_fixture() {
         std::env::var_os("TERMLOOP_TEST_PERIODIC_COMPOSER_REDRAW").is_some();
     let codex_composer_gate = std::env::var_os("TERMLOOP_TEST_CODEX_COMPOSER_READY").is_some();
 
-    termloop_platform::configure_headless_terminal_input_fixture()
+    let _terminal_input_mode = termloop_platform::configure_headless_terminal_input_fixture()
         .expect("fixture must configure its PTY input mode");
 
     // Real agent TUIs opt into bracketed-paste mode before TermLoop delivers
@@ -316,7 +400,7 @@ fn pending_generated_input_fixture() {
         ""
     };
     let idle_composer_frame = if periodic_composer_redraw {
-        "\x1b[?2026h\x1b[?25h\x1b[36;3H\x1b[?2026l"
+        "\x1b[?2026h\x1b[?25h\x1b[20;3H\x1b[?2026l"
     } else {
         ""
     };
@@ -326,7 +410,7 @@ fn pending_generated_input_fixture() {
         ""
     };
     let stale_codex_transcript_frame = if codex_composer_gate {
-        "\x1b[?2026h\x1b[8;1H\x1b[K\x1b[1m›\x1b[0m prior prompt\x1b[?25h\x1b[36;3H\x1b[?2026l"
+        "\x1b[?2026h\x1b[8;1H\x1b[K\x1b[1m›\x1b[0m prior prompt\x1b[?25h\x1b[20;3H\x1b[?2026l"
     } else {
         ""
     };
@@ -343,16 +427,14 @@ fn pending_generated_input_fixture() {
     if codex_composer_gate {
         std::thread::sleep(std::time::Duration::from_millis(750));
         println!(
-            "\x1b[?2026h\x1b[36;1H\x1b[K\x1b[1m›\x1b[0m Ask Codex to do anything \
-             TERMLOOP_CODEX_COMPOSER_READY\x1b[?25h\x1b[36;3H\x1b[?2026l"
+            "\x1b[?2026h\x1b[20;1H\x1b[K\x1b[1m›\x1b[0m Ask Codex to do anything \
+             TERMLOOP_CODEX_COMPOSER_READY\x1b[?25h\x1b[20;3H\x1b[?2026l"
         );
         std::io::stdout().flush().unwrap();
     }
     let expected_paste = termloop_platform::terminal_paste_input(expected.as_bytes());
     let mut input = std::io::stdin().lock();
-    let mut pasted = vec![0_u8; expected_paste.len()];
-    input.read_exact(&mut pasted).unwrap();
-    assert_eq!(pasted, expected_paste);
+    read_headless_fixture_input(&mut input, &expected_paste);
     let submitted = expected;
     // Claude and Codex show the text cursor after rendering pasted composer
     // content. The periodic branch mirrors a multiline Codex composer that
@@ -360,14 +442,14 @@ fn pending_generated_input_fixture() {
     // exercises marker-plus-global-quiescence.
     if periodic_composer_redraw {
         println!(
-            "TERMLOOP_INITIAL_INPUT_VISIBLE:{submitted}\x1b[?2026h\x1b[34;1H\x1b[Kcomposer top\x1b[35;1H\x1b[Kcomposer body\x1b[36;1H\x1b[K>\x1b[?25h\x1b[36;3H\x1b[?2026l"
+            "TERMLOOP_INITIAL_INPUT_VISIBLE:{submitted}\x1b[?2026h\x1b[18;1H\x1b[Kcomposer top\x1b[19;1H\x1b[Kcomposer body\x1b[20;1H\x1b[K>\x1b[?25h\x1b[20;3H\x1b[?2026l"
         );
         std::io::stdout().flush().unwrap();
         std::thread::spawn(|| {
             for _ in 0..600 {
                 std::thread::sleep(std::time::Duration::from_millis(20));
                 print!(
-                    "\x1b[?2026h\x1b[7;1H\x1b[Kanimation\x1b[36;1H\x1b[K>\x1b[?25h\x1b[36;3H\x1b[?2026l"
+                    "\x1b[?2026h\x1b[7;1H\x1b[Kanimation\x1b[20;1H\x1b[K>\x1b[?25h\x1b[20;3H\x1b[?2026l"
                 );
                 let _ = std::io::stdout().flush();
             }
@@ -399,27 +481,20 @@ fn pending_generated_input_fixture() {
                 b"\x1b[<0;12;8m".as_slice(),
                 b"\x1b[I".as_slice(),
             ] {
-                let mut reply = vec![0_u8; expected_reply.len()];
-                input.read_exact(&mut reply).unwrap();
-                assert_eq!(reply, expected_reply);
+                read_headless_fixture_input(&mut input, expected_reply);
             }
         }
     }
     if std::env::var_os("TERMLOOP_TEST_INTERLEAVED_USER_INPUT").is_some() {
-        let mut interleaved = [0_u8; 3];
-        input.read_exact(&mut interleaved).unwrap();
-        assert_eq!(interleaved, *b"\x1b[D");
+        read_headless_fixture_input(&mut input, b"\x1b[D");
     }
-    let mut submit = [0_u8; 1];
-    input.read_exact(&mut submit).unwrap();
-    assert_eq!(submit, [b'\r']);
+    read_headless_fixture_input(&mut input, b"\r");
     if std::env::var_os("TERMLOOP_TEST_RETAIN_FIRST_SUBMIT").is_some() {
         println!(
-            "\x1b[?2026h\x1b[36;1H\x1b[K\x1b[1m›\x1b[0m retained prompt\x1b[?25h\x1b[36;3H\x1b[?2026lTERMLOOP_PROMPT_RETAINED"
+            "\x1b[?2026h\x1b[20;1H\x1b[K\x1b[1m›\x1b[0m retained prompt\x1b[?25h\x1b[20;3H\x1b[?2026lTERMLOOP_PROMPT_RETAINED"
         );
         std::io::stdout().flush().unwrap();
-        input.read_exact(&mut submit).unwrap();
-        assert_eq!(submit, [b'\r']);
+        read_headless_fixture_input(&mut input, b"\r");
     } else if std::env::var_os("TERMLOOP_TEST_RETAIN_WITHOUT_REPAINT").is_some() {
         std::thread::sleep(std::time::Duration::from_secs(6));
     }
@@ -499,7 +574,7 @@ async fn late_terminal_exit_preserves_the_visible_resume_failure() {
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
     let mut bytes = Vec::new();
-    let mut answered_cursor_position_query = false;
+    let mut answered_cursor_position_queries = 0;
     while terminal.session_is_running("timed-out-resume", 9).unwrap() {
         assert!(
             std::time::Instant::now() < deadline,
@@ -508,17 +583,14 @@ async fn late_terminal_exit_preserves_the_visible_resume_failure() {
         if let Ok(Ok(termloop_terminal::TerminalEvent::Output(chunk))) =
             tokio::time::timeout(std::time::Duration::from_millis(100), output.recv()).await
         {
-            bytes.extend(chunk);
-            if !answered_cursor_position_query
-                && bytes
-                    .windows(b"\x1b[6n".len())
-                    .any(|window| window == b"\x1b[6n")
-            {
-                terminal
-                    .input_user("timed-out-resume", 9, b"\x1b[1;1R")
-                    .unwrap();
-                answered_cursor_position_query = true;
-            }
+            append_headless_output_and_answer_cursor_queries(
+                &terminal,
+                "timed-out-resume",
+                9,
+                &mut bytes,
+                &mut answered_cursor_position_queries,
+                chunk,
+            );
         }
     }
 
@@ -551,6 +623,7 @@ async fn late_terminal_exit_preserves_the_visible_resume_failure() {
     let hold_deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
     let mut held_bytes = Vec::new();
     let mut windows_command_sent = false;
+    let mut answered_hold_cursor_position_queries = 0;
     while !held_bytes
         .windows(b"TERMLOOP_AGENT_TERMINAL_HELD".len())
         .any(|window| window == b"TERMLOOP_AGENT_TERMINAL_HELD")
@@ -562,19 +635,18 @@ async fn late_terminal_exit_preserves_the_visible_resume_failure() {
         if let Ok(Ok(termloop_terminal::TerminalEvent::Output(chunk))) =
             tokio::time::timeout(std::time::Duration::from_millis(100), hold_output.recv()).await
         {
-            held_bytes.extend(chunk);
-            if windows_host
-                && !windows_command_sent
-                && held_bytes
-                    .windows(b"\x1b[6n".len())
-                    .any(|window| window == b"\x1b[6n")
-            {
+            append_headless_output_and_answer_cursor_queries(
+                &terminal,
+                "timed-out-resume",
+                9,
+                &mut held_bytes,
+                &mut answered_hold_cursor_position_queries,
+                chunk,
+            );
+            if windows_host && !windows_command_sent && answered_hold_cursor_position_queries > 0 {
                 // PowerShell asks ConPTY for the cursor position before it
                 // accepts the first command. Wait for that query so the
                 // renderer response cannot arrive too early and be discarded.
-                terminal
-                    .input_user("timed-out-resume", 9, b"\x1b[1;1R")
-                    .unwrap();
                 terminal
                     .input(
                         "timed-out-resume",
@@ -1479,21 +1551,18 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
         .unwrap();
     let mut output = terminal.subscribe("worker-activation", 9).unwrap();
     let mut bytes = Vec::new();
-    let mut answered_cursor_position_query = false;
+    let mut answered_cursor_position_queries = 0;
     tokio::time::timeout(std::time::Duration::from_secs(15), async {
         while !String::from_utf8_lossy(&bytes).contains("TERMLOOP_INITIAL_INPUT_READY") {
             if let termloop_terminal::TerminalEvent::Output(chunk) = output.recv().await.unwrap() {
-                bytes.extend(chunk);
-            }
-            if !answered_cursor_position_query
-                && bytes
-                    .windows(b"\x1b[6n".len())
-                    .any(|window| window == b"\x1b[6n")
-            {
-                terminal
-                    .input_user("worker-activation", 9, b"\x1b[1;1R")
-                    .unwrap();
-                answered_cursor_position_query = true;
+                append_headless_output_and_answer_cursor_queries(
+                    &terminal,
+                    "worker-activation",
+                    9,
+                    &mut bytes,
+                    &mut answered_cursor_position_queries,
+                    chunk,
+                );
             }
         }
     })
@@ -1524,12 +1593,26 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
             .contains("TERMLOOP_INITIAL_INPUT_VISIBLE:Activate this Worker")
         {
             if let termloop_terminal::TerminalEvent::Output(chunk) = output.recv().await.unwrap() {
-                bytes.extend(chunk);
+                append_headless_output_and_answer_cursor_queries(
+                    &terminal,
+                    "worker-activation",
+                    9,
+                    &mut bytes,
+                    &mut answered_cursor_position_queries,
+                    chunk,
+                );
             }
         }
     })
     .await
-    .unwrap();
+    .unwrap_or_else(|_| {
+        panic!(
+            "worker fixture did not render paste; state={:?} failure={:?} output={}",
+            runtime.generated_input_delivery_state("worker-activation", 9),
+            runtime.generated_input_delivery_failure("worker-activation", 9),
+            bounded_headless_fixture_output(&bytes),
+        )
+    });
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert_eq!(
         runtime.generated_input_delivery_state("worker-activation", 9),
@@ -1541,12 +1624,26 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
             .contains("TERMLOOP_INITIAL_INPUT_RECEIVED:Activate this Worker")
         {
             if let termloop_terminal::TerminalEvent::Output(chunk) = output.recv().await.unwrap() {
-                bytes.extend(chunk);
+                append_headless_output_and_answer_cursor_queries(
+                    &terminal,
+                    "worker-activation",
+                    9,
+                    &mut bytes,
+                    &mut answered_cursor_position_queries,
+                    chunk,
+                );
             }
         }
     })
     .await
-    .unwrap();
+    .unwrap_or_else(|_| {
+        panic!(
+            "worker fixture did not receive submit; state={:?} failure={:?} output={}",
+            runtime.generated_input_delivery_state("worker-activation", 9),
+            runtime.generated_input_delivery_failure("worker-activation", 9),
+            bounded_headless_fixture_output(&bytes),
+        )
+    });
 
     let event = generated_input_events
         .recv_timeout(std::time::Duration::from_secs(1))
@@ -1685,25 +1782,24 @@ async fn assert_quick_action_initial_input_delivery(
         .unwrap();
     let mut output = terminal.subscribe("quick-action-ready", 9).unwrap();
     let mut bytes = Vec::new();
-    let mut answered_cursor_position_query = false;
+    let mut answered_cursor_position_queries = 0;
     tokio::time::timeout(std::time::Duration::from_secs(15), async {
         while !String::from_utf8_lossy(&bytes).contains("TERMLOOP_INITIAL_INPUT_READY") {
             match output.recv().await.unwrap() {
-                termloop_terminal::TerminalEvent::Output(chunk) => bytes.extend(chunk),
+                termloop_terminal::TerminalEvent::Output(chunk) => {
+                    append_headless_output_and_answer_cursor_queries(
+                        &terminal,
+                        "quick-action-ready",
+                        9,
+                        &mut bytes,
+                        &mut answered_cursor_position_queries,
+                        chunk,
+                    );
+                }
                 termloop_terminal::TerminalEvent::Gap(_) => {
                     panic!("fixture output unexpectedly reported a gap")
                 }
                 termloop_terminal::TerminalEvent::Eof => panic!("fixture exited before ready"),
-            }
-            if !answered_cursor_position_query
-                && bytes
-                    .windows(b"\x1b[6n".len())
-                    .any(|window| window == b"\x1b[6n")
-            {
-                terminal
-                    .input_user("quick-action-ready", 9, b"\x1b[1;1R")
-                    .unwrap();
-                answered_cursor_position_query = true;
             }
         }
     })
@@ -1828,7 +1924,16 @@ async fn assert_quick_action_initial_input_delivery(
             .contains("TERMLOOP_INITIAL_INPUT_VISIBLE:Review this diff")
         {
             match output.recv().await.unwrap() {
-                termloop_terminal::TerminalEvent::Output(chunk) => bytes.extend(chunk),
+                termloop_terminal::TerminalEvent::Output(chunk) => {
+                    append_headless_output_and_answer_cursor_queries(
+                        &terminal,
+                        "quick-action-ready",
+                        9,
+                        &mut bytes,
+                        &mut answered_cursor_position_queries,
+                        chunk,
+                    );
+                }
                 termloop_terminal::TerminalEvent::Gap(_) => {
                     panic!("fixture output unexpectedly reported a gap")
                 }
@@ -1839,7 +1944,18 @@ async fn assert_quick_action_initial_input_delivery(
         }
     })
     .await
-    .unwrap();
+    .unwrap_or_else(|_| {
+        panic!(
+            "quick-action fixture did not render paste; state={:?} failure={:?} readiness={:?} queued_event={:?} output={}",
+            runtime.generated_input_delivery_state("quick-action-ready", 9),
+            runtime.generated_input_delivery_failure("quick-action-ready", 9),
+            terminal
+                .input_readiness_snapshot("quick-action-ready", 9)
+                .map(|snapshot| snapshot.facts()),
+            generated_input_events.try_recv().ok(),
+            bounded_headless_fixture_output(&bytes),
+        )
+    });
     terminal
         .input_user("quick-action-ready", 9, b"\x1b[D")
         .unwrap();
@@ -1888,7 +2004,16 @@ async fn assert_quick_action_initial_input_delivery(
                 .contains("TERMLOOP_INITIAL_INPUT_RECEIVED:Review this diff")
             {
                 match output.recv().await.unwrap() {
-                    termloop_terminal::TerminalEvent::Output(chunk) => bytes.extend(chunk),
+                    termloop_terminal::TerminalEvent::Output(chunk) => {
+                        append_headless_output_and_answer_cursor_queries(
+                            &terminal,
+                            "quick-action-ready",
+                            9,
+                            &mut bytes,
+                            &mut answered_cursor_position_queries,
+                            chunk,
+                        );
+                    }
                     termloop_terminal::TerminalEvent::Gap(_) => {
                         panic!("fixture output unexpectedly reported a gap")
                     }
@@ -1903,7 +2028,18 @@ async fn assert_quick_action_initial_input_delivery(
         },
     )
     .await
-    .unwrap();
+    .unwrap_or_else(|_| {
+        panic!(
+            "quick-action fixture did not receive submit; state={:?} failure={:?} readiness={:?} queued_event={:?} output={}",
+            runtime.generated_input_delivery_state("quick-action-ready", 9),
+            runtime.generated_input_delivery_failure("quick-action-ready", 9),
+            terminal
+                .input_readiness_snapshot("quick-action-ready", 9)
+                .map(|snapshot| snapshot.facts()),
+            generated_input_events.try_recv().ok(),
+            bounded_headless_fixture_output(&bytes),
+        )
+    });
 
     let event = generated_input_events
         .recv_timeout(std::time::Duration::from_secs(1))

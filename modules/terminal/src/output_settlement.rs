@@ -4,6 +4,7 @@ use std::time::Duration;
 const SYNCHRONIZED_OUTPUT_END: &[u8] = b"\x1b[?2026l";
 const SYNCHRONIZED_OUTPUT_BEGIN: &[u8] = b"\x1b[?2026h";
 const SHOW_CURSOR: &[u8] = b"\x1b[?25h";
+const HIDE_CURSOR: &[u8] = b"\x1b[?25l";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CursorPosition {
@@ -17,18 +18,62 @@ pub(crate) enum TerminalStructure {
     EraseLine,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct TerminalStructureParser {
     stage: u8,
     private: bool,
     parameter_index: usize,
     parameters: [Option<u16>; 2],
+    cursor_position: CursorPosition,
+}
+
+impl Default for TerminalStructureParser {
+    fn default() -> Self {
+        Self {
+            stage: 0,
+            private: false,
+            parameter_index: 0,
+            parameters: [None, None],
+            cursor_position: CursorPosition { row: 1, column: 1 },
+        }
+    }
 }
 
 impl TerminalStructureParser {
     pub(crate) fn record(&mut self, byte: u8) -> Option<TerminalStructure> {
         match self.stage {
             0 if byte == b'\x1b' => self.stage = 1,
+            0 if byte == b'\r' => {
+                self.cursor_position.column = 1;
+                return Some(TerminalStructure::CursorPosition(self.cursor_position));
+            }
+            0 if byte == b'\n' => {
+                self.cursor_position.row = self.cursor_position.row.saturating_add(1);
+                return Some(TerminalStructure::CursorPosition(self.cursor_position));
+            }
+            0 if byte == b'\x08' => {
+                self.cursor_position.column = self.cursor_position.column.saturating_sub(1).max(1);
+                return Some(TerminalStructure::CursorPosition(self.cursor_position));
+            }
+            0 if byte == b'\t' => {
+                self.cursor_position.column = self
+                    .cursor_position
+                    .column
+                    .saturating_sub(1)
+                    .saturating_div(8)
+                    .saturating_add(1)
+                    .saturating_mul(8)
+                    .saturating_add(1);
+                return Some(TerminalStructure::CursorPosition(self.cursor_position));
+            }
+            // Count one cell for ASCII graphics and for the leading byte of a
+            // UTF-8 scalar. Continuation bytes and C0 controls do not advance
+            // the cursor. This bounded cursor model is sufficient for the
+            // row/ordering facts emitted by ConPTY's normalized screen diff;
+            // it is deliberately not a retained VT grid.
+            0 if byte.is_ascii_graphic() || byte == b' ' || byte >= 0xc0 => {
+                self.cursor_position.column = self.cursor_position.column.saturating_add(1);
+            }
             1 if byte == b'[' => {
                 self.stage = 2;
                 self.private = false;
@@ -61,13 +106,60 @@ impl TerminalStructureParser {
                 }
             }
             2 if (0x40..=0x7e).contains(&byte) => {
-                let structure = (!self.private).then(|| match byte {
-                    b'H' | b'f' => Some(TerminalStructure::CursorPosition(CursorPosition {
-                        row: self.parameters[0].unwrap_or(1).max(1),
-                        column: self.parameters[1].unwrap_or(1).max(1),
-                    })),
-                    b'K' => Some(TerminalStructure::EraseLine),
-                    _ => None,
+                let structure = (!self.private).then(|| {
+                    let first = self.parameters[0].unwrap_or(1).max(1);
+                    let second = self.parameters[1].unwrap_or(1).max(1);
+                    match byte {
+                        b'H' | b'f' => {
+                            self.cursor_position = CursorPosition {
+                                row: first,
+                                column: second,
+                            };
+                            Some(TerminalStructure::CursorPosition(self.cursor_position))
+                        }
+                        b'A' => {
+                            self.cursor_position.row =
+                                self.cursor_position.row.saturating_sub(first).max(1);
+                            Some(TerminalStructure::CursorPosition(self.cursor_position))
+                        }
+                        b'B' => {
+                            self.cursor_position.row =
+                                self.cursor_position.row.saturating_add(first);
+                            Some(TerminalStructure::CursorPosition(self.cursor_position))
+                        }
+                        b'C' => {
+                            self.cursor_position.column =
+                                self.cursor_position.column.saturating_add(first);
+                            Some(TerminalStructure::CursorPosition(self.cursor_position))
+                        }
+                        b'D' => {
+                            self.cursor_position.column =
+                                self.cursor_position.column.saturating_sub(first).max(1);
+                            Some(TerminalStructure::CursorPosition(self.cursor_position))
+                        }
+                        b'E' => {
+                            self.cursor_position.row =
+                                self.cursor_position.row.saturating_add(first);
+                            self.cursor_position.column = 1;
+                            Some(TerminalStructure::CursorPosition(self.cursor_position))
+                        }
+                        b'F' => {
+                            self.cursor_position.row =
+                                self.cursor_position.row.saturating_sub(first).max(1);
+                            self.cursor_position.column = 1;
+                            Some(TerminalStructure::CursorPosition(self.cursor_position))
+                        }
+                        b'G' => {
+                            self.cursor_position.column = first;
+                            Some(TerminalStructure::CursorPosition(self.cursor_position))
+                        }
+                        b'd' => {
+                            self.cursor_position.row = first;
+                            Some(TerminalStructure::CursorPosition(self.cursor_position))
+                        }
+                        b'K' => Some(TerminalStructure::EraseLine),
+                        _ => None,
+                    }
                 });
                 self.reset();
                 return structure.flatten();
@@ -76,6 +168,10 @@ impl TerminalStructureParser {
             _ => {}
         }
         None
+    }
+
+    pub(crate) fn cursor_position(&self) -> CursorPosition {
+        self.cursor_position
     }
 
     fn reset(&mut self) {
@@ -156,13 +252,27 @@ struct OutputActivityState {
     composer_surface_render_count: u64,
     composer_surface_render_cursor_position: Option<CursorPosition>,
     show_cursor_match: usize,
+    hide_cursor_match: usize,
+    normalized_repaint_open: bool,
+    normalized_repaint_cursor_position: Option<CursorPosition>,
+    normalized_repaint_erased_rows: ErasedTerminalRows,
     terminal_structure_parser: TerminalStructureParser,
     closed: bool,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct OutputActivityTracker {
     inner: Arc<(Mutex<OutputActivityState>, Condvar)>,
+    accepts_normalized_screen_diff: bool,
+}
+
+impl Default for OutputActivityTracker {
+    fn default() -> Self {
+        Self {
+            inner: Arc::default(),
+            accepts_normalized_screen_diff: !termloop_platform::host_uses_bracketed_paste_framing(),
+        }
+    }
 }
 
 impl OutputActivityTracker {
@@ -180,9 +290,21 @@ impl OutputActivityTracker {
                             state.synchronized_frame_cursor_after_show = Some(position);
                         }
                     }
+                    Some(TerminalStructure::CursorPosition(position))
+                        if self.accepts_normalized_screen_diff && state.normalized_repaint_open =>
+                    {
+                        state.normalized_repaint_cursor_position = Some(position);
+                    }
                     Some(TerminalStructure::EraseLine) if state.synchronized_frame_open => {
                         if let Some(position) = state.synchronized_frame_cursor_position {
                             state.synchronized_frame_erased_rows.record(position.row);
+                        }
+                    }
+                    Some(TerminalStructure::EraseLine)
+                        if self.accepts_normalized_screen_diff && state.normalized_repaint_open =>
+                    {
+                        if let Some(position) = state.normalized_repaint_cursor_position {
+                            state.normalized_repaint_erased_rows.record(position.row);
                         }
                     }
                     _ => {}
@@ -200,12 +322,36 @@ impl OutputActivityTracker {
                     state.synchronized_frame_cursor_after_show = None;
                     state.synchronized_frame_erased_rows.clear();
                 }
+                if record_marker(byte, HIDE_CURSOR, &mut state.hide_cursor_match)
+                    && self.accepts_normalized_screen_diff
+                {
+                    state.normalized_repaint_open = true;
+                    state.normalized_repaint_cursor_position =
+                        Some(state.terminal_structure_parser.cursor_position());
+                    state.normalized_repaint_erased_rows.clear();
+                }
                 if record_marker(byte, SHOW_CURSOR, &mut state.show_cursor_match) {
                     state.composer_render_sequence = state.sequence;
                     state.composer_render_count = state.composer_render_count.saturating_add(1);
                     if state.synchronized_frame_open {
                         state.synchronized_frame_had_show_cursor = true;
                         state.synchronized_frame_cursor_after_show = None;
+                    }
+                    if self.accepts_normalized_screen_diff && state.normalized_repaint_open {
+                        let position = state.terminal_structure_parser.cursor_position();
+                        state.completed_composer_frame_sequence = state.sequence;
+                        state.completed_composer_frame_count =
+                            state.completed_composer_frame_count.saturating_add(1);
+                        state.completed_composer_frame_cursor_position = Some(position);
+                        if state.normalized_repaint_erased_rows.contains(position.row) {
+                            state.composer_surface_render_sequence = state.sequence;
+                            state.composer_surface_render_count =
+                                state.composer_surface_render_count.saturating_add(1);
+                            state.composer_surface_render_cursor_position = Some(position);
+                        }
+                        state.normalized_repaint_open = false;
+                        state.normalized_repaint_cursor_position = None;
+                        state.normalized_repaint_erased_rows.clear();
                     }
                 }
                 if record_marker(
@@ -446,6 +592,27 @@ impl OutputActivitySnapshot {
         quiet_window: Duration,
         timeout: Duration,
     ) -> Result<OutputSettlementReceipt, OutputSettlementFailure> {
+        self.wait_for_composer_render_settlement_inner(quiet_window, timeout, false)
+    }
+
+    /// ConPTY may consume synchronized-output boundaries and emit a normalized
+    /// hide/repaint/show screen diff afterward. This variant accepts either a
+    /// stable structural composer surface or post-baseline output quiescence;
+    /// a synchronized boundary alone is never sufficient.
+    pub fn wait_for_normalized_composer_render_settlement(
+        &self,
+        quiet_window: Duration,
+        timeout: Duration,
+    ) -> Result<OutputSettlementReceipt, OutputSettlementFailure> {
+        self.wait_for_composer_render_settlement_inner(quiet_window, timeout, true)
+    }
+
+    fn wait_for_composer_render_settlement_inner(
+        &self,
+        quiet_window: Duration,
+        timeout: Duration,
+        allow_unmarked_output_quiescence: bool,
+    ) -> Result<OutputSettlementReceipt, OutputSettlementFailure> {
         if quiet_window.is_zero() || timeout < quiet_window {
             return Err(OutputSettlementFailure::InvalidWindow);
         }
@@ -525,7 +692,9 @@ impl OutputActivitySnapshot {
                 state = next;
                 continue;
             }
-            if state.composer_render_sequence <= self.composer_render_sequence {
+            if state.composer_render_sequence <= self.composer_render_sequence
+                && (!allow_unmarked_output_quiescence || state.sequence <= self.sequence)
+            {
                 let remaining = deadline
                     .remaining()
                     .ok_or(OutputSettlementFailure::TimedOut)?;
@@ -537,6 +706,35 @@ impl OutputActivitySnapshot {
                     && state.composer_render_sequence <= self.composer_render_sequence
                 {
                     return Err(OutputSettlementFailure::TimedOut);
+                }
+                continue;
+            }
+
+            if allow_unmarked_output_quiescence
+                && state.composer_render_sequence <= self.composer_render_sequence
+            {
+                let settled_sequence = state.sequence;
+                let remaining = deadline
+                    .remaining()
+                    .ok_or(OutputSettlementFailure::TimedOut)?;
+                let wait_for = quiet_window.min(remaining);
+                let (next, wait) = changed
+                    .wait_timeout(state, wait_for)
+                    .map_err(|_| OutputSettlementFailure::TrackerUnavailable)?;
+                state = next;
+                if state.closed {
+                    return Err(OutputSettlementFailure::TerminalClosed);
+                }
+                if state.sequence == settled_sequence && wait.timed_out() {
+                    if wait_for < quiet_window {
+                        return Err(OutputSettlementFailure::TimedOut);
+                    }
+                    return Ok(OutputSettlementReceipt {
+                        runtime_epoch: self.runtime_epoch,
+                        baseline_sequence: self.sequence,
+                        settled_sequence,
+                        evidence: OutputSettlementEvidence::Quiescence,
+                    });
                 }
                 continue;
             }
@@ -855,6 +1053,63 @@ mod tests {
                 .unwrap()
                 .evidence,
             OutputSettlementEvidence::ComposerRenderQuiescence
+        );
+    }
+
+    #[test]
+    fn normalized_screen_diff_ignores_early_sync_boundary_then_settles_on_quiet() {
+        let tracker = OutputActivityTracker {
+            accepts_normalized_screen_diff: true,
+            ..OutputActivityTracker::default()
+        };
+        let snapshot = tracker.snapshot("session".into(), 7).unwrap();
+        let producer = tracker.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(5));
+            producer.record(b"\x1b[?2026h\x1b[?2026l");
+            std::thread::sleep(Duration::from_millis(5));
+            producer.record(b"normalized paste preview");
+        });
+
+        let receipt = snapshot
+            .wait_for_normalized_composer_render_settlement(
+                Duration::from_millis(20),
+                Duration::from_millis(100),
+            )
+            .unwrap();
+
+        assert_eq!(receipt.settled_sequence, 2);
+        assert_eq!(receipt.evidence, OutputSettlementEvidence::Quiescence);
+    }
+
+    #[test]
+    fn normalized_composer_surface_settles_during_periodic_redraws() {
+        let tracker = OutputActivityTracker {
+            accepts_normalized_screen_diff: true,
+            ..OutputActivityTracker::default()
+        };
+        let snapshot = tracker.snapshot("session".into(), 7).unwrap();
+        let producer = tracker.clone();
+        std::thread::spawn(move || {
+            for _ in 0..20 {
+                std::thread::sleep(Duration::from_millis(5));
+                producer.record(
+                    b"\x1b[?2026h\x1b[?2026l\x1b[?25l\x1b[7;1Hanimation\
+                      \x1b[20;1H\x1b[K>\x1b[1C\x1b[?25h",
+                );
+            }
+        });
+
+        let receipt = snapshot
+            .wait_for_normalized_composer_render_settlement(
+                Duration::from_millis(20),
+                Duration::from_millis(200),
+            )
+            .unwrap();
+
+        assert_eq!(
+            receipt.evidence,
+            OutputSettlementEvidence::ComposerSurfaceStability
         );
     }
 

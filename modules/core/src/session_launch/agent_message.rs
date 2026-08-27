@@ -169,22 +169,67 @@ mod tests {
     use std::time::Duration;
     use termloop_domain::{ProcessDescriptor, SessionRecord};
     use termloop_store::{Store, issue_core_write_authority_for_composition};
-    use termloop_terminal::{PtySpawnSpec, TerminalService};
+    use termloop_terminal::{PtySpawnSpec, TerminalEvent, TerminalService, TerminalSubscription};
     use uuid::Uuid;
 
     const SOURCE_ID: &str = "123e4567-e89b-42d3-a456-426614174000";
     const TARGET_ID: &str = "123e4567-e89b-42d3-a456-426614174001";
+
+    async fn await_handoff_fixture_ready(
+        terminal: &TerminalService,
+        session_id: &str,
+        output: &mut TerminalSubscription,
+    ) {
+        let mut bytes = Vec::new();
+        let mut answered_cursor_position_queries = 0;
+        let mut response_show_cursor_baseline = None;
+        tokio::time::timeout(Duration::from_secs(15), async {
+            loop {
+                if let TerminalEvent::Output(chunk) = output.recv().await.unwrap() {
+                    bytes.extend(chunk);
+                    let observed_queries = bytes
+                        .windows(b"\x1b[6n".len())
+                        .filter(|window| *window == b"\x1b[6n")
+                        .count();
+                    let show_cursor_count = bytes
+                        .windows(b"\x1b[?25h".len())
+                        .filter(|window| *window == b"\x1b[?25h")
+                        .count();
+                    while answered_cursor_position_queries < observed_queries {
+                        response_show_cursor_baseline.get_or_insert(show_cursor_count);
+                        terminal.input_user(session_id, 17, b"\x1b[1;1R").unwrap();
+                        answered_cursor_position_queries += 1;
+                    }
+                    let fixture_ready = bytes
+                        .windows(b"\x1b[?2026l".len())
+                        .any(|window| window == b"\x1b[?2026l");
+                    let response_consumed = response_show_cursor_baseline.is_none_or(|baseline| {
+                        bytes
+                            .windows(b"\x1b[?25h".len())
+                            .filter(|window| *window == b"\x1b[?25h")
+                            .count()
+                            > baseline
+                    });
+                    if fixture_ready && response_consumed {
+                        break;
+                    }
+                }
+            }
+        })
+        .await
+        .expect("handoff fixture did not become terminal-input ready");
+    }
 
     #[test]
     fn handoff_target_fixture() {
         if std::env::var_os("TERMLOOP_TEST_AGENT_HANDOFF_TARGET").is_none() {
             return;
         }
-        termloop_platform::configure_headless_terminal_input_fixture()
+        let _terminal_input_mode = termloop_platform::configure_headless_terminal_input_fixture()
             .expect("handoff fixture must configure its PTY input mode");
         println!(
-            "\x1b[?1049h\x1b[?2004h\x1b[?2026h\x1b[36;1H\x1b[K›\
-             \x1b[?25h\x1b[36;3H\x1b[?2026l"
+            "\x1b[?1049h\x1b[?2004h\x1b[?2026h\x1b[20;1H\x1b[K›\
+             \x1b[?25h\x1b[20;3H\x1b[?2026l"
         );
         std::io::stdout().flush().unwrap();
         let mut input = std::io::stdin().lock();
@@ -274,7 +319,19 @@ mod tests {
                 .confirm_generated_input_submission(session_id, 17, provider_sequence,)
                 .unwrap()
         );
-        let event = events.recv_timeout(Duration::from_secs(15)).unwrap();
+        let event = events
+            .recv_timeout(Duration::from_secs(15))
+            .unwrap_or_else(|_| {
+                panic!(
+                    "handoff delivery did not emit a transport event; state={:?} failure={:?} readiness={:?}",
+                    runtime.generated_input_delivery_state(session_id, 17),
+                    runtime.generated_input_delivery_failure(session_id, 17),
+                    runtime
+                        .terminal
+                        .input_readiness_snapshot(session_id, 17)
+                        .map(|snapshot| snapshot.facts()),
+                )
+            });
         assert!(runtime.record_generated_input_runtime_event(event).unwrap());
         assert_eq!(
             runtime.generated_input_delivery_state(session_id, 17),
@@ -282,8 +339,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn exact_running_agent_can_receive_cross_project_handoff() {
+    #[tokio::test]
+    async fn exact_running_agent_can_receive_cross_project_handoff() {
         let root = std::env::temp_dir().join(format!(
             "termloop-core-agent-handoff-{}-{}",
             std::process::id(),
@@ -406,7 +463,7 @@ mod tests {
                 cwd: target_folder.to_string_lossy().into_owned(),
                 environment: termloop_platform::LaunchEnvironment::os_baseline()
                     .with_explicit("TERMLOOP_TEST_AGENT_HANDOFF_TARGET", "1"),
-                recent_output_replay: false,
+                recent_output_replay: true,
             })
             .unwrap();
         terminal
@@ -426,9 +483,13 @@ mod tests {
                 cwd: source_folder.to_string_lossy().into_owned(),
                 environment: termloop_platform::LaunchEnvironment::os_baseline()
                     .with_explicit("TERMLOOP_TEST_AGENT_HANDOFF_TARGET", "1"),
-                recent_output_replay: false,
+                recent_output_replay: true,
             })
             .unwrap();
+        let mut source_output = terminal.subscribe(SOURCE_ID, 17).unwrap();
+        let mut target_output = terminal.subscribe(TARGET_ID, 17).unwrap();
+        await_handoff_fixture_ready(&terminal, SOURCE_ID, &mut source_output).await;
+        await_handoff_fixture_ready(&terminal, TARGET_ID, &mut target_output).await;
         let generated_input_events = runtime.take_generated_input_runtime_events().unwrap();
 
         assert_eq!(

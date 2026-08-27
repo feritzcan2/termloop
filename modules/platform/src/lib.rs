@@ -96,9 +96,10 @@ pub use stale_disposal::{
     StaleDisposalTargetFacts, inspect_stale_disposal_target, remove_stale_disposal_target_exact,
 };
 pub use terminal_input::{
-    GeneratedTerminalInputError, configure_headless_terminal_input_fixture,
-    generated_terminal_paste_submission_sequence, host_uses_bracketed_paste_framing,
-    terminal_paste_input, terminal_paste_submission, terminal_paste_submission_sequence,
+    GeneratedTerminalInputError, HeadlessTerminalInputFixtureGuard,
+    configure_headless_terminal_input_fixture, generated_terminal_paste_submission_sequence,
+    host_uses_bracketed_paste_framing, terminal_paste_input, terminal_paste_submission,
+    terminal_paste_submission_sequence,
 };
 pub use watch::{
     DirectoryWatcher, GitRepositoryWatchChange, watch_directories, watch_directory,

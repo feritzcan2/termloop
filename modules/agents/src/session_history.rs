@@ -536,10 +536,31 @@ mod tests {
 
     #[test]
     fn claude_parser_keeps_private_resume_identity_and_bounded_preview() {
+        let cwd = std::env::temp_dir()
+            .join("project")
+            .to_string_lossy()
+            .into_owned();
         let body = [
-            r#"{"type":"user","sessionId":"019f1dae-3bf3-73d1-b3c7-08ddbbd1f035","cwd":"/tmp/project","gitBranch":"main","message":{"content":"Build the history panel"}}"#,
-            r#"{"type":"assistant","sessionId":"019f1dae-3bf3-73d1-b3c7-08ddbbd1f035","cwd":"/tmp/project","message":{"model":"claude-sonnet-5","content":[{"type":"text","text":"Working on it"}]}}"#,
-        ].join("\n");
+            serde_json::json!({
+                "type": "user",
+                "sessionId": "019f1dae-3bf3-73d1-b3c7-08ddbbd1f035",
+                "cwd": cwd,
+                "gitBranch": "main",
+                "message": { "content": "Build the history panel" }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "assistant",
+                "sessionId": "019f1dae-3bf3-73d1-b3c7-08ddbbd1f035",
+                "cwd": cwd,
+                "message": {
+                    "model": "claude-sonnet-5",
+                    "content": [{ "type": "text", "text": "Working on it" }]
+                }
+            })
+            .to_string(),
+        ]
+        .join("\n");
         let (candidate, slices, root) = source("claude", &body);
         let parsed = parse_claude(&candidate, &slices).unwrap();
         assert_eq!(parsed.title, "Build the history panel");
@@ -563,13 +584,18 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("termloop-history-budget-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
+        let cwd = root.join("project").to_string_lossy().into_owned();
         for index in 0..2 {
             let session_id = uuid::Uuid::new_v4();
             std::fs::write(
                 root.join(format!("{index}.jsonl")),
-                format!(
-                    r#"{{"type":"user","sessionId":"{session_id}","cwd":"/tmp/project","message":{{"content":"Conversation {index}"}}}}"#
-                ),
+                serde_json::json!({
+                    "type": "user",
+                    "sessionId": session_id,
+                    "cwd": cwd,
+                    "message": { "content": format!("Conversation {index}") }
+                })
+                .to_string(),
             )
             .unwrap();
         }

@@ -870,6 +870,7 @@ fn manual_recovery_is_attributed(
     ) && submission_content_unchanged(delivery, activity)
 }
 
+#[derive(Debug)]
 pub struct GeneratedInputRuntimeEvent {
     session_id: String,
     runtime_epoch: u64,
@@ -888,6 +889,7 @@ impl GeneratedInputRuntimeEvent {
     }
 }
 
+#[derive(Debug)]
 enum GeneratedInputTransportOutcome {
     Submitted,
     SubmitRetried,
@@ -1066,6 +1068,19 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
         output_after_flush.sequence() > output_before_paste.sequence();
     let settlement = match settlement {
         GeneratedInputSettlement::ComposerRender
+        | GeneratedInputSettlement::CodexComposerRender
+            if !termloop_platform::host_uses_bracketed_paste_framing() =>
+        {
+            // ConPTY emits synchronized-output boundaries before its later
+            // normalized screen diff. Require that diff to become quiet or a
+            // normalized composer surface to stabilize; the boundary alone
+            // must not race Enter ahead of client input.
+            output_after_flush.wait_for_normalized_composer_render_settlement(
+                COMPOSER_RENDER_SETTLEMENT_QUIET,
+                COMPOSER_RENDER_SETTLEMENT_TIMEOUT,
+            )
+        }
+        GeneratedInputSettlement::ComposerRender
         | GeneratedInputSettlement::CodexComposerRender => output_after_flush
             .wait_for_composer_render_settlement(
                 COMPOSER_RENDER_SETTLEMENT_QUIET,
@@ -1206,10 +1221,12 @@ fn submit_retry_has_structural_evidence(
                 .current_facts()
                 .ok()
                 .is_some_and(|current| {
-                    composer_redrew
-                        && current.composer_prompt_ready_count
-                            > baseline.composer_prompt_ready_count
-                        && codex_composer_is_ready(current)
+                    let prompt_redrew = if termloop_platform::host_uses_bracketed_paste_framing() {
+                        current.composer_prompt_ready_count > baseline.composer_prompt_ready_count
+                    } else {
+                        current.composer_prompt_render_count > baseline.composer_prompt_render_count
+                    };
+                    composer_redrew && prompt_redrew && codex_composer_is_ready(current)
                 })
         }
         GeneratedInputSettlement::ComposerRender => composer_redrew,
