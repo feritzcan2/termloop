@@ -94,6 +94,21 @@ const SLOW_METHOD_TIMEOUT_MS: Partial<Record<MobileControlMethod, number>> = {
   "playbook.taskPositionSet": 20_000,
 };
 const MAX_REQUESTS_IN_FLIGHT = 32;
+const RETRYABLE_READ_METHODS: ReadonlySet<MobileControlMethod> = new Set([
+  "system.version",
+  "project.list",
+  "session.list",
+  "agent.statusList",
+  "agent.capabilityList",
+  "task.list",
+  "task.worktreeChangeList",
+  "task.worktreeDiff",
+  "task.worktreePreImage",
+  "playbook.get",
+  "playbook.runtime",
+  "routine.configurationList",
+  "companion.transcriptList",
+]);
 
 interface PendingMobileCall {
   readonly method: MobileControlMethod;
@@ -106,6 +121,13 @@ export class MobileControlError extends Error {
   constructor(message: string, readonly code: string | undefined) {
     super(message);
     this.name = "MobileControlError";
+  }
+}
+
+class MobileControlTransportError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MobileControlTransportError";
   }
 }
 
@@ -133,6 +155,23 @@ export class MobileControlClient {
     method: M,
     params: Record<string, unknown> = {},
   ): Promise<MobileControlResults[M]> {
+    try {
+      return await this.callOnce(method, params);
+    } catch (cause: unknown) {
+      /// Reads are safe to repeat and a fresh socket is the fastest recovery from an
+      /// iOS foreground zombie. Commands, previews, and launches are never retried:
+      /// an ambiguous transport outcome must not duplicate user intent.
+      if (!(cause instanceof MobileControlTransportError) || !RETRYABLE_READ_METHODS.has(method)) {
+        throw cause;
+      }
+      return await this.callOnce(method, params);
+    }
+  }
+
+  private async callOnce<M extends MobileControlMethod>(
+    method: M,
+    params: Record<string, unknown>,
+  ): Promise<MobileControlResults[M]> {
     if (this.pending.size >= MAX_REQUESTS_IN_FLIGHT) {
       throw new MobileControlError("Too many mobile control requests are in flight.", "serviceBusy");
     }
@@ -140,7 +179,15 @@ export class MobileControlClient {
     return await new Promise<MobileControlResults[M]>((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (!this.pending.delete(id)) return;
-        reject(new Error("request timeout"));
+        const error = new MobileControlTransportError("request timeout");
+        reject(error);
+        /// iOS can suspend a foreground WebSocket without delivering `close` to
+        /// JavaScript. Once one request times out, that transport is no longer
+        /// evidence of a usable connection: retaining it makes every later probe
+        /// reuse the same silent socket until the whole app is restarted.
+        const socket = this.socket;
+        this.disconnect(this.generation, error);
+        socket?.close();
       }, SLOW_METHOD_TIMEOUT_MS[method] ?? REQUEST_TIMEOUT_MS);
       this.pending.set(id, {
         method,
@@ -159,15 +206,16 @@ export class MobileControlClient {
             params,
           }));
         } catch {
+          const error = new MobileControlTransportError("connection failed");
+          this.disconnect(this.generation, error);
           socket.close();
-          this.disconnect(this.generation, new Error("connection failed"));
         }
       }).catch(() => {
         const pending = this.pending.get(id);
         if (!pending) return;
         this.pending.delete(id);
         clearTimeout(pending.timeout);
-        pending.reject(new Error("connection failed"));
+        pending.reject(new MobileControlTransportError("connection failed"));
       });
     });
   }
@@ -177,7 +225,7 @@ export class MobileControlClient {
     this.generation += 1;
     this.socket = undefined;
     this.connecting = undefined;
-    this.rejectPending(new Error("connection closed"));
+    this.rejectPending(new MobileControlTransportError("connection closed"));
     socket?.close();
   }
 
@@ -191,7 +239,7 @@ export class MobileControlClient {
       socket.addEventListener("open", () => {
         if (generation !== this.generation) {
           socket.close();
-          reject(new Error("connection superseded"));
+          reject(new MobileControlTransportError("connection superseded"));
           return;
         }
         opened = true;
@@ -201,13 +249,13 @@ export class MobileControlClient {
       }, { once: true });
       socket.addEventListener("message", (event) => this.receive(generation, event));
       socket.addEventListener("error", () => {
-        if (!opened) reject(new Error("connection failed"));
-        this.disconnect(generation, new Error("connection failed"));
+        if (!opened) reject(new MobileControlTransportError("connection failed"));
+        this.disconnect(generation, new MobileControlTransportError("connection failed"));
         socket.close();
       }, { once: true });
       socket.addEventListener("close", () => {
-        if (!opened) reject(new Error("connection closed"));
-        this.disconnect(generation, new Error("connection closed"));
+        if (!opened) reject(new MobileControlTransportError("connection closed"));
+        this.disconnect(generation, new MobileControlTransportError("connection closed"));
       }, { once: true });
     });
     this.connecting = connecting;

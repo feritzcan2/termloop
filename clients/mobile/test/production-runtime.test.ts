@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { TerminalEvent } from "../src/application/ports";
 import { createProductionRuntime, type DataSocket } from "../src/adapters/production/production-runtime";
-import { MOBILE_API_VERSION } from "../src/adapters/production/mobile-control-client";
+import { MOBILE_API_VERSION, MobileControlClient } from "../src/adapters/production/mobile-control-client";
 import {
   KIND_ATTACH,
   KIND_GAP,
@@ -85,6 +85,90 @@ describe("secure connection repository", () => {
 });
 
 describe("production control adapter", () => {
+  it("retries a safe read on a fresh socket after a foreground zombie times out", async () => {
+    vi.useFakeTimers();
+    try {
+      let socketCount = 0;
+      let firstClosed = false;
+      const runtime = createProductionRuntime({
+        repository: fixedRepository(saved),
+        controlSocketFactory() {
+          const socketNumber = ++socketCount;
+          const listeners = new Map<string, Array<(event: { data?: string }) => void>>();
+          const emit = (type: string, event: { data?: string } = {}) => {
+            for (const listener of listeners.get(type) ?? []) listener(event);
+          };
+          queueMicrotask(() => emit("open"));
+          return {
+            addEventListener(type, listener) {
+              const current = listeners.get(type) ?? [];
+              current.push(listener);
+              listeners.set(type, current);
+            },
+            send(data) {
+              if (socketNumber === 1) return;
+              const request = JSON.parse(data) as { id: string };
+              queueMicrotask(() => emit("message", {
+                data: JSON.stringify({
+                  id: request.id,
+                  ok: true,
+                  result: controlResult("system.version"),
+                }),
+              }));
+            },
+            close() {
+              if (socketNumber === 1) firstClosed = true;
+              emit("close");
+            },
+          } satisfies SocketLike;
+        },
+        terminalSocketFactory: () => { throw new Error("terminal not used"); },
+      });
+
+      const recoveredProbe = runtime.connections.list();
+      await vi.advanceTimersByTimeAsync(5_000);
+      await expect(recoveredProbe).resolves.toEqual([
+        expect.objectContaining({ availability: "online" }),
+      ]);
+      expect(firstClosed).toBe(true);
+      expect(socketCount).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not retry a command whose transport outcome is ambiguous", async () => {
+    vi.useFakeTimers();
+    try {
+      let socketCount = 0;
+      const client = new MobileControlClient(saved.controlUrl, saved.controlToken, () => {
+        socketCount += 1;
+        const listeners = new Map<string, Array<(event: { data?: string }) => void>>();
+        const emit = (type: string, event: { data?: string } = {}) => {
+          for (const listener of listeners.get(type) ?? []) listener(event);
+        };
+        queueMicrotask(() => emit("open"));
+        return {
+          addEventListener(type, listener) {
+            const current = listeners.get(type) ?? [];
+            current.push(listener);
+            listeners.set(type, current);
+          },
+          send() {},
+          close() { emit("close"); },
+        } satisfies SocketLike;
+      });
+
+      const command = client.call("session.rename", { sessionId, name: "Recovered" });
+      const rejected = expect(command).rejects.toThrow("request timeout");
+      await vi.advanceTimersByTimeAsync(5_000);
+      await rejected;
+      expect(socketCount).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("uses stable mobile API v1 across daemon identity changes and assembles overview projections", async () => {
     const repository = fixedRepository(saved);
     const methods: string[] = [];
@@ -492,6 +576,45 @@ describe("production terminal adapter", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("proves a fresh authenticated terminal transport after a native upload", async () => {
+    const sockets: FakeDataSocket[] = [];
+    const runtime = createProductionRuntime({
+      repository: fixedRepository(saved),
+      controlSocketFactory: () => { throw new Error("control not used"); },
+      terminalSocketFactory: () => {
+        const socket = new FakeDataSocket();
+        sockets.push(socket);
+        return socket;
+      },
+    });
+    const events: string[] = [];
+    const attaching = runtime.terminal.attach(
+      saved.id,
+      { ...fixtureSessions[0]!, id: sessionId, runtime_epoch: 17 },
+      (event) => events.push(event.type === "state" ? `${event.type}:${event.state}` : event.type),
+    );
+    await waitFor(() => sockets.length === 1);
+    sockets[0]!.open();
+    sockets[0]!.message("TLOK");
+    const attachment = await attaching;
+
+    let reconnected = false;
+    const reconnecting = attachment.reconnect().then(() => { reconnected = true; });
+    expect(sockets).toHaveLength(2);
+    expect(events.slice(-2)).toEqual(["state:connectionLost", "state:connecting"]);
+    sockets[1]!.open();
+    await Promise.resolve();
+    expect(reconnected).toBe(false);
+
+    sockets[1]!.message("TLOK");
+    await reconnecting;
+    expect(reconnected).toBe(true);
+    expect(events.slice(-2)).toEqual(["reset", "state:connected"]);
+    await expect(attachment.input(new TextEncoder().encode("photo attached"))).resolves.toBeUndefined();
+    expect(decodeFrame(new Uint8Array(sockets[1]!.sent.at(-1) as ArrayBuffer)).kind).toBe(KIND_INPUT);
+    await attachment.detach();
   });
 
   it("reconnects after a socket write fails before the close event arrives", async () => {

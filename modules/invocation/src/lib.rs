@@ -125,7 +125,7 @@ const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.steward.executor",
-    version: 29,
+    version: 30,
     authored_body: include_str!("../../../resources/prompts/builtin.steward.executor.md"),
 };
 
@@ -250,7 +250,7 @@ const AGENT_MENU_HANDOVER_TO_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const STEWARD_TASK_ASSIGNMENT_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.steward.task-assignment",
-    version: 2,
+    version: 3,
     authored_body: include_str!("../../../resources/prompts/builtin.steward.task-assignment.md"),
 };
 
@@ -3172,12 +3172,20 @@ fn compose_task_kickoff(
 /// adding durable delivery history.
 pub fn steward_task_assignment_prompt(
     task_id: &str,
+    steward_session_id: &str,
     title: &str,
     brief: Option<&str>,
     jira_url: Option<&str>,
     assignment: &str,
 ) -> Result<AskToTerminalPrompt, InvocationError> {
-    let composed = compose_steward_task_assignment(task_id, title, brief, jira_url, assignment)?;
+    let composed = compose_steward_task_assignment(
+        task_id,
+        steward_session_id,
+        title,
+        brief,
+        jira_url,
+        assignment,
+    )?;
     terminal_prompt(
         composed.template,
         composed.bindings,
@@ -3193,6 +3201,7 @@ pub fn steward_task_agent_for_conversation(
     permission: &str,
     reasoning: &str,
     task_id: &str,
+    steward_session_id: &str,
     title: &str,
     brief: Option<&str>,
     jira_url: Option<&str>,
@@ -3208,6 +3217,7 @@ pub fn steward_task_agent_for_conversation(
         permission,
         reasoning,
         task_id,
+        steward_session_id,
         title,
         brief,
         jira_url,
@@ -3227,6 +3237,7 @@ pub fn steward_task_agent_for_managed_worktree_conversation(
     permission: &str,
     reasoning: &str,
     task_id: &str,
+    steward_session_id: &str,
     title: &str,
     brief: Option<&str>,
     jira_url: Option<&str>,
@@ -3242,6 +3253,7 @@ pub fn steward_task_agent_for_managed_worktree_conversation(
         permission,
         reasoning,
         task_id,
+        steward_session_id,
         title,
         brief,
         jira_url,
@@ -3261,6 +3273,7 @@ fn steward_task_agent_for_conversation_with_codex_project_trust(
     permission: &str,
     reasoning: &str,
     task_id: &str,
+    steward_session_id: &str,
     title: &str,
     brief: Option<&str>,
     jira_url: Option<&str>,
@@ -3271,7 +3284,14 @@ fn steward_task_agent_for_conversation_with_codex_project_trust(
     codex_project_trust: CodexProjectTrust,
 ) -> Result<LaunchPayload, InvocationError> {
     validate_agent_configuration(agent_id, model, permission, reasoning)?;
-    let composed = compose_steward_task_assignment(task_id, title, brief, jira_url, assignment)?;
+    let composed = compose_steward_task_assignment(
+        task_id,
+        steward_session_id,
+        title,
+        brief,
+        jira_url,
+        assignment,
+    )?;
     resolve_launch_manifest_with_codex_project_trust(
         agent_id,
         cwd,
@@ -3296,6 +3316,7 @@ struct ComposedStewardTaskAssignment {
 
 fn compose_steward_task_assignment(
     task_id: &str,
+    steward_session_id: &str,
     title: &str,
     brief: Option<&str>,
     jira_url: Option<&str>,
@@ -3306,17 +3327,25 @@ fn compose_steward_task_assignment(
         .map(|jira_url| format!("Jira issue: {jira_url}\n"))
         .unwrap_or_default();
     if task_id.trim().is_empty()
+        || steward_session_id.trim().is_empty()
         || title.trim().is_empty()
         || assignment.trim().is_empty()
         || assignment.len() > 8_192
         || jira_url.is_some_and(|jira_url| jira_url.trim().is_empty() || jira_url.len() > 2_048)
-        || [task_id, title, brief, jira_context.as_str(), assignment]
-            .iter()
-            .any(|value| {
-                value
-                    .chars()
-                    .any(|character| character.is_control() && !matches!(character, '\n' | '\t'))
-            })
+        || [
+            task_id,
+            steward_session_id,
+            title,
+            brief,
+            jira_context.as_str(),
+            assignment,
+        ]
+        .iter()
+        .any(|value| {
+            value
+                .chars()
+                .any(|character| character.is_control() && !matches!(character, '\n' | '\t'))
+        })
     {
         return Err(InvocationError::InvalidPromptBinding);
     }
@@ -3328,6 +3357,7 @@ fn compose_steward_task_assignment(
     let bindings = [
         ("task_id", task_id),
         ("title", title),
+        ("steward_session_id", steward_session_id),
         ("jira_context", jira_context.as_str()),
         ("brief", brief),
         ("assignment", assignment),
@@ -5751,7 +5781,7 @@ mod tests {
     #[test]
     fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
         let prompt = executor_prompt(ExecutorRole::Steward).unwrap();
-        assert_eq!(prompt.provenance().template_version, 29);
+        assert_eq!(prompt.provenance().template_version, 30);
         assert!(prompt.authored_preview().contains("routine_finding_read"));
         assert!(prompt.authored_preview().contains("playbook_read"));
         assert!(prompt.authored_preview().contains("task_set_steward_brief"));
@@ -5810,6 +5840,22 @@ mod tests {
             prompt
                 .authored_preview()
                 .contains("A Task Agent request is complete only when")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("When a Task Agent sends its assignment report")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("call `agent_message_send` to the same running Source Session")
+        );
+        assert!(prompt.authored_preview().contains("call `task_close`"));
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("Speak like a Project Manager")
         );
         assert!(
             prompt
@@ -5879,7 +5925,7 @@ mod tests {
             default_steward_system_prompt()
         );
         let latest_retired =
-            include_str!("../../../resources/prompts/retired/builtin.steward.executor.v28.md")
+            include_str!("../../../resources/prompts/retired/builtin.steward.executor.v29.md")
                 .splitn(3, "\n\n")
                 .nth(2)
                 .unwrap()
@@ -6229,6 +6275,7 @@ mod tests {
     fn steward_task_assignment_is_stable_visible_and_terminal_safe() {
         let without_jira = steward_task_assignment_prompt(
             "task-123",
+            "123e4567-e89b-42d3-a456-426614174000",
             "Fix OAuth callback",
             Some("Reproduce the redirect failure."),
             None,
@@ -6238,6 +6285,7 @@ mod tests {
         assert!(!without_jira.delivered_prompt().contains("Jira issue:"));
         let prompt = steward_task_assignment_prompt(
             "task-123",
+            "123e4567-e89b-42d3-a456-426614174000",
             "Fix OAuth callback",
             Some("Reproduce the redirect failure."),
             Some("https://example.atlassian.net/browse/TERM-42"),
@@ -6248,7 +6296,7 @@ mod tests {
             prompt.provenance().template_ref,
             "builtin.steward.task-assignment"
         );
-        assert_eq!(prompt.provenance().template_version, 2);
+        assert_eq!(prompt.provenance().template_version, 3);
         assert!(
             prompt
                 .delivered_prompt()
@@ -6258,18 +6306,36 @@ mod tests {
         assert!(
             prompt
                 .delivered_prompt()
+                .contains("Steward Session ID: `123e4567-e89b-42d3-a456-426614174000`")
+        );
+        assert!(
+            prompt
+                .delivered_prompt()
+                .contains("call `send_to_agent` once")
+        );
+        assert!(
+            prompt
+                .delivered_prompt()
                 .contains("Jira issue: https://example.atlassian.net/browse/TERM-42")
         );
         assert!(prompt.delivered_prompt().contains("run focused tests"));
         assert!(!prompt.delivered_prompt().contains("{{assignment}}"));
         assert_terminal_submission(prompt.terminal_input_sequence(), prompt.delivered_prompt());
         assert!(matches!(
-            steward_task_assignment_prompt("task", "Title", None, None, "unsafe\u{1b}[201~message"),
+            steward_task_assignment_prompt(
+                "task",
+                "123e4567-e89b-42d3-a456-426614174000",
+                "Title",
+                None,
+                None,
+                "unsafe\u{1b}[201~message"
+            ),
             Err(InvocationError::InvalidPromptBinding)
         ));
         assert!(matches!(
             steward_task_assignment_prompt(
                 "task",
+                "123e4567-e89b-42d3-a456-426614174000",
                 "Title",
                 None,
                 Some("https://example.atlassian.net/browse/TERM-42\u{1b}"),
@@ -6285,6 +6351,7 @@ mod tests {
             "default",
             "default",
             "task-123",
+            "123e4567-e89b-42d3-a456-426614174000",
             "Fix OAuth callback",
             Some("Reproduce the redirect failure."),
             Some("https://example.atlassian.net/browse/TERM-42"),

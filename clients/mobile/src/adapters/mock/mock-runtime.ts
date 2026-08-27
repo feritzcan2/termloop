@@ -268,6 +268,9 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
             if (detached) throw new Error("mock terminal is detached");
             inputs.push(bytes.slice());
           },
+          async reconnect() {
+            if (detached) throw new Error("mock terminal is detached");
+          },
           async detach() {
             if (detached) return;
             detached = true;

@@ -1,66 +1,62 @@
 /// The mobile client's colour and geometry vocabulary.
 ///
-/// The chrome is a deliberate fork from the desktop's `app.css`: the phone is a
-/// pager for terminals, and its identity comes from the terminal's own world —
-/// ink with a faint phosphor cast, a teal prompt accent (ANSI cyan, the one hue
-/// the six-tone state vocabulary leaves free), and depth stated by surface value
-/// rather than by borders. Agent hues stay identical to the desktop because they
-/// are cross-client semantics, not chrome. Geometry keeps the phone-proven legacy
-/// numbers: 44pt targets and 56pt rows survive a thumb, 2px spines do not.
+/// Mobile uses the desktop shell's surface and accent vocabulary while retaining
+/// phone-native geometry. The same Project should therefore feel like the same
+/// workspace on both clients, without shrinking 44pt targets or 56pt rows to the
+/// desktop sidebar's pointer-sized controls.
 
 export const color = {
-  bgApp: "#0c1110",
-  bgRaised: "#131917",
-  bgSidebar: "#161d1b",
-  bgHover: "#1b2320",
+  bgApp: "#1e2325",
+  bgRaised: "#2b3032",
+  bgSidebar: "#303537",
+  bgHover: "#353a3c",
   /// Darker than every chrome surface. The terminal is a screen within the
   /// screen, and it reads as one only if nothing around it is deeper.
-  bgTerminal: "#090d0c",
+  bgTerminal: "#282c34",
 
-  border: "#212a27",
-  borderStrong: "#313d39",
-  rule: "rgba(190,255,235,0.07)",
+  border: "#353a3c",
+  borderStrong: "#434749",
+  rule: "rgba(255,255,255,0.08)",
 
-  text: "#e9efeb",
-  textSecondary: "#93a49d",
-  textMuted: "#5a6a63",
+  text: "#dededf",
+  textSecondary: "#9aa0a1",
+  textMuted: "#5b6062",
 
-  accent: "#3ecfad",
-  accentStrong: "#7fe6cc",
-  accentWash: "rgba(62,207,173,0.11)",
+  accent: "#7c5cff",
+  accentStrong: "#a48cff",
+  accentWash: "rgba(124,92,255,0.12)",
 
-  success: "#4cc98a",
-  warning: "#dfb35c",
-  danger: "#ef7c82",
+  success: "#5cc995",
+  warning: "#d9aa5f",
+  danger: "#e1757e",
 
   agentClaude: "#c78cf2",
-  agentCodex: "#6bb2ff",
+  agentCodex: "#66b3ff",
 
-  /// Dark on the teal accent. White fails contrast on a light phosphor fill.
-  onAccent: "#062019",
-  scrim: "rgba(2,6,5,0.72)",
+  onAccent: "#f7f5ff",
+  scrim: "rgba(8,10,11,0.76)",
 } as const;
 
 /// Tone hues. `quiet` renders no spine at all and `done` is stated but never lit,
 /// so neither has a colour here — a settled row must not compete with the one row
 /// that is actually waiting on the user.
 export const toneColor = {
-  working: color.success,
-  interrupted: "#dfb35c",
-  review: color.agentCodex,
-  busy: "#e8813f",
-  attention: "#ff8e62",
-  blocked: "#ef5350",
+  working: "#5cc995",
+  interrupted: "#e5b454",
+  review: "#66b3ff",
+  busy: "#e67a14",
+  attention: "#ff8f6b",
+  blocked: "#c93d36",
 } as const;
 
 /** Subtle row fields make live state glanceable without turning the list neon. */
 export const toneWash = {
-  working: "rgba(76,201,138,0.10)",
-  interrupted: "rgba(223,179,92,0.10)",
-  review: "rgba(107,178,255,0.12)",
-  busy: "rgba(232,129,63,0.11)",
-  attention: "rgba(255,142,98,0.14)",
-  blocked: "rgba(239,83,80,0.13)",
+  working: "rgba(92,201,149,0.10)",
+  interrupted: "rgba(229,180,84,0.10)",
+  review: "rgba(102,179,255,0.12)",
+  busy: "rgba(230,122,20,0.11)",
+  attention: "rgba(255,143,107,0.14)",
+  blocked: "rgba(201,61,54,0.14)",
 } as const;
 
 export const radius = {
