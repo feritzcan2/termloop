@@ -61,7 +61,7 @@ export function selectedWorktreeParent(destinationPath: string, branchName: stri
 /// propose one instead of asking. Diacritics fold to ASCII (Turkish dotless ı
 /// included), everything else collapses to single dashes, and an untitled or
 /// fully non-ASCII title yields "" so callers fall back to asking.
-export function suggestedBranchName(title: string): string {
+export function suggestedBranchName(title: string, prefix = "termloop"): string {
   const slug = title
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -71,7 +71,7 @@ export function suggestedBranchName(title: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 48)
     .replace(/-+$/, "");
-  return slug ? `task/${slug}` : "";
+  return slug ? `${prefix}/${slug}` : "";
 }
 
 const preferredLocalBranchNames = [

@@ -365,15 +365,17 @@ describe("Project New Task automation", () => {
   const configuration = {
     projectId: "project-1",
     createWorktree: true,
+    worktreePrefix: "termloop",
     agentId: "codex" as string | null,
     model: "gpt-5.6-sol" as string | null,
     permission: "bypassPermissions" as const,
     reasoning: "high" as const,
     kickoffMessage: "Implement and verify." as string | null,
   };
-  const off = { createWorktree: false, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null } as const;
+  const off = { createWorktree: false, worktreePrefix: "termloop", agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null } as const;
   const on = {
     createWorktree: true,
+    worktreePrefix: "termloop",
     agentId: "codex",
     model: "gpt-5.6-sol",
     permission: "bypassPermissions" as const,
@@ -391,6 +393,7 @@ describe("Project New Task automation", () => {
     expect(projectTaskAutomationError({ ...on, createWorktree: false })).toMatch(/requires worktree/);
     expect(projectTaskAutomationError({ ...on, agentId: "x".repeat(65) })).toMatch(/configured agent/);
     expect(projectTaskAutomationError({ ...on, permission: null })).toMatch(/permission mode/);
+    expect(projectTaskAutomationError({ ...on, worktreePrefix: "team/feature" })).toMatch(/prefix/);
     expect(projectTaskAutomationError({ ...on, kickoffMessage: " " })).toMatch(/kickoff message/);
   });
 
@@ -405,6 +408,7 @@ describe("Project New Task automation", () => {
     expect(taskCreationIntent(on))
       .toEqual({
         worktreeIntent: "provision",
+        worktreePrefix: "termloop",
         agentId: "codex",
         model: "gpt-5.6-sol",
         permission: "bypassPermissions",
@@ -412,11 +416,11 @@ describe("Project New Task automation", () => {
         kickoffMessage: "Implement and verify.",
       });
     expect(taskCreationIntent({ ...off, createWorktree: true }))
-      .toEqual({ worktreeIntent: "provision", agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null });
+      .toEqual({ worktreeIntent: "provision", worktreePrefix: "termloop", agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null });
     // Unchecked worktree drops the agent with it: the daemon rejects an agent
     // without one, and "none" must never smuggle a Project default back in.
     expect(taskCreationIntent({ ...on, createWorktree: false }))
-      .toEqual({ worktreeIntent: "none", agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null });
+      .toEqual({ worktreeIntent: "none", worktreePrefix: null, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null });
   });
 
   it("keeps a chosen but unavailable agent visible in the picker", () => {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { AgentCapabilityDto, LocalBranchDto, ProjectLocalBranchListResult, ProjectTaskAutomationGetResult, TaskProvisionWorktreeParams } from "@termloop/contract/current";
 import type { Task } from "../../model.js";
-import { agentLaunchDefaults } from "../../project-task-automation.js";
+import { agentLaunchDefaults, DEFAULT_TASK_WORKTREE_PREFIX } from "../../project-task-automation.js";
 import { Icon } from "../Icon.js";
 import {
   selectedWorktreeParent,
@@ -90,6 +90,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
   const [title, setTitle] = useState("");
   const [brief, setBrief] = useState("");
   const [workspace, setWorkspace] = useState<"create" | "none">("create");
+  const [worktreePrefix, setWorktreePrefix] = useState(DEFAULT_TASK_WORKTREE_PREFIX);
   const [starts, setStarts] = useState<ReadonlySet<string>>(new Set());
   const [automationAgentStart, setAutomationAgentStart] = useState<Exclude<TaskStartSelection, "terminal">>();
   const [branchMode, setBranchMode] = useState<"existing" | "create">("create");
@@ -127,6 +128,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
     void loadProjectAutomation(projectId).then(({ configuration }) => {
       if (!current) return;
       setWorkspace(configuration.createWorktree ? "create" : "none");
+      setWorktreePrefix(configuration.worktreePrefix);
       const selectedAgent = configuration.createWorktree
         && configuration.agentId
         && configuration.model
@@ -179,12 +181,14 @@ function CreateTaskDialog({ close, createTask, flow }: {
   /// The branch field is never empty: the title drives it, and before a title
   /// exists (or when it yields no slug) a per-dialog suffix keeps the proposal
   /// concrete and collision-free without asking the user for anything.
-  const [fallbackBranchName] = useState(() => `task/${globalThis.crypto.randomUUID().slice(0, 4)}`);
+  const [fallbackBranchSuffix] = useState(() => globalThis.crypto.randomUUID().slice(0, 4));
   /// Derived, not synchronized: the branch follows the title and the folder
   /// follows the branch until the user edits that exact field, which pins it.
   const branchName = branchMode === "existing"
     ? existingBranchName
-    : branchEdited ? createdBranchName : (suggestedBranchName(title) || fallbackBranchName);
+    : branchEdited
+      ? createdBranchName
+      : (suggestedBranchName(title, worktreePrefix) || `${worktreePrefix}/${fallbackBranchSuffix}`);
   const destinationPath = editedDestinationPath
     ?? (branchName ? worktreeDestination(destinationParentPath, branchName) : "");
   const selectionUnavailable = branchesLoading || Boolean(branchesError) || localBranches.length === 0;

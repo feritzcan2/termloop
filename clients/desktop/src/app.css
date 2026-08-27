@@ -2714,8 +2714,9 @@ button.history-row-main { cursor: pointer; }
 /* The choice block is used on a stage page and inside a dialog, so it carries
    its own field styling instead of inheriting `.dialog-body`. */
 .task-automation-choices > label[for] { display: block; margin: 3px 0 0 3px; color: #636d71; font: 750 9px/1 var(--font-ui); letter-spacing: .13em; text-transform: uppercase; }
-.task-automation-choices > select { width: 100%; height: 30px; padding: 0 9px; border: 1px solid var(--border); border-radius: 7px; outline: 0; background: #1e2224; color: var(--text); font-size: 10.5px; }
-.task-automation-choices > select:focus { border-color: rgba(124,92,255,.5); box-shadow: 0 0 0 3px var(--accent-wash); }
+.task-automation-choices > select, .task-automation-choices > input { width: 100%; height: 30px; padding: 0 9px; border: 1px solid var(--border); border-radius: 7px; outline: 0; background: #1e2224; color: var(--text); font-size: 10.5px; }
+.task-automation-choices > select:focus, .task-automation-choices > input:focus { border-color: rgba(124,92,255,.5); box-shadow: 0 0 0 3px var(--accent-wash); }
+.task-automation-choices > .field-help { margin: -2px 3px 2px; }
 .task-automation-launch-options { display: grid; grid-template-columns: minmax(0,1.4fr) minmax(135px,1fr) minmax(105px,.8fr); gap: 8px; }
 .task-automation-launch-options > label { display: grid; gap: 4px; margin: 0; }
 .task-automation-launch-options > label > span { color: var(--text-muted); font: 750 9px/1 var(--font-ui); letter-spacing: .1em; text-transform: uppercase; }

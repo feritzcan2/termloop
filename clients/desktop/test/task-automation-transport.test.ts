@@ -22,6 +22,7 @@ describe("Project Task automation transport", () => {
       title: "Task",
       brief: null,
       worktreeIntent: "none",
+      worktreePrefix: null,
       agentId: null,
       model: null,
       permission: null,

@@ -156,11 +156,8 @@ mod naming_tests {
 
     #[test]
     fn managed_names_are_bounded_portable_deterministic_and_have_a_fallback() {
-        let names = managed_task_checkout_names(
-            "  OAuth Callback — Fix!  ",
-            "12345678-abcd",
-            "termloop",
-        );
+        let names =
+            managed_task_checkout_names("  OAuth Callback — Fix!  ", "12345678-abcd", "termloop");
         assert_eq!(names.branch_name, "termloop/oauth-callback-fix-12345678");
         assert_eq!(
             names.worktree_leaf,

@@ -29,6 +29,7 @@ function actions(state: PanelState): TaskSourceActions & { calls: string[] } {
   const automation = () => state.automation ?? {
     projectId: "project-1",
     createWorktree: false,
+    worktreePrefix: "termloop",
     agentId: null,
     model: null,
     permission: null,
@@ -43,10 +44,11 @@ function actions(state: PanelState): TaskSourceActions & { calls: string[] } {
       return { configuration: automation(), stateRevision: 4 };
     },
     setProjectAutomation: async (params) => {
-      calls.push(`automationSet:${params.projectId}:${params.createWorktree}:${params.agentId ?? "-"}:${params.model ?? "-"}:${params.permission ?? "-"}:${params.reasoning ?? "-"}:${params.kickoffMessage ? "message" : "-"}:${params.expectedRevision}`);
+      calls.push(`automationSet:${params.projectId}:${params.createWorktree}:${params.worktreePrefix}:${params.agentId ?? "-"}:${params.model ?? "-"}:${params.permission ?? "-"}:${params.reasoning ?? "-"}:${params.kickoffMessage ? "message" : "-"}:${params.expectedRevision}`);
       state.automation = {
         projectId: params.projectId,
         createWorktree: params.createWorktree,
+        worktreePrefix: params.worktreePrefix,
         agentId: params.agentId,
         model: params.model,
         permission: params.permission,
@@ -140,7 +142,7 @@ function actions(state: PanelState): TaskSourceActions & { calls: string[] } {
     refresh: async (params) => { calls.push(`refresh:${params.sourceId}:${params.expectedGeneration}`); return { sourceId: params.sourceId, refreshed: true, failureReason: null, candidateCount: 2, truncated: true, observationSequence: 8 }; },
     listCandidates: async (sourceId) => { calls.push(`candidates:${sourceId}`); return { sourceId, candidates: state.candidates, lastSuccessfulAtEpochMs: 1_000_000, stateRevision: 10, observationSequence: 7 }; },
     importCandidate: async (params) => {
-      calls.push(`import:${params.externalId}:${params.expectedGeneration}:${params.expectedObservationSequence}:${params.expectedRevision}:${params.worktreeIntent}:${params.agentId ?? "-"}:${params.model ?? "-"}:${params.permission ?? "-"}:${params.reasoning ?? "-"}:${params.kickoffMessage ? "message" : "-"}`);
+      calls.push(`import:${params.externalId}:${params.expectedGeneration}:${params.expectedObservationSequence}:${params.expectedRevision}:${params.worktreeIntent}:${params.worktreePrefix ?? "-"}:${params.agentId ?? "-"}:${params.model ?? "-"}:${params.permission ?? "-"}:${params.reasoning ?? "-"}:${params.kickoffMessage ? "message" : "-"}`);
       state.candidates = state.candidates.map((row) => row.externalId === params.externalId ? { ...row, state: "added", taskId: "task-9" } : row);
       return { task: { id: "task-9", title: "Fix login" } as never, stateRevision: 12 };
     },
@@ -297,7 +299,7 @@ describe("Task Sources panel", () => {
     await flush();
 
     // Saved as one explicit profile against the revision the page read.
-    expect(api.calls).toContain("automationSet:project-1:true:-:-:-:-:-:4");
+    expect(api.calls).toContain("automationSet:project-1:true:termloop:-:-:-:-:-:4");
     expect(host.querySelector('[data-testid="project-task-automation-summary"]')?.textContent)
       .toBe("Task and worktree — no agent");
     expect([...host.querySelectorAll("button")].map((button) => button.textContent)).not.toContain("Save defaults");
@@ -356,6 +358,7 @@ describe("Task Sources panel", () => {
       automation: {
         projectId: "project-1",
         createWorktree: true,
+        worktreePrefix: "termloop",
         agentId: "codex",
         model: "gpt-5.6-sol",
         permission: "bypassPermissions",
@@ -379,6 +382,7 @@ describe("Task Sources panel", () => {
     expect(options).not.toBeNull();
     expect((options.querySelector("#task-candidate-import-worktree") as HTMLInputElement).checked).toBe(true);
     expect((options.querySelector("#task-candidate-import-start-agent") as HTMLInputElement).checked).toBe(true);
+    expect((options.querySelector("#task-candidate-import-worktree-prefix") as HTMLInputElement).value).toBe("termloop");
     expect((options.querySelector("#task-candidate-import-agent") as HTMLSelectElement).value).toBe("codex");
     expect((options.querySelector("#task-candidate-import-model") as HTMLSelectElement).value).toBe("gpt-5.6-sol");
     expect((options.querySelector("#task-candidate-import-permission") as HTMLSelectElement).value).toBe("bypassPermissions");
@@ -387,6 +391,7 @@ describe("Task Sources panel", () => {
       .toBe("Implement and verify this Task.");
 
     // The one-shot choice overrides the Project default for this import only.
+    await setInput("task-candidate-import-worktree-prefix", "feature");
     await setInput("task-candidate-import-agent", "claude");
     expect(host.querySelector('[data-testid="task-candidate-import-summary"]')?.textContent).toContain("Claude");
 
@@ -402,7 +407,7 @@ describe("Task Sources panel", () => {
     await flush();
 
     expect(api.calls.filter((call) => call.startsWith("import:"))).toEqual([
-      "import:10001:3:7:10:provision:claude:default:default:default:message",
+      "import:10001:3:7:10:provision:feature:claude:default:default:default:message",
     ]);
     expect(host.textContent).toContain("ACME-1 is now Task “Fix login”");
     expect(host.querySelector('[aria-label="Import ACME-1 as Task"]')).toBeNull();
@@ -415,6 +420,7 @@ describe("Task Sources panel", () => {
       automation: {
         projectId: "project-1",
         createWorktree: true,
+        worktreePrefix: "termloop",
         agentId: "codex",
         model: "gpt-5.6-sol",
         permission: "bypassPermissions",
@@ -438,7 +444,7 @@ describe("Task Sources panel", () => {
     });
     await flush();
     await flush();
-    expect(api.calls.filter((call) => call.startsWith("import:"))).toEqual(["import:10001:3:7:10:none:-:-:-:-:-"]);
+    expect(api.calls.filter((call) => call.startsWith("import:"))).toEqual(["import:10001:3:7:10:none:-:-:-:-:-:-"]);
 
     // Cancel closes the confirmation without a second command.
     api.calls.length = 0;
