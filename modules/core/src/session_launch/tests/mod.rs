@@ -406,6 +406,7 @@ fn pending_generated_input_fixture() {
     let periodic_composer_redraw =
         std::env::var_os("TERMLOOP_TEST_PERIODIC_COMPOSER_REDRAW").is_some();
     let codex_composer_gate = std::env::var_os("TERMLOOP_TEST_CODEX_COMPOSER_READY").is_some();
+    let retain_without_repaint = std::env::var_os("TERMLOOP_TEST_RETAIN_WITHOUT_REPAINT").is_some();
 
     let _terminal_input_mode = termloop_platform::configure_headless_terminal_input_fixture()
         .expect("fixture must configure its PTY input mode");
@@ -468,15 +469,17 @@ fn pending_generated_input_fixture() {
              \x1b[20;1H\x1b[K>\x1b[?25h\x1b[20;3H\x1b[?2026l"
         );
         std::io::stdout().flush().unwrap();
-        std::thread::spawn(|| {
-            for _ in 0..600 {
-                std::thread::sleep(std::time::Duration::from_millis(20));
-                print!(
-                    "\x1b[?2026h\x1b[7;1H\x1b[Kanimation\x1b[20;1H\x1b[K>\x1b[?25h\x1b[20;3H\x1b[?2026l"
-                );
-                let _ = std::io::stdout().flush();
-            }
-        });
+        if !retain_without_repaint {
+            std::thread::spawn(|| {
+                for _ in 0..600 {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    print!(
+                        "\x1b[?2026h\x1b[7;1H\x1b[Kanimation\x1b[20;1H\x1b[K>\x1b[?25h\x1b[20;3H\x1b[?2026l"
+                    );
+                    let _ = std::io::stdout().flush();
+                }
+            });
+        }
     } else if std::env::var_os("TERMLOOP_TEST_DELAY_COMPOSER_RENDER").is_some() {
         println!("TERMLOOP_INITIAL_INPUT_VISIBLE:{submitted}\x1b[?2026l");
         std::io::stdout().flush().unwrap();
@@ -527,7 +530,7 @@ fn pending_generated_input_fixture() {
         );
         std::io::stdout().flush().unwrap();
         read_headless_fixture_input(&mut input, b"\r");
-    } else if std::env::var_os("TERMLOOP_TEST_RETAIN_WITHOUT_REPAINT").is_some() {
+    } else if retain_without_repaint {
         std::thread::sleep(std::time::Duration::from_secs(6));
     }
     if termloop_platform::host_uses_bracketed_paste_framing() {
