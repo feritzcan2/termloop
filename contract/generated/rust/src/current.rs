@@ -67,45 +67,48 @@ static CONTRACT_PATTERN_15: std::sync::LazyLock<regex::Regex> = std::sync::LazyL
     regex::Regex::new("^[A-Za-z_][A-Za-z0-9_]*$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_16: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[a-z](?:[a-z0-9]|-[a-z0-9])*$").expect("generated contract pattern")
+    regex::Regex::new("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_17: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^[a-z](?:[a-z0-9]|-[a-z0-9])*$").expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://(?:github\\.com|dev\\.azure\\.com)/")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z](?:[A-Z0-9]{0,63})-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_20: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_20: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_22: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_22: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_23: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_23: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_24: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_24: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_25: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_25: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_26: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_26: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_27: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https?://").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_27: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_28: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^refs/heads/").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_28: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_29: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^sha256:[0-9a-f]{64}$").expect("generated contract pattern")
 });
 
@@ -133,41 +136,42 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
         "^[A-Za-z0-9_-]{86}$" => CONTRACT_PATTERN_13.is_match(text),
         "^[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_14.is_match(text),
         "^[A-Za-z_][A-Za-z0-9_]*$" => CONTRACT_PATTERN_15.is_match(text),
-        "^[a-z](?:[a-z0-9]|-[a-z0-9])*$" => CONTRACT_PATTERN_16.is_match(text),
-        "^https://(?:github\\.com|dev\\.azure\\.com)/" => CONTRACT_PATTERN_17.is_match(text),
+        "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" => CONTRACT_PATTERN_16.is_match(text),
+        "^[a-z](?:[a-z0-9]|-[a-z0-9])*$" => CONTRACT_PATTERN_17.is_match(text),
+        "^https://(?:github\\.com|dev\\.azure\\.com)/" => CONTRACT_PATTERN_18.is_match(text),
         "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z](?:[A-Z0-9]{0,63})-[1-9][0-9]{0,19}$" => {
-            CONTRACT_PATTERN_18.is_match(text)
-        }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_19.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_20.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_21.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$" => {
             CONTRACT_PATTERN_22.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$" => {
             CONTRACT_PATTERN_23.is_match(text)
         }
-        "^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_24.is_match(text)
         }
-        "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$" => {
+        "^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$" => {
             CONTRACT_PATTERN_25.is_match(text)
         }
-        "^https?://" => CONTRACT_PATTERN_26.is_match(text),
-        "^refs/heads/" => CONTRACT_PATTERN_27.is_match(text),
-        "^sha256:[0-9a-f]{64}$" => CONTRACT_PATTERN_28.is_match(text),
+        "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$" => {
+            CONTRACT_PATTERN_26.is_match(text)
+        }
+        "^https?://" => CONTRACT_PATTERN_27.is_match(text),
+        "^refs/heads/" => CONTRACT_PATTERN_28.is_match(text),
+        "^sha256:[0-9a-f]{64}$" => CONTRACT_PATTERN_29.is_match(text),
         _ => false,
     }
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:7ce6a9c386874df16b7e82d643d6c9e41747ce28317d0ec71d96239005799f26";
+    "sha256:1edd38b7a14d3c9dcf9e2f290c29720824a15b5860645a458440853a408666e8";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -970,6 +974,8 @@ pub struct ProjectTaskAutomationConfigurationDto {
     pub project_id: String,
     #[serde(rename = "createWorktree")]
     pub create_worktree: bool,
+    #[serde(rename = "worktreePrefix")]
+    pub worktree_prefix: TaskWorktreePrefix,
     #[serde(rename = "agentId", deserialize_with = "deserialize_required_nullable")]
     pub agent_id: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
@@ -1000,6 +1006,8 @@ pub struct ProjectTaskAutomationSetParams {
     pub project_id: String,
     #[serde(rename = "createWorktree")]
     pub create_worktree: bool,
+    #[serde(rename = "worktreePrefix")]
+    pub worktree_prefix: TaskWorktreePrefix,
     #[serde(rename = "agentId", deserialize_with = "deserialize_required_nullable")]
     pub agent_id: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
@@ -2703,6 +2711,11 @@ pub struct TaskCreateParams {
     pub brief: Option<String>,
     #[serde(rename = "worktreeIntent")]
     pub worktree_intent: TaskCreateWorktreeIntent,
+    #[serde(
+        rename = "worktreePrefix",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub worktree_prefix: Option<TaskWorktreePrefix>,
     #[serde(rename = "agentId", deserialize_with = "deserialize_required_nullable")]
     pub agent_id: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
@@ -6098,6 +6111,11 @@ pub struct TaskSourceCandidateImportParams {
     pub expected_revision: u64,
     #[serde(rename = "worktreeIntent")]
     pub worktree_intent: TaskCreateWorktreeIntent,
+    #[serde(
+        rename = "worktreePrefix",
+        deserialize_with = "deserialize_required_nullable"
+    )]
+    pub worktree_prefix: Option<TaskWorktreePrefix>,
     #[serde(rename = "agentId", deserialize_with = "deserialize_required_nullable")]
     pub agent_id: Option<String>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
@@ -8922,6 +8940,9 @@ fn validate_project_task_automation_configuration_dto(value: &Value) -> bool {
             && object
                 .get("createWorktree")
                 .is_some_and(|field| field.is_boolean())
+            && object
+                .get("worktreePrefix")
+                .is_some_and(|field| validate_task_worktree_prefix(field))
             && object.get("agentId").is_some_and(|field| {
                 (field
                     .as_str()
@@ -8954,6 +8975,7 @@ fn validate_project_task_automation_configuration_dto(value: &Value) -> bool {
                 [
                     "projectId",
                     "createWorktree",
+                    "worktreePrefix",
                     "agentId",
                     "model",
                     "permission",
@@ -9042,6 +9064,9 @@ fn validate_project_task_automation_set_params(value: &Value) -> bool {
             && object
                 .get("createWorktree")
                 .is_some_and(|field| field.is_boolean())
+            && object
+                .get("worktreePrefix")
+                .is_some_and(|field| validate_task_worktree_prefix(field))
             && object.get("agentId").is_some_and(|field| {
                 (field
                     .as_str()
@@ -9080,6 +9105,7 @@ fn validate_project_task_automation_set_params(value: &Value) -> bool {
                 [
                     "projectId",
                     "createWorktree",
+                    "worktreePrefix",
                     "agentId",
                     "model",
                     "permission",
@@ -9432,6 +9458,23 @@ fn validate_task_create_worktree_intent(value: &Value) -> bool {
     value
         .as_str()
         .is_some_and(|text| ["inherit", "none", "provision"].contains(&text))
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_task_worktree_prefix(value: &Value) -> bool {
+    value.as_str().is_some_and(|text| {
+        text.chars().count() >= 1
+            && text.chars().count() <= 32
+            && contract_pattern_matches("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$", text)
+    })
 }
 
 #[allow(
@@ -13146,6 +13189,9 @@ fn validate_task_create_params(value: &Value) -> bool {
             && object
                 .get("worktreeIntent")
                 .is_some_and(|field| validate_task_create_worktree_intent(field))
+            && object
+                .get("worktreePrefix")
+                .is_some_and(|field| (validate_task_worktree_prefix(field) || field.is_null()))
             && object.get("agentId").is_some_and(|field| {
                 (field
                     .as_str()
@@ -13180,6 +13226,7 @@ fn validate_task_create_params(value: &Value) -> bool {
                     "title",
                     "brief",
                     "worktreeIntent",
+                    "worktreePrefix",
                     "agentId",
                     "model",
                     "permission",
@@ -13190,39 +13237,56 @@ fn validate_task_create_params(value: &Value) -> bool {
             })
     }) && ((!(value.as_object().is_some_and(|object| {
         object
-            .get("agentId")
-            .is_some_and(|field| field.as_str().is_some_and(|text| true))
+            .get("worktreeIntent")
+            .is_some_and(|field| field == &serde_json::json!("provision"))
     })) || (value.as_object().is_some_and(|object| {
         object
-            .get("worktreeIntent")
-            .is_none_or(|field| field == &serde_json::json!("provision"))
-            && object
-                .get("model")
-                .is_none_or(|field| field.as_str().is_some_and(|text| true))
-            && object
-                .get("permission")
-                .is_none_or(|field| field.as_str().is_some_and(|text| true))
-            && object
-                .get("reasoning")
-                .is_none_or(|field| field.as_str().is_some_and(|text| true))
+            .get("worktreePrefix")
+            .is_none_or(|field| validate_task_worktree_prefix(field))
     }))) && ((value.as_object().is_some_and(|object| {
         object
-            .get("agentId")
-            .is_some_and(|field| field.as_str().is_some_and(|text| true))
+            .get("worktreeIntent")
+            .is_some_and(|field| field == &serde_json::json!("provision"))
     })) || (value.as_object().is_some_and(|object| {
         object
-            .get("model")
+            .get("worktreePrefix")
             .is_none_or(|field| field == &serde_json::json!(null))
-            && object
-                .get("permission")
+    }))))
+        && ((!(value.as_object().is_some_and(|object| {
+            object
+                .get("agentId")
+                .is_some_and(|field| field.as_str().is_some_and(|text| true))
+        })) || (value.as_object().is_some_and(|object| {
+            object
+                .get("worktreeIntent")
+                .is_none_or(|field| field == &serde_json::json!("provision"))
+                && object
+                    .get("model")
+                    .is_none_or(|field| field.as_str().is_some_and(|text| true))
+                && object
+                    .get("permission")
+                    .is_none_or(|field| field.as_str().is_some_and(|text| true))
+                && object
+                    .get("reasoning")
+                    .is_none_or(|field| field.as_str().is_some_and(|text| true))
+        }))) && ((value.as_object().is_some_and(|object| {
+            object
+                .get("agentId")
+                .is_some_and(|field| field.as_str().is_some_and(|text| true))
+        })) || (value.as_object().is_some_and(|object| {
+            object
+                .get("model")
                 .is_none_or(|field| field == &serde_json::json!(null))
-            && object
-                .get("reasoning")
-                .is_none_or(|field| field == &serde_json::json!(null))
-            && object
-                .get("kickoffMessage")
-                .is_none_or(|field| field == &serde_json::json!(null))
-    })))))
+                && object
+                    .get("permission")
+                    .is_none_or(|field| field == &serde_json::json!(null))
+                && object
+                    .get("reasoning")
+                    .is_none_or(|field| field == &serde_json::json!(null))
+                && object
+                    .get("kickoffMessage")
+                    .is_none_or(|field| field == &serde_json::json!(null))
+        })))))
 }
 
 #[allow(
@@ -22687,6 +22751,9 @@ fn validate_task_source_candidate_import_params(value: &Value) -> bool {
             && object
                 .get("worktreeIntent")
                 .is_some_and(|field| validate_task_create_worktree_intent(field))
+            && object
+                .get("worktreePrefix")
+                .is_some_and(|field| (validate_task_worktree_prefix(field) || field.is_null()))
             && object.get("agentId").is_some_and(|field| {
                 (field
                     .as_str()
@@ -22723,6 +22790,7 @@ fn validate_task_source_candidate_import_params(value: &Value) -> bool {
                     "expectedObservationSequence",
                     "expectedRevision",
                     "worktreeIntent",
+                    "worktreePrefix",
                     "agentId",
                     "model",
                     "permission",
@@ -22733,39 +22801,56 @@ fn validate_task_source_candidate_import_params(value: &Value) -> bool {
             })
     }) && ((!(value.as_object().is_some_and(|object| {
         object
-            .get("agentId")
-            .is_some_and(|field| field.as_str().is_some_and(|text| true))
+            .get("worktreeIntent")
+            .is_some_and(|field| field == &serde_json::json!("provision"))
     })) || (value.as_object().is_some_and(|object| {
         object
-            .get("worktreeIntent")
-            .is_none_or(|field| field == &serde_json::json!("provision"))
-            && object
-                .get("model")
-                .is_none_or(|field| field.as_str().is_some_and(|text| true))
-            && object
-                .get("permission")
-                .is_none_or(|field| field.as_str().is_some_and(|text| true))
-            && object
-                .get("reasoning")
-                .is_none_or(|field| field.as_str().is_some_and(|text| true))
+            .get("worktreePrefix")
+            .is_none_or(|field| validate_task_worktree_prefix(field))
     }))) && ((value.as_object().is_some_and(|object| {
         object
-            .get("agentId")
-            .is_some_and(|field| field.as_str().is_some_and(|text| true))
+            .get("worktreeIntent")
+            .is_some_and(|field| field == &serde_json::json!("provision"))
     })) || (value.as_object().is_some_and(|object| {
         object
-            .get("model")
+            .get("worktreePrefix")
             .is_none_or(|field| field == &serde_json::json!(null))
-            && object
-                .get("permission")
+    }))))
+        && ((!(value.as_object().is_some_and(|object| {
+            object
+                .get("agentId")
+                .is_some_and(|field| field.as_str().is_some_and(|text| true))
+        })) || (value.as_object().is_some_and(|object| {
+            object
+                .get("worktreeIntent")
+                .is_none_or(|field| field == &serde_json::json!("provision"))
+                && object
+                    .get("model")
+                    .is_none_or(|field| field.as_str().is_some_and(|text| true))
+                && object
+                    .get("permission")
+                    .is_none_or(|field| field.as_str().is_some_and(|text| true))
+                && object
+                    .get("reasoning")
+                    .is_none_or(|field| field.as_str().is_some_and(|text| true))
+        }))) && ((value.as_object().is_some_and(|object| {
+            object
+                .get("agentId")
+                .is_some_and(|field| field.as_str().is_some_and(|text| true))
+        })) || (value.as_object().is_some_and(|object| {
+            object
+                .get("model")
                 .is_none_or(|field| field == &serde_json::json!(null))
-            && object
-                .get("reasoning")
-                .is_none_or(|field| field == &serde_json::json!(null))
-            && object
-                .get("kickoffMessage")
-                .is_none_or(|field| field == &serde_json::json!(null))
-    })))))
+                && object
+                    .get("permission")
+                    .is_none_or(|field| field == &serde_json::json!(null))
+                && object
+                    .get("reasoning")
+                    .is_none_or(|field| field == &serde_json::json!(null))
+                && object
+                    .get("kickoffMessage")
+                    .is_none_or(|field| field == &serde_json::json!(null))
+        })))))
 }
 
 #[allow(

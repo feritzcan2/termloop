@@ -11,6 +11,7 @@ const utf8ByteLength = (value: string): number => new TextEncoder().encode(value
 /// provider import, and any future Task creation path.
 export type ProjectTaskAutomationDraft = {
   createWorktree: boolean;
+  worktreePrefix: string;
   agentId: string | null;
   model: string | null;
   permission: AgentCapabilityDto["permissions"][number] | null;
@@ -19,6 +20,7 @@ export type ProjectTaskAutomationDraft = {
 };
 
 export const PROJECT_TASK_AUTOMATION_KICKOFF_MAX_BYTES = 8_192;
+export const DEFAULT_TASK_WORKTREE_PREFIX = "termloop";
 export const DEFAULT_TASK_KICKOFF_MESSAGE =
   "Work on this Task end to end. Implement the required changes, run focused tests, and continue until it is complete.";
 
@@ -30,6 +32,7 @@ export function projectTaskAutomationDraftFrom(
 ): ProjectTaskAutomationDraft {
   return {
     createWorktree: configuration.createWorktree,
+    worktreePrefix: configuration.worktreePrefix,
     agentId: configuration.agentId,
     model: configuration.model,
     permission: configuration.permission,
@@ -42,6 +45,9 @@ export function projectTaskAutomationDraftFrom(
 /// so a named agent without one is refused next to the control instead of by a
 /// rejected round trip.
 export function projectTaskAutomationError(draft: ProjectTaskAutomationDraft): string | undefined {
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/.test(draft.worktreePrefix)) {
+    return "Use 1–32 lowercase letters, numbers, or single hyphens for the branch/worktree prefix.";
+  }
   if (draft.agentId === null) {
     return draft.model === null && draft.permission === null && draft.reasoning === null && draft.kickoffMessage === null
       ? undefined
@@ -66,6 +72,7 @@ export function projectTaskAutomationChanged(
   configuration: ProjectTaskAutomationConfigurationDto,
 ): boolean {
   return draft.createWorktree !== configuration.createWorktree
+    || draft.worktreePrefix !== configuration.worktreePrefix
     || draft.agentId !== configuration.agentId
     || draft.model !== configuration.model
     || draft.permission !== configuration.permission
@@ -93,6 +100,7 @@ export type TaskImportChoice = ProjectTaskAutomationDraft;
 /// act on exactly that choice if the Project default changes meanwhile.
 export function taskCreationIntent(choice: TaskImportChoice): {
   worktreeIntent: TaskCreateWorktreeIntent;
+  worktreePrefix: string | null;
   agentId: string | null;
   model: string | null;
   permission: AgentCapabilityDto["permissions"][number] | null;
@@ -101,14 +109,15 @@ export function taskCreationIntent(choice: TaskImportChoice): {
 } {
   if (!choice.createWorktree || choice.agentId === null) {
     return choice.createWorktree
-      ? { worktreeIntent: "provision", agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null }
-      : { worktreeIntent: "none", agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null };
+      ? { worktreeIntent: "provision", worktreePrefix: choice.worktreePrefix, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null }
+      : { worktreeIntent: "none", worktreePrefix: null, agentId: null, model: null, permission: null, reasoning: null, kickoffMessage: null };
   }
   if (choice.model === null || choice.permission === null || choice.reasoning === null) {
     throw new Error("An explicit Task Agent selection requires model, permission, and reasoning.");
   }
   return {
     worktreeIntent: "provision",
+    worktreePrefix: choice.worktreePrefix,
     agentId: choice.agentId,
     model: choice.model,
     permission: choice.permission,

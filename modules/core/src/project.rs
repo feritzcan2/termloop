@@ -691,12 +691,14 @@ mod tests {
             .get_project_task_automation(json!({ "projectId": project_id }))
             .unwrap();
         assert_eq!(initial["configuration"]["createWorktree"], false);
+        assert_eq!(initial["configuration"]["worktreePrefix"], "termloop");
         assert_eq!(initial["configuration"]["agentId"], Value::Null);
         let revision = initial["stateRevision"].as_u64().unwrap();
         let updated = runtime
             .set_project_task_automation(json!({
                 "projectId": project_id,
                 "createWorktree": true,
+                "worktreePrefix": "feature",
                 "agentId": "codex",
                 "model": "gpt-5.6-sol",
                 "permission": "bypassPermissions",
@@ -706,6 +708,7 @@ mod tests {
             }))
             .unwrap();
         assert_eq!(updated["configuration"]["agentId"], "codex");
+        assert_eq!(updated["configuration"]["worktreePrefix"], "feature");
         assert_eq!(updated["configuration"]["model"], "gpt-5.6-sol");
         assert_eq!(updated["configuration"]["permission"], "bypassPermissions");
         assert_eq!(updated["configuration"]["reasoning"], "high");
@@ -717,6 +720,7 @@ mod tests {
             runtime.set_project_task_automation(json!({
                 "projectId": project_id,
                 "createWorktree": false,
+                "worktreePrefix": "termloop",
                 "agentId": null,
                 "model": null,
                 "permission": null,
