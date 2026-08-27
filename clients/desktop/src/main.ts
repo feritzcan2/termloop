@@ -1544,8 +1544,11 @@ if (ownsSingleInstance) app.whenReady().then(async () => {
         close.click();
         return true;
       })()`);
-      await new Promise((resolve) => setTimeout(resolve, 25));
-      const portalContentClosed = await overlay.webContents.executeJavaScript(`document.querySelector('[aria-label="Close command palette"]') === null`);
+      let portalContentClosed = false;
+      for (let attempt = 0; attempt < 40 && !portalContentClosed; attempt += 1) {
+        portalContentClosed = await overlay.webContents.executeJavaScript(`document.querySelector('[aria-label="Close command palette"]') === null`);
+        if (!portalContentClosed) await new Promise((resolve) => setTimeout(resolve, 25));
+      }
       if (!closedFromPortal || !portalContentClosed) throw new Error("native overlay portal interaction failed");
       await window.webContents.executeJavaScript(`(() => {
         const shift = (type) => window.dispatchEvent(new KeyboardEvent(type, { code: "ShiftLeft", key: "Shift", shiftKey: true, bubbles: true }));
