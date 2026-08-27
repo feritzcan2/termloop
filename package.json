@@ -54,7 +54,7 @@
     "acceptance:access-plane": "pnpm --filter @termloop/contract build && cargo build -p termloop-server && node tests/e2e/access-plane.mjs"
   },
   "devDependencies": {
-    "playwright": "1.55.0",
+    "playwright": "1.55.1",
     "typescript": "7.0.2",
     "ws": "8.21.2"
   },
