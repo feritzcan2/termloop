@@ -319,7 +319,15 @@ mod tests {
                 .confirm_generated_input_submission(session_id, 17, provider_sequence,)
                 .unwrap()
         );
-        let event = events.recv_timeout(Duration::from_secs(15)).unwrap();
+        let event = events
+            .recv_timeout(Duration::from_secs(15))
+            .unwrap_or_else(|_| {
+                panic!(
+                    "handoff delivery did not emit a transport event; state={:?} failure={:?}",
+                    runtime.generated_input_delivery_state(session_id, 17),
+                    runtime.generated_input_delivery_failure(session_id, 17),
+                )
+            });
         assert!(runtime.record_generated_input_runtime_event(event).unwrap());
         assert_eq!(
             runtime.generated_input_delivery_state(session_id, 17),

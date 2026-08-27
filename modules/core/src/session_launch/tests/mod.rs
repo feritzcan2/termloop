@@ -82,6 +82,12 @@ fn is_cursor_position_response(bytes: &[u8]) -> bool {
         })
 }
 
+fn bounded_headless_fixture_output(bytes: &[u8]) -> String {
+    const MAX_DIAGNOSTIC_BYTES: usize = 4 * 1024;
+    let start = bytes.len().saturating_sub(MAX_DIAGNOSTIC_BYTES);
+    String::from_utf8_lossy(&bytes[start..]).into_owned()
+}
+
 #[test]
 fn running_persistent_assistant_restart_preserves_closed_mcp_role() {
     let root = std::env::temp_dir().join(format!(
@@ -1599,7 +1605,14 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
         }
     })
     .await
-    .unwrap();
+    .unwrap_or_else(|_| {
+        panic!(
+            "worker fixture did not render paste; state={:?} failure={:?} output={}",
+            runtime.generated_input_delivery_state("worker-activation", 9),
+            runtime.generated_input_delivery_failure("worker-activation", 9),
+            bounded_headless_fixture_output(&bytes),
+        )
+    });
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert_eq!(
         runtime.generated_input_delivery_state("worker-activation", 9),
@@ -1623,7 +1636,14 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
         }
     })
     .await
-    .unwrap();
+    .unwrap_or_else(|_| {
+        panic!(
+            "worker fixture did not receive submit; state={:?} failure={:?} output={}",
+            runtime.generated_input_delivery_state("worker-activation", 9),
+            runtime.generated_input_delivery_failure("worker-activation", 9),
+            bounded_headless_fixture_output(&bytes),
+        )
+    });
 
     let event = generated_input_events
         .recv_timeout(std::time::Duration::from_secs(1))
@@ -1924,7 +1944,14 @@ async fn assert_quick_action_initial_input_delivery(
         }
     })
     .await
-    .unwrap();
+    .unwrap_or_else(|_| {
+        panic!(
+            "quick-action fixture did not render paste; state={:?} failure={:?} output={}",
+            runtime.generated_input_delivery_state("quick-action-ready", 9),
+            runtime.generated_input_delivery_failure("quick-action-ready", 9),
+            bounded_headless_fixture_output(&bytes),
+        )
+    });
     terminal
         .input_user("quick-action-ready", 9, b"\x1b[D")
         .unwrap();
@@ -1997,7 +2024,14 @@ async fn assert_quick_action_initial_input_delivery(
         },
     )
     .await
-    .unwrap();
+    .unwrap_or_else(|_| {
+        panic!(
+            "quick-action fixture did not receive submit; state={:?} failure={:?} output={}",
+            runtime.generated_input_delivery_state("quick-action-ready", 9),
+            runtime.generated_input_delivery_failure("quick-action-ready", 9),
+            bounded_headless_fixture_output(&bytes),
+        )
+    });
 
     let event = generated_input_events
         .recv_timeout(std::time::Duration::from_secs(1))
