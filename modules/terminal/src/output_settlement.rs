@@ -17,18 +17,62 @@ pub(crate) enum TerminalStructure {
     EraseLine,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct TerminalStructureParser {
     stage: u8,
     private: bool,
     parameter_index: usize,
     parameters: [Option<u16>; 2],
+    cursor_position: CursorPosition,
+}
+
+impl Default for TerminalStructureParser {
+    fn default() -> Self {
+        Self {
+            stage: 0,
+            private: false,
+            parameter_index: 0,
+            parameters: [None, None],
+            cursor_position: CursorPosition { row: 1, column: 1 },
+        }
+    }
 }
 
 impl TerminalStructureParser {
     pub(crate) fn record(&mut self, byte: u8) -> Option<TerminalStructure> {
         match self.stage {
             0 if byte == b'\x1b' => self.stage = 1,
+            0 if byte == b'\r' => {
+                self.cursor_position.column = 1;
+                return Some(TerminalStructure::CursorPosition(self.cursor_position));
+            }
+            0 if byte == b'\n' => {
+                self.cursor_position.row = self.cursor_position.row.saturating_add(1);
+                return Some(TerminalStructure::CursorPosition(self.cursor_position));
+            }
+            0 if byte == b'\x08' => {
+                self.cursor_position.column = self.cursor_position.column.saturating_sub(1).max(1);
+                return Some(TerminalStructure::CursorPosition(self.cursor_position));
+            }
+            0 if byte == b'\t' => {
+                self.cursor_position.column = self
+                    .cursor_position
+                    .column
+                    .saturating_sub(1)
+                    .saturating_div(8)
+                    .saturating_add(1)
+                    .saturating_mul(8)
+                    .saturating_add(1);
+                return Some(TerminalStructure::CursorPosition(self.cursor_position));
+            }
+            // Count one cell for ASCII graphics and for the leading byte of a
+            // UTF-8 scalar. Continuation bytes and C0 controls do not advance
+            // the cursor. This bounded cursor model is sufficient for the
+            // row/ordering facts emitted by ConPTY's normalized screen diff;
+            // it is deliberately not a retained VT grid.
+            0 if byte.is_ascii_graphic() || byte == b' ' || byte >= 0xc0 => {
+                self.cursor_position.column = self.cursor_position.column.saturating_add(1);
+            }
             1 if byte == b'[' => {
                 self.stage = 2;
                 self.private = false;
@@ -61,13 +105,60 @@ impl TerminalStructureParser {
                 }
             }
             2 if (0x40..=0x7e).contains(&byte) => {
-                let structure = (!self.private).then(|| match byte {
-                    b'H' | b'f' => Some(TerminalStructure::CursorPosition(CursorPosition {
-                        row: self.parameters[0].unwrap_or(1).max(1),
-                        column: self.parameters[1].unwrap_or(1).max(1),
-                    })),
-                    b'K' => Some(TerminalStructure::EraseLine),
-                    _ => None,
+                let structure = (!self.private).then(|| {
+                    let first = self.parameters[0].unwrap_or(1).max(1);
+                    let second = self.parameters[1].unwrap_or(1).max(1);
+                    match byte {
+                        b'H' | b'f' => {
+                            self.cursor_position = CursorPosition {
+                                row: first,
+                                column: second,
+                            };
+                            Some(TerminalStructure::CursorPosition(self.cursor_position))
+                        }
+                        b'A' => {
+                            self.cursor_position.row =
+                                self.cursor_position.row.saturating_sub(first).max(1);
+                            Some(TerminalStructure::CursorPosition(self.cursor_position))
+                        }
+                        b'B' => {
+                            self.cursor_position.row =
+                                self.cursor_position.row.saturating_add(first);
+                            Some(TerminalStructure::CursorPosition(self.cursor_position))
+                        }
+                        b'C' => {
+                            self.cursor_position.column =
+                                self.cursor_position.column.saturating_add(first);
+                            Some(TerminalStructure::CursorPosition(self.cursor_position))
+                        }
+                        b'D' => {
+                            self.cursor_position.column =
+                                self.cursor_position.column.saturating_sub(first).max(1);
+                            Some(TerminalStructure::CursorPosition(self.cursor_position))
+                        }
+                        b'E' => {
+                            self.cursor_position.row =
+                                self.cursor_position.row.saturating_add(first);
+                            self.cursor_position.column = 1;
+                            Some(TerminalStructure::CursorPosition(self.cursor_position))
+                        }
+                        b'F' => {
+                            self.cursor_position.row =
+                                self.cursor_position.row.saturating_sub(first).max(1);
+                            self.cursor_position.column = 1;
+                            Some(TerminalStructure::CursorPosition(self.cursor_position))
+                        }
+                        b'G' => {
+                            self.cursor_position.column = first;
+                            Some(TerminalStructure::CursorPosition(self.cursor_position))
+                        }
+                        b'd' => {
+                            self.cursor_position.row = first;
+                            Some(TerminalStructure::CursorPosition(self.cursor_position))
+                        }
+                        b'K' => Some(TerminalStructure::EraseLine),
+                        _ => None,
+                    }
                 });
                 self.reset();
                 return structure.flatten();
@@ -76,6 +167,10 @@ impl TerminalStructureParser {
             _ => {}
         }
         None
+    }
+
+    pub(crate) fn cursor_position(&self) -> CursorPosition {
+        self.cursor_position
     }
 
     fn reset(&mut self) {

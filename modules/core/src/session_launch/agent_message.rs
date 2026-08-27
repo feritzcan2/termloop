@@ -228,8 +228,8 @@ mod tests {
         let _terminal_input_mode = termloop_platform::configure_headless_terminal_input_fixture()
             .expect("handoff fixture must configure its PTY input mode");
         println!(
-            "\x1b[?1049h\x1b[?2004h\x1b[?2026h\x1b[36;1H\x1b[K›\
-             \x1b[?25h\x1b[36;3H\x1b[?2026l"
+            "\x1b[?1049h\x1b[?2004h\x1b[?2026h\x1b[20;1H\x1b[K›\
+             \x1b[?25h\x1b[20;3H\x1b[?2026l"
         );
         std::io::stdout().flush().unwrap();
         let mut input = std::io::stdin().lock();

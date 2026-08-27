@@ -49,6 +49,7 @@ struct InputReadinessState {
     synchronized_frame_cursor_position: Option<CursorPosition>,
     synchronized_frame_cursor_after_show: Option<CursorPosition>,
     synchronized_frame_last_right_angle_prompt_position: Option<CursorPosition>,
+    visible_right_angle_prompt_position: Option<CursorPosition>,
     completed_frame_cursor_position: Option<CursorPosition>,
     terminal_structure_parser: TerminalStructureParser,
     closed: bool,
@@ -107,9 +108,19 @@ fn record_completed_composer_prompt(state: &mut InputReadinessState) {
     state.structural_sequence = state.structural_sequence.saturating_add(1);
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct InputReadinessTracker {
     inner: Arc<(Mutex<InputReadinessState>, Condvar)>,
+    accepts_normalized_screen_diff: bool,
+}
+
+impl Default for InputReadinessTracker {
+    fn default() -> Self {
+        Self {
+            inner: Arc::default(),
+            accepts_normalized_screen_diff: !termloop_platform::host_uses_bracketed_paste_framing(),
+        }
+    }
 }
 
 impl InputReadinessTracker {
@@ -186,9 +197,8 @@ impl InputReadinessTracker {
                     state.synchronized_frame_cursor_after_show = None;
                     state.synchronized_frame_last_right_angle_prompt_position = None;
                 }
-                if record_marker(byte, SHOW_CURSOR, &mut state.show_cursor_match)
-                    && state.synchronized_frame_open
-                {
+                let showed_cursor = record_marker(byte, SHOW_CURSOR, &mut state.show_cursor_match);
+                if showed_cursor && state.synchronized_frame_open {
                     state.synchronized_frame_had_show_cursor = true;
                     state.synchronized_frame_cursor_after_show = None;
                 }
@@ -196,10 +206,30 @@ impl InputReadinessTracker {
                     byte,
                     RIGHT_ANGLE_PROMPT,
                     &mut state.right_angle_prompt_match,
-                ) && state.synchronized_frame_open
+                ) {
+                    let prompt_position = state.terminal_structure_parser.cursor_position();
+                    state.visible_right_angle_prompt_position = Some(prompt_position);
+                    if state.synchronized_frame_open {
+                        state.synchronized_frame_last_right_angle_prompt_position =
+                            Some(prompt_position);
+                    }
+                }
+                // ConPTY consumes synchronized-output framing and emits the
+                // resulting screen diff after the frame has closed. Preserve
+                // the same byte-free prompt-at-visible-cursor proof from that
+                // normalized stream without weakening the framed Unix path.
+                if showed_cursor
+                    && self.accepts_normalized_screen_diff
+                    && !state.synchronized_frame_open
+                    && state.alternate_screen_active
+                    && state
+                        .visible_right_angle_prompt_position
+                        .is_some_and(|prompt| {
+                            let cursor = state.terminal_structure_parser.cursor_position();
+                            prompt.row == cursor.row && cursor.column > prompt.column
+                        })
                 {
-                    state.synchronized_frame_last_right_angle_prompt_position =
-                        state.synchronized_frame_cursor_position;
+                    record_completed_composer_prompt(&mut state);
                 }
                 if record_marker(
                     byte,
@@ -412,6 +442,38 @@ mod tests {
         let facts = tracker.snapshot("session".into(), 7).unwrap().facts();
         assert!(facts.composer_prompt_seen_after_bracketed_paste);
         assert_eq!(facts.composer_prompt_ready_count, 1);
+    }
+
+    #[test]
+    fn conpty_screen_diff_preserves_prompt_at_visible_cursor_proof() {
+        let tracker = InputReadinessTracker {
+            accepts_normalized_screen_diff: true,
+            ..InputReadinessTracker::default()
+        };
+        tracker.record(ALTERNATE_SCREEN_ENABLE);
+
+        // ConPTY consumes synchronized-output framing and emits the resulting
+        // screen diff afterward. A transcript prompt on another row must not
+        // become composer readiness even though the cursor is shown.
+        tracker.record(b"\x1b[?2026h\x1b[?2026l\x1b[H");
+        for _ in 0..7 {
+            tracker.record(b"\r\n");
+        }
+        tracker.record("› prior prompt".as_bytes());
+        for _ in 0..12 {
+            tracker.record(b"\r\n");
+        }
+        tracker.record(b"\r\x1b[2C\x1b[?25h");
+        let facts = tracker.snapshot("session".into(), 7).unwrap().facts();
+        assert!(!facts.composer_prompt_seen_in_current_alternate_screen);
+
+        // A later normalized repaint puts the prompt and final visible cursor
+        // on the same row. No terminal bytes or screen grid are retained.
+        tracker.record("\r› Ask Codex".as_bytes());
+        tracker.record(b"\r\x1b[2C\x1b[?25h");
+        let facts = tracker.snapshot("session".into(), 7).unwrap().facts();
+        assert!(facts.composer_prompt_seen_in_current_alternate_screen);
+        assert_eq!(facts.composer_prompt_render_count, 1);
     }
 
     #[test]

@@ -1065,12 +1065,21 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
     let output_observed_before_flush_receipt =
         output_after_flush.sequence() > output_before_paste.sequence();
     let settlement = match settlement {
-        // A child can consume the paste and finish its composer render before
-        // the PTY writer reports the later flush receipt, especially through
-        // Windows ConPTY. Keep the render baseline causally before the paste;
-        // the receipt above still independently proves write and flush.
         GeneratedInputSettlement::ComposerRender
-        | GeneratedInputSettlement::CodexComposerRender => output_before_paste
+        | GeneratedInputSettlement::CodexComposerRender
+            if !termloop_platform::host_uses_bracketed_paste_framing() =>
+        {
+            // ConPTY emits a normalized screen diff and may remove redundant
+            // cursor-visibility markers. Post-flush activity followed by
+            // quiet or a completed synchronized frame is the native causal
+            // settlement proof for its unframed paste path.
+            output_after_flush.wait_for_settlement(
+                OUTPUT_ACTIVITY_SETTLEMENT_QUIET,
+                OUTPUT_ACTIVITY_SETTLEMENT_TIMEOUT,
+            )
+        }
+        GeneratedInputSettlement::ComposerRender
+        | GeneratedInputSettlement::CodexComposerRender => output_after_flush
             .wait_for_composer_render_settlement(
                 COMPOSER_RENDER_SETTLEMENT_QUIET,
                 COMPOSER_RENDER_SETTLEMENT_TIMEOUT,
@@ -1210,10 +1219,12 @@ fn submit_retry_has_structural_evidence(
                 .current_facts()
                 .ok()
                 .is_some_and(|current| {
-                    composer_redrew
-                        && current.composer_prompt_ready_count
-                            > baseline.composer_prompt_ready_count
-                        && codex_composer_is_ready(current)
+                    let prompt_redrew = if termloop_platform::host_uses_bracketed_paste_framing() {
+                        current.composer_prompt_ready_count > baseline.composer_prompt_ready_count
+                    } else {
+                        current.composer_prompt_render_count > baseline.composer_prompt_render_count
+                    };
+                    composer_redrew && prompt_redrew && codex_composer_is_ready(current)
                 })
         }
         GeneratedInputSettlement::ComposerRender => composer_redrew,

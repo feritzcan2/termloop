@@ -400,7 +400,7 @@ fn pending_generated_input_fixture() {
         ""
     };
     let idle_composer_frame = if periodic_composer_redraw {
-        "\x1b[?2026h\x1b[?25h\x1b[36;3H\x1b[?2026l"
+        "\x1b[?2026h\x1b[?25h\x1b[20;3H\x1b[?2026l"
     } else {
         ""
     };
@@ -410,7 +410,7 @@ fn pending_generated_input_fixture() {
         ""
     };
     let stale_codex_transcript_frame = if codex_composer_gate {
-        "\x1b[?2026h\x1b[8;1H\x1b[K\x1b[1m›\x1b[0m prior prompt\x1b[?25h\x1b[36;3H\x1b[?2026l"
+        "\x1b[?2026h\x1b[8;1H\x1b[K\x1b[1m›\x1b[0m prior prompt\x1b[?25h\x1b[20;3H\x1b[?2026l"
     } else {
         ""
     };
@@ -427,8 +427,8 @@ fn pending_generated_input_fixture() {
     if codex_composer_gate {
         std::thread::sleep(std::time::Duration::from_millis(750));
         println!(
-            "\x1b[?2026h\x1b[36;1H\x1b[K\x1b[1m›\x1b[0m Ask Codex to do anything \
-             TERMLOOP_CODEX_COMPOSER_READY\x1b[?25h\x1b[36;3H\x1b[?2026l"
+            "\x1b[?2026h\x1b[20;1H\x1b[K\x1b[1m›\x1b[0m Ask Codex to do anything \
+             TERMLOOP_CODEX_COMPOSER_READY\x1b[?25h\x1b[20;3H\x1b[?2026l"
         );
         std::io::stdout().flush().unwrap();
     }
@@ -442,14 +442,14 @@ fn pending_generated_input_fixture() {
     // exercises marker-plus-global-quiescence.
     if periodic_composer_redraw {
         println!(
-            "TERMLOOP_INITIAL_INPUT_VISIBLE:{submitted}\x1b[?2026h\x1b[34;1H\x1b[Kcomposer top\x1b[35;1H\x1b[Kcomposer body\x1b[36;1H\x1b[K>\x1b[?25h\x1b[36;3H\x1b[?2026l"
+            "TERMLOOP_INITIAL_INPUT_VISIBLE:{submitted}\x1b[?2026h\x1b[18;1H\x1b[Kcomposer top\x1b[19;1H\x1b[Kcomposer body\x1b[20;1H\x1b[K>\x1b[?25h\x1b[20;3H\x1b[?2026l"
         );
         std::io::stdout().flush().unwrap();
         std::thread::spawn(|| {
             for _ in 0..600 {
                 std::thread::sleep(std::time::Duration::from_millis(20));
                 print!(
-                    "\x1b[?2026h\x1b[7;1H\x1b[Kanimation\x1b[36;1H\x1b[K>\x1b[?25h\x1b[36;3H\x1b[?2026l"
+                    "\x1b[?2026h\x1b[7;1H\x1b[Kanimation\x1b[20;1H\x1b[K>\x1b[?25h\x1b[20;3H\x1b[?2026l"
                 );
                 let _ = std::io::stdout().flush();
             }
@@ -491,7 +491,7 @@ fn pending_generated_input_fixture() {
     read_headless_fixture_input(&mut input, b"\r");
     if std::env::var_os("TERMLOOP_TEST_RETAIN_FIRST_SUBMIT").is_some() {
         println!(
-            "\x1b[?2026h\x1b[36;1H\x1b[K\x1b[1m›\x1b[0m retained prompt\x1b[?25h\x1b[36;3H\x1b[?2026lTERMLOOP_PROMPT_RETAINED"
+            "\x1b[?2026h\x1b[20;1H\x1b[K\x1b[1m›\x1b[0m retained prompt\x1b[?25h\x1b[20;3H\x1b[?2026lTERMLOOP_PROMPT_RETAINED"
         );
         std::io::stdout().flush().unwrap();
         read_headless_fixture_input(&mut input, b"\r");
