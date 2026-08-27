@@ -35,8 +35,16 @@ fn read_headless_fixture_input(input: &mut impl std::io::Read, expected: &[u8]) 
         return;
     }
 
-    let mut observed = Vec::with_capacity(expected.len());
-    while observed.len() < expected.len() {
+    let observed = read_windows_headless_fixture_input(input, expected.len());
+    assert_eq!(observed, expected);
+}
+
+fn read_windows_headless_fixture_input(
+    input: &mut impl std::io::Read,
+    expected_len: usize,
+) -> Vec<u8> {
+    let mut observed = Vec::with_capacity(expected_len);
+    while observed.len() < expected_len {
         let mut byte = [0_u8; 1];
         input
             .read_exact(&mut byte)
@@ -61,7 +69,7 @@ fn read_headless_fixture_input(input: &mut impl std::io::Read, expected: &[u8]) 
         }
         observed.extend(control);
     }
-    assert_eq!(observed, expected);
+    observed
 }
 
 fn is_cursor_position_response(bytes: &[u8]) -> bool {
@@ -485,10 +493,23 @@ fn pending_generated_input_fixture() {
             }
         }
     }
-    if std::env::var_os("TERMLOOP_TEST_INTERLEAVED_USER_INPUT").is_some() {
-        read_headless_fixture_input(&mut input, b"\x1b[D");
+    let interleaved_user_input = std::env::var_os("TERMLOOP_TEST_INTERLEAVED_USER_INPUT").is_some();
+    let windows_submit_already_consumed = if interleaved_user_input && cfg!(windows) {
+        let observed = read_windows_headless_fixture_input(&mut input, b"\x1b[D\r".len());
+        assert!(
+            observed == b"\x1b[D\r" || observed == b"\r\x1b[D",
+            "Windows fixture must receive one user edit and one generated submit"
+        );
+        true
+    } else {
+        if interleaved_user_input {
+            read_headless_fixture_input(&mut input, b"\x1b[D");
+        }
+        false
+    };
+    if !windows_submit_already_consumed {
+        read_headless_fixture_input(&mut input, b"\r");
     }
-    read_headless_fixture_input(&mut input, b"\r");
     if std::env::var_os("TERMLOOP_TEST_RETAIN_FIRST_SUBMIT").is_some() {
         println!(
             "\x1b[?2026h\x1b[20;1H\x1b[K\x1b[1m›\x1b[0m retained prompt\x1b[?25h\x1b[20;3H\x1b[?2026lTERMLOOP_PROMPT_RETAINED"
@@ -1946,12 +1967,15 @@ async fn assert_quick_action_initial_input_delivery(
     .await
     .unwrap_or_else(|_| {
         panic!(
-            "quick-action fixture did not render paste; state={:?} failure={:?} readiness={:?} queued_event={:?} output={}",
+            "quick-action fixture did not render paste; state={:?} failure={:?} readiness={:?} readiness_diagnostics={:?} queued_event={:?} output={}",
             runtime.generated_input_delivery_state("quick-action-ready", 9),
             runtime.generated_input_delivery_failure("quick-action-ready", 9),
             terminal
                 .input_readiness_snapshot("quick-action-ready", 9)
                 .map(|snapshot| snapshot.facts()),
+            terminal
+                .input_readiness_snapshot("quick-action-ready", 9)
+                .map(|snapshot| snapshot.diagnostics()),
             generated_input_events.try_recv().ok(),
             bounded_headless_fixture_output(&bytes),
         )
@@ -2030,12 +2054,15 @@ async fn assert_quick_action_initial_input_delivery(
     .await
     .unwrap_or_else(|_| {
         panic!(
-            "quick-action fixture did not receive submit; state={:?} failure={:?} readiness={:?} queued_event={:?} output={}",
+            "quick-action fixture did not receive submit; state={:?} failure={:?} readiness={:?} readiness_diagnostics={:?} queued_event={:?} output={}",
             runtime.generated_input_delivery_state("quick-action-ready", 9),
             runtime.generated_input_delivery_failure("quick-action-ready", 9),
             terminal
                 .input_readiness_snapshot("quick-action-ready", 9)
                 .map(|snapshot| snapshot.facts()),
+            terminal
+                .input_readiness_snapshot("quick-action-ready", 9)
+                .map(|snapshot| snapshot.diagnostics()),
             generated_input_events.try_recv().ok(),
             bounded_headless_fixture_output(&bytes),
         )

@@ -16,7 +16,7 @@ use tokio::sync::broadcast;
 
 use input_activity::{ClientInputActivity, ClientInputActivityKind};
 use input_readiness::InputReadinessTracker;
-pub use input_readiness::{InputReadinessFacts, InputReadinessSnapshot};
+pub use input_readiness::{InputReadinessDiagnostics, InputReadinessFacts, InputReadinessSnapshot};
 #[cfg(test)]
 use input_writer::INPUT_SEQUENCE_GAP;
 pub use input_writer::{

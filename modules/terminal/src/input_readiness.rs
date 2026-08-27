@@ -44,6 +44,8 @@ struct InputReadinessState {
     synchronized_output_end_match: usize,
     show_cursor_match: usize,
     right_angle_prompt_match: usize,
+    show_cursor_count: u64,
+    right_angle_prompt_count: u64,
     synchronized_frame_open: bool,
     synchronized_frame_had_show_cursor: bool,
     synchronized_frame_cursor_position: Option<CursorPosition>,
@@ -67,6 +69,16 @@ pub struct InputReadinessFacts {
     pub composer_prompt_render_count: u64,
     pub composer_prompt_seen_after_bracketed_paste: bool,
     pub composer_prompt_ready_count: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct InputReadinessDiagnostics {
+    pub accepts_normalized_screen_diff: bool,
+    pub synchronized_frame_open: bool,
+    pub show_cursor_count: u64,
+    pub right_angle_prompt_count: u64,
+    pub visible_prompt_position: Option<(u16, u16)>,
+    pub cursor_position: (u16, u16),
 }
 
 impl InputReadinessFacts {
@@ -198,6 +210,9 @@ impl InputReadinessTracker {
                     state.synchronized_frame_last_right_angle_prompt_position = None;
                 }
                 let showed_cursor = record_marker(byte, SHOW_CURSOR, &mut state.show_cursor_match);
+                if showed_cursor {
+                    state.show_cursor_count = state.show_cursor_count.saturating_add(1);
+                }
                 if showed_cursor && state.synchronized_frame_open {
                     state.synchronized_frame_had_show_cursor = true;
                     state.synchronized_frame_cursor_after_show = None;
@@ -207,6 +222,8 @@ impl InputReadinessTracker {
                     RIGHT_ANGLE_PROMPT,
                     &mut state.right_angle_prompt_match,
                 ) {
+                    state.right_angle_prompt_count =
+                        state.right_angle_prompt_count.saturating_add(1);
                     let prompt_position = state.terminal_structure_parser.cursor_position();
                     state.visible_right_angle_prompt_position = Some(prompt_position);
                     if state.synchronized_frame_open {
@@ -326,6 +343,26 @@ impl InputReadinessSnapshot {
             return Err(OutputSettlementFailure::TerminalClosed);
         }
         Ok(InputReadinessFacts::from_state(&state))
+    }
+
+    pub fn diagnostics(&self) -> Result<InputReadinessDiagnostics, OutputSettlementFailure> {
+        let state = self
+            .tracker
+            .inner
+            .0
+            .lock()
+            .map_err(|_| OutputSettlementFailure::TrackerUnavailable)?;
+        let cursor = state.terminal_structure_parser.cursor_position();
+        Ok(InputReadinessDiagnostics {
+            accepts_normalized_screen_diff: self.tracker.accepts_normalized_screen_diff,
+            synchronized_frame_open: state.synchronized_frame_open,
+            show_cursor_count: state.show_cursor_count,
+            right_angle_prompt_count: state.right_angle_prompt_count,
+            visible_prompt_position: state
+                .visible_right_angle_prompt_position
+                .map(|position| (position.row, position.column)),
+            cursor_position: (cursor.row, cursor.column),
+        })
     }
 
     /// Waits for the next structural terminal fact and advances this snapshot.
@@ -471,6 +508,41 @@ mod tests {
         // on the same row. No terminal bytes or screen grid are retained.
         tracker.record("\r› Ask Codex".as_bytes());
         tracker.record(b"\r\x1b[2C\x1b[?25h");
+        let facts = tracker.snapshot("session".into(), 7).unwrap().facts();
+        assert!(facts.composer_prompt_seen_in_current_alternate_screen);
+        assert_eq!(facts.composer_prompt_render_count, 1);
+    }
+
+    #[test]
+    fn conpty_normalized_codex_fixture_output_marks_the_current_composer() {
+        let tracker = InputReadinessTracker {
+            accepts_normalized_screen_diff: true,
+            ..InputReadinessTracker::default()
+        };
+        tracker.record(
+            b"\x1b[?1049h\x1b[?2026h\x1b[?2026l\x1b[?2026h\x1b[?2026l\
+              \x1b[?25l\x1b[H\x1b[K\r\n\x1b[K\r\n",
+        );
+        tracker.record("TERMLOOP_INITIAL_INPUT_READY\r\n\x1b[K\r\n\x1b[K\r\n".as_bytes());
+        tracker.record(
+            "\x1b[8;1H\x1b[K\x1b[1m›\x1b[22m prior prompt\x1b[K\
+             \x1b[21;1H\x1b[?25h"
+                .as_bytes(),
+        );
+        assert!(
+            !tracker
+                .snapshot("session".into(), 7)
+                .unwrap()
+                .facts()
+                .composer_prompt_seen_in_current_alternate_screen
+        );
+
+        tracker.record(
+            "\x1b[?2026h\x1b[?2026l\x1b[?25l\x1b[1m\x1b[20;1H›\
+             \x1b[22m Ask Codex to do anything TERMLOOP_CODEX_COMPOSER_READY\x1b[K\
+             \x1b[?25h"
+                .as_bytes(),
+        );
         let facts = tracker.snapshot("session".into(), 7).unwrap().facts();
         assert!(facts.composer_prompt_seen_in_current_alternate_screen);
         assert_eq!(facts.composer_prompt_render_count, 1);
