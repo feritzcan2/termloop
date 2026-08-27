@@ -7,9 +7,31 @@ pub fn host_uses_bracketed_paste_framing() -> bool {
 
 /// Configures the child side of a headless PTY fixture so tests can observe
 /// paste framing and the submit key as exact byte boundaries.
-pub fn configure_headless_terminal_input_fixture() -> Result<(), std::io::Error> {
+#[must_use = "the guard restores the inherited terminal input mode"]
+pub struct HeadlessTerminalInputFixtureGuard {
     #[cfg(windows)]
-    configure_windows_headless_terminal_input_fixture()?;
+    input: windows_sys::Win32::Foundation::HANDLE,
+    #[cfg(windows)]
+    original_mode: u32,
+}
+
+#[cfg_attr(windows, allow(unsafe_code))]
+impl Drop for HeadlessTerminalInputFixtureGuard {
+    fn drop(&mut self) {
+        #[cfg(windows)]
+        unsafe {
+            // SAFETY: `input` remains the process-owned standard-input handle
+            // for this fixture, and `original_mode` came from GetConsoleMode.
+            let _ =
+                windows_sys::Win32::System::Console::SetConsoleMode(self.input, self.original_mode);
+        }
+    }
+}
+
+pub fn configure_headless_terminal_input_fixture()
+-> Result<HeadlessTerminalInputFixtureGuard, std::io::Error> {
+    #[cfg(windows)]
+    let guard = configure_windows_headless_terminal_input_fixture()?;
     #[cfg(unix)]
     {
         let status = std::process::Command::new("stty")
@@ -21,12 +43,18 @@ pub fn configure_headless_terminal_input_fixture() -> Result<(), std::io::Error>
             ));
         }
     }
-    Ok(())
+    Ok(HeadlessTerminalInputFixtureGuard {
+        #[cfg(windows)]
+        input: guard.input,
+        #[cfg(windows)]
+        original_mode: guard.original_mode,
+    })
 }
 
 #[cfg(windows)]
 #[allow(unsafe_code)]
-fn configure_windows_headless_terminal_input_fixture() -> Result<(), std::io::Error> {
+fn configure_windows_headless_terminal_input_fixture()
+-> Result<HeadlessTerminalInputFixtureGuard, std::io::Error> {
     use windows_sys::Win32::System::Console::{
         ENABLE_ECHO_INPUT, ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT,
         ENABLE_VIRTUAL_TERMINAL_INPUT, GetConsoleMode, STD_INPUT_HANDLE, SetConsoleMode,
@@ -60,7 +88,10 @@ fn configure_windows_headless_terminal_input_fixture() -> Result<(), std::io::Er
     {
         return Err(std::io::Error::last_os_error());
     }
-    Ok(())
+    Ok(HeadlessTerminalInputFixtureGuard {
+        input,
+        original_mode: mode,
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

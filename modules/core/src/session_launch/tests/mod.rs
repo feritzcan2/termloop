@@ -4,6 +4,27 @@ use termloop_domain::{IssueLink, IssueLinkProvider, IssueLinkSyncAuthority, Resu
 use termloop_store::Store;
 use termloop_terminal::TerminalService;
 
+fn append_headless_output_and_answer_cursor_queries(
+    terminal: &TerminalService,
+    session_id: &str,
+    runtime_epoch: u64,
+    bytes: &mut Vec<u8>,
+    answered_queries: &mut usize,
+    chunk: Vec<u8>,
+) {
+    bytes.extend(chunk);
+    let observed_queries = bytes
+        .windows(b"\x1b[6n".len())
+        .filter(|window| *window == b"\x1b[6n")
+        .count();
+    while *answered_queries < observed_queries {
+        terminal
+            .input_user(session_id, runtime_epoch, b"\x1b[1;1R")
+            .expect("headless fixture must accept its cursor-position response");
+        *answered_queries += 1;
+    }
+}
+
 #[test]
 fn running_persistent_assistant_restart_preserves_closed_mcp_role() {
     let root = std::env::temp_dir().join(format!(
@@ -302,7 +323,7 @@ fn pending_generated_input_fixture() {
         std::env::var_os("TERMLOOP_TEST_PERIODIC_COMPOSER_REDRAW").is_some();
     let codex_composer_gate = std::env::var_os("TERMLOOP_TEST_CODEX_COMPOSER_READY").is_some();
 
-    termloop_platform::configure_headless_terminal_input_fixture()
+    let _terminal_input_mode = termloop_platform::configure_headless_terminal_input_fixture()
         .expect("fixture must configure its PTY input mode");
 
     // Real agent TUIs opt into bracketed-paste mode before TermLoop delivers
@@ -499,7 +520,7 @@ async fn late_terminal_exit_preserves_the_visible_resume_failure() {
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
     let mut bytes = Vec::new();
-    let mut answered_cursor_position_query = false;
+    let mut answered_cursor_position_queries = 0;
     while terminal.session_is_running("timed-out-resume", 9).unwrap() {
         assert!(
             std::time::Instant::now() < deadline,
@@ -508,17 +529,14 @@ async fn late_terminal_exit_preserves_the_visible_resume_failure() {
         if let Ok(Ok(termloop_terminal::TerminalEvent::Output(chunk))) =
             tokio::time::timeout(std::time::Duration::from_millis(100), output.recv()).await
         {
-            bytes.extend(chunk);
-            if !answered_cursor_position_query
-                && bytes
-                    .windows(b"\x1b[6n".len())
-                    .any(|window| window == b"\x1b[6n")
-            {
-                terminal
-                    .input_user("timed-out-resume", 9, b"\x1b[1;1R")
-                    .unwrap();
-                answered_cursor_position_query = true;
-            }
+            append_headless_output_and_answer_cursor_queries(
+                &terminal,
+                "timed-out-resume",
+                9,
+                &mut bytes,
+                &mut answered_cursor_position_queries,
+                chunk,
+            );
         }
     }
 
@@ -551,6 +569,7 @@ async fn late_terminal_exit_preserves_the_visible_resume_failure() {
     let hold_deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
     let mut held_bytes = Vec::new();
     let mut windows_command_sent = false;
+    let mut answered_hold_cursor_position_queries = 0;
     while !held_bytes
         .windows(b"TERMLOOP_AGENT_TERMINAL_HELD".len())
         .any(|window| window == b"TERMLOOP_AGENT_TERMINAL_HELD")
@@ -562,19 +581,18 @@ async fn late_terminal_exit_preserves_the_visible_resume_failure() {
         if let Ok(Ok(termloop_terminal::TerminalEvent::Output(chunk))) =
             tokio::time::timeout(std::time::Duration::from_millis(100), hold_output.recv()).await
         {
-            held_bytes.extend(chunk);
-            if windows_host
-                && !windows_command_sent
-                && held_bytes
-                    .windows(b"\x1b[6n".len())
-                    .any(|window| window == b"\x1b[6n")
-            {
+            append_headless_output_and_answer_cursor_queries(
+                &terminal,
+                "timed-out-resume",
+                9,
+                &mut held_bytes,
+                &mut answered_hold_cursor_position_queries,
+                chunk,
+            );
+            if windows_host && !windows_command_sent && answered_hold_cursor_position_queries > 0 {
                 // PowerShell asks ConPTY for the cursor position before it
                 // accepts the first command. Wait for that query so the
                 // renderer response cannot arrive too early and be discarded.
-                terminal
-                    .input_user("timed-out-resume", 9, b"\x1b[1;1R")
-                    .unwrap();
                 terminal
                     .input(
                         "timed-out-resume",
@@ -1479,21 +1497,18 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
         .unwrap();
     let mut output = terminal.subscribe("worker-activation", 9).unwrap();
     let mut bytes = Vec::new();
-    let mut answered_cursor_position_query = false;
+    let mut answered_cursor_position_queries = 0;
     tokio::time::timeout(std::time::Duration::from_secs(15), async {
         while !String::from_utf8_lossy(&bytes).contains("TERMLOOP_INITIAL_INPUT_READY") {
             if let termloop_terminal::TerminalEvent::Output(chunk) = output.recv().await.unwrap() {
-                bytes.extend(chunk);
-            }
-            if !answered_cursor_position_query
-                && bytes
-                    .windows(b"\x1b[6n".len())
-                    .any(|window| window == b"\x1b[6n")
-            {
-                terminal
-                    .input_user("worker-activation", 9, b"\x1b[1;1R")
-                    .unwrap();
-                answered_cursor_position_query = true;
+                append_headless_output_and_answer_cursor_queries(
+                    &terminal,
+                    "worker-activation",
+                    9,
+                    &mut bytes,
+                    &mut answered_cursor_position_queries,
+                    chunk,
+                );
             }
         }
     })
@@ -1524,7 +1539,14 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
             .contains("TERMLOOP_INITIAL_INPUT_VISIBLE:Activate this Worker")
         {
             if let termloop_terminal::TerminalEvent::Output(chunk) = output.recv().await.unwrap() {
-                bytes.extend(chunk);
+                append_headless_output_and_answer_cursor_queries(
+                    &terminal,
+                    "worker-activation",
+                    9,
+                    &mut bytes,
+                    &mut answered_cursor_position_queries,
+                    chunk,
+                );
             }
         }
     })
@@ -1541,7 +1563,14 @@ async fn worker_activation_waits_for_post_hook_and_confirms_once() {
             .contains("TERMLOOP_INITIAL_INPUT_RECEIVED:Activate this Worker")
         {
             if let termloop_terminal::TerminalEvent::Output(chunk) = output.recv().await.unwrap() {
-                bytes.extend(chunk);
+                append_headless_output_and_answer_cursor_queries(
+                    &terminal,
+                    "worker-activation",
+                    9,
+                    &mut bytes,
+                    &mut answered_cursor_position_queries,
+                    chunk,
+                );
             }
         }
     })
@@ -1685,25 +1714,24 @@ async fn assert_quick_action_initial_input_delivery(
         .unwrap();
     let mut output = terminal.subscribe("quick-action-ready", 9).unwrap();
     let mut bytes = Vec::new();
-    let mut answered_cursor_position_query = false;
+    let mut answered_cursor_position_queries = 0;
     tokio::time::timeout(std::time::Duration::from_secs(15), async {
         while !String::from_utf8_lossy(&bytes).contains("TERMLOOP_INITIAL_INPUT_READY") {
             match output.recv().await.unwrap() {
-                termloop_terminal::TerminalEvent::Output(chunk) => bytes.extend(chunk),
+                termloop_terminal::TerminalEvent::Output(chunk) => {
+                    append_headless_output_and_answer_cursor_queries(
+                        &terminal,
+                        "quick-action-ready",
+                        9,
+                        &mut bytes,
+                        &mut answered_cursor_position_queries,
+                        chunk,
+                    );
+                }
                 termloop_terminal::TerminalEvent::Gap(_) => {
                     panic!("fixture output unexpectedly reported a gap")
                 }
                 termloop_terminal::TerminalEvent::Eof => panic!("fixture exited before ready"),
-            }
-            if !answered_cursor_position_query
-                && bytes
-                    .windows(b"\x1b[6n".len())
-                    .any(|window| window == b"\x1b[6n")
-            {
-                terminal
-                    .input_user("quick-action-ready", 9, b"\x1b[1;1R")
-                    .unwrap();
-                answered_cursor_position_query = true;
             }
         }
     })
@@ -1828,7 +1856,16 @@ async fn assert_quick_action_initial_input_delivery(
             .contains("TERMLOOP_INITIAL_INPUT_VISIBLE:Review this diff")
         {
             match output.recv().await.unwrap() {
-                termloop_terminal::TerminalEvent::Output(chunk) => bytes.extend(chunk),
+                termloop_terminal::TerminalEvent::Output(chunk) => {
+                    append_headless_output_and_answer_cursor_queries(
+                        &terminal,
+                        "quick-action-ready",
+                        9,
+                        &mut bytes,
+                        &mut answered_cursor_position_queries,
+                        chunk,
+                    );
+                }
                 termloop_terminal::TerminalEvent::Gap(_) => {
                     panic!("fixture output unexpectedly reported a gap")
                 }
@@ -1888,7 +1925,16 @@ async fn assert_quick_action_initial_input_delivery(
                 .contains("TERMLOOP_INITIAL_INPUT_RECEIVED:Review this diff")
             {
                 match output.recv().await.unwrap() {
-                    termloop_terminal::TerminalEvent::Output(chunk) => bytes.extend(chunk),
+                    termloop_terminal::TerminalEvent::Output(chunk) => {
+                        append_headless_output_and_answer_cursor_queries(
+                            &terminal,
+                            "quick-action-ready",
+                            9,
+                            &mut bytes,
+                            &mut answered_cursor_position_queries,
+                            chunk,
+                        );
+                    }
                     termloop_terminal::TerminalEvent::Gap(_) => {
                         panic!("fixture output unexpectedly reported a gap")
                     }
