@@ -904,12 +904,14 @@ async fn steward_task_command(
     {
         match super::task_automation::action_for_task(
             task,
-            worktree_intent,
-            agent_id,
-            None,
-            None,
-            None,
-            None,
+            super::task_automation::TaskAutomationSelection {
+                worktree_intent,
+                agent_id,
+                model: None,
+                permission: None,
+                reasoning: None,
+                kickoff_message: None,
+            },
             state,
         )
         .await

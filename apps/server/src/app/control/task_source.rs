@@ -629,12 +629,14 @@ pub(super) async fn candidate_import(params: Value, state: &AppState) -> Result<
         Some(
             super::super::task_automation::action_for_task(
                 &imported.task,
-                params.worktree_intent,
-                params.agent_id,
-                params.model,
-                params.permission,
-                params.reasoning,
-                params.kickoff_message,
+                super::super::task_automation::TaskAutomationSelection {
+                    worktree_intent: params.worktree_intent,
+                    agent_id: params.agent_id,
+                    model: params.model,
+                    permission: params.permission,
+                    reasoning: params.reasoning,
+                    kickoff_message: params.kickoff_message,
+                },
                 state,
             )
             .await?,

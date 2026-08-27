@@ -19,15 +19,26 @@ pub(super) struct TaskAutomationAction {
     kickoff_message: Option<String>,
 }
 
+pub(super) struct TaskAutomationSelection {
+    pub(super) worktree_intent: protocol::TaskCreateWorktreeIntent,
+    pub(super) agent_id: Option<String>,
+    pub(super) model: Option<String>,
+    pub(super) permission: Option<String>,
+    pub(super) reasoning: Option<String>,
+    pub(super) kickoff_message: Option<String>,
+}
+
 pub(super) async fn create_task(params: Value, state: &AppState) -> Result<Value, CoreError> {
     let params = serde_json::from_value::<protocol::TaskCreateParams>(params)
         .expect("validated Task create params");
-    let worktree_intent = params.worktree_intent.clone();
-    let agent_id = params.agent_id.clone();
-    let model = params.model.clone();
-    let permission = params.permission.clone();
-    let reasoning = params.reasoning.clone();
-    let kickoff_message = params.kickoff_message.clone();
+    let selection = TaskAutomationSelection {
+        worktree_intent: params.worktree_intent.clone(),
+        agent_id: params.agent_id.clone(),
+        model: params.model.clone(),
+        permission: params.permission.clone(),
+        reasoning: params.reasoning.clone(),
+        kickoff_message: params.kickoff_message.clone(),
+    };
     let project_id = params.project_id.clone();
     let (task, action, state_revision) = {
         let mut core = state.core.lock().await;
@@ -36,16 +47,7 @@ pub(super) async fn create_task(params: Value, state: &AppState) -> Result<Value
             serde_json::to_value(params).map_err(|error| CoreError::Store(error.to_string()))?,
         )?;
         let configuration = core.project_task_automation_configuration(&project_id)?;
-        let action = action_from_task(
-            &configuration,
-            &task,
-            worktree_intent,
-            agent_id,
-            model,
-            permission,
-            reasoning,
-            kickoff_message,
-        )?;
+        let action = action_from_task(&configuration, &task, selection)?;
         (task, action, core.state_revision())
     };
     let _ = state.invalidation_requests.try_send(InvalidationRequest {
@@ -105,12 +107,14 @@ pub(super) async fn auto_import_after_refresh(
                 actions.push(action_from_task(
                     &configuration,
                     &imported.task,
-                    protocol::TaskCreateWorktreeIntent::Inherit,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
+                    TaskAutomationSelection {
+                        worktree_intent: protocol::TaskCreateWorktreeIntent::Inherit,
+                        agent_id: None,
+                        model: None,
+                        permission: None,
+                        reasoning: None,
+                        kickoff_message: None,
+                    },
                 )?);
             }
         }
@@ -130,12 +134,7 @@ fn available_auto_import_slots(limit: u64, active_task_count: u64) -> usize {
 
 pub(super) async fn action_for_task(
     task: &Value,
-    worktree_intent: protocol::TaskCreateWorktreeIntent,
-    agent_id: Option<String>,
-    model: Option<String>,
-    permission: Option<String>,
-    reasoning: Option<String>,
-    kickoff_message: Option<String>,
+    selection: TaskAutomationSelection,
     state: &AppState,
 ) -> Result<TaskAutomationAction, CoreError> {
     let project_id = task
@@ -147,16 +146,7 @@ pub(super) async fn action_for_task(
         .lock()
         .await
         .project_task_automation_configuration(project_id)?;
-    action_from_task(
-        &configuration,
-        task,
-        worktree_intent,
-        agent_id,
-        model,
-        permission,
-        reasoning,
-        kickoff_message,
-    )
+    action_from_task(&configuration, task, selection)
 }
 
 pub(super) fn spawn(actions: Vec<TaskAutomationAction>, state: &AppState) {
@@ -182,12 +172,7 @@ async fn run(actions: Vec<TaskAutomationAction>, state: &AppState) {
 fn action_from_task(
     configuration: &ProjectTaskAutomationConfiguration,
     task: &Value,
-    worktree_intent: protocol::TaskCreateWorktreeIntent,
-    agent_id: Option<String>,
-    model: Option<String>,
-    permission: Option<String>,
-    reasoning: Option<String>,
-    kickoff_message: Option<String>,
+    selection: TaskAutomationSelection,
 ) -> Result<TaskAutomationAction, CoreError> {
     let task_id = task
         .get("id")
@@ -198,15 +183,7 @@ fn action_from_task(
         .and_then(Value::as_str)
         .ok_or_else(|| CoreError::Store("created Task projection has no title".into()))?;
     let (create_worktree, agent_id, model, permission, reasoning, kickoff_message) =
-        effective_settings(
-            configuration,
-            worktree_intent,
-            agent_id,
-            model,
-            permission,
-            reasoning,
-            kickoff_message,
-        )?;
+        effective_settings(configuration, selection)?;
     Ok(TaskAutomationAction {
         task_id: task_id.to_owned(),
         project_id: configuration.project_id.clone(),
@@ -222,13 +199,16 @@ fn action_from_task(
 
 fn effective_settings(
     configuration: &ProjectTaskAutomationConfiguration,
-    worktree_intent: protocol::TaskCreateWorktreeIntent,
-    agent_id: Option<String>,
-    model: Option<String>,
-    permission: Option<String>,
-    reasoning: Option<String>,
-    kickoff_message: Option<String>,
+    selection: TaskAutomationSelection,
 ) -> Result<EffectiveTaskAutomation, CoreError> {
+    let TaskAutomationSelection {
+        worktree_intent,
+        agent_id,
+        model,
+        permission,
+        reasoning,
+        kickoff_message,
+    } = selection;
     match (
         worktree_intent,
         agent_id,
@@ -477,12 +457,14 @@ mod tests {
         assert_eq!(
             effective_settings(
                 &defaults,
-                protocol::TaskCreateWorktreeIntent::Inherit,
-                None,
-                None,
-                None,
-                None,
-                None,
+                TaskAutomationSelection {
+                    worktree_intent: protocol::TaskCreateWorktreeIntent::Inherit,
+                    agent_id: None,
+                    model: None,
+                    permission: None,
+                    reasoning: None,
+                    kickoff_message: None,
+                },
             )
             .unwrap(),
             (
@@ -497,12 +479,14 @@ mod tests {
         assert_eq!(
             effective_settings(
                 &defaults,
-                protocol::TaskCreateWorktreeIntent::None,
-                None,
-                None,
-                None,
-                None,
-                None,
+                TaskAutomationSelection {
+                    worktree_intent: protocol::TaskCreateWorktreeIntent::None,
+                    agent_id: None,
+                    model: None,
+                    permission: None,
+                    reasoning: None,
+                    kickoff_message: None,
+                },
             )
             .unwrap(),
             (false, None, None, None, None, None)
@@ -510,12 +494,14 @@ mod tests {
         assert_eq!(
             effective_settings(
                 &defaults,
-                protocol::TaskCreateWorktreeIntent::Provision,
-                Some("claude".into()),
-                Some("sonnet".into()),
-                Some("plan".into()),
-                Some("medium".into()),
-                Some("Start with the regression test.".into()),
+                TaskAutomationSelection {
+                    worktree_intent: protocol::TaskCreateWorktreeIntent::Provision,
+                    agent_id: Some("claude".into()),
+                    model: Some("sonnet".into()),
+                    permission: Some("plan".into()),
+                    reasoning: Some("medium".into()),
+                    kickoff_message: Some("Start with the regression test.".into()),
+                },
             )
             .unwrap(),
             (
