@@ -20,7 +20,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "ai.termloop.mobile",
-      "buildNumber": "202608272217",
+      "buildNumber": "202608272249",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocalNetworkUsageDescription": "TermLoop connects to your Mac over your local network or Tailscale.",
