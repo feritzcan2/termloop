@@ -56,12 +56,12 @@ pub fn configure_headless_terminal_input_fixture()
 fn configure_windows_headless_terminal_input_fixture()
 -> Result<HeadlessTerminalInputFixtureGuard, std::io::Error> {
     use windows_sys::Win32::System::Console::{
-        ENABLE_ECHO_INPUT, ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT,
-        ENABLE_VIRTUAL_TERMINAL_INPUT, GetConsoleMode, STD_INPUT_HANDLE, SetConsoleMode,
+        ENABLE_ECHO_INPUT, ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT, GetConsoleMode,
+        STD_INPUT_HANDLE, SetConsoleMode,
     };
 
     // ConPTY starts the synthetic child in cooked console mode. Real agent
-    // TUIs switch to VT/raw input before TermLoop delivers generated text;
+    // TUIs switch to raw input before TermLoop delivers generated text;
     // mirror that setup so the fixture can observe the unframed paste and the
     // later Enter write as separate boundaries.
     let input = unsafe {
@@ -78,8 +78,7 @@ fn configure_windows_headless_terminal_input_fixture()
     {
         return Err(std::io::Error::last_os_error());
     }
-    let raw_mode = (mode | ENABLE_VIRTUAL_TERMINAL_INPUT)
-        & !(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT);
+    let raw_mode = mode & !(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT);
     if unsafe {
         // SAFETY: `input` was accepted by GetConsoleMode and `raw_mode`
         // contains only documented console input flags.
