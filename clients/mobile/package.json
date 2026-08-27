@@ -44,6 +44,6 @@
     "esbuild": "0.28.1",
     "qrcode-terminal": "^0.12.0",
     "typescript": "~6.0.3",
-    "vitest": "3.2.4"
+    "vitest": "3.2.6"
   }
 }
