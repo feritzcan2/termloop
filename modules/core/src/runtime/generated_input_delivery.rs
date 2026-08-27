@@ -955,8 +955,7 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
     let mut diagnostics = GeneratedInputTransportDiagnostics::default();
     if matches!(
         settlement,
-        GeneratedInputSettlement::ComposerRender
-            | GeneratedInputSettlement::CodexComposerRender
+        GeneratedInputSettlement::ComposerRender | GeneratedInputSettlement::CodexComposerRender
     ) {
         let readiness = wait_for_composer_ready(input_readiness, settlement, &cancel_submit);
         if let Err(failure) = readiness {
@@ -1211,8 +1210,7 @@ fn composer_is_ready(
     match settlement {
         GeneratedInputSettlement::CodexComposerRender => codex_composer_is_ready(facts),
         GeneratedInputSettlement::ComposerRender => {
-            !termloop_platform::host_uses_bracketed_paste_framing()
-                || facts.bracketed_paste_enabled
+            !termloop_platform::host_uses_bracketed_paste_framing() || facts.bracketed_paste_enabled
         }
         GeneratedInputSettlement::OutputActivity | GeneratedInputSettlement::ProviderQueue => true,
     }

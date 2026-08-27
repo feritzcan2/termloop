@@ -85,6 +85,28 @@ fn read_windows_headless_fixture_submit(input: &mut impl std::io::Read) {
     }
 }
 
+fn read_headless_fixture_protocol_replies(input: &mut impl std::io::Read) {
+    for _ in 0..2 {
+        for expected_reply in [
+            b"\x1b[?62;22;52c".as_slice(),
+            b"\x1b[?62;22;52c".as_slice(),
+            b"\x1b[?62;22;52c".as_slice(),
+            b"\x1b[?2026;1$y".as_slice(),
+            b"\x1bP>|ghostty 1.2.3\x1b\\".as_slice(),
+            b"\x1b[?5u".as_slice(),
+            b"\x1b[13;1:3u".as_slice(),
+            b"\x1b]11;rgb:2828/2c2c/3434\x1b\\".as_slice(),
+            b"\x1b[?997;1n".as_slice(),
+            b"\x1b[<35;12;8M".as_slice(),
+            b"\x1b[<64;12;8M".as_slice(),
+            b"\x1b[<0;12;8m".as_slice(),
+            b"\x1b[I".as_slice(),
+        ] {
+            read_headless_fixture_input(input, expected_reply);
+        }
+    }
+}
+
 fn is_cursor_position_response(bytes: &[u8]) -> bool {
     let Some(body) = bytes
         .strip_prefix(b"\x1b[")
@@ -467,6 +489,9 @@ fn pending_generated_input_fixture() {
     }
     let expected_paste = termloop_platform::terminal_paste_input(expected.as_bytes());
     let mut input = std::io::stdin().lock();
+    if delayed_paste_ready && client_protocol_replies {
+        read_headless_fixture_protocol_replies(&mut input);
+    }
     read_headless_fixture_input(&mut input, &expected_paste);
     let submitted = expected;
     // Claude and Codex show the text cursor after rendering pasted composer
@@ -499,26 +524,8 @@ fn pending_generated_input_fixture() {
         println!("TERMLOOP_INITIAL_INPUT_VISIBLE:{submitted}\x1b[?25h");
         std::io::stdout().flush().unwrap();
     }
-    if client_protocol_replies {
-        for _ in 0..2 {
-            for expected_reply in [
-                b"\x1b[?62;22;52c".as_slice(),
-                b"\x1b[?62;22;52c".as_slice(),
-                b"\x1b[?62;22;52c".as_slice(),
-                b"\x1b[?2026;1$y".as_slice(),
-                b"\x1bP>|ghostty 1.2.3\x1b\\".as_slice(),
-                b"\x1b[?5u".as_slice(),
-                b"\x1b[13;1:3u".as_slice(),
-                b"\x1b]11;rgb:2828/2c2c/3434\x1b\\".as_slice(),
-                b"\x1b[?997;1n".as_slice(),
-                b"\x1b[<35;12;8M".as_slice(),
-                b"\x1b[<64;12;8M".as_slice(),
-                b"\x1b[<0;12;8m".as_slice(),
-                b"\x1b[I".as_slice(),
-            ] {
-                read_headless_fixture_input(&mut input, expected_reply);
-            }
-        }
+    if client_protocol_replies && !delayed_paste_ready {
+        read_headless_fixture_protocol_replies(&mut input);
     }
     let interleaved_user_input = std::env::var_os("TERMLOOP_TEST_INTERLEAVED_USER_INPUT").is_some();
     if interleaved_user_input && !termloop_platform::host_uses_bracketed_paste_framing() {
@@ -1798,8 +1805,7 @@ async fn assert_quick_action_initial_input_delivery(
         environment = environment.with_explicit("TERMLOOP_TEST_PERIODIC_COMPOSER_REDRAW", "1");
     }
     if agent_id == "claude" && termloop_platform::host_uses_bracketed_paste_framing() {
-        environment =
-            environment.with_explicit("TERMLOOP_TEST_DELAY_BRACKETED_PASTE_READY", "1");
+        environment = environment.with_explicit("TERMLOOP_TEST_DELAY_BRACKETED_PASTE_READY", "1");
     }
     if agent_id == "codex" {
         environment = environment.with_explicit("TERMLOOP_TEST_CODEX_COMPOSER_READY", "1");
@@ -1916,16 +1922,6 @@ async fn assert_quick_action_initial_input_delivery(
             !diagnostics.paste_receipted,
             "Codex startup output must not receive the paste before its composer glyph renders"
         );
-    } else if agent_id == "claude" && termloop_platform::host_uses_bracketed_paste_framing() {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        let diagnostics = runtime
-            .generated_input_deliveries
-            .diagnostics("quick-action-ready", 9)
-            .unwrap();
-        assert!(
-            !diagnostics.paste_receipted,
-            "Claude startup output must not receive the paste before bracketed-paste readiness"
-        );
     } else {
         runtime
             .record_agent_observation(
@@ -1951,6 +1947,17 @@ async fn assert_quick_action_initial_input_delivery(
                 .deliver_pending_generated_input_after_hook_response("quick-action-ready")
                 .unwrap()
         );
+        if agent_id == "claude" && termloop_platform::host_uses_bracketed_paste_framing() {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let diagnostics = runtime
+                .generated_input_deliveries
+                .diagnostics("quick-action-ready", 9)
+                .unwrap();
+            assert!(
+                !diagnostics.paste_receipted,
+                "Claude startup output must not receive the paste before bracketed-paste readiness"
+            );
+        }
     }
     if client_protocol_replies {
         for _ in 0..2 {
@@ -1996,7 +2003,10 @@ async fn assert_quick_action_initial_input_delivery(
                     panic!("fixture output unexpectedly reported a gap")
                 }
                 termloop_terminal::TerminalEvent::Eof => {
-                    panic!("fixture exited before rendering initial input")
+                    panic!(
+                        "fixture exited before rendering initial input: {}",
+                        bounded_headless_fixture_output(&bytes)
+                    )
                 }
             }
         }
