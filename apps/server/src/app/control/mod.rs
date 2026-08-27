@@ -905,6 +905,7 @@ mod tests {
             "contextBank.catalogGet",
             "contextBank.fileGet",
             "contextBank.fileSave",
+            "contextBank.siblingConflictResolve",
         ] {
             assert!(scope_allows_method(ClientScope::Full, method));
             assert!(!scope_allows_method(ClientScope::ReadOnly, method));
