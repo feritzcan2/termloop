@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { WorkerConfigurationDto } from "@termloop/contract/current";
+import type { Session } from "../src/renderer/model.js";
 import {
   restartStewardSession,
   restartWorkerSession,
@@ -29,6 +30,7 @@ function worker(executorSessionId: string | null, enabled = true): WorkerConfigu
 function api(overrides: Partial<WorkerRestartApi> = {}): WorkerRestartApi {
   return {
     workerConfigurationList: vi.fn().mockResolvedValue({ configurations: [worker("session-1")], stateRevision: 4 }),
+    sessionClose: vi.fn().mockResolvedValue({ sessionId: "session-1", closed: true }),
     sessionTerminate: vi.fn().mockResolvedValue({ ok: true, result: {} }),
     workerConfigurationUpdate: vi.fn().mockResolvedValue({ configuration: worker("session-2"), stateRevision: 6 }),
     ...overrides,
@@ -72,6 +74,26 @@ describe("Worker restart orchestration", () => {
     expect(target.workerConfigurationUpdate).toHaveBeenCalledWith(expect.objectContaining({ expectedRevision: 8 }));
   });
 
+  it("closes a resume-failed Worker descriptor before launching its replacement", async () => {
+    const list = vi.fn()
+      .mockResolvedValueOnce({ configurations: [worker("session-1")], stateRevision: 4 })
+      .mockResolvedValueOnce({ configurations: [worker(null)], stateRevision: 5 })
+      .mockResolvedValueOnce({ configurations: [worker("session-2")], stateRevision: 6 });
+    const target = api({ workerConfigurationList: list });
+    const failed = {
+      id: "session-1",
+      kind: "Agent",
+      lifecycle_state: "resumeFailed",
+      retryable: false,
+      closable: true,
+    } as Session;
+
+    await expect(restartWorkerSession(target, "project-1", "worker-1", [failed])).resolves.toBe("session-2");
+
+    expect(target.sessionClose).toHaveBeenCalledWith("session-1");
+    expect(target.sessionTerminate).not.toHaveBeenCalled();
+  });
+
   it("does not launch after termination is refused", async () => {
     const target = api({
       sessionTerminate: vi.fn().mockResolvedValue({ ok: false, code: undefined, details: undefined, message: "busy" }),
@@ -99,6 +121,7 @@ describe("Project Steward restart orchestration", () => {
     const target: StewardRestartApi = {
       stewardConfigurationGet: get,
       stewardConfigurationSet: vi.fn().mockResolvedValue({}),
+      sessionClose: vi.fn().mockResolvedValue({ sessionId: "session-1", closed: true }),
       sessionTerminate: vi.fn().mockResolvedValue({ ok: true, result: {} }),
     };
 
@@ -122,6 +145,7 @@ describe("Project Steward restart orchestration", () => {
         .mockResolvedValueOnce({ configuration: { projectId: "project-1", agentId: "codex", model: "gpt-5.6-sol", permission: "bypassPermissions", reasoning: "high", systemPrompt: "PM", enabled: true, executorSessionId: null, generation: 2, updatedAtEpochMs: 10 }, stateRevision: 7, supervisorAvailability: "online" })
         .mockResolvedValueOnce({ configuration: { projectId: "project-1", agentId: "codex", model: "gpt-5.6-sol", permission: "bypassPermissions", reasoning: "high", systemPrompt: "PM", enabled: true, executorSessionId: "session-2", generation: 2, updatedAtEpochMs: 11 }, stateRevision: 8, supervisorAvailability: "online" }),
       stewardConfigurationSet: vi.fn().mockResolvedValue({}),
+      sessionClose: vi.fn(),
       sessionTerminate: vi.fn(),
     };
 

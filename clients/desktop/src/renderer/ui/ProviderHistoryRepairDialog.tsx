@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Session } from "../model.js";
-import { sessionLabel } from "../model.js";
+import { isLiveSession, sessionLabel } from "../model.js";
 import { Icon } from "./Icon.js";
 
 export function ProviderHistoryRepairDialog({ session, repair, close }: {
@@ -10,7 +10,7 @@ export function ProviderHistoryRepairDialog({ session, repair, close }: {
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const stopsAgent = session.lifecycle_state !== "exited";
+  const stopsAgent = isLiveSession(session);
   const submit = async () => {
     if (busy) return;
     setBusy(true);

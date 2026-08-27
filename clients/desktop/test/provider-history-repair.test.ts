@@ -54,4 +54,14 @@ describe("provider history repair confirmation", () => {
     expect(markup).not.toContain("Stop &amp; Repair");
     expect(markup).toContain(">Repair<");
   });
+
+  it("does not terminate a resume-failed Agent before repairing its retained Session", () => {
+    const markup = renderToStaticMarkup(createElement(ProviderHistoryRepairDialog, {
+      session: damagedSession("resumeFailed"),
+      repair: vi.fn(),
+      close: vi.fn(),
+    }));
+    expect(markup).not.toContain("Stop &amp; Repair");
+    expect(markup).toContain(">Repair<");
+  });
 });

@@ -3,6 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   AssistantTerminalHost,
+  assistantTerminalKeepsSurfaceMounted,
   dismissChangesBeforeNavigation,
   openImproverSession,
   openWorkspaceSession,
@@ -127,6 +128,10 @@ describe("Shell Session recovery", () => {
     expect(markup).toContain("data-session-recovery-state=\"resumeFailed\"");
     expect(markup).toContain("Repair history");
     expect(markup).toContain("provider conversation history is damaged");
+    expect(assistantTerminalKeepsSurfaceMounted({
+      ...failedAgent,
+      resume_failure_reason: "providerHistoryDamaged",
+    })).toBe(false);
   });
 
   it("offers Retry inside Steward and Worker terminal hosts for retryable failures", () => {
@@ -140,6 +145,19 @@ describe("Shell Session recovery", () => {
 
     expect(markup).toContain(">Retry</button>");
     expect(markup).not.toContain("Repair history");
+  });
+
+  it("remounts the persistent assistant terminal after recovery starts", () => {
+    expect(assistantTerminalKeepsSurfaceMounted({
+      ...failedAgent,
+      lifecycle_state: "resuming",
+      resume_failure_reason: null,
+    })).toBe(true);
+    expect(assistantTerminalKeepsSurfaceMounted({
+      ...failedAgent,
+      lifecycle_state: "running",
+      resume_failure_reason: null,
+    })).toBe(true);
   });
 });
 

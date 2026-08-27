@@ -54,6 +54,7 @@ import { GitHostRefreshCoordinator } from "./git-host-refresh.js";
 import { BranchCommitRefreshQueue } from "./branch-commit-refresh.js";
 import { connectionSnapshotRefresh } from "./connection-refresh.js";
 import { executeProviderHistoryRepair, fixProviderHistoryAndRetry } from "./provider-history-repair.js";
+import { restartStewardSession, restartWorkerSession } from "./worker-restart.js";
 import { AssistantRefreshThrottle, timeoutRefreshScheduler } from "./assistant-refresh-throttle.js";
 import { presentedAgentStatus } from "../session-presentation.js";
 import { nativeTerminalSurfaceVisible, useNativeOverlayWindow } from "./native-overlay-window.js";
@@ -405,15 +406,6 @@ function sourceApiForAttachmentId(attachmentId: string): SourceDesktopApi {
     return desktopApi.source("local");
   }
   throw new Error("Attachment source is unavailable");
-}
-
-async function waitForAssistantSession(read: () => Promise<string | null>): Promise<string | null> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const sessionId = await read();
-    if (sessionId) return sessionId;
-    await new Promise((resolve) => setTimeout(resolve, 150));
-  }
-  return null;
 }
 
 async function refreshTaskProjection(taskIds: readonly string[]): Promise<void> {
@@ -1903,49 +1895,19 @@ export function DesktopApp() {
     updatePlaybook: selectedSourceApi.playbookUpdate,
     promptImprovement,
     restartSteward: async (): Promise<string | null> => {
-      const current = await selectedSourceApi.stewardConfigurationGet(assistantProjectId);
-      if (!current.configuration?.enabled) return null;
-      if (current.configuration.executorSessionId) {
-        await selectedSourceApi.sessionTerminate(current.configuration.executorSessionId);
-      }
-      const latest = await selectedSourceApi.stewardConfigurationGet(assistantProjectId);
-      await selectedSourceApi.stewardConfigurationSet({
-        projectId: assistantProjectId,
-        agentId: latest.configuration?.agentId ?? current.configuration.agentId,
-        model: latest.configuration?.model ?? current.configuration.model,
-        permission: latest.configuration?.permission ?? current.configuration.permission,
-        reasoning: latest.configuration?.reasoning ?? current.configuration.reasoning,
-        systemPrompt: latest.configuration?.systemPrompt ?? current.configuration.systemPrompt,
-        enabled: true,
-        expectedRevision: latest.stateRevision,
-      });
-      return waitForAssistantSession(async () =>
-        (await selectedSourceApi.stewardConfigurationGet(assistantProjectId)).configuration?.executorSessionId ?? null);
+      return restartStewardSession(
+        selectedSourceApi,
+        assistantProjectId,
+        projectionStore.getSnapshot().sessions,
+      );
     },
     restartWorker: async (workerId: string): Promise<string | null> => {
-      const before = await selectedSourceApi.workerConfigurationList({ projectId: assistantProjectId });
-      const worker = before.configurations.find((candidate) => candidate.id === workerId);
-      if (!worker?.enabled) return null;
-      if (worker.executorSessionId) await selectedSourceApi.sessionTerminate(worker.executorSessionId);
-      const latest = await selectedSourceApi.workerConfigurationList({ projectId: assistantProjectId });
-      const current = latest.configurations.find((candidate) => candidate.id === workerId) ?? worker;
-      await selectedSourceApi.workerConfigurationUpdate({
+      return restartWorkerSession(
+        selectedSourceApi,
+        assistantProjectId,
         workerId,
-        name: current.name,
-        agentId: current.agentId,
-        model: current.model,
-        permission: current.permission,
-        reasoning: current.reasoning,
-        enabled: true,
-        pingIntervalSeconds: current.pingIntervalSeconds,
-        workerPrompt: current.workerPrompt,
-        systemPrompt: current.systemPrompt,
-        expectedRevision: latest.stateRevision,
-      });
-      return waitForAssistantSession(async () => {
-        const result = await selectedSourceApi.workerConfigurationList({ projectId: assistantProjectId });
-        return result.configurations.find((candidate) => candidate.id === workerId)?.executorSessionId ?? null;
-      });
+        projectionStore.getSnapshot().sessions,
+      );
     },
   };
 

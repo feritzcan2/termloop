@@ -1,19 +1,37 @@
 import type { DesktopApi } from "../transport/desktop-api.js";
+import { sessionDismissCommand, type Session } from "../model.js";
 
 export type WorkerRestartApi = Pick<
   DesktopApi,
-  "sessionTerminate" | "workerConfigurationList" | "workerConfigurationUpdate"
+  "sessionClose" | "sessionTerminate" | "workerConfigurationList" | "workerConfigurationUpdate"
 >;
 
 export type StewardRestartApi = Pick<
   DesktopApi,
-  "sessionTerminate" | "stewardConfigurationGet" | "stewardConfigurationSet"
+  "sessionClose" | "sessionTerminate" | "stewardConfigurationGet" | "stewardConfigurationSet"
 >;
+
+async function retirePersistentAssistantSession(
+  api: Pick<DesktopApi, "sessionClose" | "sessionTerminate">,
+  sessionId: string,
+  sessions: readonly Session[],
+): Promise<void> {
+  const session = sessions.find((candidate) => candidate.id === sessionId);
+  const command = session ? sessionDismissCommand(session) : "terminate";
+  if (command === "close") {
+    await api.sessionClose(sessionId);
+    return;
+  }
+  if (command !== "terminate") throw new Error("This assistant Session cannot be restarted yet.");
+  const outcome = await api.sessionTerminate(sessionId);
+  if (!outcome.ok) throw new Error(outcome.message);
+}
 
 /** Restart the Steward's exact Session, then launch its current configuration. */
 export async function restartStewardSession(
   api: StewardRestartApi,
   projectId: string,
+  sessions: readonly Session[] = [],
 ): Promise<string> {
   let snapshot = await api.stewardConfigurationGet(projectId);
   let steward = snapshot.configuration;
@@ -21,8 +39,7 @@ export async function restartStewardSession(
   if (!steward.enabled) throw new Error("Enable the Project Steward before restarting it.");
 
   if (steward.executorSessionId) {
-    const outcome = await api.sessionTerminate(steward.executorSessionId);
-    if (!outcome.ok) throw new Error(outcome.message);
+    await retirePersistentAssistantSession(api, steward.executorSessionId, sessions);
     snapshot = await api.stewardConfigurationGet(projectId);
     steward = snapshot.configuration;
     if (!steward) throw new Error("The Project Steward was removed while it was restarting.");
@@ -56,6 +73,7 @@ export async function restartWorkerSession(
   api: WorkerRestartApi,
   projectId: string,
   workerId: string,
+  sessions: readonly Session[] = [],
 ): Promise<string> {
   let snapshot = await api.workerConfigurationList({ projectId });
   let worker = snapshot.configurations.find((candidate) => candidate.id === workerId);
@@ -63,8 +81,7 @@ export async function restartWorkerSession(
   if (!worker.enabled) throw new Error("Enable the Worker before restarting it.");
 
   if (worker.executorSessionId) {
-    const outcome = await api.sessionTerminate(worker.executorSessionId);
-    if (!outcome.ok) throw new Error(outcome.message);
+    await retirePersistentAssistantSession(api, worker.executorSessionId, sessions);
     // Termination clears the durable Session pointer. Read the current Worker
     // and CAS revision instead of restoring the renderer's older snapshot.
     snapshot = await api.workerConfigurationList({ projectId });

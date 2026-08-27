@@ -2043,7 +2043,13 @@ export function AssistantTerminalHost({ sessionId, session, bindTerminalHost, re
   resumeSession(sessionId: string): Promise<void>;
   repairProviderHistory(sessionId: string): void;
 }) {
-  const hostRef = useCallback((host: HTMLElement | null) => { if (session?.kind === "Agent") bindTerminalHost(sessionId, host); }, [bindTerminalHost, sessionId, session?.runtime_epoch, session?.lifecycle_state, session?.kind]);
+  const hostRef = useCallback((host: HTMLElement | null) => {
+    if (session?.kind !== "Agent") return;
+    // Ghostty is a native surface above the renderer. A failed assistant has no
+    // live PTY to display, so unmount that surface while the HTML recovery strip
+    // is actionable; retrying remounts the retained surface on the next state.
+    bindTerminalHost(sessionId, assistantTerminalKeepsSurfaceMounted(session) ? host : null);
+  }, [bindTerminalHost, sessionId, session?.runtime_epoch, session?.lifecycle_state, session?.kind]);
   return <div className="assistant-terminal-host" ref={hostRef}>
     {session && sessionShowsRecoveryStrip(session) ? <TerminalRecoveryStrip
       session={session}
@@ -2051,6 +2057,10 @@ export function AssistantTerminalHost({ sessionId, session, bindTerminalHost, re
       repairProviderHistory={repairProviderHistory}
     /> : null}
   </div>;
+}
+
+export function assistantTerminalKeepsSurfaceMounted(session: Session | undefined): boolean {
+  return session?.kind === "Agent" && !sessionShowsRecoveryStrip(session);
 }
 
 function TerminalRecoveryStrip({ session, resumeSession, repairProviderHistory, closeDescriptor }: {

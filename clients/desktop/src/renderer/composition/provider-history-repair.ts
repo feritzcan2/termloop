@@ -1,4 +1,4 @@
-import type { Session } from "../model.js";
+import { isLiveSession, type Session } from "../model.js";
 import { providerHistoryRepairErrorMessage } from "../control-error.js";
 import type { SourceDesktopApi } from "../transport/desktop-api.js";
 import { retryAgentSession, type SessionResumeApi } from "./session-resume.js";
@@ -16,7 +16,7 @@ export async function executeProviderHistoryRepair(
   api: ProviderHistoryRepairApi,
   session: Session,
 ): Promise<ProviderHistoryRepairOutcome> {
-  if (session.lifecycle_state !== "exited") {
+  if (isLiveSession(session)) {
     const terminated = await api.sessionTerminate(session.id);
     if (!terminated.ok) return { failure: terminated.message };
   }

@@ -87,7 +87,7 @@ describe("provider history repair orchestration", () => {
 
     const result = await fixProviderHistoryAndRetry(api, session("resumeFailed"));
 
-    expect(order).toEqual(["terminate", "repair", "preview", "resume"]);
+    expect(order).toEqual(["repair", "preview", "resume"]);
     expect(result.failure).toBeUndefined();
   });
 
@@ -96,7 +96,7 @@ describe("provider history repair orchestration", () => {
     const result = await executeProviderHistoryRepair({
       sessionTerminate: vi.fn(async () => ({ ok: false as const, code: "conflict" as const, details: undefined, message: "still running" })),
       sessionRepairProviderHistory: repair,
-    }, session("resumeFailed"));
+    }, session("running"));
     expect(repair).not.toHaveBeenCalled();
     expect(result.failure).toBe("still running");
   });
@@ -115,5 +115,24 @@ describe("provider history repair orchestration", () => {
     }, session("exited"));
     expect(terminate).not.toHaveBeenCalled();
     expect(result.success).toContain("healthy");
+  });
+
+  it("repairs a resume-failed Session without deleting its stopped descriptor first", async () => {
+    const terminate = vi.fn();
+    const repair = vi.fn(async () => ({ ok: true as const, result: {
+      sessionId: "session-1",
+      outcome: "repaired" as const,
+      repairedRecords: 1,
+      duplicateBoundaries: 1,
+      backupCreated: true,
+    } }));
+    const result = await executeProviderHistoryRepair({
+      sessionTerminate: terminate,
+      sessionRepairProviderHistory: repair,
+    }, session("resumeFailed"));
+
+    expect(terminate).not.toHaveBeenCalled();
+    expect(repair).toHaveBeenCalledWith("session-1");
+    expect(result.failure).toBeUndefined();
   });
 });
