@@ -13,4 +13,10 @@
 **/.termloop-runtime/
 /.termloop-worktrees/
 /artifacts/evidence/
+/.agents/
+/.superpowers/
+/.termloop/
+/GhosttyKit.xcframework/
+/terminal-app/
+/termloop/
 .DS_Store

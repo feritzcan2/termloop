@@ -806,6 +806,7 @@ pub(in crate::app) async fn preview_task_agent_session(
 
 pub(in crate::app) async fn preview_steward_task_agent_session(
     params: serde_json::Value,
+    steward_session_id: &str,
     task_id: &str,
     assignment: &str,
     deadline: Instant,
@@ -814,6 +815,7 @@ pub(in crate::app) async fn preview_steward_task_agent_session(
     preview_task_agent_session_with_initial_message(
         params,
         Some(TaskAgentInitialMessage::StewardAssignment {
+            steward_session_id,
             task_id,
             assignment,
         }),
@@ -826,6 +828,7 @@ pub(in crate::app) async fn preview_steward_task_agent_session(
 enum TaskAgentInitialMessage<'a> {
     Kickoff(&'a str),
     StewardAssignment {
+        steward_session_id: &'a str,
         task_id: &'a str,
         assignment: &'a str,
     },
@@ -861,9 +864,12 @@ async fn preview_task_agent_session_with_initial_message(
         let plan = core.complete_task_agent_launch_plan(observed)?;
         match initial_message {
             Some(TaskAgentInitialMessage::StewardAssignment {
+                steward_session_id,
                 task_id,
                 assignment,
-            }) => core.attach_steward_task_assignment(plan, task_id, assignment)?,
+            }) => {
+                core.attach_steward_task_assignment(plan, steward_session_id, task_id, assignment)?
+            }
             Some(TaskAgentInitialMessage::Kickoff(message)) => {
                 core.attach_task_kickoff(plan, &task_id, message)?
             }

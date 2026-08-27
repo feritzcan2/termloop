@@ -36,10 +36,9 @@ import { toneRank, type RowTone } from "./tone";
 
 /// Turns one connection-wide projection into the Project overview the phone shows.
 ///
-/// The screen is a single ordered scroll rather than a tab bar or a board, matching
-/// the desktop's one rail: Tasks and the agents inside them are the same subject
-/// read at two depths, and splitting them across tabs would make "what needs me"
-/// require two taps and a comparison the user has to do in their head.
+/// The Project screen presents these projections through peer Agents and Tasks tabs,
+/// matching desktop. Attention remains one shared derivation so both tab markers and
+/// the ordered rows agree about what currently needs the user.
 ///
 /// Everything here is derived. Task presence, agent attention, and the per-Project
 /// summary are projections of Session and Task facts, never stored entities — the

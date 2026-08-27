@@ -658,6 +658,7 @@ impl CoreRuntime {
         }
         let prompt = termloop_invocation::steward_task_assignment_prompt(
             task_id,
+            steward_session_id,
             &task.title,
             task.brief.as_deref(),
             jira_url,

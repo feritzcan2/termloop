@@ -153,9 +153,6 @@ export default function SessionRoute() {
       if (!result.canceled) setSelectedImage(result.assets[0]);
     } finally {
       setImagePicking(false);
-      /// The native picker can temporarily suspend the app. Its old WebSocket is not
-      /// reliable after returning, even if iOS never delivered an AppState change.
-      terminal.reconnect();
     }
   };
 

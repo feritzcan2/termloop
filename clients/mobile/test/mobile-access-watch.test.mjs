@@ -427,10 +427,18 @@ describe("watch facade over the gateway", () => {
         promptDelivered: true,
         transcript: "saatten sesli mesaj",
       });
-      expect(terminalMessages).toHaveLength(12);
-      expect(terminalMessages[10].subarray(41).toString("utf8"))
-        .toBe("\u001b[200~saatten sesli mesaj\u001b[201~");
-      expect(terminalMessages[11].subarray(41)).toEqual(Buffer.from("\r"));
+      expect(terminalMessages).toHaveLength(8);
+      const voiceQuickActionPreview = tokensSeen.filter((entry) => entry.method === "quickAction.preview").at(-1);
+      expect(voiceQuickActionPreview?.params).toMatchObject({
+        projectId: "p1",
+        cwd: "/repo",
+        agentId: "codex",
+        templateRef: "builtin.quick-action.free-prompt",
+        bindings: { prompt: "saatten sesli mesaj" },
+        attachments: [],
+      });
+      const voiceQuickActionLaunch = tokensSeen.filter((entry) => entry.method === "quickAction.launch").at(-1);
+      expect(voiceQuickActionLaunch?.params.launchTicket).toBe("b".repeat(64));
 
       // Transcribe-only: the watch previews the prompt text before launching.
       const transcribed = await (await fetch(`${base}/watch/transcribe`, {
@@ -439,7 +447,7 @@ describe("watch facade over the gateway", () => {
         body: Buffer.from("fake m4a bytes"),
       })).json();
       expect(transcribed).toEqual({ transcript: "saatten sesli mesaj" });
-      expect(terminalMessages).toHaveLength(12);
+      expect(terminalMessages).toHaveLength(8);
 
       // A confirmed text prompt launches and delivers those exact words.
       const promptLaunch = await (await fetch(`${base}/watch/project-agent`, {
@@ -453,12 +461,13 @@ describe("watch facade over the gateway", () => {
         runtimeEpoch: 1,
         promptDelivered: true,
       });
-      expect(terminalMessages).toHaveLength(16);
-      expect(terminalMessages[14].subarray(41).toString("utf8"))
-        .toBe("\u001b[200~onaylanan prompt\u001b[201~");
-      expect(terminalMessages[15].subarray(41)).toEqual(Buffer.from("\r"));
-      expect(tokensSeen.filter((entry) => entry.method === "session.rename").map((entry) => entry.params.name))
-        .toEqual(["saatten sesli mesaj", "onaylanan prompt"]);
+      expect(terminalMessages).toHaveLength(8);
+      const textQuickActionLaunch = tokensSeen.filter((entry) => entry.method === "quickAction.launch").at(-1);
+      expect(textQuickActionLaunch?.params).toMatchObject({
+        bindings: { prompt: "onaylanan prompt" },
+        launchTicket: "b".repeat(64),
+      });
+      expect(tokensSeen.filter((entry) => entry.method === "session.rename")).toEqual([]);
 
       const blankPrompt = await fetch(`${base}/watch/project-agent`, {
         method: "POST",
@@ -648,6 +657,15 @@ function upstreamResult(request) {
         id: "bbbbbbbb-cccc-dddd-eeee-ffffffffffff", project_id: "p1", name: request.params.name,
         kind: "Agent", lifecycle_state: "running", runtime_epoch: 1,
         process: { agent_id: "codex", cwd: "/repo", template_ref: "builtin.agent.interactive" },
+      };
+    case "quickAction.preview":
+      return { launch_ticket: "b".repeat(64), manifest: {} };
+    case "quickAction.launch":
+      return {
+        id: "bbbbbbbb-cccc-dddd-eeee-ffffffffffff", project_id: "p1",
+        name: request.params.bindings.prompt.split("\n", 1)[0].slice(0, 80),
+        kind: "Agent", lifecycle_state: "running", runtime_epoch: 1,
+        process: { agent_id: request.params.agentId, cwd: "/repo", template_ref: request.params.templateRef },
       };
     default:
       return { product: "TermLoop", version: "0.1.0", protocolVersion: `sha256:${"a".repeat(64)}` };

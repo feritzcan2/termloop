@@ -127,6 +127,7 @@ pub(super) async fn start(
                     "permission": plan.launch_selection().permission,
                     "reasoning": plan.launch_selection().reasoning,
                 }),
+                steward_session_id,
                 &params.task_id,
                 &params.assignment,
                 Instant::now() + Duration::from_secs(15),

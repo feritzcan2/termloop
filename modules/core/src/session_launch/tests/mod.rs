@@ -2251,11 +2251,19 @@ fn steward_task_assignment_derives_jira_context_from_the_sidecar() {
     });
 
     let plan = runtime
-        .attach_steward_task_assignment(plan, task_id, "Implement and verify.")
+        .attach_steward_task_assignment(
+            plan,
+            "123e4567-e89b-42d3-a456-426614174000",
+            task_id,
+            "Implement and verify.",
+        )
         .unwrap();
     let launch = resolve_interactive_agent_launch(&plan).unwrap();
     assert!(launch.initial_input().is_some_and(|input| {
         input.contains("Jira issue: https://example.atlassian.net/browse/TERM-42")
+    }));
+    assert!(launch.initial_input().is_some_and(|input| {
+        input.contains("Steward Session ID: `123e4567-e89b-42d3-a456-426614174000`")
     }));
     drop(plan);
 

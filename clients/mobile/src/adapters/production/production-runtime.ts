@@ -38,6 +38,7 @@ import {
 } from "./terminal-frame";
 
 const AUTH_TIMEOUT_MS = 5_000;
+const FORCE_RECONNECT_TIMEOUT_MS = 12_000;
 const MIN_RECONNECT_MS = 250;
 const MAX_RECONNECT_MS = 2_000;
 const MAX_INPUT_FRAME_BYTES = 16 * 1024;
@@ -544,6 +545,11 @@ async function attachTerminal(
   let successfulConnections = 0;
   let resolveFirst: (() => void) | undefined;
   let rejectFirst: ((cause: Error) => void) | undefined;
+  const reconnectWaiters = new Set<{
+    readonly resolve: () => void;
+    readonly reject: (cause: Error) => void;
+    readonly timeout: ReturnType<typeof setTimeout>;
+  }>();
 
   const firstConnection = new Promise<void>((resolve, reject) => {
     resolveFirst = resolve;
@@ -564,6 +570,16 @@ async function attachTerminal(
     clearReplayTimer();
     replayChunks = [];
     replayBytes = 0;
+  };
+
+  const settleReconnectWaiters = (cause?: Error) => {
+    const waiters = [...reconnectWaiters];
+    reconnectWaiters.clear();
+    for (const waiter of waiters) {
+      clearTimeout(waiter.timeout);
+      if (cause === undefined) waiter.resolve();
+      else waiter.reject(cause);
+    }
   };
 
   const flushReplay = () => {
@@ -662,6 +678,7 @@ async function attachTerminal(
       successfulConnections += 1;
       onEvent({ type: "state", state: "connected" });
       source.send(encodeFrame(session.id, session.runtime_epoch, sequence++, KIND_ATTACH));
+      settleReconnectWaiters();
       resolveFirst?.();
       resolveFirst = undefined;
       rejectFirst = undefined;
@@ -717,12 +734,40 @@ async function attachTerminal(
         throw cause;
       }
     },
+    reconnect() {
+      if (detached) return Promise.reject(new Error("Terminal is detached."));
+      const waiting = new Promise<void>((resolve, reject) => {
+        const waiter = {
+          resolve,
+          reject,
+          timeout: setTimeout(() => {
+            reconnectWaiters.delete(waiter);
+            reject(new Error("Terminal did not reconnect."));
+          }, FORCE_RECONNECT_TIMEOUT_MS),
+        };
+        reconnectWaiters.add(waiter);
+      });
+      if (reconnectTimer !== undefined) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = undefined;
+      }
+      const stale = socket;
+      socket = undefined;
+      authenticated = false;
+      clearAuthenticationTimer();
+      discardReplay();
+      onEvent({ type: "state", state: "connectionLost" });
+      stale?.close();
+      connect();
+      return waiting;
+    },
     async detach() {
       if (detached) return;
       detached = true;
       if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
       clearAuthenticationTimer();
       discardReplay();
+      settleReconnectWaiters(new Error("Terminal is detached."));
       socket?.close();
       socket = undefined;
     },

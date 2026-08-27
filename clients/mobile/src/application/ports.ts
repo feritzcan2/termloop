@@ -180,6 +180,10 @@ export type TerminalEvent =
 
 export interface TerminalAttachment {
   input(bytes: Uint8Array): Promise<void>;
+  /// Replaces the current transport and resolves only after the new socket is
+  /// authenticated. Native pickers and foreground transitions can leave iOS
+  /// reporting an open WebSocket that no longer carries bytes.
+  reconnect(): Promise<void>;
   detach(): Promise<void>;
 }
 

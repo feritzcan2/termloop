@@ -259,7 +259,16 @@ export function useTerminalSession(
   }, [canSend, deliver]);
 
   const reconnect = useCallback(() => {
-    setReconnectRevision((revision) => revision + 1);
+    const open = attachment.current;
+    if (open === undefined) {
+      setReconnectRevision((revision) => revision + 1);
+      return;
+    }
+    void open.reconnect().catch(() => {
+      if (attachment.current === open) {
+        setReconnectRevision((revision) => revision + 1);
+      }
+    });
   }, []);
 
   const submit = useCallback((text: string) => {
@@ -278,11 +287,19 @@ export function useTerminalSession(
   }, [canSend, deliver, encoder]);
 
   const submitWithImage = useCallback(async (text: string, image: SelectedImage): Promise<boolean> => {
-    const open = attachment.current;
-    if (!canSend || open === undefined || connectionId === undefined || sessionId === undefined) return false;
+    if (!canSend || attachment.current === undefined || connectionId === undefined || sessionId === undefined) return false;
+    let reconnectStarted = false;
     try {
       setImageError(undefined);
       const attachmentPath = await runtime.images.upload(connectionId, sessionId, image);
+      /// The native picker and the HTTPS upload both cross iOS networking paths that
+      /// can leave the earlier WebSocket looking open while it no longer carries PTY
+      /// bytes. Prove a newly authenticated terminal transport before sending the
+      /// generated attachment message; readyState alone is not delivery evidence.
+      const open = attachment.current;
+      if (open === undefined) throw new Error("Terminal is reconnecting.");
+      reconnectStarted = true;
+      await open.reconnect();
       if (attachment.current !== open) return false;
       const message = attachedImageMessage(attachmentPath, text);
       const delivered = await deliver(open, encoder.encode(message));
@@ -297,10 +314,13 @@ export function useTerminalSession(
       });
       return attachment.current === open;
     } catch (cause: unknown) {
+      /// Even a failed HTTP upload may have invalidated the old iOS socket. Start a
+      /// bounded refresh so ordinary typing recovers without closing the app.
+      if (!reconnectStarted) reconnect();
       setImageError(cause instanceof Error ? cause.message : "The image could not be delivered.");
       return false;
     }
-  }, [canSend, connectionId, deliver, encoder, runtime.images, sessionId]);
+  }, [canSend, connectionId, deliver, encoder, reconnect, runtime.images, sessionId]);
 
   const scrollBack = useCallback((lines: number) => {
     const open = attachment.current;

@@ -22,7 +22,6 @@ import {
   WATCH_PATCH_ENTRY_LIMIT,
   parseWatchTarget,
   patchTextOf,
-  promptSessionName,
   validatePairCode,
   watchChatMessageOf,
   watchProjectWorktreeOf,
@@ -87,6 +86,8 @@ const MOBILE_FULL_CONTROL_METHODS = new Set([
   "session.previewAgent",
   "session.launchAgent",
   "session.rename",
+  "quickAction.preview",
+  "quickAction.launch",
   "companion.transcriptList",
   "companion.transcriptAppend",
   "companion.suggestionAccept",
@@ -710,23 +711,19 @@ async function watchProjectAgent(request, response) {
     }
     const full = controlCaller(runtime, runtime.fullToken);
     const launchTarget = { projectId, cwd: project.folder_path, agentId };
-    const preview = await full("session.previewAgent", launchTarget);
-    const launchedSession = await full("session.launchAgent", {
-      ...launchTarget,
-      launchTicket: preview.launch_ticket,
-    });
-    const session = await namePromptedSession(full, launchedSession, prompt);
+    const session = prompt === undefined
+      ? await launchProjectAgent(full, launchTarget)
+      : await launchPromptedProjectAgent(full, launchTarget, prompt);
     const result = {
       sessionId: session.id,
       name: session.name,
       runtimeEpoch: session.runtime_epoch,
     };
     if (prompt !== undefined) {
-      result.promptDelivered = await sendTerminalInput(WebSocket, runtime.terminalUrl, runtime.terminalToken, {
-        sessionId: session.id,
-        runtimeEpoch: session.runtime_epoch,
-        text: prompt,
-      });
+      // Backward-compatible Watch response: launch acceptance now means Core
+      // owns the immutable prompt and its observable delivery lifecycle. The
+      // gateway must not race provider readiness with raw terminal frames.
+      result.promptDelivered = true;
     }
     return json(response, 200, result);
   } catch {
@@ -757,26 +754,14 @@ async function watchProjectAgentVoice(request, response) {
     }
     const full = controlCaller(runtime, runtime.fullToken);
     const launchTarget = { projectId, cwd: project.folder_path, agentId };
-    const preview = await full("session.previewAgent", launchTarget);
-    const launchedSession = await full("session.launchAgent", {
-      ...launchTarget,
-      launchTicket: preview.launch_ticket,
-    });
-    const session = await namePromptedSession(full, launchedSession, transcription.text);
-    const promptDelivered = await sendTerminalInput(
-      WebSocket,
-      runtime.terminalUrl,
-      runtime.terminalToken,
-      { sessionId: session.id, runtimeEpoch: session.runtime_epoch, text: transcription.text },
-    );
-    // runtimeEpoch lets the watch retry an unconfirmed prompt through
-    // /watch/reply-voice against this exact session instead of relaunching,
-    // and the transcript shows the user the exact delivered words.
+    const session = await launchPromptedProjectAgent(full, launchTarget, transcription.text);
+    // The transcript shows the user the exact invocation-owned words. Core now
+    // owns readiness, paste settlement, and submit confirmation for this launch.
     return json(response, 200, {
       sessionId: session.id,
       name: session.name,
       runtimeEpoch: session.runtime_epoch,
-      promptDelivered,
+      promptDelivered: true,
       transcript: transcription.text,
     });
   } catch {
@@ -784,16 +769,26 @@ async function watchProjectAgentVoice(request, response) {
   }
 }
 
-async function namePromptedSession(full, session, prompt) {
-  const name = promptSessionName(prompt);
-  if (name === null) return session;
-  try {
-    return await full("session.rename", { sessionId: session.id, name });
-  } catch {
-    // Launch already succeeded. Keep that exact Session recoverable instead of
-    // reporting a launch failure that could make the user start a duplicate.
-    return session;
-  }
+async function launchProjectAgent(full, launchTarget) {
+  const preview = await full("session.previewAgent", launchTarget);
+  return full("session.launchAgent", {
+    ...launchTarget,
+    launchTicket: preview.launch_ticket,
+  });
+}
+
+async function launchPromptedProjectAgent(full, launchTarget, prompt) {
+  const params = {
+    ...launchTarget,
+    model: "default",
+    permission: "default",
+    reasoning: "default",
+    templateRef: "builtin.quick-action.free-prompt",
+    bindings: { prompt },
+    attachments: [],
+  };
+  const preview = await full("quickAction.preview", params);
+  return full("quickAction.launch", { ...params, launchTicket: preview.launch_ticket });
 }
 
 function startAttentionMonitor() {

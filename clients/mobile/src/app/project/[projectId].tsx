@@ -4,10 +4,11 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, T
 
 import { ConnectionBlocked } from "@/components/connection-blocked";
 import { AgentAvatar } from "@/components/agent-avatar";
-import { Banner, Card, CardDivider, Chip, EmptyState, PrimaryButton, SectionHeader } from "@/components/primitives";
+import { Banner, Card, CardDivider, EmptyState, SectionHeader, StatePill } from "@/components/primitives";
 import { ProjectSelector } from "@/components/project-selector";
 import { Row } from "@/components/row";
 import { MockBadge, Screen, ScreenHeader } from "@/components/screen";
+import { WorkspaceTabs, type WorkspaceTabId } from "@/components/workspace-tabs";
 import { useConnections } from "@/features/connection/connection-store";
 import { useOverview } from "@/features/overview/overview-store";
 import {
@@ -20,20 +21,16 @@ import { relativeAge } from "@/presentation/relative-time";
 import { color, geometry, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
-/// The Project's attention overview: one ordered scroll, not tabs and not a board.
-///
-/// Section order is fixed — Needs you, Agents, Tasks, Terminals — so the answer to
-/// "does anything want me" is always in the same place. `Needs you` renders only when
-/// it has rows: an empty box under that heading is a question the screen keeps asking
-/// and never answering.
-type Filter = "all" | "needsYou" | "agents" | "tasks";
+/// Project workspace navigation follows desktop: Agents and Tasks are peer tabs.
+/// Attention is carried by their tab markers and row order, so a waiting Agent is
+/// never duplicated in a separate list just to make urgency visible.
 
 export default function ProjectRoute() {
   const { projectId, connectionId } = useLocalSearchParams<{ projectId: string; connectionId?: string }>();
   const router = useRouter();
   const connections = useConnections();
   const store = useOverview();
-  const [filter, setFilter] = useState<Filter>("all");
+  const [selectedTab, setSelectedTab] = useState<WorkspaceTabId>("agents");
 
   useEffect(() => {
     if (connectionId !== undefined && connections.selectedId !== connectionId) {
@@ -83,13 +80,9 @@ export default function ProjectRoute() {
     );
   }
 
-  const showAgents = filter === "all" || filter === "agents";
-  const showTasks = filter === "all" || filter === "tasks";
-  const showTerminals = filter === "all";
   const needsYou = model?.needsYou ?? [];
-  /// The "Needs you" filter narrows to the same computed list the section renders, so
-  /// the chip count and the rows can never come from two different derivations.
-  const agentRows = filter === "needsYou" ? needsYou : (model?.agents ?? []);
+  const agentRows = model?.agents ?? [];
+  const taskAttentionCount = model?.tasks.filter((row) => asksForUser(row.tone)).length ?? 0;
 
   return (
     <Screen>
@@ -120,22 +113,34 @@ export default function ProjectRoute() {
         </View>
       ) : (
         <>
-          {/*
-            The filter row is a measured box, not a bare flex child. As a sibling of the
-            list below it, flexbox split the screen between the two and stretched every
-            chip into a full-height capsule.
-          */}
-          <View style={styles.filterBar}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.filters}
-            >
-              <Chip label="All" selected={filter === "all"} onPress={() => setFilter("all")} />
-              <Chip label="Needs you" count={countOrNone(model.counts.needsYou)} selected={filter === "needsYou"} onPress={() => setFilter("needsYou")} />
-              <Chip label="Agents" count={countOrNone(model.counts.agents)} selected={filter === "agents"} onPress={() => setFilter("agents")} />
-              <Chip label="Tasks" count={countOrNone(model.counts.tasks)} selected={filter === "tasks"} onPress={() => setFilter("tasks")} />
-            </ScrollView>
+          <View style={styles.workspaceChrome}>
+            <WorkspaceTabs
+              selected={selectedTab}
+              agents={{ count: model.counts.agents, attentionCount: model.counts.needsYou }}
+              tasks={{ count: model.counts.tasks, attentionCount: taskAttentionCount }}
+              select={setSelectedTab}
+            />
+            <View style={styles.workspaceActions}>
+              <WorkspaceAction
+                glyph="+"
+                label="New Agent"
+                primary
+                disabled={model.project === undefined}
+                onPress={() => router.push({
+                  pathname: "/launch/[taskId]",
+                  params: { taskId: `project:${model.project?.id ?? projectId}` },
+                })}
+              />
+              <WorkspaceAction
+                glyph="✦"
+                label="Steward"
+                disabled={model.project === undefined || connections.selectedId === undefined}
+                onPress={() => router.push({
+                  pathname: "/steward/[projectId]",
+                  params: { projectId, connectionId: connections.selectedId },
+                })}
+              />
+            </View>
           </View>
 
           <ScrollView
@@ -154,61 +159,65 @@ export default function ProjectRoute() {
               />
             ) : null}
 
-            {showAgents && needsYou.length > 0 ? (
-              <View style={styles.section}>
-                <SectionHeader label="Needs you" />
-                <Card>
-                  {needsYou.map((row, index) => (
-                    <View key={row.sessionId}>
-                      {index === 0 ? null : <CardDivider />}
-                      <AgentRowView row={row} nowMs={nowMs} />
-                    </View>
-                  ))}
-                </Card>
-              </View>
-            ) : null}
-
-            {showAgents || filter === "needsYou" ? (
-              <View style={styles.section}>
-                {filter === "needsYou" ? (
-                  <SectionHeader label="Needs you" trailing={<Text style={styles.count}>{agentRows.length}</Text>} />
-                ) : (
-                  <>
-                    <PrimaryButton
-                      label="+ New agent"
-                      disabled={model.project === undefined}
-                      onPress={() => router.push({
-                        pathname: "/launch/[taskId]",
-                        params: { taskId: `project:${model.project?.id ?? projectId}` },
-                      })}
+            {selectedTab === "agents" ? (
+              <>
+                {needsYou.length > 0 ? (
+                  <Banner
+                    kind="warning"
+                    message={`${needsYou.length} ${needsYou.length === 1 ? "agent needs" : "agents need"} your attention. They are pinned to the top.`}
+                  />
+                ) : null}
+                <View style={styles.section}>
+                  <SectionHeader label="Active agents" trailing={<Text style={styles.count}>{agentRows.length}</Text>} />
+                  {agentRows.length === 0 ? (
+                    <EmptyState
+                      title="No active agents"
+                      body="Start an Agent for this Project and its live Session will appear here."
                     />
-                    <SectionHeader label="Agents" trailing={<Text style={styles.count}>{agentRows.length}</Text>} />
-                  </>
-                )}
-                {agentRows.length === 0 ? (
-                  <Text style={styles.quiet}>
-                    {filter === "needsYou"
-                      ? "Nothing needs you right now."
-                      : "No agent sessions in this project."}
-                  </Text>
-                ) : (
-                  <Card>
-                    {agentRows.map((row, index) => (
-                      <View key={row.sessionId}>
-                        {index === 0 ? null : <CardDivider />}
-                        <AgentRowView row={row} nowMs={nowMs} />
-                      </View>
-                    ))}
-                  </Card>
-                )}
-              </View>
-            ) : null}
+                  ) : (
+                    <Card>
+                      {agentRows.map((row, index) => (
+                        <View key={row.sessionId}>
+                          {index === 0 ? null : <CardDivider />}
+                          <AgentRowView row={row} nowMs={nowMs} />
+                        </View>
+                      ))}
+                    </Card>
+                  )}
+                </View>
 
-            {showTasks ? (
+                {model.terminals.length > 0 ? (
+                  <View style={styles.section}>
+                    <SectionHeader label="Terminals" trailing={<Text style={styles.count}>{model.counts.terminals}</Text>} />
+                    <Card>
+                      {model.terminals.map((row, index) => (
+                        <View key={row.sessionId}>
+                          {index === 0 ? null : <CardDivider />}
+                          <Row
+                            tone="quiet"
+                            title={row.title}
+                            detail={row.detail}
+                            accessibleName={row.accessibleName}
+                            disabled={!row.attachable}
+                            onPress={() => router.push({
+                              pathname: "/session/[sessionId]",
+                              params: { sessionId: row.sessionId },
+                            })}
+                          />
+                        </View>
+                      ))}
+                    </Card>
+                  </View>
+                ) : null}
+              </>
+            ) : (
               <View style={styles.section}>
-                <SectionHeader label="Tasks" trailing={<Text style={styles.count}>{model.counts.tasks}</Text>} />
+                <SectionHeader label="Open tasks" trailing={<Text style={styles.count}>{model.counts.tasks}</Text>} />
                 {model.tasks.length === 0 ? (
-                  <Text style={styles.quiet}>No open tasks in this project.</Text>
+                  <EmptyState
+                    title="No open tasks"
+                    body="Create a Task on your Mac and it will appear in this Project workspace."
+                  />
                 ) : (
                   <Card>
                     {model.tasks.map((row, index) => (
@@ -218,6 +227,7 @@ export default function ProjectRoute() {
                           tone={row.tone}
                           title={row.title}
                           detail={row.stateLine}
+                          trailing={<StatePill tone={row.tone} label={row.attention?.label ?? row.stage.flag ?? "Ready"} />}
                           accessibleName={row.accessibleName}
                           minHeight={geometry.taskRowMinHeight}
                           onPress={() => router.push({
@@ -230,38 +240,7 @@ export default function ProjectRoute() {
                   </Card>
                 )}
               </View>
-            ) : null}
-
-            {showTerminals && model.terminals.length > 0 ? (
-              <View style={styles.section}>
-                <SectionHeader label="Terminals" trailing={<Text style={styles.count}>{model.counts.terminals}</Text>} />
-                <Card>
-                  {model.terminals.map((row, index) => (
-                    <View key={row.sessionId}>
-                      {index === 0 ? null : <CardDivider />}
-                      <Row
-                        tone="quiet"
-                        title={row.title}
-                        detail={row.detail}
-                        accessibleName={row.accessibleName}
-                        disabled={!row.attachable}
-                        onPress={() => router.push({
-                          pathname: "/session/[sessionId]",
-                          params: { sessionId: row.sessionId },
-                        })}
-                      />
-                    </View>
-                  ))}
-                </Card>
-              </View>
-            ) : null}
-
-            {model.counts.agents === 0 && model.counts.tasks === 0 && model.counts.terminals === 0 ? (
-              <EmptyState
-                title="Nothing here yet"
-                body="Create a task or start a session on your Mac, and it shows up in this project."
-              />
-            ) : null}
+            )}
           </ScrollView>
         </>
       )}
@@ -337,10 +316,35 @@ function AgentTaskAction({ label, accessibilityLabel, onPress }: {
   );
 }
 
-/// A zero count on a filter chip is noise: the chip already says what it filters, and
-/// selecting it explains the emptiness in a sentence.
-function countOrNone(value: number): number | undefined {
-  return value > 0 ? value : undefined;
+function WorkspaceAction({ glyph, label, primary = false, disabled = false, onPress }: {
+  glyph: string;
+  label: string;
+  primary?: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      accessibilityLabel={label}
+      style={({ pressed }) => [
+        styles.workspaceAction,
+        primary ? styles.workspaceActionPrimary : null,
+        pressed && !disabled ? styles.workspaceActionPressed : null,
+        disabled ? styles.workspaceActionDisabled : null,
+      ]}
+    >
+      <Text style={[styles.workspaceActionGlyph, primary ? styles.workspaceActionPrimaryText : null]}>{glyph}</Text>
+      <Text style={[styles.workspaceActionLabel, primary ? styles.workspaceActionPrimaryText : null]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function asksForUser(tone: AgentRow["tone"]): boolean {
+  return tone === "attention" || tone === "blocked" || tone === "review";
 }
 
 const styles = StyleSheet.create({
@@ -348,17 +352,41 @@ const styles = StyleSheet.create({
   refresh: { width: 34, height: geometry.touchTarget, alignItems: "center", justifyContent: "center" },
   refreshGlyph: { color: color.textSecondary, fontSize: 18 },
   loading: { flex: 1, justifyContent: "center", padding: space.screen },
-  filterBar: { height: geometry.filterBar },
-  filters: {
-    alignItems: "center",
-    gap: 7,
+  workspaceChrome: {
+    gap: space.sm,
     paddingHorizontal: space.screen,
+    paddingTop: space.sm,
+    paddingBottom: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: color.rule,
   },
+  workspaceActions: { flexDirection: "row", gap: space.sm },
+  workspaceAction: {
+    flex: 1,
+    minHeight: 40,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: color.borderStrong,
+    borderRadius: 8,
+    backgroundColor: color.bgRaised,
+  },
+  workspaceActionPrimary: {
+    borderColor: `${color.accent}99`,
+    backgroundColor: color.accentWash,
+  },
+  workspaceActionPressed: { backgroundColor: color.bgHover },
+  workspaceActionDisabled: { opacity: 0.45 },
+  workspaceActionGlyph: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 14, fontWeight: "800" },
+  workspaceActionLabel: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 11.5, fontWeight: "700" },
+  workspaceActionPrimaryText: { color: color.accentStrong },
   list: { flex: 1 },
   content: {
-    gap: 20,
+    gap: space.lg,
     paddingHorizontal: space.screen,
-    paddingTop: space.xs,
+    paddingTop: space.md,
     paddingBottom: space.xl,
   },
   section: { gap: space.sm },
@@ -369,7 +397,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontVariant: ["tabular-nums"],
   },
-  quiet: { color: color.textMuted, fontSize: 12.5, lineHeight: 18, paddingVertical: 2 },
   agentTaskActions: {
     flexDirection: "row",
     gap: space.sm,
