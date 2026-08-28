@@ -19,7 +19,15 @@ export function MobileConnectDialog({ close, prepare, loadVoiceSettings, saveVoi
   useEffect(() => {
     let active = true;
     setResult(undefined);
-    void prepare().then((value) => { if (active) setResult(value); });
+    void prepare()
+      .then((value) => { if (active) setResult(value); })
+      .catch((cause: unknown) => {
+        if (!active) return;
+        setResult({
+          ok: false,
+          error: cause instanceof Error ? cause.message : "Mobile Access could not be prepared.",
+        });
+      });
     return () => { active = false; };
   }, [attempt, prepare]);
 

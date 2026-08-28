@@ -183,6 +183,7 @@ describe("Shell sidebar sizing", () => {
     expect(shellTerminalOccluded(false, true)).toBe(true);
     expect(shellTerminalOccluded(true, false)).toBe(true);
     expect(shellTerminalOccluded(false, false, true)).toBe(true);
+    expect(shellTerminalOccluded(false, false, false, true)).toBe(true);
   });
 
   it("makes the native child window interactive for Project relocation confirmation", () => {
@@ -191,7 +192,6 @@ describe("Shell sidebar sizing", () => {
       projectMenu: false,
       editProject: false,
       deleteProject: false,
-      mobileConnect: false,
       renameSession: false,
       commandPalette: false,
       shortcutSettings: false,
@@ -212,7 +212,6 @@ describe("Shell sidebar sizing", () => {
       projectMenu: false,
       editProject: false,
       deleteProject: false,
-      mobileConnect: false,
       renameSession: false,
       commandPalette: false,
       shortcutSettings: false,
@@ -230,7 +229,6 @@ describe("Shell sidebar sizing", () => {
       projectMenu: false,
       editProject: false,
       deleteProject: false,
-      mobileConnect: true,
       renameSession: false,
       commandPalette: false,
       shortcutSettings: false,
@@ -242,6 +240,6 @@ describe("Shell sidebar sizing", () => {
       providerHistoryRepair: false,
       taskRail: false,
       archivedRail: false,
-    })).toBe(true);
+    })).toBe(false);
   });
 });

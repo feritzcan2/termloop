@@ -55,6 +55,19 @@ describe("mobile connection dialog", () => {
     expect(container.querySelector(".mobile-connect-qr svg")).not.toBeNull();
   });
 
+  it("keeps the dialog rendered when setup rejects", async () => {
+    await act(async () => root.render(createElement(MobileConnectDialog, {
+      close: vi.fn(),
+      prepare: async () => { throw new Error("Pairing service unavailable."); },
+      loadVoiceSettings: async () => ({ configured: false }),
+      saveVoiceCredentials: async () => ({ configured: true }),
+    })));
+    await act(async () => undefined);
+
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(container.textContent).toContain("Pairing service unavailable.");
+  });
+
   it("shows only secure OpenAI credential presence and never the stored key", async () => {
     await act(async () => root.render(createElement(MobileConnectDialog, {
       close: vi.fn(),

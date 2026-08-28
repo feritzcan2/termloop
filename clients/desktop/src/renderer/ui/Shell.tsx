@@ -367,11 +367,16 @@ export function shellAssistantStageVisible(
   return railMode === "workspace" && workspaceView === "steward" && selection !== undefined;
 }
 
-export function shellTerminalOccluded(changesOpen: boolean, sidebarDragging: boolean, sessionDragging = false): boolean {
+export function shellTerminalOccluded(
+  changesOpen: boolean,
+  sidebarDragging: boolean,
+  sessionDragging = false,
+  mobileConnectOpen = false,
+): boolean {
   // Ghostty is a native child view above Chromium. It must yield for the whole
   // Session drag or it can intercept a quick pointer path into a terminal pane
   // before the DOM drop target sees that pointer.
-  return changesOpen || sidebarDragging || sessionDragging;
+  return changesOpen || sidebarDragging || sessionDragging || mobileConnectOpen;
 }
 
 export function shellNativeOverlayOpen(state: {
@@ -379,7 +384,6 @@ export function shellNativeOverlayOpen(state: {
   projectMenu: boolean;
   editProject: boolean;
   deleteProject: boolean;
-  mobileConnect: boolean;
   connectionProfiles?: boolean;
   renameSession: boolean;
   commandPalette: boolean;
@@ -929,7 +933,6 @@ export function Shell(props: ShellProps) {
     projectMenu: projectMenuOpen,
     editProject: editProjectOpen,
     deleteProject: deleteProjectOpen,
-    mobileConnect: mobileConnectOpen,
     connectionProfiles: connectionProfilesOpen,
     renameSession: Boolean(renameTarget),
     commandPalette: commandPaletteOpen,
@@ -947,7 +950,12 @@ export function Shell(props: ShellProps) {
     props.setNativeOverlayOpen(nativeOverlayOpen);
     return () => props.setNativeOverlayOpen(false);
   }, [nativeOverlayOpen, props.setNativeOverlayOpen]);
-  const terminalOccluded = shellTerminalOccluded(Boolean(changesSubject), sidebarDragging, sessionDragging);
+  const terminalOccluded = shellTerminalOccluded(
+    Boolean(changesSubject),
+    sidebarDragging,
+    sessionDragging,
+    mobileConnectOpen,
+  );
   useEffect(() => {
     props.setTerminalOccluded(terminalOccluded);
     return () => props.setTerminalOccluded(false);
@@ -1876,12 +1884,6 @@ export function Shell(props: ShellProps) {
         remove={props.deleteRunConfiguration}
         run={async () => undefined}
       /> : null}
-      {mobileConnectOpen ? <MobileConnectDialog
-        prepare={props.prepareMobileAccess}
-        loadVoiceSettings={props.loadVoiceSettings}
-        saveVoiceCredentials={props.saveVoiceCredentials}
-        close={() => setMobileConnectOpen(false)}
-      /> : null}
       {connectionProfilesOpen ? <ConnectionProfilesDialog
         list={props.listConnectionProfiles}
         connect={props.connectConnectionProfile}
@@ -1981,6 +1983,12 @@ export function Shell(props: ShellProps) {
         repairProviderHistory={repairBackgroundRelocation}
       />
       </OverlayPortal>
+      {mobileConnectOpen ? <MobileConnectDialog
+        prepare={props.prepareMobileAccess}
+        loadVoiceSettings={props.loadVoiceSettings}
+        saveVoiceCredentials={props.saveVoiceCredentials}
+        close={() => setMobileConnectOpen(false)}
+      /> : null}
     </>
   );
 }
