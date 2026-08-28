@@ -28,6 +28,8 @@ SOURCE_BRANCH="develop"
 TARGET_BRANCH="main"
 CI_WORKFLOW="ci.yml"
 LOCK_DIR="${TMPDIR:-/tmp}/termloop-promote-main-${UID}"
+main_checkout=""
+created_main_checkout=0
 
 need_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -73,6 +75,9 @@ acquire_lock() {
 
 acquire_lock
 cleanup() {
+  if [[ "$created_main_checkout" == "1" && -n "$main_checkout" ]]; then
+    git -C "$REPO_DIR" worktree remove "$main_checkout" >/dev/null 2>&1 || true
+  fi
   rm -f "$LOCK_DIR/pid"
   rmdir "$LOCK_DIR" >/dev/null 2>&1 || true
 }
@@ -206,9 +211,11 @@ fi
 
 main_checkout="$(worktree_for_branch "$TARGET_BRANCH")"
 if [[ -z "$main_checkout" ]]; then
-  echo "No designated local $TARGET_BRANCH checkout exists."
-  echo "Create one with git worktree before promoting."
-  exit 1
+  main_checkout="$(mktemp -d "${TMPDIR:-/tmp}/termloop-main-promotion.XXXXXX")"
+  rmdir "$main_checkout"
+  git -C "$REPO_DIR" worktree add "$main_checkout" "$TARGET_BRANCH"
+  created_main_checkout=1
+  echo "Created temporary $TARGET_BRANCH checkout: $main_checkout"
 fi
 
 if [[ -n "$(git -C "$main_checkout" status --porcelain)" ]]; then
