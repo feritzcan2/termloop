@@ -77,6 +77,7 @@ pub use termloop_domain::{ImproverSessionTarget, ImproverSessionTargetKind};
 /// preference onto its generated contract shape without depending on `domain`.
 pub use termloop_domain::{KeepAwakeMode, KeepAwakePreference};
 pub use termloop_invocation::SettingsEntryKind;
+pub use termloop_providers::{OpenAiVoiceService as VoiceService, VoiceProviderError};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

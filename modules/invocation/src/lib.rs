@@ -119,19 +119,19 @@ const ROUTINE_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.playbook",
-    version: 13,
+    version: 14,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.playbook.md"),
 };
 
 const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.steward.executor",
-    version: 30,
+    version: 31,
     authored_body: include_str!("../../../resources/prompts/builtin.steward.executor.md"),
 };
 
 const WORKER_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.worker.executor",
-    version: 17,
+    version: 18,
     authored_body: include_str!("../../../resources/prompts/builtin.worker.executor.md"),
 };
 
@@ -4079,8 +4079,8 @@ mod tests {
         let launch = prompt_improver_launch(target);
         let delivered = launch.delivered_prompt().unwrap();
 
-        assert_eq!(template.version, 13);
-        assert_eq!(launch.provenance().template_version, 13);
+        assert_eq!(template.version, 14);
+        assert_eq!(launch.provenance().template_version, 14);
         for expected in [
             "two compact review",
             "show the complete normal path as one readable arrow sequence",
@@ -4096,6 +4096,8 @@ mod tests {
             "never send probe",
             "authenticated scoped",
             "Project checkout cwd or",
+            "task_agent_request",
+            "Worker-to-Agent coordination among the recommended options",
         ] {
             assert!(delivered.contains(expected), "missing {expected:?}");
         }
@@ -4688,6 +4690,7 @@ mod tests {
                     .content
                     .contains("task_agent_transcript_tail_read")
             );
+            assert!(instructions.content.contains("task_agent_request"));
             match agent_id {
                 "codex" => assert!(worker.args().iter().any(|argument| {
                     argument.starts_with("developer_instructions=")
@@ -5880,11 +5883,17 @@ mod tests {
     #[test]
     fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
         let prompt = executor_prompt(ExecutorRole::Steward).unwrap();
-        assert_eq!(prompt.provenance().template_version, 30);
+        assert_eq!(prompt.provenance().template_version, 31);
         assert!(prompt.authored_preview().contains("routine_finding_read"));
         assert!(prompt.authored_preview().contains("playbook_read"));
         assert!(prompt.authored_preview().contains("task_set_steward_brief"));
         assert!(prompt.authored_preview().contains("task_agent_start"));
+        assert!(prompt.authored_preview().contains("inputMode: voice"));
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("idempotent and safe to retry")
+        );
         assert!(
             prompt
                 .authored_preview()
@@ -6066,7 +6075,7 @@ mod tests {
     #[test]
     fn pipeline_prompts_treat_a_step_title_as_a_label_not_a_yes_no_contract() {
         let worker = executor_prompt(ExecutorRole::Worker).unwrap();
-        assert_eq!(worker.provenance().template_version, 17);
+        assert_eq!(worker.provenance().template_version, 18);
         assert!(
             worker
                 .authored_preview()

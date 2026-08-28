@@ -16,7 +16,7 @@ use termloop_contract::current::{
     McpStewardTaskRenameParams, McpStewardTaskSetJiraUrlParams, McpStewardTaskUpdateBriefParams,
     McpTaskAgentTranscriptTailReadParams, ProjectionTopic, ReplyToRequestParams,
     RoutineFindingResolveParams, SendToAgentParams, WorkerRoutineCompleteParams,
-    WorkerRoutineProblemParams, WorkerStepVerdictsParams,
+    WorkerRoutineProblemParams, WorkerStepVerdictsParams, WorkerTaskAgentRequestParams,
 };
 use tokio::time::{Duration, Instant};
 
@@ -548,6 +548,15 @@ async fn tool_call_inner(
             send_steward_agent_message(project_id, principal.session_id(), params, state).await
         }
         (
+            termloop_core::session_launch::AgentMcpRole::Worker { project_id, .. },
+            "task_agent_request",
+        ) => {
+            let params: WorkerTaskAgentRequestParams = serde_json::from_value(arguments)
+                .expect("generated MCP validation precedes decoding");
+            worker_task_agent_request(project_id, principal.session_id(), token, params, state)
+                .await
+        }
+        (
             termloop_core::session_launch::AgentMcpRole::Worker {
                 project_id,
                 worker_id: _,
@@ -681,7 +690,7 @@ fn role_instructions(role: &termloop_core::session_launch::AgentMcpRole) -> &'st
             "Authenticated Project Steward profile. Follow the visible versioned Steward and wake prompts; the exposed MCP tools enforce Project scope and mutation authority."
         }
         termloop_core::session_launch::AgentMcpRole::Worker { .. } => {
-            "Authenticated Project Worker profile. Follow the visible versioned Worker and wake prompts; the exposed MCP tools enforce Routine reporting scope. Use task_agent_transcript_tail_read when Task completion evidence depends on recent developer Agent reports. Workers cannot contact Task Agents."
+            "Authenticated Project Worker profile. Follow the visible versioned Worker and wake prompts; the exposed MCP tools enforce Routine reporting scope. Use task_agent_transcript_tail_read when Task completion evidence depends on recent developer Agent reports. During an exact claimed Playbook step, task_agent_request may send one Task-scoped question or delegated follow-up only to an ordinary Agent returned by that Task's successful scoped task_read; the Agent may return a visible handoff to this exact Worker Session. Workers cannot contact any other Agent or launch a replacement."
         }
         termloop_core::session_launch::AgentMcpRole::Helper {
             request_id: Some(_),
@@ -1188,6 +1197,47 @@ async fn send_steward_agent_message(
         observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
     });
     Ok(json!({ "sessionId": params.session_id, "status": "submitting" }))
+}
+
+async fn worker_task_agent_request(
+    project_id: &str,
+    worker_session_id: &str,
+    token: &str,
+    params: WorkerTaskAgentRequestParams,
+    state: &AppState,
+) -> Result<Value, termloop_core::CoreError> {
+    let capability = claimed_check(state, project_id, worker_session_id, &params.check_id)?;
+    let focused_task_id = state.core.lock().await.tracker_check_task_id(&capability)?;
+    if focused_task_id.as_deref() != Some(params.task_id.as_str()) {
+        return Err(termloop_core::CoreError::CapabilityDenied);
+    }
+    let task_read_completed =
+        state
+            .tracker_report_capabilities
+            .lock()
+            .ok()
+            .is_some_and(|mut capabilities| {
+                capabilities.task_was_read(
+                    worker_session_id,
+                    &params.check_id,
+                    &params.task_id,
+                    super::current_epoch_ms(),
+                )
+            });
+    if !task_read_completed {
+        return Err(termloop_core::CoreError::TrackerReportInvalid);
+    }
+
+    let mut core = state.core.lock().await;
+    if core.tracker_check_task_id(&capability)?.as_deref() != Some(params.task_id.as_str()) {
+        return Err(termloop_core::CoreError::TrackerReportStale);
+    }
+    core.ensure_task_agent_request_target_for_executor(
+        project_id,
+        &params.task_id,
+        &params.session_id,
+    )?;
+    core.send_to_agent(token, &params.session_id, &params.message)
 }
 
 async fn worker_get_next_routine(
@@ -1860,6 +1910,8 @@ mod tests {
         );
         assert!(tool_names(&worker).contains(&"task_agent_transcript_tail_read"));
         assert!(!tool_names(&steward).contains(&"task_agent_transcript_tail_read"));
+        assert!(tool_names(&worker).contains(&"task_agent_request"));
+        assert!(!tool_names(&steward).contains(&"task_agent_request"));
         assert!(!tool_names(&worker).contains(&"send_to_agent"));
         assert!(tool_names(&worker).contains(&"worker_report_routine_problem"));
         assert!(!tool_names(&worker).contains(&"ask_to"));
@@ -1895,6 +1947,19 @@ mod tests {
                 .is_some_and(|description| description.contains(
                     "visible `builtin.steward.task-assignment` explicitly supplies the exact Steward Session ID"
                 ))
+        );
+        let task_agent_request = worker
+            .iter()
+            .find(|tool| tool["name"] == "task_agent_request")
+            .unwrap();
+        assert!(task_agent_request["inputSchema"]["properties"]["checkId"].is_object());
+        assert!(task_agent_request["inputSchema"]["properties"]["taskId"].is_object());
+        assert!(task_agent_request["inputSchema"]["properties"]["sessionId"].is_object());
+        assert_eq!(task_agent_request["annotations"]["readOnlyHint"], false);
+        assert!(
+            task_agent_request["description"]
+                .as_str()
+                .is_some_and(|description| description.contains("may return one visible handoff"))
         );
     }
 
@@ -2017,6 +2082,24 @@ mod tests {
         assert!(!protocol::validate_mcp_tool_params(
             "task_agent_transcript_tail_read",
             &json!({ "taskId": "task-1", "sessionId": "session-1" })
+        ));
+        assert!(protocol::validate_mcp_tool_params(
+            "task_agent_request",
+            &json!({
+                "checkId": "check-1",
+                "taskId": "task-1",
+                "sessionId": "123e4567-e89b-42d3-a456-426614174001",
+                "message": "Investigate the exact merged behavior and return correlation evidence."
+            })
+        ));
+        assert!(!protocol::validate_mcp_tool_params(
+            "task_agent_request",
+            &json!({
+                "checkId": "check-1",
+                "taskId": "task-1",
+                "sessionId": "another-task-agent",
+                "message": "Investigate it."
+            })
         ));
         assert!(protocol::validate_mcp_tool_params(
             "steward_system_prompt_update",

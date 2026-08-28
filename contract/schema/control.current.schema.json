@@ -1339,6 +1339,22 @@
         "$ref": "#/$defs/companionStewardWakeResult"
       }
     },
+    "voice.settingsGet": {
+      "params": {
+        "$ref": "#/$defs/emptyParams"
+      },
+      "result": {
+        "$ref": "#/$defs/voiceSettingsResult"
+      }
+    },
+    "voice.credentialsSet": {
+      "params": {
+        "$ref": "#/$defs/voiceCredentialsSetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/voiceSettingsResult"
+      }
+    },
     "gitHost.pullRequestList": {
       "params": {
         "$ref": "#/$defs/gitHostPullRequestListParams"
@@ -1539,6 +1555,8 @@
         "companion.transcriptClear",
         "companion.wakeNext",
         "companion.stewardWake",
+        "voice.settingsGet",
+        "voice.credentialsSet",
         "gitHost.pullRequestList",
         "gitHost.pullRequestChangeList",
         "gitHost.pullRequestDiff"
@@ -1800,6 +1818,7 @@
         "task_read",
         "agent_status_read",
         "task_agent_transcript_tail_read",
+        "task_agent_request",
         "pull_request_read",
         "routine_report_read",
         "companion_transcript_read",
@@ -1905,8 +1924,8 @@
           "items": {
             "$ref": "#/$defs/mcpToolSettingsDto"
           },
-          "minItems": 32,
-          "maxItems": 32,
+          "minItems": 33,
+          "maxItems": 33,
           "uniqueItems": true
         }
       }
@@ -10512,6 +10531,15 @@
         "decline"
       ]
     },
+    "companionMessageInputMode": {
+      "x-codegen": true,
+      "x-codegen-name": "CompanionMessageInputMode",
+      "type": "string",
+      "enum": [
+        "text",
+        "voice"
+      ]
+    },
     "companionMessageRefsDto": {
       "x-codegen": true,
       "x-codegen-name": "CompanionMessageRefsDto",
@@ -10585,6 +10613,9 @@
         "kind": {
           "$ref": "#/$defs/companionMessageKind"
         },
+        "inputMode": {
+          "$ref": "#/$defs/companionMessageInputMode"
+        },
         "refs": {
           "$ref": "#/$defs/companionMessageRefsDto"
         },
@@ -10653,12 +10684,47 @@
           "type": "string",
           "minLength": 1
         },
+        "inputMode": {
+          "$ref": "#/$defs/companionMessageInputMode"
+        },
         "content": {
           "type": "string",
           "minLength": 1,
           "maxLength": 49152,
           "pattern": "\\S",
           "x-utf8-max-bytes": 49152
+        }
+      }
+    },
+    "voiceSettingsResult": {
+      "x-codegen": true,
+      "x-codegen-name": "VoiceSettingsResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "configured"
+      ],
+      "properties": {
+        "configured": {
+          "type": "boolean"
+        }
+      }
+    },
+    "voiceCredentialsSetParams": {
+      "x-codegen": true,
+      "x-codegen-name": "VoiceCredentialsSetParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "apiKey"
+      ],
+      "properties": {
+        "apiKey": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 512,
+          "pattern": "^sk-\\S+$",
+          "x-utf8-max-bytes": 512
         }
       }
     },

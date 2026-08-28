@@ -8,6 +8,7 @@ import { ConnectionProvider } from "@/features/connection/connection-store";
 import { NotificationCoordinator } from "@/features/notifications/notification-coordinator";
 import { OverviewProvider } from "@/features/overview/overview-store";
 import { WatchSyncCoordinator } from "@/features/watch/watch-sync-coordinator";
+import { StewardVoiceDock } from "@/components/steward-voice-dock";
 import { AppLifecycleProvider } from "@/platform/app-lifecycle";
 import { color } from "@/theme/tokens";
 
@@ -40,6 +41,7 @@ export default function RootLayout() {
                 <Stack.Screen name="steward/[projectId]" />
                 <Stack.Screen name="session/[sessionId]" />
               </Stack>
+              <StewardVoiceDock />
             </OverviewProvider>
           </ConnectionProvider>
         </RuntimeProvider>

@@ -327,6 +327,12 @@ handleIpc("termloop:keep-awake-get", () => controlCall("system.keepAwake.get"));
 handleIpc("termloop:keep-awake-set", (_event, params: KeepAwakeSetParams) =>
   controlCall("system.keepAwake.set", params),
 );
+handleIpc("termloop:voice-settings-get", () => controlCall("voice.settingsGet"));
+handleIpc(
+  "termloop:voice-credentials-set",
+  (_event, params: import("@termloop/contract/current").VoiceCredentialsSetParams) =>
+    controlCall("voice.credentialsSet", params),
+);
 handleIpc("termloop:mcp-tool-settings-get", () => controlCall("mcp.toolSettingsGet"));
 handleIpc(
   "termloop:mcp-tool-description-update",

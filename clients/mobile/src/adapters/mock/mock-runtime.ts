@@ -84,7 +84,12 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
   // reply would otherwise both claim the same sequence, and the production
   // adapter orders the thread by exactly this field.
   let nextSequence = (transcript.at(-1)?.sequence ?? 0) + 1;
-  const appended = (author: "user" | "steward", kind: StewardMessage["kind"], content: string): StewardMessage => {
+  const appended = (
+    author: "user" | "steward",
+    kind: StewardMessage["kind"],
+    content: string,
+    inputMode: StewardMessage["inputMode"] = "text",
+  ): StewardMessage => {
     const sequence = nextSequence;
     nextSequence += 1;
     return {
@@ -93,6 +98,7 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
       sequence,
       author,
       kind,
+      inputMode,
       content,
       createdAtEpochMs: 1_786_617_600_000 + sequence * 1_000,
     };
@@ -236,6 +242,20 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
           appended("steward", "reply", "Noted. I will look at it and report back here."),
         ];
         return transcript.map((message) => ({ ...message }));
+      },
+      async sendVoice(connectionId) {
+        if (connectionId !== profiles[0]?.id) throw new Error("mock connection not found");
+        const user = appended("user", "reply", "Mock voice turn", "voice");
+        transcript = [
+          ...transcript,
+          user,
+          appended("steward", "reply", "I heard the mock voice turn clearly."),
+        ];
+        return { transcript: user.content, userSequence: user.sequence };
+      },
+      async speech(connectionId) {
+        if (connectionId !== profiles[0]?.id) throw new Error("mock connection not found");
+        return new Uint8Array([73, 68, 51]);
       },
       async respond(connectionId, _projectId, messageId, action) {
         if (connectionId !== profiles[0]?.id) throw new Error("mock connection not found");

@@ -23,6 +23,11 @@ struct VoiceSendResponse: Codable {
     let message: ChatMessage
 }
 
+private struct StewardSpeechRequest: Codable {
+    let projectId: String
+    let sequence: Int
+}
+
 struct StewardActionRequest: Codable {
     let projectId: String
     let messageId: String
@@ -57,14 +62,75 @@ struct StatusResponse: Codable {
     let sessions: [StatusSession]
 }
 
-enum Speech {
-    static let synthesizer = AVSpeechSynthesizer()
+@MainActor
+final class SpeechPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDelegate {
+    @Published private(set) var isSpeaking = false
 
-    static func speak(_ text: String) {
-        synthesizer.stopSpeaking(at: .immediate)
-        let utterance = AVSpeechUtterance(string: String(text.prefix(600)))
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+    private let synthesizer = AVSpeechSynthesizer()
+    private var player: AVAudioPlayer?
+    private var completion: (() -> Void)?
+
+    override init() {
+        super.init()
+        synthesizer.delegate = self
+    }
+
+    func play(_ audio: Data?, fallbackText: String, completion: @escaping () -> Void) {
+        cancel()
+        self.completion = completion
+        activatePlaybackSession()
+        if let audio,
+           let player = try? AVAudioPlayer(data: audio),
+           player.prepareToPlay() {
+            self.player = player
+            player.delegate = self
+            isSpeaking = true
+            if player.play() { return }
+        }
+        player = nil
+        let utterance = AVSpeechUtterance(string: String(fallbackText.prefix(1_500)))
+        utterance.voice = AVSpeechSynthesisVoice(language: "tr-TR")
+        utterance.rate = 0.47
+        utterance.pitchMultiplier = 0.98
+        isSpeaking = true
         synthesizer.speak(utterance)
+    }
+
+    func cancel() {
+        completion = nil
+        player?.stop()
+        player = nil
+        synthesizer.stopSpeaking(at: .immediate)
+        isSpeaking = false
+        try? AVAudioSession.sharedInstance().setActive(false)
+    }
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in self.finished() }
+    }
+
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        Task { @MainActor in self.finished() }
+    }
+
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        Task { @MainActor in self.finished() }
+    }
+
+    private func activatePlaybackSession() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .spokenAudio)
+        try? session.setActive(true)
+    }
+
+    private func finished() {
+        guard isSpeaking else { return }
+        isSpeaking = false
+        player = nil
+        try? AVAudioSession.sharedInstance().setActive(false)
+        let action = completion
+        completion = nil
+        action?()
     }
 }
 
@@ -79,14 +145,17 @@ struct ChatView: View {
 
     init(autoStart: Bool = false) {
         self.autoStart = autoStart
+        _liveConversation = State(initialValue: autoStart)
     }
 
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var appState = AppState.shared
     @AppStorage("chatConnectionId") private var connectionId = ""
     @AppStorage("chatProjectId") private var projectId = ""
     @AppStorage("speakReplies") private var speakReplies = true
 
     @StateObject private var recorder = VoiceRecorder()
+    @StateObject private var speech = SpeechPlayer()
     @State private var projects: [ChatProjectOption] = []
     @State private var messages: [ChatMessage] = []
     @State private var selectedSequence: Int?
@@ -96,6 +165,7 @@ struct ChatView: View {
     @State private var lastSpokenSequence = 0
     @State private var awaitingReplySince: Int?
     @State private var didAutoStart = false
+    @State private var liveConversation = false
 
     var body: some View {
         VStack(spacing: 3) {
@@ -154,7 +224,7 @@ struct ChatView: View {
                     } else {
                         ZStack {
                             Circle().fill(Theme.stew)
-                            Image(systemName: sending ? "ellipsis" : "mic.fill")
+                            Image(systemName: speech.isSpeaking ? "waveform" : (sending ? "ellipsis" : "mic.fill"))
                                 .font(.system(size: 17, weight: .semibold))
                                 .foregroundStyle(.black)
                         }
@@ -215,15 +285,33 @@ struct ChatView: View {
         .onAppear {
             if appState.autoTalkRequested { autoTalk() }
         }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background {
+                liveConversation = false
+                recorder.cancel()
+                speech.cancel()
+            }
+        }
+        .onDisappear {
+            liveConversation = false
+            recorder.cancel()
+            speech.cancel()
+        }
     }
 
     private var footerLabel: String {
-        switch recorder.phase {
-        case .listening: return "dinliyorum…"
-        case .transcribing: return "yazıya çevriliyor…"
-        case .denied: return "mikrofon izni kapalı"
-        case .idle: return awaitingReplySince == nil ? "" : "stew düşünüyor…"
+        let status: String
+        if speech.isSpeaking { status = "stew konuşuyor…" }
+        else {
+            switch recorder.phase {
+            case .listening: status = "dinliyorum…"
+            case .transcribing: status = "yazıya çevriliyor…"
+            case .denied: status = "mikrofon izni kapalı"
+            case .idle: status = awaitingReplySince == nil ? "" : "stew düşünüyor…"
+            }
         }
+        if liveConversation { return status.isEmpty ? "canlı konuşma" : "canlı • \(status)" }
+        return status
     }
 
     private var footerColor: Color {
@@ -244,6 +332,11 @@ struct ChatView: View {
     // step. If the microphone was refused, the system dictation sheet remains
     // as the way in.
     private func micTapped() {
+        if speech.isSpeaking {
+            speech.cancel()
+            listen()
+            return
+        }
         if recorder.phase == .listening {
             recorder.finish()
             return
@@ -273,6 +366,7 @@ struct ChatView: View {
     // wearer only has to speak.
     private func autoTalk() {
         appState.autoTalkRequested = false
+        liveConversation = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             listen()
         }
@@ -282,6 +376,7 @@ struct ChatView: View {
         await loadProjects()
         if autoStart && !didAutoStart {
             didAutoStart = true
+            liveConversation = true
             listen()
         }
         while !Task.isCancelled {
@@ -424,7 +519,36 @@ struct ChatView: View {
         if reply.sequence > lastSpokenSequence {
             lastSpokenSequence = reply.sequence
             Haptics.reply()
-            if speakReplies { Speech.speak(reply.content) }
+            if speakReplies {
+                Task { await speak(reply) }
+            } else if liveConversation {
+                scheduleNextListen()
+            }
+        }
+    }
+
+    private func speak(_ reply: ChatMessage) async {
+        guard let credential = CredentialStore.credential(id: connectionId), !projectId.isEmpty else {
+            if liveConversation { scheduleNextListen() }
+            return
+        }
+        let audio = try? await GatewayAPI.postBinary(
+            credential: credential,
+            path: "/watch/speech",
+            body: StewardSpeechRequest(projectId: projectId, sequence: reply.sequence)
+        )
+        speech.play(audio, fallbackText: reply.content) {
+            if liveConversation { scheduleNextListen() }
+        }
+    }
+
+    private func scheduleNextListen() {
+        guard liveConversation, scenePhase == .active else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            guard liveConversation, scenePhase == .active,
+                  recorder.phase == .idle, !speech.isSpeaking, !sending
+            else { return }
+            listen()
         }
     }
 }

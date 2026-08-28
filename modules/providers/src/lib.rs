@@ -1,7 +1,10 @@
 #![forbid(unsafe_code)]
 
 mod jira;
+mod openai_voice;
 mod pull_request_changes;
+
+pub use openai_voice::{OpenAiVoiceService, VoiceProviderError};
 
 pub use jira::{
     JiraBoard, JiraBoardListResult, JiraBoardSource, JiraCloudClient, JiraCredential,

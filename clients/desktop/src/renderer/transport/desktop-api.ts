@@ -146,6 +146,8 @@ import type {
   McpToolDescriptionResetParams,
   KeepAwakeSetParams,
   KeepAwakeStatusResult,
+  VoiceCredentialsSetParams,
+  VoiceSettingsResult,
   McpToolDescriptionUpdateParams,
   McpToolSettingsResult,
   TaskArchivePreviewDto,
@@ -225,6 +227,8 @@ export type DesktopApi = {
   systemInfo(): Promise<Record<string, unknown>>;
   keepAwakeGet(): Promise<KeepAwakeStatusResult>;
   keepAwakeSet(params: KeepAwakeSetParams): Promise<KeepAwakeStatusResult>;
+  voiceSettingsGet(): Promise<VoiceSettingsResult>;
+  voiceCredentialsSet(params: VoiceCredentialsSetParams): Promise<VoiceSettingsResult>;
   mcpToolSettingsGet(): Promise<McpToolSettingsResult>;
   mcpToolDescriptionUpdate(params: McpToolDescriptionUpdateParams): Promise<TaskControlDesktopResult<McpToolSettingsResult>>;
   mcpToolDescriptionReset(params: McpToolDescriptionResetParams): Promise<TaskControlDesktopResult<McpToolSettingsResult>>;

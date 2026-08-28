@@ -7,6 +7,8 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   systemInfo: "termloop:system-info",
   keepAwakeGet: "termloop:keep-awake-get",
   keepAwakeSet: "termloop:keep-awake-set",
+  voiceSettingsGet: "termloop:voice-settings-get",
+  voiceCredentialsSet: "termloop:voice-credentials-set",
   mcpToolSettingsGet: "termloop:mcp-tool-settings-get",
   mcpToolDescriptionUpdate: "termloop:mcp-tool-description-update",
   mcpToolDescriptionReset: "termloop:mcp-tool-description-reset",

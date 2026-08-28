@@ -131,7 +131,28 @@ describe("watch facade over the gateway", () => {
     const pairFile = path.join(directory, "watch-pair.json");
     const tokensSeen = [];
     const terminalMessages = [];
-    const upstreamServer = http.createServer();
+    const voiceRequests = [];
+    const upstreamServer = http.createServer(async (request, response) => {
+      const body = Buffer.concat(await Array.fromAsync(request));
+      voiceRequests.push({
+        url: request.url,
+        authorization: request.headers.authorization,
+        contentType: request.headers["content-type"],
+        body,
+      });
+      if (request.url === "/voice/transcriptions") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ text: "OpenAI saatten sesli mesaj" }));
+        return;
+      }
+      if (request.url === "/voice/speech") {
+        response.writeHead(200, { "content-type": "audio/mpeg" });
+        response.end("fake Steward mp3");
+        return;
+      }
+      response.writeHead(404);
+      response.end();
+    });
     const upstreamSockets = new WebSocketServer({ server: upstreamServer });
     upstreamSockets.on("connection", (socket, request) => {
       if (request.url === "/terminal") {
@@ -329,12 +350,63 @@ describe("watch facade over the gateway", () => {
         headers: { ...authorization, "content-type": "audio/m4a" },
         body: Buffer.from("fake m4a bytes"),
       })).json();
-      expect(voiceSent.transcript).toBe("saatten sesli mesaj");
+      expect(voiceSent.transcript).toBe("OpenAI saatten sesli mesaj");
       // The transcript, not the raw audio, is what reaches the Steward.
       const voiceAppend = tokensSeen.filter((entry) => entry.method === "companion.transcriptAppend").at(-1);
-      expect(voiceAppend?.params).toMatchObject({ projectId: "p1", content: "saatten sesli mesaj" });
+      expect(voiceAppend?.params).toMatchObject({
+        projectId: "p1",
+        inputMode: "voice",
+        content: "OpenAI saatten sesli mesaj",
+      });
+      expect(voiceRequests.find((entry) => entry.url === "/voice/transcriptions")).toMatchObject({
+        authorization: `Bearer ${"f".repeat(64)}`,
+        contentType: "audio/m4a",
+      });
       // The uploaded recording is not left behind on disk.
       expect(readdirSync(path.dirname(gatewayConfig)).some((entry) => entry.startsWith("watch-voice-"))).toBe(false);
+
+      // The phone uses the same provider path with its owner credential. The
+      // watch-scoped token cannot call the mobile route.
+      const mobileVoiceWithWatchToken = await fetch(`${base}/steward/voice?project=p1`, {
+        method: "POST",
+        headers: { ...authorization, "content-type": "audio/m4a" },
+        body: Buffer.from("fake m4a bytes"),
+      });
+      expect(mobileVoiceWithWatchToken.status).toBe(401);
+      const ownerAuthorization = { authorization: `Bearer ${"c".repeat(64)}` };
+      const mobileVoice = await (await fetch(`${base}/steward/voice?project=p1`, {
+        method: "POST",
+        headers: { ...ownerAuthorization, "content-type": "audio/m4a" },
+        body: Buffer.from("fake m4a bytes"),
+      })).json();
+      expect(mobileVoice.transcript).toBe("OpenAI saatten sesli mesaj");
+      expect(tokensSeen.filter((entry) => entry.method === "companion.transcriptAppend").at(-1)?.params)
+        .toMatchObject({ projectId: "p1", inputMode: "voice" });
+
+      const speech = await fetch(`${base}/watch/speech`, {
+        method: "POST",
+        headers: { ...authorization, "content-type": "application/json" },
+        body: JSON.stringify({ projectId: "p1", sequence: 1 }),
+      });
+      expect(speech.status).toBe(200);
+      expect(Buffer.from(await speech.arrayBuffer()).toString()).toBe("fake Steward mp3");
+      const speechRequest = voiceRequests.find((entry) => entry.url === "/voice/speech");
+      expect(speechRequest?.authorization).toBe(`Bearer ${"f".repeat(64)}`);
+      expect(JSON.parse(speechRequest?.body.toString() ?? "{}")).toEqual({ text: "hi" });
+
+      const mobileSpeechWithWatchToken = await fetch(`${base}/steward/speech`, {
+        method: "POST",
+        headers: { ...authorization, "content-type": "application/json" },
+        body: JSON.stringify({ projectId: "p1", sequence: 1 }),
+      });
+      expect(mobileSpeechWithWatchToken.status).toBe(401);
+      const mobileSpeech = await fetch(`${base}/steward/speech`, {
+        method: "POST",
+        headers: { ...ownerAuthorization, "content-type": "application/json" },
+        body: JSON.stringify({ projectId: "p1", sequence: 1 }),
+      });
+      expect(mobileSpeech.status).toBe(200);
+      expect(Buffer.from(await mobileSpeech.arrayBuffer()).toString()).toBe("fake Steward mp3");
 
       const chat = await (await fetch(`${base}/watch/chat?project=p1`, { headers: authorization })).json();
       expect(chat.messages).toEqual([{

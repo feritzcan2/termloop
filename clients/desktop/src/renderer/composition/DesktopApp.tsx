@@ -2033,6 +2033,8 @@ export function DesktopApp() {
       errorLog={projection.errorLog}
       clearErrorLog={() => projectionStore.clearErrorLog()}
       prepareMobileAccess={desktopApi.mobileAccessPairing}
+      loadVoiceSettings={desktopApi.voiceSettingsGet}
+      saveVoiceCredentials={desktopApi.voiceCredentialsSet}
       listConnectionProfiles={desktopApi.connectionProfileList}
       connectConnectionProfile={async (input) => {
         const result = await desktopApi.connectionProfileConnect(input);

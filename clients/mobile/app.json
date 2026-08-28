@@ -56,6 +56,15 @@
           "photosPermission": "Choose a photo to send to a TermLoop agent.",
           "cameraPermission": "Take a photo to send to a TermLoop agent."
         }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "TermLoop uses the microphone only while you are speaking live with Steward.",
+          "recordAudioAndroid": true,
+          "enableBackgroundRecording": false,
+          "enableBackgroundPlayback": false
+        }
       ]
     ],
     "experiments": {

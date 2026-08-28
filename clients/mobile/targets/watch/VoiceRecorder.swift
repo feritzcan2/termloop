@@ -5,8 +5,9 @@ import WatchKit
 // Records straight from the wrist mic instead of going through the system
 // dictation sheet: one tap starts listening, falling silent ends it, and the
 // recording is transcribed by the paired Mac's own on-device speech
-// recognition. That removes the sheet and its confirm button from the path —
-// tap, speak, done.
+// recognition through the paired Mac daemon (OpenAI when configured, on-device
+// fallback otherwise). That removes the sheet and its confirm button from the
+// path — tap, speak, done.
 @MainActor
 final class VoiceRecorder: NSObject, ObservableObject {
     enum Phase: Equatable {

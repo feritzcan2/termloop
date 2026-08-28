@@ -188,6 +188,20 @@ describe("mock mobile runtime", () => {
     expect(afterAccept.at(-1)?.kind).toBe("approval");
   });
 
+  it("marks a mocked recording as a voice turn", async () => {
+    const runtime = createMockRuntime();
+
+    const appended = await runtime.steward.sendVoice(
+      "connection-local-mac",
+      "project-termloop-next",
+      { uri: "file:///mock.m4a", mediaType: "audio/m4a" },
+    );
+    const transcript = await runtime.steward.transcript("connection-local-mac", "project-termloop-next");
+
+    expect(appended.transcript).toBe("Mock voice turn");
+    expect(transcript.find((message) => message.sequence === appended.userSequence)?.inputMode).toBe("voice");
+  });
+
   it("refuses to answer a Steward message the transcript does not hold", async () => {
     const runtime = createMockRuntime();
     await expect(runtime.steward.respond(

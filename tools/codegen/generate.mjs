@@ -847,6 +847,7 @@ function formatRust(source) {
   const result = spawnSync("rustfmt", ["--edition", "2024", "--emit", "stdout"], {
     input: source,
     encoding: "utf8",
+    maxBuffer: 8 * 1024 * 1024,
   });
   if (result.status !== 0) {
     throw new Error(`rustfmt failed while generating the Rust contract: ${result.stderr || result.stdout}`);

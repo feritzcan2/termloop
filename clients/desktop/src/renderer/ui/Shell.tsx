@@ -19,7 +19,7 @@ import { ArchivedRail, archivedRailVisible, useArchivedTasks } from "./ArchivedR
 import { useDeletedSessions } from "./DeletedRail.js";
 import { ChangesOverlay, type ChangesSubject } from "./ChangesOverlay.js";
 import { taskReviewAgentSessions } from "../changes-review.js";
-import type { AgentCapabilityDto, AssistantPromptImproverTarget, GitHostPullRequestChangeListResult, GitHostPullRequestDiffResult, GitHostPullRequestIdentityDto, KeepAwakeSetParams, KeepAwakeStatusResult, McpToolDescriptionResetParams, McpToolDescriptionUpdateParams, McpToolSettingsResult, PlaybookRuntimeResult, ProjectLocalBranchListResult, ProjectWorktreeChangeListResult, ProjectWorktreeDiffResult, ProjectWorktreePreImageResult, QuickActionPreviewResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SessionRelocationPreviewDto, SettingsImproverTarget, TaskArchivePreviewDto, TaskBranchCommitChangeListResult, TaskBranchCommitDiffResult, TaskBranchCommitListResult, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeChangeListResult, TaskWorktreeCleanupPreviewDto, TaskWorktreeDiffResult, TaskWorktreePreImageResult, TaskWorktreeRepairPreviewDto } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AssistantPromptImproverTarget, GitHostPullRequestChangeListResult, GitHostPullRequestDiffResult, GitHostPullRequestIdentityDto, KeepAwakeSetParams, KeepAwakeStatusResult, McpToolDescriptionResetParams, McpToolDescriptionUpdateParams, McpToolSettingsResult, PlaybookRuntimeResult, ProjectLocalBranchListResult, ProjectWorktreeChangeListResult, ProjectWorktreeDiffResult, ProjectWorktreePreImageResult, QuickActionPreviewResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SessionRelocationPreviewDto, SettingsImproverTarget, TaskArchivePreviewDto, TaskBranchCommitChangeListResult, TaskBranchCommitDiffResult, TaskBranchCommitListResult, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeChangeListResult, TaskWorktreeCleanupPreviewDto, TaskWorktreeDiffResult, TaskWorktreePreImageResult, TaskWorktreeRepairPreviewDto, VoiceCredentialsSetParams, VoiceSettingsResult } from "@termloop/contract/current";
 import type { DeletedSessionDto, SessionHistoryPreviewResult } from "@termloop/contract/current";
 import type { ChangesOpenSource } from "../change-source.js";
 import { CommandPalette, KeyboardShortcutsDialog } from "./CommandPalette.js";
@@ -142,6 +142,8 @@ export type ShellProps = {
   errorLog: readonly ErrorLogEntry[];
   clearErrorLog(): void;
   prepareMobileAccess(): Promise<MobileAccessPairingResult>;
+  loadVoiceSettings(): Promise<VoiceSettingsResult>;
+  saveVoiceCredentials(params: VoiceCredentialsSetParams): Promise<VoiceSettingsResult>;
   listConnectionProfiles(): Promise<ConnectionProfileSummary[]>;
   connectConnectionProfile(input: ConnectionProfileConnectInput): Promise<ConnectionProfileConnectResult>;
   setConnectionProfileEnabled(profileId: string, enabled: boolean): Promise<ConnectionProfileSummary[]>;
@@ -1874,7 +1876,12 @@ export function Shell(props: ShellProps) {
         remove={props.deleteRunConfiguration}
         run={async () => undefined}
       /> : null}
-      {mobileConnectOpen ? <MobileConnectDialog prepare={props.prepareMobileAccess} close={() => setMobileConnectOpen(false)} /> : null}
+      {mobileConnectOpen ? <MobileConnectDialog
+        prepare={props.prepareMobileAccess}
+        loadVoiceSettings={props.loadVoiceSettings}
+        saveVoiceCredentials={props.saveVoiceCredentials}
+        close={() => setMobileConnectOpen(false)}
+      /> : null}
       {connectionProfilesOpen ? <ConnectionProfilesDialog
         list={props.listConnectionProfiles}
         connect={props.connectConnectionProfile}

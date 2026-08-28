@@ -214,14 +214,11 @@ impl CoreRuntime {
         self.task_current_projection(task_id)
     }
 
-    /// Projects current status only for ordinary Agent Sessions whose cwd is
-    /// inside this exact Task's current worktree. Persistent assistants,
-    /// helpers, and Improve Sessions never become Task evidence through cwd.
-    pub fn task_agent_status_projection_for_executor(
+    fn task_agent_session_ids_for_executor(
         &self,
         project_id: &str,
         task_id: &str,
-    ) -> Result<Value, CoreError> {
+    ) -> Result<HashSet<String>, CoreError> {
         let task = self
             .store
             .tasks()
@@ -229,7 +226,7 @@ impl CoreRuntime {
             .find(|task| task.id == task_id && task.project_id == project_id)
             .ok_or(CoreError::NotFound)?;
         let Some(worktree) = task.worktree.as_ref() else {
-            return Ok(Value::Array(Vec::new()));
+            return Ok(HashSet::new());
         };
         let worktree_key = super::comparison_key(Path::new(&worktree.path))
             .map_err(|_| CoreError::InvalidParams("taskWorktree".into()))?;
@@ -247,7 +244,7 @@ impl CoreRuntime {
                     .filter_map(|configuration| configuration.executor_session_id.as_deref()),
             )
             .collect::<HashSet<_>>();
-        let task_session_ids = self
+        Ok(self
             .store
             .sessions()
             .iter()
@@ -260,8 +257,19 @@ impl CoreRuntime {
                     && super::comparison_key(Path::new(&session.process.cwd))
                         .is_ok_and(|session_key| worktree_key.contains_or_equals(&session_key))
             })
-            .map(|session| session.id.as_str())
-            .collect::<HashSet<_>>();
+            .map(|session| session.id.clone())
+            .collect())
+    }
+
+    /// Projects current status only for ordinary Agent Sessions whose cwd is
+    /// inside this exact Task's current worktree. Persistent assistants,
+    /// helpers, and Improve Sessions never become Task evidence through cwd.
+    pub fn task_agent_status_projection_for_executor(
+        &self,
+        project_id: &str,
+        task_id: &str,
+    ) -> Result<Value, CoreError> {
+        let task_session_ids = self.task_agent_session_ids_for_executor(project_id, task_id)?;
         let statuses = self.agent_status_list_for_project(Some(project_id))?;
         Ok(Value::Array(
             statuses
@@ -277,6 +285,22 @@ impl CoreRuntime {
                 .cloned()
                 .collect(),
         ))
+    }
+
+    /// Authorizes one Worker request target only when it is an ordinary Agent
+    /// projected into this exact Task worktree. The server separately proves
+    /// the Worker's live Playbook check and scoped Task-read receipt before
+    /// invoking the existing authenticated handoff path.
+    pub fn ensure_task_agent_request_target_for_executor(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        target_session_id: &str,
+    ) -> Result<(), CoreError> {
+        self.task_agent_session_ids_for_executor(project_id, task_id)?
+            .contains(target_session_id)
+            .then_some(())
+            .ok_or(CoreError::CapabilityDenied)
     }
 
     pub(crate) fn create_task(&mut self, params: Value) -> Result<Value, CoreError> {

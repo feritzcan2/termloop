@@ -11,6 +11,7 @@ import type {
   PlaybookProjection,
   SelectedImage,
   StewardMessage,
+  StewardVoiceClip,
   TerminalAttachment,
   TerminalEvent,
 } from "@/application/ports";
@@ -51,6 +52,8 @@ const REPLAY_BATCH_SETTLE_MS = 16;
 const MAX_REPLAY_BATCH_BYTES = 1024 * 1024;
 const STEWARD_TRANSCRIPT_LIMIT = 60;
 const STEWARD_MESSAGE_LIMIT = 8_192;
+const STEWARD_VOICE_LIMIT_BYTES = 12 * 1024 * 1024;
+const STEWARD_SPEECH_LIMIT_BYTES = 10 * 1024 * 1024;
 const INITIAL_PROMPT_LIMIT = 4_096;
 const BRACKETED_PASTE_START = "\u001b[200~";
 const BRACKETED_PASTE_END = "\u001b[201~";
@@ -341,6 +344,58 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
         const result = await control.call("companion.transcriptList", { projectId, limit: STEWARD_TRANSCRIPT_LIMIT });
         return orderedTranscript(result.messages);
       },
+      async sendVoice(connectionId, projectId, clip) {
+        const connection = await resolve(connectionId);
+        if (!validStewardVoiceClip(clip) || !validProjectId(projectId)) {
+          throw new Error("This recording cannot be sent to the Steward.");
+        }
+        const source = await request(clip.uri);
+        if (!source.ok) throw new Error("The recording could not be read.");
+        const body = await source.arrayBuffer();
+        if (body.byteLength === 0 || body.byteLength > STEWARD_VOICE_LIMIT_BYTES) {
+          throw new Error("Keep each voice turn under 12 MB.");
+        }
+        const endpoint = gatewayHttpEndpoint(connection, "/steward/voice");
+        endpoint.search = new URLSearchParams({ project: projectId }).toString();
+        const response = await request(endpoint.toString(), {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${connection.controlToken}`,
+            "content-type": clip.mediaType,
+          },
+          body,
+        });
+        if (!response.ok) throw new Error(stewardVoiceFailure(response.status));
+        const value: unknown = await response.json();
+        const transcript = (value as { transcript?: unknown } | null)?.transcript;
+        const userSequence = (value as { message?: { sequence?: unknown } } | null)?.message?.sequence;
+        if (typeof transcript !== "string" || transcript.trim().length === 0
+          || !Number.isSafeInteger(userSequence) || Number(userSequence) < 1) {
+          throw new Error("Your Mac returned an invalid voice transcript.");
+        }
+        return { transcript: transcript.trim(), userSequence: Number(userSequence) };
+      },
+      async speech(connectionId, projectId, sequence) {
+        const connection = await resolve(connectionId);
+        if (!validProjectId(projectId) || !Number.isSafeInteger(sequence) || sequence < 1) {
+          throw new Error("This Steward reply cannot be spoken.");
+        }
+        const endpoint = gatewayHttpEndpoint(connection, "/steward/speech");
+        const response = await request(endpoint.toString(), {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${connection.controlToken}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ projectId, sequence }),
+        });
+        if (!response.ok) throw new Error(stewardSpeechFailure(response.status));
+        const body = await response.arrayBuffer();
+        if (body.byteLength === 0 || body.byteLength > STEWARD_SPEECH_LIMIT_BYTES) {
+          throw new Error("Your Mac returned invalid Steward speech.");
+        }
+        return new Uint8Array(body);
+      },
       async respond(connectionId, projectId, messageId, action) {
         const control = controlClient(await resolve(connectionId));
         if (action === "accept") {
@@ -474,6 +529,38 @@ const IMAGE_MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 function validSessionId(value: string): boolean {
   return /^[A-Za-z0-9-]{1,128}$/.test(value);
+}
+
+function validProjectId(value: string): boolean {
+  return /^[A-Za-z0-9-]{1,64}$/.test(value);
+}
+
+function validStewardVoiceClip(clip: StewardVoiceClip): boolean {
+  return clip.uri.length > 0 && clip.uri.length <= 4096
+    && ["audio/m4a", "audio/mp4", "audio/webm"].includes(clip.mediaType);
+}
+
+function gatewayHttpEndpoint(connection: SavedConnection, pathname: string): URL {
+  const endpoint = new URL(connection.controlUrl);
+  endpoint.protocol = endpoint.protocol === "wss:" ? "https:" : "http:";
+  endpoint.pathname = pathname;
+  endpoint.search = "";
+  endpoint.hash = "";
+  return endpoint;
+}
+
+function stewardVoiceFailure(status: number): string {
+  if (status === 401) return "This Mac no longer accepts the saved mobile credential.";
+  if (status === 413) return "Keep each voice turn under 12 MB.";
+  if (status === 422) return "I could not hear speech in that recording.";
+  if (status === 404) return "Your Mac's mobile access gateway needs an update.";
+  return "Steward voice is unavailable. Try again shortly.";
+}
+
+function stewardSpeechFailure(status: number): string {
+  if (status === 401) return "This Mac no longer accepts the saved mobile credential.";
+  if (status === 404) return "That Steward reply is no longer available for speech.";
+  return "Steward speech is unavailable. Check the OpenAI voice key on your Mac.";
 }
 
 function imageMediaType(image: SelectedImage, responseMediaType: string | null): string | undefined {

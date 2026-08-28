@@ -91,8 +91,8 @@ enum GatewayAPI {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
-    /// Raw recorded audio, uploaded as the request body. Transcription happens
-    /// on the Mac, so this call outlives the ordinary read timeout.
+    /// Raw recorded audio, uploaded as the request body. The Mac daemon owns
+    /// provider access, so no OpenAI credential ever reaches the Watch.
     static func postAudio<T: Decodable>(
         credential: GatewayCredential,
         path: String,
@@ -107,6 +107,21 @@ enum GatewayAPI {
         let (data, response) = try await session.upload(for: request, from: audio)
         try validate(response: response, data: data)
         return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    static func postBinary<Body: Encodable>(
+        credential: GatewayCredential,
+        path: String,
+        body: Body
+    ) async throws -> Data {
+        var request = try authorizedRequest(credential: credential, path: path)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(body)
+        request.timeoutInterval = 30
+        let (data, response) = try await session.data(for: request)
+        try validate(response: response, data: data)
+        return data
     }
 
     private static func validate(response: URLResponse, data: Data) throws {

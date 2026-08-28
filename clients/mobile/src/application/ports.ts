@@ -161,11 +161,29 @@ export interface AgentLaunchPort {
 
 export type StewardMessage = CompanionMessageDto;
 
+export interface StewardVoiceClip {
+  /// Device-local cache URI produced by the platform recorder. The production
+  /// adapter reads it and uploads only the bounded bytes; the URI is never sent.
+  uri: string;
+  mediaType: "audio/m4a" | "audio/mp4" | "audio/webm";
+}
+
+export interface StewardVoiceAppend {
+  transcript: string;
+  userSequence: number;
+}
+
 export interface StewardPort {
   transcript(connectionId: string, projectId: string): Promise<readonly StewardMessage[]>;
   /// Appends one user message. The daemon's own chat wake brings the Steward up,
   /// exactly as it does for the desktop and Watch chats.
   send(connectionId: string, projectId: string, content: string): Promise<readonly StewardMessage[]>;
+  /// Transcribes one bounded recording on the Mac, appends it as a live voice
+  /// turn, and returns the sequence that a later Steward reply must follow.
+  sendVoice(connectionId: string, projectId: string, clip: StewardVoiceClip): Promise<StewardVoiceAppend>;
+  /// Returns daemon-generated speech bytes for the exact persisted Steward
+  /// message. Provider credentials never cross this port.
+  speech(connectionId: string, projectId: string, sequence: number): Promise<Uint8Array>;
   /// Answers one pending Steward proposal or accepts one suggestion.
   respond(connectionId: string, projectId: string, messageId: string, action: "approve" | "decline" | "accept"): Promise<readonly StewardMessage[]>;
 }

@@ -61,13 +61,13 @@ pub use companion::{
     COMPANION_MESSAGE_MAX_BYTES, COMPANION_TRANSCRIPT_HARD_BYTES,
     COMPANION_TRANSCRIPT_HARD_MESSAGES, COMPANION_TRANSCRIPT_SOFT_BYTES,
     COMPANION_TRANSCRIPT_SOFT_MESSAGES, CompanionMessage, CompanionMessageAuthor,
-    CompanionMessageKind, CompanionMessageRefs, PendingRoutineFinding, ROUTINE_CONTEXT_MAX_BYTES,
-    ROUTINE_FINDING_EVIDENCE_MAX_BYTES, ROUTINE_FINDING_SUMMARY_MAX_BYTES,
-    ROUTINE_PENDING_FINDINGS_MAX, ROUTINE_RECENT_SOURCE_KEYS_MAX, ROUTINE_RELATED_TASKS_MAX,
-    ROUTINE_SOURCE_KEY_MAX_BYTES, RoutineActionHandling, RoutineTriggerMode,
-    STEWARD_SYSTEM_PROMPT_MAX_BYTES, StewardAgentId, StewardConfiguration, StewardConversationRef,
-    TRACKER_NAME_MAX_BYTES, TRACKER_PROMPT_MAX_BYTES, TRACKER_REPORT_MAX_BYTES,
-    TRACKER_REPORT_SOURCE_REF_MAX_BYTES, TRACKER_REPORT_SOURCE_REFS_MAX,
+    CompanionMessageInputMode, CompanionMessageKind, CompanionMessageRefs, PendingRoutineFinding,
+    ROUTINE_CONTEXT_MAX_BYTES, ROUTINE_FINDING_EVIDENCE_MAX_BYTES,
+    ROUTINE_FINDING_SUMMARY_MAX_BYTES, ROUTINE_PENDING_FINDINGS_MAX,
+    ROUTINE_RECENT_SOURCE_KEYS_MAX, ROUTINE_RELATED_TASKS_MAX, ROUTINE_SOURCE_KEY_MAX_BYTES,
+    RoutineActionHandling, RoutineTriggerMode, STEWARD_SYSTEM_PROMPT_MAX_BYTES, StewardAgentId,
+    StewardConfiguration, StewardConversationRef, TRACKER_NAME_MAX_BYTES, TRACKER_PROMPT_MAX_BYTES,
+    TRACKER_REPORT_MAX_BYTES, TRACKER_REPORT_SOURCE_REF_MAX_BYTES, TRACKER_REPORT_SOURCE_REFS_MAX,
     TRACKER_REPORTS_PER_PROJECT_MAX, TRACKER_SCHEDULE_MAX_SECONDS, TRACKER_SCHEDULE_MIN_SECONDS,
     TrackerConfiguration, TrackerKind, TrackerReport, TrackerReportKind, WORKER_NAME_MAX_BYTES,
     WORKER_PROMPT_MAX_BYTES, WORKER_SYSTEM_PROMPT_MAX_BYTES, WORKERS_PER_PROJECT_MAX,
@@ -97,6 +97,8 @@ pub enum McpToolName {
     AgentStatusRead,
     #[serde(rename = "task_agent_transcript_tail_read")]
     TaskAgentTranscriptTailRead,
+    #[serde(rename = "task_agent_request")]
+    TaskAgentRequest,
     #[serde(rename = "pull_request_read")]
     PullRequestRead,
     #[serde(rename = "routine_report_read", alias = "tracker_report_read")]
@@ -157,7 +159,7 @@ pub enum McpToolName {
 }
 
 impl McpToolName {
-    pub const ALL: [Self; 32] = [
+    pub const ALL: [Self; 33] = [
         Self::AskTo,
         Self::SendToAgent,
         Self::ReplyToRequest,
@@ -165,6 +167,7 @@ impl McpToolName {
         Self::TaskRead,
         Self::AgentStatusRead,
         Self::TaskAgentTranscriptTailRead,
+        Self::TaskAgentRequest,
         Self::PullRequestRead,
         Self::RoutineReportRead,
         Self::CompanionTranscriptRead,
@@ -201,6 +204,7 @@ impl McpToolName {
             Self::TaskRead => "task_read",
             Self::AgentStatusRead => "agent_status_read",
             Self::TaskAgentTranscriptTailRead => "task_agent_transcript_tail_read",
+            Self::TaskAgentRequest => "task_agent_request",
             Self::PullRequestRead => "pull_request_read",
             Self::RoutineReportRead => "routine_report_read",
             Self::CompanionTranscriptRead => "companion_transcript_read",
@@ -242,6 +246,7 @@ impl std::str::FromStr for McpToolName {
             "task_read" => Ok(Self::TaskRead),
             "agent_status_read" => Ok(Self::AgentStatusRead),
             "task_agent_transcript_tail_read" => Ok(Self::TaskAgentTranscriptTailRead),
+            "task_agent_request" => Ok(Self::TaskAgentRequest),
             "pull_request_read" => Ok(Self::PullRequestRead),
             "routine_report_read" | "tracker_report_read" => Ok(Self::RoutineReportRead),
             "companion_transcript_read" => Ok(Self::CompanionTranscriptRead),
@@ -1362,6 +1367,7 @@ mod tests {
                 "task_read",
                 "agent_status_read",
                 "task_agent_transcript_tail_read",
+                "task_agent_request",
                 "pull_request_read",
                 "routine_report_read",
                 "companion_transcript_read",

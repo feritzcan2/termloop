@@ -1,10 +1,10 @@
 use super::*;
 use termloop_domain::{
-    CompanionMessage, CompanionMessageAuthor, CompanionMessageKind, PlaybookConfiguration,
-    PlaybookGateKind, PlaybookMilestone, PlaybookStepProgress, PlaybookStepVerdict,
-    ProcessDescriptor, ResumeFailureReason, ResumeProvider, ResumeRef, RoutineActionHandling,
-    RoutineTriggerMode, SessionKind, SessionRecord, StewardAgentId, StewardConfiguration,
-    TaskStatus, TrackerConfiguration, TrackerKind, WorkerConfiguration,
+    CompanionMessage, CompanionMessageAuthor, CompanionMessageInputMode, CompanionMessageKind,
+    PlaybookConfiguration, PlaybookGateKind, PlaybookMilestone, PlaybookStepProgress,
+    PlaybookStepVerdict, ProcessDescriptor, ResumeFailureReason, ResumeProvider, ResumeRef,
+    RoutineActionHandling, RoutineTriggerMode, SessionKind, SessionRecord, StewardAgentId,
+    StewardConfiguration, TaskStatus, TrackerConfiguration, TrackerKind, WorkerConfiguration,
 };
 
 #[test]
@@ -38,6 +38,7 @@ fn message(project_id: &str, sequence: u64, content: &str) -> CompanionMessage {
         sequence,
         author: CompanionMessageAuthor::User,
         kind: CompanionMessageKind::Reply,
+        input_mode: CompanionMessageInputMode::Text,
         refs: None,
         content: content.into(),
         created_at_epoch_ms: sequence,

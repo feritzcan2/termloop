@@ -1298,13 +1298,23 @@ async fn dispatch_inner(
                 )
                 .expect("validated Companion transcript append params");
                 let author = companion_transcript_author(scope.expect("authenticated scope"));
+                let input_mode = match params
+                    .input_mode
+                    .unwrap_or(protocol::CompanionMessageInputMode::Text)
+                {
+                    protocol::CompanionMessageInputMode::Text => "text",
+                    protocol::CompanionMessageInputMode::Voice => "voice",
+                };
                 let mut core = state.core.lock().await;
-                let result = core.append_companion_message(
+                let result = core.append_companion_message_input(
                     &params.project_id,
-                    author,
-                    "reply",
-                    termloop_core::companion_integrations::transcript::CompanionMessageRefsInput::default(),
-                    params.content,
+                    termloop_core::companion_integrations::transcript::CompanionMessageAppendInput {
+                        author: author.into(),
+                        kind: "reply".into(),
+                        input_mode: input_mode.into(),
+                        refs: termloop_core::companion_integrations::transcript::CompanionMessageRefsInput::default(),
+                        content: params.content,
+                    },
                     current_epoch_ms(),
                 );
                 let state_revision = core.state_revision();
@@ -1325,6 +1335,10 @@ async fn dispatch_inner(
                     }
                 }
                 result
+            }
+            "voice.settingsGet" => super::super::voice::settings_get(request.params, state).await,
+            "voice.credentialsSet" => {
+                super::super::voice::credentials_set(request.params, state).await
             }
             "companion.proposalRespond" => {
                 let params = serde_json::from_value::<protocol::CompanionProposalRespondParams>(

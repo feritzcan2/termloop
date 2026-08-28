@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use termloop_domain::{
     COMPANION_TRANSCRIPT_HARD_BYTES, COMPANION_TRANSCRIPT_HARD_MESSAGES,
     COMPANION_TRANSCRIPT_SOFT_BYTES, COMPANION_TRANSCRIPT_SOFT_MESSAGES, CompanionMessage,
-    CompanionMessageAuthor, CompanionMessageKind, CompanionMessageRefs,
+    CompanionMessageAuthor, CompanionMessageInputMode, CompanionMessageKind, CompanionMessageRefs,
 };
 
 const MAX_TRANSCRIPT_PAGE: usize = 100;
@@ -17,6 +17,15 @@ pub struct CompanionMessageRefsInput {
     pub session_id: Option<String>,
     pub routine_finding_id: Option<String>,
     pub routine_finding_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompanionMessageAppendInput {
+    pub author: String,
+    pub kind: String,
+    pub input_mode: String,
+    pub refs: CompanionMessageRefsInput,
+    pub content: String,
 }
 
 impl CompanionMessageRefsInput {
@@ -114,15 +123,41 @@ impl CoreRuntime {
         content: String,
         created_at_epoch_ms: u64,
     ) -> Result<Value, CoreError> {
+        self.append_companion_message_input(
+            project_id,
+            CompanionMessageAppendInput {
+                author: author.into(),
+                kind: kind.into(),
+                input_mode: "text".into(),
+                refs,
+                content,
+            },
+            created_at_epoch_ms,
+        )
+    }
+
+    pub fn append_companion_message_input(
+        &mut self,
+        project_id: &str,
+        input: CompanionMessageAppendInput,
+        created_at_epoch_ms: u64,
+    ) -> Result<Value, CoreError> {
+        let CompanionMessageAppendInput {
+            author,
+            kind,
+            input_mode,
+            refs,
+            content,
+        } = input;
         if !self.project_exists(project_id) {
             return Err(CoreError::NotFound);
         }
-        let author = match author {
+        let author = match author.as_str() {
             "user" => CompanionMessageAuthor::User,
             "steward" => CompanionMessageAuthor::Steward,
             _ => return Err(CoreError::InvalidParams("author".into())),
         };
-        let kind = match kind {
+        let kind = match kind.as_str() {
             "reply" => CompanionMessageKind::Reply,
             "update" => CompanionMessageKind::Update,
             "attention" => CompanionMessageKind::Attention,
@@ -134,6 +169,11 @@ impl CoreRuntime {
             "approval" => CompanionMessageKind::Approval,
             "decline" => CompanionMessageKind::Decline,
             _ => return Err(CoreError::InvalidParams("kind".into())),
+        };
+        let input_mode = match input_mode.as_str() {
+            "text" => CompanionMessageInputMode::Text,
+            "voice" => CompanionMessageInputMode::Voice,
+            _ => return Err(CoreError::InvalidParams("inputMode".into())),
         };
         let refs = (refs.task_id.is_some()
             || refs.session_id.is_some()
@@ -161,6 +201,7 @@ impl CoreRuntime {
             sequence,
             author,
             kind,
+            input_mode,
             refs,
             content,
             created_at_epoch_ms,
@@ -359,12 +400,15 @@ mod tests {
         let (mut runtime, path) = runtime();
         let project_id = runtime.store.projects()[0].id.clone();
         runtime
-            .append_companion_message(
+            .append_companion_message_input(
                 &project_id,
-                "user",
-                "reply",
-                CompanionMessageRefsInput::default(),
-                "first".into(),
+                CompanionMessageAppendInput {
+                    author: "user".into(),
+                    kind: "reply".into(),
+                    input_mode: "voice".into(),
+                    refs: CompanionMessageRefsInput::default(),
+                    content: "first".into(),
+                },
                 1,
             )
             .unwrap();
@@ -388,6 +432,15 @@ mod tests {
         assert_eq!(page["nextBeforeSequence"], 2);
         assert!(page["usage"]["usedBytes"].as_u64().unwrap() > 11);
         assert_eq!(page["usage"]["usedMessages"], 2);
+        assert_eq!(
+            runtime
+                .list_companion_transcript(json!({
+                    "projectId": project_id,
+                    "limit": 2
+                }))
+                .unwrap()["messages"][1]["inputMode"],
+            "voice"
+        );
 
         assert!(matches!(
             runtime.clear_companion_transcript(json!({

@@ -118,6 +118,14 @@ const server = http.createServer(async (request, response) => {
     await uploadSessionImage(request, response);
     return;
   }
+  if (request.method === "POST" && safePathname(request.url) === "/steward/voice") {
+    await mobileStewardVoiceSend(request, response);
+    return;
+  }
+  if (request.method === "POST" && request.url === "/steward/speech") {
+    await mobileStewardSpeech(request, response);
+    return;
+  }
   if (request.method === "POST" && request.url === "/watch/pair") {
     await watchPair(request, response);
     return;
@@ -156,6 +164,10 @@ const server = http.createServer(async (request, response) => {
   }
   if (request.method === "POST" && safePathname(request.url) === "/watch/voice") {
     await watchVoiceSend(request, response);
+    return;
+  }
+  if (request.method === "POST" && request.url === "/watch/speech") {
+    await watchStewardSpeech(request, response);
     return;
   }
   if (request.method === "POST" && request.url === "/watch/reply") {
@@ -502,11 +514,12 @@ async function watchChatSend(request, response) {
   }
 }
 
-async function appendStewardMessage(projectId, content) {
+async function appendStewardMessage(projectId, content, inputMode) {
   const runtime = await currentRuntime();
   if (runtime.fullToken === undefined) throw new Error("TermLoop is unavailable");
   const full = controlCaller(runtime, runtime.fullToken);
-  const result = await full("companion.transcriptAppend", { projectId, content });
+  const params = inputMode === undefined ? { projectId, content } : { projectId, inputMode, content };
+  const result = await full("companion.transcriptAppend", params);
   return watchChatMessageOf(result.message);
 }
 
@@ -541,11 +554,21 @@ async function watchStewardAction(request, response) {
   }
 }
 
-/// Wrist audio, transcribed by this Mac's own on-device speech recognition and
-/// appended to the Steward transcript. The recording never leaves the machine
-/// the daemon already runs on, and the temporary file is removed on every path.
+/// Wrist audio is sent through the daemon-owned OpenAI voice capability. The
+/// gateway never sees the API key. If cloud transcription is not configured or
+/// temporarily unavailable, the existing on-device Mac recognizer remains a
+/// no-secret fallback.
 async function watchVoiceSend(request, response) {
   if (!watchAuthorized(request)) return json(response, 401, {});
+  return stewardVoiceSend(request, response);
+}
+
+async function mobileStewardVoiceSend(request, response) {
+  if (!ownerAuthorized(request)) return json(response, 401, {});
+  return stewardVoiceSend(request, response);
+}
+
+async function stewardVoiceSend(request, response) {
   const projectId = new URL(request.url, "http://127.0.0.1").searchParams.get("project") ?? "";
   if (!/^[A-Za-z0-9-]{1,64}$/.test(projectId)) return json(response, 400, { error: "invalid project" });
   let audio;
@@ -557,27 +580,108 @@ async function watchVoiceSend(request, response) {
   if (!validVoiceUpload(request.headers["content-type"], audio.length)) {
     return json(response, 400, { error: "invalid recording" });
   }
-  const runtimeDir = path.dirname(configFile);
-  const audioFile = path.join(runtimeDir, `watch-voice-${randomUUID()}.m4a`);
   let status = 503;
   let payload = { error: "transcription unavailable" };
   try {
-    await writeFile(audioFile, audio, { mode: 0o600 });
-    const { text } = await transcribeAudioFile(runtimeDir, audioFile);
+    const runtime = await currentRuntime();
+    if (runtime.fullToken === undefined) throw new Error("TermLoop is unavailable");
+    const text = await transcribeStewardAudio(runtime, audio, request.headers["content-type"]);
     if (text.length === 0) {
       status = 422;
       payload = { error: "no speech recognized" };
     } else {
-      const message = await appendStewardMessage(projectId, text.slice(0, 8192));
+      const message = await appendStewardMessage(projectId, text.slice(0, 8192), "voice");
       status = 200;
       payload = { transcript: text, message };
     }
   } catch {
-    // Keep the generic response and remove the recording before replying.
+    // Keep the generic response. Provider and credential details stay private.
+  }
+  return json(response, status, payload);
+}
+
+async function transcribeStewardAudio(runtime, audio, contentType) {
+  try {
+    const provider = await daemonVoiceFetch(runtime, "/voice/transcriptions", {
+      method: "POST",
+      headers: { "content-type": contentType },
+      body: audio,
+    });
+    if (provider.ok) {
+      const payload = await provider.json();
+      const text = typeof payload?.text === "string" ? payload.text.trim() : "";
+      if (text.length > 0 && text.length <= 64 * 1024) return text;
+    }
+  } catch {
+    // The no-secret local recognizer below preserves the existing wrist path.
+  }
+  const runtimeDir = path.dirname(configFile);
+  const audioFile = path.join(runtimeDir, `watch-voice-${randomUUID()}.m4a`);
+  try {
+    await writeFile(audioFile, audio, { mode: 0o600 });
+    return (await transcribeAudioFile(runtimeDir, audioFile)).text;
   } finally {
     await rm(audioFile, { force: true });
   }
-  return json(response, status, payload);
+}
+
+async function watchStewardSpeech(request, response) {
+  if (!watchAuthorized(request)) return json(response, 401, {});
+  return stewardSpeech(request, response);
+}
+
+async function mobileStewardSpeech(request, response) {
+  if (!ownerAuthorized(request)) return json(response, 401, {});
+  return stewardSpeech(request, response);
+}
+
+async function stewardSpeech(request, response) {
+  try {
+    const body = JSON.parse(await readBody(request, 4096));
+    const projectId = typeof body?.projectId === "string" ? body.projectId : "";
+    const sequence = Number(body?.sequence);
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(projectId)
+      || !Number.isSafeInteger(sequence) || sequence < 1) {
+      return json(response, 400, { error: "invalid speech target" });
+    }
+    const runtime = await currentRuntime();
+    if (runtime.fullToken === undefined) return json(response, 503, { error: "TermLoop is unavailable" });
+    const full = controlCaller(runtime, runtime.fullToken);
+    const transcript = await full("companion.transcriptList", { projectId, limit: 100 });
+    const message = transcript.messages.find((entry) => entry.sequence === sequence && entry.author === "steward");
+    if (message === undefined) return json(response, 404, { error: "Steward reply was not found" });
+    const provider = await daemonVoiceFetch(runtime, "/voice/speech", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: message.content }),
+    });
+    if (!provider.ok) return json(response, 503, { error: "Steward voice is unavailable" });
+    const audio = Buffer.from(await provider.arrayBuffer());
+    if (audio.length === 0 || audio.length > 10 * 1024 * 1024) {
+      return json(response, 503, { error: "Steward voice is unavailable" });
+    }
+    response.writeHead(200, {
+      "content-type": "audio/mpeg",
+      "content-length": audio.length,
+      "cache-control": "no-store",
+    });
+    response.end(audio);
+  } catch {
+    return json(response, 503, { error: "Steward voice is unavailable" });
+  }
+}
+
+function daemonVoiceFetch(runtime, pathname, options) {
+  const endpoint = new URL(runtime.controlUrl);
+  endpoint.protocol = "http:";
+  endpoint.pathname = pathname;
+  endpoint.search = "";
+  endpoint.hash = "";
+  return fetch(endpoint, {
+    ...options,
+    headers: { ...options.headers, authorization: `Bearer ${runtime.fullToken}` },
+    signal: AbortSignal.timeout(30_000),
+  });
 }
 
 async function watchReply(request, response) {

@@ -805,7 +805,7 @@ mod tests {
 
     #[test]
     fn task_agent_tail_is_scoped_to_ordinary_sessions_in_the_task_worktree() {
-        let (mut runtime, project_id, _native_id, root, mut conversation) = fixture();
+        let (mut runtime, project_id, native_id, root, mut conversation) = fixture();
         let worktree = root.join("task-worktree");
         std::fs::create_dir_all(&worktree).unwrap();
         let worktree = worktree.to_string_lossy().into_owned();
@@ -1003,6 +1003,24 @@ mod tests {
             tail["sessions"][0]["messages"][1]["text"],
             "Implemented it; focused tests passed."
         );
+        assert!(
+            runtime
+                .ensure_task_agent_request_target_for_executor(&project_id, task_id, session_id)
+                .is_ok()
+        );
+        assert!(matches!(
+            runtime.ensure_task_agent_request_target_for_executor(
+                &project_id,
+                task_id,
+                "helper-in-task-worktree",
+            ),
+            Err(CoreError::CapabilityDenied)
+        ));
+        assert!(matches!(
+            runtime
+                .ensure_task_agent_request_target_for_executor(&project_id, task_id, &native_id,),
+            Err(CoreError::CapabilityDenied)
+        ));
         assert!(!tail.to_string().contains("helper-in-task-worktree"));
         assert!(!tail.to_string().contains("provider-history"));
         let _ = std::fs::remove_dir_all(root);

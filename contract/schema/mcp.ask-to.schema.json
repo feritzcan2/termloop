@@ -141,6 +141,23 @@
         "openWorldHint": false
       }
     },
+    "task_agent_request": {
+      "description": "Send one bounded question, investigation request, or delegated follow-up from a Worker to an ordinary running Agent currently projected into the exact focused Task. Pass the active assignment's exact checkId and taskId, and a sessionId returned by that Task's successful scoped task_read. TermLoop rejects scheduled Routines, stale or mismatched checks, Tasks that were not read for this check, and targets outside that exact Task; never guess or substitute an Agent. The target receives this Worker's exact Source Session ID and may return one visible handoff with send_to_agent. Submission is not completion evidence: do not poll or resend an unchanged request, and verify any reply against current Task artifacts before passing the step.",
+      "role": "worker",
+      "params": {
+        "$ref": "#/$defs/workerTaskAgentRequestParams"
+      },
+      "result": {
+        "$ref": "#/$defs/sendToAgentResult"
+      },
+      "annotations": {
+        "title": "Ask or delegate to this Task's Agent",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
     "pull_request_read": {
       "description": "Read the current best-effort pull request projection for this Project.",
       "role": [
@@ -1347,6 +1364,47 @@
             "maxLength": 512,
             "x-utf8-max-bytes": 512
           }
+        }
+      }
+    },
+    "workerTaskAgentRequestParams": {
+      "x-codegen": true,
+      "x-codegen-name": "WorkerTaskAgentRequestParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checkId",
+        "taskId",
+        "sessionId",
+        "message"
+      ],
+      "properties": {
+        "checkId": {
+          "description": "Exact active Playbook check ID from the current assignment.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "taskId": {
+          "description": "Exact focused Task ID from the current assignment and scoped task_read.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "x-utf8-max-bytes": 256
+        },
+        "sessionId": {
+          "description": "Exact ordinary Task Agent Session ID returned in this Task's current agentStatuses projection.",
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "message": {
+          "description": "Concise Task-scoped question or delegated outcome, including the evidence needed in the return handoff. Never include credentials, secrets, or unrelated work.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "x-utf8-max-bytes": 8192
         }
       }
     },

@@ -26,6 +26,8 @@ describe("mobile connection dialog", () => {
     await act(async () => root.render(createElement(MobileConnectDialog, {
       close: vi.fn(),
       prepare: async () => ({ ok: true as const, qrSvg: '<svg data-test="qr"></svg>' }),
+      loadVoiceSettings: async () => ({ configured: false }),
+      saveVoiceCredentials: async () => ({ configured: true }),
     })));
     await act(async () => undefined);
 
@@ -38,7 +40,12 @@ describe("mobile connection dialog", () => {
     const prepare = vi.fn()
       .mockResolvedValueOnce({ ok: false as const, error: "Tailscale is not connected." })
       .mockResolvedValueOnce({ ok: true as const, qrSvg: "<svg></svg>" });
-    await act(async () => root.render(createElement(MobileConnectDialog, { close: vi.fn(), prepare })));
+    await act(async () => root.render(createElement(MobileConnectDialog, {
+      close: vi.fn(),
+      prepare,
+      loadVoiceSettings: async () => ({ configured: true }),
+      saveVoiceCredentials: async () => ({ configured: true }),
+    })));
     await act(async () => undefined);
     expect(container.textContent).toContain("Tailscale is not connected.");
 
@@ -46,5 +53,19 @@ describe("mobile connection dialog", () => {
     await act(async () => undefined);
     expect(prepare).toHaveBeenCalledTimes(2);
     expect(container.querySelector(".mobile-connect-qr svg")).not.toBeNull();
+  });
+
+  it("shows only secure OpenAI credential presence and never the stored key", async () => {
+    await act(async () => root.render(createElement(MobileConnectDialog, {
+      close: vi.fn(),
+      prepare: async () => ({ ok: true as const, qrSvg: "<svg></svg>" }),
+      loadVoiceSettings: async () => ({ configured: true }),
+      saveVoiceCredentials: async () => ({ configured: true }),
+    })));
+    await act(async () => undefined);
+
+    expect(container.textContent).toContain("Ready — the API key is stored");
+    expect((container.querySelector('input[aria-label="OpenAI API key"]') as HTMLInputElement).type).toBe("password");
+    expect(container.textContent).not.toContain("sk-proj-secret");
   });
 });

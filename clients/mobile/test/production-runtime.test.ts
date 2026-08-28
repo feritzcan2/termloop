@@ -990,6 +990,54 @@ describe("production pipeline, launch, and Steward adapters", () => {
     expect(methods).toEqual([]);
   });
 
+  it("uploads voice and downloads speech through the owner-authenticated gateway", async () => {
+    const calls: Array<{ url: string; authorization: string | null; contentType: string | null; body: unknown }> = [];
+    const request: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (url === "file:///voice-turn.m4a") {
+        return new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "audio/m4a" } });
+      }
+      const headers = new Headers(init?.headers);
+      calls.push({
+        url,
+        authorization: headers.get("authorization"),
+        contentType: headers.get("content-type"),
+        body: init?.body,
+      });
+      if (url.includes("/steward/voice")) {
+        return Response.json({ transcript: "  canlı merhaba  ", message: { sequence: 19 } });
+      }
+      if (url.endsWith("/steward/speech")) {
+        return new Response(new Uint8Array([73, 68, 51]));
+      }
+      return new Response(null, { status: 404 });
+    };
+    const runtime = createProductionRuntime({
+      repository: fixedRepository(saved),
+      controlSocketFactory: controlSocketFactory([], []),
+      terminalSocketFactory: () => { throw new Error("terminal not used"); },
+      fetch: request,
+    });
+
+    await expect(runtime.steward.sendVoice(saved.id, fixtureProjects[0]!.id, {
+      uri: "file:///voice-turn.m4a",
+      mediaType: "audio/m4a",
+    })).resolves.toEqual({ transcript: "canlı merhaba", userSequence: 19 });
+    await expect(runtime.steward.speech(saved.id, fixtureProjects[0]!.id, 20))
+      .resolves.toEqual(new Uint8Array([73, 68, 51]));
+
+    expect(calls[0]).toMatchObject({
+      url: `http://127.0.0.1:48100/steward/voice?project=${fixtureProjects[0]!.id}`,
+      authorization: `Bearer ${saved.controlToken}`,
+      contentType: "audio/m4a",
+    });
+    expect(calls[1]).toMatchObject({
+      url: "http://127.0.0.1:48100/steward/speech",
+      authorization: `Bearer ${saved.controlToken}`,
+      contentType: "application/json",
+    });
+  });
+
   it("answers a proposal and a suggestion through their own named commands", async () => {
     const requests: Array<{
       method: string;
