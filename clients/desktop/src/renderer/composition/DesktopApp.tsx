@@ -53,6 +53,7 @@ import { requireQuickActionSession } from "../quick-action-result.js";
 import { GitHostRefreshCoordinator } from "./git-host-refresh.js";
 import { BranchCommitRefreshQueue } from "./branch-commit-refresh.js";
 import { connectionSnapshotRefresh } from "./connection-refresh.js";
+import { portableSkillDirectoryName, remoteSkillComputers } from "./remote-skills.js";
 import { executeProviderHistoryRepair, fixProviderHistoryAndRetry } from "./provider-history-repair.js";
 import { restartStewardSession, restartWorkerSession } from "./worker-restart.js";
 import { AssistantRefreshThrottle, timeoutRefreshScheduler } from "./assistant-refresh-throttle.js";
@@ -535,7 +536,8 @@ export function DesktopApp() {
     terminalPool.setVisible(nativeTerminalSurfaceVisible(shellTerminalOccluded, nativeOverlayActive));
   }, [nativeOverlayActive, shellTerminalOccluded]);
   const selectedProject = projection.projects.find((project) => project.id === presentation.selectedProjectId);
-  const selectedSourceApi = desktopApi.source(connectionProfileIdOf(selectedProject));
+  const selectedConnectionProfileId = connectionProfileIdOf(selectedProject);
+  const selectedSourceApi = desktopApi.source(selectedConnectionProfileId);
   const assistantProjectId = selectedProject?.id ?? "";
   const projectSessions = useMemo(
     () => {
@@ -1953,6 +1955,24 @@ export function DesktopApp() {
     }),
     [selectedSourceApi, skillProjectId],
   );
+  const listRemoteSkillComputers = useCallback(async () => {
+    const profiles = await desktopApi.connectionProfileList();
+    return remoteSkillComputers(profiles, selectedConnectionProfileId);
+  }, [selectedConnectionProfileId]);
+  const loadRemoteSkillCatalog = useCallback(
+    (profileId: string) => desktopApi.source(profileId).skillCatalogGet({ projectId: null }),
+    [],
+  );
+  const createRemoteSkill = useCallback(async (profileId: string, sourceSkillId: string) => {
+    const definition = await selectedSourceApi.skillDefinitionGet({
+      projectId: skillProjectId,
+      skillId: sourceSkillId,
+    });
+    return desktopApi.source(profileId).skillDefinitionCreate({
+      directoryName: portableSkillDirectoryName(definition.name, sourceSkillId),
+      content: definition.content,
+    });
+  }, [selectedSourceApi, skillProjectId]);
   const loadContextBankCatalog = useCallback(() => {
     if (!skillProjectId) return Promise.reject(new Error("Open a Project to view its Context Bank."));
     return selectedSourceApi.contextBankCatalogGet({ projectId: skillProjectId });
@@ -2042,6 +2062,9 @@ export function DesktopApp() {
       resetPromptAsset={promptSettings.reset}
       loadSkillCatalog={loadSkillCatalog}
       setSkillDeployment={setSkillDeployment}
+      listRemoteSkillComputers={listRemoteSkillComputers}
+      loadRemoteSkillCatalog={loadRemoteSkillCatalog}
+      createRemoteSkill={createRemoteSkill}
       loadSkillDefinition={loadSkillDefinition}
       saveSkillDefinition={saveSkillDefinition}
       loadContextBankCatalog={loadContextBankCatalog}

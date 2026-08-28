@@ -70,45 +70,49 @@ static CONTRACT_PATTERN_16: std::sync::LazyLock<regex::Regex> = std::sync::LazyL
     regex::Regex::new("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$").expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_17: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new("^[a-z](?:[a-z0-9]|-[a-z0-9])*$").expect("generated contract pattern")
+    regex::Regex::new("^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$")
+        .expect("generated contract pattern")
 });
 static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^[a-z](?:[a-z0-9]|-[a-z0-9])*$").expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://(?:github\\.com|dev\\.azure\\.com)/")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_20: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z](?:[A-Z0-9]{0,63})-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_20: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_22: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_22: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_23: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_23: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_24: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_24: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_25: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_25: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_26: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_26: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_27: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_27: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_28: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https?://").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_28: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_29: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^refs/heads/").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_29: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_30: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^sha256:[0-9a-f]{64}$").expect("generated contract pattern")
 });
 
@@ -137,41 +141,42 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
         "^[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_14.is_match(text),
         "^[A-Za-z_][A-Za-z0-9_]*$" => CONTRACT_PATTERN_15.is_match(text),
         "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" => CONTRACT_PATTERN_16.is_match(text),
-        "^[a-z](?:[a-z0-9]|-[a-z0-9])*$" => CONTRACT_PATTERN_17.is_match(text),
-        "^https://(?:github\\.com|dev\\.azure\\.com)/" => CONTRACT_PATTERN_18.is_match(text),
+        "^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$" => CONTRACT_PATTERN_17.is_match(text),
+        "^[a-z](?:[a-z0-9]|-[a-z0-9])*$" => CONTRACT_PATTERN_18.is_match(text),
+        "^https://(?:github\\.com|dev\\.azure\\.com)/" => CONTRACT_PATTERN_19.is_match(text),
         "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z](?:[A-Z0-9]{0,63})-[1-9][0-9]{0,19}$" => {
-            CONTRACT_PATTERN_19.is_match(text)
-        }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_20.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_21.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_22.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$" => {
             CONTRACT_PATTERN_23.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$" => {
             CONTRACT_PATTERN_24.is_match(text)
         }
-        "^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_25.is_match(text)
         }
-        "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$" => {
+        "^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$" => {
             CONTRACT_PATTERN_26.is_match(text)
         }
-        "^https?://" => CONTRACT_PATTERN_27.is_match(text),
-        "^refs/heads/" => CONTRACT_PATTERN_28.is_match(text),
-        "^sha256:[0-9a-f]{64}$" => CONTRACT_PATTERN_29.is_match(text),
+        "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$" => {
+            CONTRACT_PATTERN_27.is_match(text)
+        }
+        "^https?://" => CONTRACT_PATTERN_28.is_match(text),
+        "^refs/heads/" => CONTRACT_PATTERN_29.is_match(text),
+        "^sha256:[0-9a-f]{64}$" => CONTRACT_PATTERN_30.is_match(text),
         _ => false,
     }
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:fd3e33771c809917164e6e9e797927234851af71ca9247680c633bb870ec2d8b";
+    "sha256:89114e4e582aac7bc7687205306a7d5fee00925432294c121c471f8136eaf6c5";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -199,6 +204,7 @@ pub const METHODS: &[&str] = &[
     "skill.deploymentSet",
     "skill.definitionGet",
     "skill.definitionSave",
+    "skill.definitionCreate",
     "contextBank.catalogGet",
     "contextBank.fileGet",
     "contextBank.fileSave",
@@ -352,6 +358,7 @@ pub const READ_ONLY_METHODS: &[&str] = &[
     "control.subscribe",
     "control.cancel",
     "mcp.toolSettingsGet",
+    "skill.catalogGet",
     "project.list",
     "project.taskAutomationGet",
     "task.list",
@@ -948,6 +955,14 @@ pub struct SkillDefinitionSaveParams {
     pub skill_id: String,
     #[serde(rename = "expectedContentSha256")]
     pub expected_content_sha256: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SkillDefinitionCreateParams {
+    #[serde(rename = "directoryName")]
+    pub directory_name: String,
     pub content: String,
 }
 
@@ -7444,6 +7459,7 @@ pub type SkillCatalogGetResult = SkillCatalogResult;
 pub type SkillDeploymentSetResult = SkillCatalogResult;
 pub type SkillDefinitionGetResult = SkillDefinitionDto;
 pub type SkillDefinitionSaveResult = SkillDefinitionDto;
+pub type SkillDefinitionCreateResult = SkillCatalogResult;
 pub type ContextBankCatalogGetResult = ContextBankCatalogResult;
 pub type ContextBankFileGetResult = ContextBankFileDto;
 pub type ContextBankFileSaveResult = ContextBankFileDto;
@@ -7608,6 +7624,7 @@ fn validate_method(value: &Value) -> bool {
             "skill.deploymentSet",
             "skill.definitionGet",
             "skill.definitionSave",
+            "skill.definitionCreate",
             "contextBank.catalogGet",
             "contextBank.fileGet",
             "contextBank.fileSave",
@@ -8876,6 +8893,33 @@ fn validate_skill_definition_save_params(value: &Value) -> bool {
         }) && object.keys().all(|key| {
             ["projectId", "skillId", "expectedContentSha256", "content"].contains(&key.as_str())
         })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_skill_definition_create_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("directoryName").is_some_and(|field| {
+            field.as_str().is_some_and(|text| {
+                text.chars().count() >= 1
+                    && text.chars().count() <= 80
+                    && contract_pattern_matches("^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$", text)
+            })
+        }) && object.get("content").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 262144)
+        }) && object
+            .keys()
+            .all(|key| ["directoryName", "content"].contains(&key.as_str()))
     })
 }
 
@@ -26754,6 +26798,10 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<SkillDefinitionSaveParams>(params.clone()).is_ok()
                 && validate_skill_definition_save_params(params)
         }
+        "skill.definitionCreate" => {
+            serde_json::from_value::<SkillDefinitionCreateParams>(params.clone()).is_ok()
+                && validate_skill_definition_create_params(params)
+        }
         "contextBank.catalogGet" => {
             serde_json::from_value::<ContextBankCatalogGetParams>(params.clone()).is_ok()
                 && validate_context_bank_catalog_get_params(params)
@@ -27443,6 +27491,10 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         "skill.definitionSave" => {
             serde_json::from_value::<SkillDefinitionSaveResult>(result.clone()).is_ok()
                 && validate_skill_definition_dto(result)
+        }
+        "skill.definitionCreate" => {
+            serde_json::from_value::<SkillDefinitionCreateResult>(result.clone()).is_ok()
+                && validate_skill_catalog_result(result)
         }
         "contextBank.catalogGet" => {
             serde_json::from_value::<ContextBankCatalogGetResult>(result.clone()).is_ok()

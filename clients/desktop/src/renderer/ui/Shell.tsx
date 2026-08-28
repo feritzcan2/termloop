@@ -35,7 +35,7 @@ import { McpToolPanel } from "./McpToolPanel.js";
 import { PromptPanel } from "./PromptPanel.js";
 import { PromptsRail } from "./PromptsRail.js";
 import { SkillEditorPanel } from "./SkillEditorPanel.js";
-import { SkillsRail } from "./SkillsRail.js";
+import { SkillsRail, type RemoteSkillComputer } from "./SkillsRail.js";
 import { ContextBankEditorPanel } from "./ContextBankEditorPanel.js";
 import { ContextBankRail } from "./ContextBankRail.js";
 import { KeepAwakePanel } from "./KeepAwakePanel.js";
@@ -162,6 +162,12 @@ export type ShellProps = {
     skillId: string,
     agent: "claude" | "codex",
     deployed: boolean,
+  ): Promise<import("@termloop/contract/current").SkillCatalogResult>;
+  listRemoteSkillComputers(): Promise<RemoteSkillComputer[]>;
+  loadRemoteSkillCatalog(profileId: string): Promise<import("@termloop/contract/current").SkillCatalogResult>;
+  createRemoteSkill(
+    profileId: string,
+    sourceSkillId: string,
   ): Promise<import("@termloop/contract/current").SkillCatalogResult>;
   loadSkillDefinition(skillId: string): Promise<import("@termloop/contract/current").SkillDefinitionDto>;
   saveSkillDefinition(
@@ -345,6 +351,12 @@ export type StagePage =
   | { kind: "prompt"; id: string }
   | { kind: "taskSources" };
 
+export function stagePageAfterProjectChange(page: StagePage | undefined): StagePage | undefined {
+  return page?.kind === "skill" || page?.kind === "contextFile" || page?.kind === "taskSources"
+    ? undefined
+    : page;
+}
+
 export function shellAssistantStageVisible(
   railMode: RailMode,
   workspaceView: WorkspaceView,
@@ -394,6 +406,9 @@ export function Shell(props: ShellProps) {
   /// One page at a time replaces the terminal stage, so the settings editors
   /// share the single slot the Skill editor introduced.
   const [stagePage, setStagePage] = useState<StagePage>();
+  useEffect(() => {
+    setStagePage(stagePageAfterProjectChange);
+  }, [props.selectedProject?.id]);
   const runEditorOpen = Boolean(runEditor);
   /// The named offer is a first-run affordance: once the Project can actually
   /// run a dev server, the same slot becomes the button that starts it in the
@@ -1314,8 +1329,12 @@ export function Shell(props: ShellProps) {
           />
           <div className="sidebar-scroll">
           {railMode === "skills" ? <SkillsRail
+            key={props.selectedProject?.id ?? "global"}
             load={props.loadSkillCatalog}
             setDeployment={props.setSkillDeployment}
+            listRemoteComputers={props.listRemoteSkillComputers}
+            loadRemoteCatalog={props.loadRemoteSkillCatalog}
+            createRemoteSkill={props.createRemoteSkill}
             openEditor={(skillId) => openStagePage({ kind: "skill", id: skillId })}
             improveSkill={props.selectedProject
               ? (skillId, name) => openSettingsImproverSetup(

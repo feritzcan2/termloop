@@ -164,6 +164,10 @@ pub enum SkillManagerError {
     DefinitionUnreadable,
     #[error("SKILL.md changed on disk since it was read; reload before saving")]
     StaleDefinition,
+    #[error("the requested skill folder name is invalid")]
+    InvalidDirectoryName,
+    #[error("a skill folder with this name already exists")]
+    SkillAlreadyExists,
     #[error("skills-manager command failed: {0}")]
     CommandFailed(String),
     #[error(transparent)]
@@ -309,6 +313,46 @@ impl SkillManager {
         self.write_definition_at(&home, scope, skill_id, expected_content_sha256, content)
     }
 
+    /// Creates one portable user skill in the shared agents folder. The
+    /// directory is caller-named but revalidated here so a transport client can
+    /// never turn this operation into arbitrary filesystem access.
+    pub fn create_user_definition(
+        &self,
+        directory_name: &str,
+        content: &str,
+    ) -> Result<SkillCatalog, SkillManagerError> {
+        let home = host_home_directory().ok_or(SkillManagerError::Unavailable)?;
+        self.create_user_definition_at(&home, directory_name, content)
+    }
+
+    fn create_user_definition_at(
+        &self,
+        home: &Path,
+        directory_name: &str,
+        content: &str,
+    ) -> Result<SkillCatalog, SkillManagerError> {
+        if !valid_skill_directory_name(directory_name) {
+            return Err(SkillManagerError::InvalidDirectoryName);
+        }
+        let parent = home.join(".agents").join("skills");
+        std::fs::create_dir_all(&parent)?;
+        let directory = parent.join(directory_name);
+        match std::fs::create_dir(&directory) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                return Err(SkillManagerError::SkillAlreadyExists);
+            }
+            Err(error) => return Err(error.into()),
+        }
+        if let Err(error) =
+            crate::atomic_replace_private_file(&directory.join("SKILL.md"), content.as_bytes())
+        {
+            let _ = std::fs::remove_dir(&directory);
+            return Err(error.into());
+        }
+        self.catalog_at(home, SkillCatalogScope::global())
+    }
+
     fn write_definition_at(
         &self,
         home: &Path,
@@ -377,6 +421,21 @@ fn sha256_hex(content: &str) -> String {
         write!(&mut value, "{byte:02x}").expect("writing to a String cannot fail");
     }
     value
+}
+
+fn valid_skill_directory_name(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    !bytes.is_empty()
+        && bytes.len() <= 80
+        && bytes
+            .first()
+            .is_some_and(|value| value.is_ascii_lowercase() || value.is_ascii_digit())
+        && bytes
+            .last()
+            .is_some_and(|value| value.is_ascii_lowercase() || value.is_ascii_digit())
+        && bytes.iter().all(|value| {
+            value.is_ascii_lowercase() || value.is_ascii_digit() || matches!(value, b'_' | b'-')
+        })
 }
 
 #[cfg(test)]
@@ -512,6 +571,62 @@ mod tests {
                 .content_sha256,
             saved.content_sha256
         );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn user_definition_create_is_shared_and_never_overwrites() {
+        let root = temporary_directory("skills-create");
+        let home = root.join("home");
+        let manager = SkillManager { backend: None };
+        let content = "---\nname: remote-review\ndescription: Review remotely.\n---\n";
+
+        let catalog = manager
+            .create_user_definition_at(&home, "remote-review", content)
+            .unwrap();
+
+        let created = catalog
+            .skills
+            .iter()
+            .find(|skill| skill.name == "remote-review")
+            .expect("created skill is discovered");
+        assert_eq!(created.agents, vec![SkillAgent::Claude, SkillAgent::Codex]);
+        assert_eq!(
+            fs::read_to_string(home.join(".agents/skills/remote-review/SKILL.md")).unwrap(),
+            content
+        );
+        assert!(matches!(
+            manager.create_user_definition_at(&home, "remote-review", "replacement"),
+            Err(SkillManagerError::SkillAlreadyExists)
+        ));
+        assert_eq!(
+            fs::read_to_string(home.join(".agents/skills/remote-review/SKILL.md")).unwrap(),
+            content
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn user_definition_create_rejects_non_leaf_names() {
+        let root = temporary_directory("skills-create-name");
+        let home = root.join("home");
+        let manager = SkillManager { backend: None };
+
+        for name in [
+            "../escape",
+            "nested/skill",
+            "Uppercase",
+            "-leading",
+            "trailing-",
+        ] {
+            assert!(matches!(
+                manager.create_user_definition_at(&home, name, "content"),
+                Err(SkillManagerError::InvalidDirectoryName)
+            ));
+        }
+        assert!(!root.join("escape").exists());
 
         let _ = fs::remove_dir_all(root);
     }

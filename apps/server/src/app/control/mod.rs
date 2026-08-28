@@ -898,11 +898,24 @@ mod tests {
         assert!(!read_only_method("task.bindBranch"));
         assert!(!read_only_method("task.provisionWorktree"));
         assert!(!read_only_method("task.dismissWorktreeProvisioning"));
-        // Catalog reads invoke the bundled manager process, and deployment
-        // changes provider files. Neither surface belongs to a narrow client.
+        // A remote read-only client may compare the bounded catalog, but it
+        // cannot read definition content or mutate provider files.
+        assert!(scope_allows_method(ClientScope::Full, "skill.catalogGet"));
+        assert!(scope_allows_method(
+            ClientScope::ReadOnly,
+            "skill.catalogGet"
+        ));
+        assert!(!scope_allows_method(
+            ClientScope::Companion,
+            "skill.catalogGet"
+        ));
+        assert!(!scope_allows_method(ClientScope::Hook, "skill.catalogGet"));
+        assert!(!cancellation_safe_method("skill.catalogGet"));
         for method in [
-            "skill.catalogGet",
             "skill.deploymentSet",
+            "skill.definitionGet",
+            "skill.definitionSave",
+            "skill.definitionCreate",
             "contextBank.catalogGet",
             "contextBank.fileGet",
             "contextBank.fileSave",

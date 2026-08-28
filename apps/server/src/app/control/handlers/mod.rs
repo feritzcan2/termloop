@@ -43,7 +43,8 @@ pub(in crate::app) use session::{
 pub(super) use settings_improvement::{launch_settings_improver, preview_settings_improver};
 pub(in crate::app::control) use skills::platform_scope;
 pub(super) use skills::{
-    get_skill_catalog, get_skill_definition, save_skill_definition, set_skill_deployment,
+    create_skill_definition, get_skill_catalog, get_skill_definition, save_skill_definition,
+    set_skill_deployment,
 };
 pub(in crate::app) use steward::schedule_current_steward;
 pub(super) use steward::{delete_steward_configuration, set_steward_configuration};

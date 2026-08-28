@@ -12,11 +12,22 @@ import {
   shellAssistantStageVisible,
   shellNativeOverlayOpen,
   shellTerminalOccluded,
+  stagePageAfterProjectChange,
 } from "../src/renderer/ui/Shell.js";
 import { clampSidebarWidth } from "../src/renderer/sidebar-width.js";
 import type { Session } from "../src/renderer/model.js";
 
 describe("Shell navigation from the changes editor", () => {
+  it("closes project-scoped settings pages when the Project changes", () => {
+    expect(stagePageAfterProjectChange({ kind: "skill", id: "skill-a" })).toBeUndefined();
+    expect(stagePageAfterProjectChange({ kind: "contextFile", id: "context-a" })).toBeUndefined();
+    expect(stagePageAfterProjectChange({ kind: "taskSources" })).toBeUndefined();
+    expect(stagePageAfterProjectChange({ kind: "mcpTool", id: "tool-a" }))
+      .toEqual({ kind: "mcpTool", id: "tool-a" });
+    expect(stagePageAfterProjectChange({ kind: "prompt", id: "prompt-a" }))
+      .toEqual({ kind: "prompt", id: "prompt-a" });
+  });
+
   it("dismisses the editor before selecting an agent Session", () => {
     const events: string[] = [];
     const dismissChanges = vi.fn(() => events.push("dismiss"));

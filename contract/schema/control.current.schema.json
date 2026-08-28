@@ -12,6 +12,7 @@
       "control.subscribe",
       "control.cancel",
       "mcp.toolSettingsGet",
+      "skill.catalogGet",
       "project.list",
       "project.taskAutomationGet",
       "task.list",
@@ -233,6 +234,14 @@
       },
       "result": {
         "$ref": "#/$defs/skillDefinitionDto"
+      }
+    },
+    "skill.definitionCreate": {
+      "params": {
+        "$ref": "#/$defs/skillDefinitionCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/skillCatalogResult"
       }
     },
     "contextBank.catalogGet": {
@@ -1388,6 +1397,7 @@
         "skill.deploymentSet",
         "skill.definitionGet",
         "skill.definitionSave",
+        "skill.definitionCreate",
         "contextBank.catalogGet",
         "contextBank.fileGet",
         "contextBank.fileSave",
@@ -2116,6 +2126,22 @@
         "skillId": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "expectedContentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "content": { "type": "string", "maxLength": 262144 }
+      }
+    },
+    "skillDefinitionCreateParams": {
+      "x-codegen": true,
+      "x-codegen-name": "SkillDefinitionCreateParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["directoryName", "content"],
+      "properties": {
+        "directoryName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$"
+        },
+        "content": { "type": "string", "minLength": 1, "maxLength": 262144 }
       }
     },
     "skillDefinitionDto": {

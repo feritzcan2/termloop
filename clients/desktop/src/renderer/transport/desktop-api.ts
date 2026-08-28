@@ -166,6 +166,7 @@ import type {
   SkillCatalogGetParams,
   SkillCatalogResult,
   SkillDefinitionDto,
+  SkillDefinitionCreateParams,
   SkillDefinitionGetParams,
   SkillDefinitionSaveParams,
   SkillDeploymentSetParams,
@@ -234,6 +235,7 @@ export type DesktopApi = {
   skillDeploymentSet(params: SkillDeploymentSetParams): Promise<SkillCatalogResult>;
   skillDefinitionGet(params: SkillDefinitionGetParams): Promise<SkillDefinitionDto>;
   skillDefinitionSave(params: SkillDefinitionSaveParams): Promise<SkillDefinitionDto>;
+  skillDefinitionCreate(params: SkillDefinitionCreateParams): Promise<SkillCatalogResult>;
   contextBankCatalogGet(params: ContextBankCatalogGetParams): Promise<ContextBankCatalogResult>;
   contextBankFileGet(params: ContextBankFileGetParams): Promise<ContextBankFileDto>;
   contextBankFileSave(params: ContextBankFileSaveParams): Promise<ContextBankFileDto>;

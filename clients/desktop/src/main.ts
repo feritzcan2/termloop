@@ -16,6 +16,7 @@ import {
   type McpToolDescriptionUpdateParams,
   type SkillCatalogGetParams,
   type SkillDefinitionGetParams,
+  type SkillDefinitionCreateParams,
   type SkillDefinitionSaveParams,
   type SkillDeploymentSetParams,
   type ProtocolErrorDetails,
@@ -351,6 +352,9 @@ handleIpc("termloop:skill-definition-get", (_event, params: SkillDefinitionGetPa
 );
 handleIpc("termloop:skill-definition-save", (_event, params: SkillDefinitionSaveParams) =>
   controlCall("skill.definitionSave", params),
+);
+handleIpc("termloop:skill-definition-create", (_event, params: SkillDefinitionCreateParams) =>
+  controlCall("skill.definitionCreate", params),
 );
 handleIpc("termloop:context-bank-catalog-get", (_event, params: ContextBankCatalogGetParams) =>
   controlCall("contextBank.catalogGet", params),
