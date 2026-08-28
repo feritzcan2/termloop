@@ -3,9 +3,11 @@ name: ci
 on:
   workflow_dispatch:
   push:
-    branches-ignore:
-      - main
+    branches:
+      - develop
   pull_request:
+    branches:
+      - main
 
 concurrency:
   group: termloop-ci-${{ github.workflow }}-${{ github.ref }}

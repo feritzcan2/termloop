@@ -46,14 +46,13 @@ jobs:
           ci_run_id="$(
             gh api --method GET \
               "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
-              -f event=workflow_dispatch \
               -f status=success \
               -f head_sha="$candidate_sha" \
-              -f per_page=1 \
-              --jq '.workflow_runs[0].id // empty'
+              -f per_page=20 \
+              --jq '[.workflow_runs[] | select(.event == "push" or .event == "workflow_dispatch")][0].id // empty'
           )"
           test -n "$ci_run_id" || {
-            echo "No successful manual CI run exists for $candidate_sha." >&2
+            echo "No successful push or manual native CI run exists for $candidate_sha." >&2
             exit 1
           }
           echo "Verified CI: https://github.com/$GITHUB_REPOSITORY/actions/runs/$ci_run_id"
