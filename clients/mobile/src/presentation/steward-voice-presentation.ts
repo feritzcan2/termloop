@@ -16,10 +16,48 @@ export interface VoiceSilenceUpdate {
   shouldStop: boolean;
 }
 
+export interface VoiceRecordingFinishStatus {
+  isFinished: boolean;
+  hasError: boolean;
+  error: string | null;
+  url: string | null;
+}
+
+export interface VoiceRecordingCompletion {
+  finished: Promise<string>;
+  receive(status: VoiceRecordingFinishStatus): void;
+}
+
 const VOICE_THRESHOLD_DB = -43;
 const MIN_TURN_MS = 800;
 const SILENCE_AFTER_VOICE_MS = 1_250;
 const MAX_TURN_MS = 30_000;
+
+/// Native recorder stop calls return before every platform has closed and
+/// finalized its output file. Resolve only from the recorder's completion
+/// event so the caller never uploads a header-only recording.
+export function createVoiceRecordingCompletion(): VoiceRecordingCompletion {
+  let resolve!: (url: string) => void;
+  let reject!: (cause: Error) => void;
+  let settled = false;
+  const finished = new Promise<string>((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+  return {
+    finished,
+    receive(status) {
+      if (!status.isFinished || settled) return;
+      settled = true;
+      const error = status.error?.trim();
+      if (status.hasError || status.url === null) {
+        reject(new Error(error && error.length > 0 ? error : "Kaydedilen ses tamamlanamadı."));
+        return;
+      }
+      resolve(status.url);
+    },
+  };
+}
 
 /// Keeps the global microphone pointed at the Project represented by the route.
 /// Routes without a Project fall back to the first Project on the selected Mac;

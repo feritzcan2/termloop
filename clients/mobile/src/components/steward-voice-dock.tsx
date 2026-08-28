@@ -3,6 +3,7 @@ import {
   AudioModule,
   IOSOutputFormat,
   RecordingPresets,
+  type RecordingStatus,
   setAudioModeAsync,
   useAudioPlayer,
   useAudioPlayerStatus,
@@ -28,9 +29,11 @@ import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
 import { useOverview } from "@/features/overview/overview-store";
 import {
+  createVoiceRecordingCompletion,
   stewardReplyAfter,
   updateVoiceSilence,
   voiceProjectId,
+  type VoiceRecordingCompletion,
   type VoiceRouteParams,
   type VoiceSilenceState,
 } from "@/presentation/steward-voice-presentation";
@@ -42,6 +45,7 @@ type VoicePhase = "idle" | "permission" | "listening" | "transcribing" | "waitin
 
 const REPLY_POLL_MS = 1_250;
 const REPLY_TIMEOUT_MS = 90_000;
+const RECORDING_FINALIZE_TIMEOUT_MS = 2_000;
 const IOS_STEWARD_RECORDING = {
   ...RecordingPresets.HIGH_QUALITY,
   extension: ".wav",
@@ -86,7 +90,11 @@ export function StewardVoiceDock() {
   const [heard, setHeard] = useState<string | undefined>(undefined);
   const [reply, setReply] = useState<StewardMessage | undefined>(undefined);
 
-  const recorder = useAudioRecorder({ ...STEWARD_RECORDING, isMeteringEnabled: true });
+  const recordingCompletionRef = useRef<VoiceRecordingCompletion | undefined>(undefined);
+  const recorder = useAudioRecorder(
+    { ...STEWARD_RECORDING, isMeteringEnabled: true },
+    (status: RecordingStatus) => recordingCompletionRef.current?.receive(status),
+  );
   const recorderState = useAudioRecorderState(recorder, 100);
   const player = useAudioPlayer(null, { updateInterval: 100 });
   const playerStatus = useAudioPlayerStatus(player);
@@ -127,6 +135,7 @@ export function StewardVoiceDock() {
     if (recorder.isRecording) void recorder.stop().catch(() => undefined);
     stoppingRef.current = false;
     activeTargetRef.current = undefined;
+    recordingCompletionRef.current = undefined;
     transition("idle");
     setError(undefined);
     void setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
@@ -177,6 +186,7 @@ export function StewardVoiceDock() {
       if (conversation !== conversationRef.current || !expandedRef.current) return;
       silenceRef.current = { heardVoice: false, lastVoiceAtMs: 0 };
       stoppingRef.current = false;
+      recordingCompletionRef.current = createVoiceRecordingCompletion();
       recorder.record({ forDuration: 30 });
       transition("listening");
     } catch (cause) {
@@ -240,9 +250,16 @@ export function StewardVoiceDock() {
     const projectId = activeTargetRef.current?.projectId;
     transition("transcribing");
     try {
+      const completion = recordingCompletionRef.current;
+      if (completion === undefined) throw new Error("Kaydedilen ses hazırlanamadı.");
       await recorder.stop();
-      const uri = recorder.uri;
-      if (connectionId === undefined || projectId === undefined || uri === null) {
+      const uri = await Promise.race([
+        completion.finished,
+        delay(RECORDING_FINALIZE_TIMEOUT_MS).then(() => {
+          throw new Error("Kaydedilen ses tamamlanamadı. Yeniden dene.");
+        }),
+      ]);
+      if (connectionId === undefined || projectId === undefined) {
         throw new Error("Kaydedilen ses hazırlanamadı.");
       }
       const bytes = await new File(uri).arrayBuffer();

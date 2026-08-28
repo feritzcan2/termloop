@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createVoiceRecordingCompletion,
   stewardReplyAfter,
   updateVoiceSilence,
   voiceProjectId,
@@ -20,6 +21,27 @@ const overview = {
 };
 
 describe("Steward voice presentation", () => {
+  it("waits for the native recorder finish event before exposing its file", async () => {
+    const completion = createVoiceRecordingCompletion();
+    let resolved = false;
+    completion.finished.then(() => { resolved = true; });
+
+    completion.receive({ isFinished: false, hasError: false, error: null, url: "file:///partial.wav" });
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+
+    completion.receive({ isFinished: true, hasError: false, error: null, url: "file:///final.wav" });
+    await expect(completion.finished).resolves.toBe("file:///final.wav");
+  });
+
+  it("rejects a failed native recording instead of uploading partial bytes", async () => {
+    const completion = createVoiceRecordingCompletion();
+
+    completion.receive({ isFinished: true, hasError: true, error: "encoder stopped", url: null });
+
+    await expect(completion.finished).rejects.toThrow("encoder stopped");
+  });
+
   it("targets the route's Project, Task, or Session before falling back", () => {
     const projectId = fixtureProjects[0]!.id;
     expect(voiceProjectId({ projectId }, overview)).toBe(projectId);
