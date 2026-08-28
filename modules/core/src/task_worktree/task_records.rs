@@ -1,6 +1,8 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::collections::HashSet;
+use std::path::Path;
 use termloop_domain::{IssueLinkProvider, TaskRecord, TaskStatus, TaskSuspensionReason};
 
 use super::cleanup::{
@@ -192,6 +194,89 @@ impl CoreRuntime {
             value["worktree_stale_resolution"] = stale_resolution_operation_json(operation);
         }
         Ok(value)
+    }
+
+    /// Returns one exact Task projection inside the caller's authenticated
+    /// Project. Agent-facing reads never accept Project scope from the payload.
+    pub fn task_projection_for_executor(
+        &self,
+        project_id: &str,
+        task_id: &str,
+    ) -> Result<Value, CoreError> {
+        if !self
+            .store
+            .tasks()
+            .iter()
+            .any(|task| task.id == task_id && task.project_id == project_id)
+        {
+            return Err(CoreError::NotFound);
+        }
+        self.task_current_projection(task_id)
+    }
+
+    /// Projects current status only for ordinary Agent Sessions whose cwd is
+    /// inside this exact Task's current worktree. Persistent assistants,
+    /// helpers, and Improve Sessions never become Task evidence through cwd.
+    pub fn task_agent_status_projection_for_executor(
+        &self,
+        project_id: &str,
+        task_id: &str,
+    ) -> Result<Value, CoreError> {
+        let task = self
+            .store
+            .tasks()
+            .iter()
+            .find(|task| task.id == task_id && task.project_id == project_id)
+            .ok_or(CoreError::NotFound)?;
+        let Some(worktree) = task.worktree.as_ref() else {
+            return Ok(Value::Array(Vec::new()));
+        };
+        let worktree_key = super::comparison_key(Path::new(&worktree.path))
+            .map_err(|_| CoreError::InvalidParams("taskWorktree".into()))?;
+        let assistant_session_ids = self
+            .store
+            .steward_configurations()
+            .iter()
+            .filter(|configuration| configuration.project_id == project_id)
+            .filter_map(|configuration| configuration.executor_session_id.as_deref())
+            .chain(
+                self.store
+                    .worker_configurations()
+                    .iter()
+                    .filter(|configuration| configuration.project_id == project_id)
+                    .filter_map(|configuration| configuration.executor_session_id.as_deref()),
+            )
+            .collect::<HashSet<_>>();
+        let task_session_ids = self
+            .store
+            .sessions()
+            .iter()
+            .filter(|session| {
+                session.project_id == project_id
+                    && session.kind == termloop_domain::SessionKind::Agent
+                    && session.ask_to_source_session_id.is_none()
+                    && session.improver_target.is_none()
+                    && !assistant_session_ids.contains(session.id.as_str())
+                    && super::comparison_key(Path::new(&session.process.cwd))
+                        .is_ok_and(|session_key| worktree_key.contains_or_equals(&session_key))
+            })
+            .map(|session| session.id.as_str())
+            .collect::<HashSet<_>>();
+        let statuses = self.agent_status_list_for_project(Some(project_id))?;
+        Ok(Value::Array(
+            statuses
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|status| {
+                    status
+                        .get("sessionId")
+                        .and_then(Value::as_str)
+                        .is_some_and(|session_id| task_session_ids.contains(session_id))
+                })
+                .cloned()
+                .collect(),
+        ))
     }
 
     pub(crate) fn create_task(&mut self, params: Value) -> Result<Value, CoreError> {

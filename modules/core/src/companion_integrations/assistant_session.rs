@@ -137,7 +137,7 @@ pub enum StewardWakeKind {
     StartupRefresh,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(crate) enum PendingAssistantWakeDelivery {
     Steward {
         project_id: String,
@@ -145,6 +145,7 @@ pub(crate) enum PendingAssistantWakeDelivery {
         wake_id: u64,
         session_id: String,
         runtime_epoch: u64,
+        submission: termloop_invocation::GeneratedTerminalSubmission,
         confirmation_queued: bool,
     },
     Worker {
@@ -152,6 +153,7 @@ pub(crate) enum PendingAssistantWakeDelivery {
         worker_generation: u64,
         session_id: String,
         runtime_epoch: u64,
+        submission: termloop_invocation::GeneratedTerminalSubmission,
     },
 }
 
@@ -167,6 +169,12 @@ impl PendingAssistantWakeDelivery {
             Self::Steward { runtime_epoch, .. } | Self::Worker { runtime_epoch, .. } => {
                 *runtime_epoch
             }
+        }
+    }
+
+    pub(crate) fn submission(&self) -> &termloop_invocation::GeneratedTerminalSubmission {
+        match self {
+            Self::Steward { submission, .. } | Self::Worker { submission, .. } => submission,
         }
     }
 
@@ -209,6 +217,7 @@ impl PendingAssistantWakeDelivery {
                 worker_generation: pending_worker_generation,
                 session_id: pending_session_id,
                 runtime_epoch: pending_runtime_epoch,
+                ..
             } if pending_worker_id == worker_id
                 && *pending_worker_generation == worker_generation
                 && pending_session_id == session_id
@@ -222,6 +231,12 @@ pub struct ConfirmedStewardWake {
     pub project_id: String,
     pub generation: u64,
     pub wake_id: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StewardWakeAdmission {
+    Admitted,
+    Coalesced,
 }
 
 pub fn compose_steward_wake(
@@ -665,7 +680,7 @@ impl CoreRuntime {
         generation: u64,
         wake_id: u64,
         message: &termloop_invocation::AssistantWakeMessage,
-    ) -> Result<String, CoreError> {
+    ) -> Result<StewardWakeAdmission, CoreError> {
         let configuration = self
             .store
             .steward_configurations()
@@ -690,10 +705,11 @@ impl CoreRuntime {
         if let Some(pending) = self.pending_assistant_wake_deliveries.get(&session_id) {
             return pending
                 .is_same_steward_wake(project_id, generation, wake_id, &session_id, runtime_epoch)
-                .then_some(session_id)
+                .then_some(StewardWakeAdmission::Coalesced)
                 .ok_or(CoreError::ConversationBusy);
         }
-        self.deliver_assistant_wake(&session_id, message)?;
+        let submission = message.terminal_submission();
+        self.deliver_assistant_wake(&session_id, submission.clone())?;
         self.prune_stale_pending_assistant_wake_deliveries();
         self.pending_assistant_wake_deliveries.insert(
             session_id.clone(),
@@ -703,10 +719,11 @@ impl CoreRuntime {
                 wake_id,
                 session_id: session_id.clone(),
                 runtime_epoch,
+                submission,
                 confirmation_queued: false,
             },
         );
-        Ok(session_id)
+        Ok(StewardWakeAdmission::Admitted)
     }
 
     pub fn deliver_worker_routine_wake(
@@ -751,7 +768,8 @@ impl CoreRuntime {
                 .then_some(session_id)
                 .ok_or(CoreError::ConversationBusy);
         }
-        self.deliver_assistant_wake(&session_id, message)?;
+        let submission = message.terminal_submission();
+        self.deliver_assistant_wake(&session_id, submission.clone())?;
         self.prune_stale_pending_assistant_wake_deliveries();
         self.pending_assistant_wake_deliveries.insert(
             session_id.clone(),
@@ -760,6 +778,7 @@ impl CoreRuntime {
                 worker_generation: wake.worker_generation,
                 session_id: session_id.clone(),
                 runtime_epoch,
+                submission,
             },
         );
         Ok(session_id)
@@ -768,7 +787,7 @@ impl CoreRuntime {
     fn deliver_assistant_wake(
         &mut self,
         session_id: &str,
-        message: &termloop_invocation::AssistantWakeMessage,
+        submission: termloop_invocation::GeneratedTerminalSubmission,
     ) -> Result<(), CoreError> {
         let session = self
             .store
@@ -779,7 +798,7 @@ impl CoreRuntime {
         if !self.agent_session_runtime_is_current(session) {
             return Err(CoreError::RevisionConflict);
         }
-        self.submit_generated_terminal_input(session_id, message.terminal_submission())
+        self.submit_generated_terminal_input(session_id, submission)
     }
 }
 
@@ -811,25 +830,174 @@ pub fn tracker_role(kind: TrackerKind) -> termloop_invocation::ExecutorRole {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use termloop_store::{Store, issue_core_write_authority_for_composition};
+    use termloop_terminal::TerminalService;
+
+    #[test]
+    fn repeated_steward_wake_coalesces_while_first_submission_waits_for_idle() {
+        let path = std::env::temp_dir().join(format!(
+            "termloop-core-steward-wake-coalescing-{}-{}.json",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let folder = path.with_extension("project");
+        std::fs::create_dir_all(&folder).unwrap();
+        let mut runtime = CoreRuntime::new(
+            Store::open(&path).unwrap(),
+            issue_core_write_authority_for_composition(),
+            TerminalService::default(),
+            7,
+        )
+        .unwrap();
+        let project_id = runtime
+            .handle("project.create", json!({"name":"Demo","folderPath":folder}))
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        runtime
+            .set_steward_configuration(
+                crate::companion_integrations::steward::StewardConfigurationUpdate {
+                    project_id: &project_id,
+                    agent_id: "codex",
+                    model: "default".into(),
+                    permission: "bypassPermissions".into(),
+                    reasoning: "default".into(),
+                    enabled: true,
+                    system_prompt: String::new(),
+                    expected_revision: runtime.state_revision(),
+                    capability:
+                        crate::companion_integrations::steward::AssistantAvailability::Proven,
+                    updated_at_epoch_ms: 1,
+                },
+            )
+            .unwrap();
+        let session_id = "steward-session";
+        runtime
+            .store
+            .attach_steward_executor_session(
+                &runtime.write_authority,
+                SessionRecord {
+                    id: session_id.into(),
+                    project_id: project_id.clone(),
+                    name: Some("Project Steward".into()),
+                    kind: SessionKind::Agent,
+                    process: ProcessDescriptor {
+                        program: "codex".into(),
+                        args: vec![],
+                        cwd: folder.to_string_lossy().into_owned(),
+                        agent_id: Some("codex".into()),
+                        template_ref: Some("builtin.assistant.activation".into()),
+                        template_version: Some(3),
+                    },
+                    lifecycle_state: "running".into(),
+                    runtime_epoch: 7,
+                    archived_at_epoch_ms: None,
+                    ask_to_source_session_id: None,
+                    run_configuration_id: None,
+                    improver_target: None,
+                    ask_to_continuation: None,
+                    resume_ref: None,
+                    resume_launch_guard: None,
+                    resume_failure: None,
+                    launch_selection: Default::default(),
+                },
+                &project_id,
+                1,
+                2,
+            )
+            .unwrap();
+
+        let message = compose_steward_wake(StewardWakeKind::ConfigurationChanged).unwrap();
+        let submission = message.terminal_submission();
+        runtime.agent_observations.insert(
+            session_id.into(),
+            crate::AgentObservationCapability {
+                token: None,
+                runtime_epoch: 7,
+                observation: Some(termloop_agents::AgentObservation {
+                    state: termloop_agents::AgentState::Working,
+                    source: termloop_agents::AgentSignalSource::DaemonBridge,
+                    sequence: 1,
+                    observed_at_epoch_ms: 2,
+                }),
+                last_signal: Some(termloop_agents::AgentSignal::ToolStarted),
+                pending_generated_input: Some(submission.clone()),
+                defer_generated_input_until_hook_response: false,
+                last_notification_type: None,
+            },
+        );
+        // This is the exact state after the first wake was accepted while the
+        // activation turn still owned the provider composer. No transport
+        // delivery exists yet, but the immutable wake submission is pending.
+        runtime.pending_assistant_wake_deliveries.insert(
+            session_id.into(),
+            PendingAssistantWakeDelivery::Steward {
+                project_id: project_id.clone(),
+                generation: 1,
+                wake_id: 11,
+                session_id: session_id.into(),
+                runtime_epoch: 7,
+                submission,
+                confirmation_queued: false,
+            },
+        );
+
+        for _ in 0..20 {
+            assert_eq!(
+                runtime
+                    .deliver_steward_wake(&project_id, 1, 11, &message)
+                    .unwrap(),
+                StewardWakeAdmission::Coalesced
+            );
+        }
+        assert_eq!(runtime.pending_assistant_wake_deliveries.len(), 1);
+        assert!(runtime.pending_generated_input_queues.is_empty());
+
+        let unrelated_submission =
+            crate::test_generated_terminal_submission("An unrelated generated input");
+        runtime
+            .agent_observations
+            .get_mut(session_id)
+            .unwrap()
+            .pending_generated_input = Some(unrelated_submission);
+        runtime.prune_stale_pending_assistant_wake_deliveries();
+        assert!(runtime.pending_assistant_wake_deliveries.is_empty());
+
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir_all(folder);
+    }
 
     #[test]
     fn pending_wake_identity_coalesces_only_the_exact_delivery() {
+        let steward_submission = compose_steward_wake(StewardWakeKind::ConfigurationChanged)
+            .unwrap()
+            .terminal_submission();
         let steward = PendingAssistantWakeDelivery::Steward {
             project_id: "project".into(),
             generation: 3,
             wake_id: 13,
             session_id: "steward".into(),
             runtime_epoch: 7,
+            submission: steward_submission,
             confirmation_queued: false,
         };
         assert!(steward.is_same_steward_wake("project", 3, 13, "steward", 7));
         assert!(!steward.is_same_steward_wake("project", 3, 14, "steward", 7));
 
+        let worker_submission = compose_tracker_wake(
+            TrackerKind::Custom,
+            "0123456789abcdef0123456789abcdef",
+            "Inspect the configured condition.",
+        )
+        .unwrap()
+        .terminal_submission();
         let worker = PendingAssistantWakeDelivery::Worker {
             worker_id: "worker".into(),
             worker_generation: 5,
             session_id: "worker-session".into(),
             runtime_epoch: 9,
+            submission: worker_submission,
         };
         assert!(worker.is_same_worker_wake("worker", 5, "worker-session", 9));
         assert!(!worker.is_same_worker_wake("worker", 5, "worker-session", 10));

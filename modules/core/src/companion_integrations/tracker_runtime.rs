@@ -1101,6 +1101,17 @@ impl CoreRuntime {
             .is_ok()
     }
 
+    /// Returns the exact focused Task for a current Playbook step check, or
+    /// `None` for a current scheduled Routine. Server-side Task-read receipts
+    /// use this to prevent one Task's read from authorizing another's verdict.
+    pub fn tracker_check_task_id(
+        &self,
+        capability: &TrackerCheckCapability,
+    ) -> Result<Option<String>, CoreError> {
+        self.validate_current_check(capability, capability.claimed_at_epoch_ms)?;
+        Ok(self.claimed_step_task_id(&capability.tracker_id))
+    }
+
     pub fn release_worker_routine_claim(&mut self, capability: &TrackerCheckCapability) -> bool {
         let exact_active_claim = self
             .tracker_runtime
@@ -1465,6 +1476,14 @@ fn assigned_routine_result(
             "approver": step.milestone.approver,
             "retryDelaySeconds": step.milestone.retry_delay_seconds,
             "finishWith": "worker_report_step_verdicts",
+            "taskRead": {
+                "requiredBeforeVerdict": true,
+                "tool": "task_read",
+                "arguments": {
+                    "taskId": step.waiting[0].task_id,
+                    "checkId": capability.check_id,
+                },
+            },
             "tasks": step
                 .waiting
                 .iter()
@@ -1957,6 +1976,7 @@ mod tests {
             Err(CoreError::RevisionConflict)
         ));
         assert!(runtime.tracker_check_is_current(&first));
+        assert_eq!(runtime.tracker_check_task_id(&first).unwrap(), None);
 
         let finding = WorkerRoutineFinding {
             id: "finding-1".into(),

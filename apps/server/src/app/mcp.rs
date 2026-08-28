@@ -318,15 +318,15 @@ async fn tool_call_inner(
                     .project_projection_for_executor(project_id),
             )
         }
-        (termloop_core::session_launch::AgentMcpRole::Steward { project_id }, "task_read")
-        | (termloop_core::session_launch::AgentMcpRole::Worker { project_id, .. }, "task_read") => {
-            text_result(
-                state
-                    .core
-                    .lock()
-                    .await
-                    .list_tasks_current(json!({ "projectId": project_id })),
-            )
+        (termloop_core::session_launch::AgentMcpRole::Steward { project_id }, "task_read") => {
+            let params: protocol::McpTaskReadParams = serde_json::from_value(arguments)
+                .expect("generated MCP validation precedes decoding");
+            read_tasks(project_id, None, params, state).await
+        }
+        (termloop_core::session_launch::AgentMcpRole::Worker { project_id, .. }, "task_read") => {
+            let params: protocol::McpTaskReadParams = serde_json::from_value(arguments)
+                .expect("generated MCP validation precedes decoding");
+            read_tasks(project_id, Some(principal.session_id()), params, state).await
         }
         (
             termloop_core::session_launch::AgentMcpRole::Worker { project_id, .. },
@@ -704,6 +704,125 @@ fn text_result(
     })
 }
 
+async fn read_tasks(
+    project_id: &str,
+    worker_session_id: Option<&str>,
+    params: protocol::McpTaskReadParams,
+    state: &AppState,
+) -> Result<Value, termloop_core::CoreError> {
+    let Some(task_id) = params.task_id else {
+        if params.check_id.is_some() {
+            return Err(termloop_core::CoreError::InvalidParams("checkId".into()));
+        }
+        return text_result(
+            state
+                .core
+                .lock()
+                .await
+                .list_tasks_current(json!({ "projectId": project_id })),
+        );
+    };
+
+    let worker_claim = if let Some(session_id) = worker_session_id {
+        let check_id = params
+            .check_id
+            .as_deref()
+            .ok_or_else(|| termloop_core::CoreError::InvalidParams("checkId".into()))?;
+        let capability = claimed_check(state, project_id, session_id, check_id)?;
+        let claimed_task_id = state.core.lock().await.tracker_check_task_id(&capability)?;
+        if claimed_task_id
+            .as_deref()
+            .is_some_and(|claimed_task_id| claimed_task_id != task_id)
+        {
+            return Err(termloop_core::CoreError::CapabilityDenied);
+        }
+        Some((session_id.to_owned(), check_id.to_owned(), capability))
+    } else {
+        if params.check_id.is_some() {
+            return Err(termloop_core::CoreError::InvalidParams("checkId".into()));
+        }
+        None
+    };
+
+    // Fail before provider or Git work when the exact Task is not in the
+    // authenticated Project. Each observation path revalidates its own Task
+    // binding again before committing or returning evidence.
+    state
+        .core
+        .lock()
+        .await
+        .task_projection_for_executor(project_id, &task_id)?;
+    let task_ids = vec![task_id.clone()];
+    let (branch_commits, pull_requests) = tokio::join!(
+        super::control::task_branch_commit_summary_list(
+            json!({ "projectId": project_id, "taskIds": task_ids.clone() }),
+            state,
+        ),
+        super::control::git_host_pull_request_list(
+            json!({ "projectId": project_id, "taskIds": task_ids }),
+            state,
+        ),
+    );
+    let branch_commits = branch_commits?;
+    let pull_requests = pull_requests?;
+
+    let (task, agent_statuses) = {
+        let core = state.core.lock().await;
+        if let Some((_, _, capability)) = worker_claim.as_ref() {
+            let claimed_task_id = core.tracker_check_task_id(capability)?;
+            if claimed_task_id
+                .as_deref()
+                .is_some_and(|claimed_task_id| claimed_task_id != task_id)
+            {
+                return Err(termloop_core::CoreError::TrackerReportStale);
+            }
+        }
+        (
+            core.task_projection_for_executor(project_id, &task_id)?,
+            core.task_agent_status_projection_for_executor(project_id, &task_id)?,
+        )
+    };
+    if let Some((session_id, check_id, _)) = worker_claim {
+        let marked =
+            state
+                .tracker_report_capabilities
+                .lock()
+                .ok()
+                .is_some_and(|mut capabilities| {
+                    capabilities.mark_task_read(
+                        &session_id,
+                        &check_id,
+                        &task_id,
+                        super::current_epoch_ms(),
+                    )
+                });
+        if !marked {
+            return Err(termloop_core::CoreError::TrackerReportStale);
+        }
+    }
+
+    text_result(Ok(task_read_projection(
+        task,
+        branch_commits,
+        pull_requests,
+        agent_statuses,
+    )))
+}
+
+fn task_read_projection(
+    task: Value,
+    branch_commits: Value,
+    pull_requests: Value,
+    agent_statuses: Value,
+) -> Value {
+    json!({
+        "task": task,
+        "branchCommitSummary": branch_commits.as_array().and_then(|items| items.first()).cloned(),
+        "pullRequest": pull_requests.as_array().and_then(|items| items.first()).cloned(),
+        "agentStatuses": agent_statuses,
+    })
+}
+
 async fn read_pull_requests(
     project_id: &str,
     state: &AppState,
@@ -713,14 +832,7 @@ async fn read_pull_requests(
         .lock()
         .await
         .list_tasks_current(json!({ "projectId": project_id }))?;
-    let task_ids = tasks
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|task| task.get("id").and_then(Value::as_str))
-        .take(40)
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
+    let task_ids = task_ids_from_list(&tasks);
     if task_ids.is_empty() {
         return Ok(json!({ "content": "[]" }));
     }
@@ -731,6 +843,18 @@ async fn read_pull_requests(
         )
         .await,
     )
+}
+
+fn task_ids_from_list(tasks: &Value) -> Vec<String> {
+    tasks
+        .get("items")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|task| task.get("id").and_then(Value::as_str))
+        .take(40)
+        .map(str::to_owned)
+        .collect()
 }
 
 async fn read_task_agent_transcript_tail(
@@ -1237,6 +1361,24 @@ async fn worker_report_step_verdicts(
     let params: WorkerStepVerdictsParams =
         serde_json::from_value(arguments).expect("generated MCP validation precedes decoding");
     let capability = claimed_check(state, project_id, session_id, &params.check_id)?;
+    let task_read_completed =
+        state
+            .tracker_report_capabilities
+            .lock()
+            .ok()
+            .is_some_and(|mut capabilities| {
+                params.verdicts.iter().all(|verdict| {
+                    capabilities.task_was_read(
+                        session_id,
+                        &params.check_id,
+                        &verdict.task_id,
+                        super::current_epoch_ms(),
+                    )
+                })
+            });
+    if !task_read_completed {
+        return Err(termloop_core::CoreError::TrackerReportInvalid);
+    }
     let verdicts = params
         .verdicts
         .into_iter()
@@ -1703,6 +1845,19 @@ mod tests {
         assert!(!tool_names(&steward).contains(&"ask_to"));
         assert!(!tool_names(&steward).contains(&"worker_complete_routine"));
         assert!(tool_names(&worker).contains(&"worker_complete_routine"));
+        let task_read = worker
+            .iter()
+            .find(|tool| tool["name"] == "task_read")
+            .unwrap();
+        assert!(task_read["inputSchema"]["properties"]["taskId"].is_object());
+        assert!(task_read["inputSchema"]["properties"]["checkId"].is_object());
+        assert_eq!(task_read["annotations"]["readOnlyHint"], true);
+        assert_eq!(task_read["annotations"]["openWorldHint"], true);
+        assert!(
+            task_read["description"]
+                .as_str()
+                .is_some_and(|description| description.contains("successful scoped read"))
+        );
         assert!(tool_names(&worker).contains(&"task_agent_transcript_tail_read"));
         assert!(!tool_names(&steward).contains(&"task_agent_transcript_tail_read"));
         assert!(!tool_names(&worker).contains(&"send_to_agent"));
@@ -1846,6 +2001,15 @@ mod tests {
             "task_set_jira_url",
             &json!({ "taskId": "task-1", "jiraUrl": "TERM-42" })
         ));
+        assert!(protocol::validate_mcp_tool_params("task_read", &json!({})));
+        assert!(protocol::validate_mcp_tool_params(
+            "task_read",
+            &json!({ "taskId": "task-1", "checkId": "check-1" })
+        ));
+        assert!(!protocol::validate_mcp_tool_params(
+            "task_read",
+            &json!({ "taskId": "task-1", "branch": "guessed" })
+        ));
         assert!(protocol::validate_mcp_tool_params(
             "task_agent_transcript_tail_read",
             &json!({ "taskId": "task-1" })
@@ -1877,6 +2041,38 @@ mod tests {
                 "systemPrompt": "Missing user provenance."
             })
         ));
+    }
+
+    #[test]
+    fn scoped_task_read_combines_task_owned_delivery_evidence() {
+        let projection = task_read_projection(
+            json!({ "id": "task-1", "branch": { "name": "termloop/exact" } }),
+            json!([{ "task_id": "task-1", "count": 2, "freshness": "fresh" }]),
+            json!([{ "taskId": "task-1", "matches": [{ "number": 42 }] }]),
+            json!([{ "sessionId": "agent-1", "status": "idle" }]),
+        );
+        assert_eq!(projection["task"]["id"], "task-1");
+        assert_eq!(projection["task"]["branch"]["name"], "termloop/exact");
+        assert_eq!(projection["branchCommitSummary"]["count"], 2);
+        assert_eq!(projection["pullRequest"]["matches"][0]["number"], 42);
+        assert_eq!(projection["agentStatuses"][0]["sessionId"], "agent-1");
+
+        let unavailable =
+            task_read_projection(json!({ "id": "task-2" }), json!([]), json!([]), json!([]));
+        assert!(unavailable["branchCommitSummary"].is_null());
+        assert!(unavailable["pullRequest"].is_null());
+    }
+
+    #[test]
+    fn pull_request_reads_take_ids_from_the_current_paginated_task_shape() {
+        assert_eq!(
+            task_ids_from_list(&json!({
+                "items": [{ "id": "task-1" }, { "id": "task-2" }],
+                "next_cursor": null,
+            })),
+            ["task-1", "task-2"]
+        );
+        assert!(task_ids_from_list(&json!([])).is_empty());
     }
 
     #[tokio::test]

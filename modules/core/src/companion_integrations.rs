@@ -665,8 +665,8 @@ impl GitHostPullRequestListPlan {
         let mut follow_up_task_ids = BTreeSet::new();
         let mut rows = BTreeMap::<String, ProviderCacheRow>::new();
         for observation in &task_observations {
-            let mut wave_admitted = 0;
-            for query in &observation.candidates {
+            let mut refreshable = Vec::new();
+            for (rank, query) in observation.candidates.iter().enumerate() {
                 let key = cache_key(query);
                 let cached = self.cache.get(&key);
                 let cache_suppresses_refresh = cached.as_ref().is_some_and(|row| {
@@ -679,6 +679,9 @@ impl GitHostPullRequestListPlan {
                                 .retry_after
                                 .is_some_and(|retry_after| self.observed_at < retry_after))
                 });
+                let last_attempt = cached
+                    .as_ref()
+                    .map_or(0, |row| row.last_attempt_observed_at);
                 if let Some(row) = cached {
                     // A bounded provider wave may defer this candidate. Keep its
                     // last safe row in the composed projection while a later wave
@@ -689,9 +692,17 @@ impl GitHostPullRequestListPlan {
                 if cache_suppresses_refresh {
                     continue;
                 }
-                if wave_admitted < MAX_PROVIDER_QUERIES_PER_TASK_WAVE {
+                refreshable.push((last_attempt, rank, query));
+            }
+            // Admit the least recently attempted candidate first so the bounded
+            // wave rotates. Fixed rank order starves every alias past the bound:
+            // the leading ranks fall due again each wave, so a deferred alias is
+            // never refreshed and its matches eventually age past STALE_MS and
+            // drop out of the composed projection.
+            refreshable.sort_unstable_by_key(|(last_attempt, rank, _)| (*last_attempt, *rank));
+            for (admitted, (_, _, query)) in refreshable.into_iter().enumerate() {
+                if admitted < MAX_PROVIDER_QUERIES_PER_TASK_WAVE {
                     pending.push(query.clone());
-                    wave_admitted += 1;
                 } else {
                     follow_up_task_ids.insert(observation.snapshot.task_id.clone());
                 }
@@ -2285,6 +2296,86 @@ mod tests {
         assert!(projection_refresh_due(projection, observed_at));
 
         drop(observed);
+        drop(store);
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn bounded_provider_wave_rotates_to_the_least_recently_attempted_alias() {
+        let observed_at = 24 * 60 * 60 * 1_000;
+        let snapshot = TaskSnapshot {
+            task_id: "task".into(),
+            project_id: "project".into(),
+            branch_name: Some("termloop/generated".into()),
+            repository_root: Some(PathBuf::from("/repo")),
+            worktree_path: Some(PathBuf::from("/repo-worktree")),
+            worktree_generation: 1,
+            force_refresh: false,
+        };
+        let facts = azure_worktree_facts(&["UKIE-835-current", "termloop/generated", "UKIE-835"]);
+        let local_facts = GitHostLocalFactsCache::default();
+        local_facts.insert(local_facts_key(&snapshot).unwrap(), Ok(facts), observed_at);
+        let directory = std::env::temp_dir().join(format!(
+            "termloop-git-host-wave-rotation-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let store = termloop_store::Store::open(directory.join("state.json")).unwrap();
+        let cache = store.open_provider_cache().unwrap();
+        let alias_key = |branch: &str| {
+            cache_key(&ProviderQuery::Azure(AzurePullRequestQuery {
+                repository: AzureRepository {
+                    organization: "valuespaces".into(),
+                    project: "Nucleus".into(),
+                    name: "Nucleus".into(),
+                },
+                head_branch: branch.into(),
+            }))
+        };
+        // The two leading aliases fall due every wave. Only the trailing alias
+        // has been starved past STALE_MS, so it must displace the lower-ranked
+        // of the two rather than being deferred again.
+        for (branch, last_attempt) in [
+            ("UKIE-835-current", observed_at - FRESH_MS),
+            ("termloop/generated", observed_at - FRESH_MS),
+            ("UKIE-835", observed_at - 16 * 60 * 60 * 1_000),
+        ] {
+            cache
+                .update(ProviderCacheRow {
+                    key: alias_key(branch),
+                    matches: vec![],
+                    truncated: false,
+                    parent_resolved: true,
+                    failure: None,
+                    last_success_observed_at: Some(last_attempt),
+                    last_attempt_observed_at: last_attempt,
+                    retry_after: None,
+                })
+                .unwrap();
+        }
+
+        let prepared = GitHostPullRequestListPlan {
+            tasks: vec![snapshot],
+            cache,
+            github: None,
+            azure: None,
+            local_facts,
+            observed_at,
+            deadline: termloop_platform::MonotonicDeadline::after(Duration::from_secs(10)).unwrap(),
+        }
+        .prepare();
+
+        assert_eq!(
+            prepared
+                .jobs
+                .iter()
+                .map(|job| job.key().to_owned())
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([alias_key("UKIE-835"), alias_key("UKIE-835-current")])
+        );
+        assert_eq!(prepared.follow_up_task_ids, vec!["task"]);
+
+        drop(prepared);
         drop(store);
         let _ = std::fs::remove_dir_all(directory);
     }

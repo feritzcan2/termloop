@@ -85,23 +85,23 @@
       }
     },
     "task_read": {
-      "description": "Read current Tasks for this Project.",
+      "description": "Read current Task state for this authenticated Project. Omit taskId to list Task records. Pass an exact taskId to read one Task together with all bounded Task-owned delivery evidence TermLoop currently projects: branch and worktree state, Jira link, branch commit summary, pull request projection, and ordinary Task Agent status. Each external projection keeps its own freshness or unavailability fields; missing or stale evidence is not completion. A Worker processing a Playbook step must pass that assignment's exact taskId and checkId before inspecting other evidence or reporting its verdict. The successful scoped read is required for that exact verdict; never infer Task identity from the Project checkout HEAD, a ticket key, title, or a guessed branch. Raw transcripts, secrets, credentials, and unrestricted logs are never returned.",
       "role": [
         "steward",
         "worker"
       ],
       "params": {
-        "$ref": "#/$defs/assistantEmptyParams"
+        "$ref": "#/$defs/mcpTaskReadParams"
       },
       "result": {
         "$ref": "#/$defs/assistantTextResult"
       },
       "annotations": {
-        "title": "Read current Tasks for this Project",
+        "title": "Read current Task state and delivery evidence",
         "readOnlyHint": true,
         "destructiveHint": false,
         "idempotentHint": true,
-        "openWorldHint": false
+        "openWorldHint": true
       }
     },
     "agent_status_read": {
@@ -980,6 +980,27 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {}
+    },
+    "mcpTaskReadParams": {
+      "x-codegen": true,
+      "x-codegen-name": "McpTaskReadParams",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "taskId": {
+          "description": "Exact Task ID from the current assignment. Omit only when listing Project Tasks.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "x-utf8-max-bytes": 256
+        },
+        "checkId": {
+          "description": "Exact active Worker check ID. Required with taskId while processing a Playbook step so TermLoop can bind the read to the later verdict.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
     },
     "assistantTextResult": {
       "x-codegen": true,

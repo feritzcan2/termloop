@@ -31,6 +31,7 @@ pub(super) use handlers::git_host_pull_request_list;
 pub(super) use handlers::git_host_pull_request_list_background;
 pub(super) use handlers::launch_current_worker;
 pub(super) use handlers::reconcile_agent_resumes_after_start;
+pub(super) use handlers::task_branch_commit_summary_list;
 pub(in crate::app) use handlers::{
     launch_task_session, preview_steward_task_agent_session, preview_task_agent_session,
     project_list_local_branches, provision_task_worktree, terminate_session,

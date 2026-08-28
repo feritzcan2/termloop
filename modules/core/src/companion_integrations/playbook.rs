@@ -128,9 +128,6 @@ impl CoreRuntime {
                 .saved_pipelines
                 .iter()
                 .any(|pipeline| !pipeline.milestones.is_empty());
-        let had_steps = current
-            .as_ref()
-            .is_some_and(|playbook| playbook.all_milestones().next().is_some());
         let (worker_id, create_worker) = self.resolve_playbook_worker(
             &draft,
             current.as_ref(),
@@ -139,7 +136,7 @@ impl CoreRuntime {
             preferred_worker_available,
             updated_at_epoch_ms,
         )?;
-        let steward_configuration = if !had_steps && has_steps {
+        let steward_configuration = if has_steps {
             self.store
                 .steward_configurations()
                 .iter()
@@ -807,7 +804,7 @@ mod tests {
     }
 
     #[test]
-    fn first_executable_playbook_enables_the_worker_and_configured_steward() {
+    fn executable_playbook_apply_enables_the_worker_and_configured_steward() {
         let (path, folder, mut runtime, project_id) = runtime_with_empty_project();
         let revision = runtime.state_revision();
         runtime
@@ -886,8 +883,8 @@ mod tests {
         assert_eq!(steward.generation, 2);
         assert_eq!(steward.updated_at_epoch_ms, 1);
 
-        // Automatic activation belongs only to the first executable Playbook.
-        // A later edit must respect a user who deliberately disabled Steward.
+        // Applying a later executable pipeline also restores its execution
+        // capacity when the Steward was disabled after the first apply.
         let revision = runtime.state_revision();
         let mut disabled_again = steward.clone();
         disabled_again.enabled = false;
@@ -911,8 +908,9 @@ mod tests {
         .unwrap();
         assert_eq!(revised["playbook"]["revision"], 3);
         let steward = &runtime.store.steward_configurations()[0];
-        assert!(!steward.enabled);
-        assert_eq!(steward.generation, 3);
+        assert!(steward.enabled);
+        assert_eq!(steward.generation, 4);
+        assert_eq!(steward.updated_at_epoch_ms, 3);
 
         let _ = std::fs::remove_file(path);
         let _ = std::fs::remove_dir_all(folder);

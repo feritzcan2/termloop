@@ -324,6 +324,12 @@ kbd { padding: 2px 5px; border: 1px solid rgba(255,255,255,.07); border-radius: 
 .task-item-tab-favorite:hover, .task-item-tab-close:hover { background: rgba(255,255,255,.1); color: var(--sidebar-text); }
 .task-item-tab-favorite:focus-visible, .task-item-tab-close:focus-visible { outline: 1px solid var(--accent-strong); }
 .task-item-tab-favorite svg, .task-item-tab-close svg { width: 11px; height: 11px; }
+.task-item-tab-close-confirm { position: absolute; z-index: 2; inset: 0; display: flex; align-items: center; justify-content: flex-end; gap: 3px; padding: 0 4px; border-radius: inherit; background: color-mix(in srgb, var(--sidebar-bg) 92%, var(--danger)); color: var(--sidebar-text); }
+.task-item-tab-close-confirm > span { margin-right: auto; padding-left: 2px; font: 600 9px/1 var(--font-ui); }
+.task-item-tab-close-confirm > button { min-width: 25px; height: 19px; padding: 0 4px; border: 0; border-radius: 4px; background: rgba(255,255,255,.07); color: var(--sidebar-text); font: 600 8.5px/1 var(--font-ui); }
+.task-item-tab-close-confirm > button:first-of-type { background: color-mix(in srgb, var(--danger) 24%, transparent); color: color-mix(in srgb, var(--danger) 45%, white); }
+.task-item-tab-close-confirm > button:hover { background: rgba(255,255,255,.13); }
+.task-item-tab-close-confirm > button:focus-visible { outline: 1px solid var(--accent-strong); outline-offset: 0; }
 .task-tab-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sidebar-dimmer); }
 .task-tab-dot.working { background: var(--agent-status-working); }
 .task-tab-dot.review { background: var(--agent-status-review); }
@@ -2298,7 +2304,9 @@ button.history-row-main { cursor: pointer; }
 /* Create-Task dialog: the worktree plan is one card — branch, base, and folder
    as hairline rows of a single object — with a switch to skip it and one quiet
    line to flip between a new and an existing branch. Start targets are
-   pressed-state chips, not checkboxes. */
+   pressed-state chips, not checkboxes; each selected agent exposes its own
+   concrete launch settings directly below them. */
+.task-create-dialog .dialog-body { max-height: min(72vh,650px); overflow-y: auto; overscroll-behavior: contain; }
 .plan-head { display: flex; align-items: baseline; gap: 8px; margin: 17px 0 7px; }
 .plan-heading { color: #636d71; font-size: 10px; font-weight: 750; letter-spacing: .13em; text-transform: uppercase; }
 .plan-sub { overflow: hidden; color: var(--text-muted); font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
@@ -2324,6 +2332,11 @@ button.history-row-main { cursor: pointer; }
 .start-chip.on { border-color: rgba(124,92,255,.55); background: var(--accent-wash); color: #e2dbff; }
 .start-chip.on svg { color: var(--accent-strong); }
 .start-chip:disabled { opacity: .45; }
+.start-agent-configurations { display: grid; gap: 6px; margin-top: 8px; }
+.start-agent-configuration { display: grid; gap: 8px; padding: 9px; border: 1px solid var(--border); border-radius: 9px; background: rgba(0,0,0,.12); }
+.start-agent-configuration-head { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font: 700 9.5px/1 var(--font-ui); }
+.start-agent-configuration-head svg { width: 11px; height: 11px; color: var(--accent-strong); }
+.start-agent-configuration .task-automation-launch-options { grid-template-columns: minmax(0,1.25fr) minmax(125px,1fr) minmax(88px,.75fr); }
 
 /* A relocatable helper row carries connector + drag handle + content: three
    in-flow children need three columns, or the content wraps into a broken

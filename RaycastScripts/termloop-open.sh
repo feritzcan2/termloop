@@ -2,7 +2,7 @@
 
 # Required parameters:
 # @raycast.schemaVersion 1
-# @raycast.title Open TermLoop
+# @raycast.title TermLoop Open
 # @raycast.mode compact
 
 # Optional parameters:

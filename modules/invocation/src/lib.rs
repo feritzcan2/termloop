@@ -119,7 +119,7 @@ const ROUTINE_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.playbook",
-    version: 11,
+    version: 13,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.playbook.md"),
 };
 
@@ -131,7 +131,7 @@ const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const WORKER_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.worker.executor",
-    version: 16,
+    version: 17,
     authored_body: include_str!("../../../resources/prompts/builtin.worker.executor.md"),
 };
 
@@ -4071,6 +4071,52 @@ mod tests {
     }
 
     #[test]
+    fn playbook_builder_reviews_every_step_and_declares_the_new_snapshot_contract() {
+        let target = ImproverTarget::Playbook {
+            project_name: "Nucleus",
+        };
+        let template = target.template().unwrap();
+        let launch = prompt_improver_launch(target);
+        let delivered = launch.delivered_prompt().unwrap();
+
+        assert_eq!(template.version, 13);
+        assert_eq!(launch.provenance().template_version, 13);
+        for expected in [
+            "two compact review",
+            "show the complete normal path as one readable arrow sequence",
+            "present the complete detailed draft",
+            "configuration_version_write.content",
+            "\"activePipelineName\"",
+            "\"milestones\"",
+            "\"savedPipelines\"",
+            "\"workerId\"",
+            "\"preferredWorkerAgentId\"",
+            "Every saved pipeline contains exactly",
+            "Every `check` contains exactly",
+            "never send probe",
+            "authenticated scoped",
+            "Project checkout cwd or",
+        ] {
+            assert!(delivered.contains(expected), "missing {expected:?}");
+        }
+        for invalid_creation_shape in [
+            "`schemaVersion`",
+            "`activePipelineId`",
+            "`pipelines`",
+            "`workers`",
+            "`routines`",
+        ] {
+            assert!(
+                delivered.contains(invalid_creation_shape),
+                "missing rejected shape {invalid_creation_shape:?}"
+            );
+        }
+        assert!(!delivered.contains("at most five short bullets"));
+        assert!(!delivered.contains("playbook_update"));
+        assert!(!delivered.contains("playbook_read"));
+    }
+
+    #[test]
     fn settings_and_new_run_improvers_save_full_versions() {
         let targets = [
             ImproverTarget::SettingsEntry {
@@ -6020,7 +6066,7 @@ mod tests {
     #[test]
     fn pipeline_prompts_treat_a_step_title_as_a_label_not_a_yes_no_contract() {
         let worker = executor_prompt(ExecutorRole::Worker).unwrap();
-        assert_eq!(worker.provenance().template_version, 16);
+        assert_eq!(worker.provenance().template_version, 17);
         assert!(
             worker
                 .authored_preview()
@@ -6040,6 +6086,18 @@ mod tests {
             worker
                 .authored_preview()
                 .contains("exactly one focused Task")
+        );
+        assert!(worker.authored_preview().contains("`step.tasks[0].taskId`"));
+        assert!(
+            worker
+                .authored_preview()
+                .contains("`step.taskRead.arguments`")
+        );
+        assert!(worker.authored_preview().contains("terminal's cwd or HEAD"));
+        assert!(
+            worker
+                .authored_preview()
+                .contains("rejects a step verdict unless")
         );
 
         let step = tracker_assignment_prompt(ExecutorRole::StepCheckTracker).unwrap();
