@@ -158,6 +158,27 @@ describe("TerminalPool", () => {
     unsubscribe();
   });
 
+  it("binds an image paste intent to the exact mounted Session", async () => {
+    const value = agentSession("013e4567-e89b-42d3-a456-426614174001");
+    const pasted: string[] = [];
+    let triggerImagePaste!: () => void;
+    const pool = new TerminalPool(
+      (_onInput, _onResize, onImagePaste) => {
+        triggerImagePaste = onImagePaste;
+        return new FakeSurface();
+      },
+      async () => new FakeAttachment(),
+      false,
+      (sessionId) => pasted.push(sessionId),
+    );
+    pool.reconcile([value]);
+    await pool.mount(value.id, {} as HTMLElement);
+
+    triggerImagePaste();
+
+    expect(pasted).toEqual([value.id]);
+  });
+
   it("forwards a fit that occurs before the asynchronous attachment is ready", async () => {
     const attachment = new FakeAttachment();
     const value = session("023e4567-e89b-12d3-a456-426614174000");

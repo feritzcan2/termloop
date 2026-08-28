@@ -30,7 +30,7 @@ pub(in crate::app) use session::terminate_session;
 pub(super) use session::{
     close_session, fork_agent_session, launch_agent_session, launch_quick_action,
     launch_run_configuration_improver, list_deleted_sessions, list_session_history,
-    preview_agent_session, preview_quick_action, preview_relocate_agent_session,
+    paste_agent_image, preview_agent_session, preview_quick_action, preview_relocate_agent_session,
     preview_relocate_agent_to_project, preview_resume_agent_session,
     preview_run_configuration_improver, preview_session_history_resume, relocate_agent_session,
     repair_provider_history, restart_agent_session, restart_agents_for_client_launch,

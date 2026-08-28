@@ -263,6 +263,7 @@ export type ShellProps = {
   repairProviderHistory(sessionId: string): Promise<string | undefined>;
   requestAgentAskTo(sessionId: string, targetAgentId: "claude" | "codex"): Promise<void>;
   requestAgentHandoverTo(sessionId: string, targetSessionId: string): Promise<void>;
+  pasteSessionImage(sessionId: string): Promise<void>;
   dismissSession(sessionId: string): Promise<void>;
   resumeSession(sessionId: string): Promise<void>;
   restartAgent(sessionId: string): Promise<void>;
@@ -1106,6 +1107,14 @@ export function Shell(props: ShellProps) {
   }, [shortcutsBlocked, closeCommandPalette, commandPaletteOpen, openCommandPalette, openQuickAction, platform]);
   useEffect(() => props.subscribeNativeShellShortcut((shortcut) => {
     doubleShiftRef.current.reset();
+    if (shortcut === "pasteImage") {
+      const session = props.selectedSession;
+      if (!shortcutsBlocked && !commandPaletteOpen
+        && session?.kind === "Agent" && session.lifecycle_state === "running") {
+        void props.pasteSessionImage(session.id);
+      }
+      return;
+    }
     if (shortcut === "quickAction") {
       if (!shortcutsBlocked && !commandPaletteOpen) openQuickAction();
       return;
@@ -1128,7 +1137,7 @@ export function Shell(props: ShellProps) {
       : undefined;
     if (!command || command.disabled) return;
     void command.perform();
-  }), [shortcutsBlocked, closeCommandPalette, commandPaletteOpen, openCommandPalette, openQuickAction, props.subscribeNativeShellShortcut]);
+  }), [shortcutsBlocked, closeCommandPalette, commandPaletteOpen, openCommandPalette, openQuickAction, props.pasteSessionImage, props.selectedSession, props.subscribeNativeShellShortcut]);
   useEffect(() => {
     setRenameSessionId(undefined);
     setProjectMenuOpen(false);

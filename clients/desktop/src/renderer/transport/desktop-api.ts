@@ -386,6 +386,7 @@ export type DesktopApi = {
   sessionHistoryResumeAgent(projectId: string, historyHandle: string, launchTicket: string): Promise<Session>;
   sessionRequestAskTo(sessionId: string, targetAgentId: "claude" | "codex"): Promise<AgentCoordinationDeliveryResult>;
   sessionRequestHandoverTo(sessionId: string, targetSessionId: string): Promise<AgentCoordinationDeliveryResult>;
+  sessionPasteImage(sessionId: string): Promise<AgentCoordinationDeliveryResult>;
   sessionClose(sessionId: string): Promise<{ sessionId: string; closed: boolean }>;
   terminalAttach(requestId: string, sessionId: string, runtimeEpoch: number): Promise<{ accepted: true }>;
 };

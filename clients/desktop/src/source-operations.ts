@@ -160,6 +160,7 @@ export const PROFILED_DESKTOP_OPERATIONS = {
   sessionHistoryResumeAgent: "termloop:session-history-resume-agent",
   sessionRequestAskTo: "termloop:session-request-ask-to",
   sessionRequestHandoverTo: "termloop:session-request-handover-to",
+  sessionPasteImage: "termloop:session-paste-image",
   sessionClose: "termloop:session-close",
   terminalAttach: "termloop:terminal-attach",
 } as const;

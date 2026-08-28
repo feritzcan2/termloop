@@ -27,8 +27,8 @@ use super::handlers::{
     launch_assistant_prompt_improver, launch_current_worker, launch_project_run,
     launch_quick_action, launch_run_configuration_improver, launch_settings_improver,
     launch_task_run, launch_task_session, list_deleted_sessions, list_session_history,
-    preview_agent_session, preview_assistant_prompt_improver, preview_quick_action,
-    preview_relocate_agent_session, preview_relocate_agent_to_project,
+    paste_agent_image, preview_agent_session, preview_assistant_prompt_improver,
+    preview_quick_action, preview_relocate_agent_session, preview_relocate_agent_to_project,
     preview_resume_agent_session, preview_run_configuration_improver,
     preview_session_history_resume, preview_settings_improver, preview_task_agent_session,
     project_list_local_branches, project_worktree_change_list, project_worktree_diff,
@@ -1412,6 +1412,7 @@ async fn dispatch_inner(
                     .await
                     .request_agent_handover_to(&params.session_id, &params.target_session_id)
             }
+            "session.pasteImage" => paste_agent_image(request.params, state).await,
             "session.archive" => archive_session(request.params, state).await,
             "project.delete" => delete_project(request.params, state).await,
             "quickAction.preview" => preview_quick_action(request.params, state).await,

@@ -110,11 +110,12 @@ declare global {
 
 const diagnosticsEnabled = new URLSearchParams(window.location.search).get("diagnostics") === "1";
 const terminalPool = new TerminalPool(
-  (onInput, onResize) => terminalRendererKind() === "ghostty"
+  (onInput, onResize, onImagePaste) => terminalRendererKind() === "ghostty"
     ? new GhosttySurface(onInput, onResize, ghosttyBridge)
-    : new XtermSurface(onInput, onResize),
+    : new XtermSurface(onInput, onResize, onImagePaste),
   attachTerminal,
   diagnosticsEnabled,
+  (sessionId) => { void pasteImageToSession(sessionId); },
 );
 let layoutLoadPromise: Promise<void> | undefined;
 let projectionRefreshCount = 0;
@@ -382,6 +383,14 @@ function sourceApiForTask(taskId: string): SourceDesktopApi {
 function sourceApiForSession(sessionId: string): SourceDesktopApi {
   const session = projectionStore.getSnapshot().sessions.find((candidate) => candidate.id === sessionId);
   return session ? desktopApi.source(connectionProfileIdOf(session)) : sourceApiForEntityId(sessionId);
+}
+
+async function pasteImageToSession(sessionId: string): Promise<void> {
+  try {
+    await sourceApiForSession(sessionId).sessionPasteImage(sessionId);
+  } catch (error) {
+    projectionStore.setMessage(controlErrorMessage(error));
+  }
 }
 
 function sourceApiForEntityId(entityId: string): SourceDesktopApi {
@@ -2135,6 +2144,7 @@ export function DesktopApp() {
       repairProviderHistory={repairProviderHistory}
       requestAgentAskTo={requestAgentAskTo}
       requestAgentHandoverTo={requestAgentHandoverTo}
+      pasteSessionImage={pasteImageToSession}
       dismissSession={dismissSession}
       resumeSession={resumeSession}
       restartAgent={restartAgent}

@@ -407,6 +407,14 @@ pub(in crate::app::control) async fn preview_quick_action(
     state.core.lock().await.preview_quick_action(params)
 }
 
+pub(in crate::app::control) async fn paste_agent_image(
+    mut params: serde_json::Value,
+    state: &AppState,
+) -> Result<serde_json::Value, CoreError> {
+    state.attachments.hydrate_quick_action(&mut params).await?;
+    state.core.lock().await.paste_agent_image(params)
+}
+
 pub(in crate::app::control) async fn launch_quick_action(
     mut params: serde_json::Value,
     state: &AppState,

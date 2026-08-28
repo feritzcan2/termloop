@@ -40,6 +40,20 @@ describe("Ghostty native host visibility", () => {
     expect(handler).toContain("[super performKeyEquivalent:event]");
   });
 
+  it("routes image-only Cmd+V to the remote image paste intent", () => {
+    const handler = source.slice(
+      source.indexOf("- (BOOL)performKeyEquivalent"),
+      source.indexOf("- (void)flagsChanged"),
+    );
+    const imagePaste = handler.indexOf("isImageOnlyPasteKeyEquivalent(event)");
+    const ghosttyLookup = handler.indexOf("ghostty_surface_key_is_binding");
+
+    expect(source).toContain("[NSImage canInitWithPasteboard:pasteboard]");
+    expect(handler).toContain('notifyShellShortcut("pasteImage")');
+    expect(imagePaste).toBeGreaterThanOrEqual(0);
+    expect(imagePaste).toBeLessThan(ghosttyLookup);
+  });
+
   it("fails closed when the embedded Ghostty config has diagnostics", () => {
     const initialization = source.slice(
       source.indexOf("static Napi::Value InitApp"),

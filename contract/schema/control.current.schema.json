@@ -754,6 +754,14 @@
         "$ref": "#/$defs/agentCoordinationDeliveryResult"
       }
     },
+    "session.pasteImage": {
+      "params": {
+        "$ref": "#/$defs/sessionImagePasteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/agentCoordinationDeliveryResult"
+      }
+    },
     "quickAction.preview": {
       "params": {
         "$ref": "#/$defs/quickActionParams"
@@ -1444,6 +1452,7 @@
         "session.resumeHistoryAgent",
         "session.requestAskTo",
         "session.requestHandoverTo",
+        "session.pasteImage",
         "quickAction.preview",
         "quickAction.launch",
         "session.list",
@@ -6567,6 +6576,31 @@
         }
       }
     },
+    "sessionImagePasteParams": {
+      "x-codegen": true,
+      "x-codegen-name": "SessionImagePasteParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "attachments"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "attachments": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "$ref": "#/$defs/quickActionImageAttachment"
+          }
+        }
+      }
+    },
     "agentCoordinationDeliveryResult": {
       "x-codegen": true,
       "x-codegen-name": "AgentCoordinationDeliveryResult",
@@ -6583,6 +6617,7 @@
           "maxLength": 36
         },
         "status": {
+          "type": "string",
           "enum": [
             "delivered",
             "submitting"

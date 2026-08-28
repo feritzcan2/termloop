@@ -219,6 +219,18 @@ static bool embedderOwnsLifecycleKeyEquivalent(NSEvent *event) {
   return event.keyCode == 0x0D;  // Every Cmd+W variant is window lifecycle.
 }
 
+static bool isImageOnlyPasteKeyEquivalent(NSEvent *event) {
+  const NSEventModifierFlags flags = event.modifierFlags &
+      (NSEventModifierFlagShift | NSEventModifierFlagControl |
+       NSEventModifierFlagOption | NSEventModifierFlagCommand);
+  if (flags != NSEventModifierFlagCommand || event.keyCode != 0x09) {
+    return false;
+  }
+  NSPasteboard *pasteboard = [NSPasteboard generalPasteboard];
+  NSString *text = [pasteboard stringForType:NSPasteboardTypeString];
+  return text.length == 0 && [NSImage canInitWithPasteboard:pasteboard];
+}
+
 // Budget for the whole Shift-release-Shift cycle. Must stay equal to
 // DOUBLE_SHIFT_WINDOW_MS in src/renderer/command-surface.ts, which runs the
 // same detection whenever the renderer rather than a native surface has focus.
@@ -461,6 +473,15 @@ static void notifyShellShortcut(const char *shortcut) {
   // consume them while the native surface is first responder.
   if (const char *shortcut = termLoopShortcutForEvent(event)) {
     notifyShellShortcut(shortcut);
+    return YES;
+  }
+
+  // A remote Agent cannot read the local AppKit pasteboard. Route an
+  // image-only Cmd+V to Electron so it can upload the PNG and ask the daemon
+  // to paste the resulting remote path into the active Agent composer. Text
+  // and mixed-content pasteboards retain Ghostty's native paste behavior.
+  if (isImageOnlyPasteKeyEquivalent(event)) {
+    notifyShellShortcut("pasteImage");
     return YES;
   }
 

@@ -895,6 +895,12 @@ pub fn validate_quick_action_with_attachments(
     attachments: &[QuickActionImageAttachment],
 ) -> Result<(), InvocationError> {
     validate_quick_action(agent_id, model, permission, reasoning, prompt)?;
+    validate_image_attachments(attachments)
+}
+
+pub fn validate_image_attachments(
+    attachments: &[QuickActionImageAttachment],
+) -> Result<(), InvocationError> {
     if attachments.len() > 1 {
         return Err(InvocationError::InvalidImageAttachment);
     }
@@ -941,6 +947,22 @@ pub fn validate_quick_action_with_attachments(
         }
     }
     Ok(())
+}
+
+/// Encodes one user-initiated image paste as a provider-neutral remote file
+/// reference without a submit key. The path is serialized as a JSON string so
+/// spaces, quotes, and platform separators remain unambiguous to every Agent
+/// composer while the user continues typing the accompanying instruction.
+pub fn image_attachment_terminal_paste(
+    attachment: &QuickActionImageAttachment,
+) -> Result<Vec<u8>, InvocationError> {
+    validate_image_attachments(std::slice::from_ref(attachment))?;
+    let mut reference = serde_json::to_string(&attachment.file_path)
+        .map_err(|_| InvocationError::InvalidImageAttachment)?;
+    reference.push(' ');
+    Ok(termloop_platform::terminal_paste_input(
+        reference.as_bytes(),
+    ))
 }
 
 pub fn validate_agent_configuration(
@@ -4222,6 +4244,32 @@ mod tests {
             codex.inspectable_manifest().digest,
             claude.inspectable_manifest().digest
         );
+    }
+
+    #[test]
+    fn image_attachment_paste_is_provider_neutral_and_does_not_submit() {
+        let attachment_id = "123e4567-e89b-42d3-a456-426614174000";
+        let file_path = std::env::temp_dir()
+            .join("termloop-quick-action-images")
+            .join(attachment_id)
+            .join("image.png");
+        let attachment = QuickActionImageAttachment {
+            attachment_id: attachment_id.into(),
+            file_path: file_path.to_string_lossy().into_owned(),
+            media_type: "image/png".into(),
+            byte_length: 4_096,
+            sha256: format!("sha256:{}", "a".repeat(64)),
+            width: 800,
+            height: 600,
+        };
+
+        let paste = image_attachment_terminal_paste(&attachment).unwrap();
+        let expected = format!("{} ", serde_json::to_string(&attachment.file_path).unwrap());
+        assert_eq!(
+            paste,
+            termloop_platform::terminal_paste_input(expected.as_bytes())
+        );
+        assert!(!paste.ends_with(b"\r"));
     }
 
     #[test]

@@ -616,27 +616,40 @@ handleIpc("termloop:ghostty-surface-diagnostic-text", (event, surfaceId: unknown
 handleIpc("termloop:ghostty-surface-destroy", (event, surfaceId: unknown) => {
   requireGhosttyManager(event).destroy(requireSurfaceId(surfaceId));
 });
-handleIpc("termloop:quick-action-paste-image", async (event) => {
-  requireMainRenderer(event);
+function clipboardPng() {
   const image = clipboard.readImage();
   if (image.isEmpty()) throw new Error("quickActionClipboardImageMissing");
-  const size = image.getSize();
-  const previewScale = Math.min(1, 160 / Math.max(size.width, size.height));
+  const { width, height } = image.getSize();
+  return { png: image.toPNG(), width, height, image };
+}
+handleIpc("termloop:quick-action-paste-image", async (event) => {
+  requireMainRenderer(event);
+  const { image, png, width, height } = clipboardPng();
+  const previewScale = Math.min(1, 160 / Math.max(width, height));
   const preview = image.resize({
-    width: Math.max(1, Math.round(size.width * previewScale)),
-    height: Math.max(1, Math.round(size.height * previewScale)),
+    width: Math.max(1, Math.round(width * previewScale)),
+    height: Math.max(1, Math.round(height * previewScale)),
     quality: "good",
   });
-  const png = image.toPNG();
-  const attachment = await uploadQuickActionImage(png, size.width, size.height);
+  const attachment = await uploadQuickActionImage(png, width, height);
   return quickActionImages().stage(
     png,
-    size.width,
-    size.height,
+    width,
+    height,
     preview.toDataURL(),
     attachment,
     currentConnectionProfileId(),
   );
+});
+handleIpc("termloop:session-paste-image", async (event, sessionId: string) => {
+  requireMainRenderer(event);
+  if (typeof sessionId !== "string"
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(sessionId)) {
+    throw new Error("invalidSessionId");
+  }
+  const { png, width, height } = clipboardPng();
+  const attachment = await uploadQuickActionImage(png, width, height);
+  return typedControlCall("session.pasteImage", { sessionId, attachments: [attachment] });
 });
 handleIpc("termloop:quick-action-restore-image", async (event, attachmentId: string) => {
   requireMainRenderer(event);

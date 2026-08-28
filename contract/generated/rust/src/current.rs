@@ -171,7 +171,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:3adebab92068f0bbf4f2906451d3d39e222c94cf99ace2a9386c5ec0033e47f6";
+    "sha256:fd3e33771c809917164e6e9e797927234851af71ca9247680c633bb870ec2d8b";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -263,6 +263,7 @@ pub const METHODS: &[&str] = &[
     "session.resumeHistoryAgent",
     "session.requestAskTo",
     "session.requestHandoverTo",
+    "session.pasteImage",
     "quickAction.preview",
     "quickAction.launch",
     "session.list",
@@ -3153,10 +3154,18 @@ pub struct SessionAgentHandoverToParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct SessionImagePasteParams {
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    pub attachments: Vec<QuickActionImageAttachment>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct AgentCoordinationDeliveryResult {
     #[serde(rename = "sessionId")]
     pub session_id: String,
-    pub status: serde_json::Value,
+    pub status: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -7490,6 +7499,8 @@ pub type SessionRequestAskToParams = SessionAgentAskToParams;
 pub type SessionRequestAskToResult = AgentCoordinationDeliveryResult;
 pub type SessionRequestHandoverToParams = SessionAgentHandoverToParams;
 pub type SessionRequestHandoverToResult = AgentCoordinationDeliveryResult;
+pub type SessionPasteImageParams = SessionImagePasteParams;
+pub type SessionPasteImageResult = AgentCoordinationDeliveryResult;
 pub type QuickActionPreviewParams = QuickActionParams;
 pub type QuickActionLaunchResult = SessionDto;
 pub type SessionListParams = EmptyParams;
@@ -7652,6 +7663,7 @@ fn validate_method(value: &Value) -> bool {
             "session.resumeHistoryAgent",
             "session.requestAskTo",
             "session.requestHandoverTo",
+            "session.pasteImage",
             "quickAction.preview",
             "quickAction.launch",
             "session.list",
@@ -14592,16 +14604,48 @@ fn validate_session_agent_handover_to_params(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_session_image_paste_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("sessionId").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 36 && text.chars().count() <= 36)
+        }) && object.get("attachments").is_some_and(|field| {
+            field.as_array().is_some_and(|items| {
+                items.len() >= 1
+                    && items.len() <= 1
+                    && items
+                        .iter()
+                        .all(|item| validate_quick_action_image_attachment(item))
+            })
+        }) && object
+            .keys()
+            .all(|key| ["sessionId", "attachments"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_agent_coordination_delivery_result(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object.get("sessionId").is_some_and(|field| {
             field
                 .as_str()
                 .is_some_and(|text| text.chars().count() >= 36 && text.chars().count() <= 36)
-        }) && object.get("status").is_some_and(|field| true)
-            && object
-                .keys()
-                .all(|key| ["sessionId", "status"].contains(&key.as_str()))
+        }) && object.get("status").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| ["delivered", "submitting"].contains(&text))
+        }) && object
+            .keys()
+            .all(|key| ["sessionId", "status"].contains(&key.as_str()))
     })
 }
 
@@ -26934,6 +26978,10 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<SessionRequestHandoverToParams>(params.clone()).is_ok()
                 && validate_session_agent_handover_to_params(params)
         }
+        "session.pasteImage" => {
+            serde_json::from_value::<SessionPasteImageParams>(params.clone()).is_ok()
+                && validate_session_image_paste_params(params)
+        }
         "quickAction.preview" => {
             serde_json::from_value::<QuickActionPreviewParams>(params.clone()).is_ok()
                 && validate_quick_action_params(params)
@@ -27625,6 +27673,10 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         }
         "session.requestHandoverTo" => {
             serde_json::from_value::<SessionRequestHandoverToResult>(result.clone()).is_ok()
+                && validate_agent_coordination_delivery_result(result)
+        }
+        "session.pasteImage" => {
+            serde_json::from_value::<SessionPasteImageResult>(result.clone()).is_ok()
                 && validate_agent_coordination_delivery_result(result)
         }
         "quickAction.preview" => {
