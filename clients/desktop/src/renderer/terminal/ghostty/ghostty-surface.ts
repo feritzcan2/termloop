@@ -72,8 +72,16 @@ export class GhosttySurface implements TerminalSurface {
     const revision = ++this.#visibilityRevision;
     if (!this.#surfaceId) return;
     if (this.#visible) {
-      this.#removeSnapshot();
-      void this.bridge.setVisible(this.#surfaceId, true);
+      const surfaceId = this.#surfaceId;
+      // A native child view can retain the frame it had before Chromium
+      // covered it. Re-apply the live pane geometry before revealing it so an
+      // overlay close cannot leave stale, multiply wrapped rows on screen until
+      // the user happens to resize the window.
+      void this.#syncFrame().finally(() => {
+        if (revision !== this.#visibilityRevision || !this.#visible) return;
+        this.#removeSnapshot();
+        void this.bridge.setVisible(surfaceId, true);
+      });
       return;
     }
     const surfaceId = this.#surfaceId;

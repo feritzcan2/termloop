@@ -1101,6 +1101,21 @@ impl CoreRuntime {
             .is_ok()
     }
 
+    /// Proves that an authenticated Worker's current check is the Playbook
+    /// step claim for this exact Task. Server-side Task-read receipts use this
+    /// before a later verdict is admitted.
+    pub fn tracker_check_is_current_for_task(
+        &self,
+        capability: &TrackerCheckCapability,
+        task_id: &str,
+    ) -> bool {
+        self.tracker_check_is_current(capability)
+            && self
+                .claimed_step_task_id(&capability.tracker_id)
+                .as_deref()
+                == Some(task_id)
+    }
+
     pub fn release_worker_routine_claim(&mut self, capability: &TrackerCheckCapability) -> bool {
         let exact_active_claim = self
             .tracker_runtime

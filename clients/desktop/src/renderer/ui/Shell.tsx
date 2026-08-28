@@ -929,10 +929,11 @@ export function Shell(props: ShellProps) {
     props.setNativeOverlayOpen(nativeOverlayOpen);
     return () => props.setNativeOverlayOpen(false);
   }, [nativeOverlayOpen, props.setNativeOverlayOpen]);
+  const terminalOccluded = shellTerminalOccluded(Boolean(changesSubject), sidebarDragging, sessionDragging);
   useEffect(() => {
-    props.setTerminalOccluded(shellTerminalOccluded(Boolean(changesSubject), sidebarDragging, sessionDragging));
+    props.setTerminalOccluded(terminalOccluded);
     return () => props.setTerminalOccluded(false);
-  }, [changesSubject, props.setTerminalOccluded, sessionDragging, sidebarDragging]);
+  }, [props.setTerminalOccluded, terminalOccluded]);
   const resizeSidebar = useCallback((width: number) => {
     const next = clampSidebarWidth(width, window.innerWidth);
     setSidebarWidth(next);

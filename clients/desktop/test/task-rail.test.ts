@@ -1148,7 +1148,7 @@ describe("Task rail first-run UX", () => {
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
-  it("creates from the fixed leading button and closes an active Task from its tab", async () => {
+  it("creates from the fixed leading button and confirms before closing an active Task from its tab", async () => {
     const setTaskClosed = vi.fn(async () => {});
     const container = document.createElement("div");
     document.body.append(container);
@@ -1164,6 +1164,15 @@ describe("Task rail first-run UX", () => {
     expect(create).not.toBeNull();
     expect(close).not.toBeNull();
     await act(async () => close!.click());
+    expect(setTaskClosed).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="group"][aria-label="Close Compact launchers?"]')?.textContent).toContain("Sure?");
+
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Cancel close Compact launchers"]')!.click());
+    expect(setTaskClosed).not.toHaveBeenCalled();
+    expect(container.querySelector('[aria-label="Confirm close Compact launchers"]')).toBeNull();
+
+    await act(async () => container.querySelector<HTMLButtonElement>('.task-item-tab-close[aria-label="Close Compact launchers"]')!.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Confirm close Compact launchers"]')!.click());
     expect(setTaskClosed).toHaveBeenCalledWith("task-1", true);
 
     await act(async () => create!.click());

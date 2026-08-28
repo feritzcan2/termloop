@@ -277,6 +277,7 @@ export function TaskRail(props: TaskRailProps) {
   const [selectedTaskIds, setSelectedTaskIds] = useState<Partial<Record<TaskListTab, string>>>(() => rememberedTaskTabs(props.projectId));
   const [favoriteTaskIds, setFavoriteTaskIds] = useState<ReadonlySet<string>>(() => readFavoriteTaskIds(props.projectId));
   const [renamingTaskTab, setRenamingTaskTab] = useState<{ taskId: string; title: string; busy: boolean; error: string | undefined }>();
+  const [closingTaskTab, setClosingTaskTab] = useState<{ taskId: string; busy: boolean }>();
   const taskListId = useId();
   const taskTabsRef = useRef<HTMLDivElement>(null);
   const [editor, setEditor] = useState<EditorState>();
@@ -401,6 +402,7 @@ export function TaskRail(props: TaskRailProps) {
     setSelectedTaskIds(rememberedTaskTabs(props.projectId));
     setFavoriteTaskIds(readFavoriteTaskIds(props.projectId));
     setRenamingTaskTab(undefined);
+    setClosingTaskTab(undefined);
     setEditor(undefined);
     setMenu(undefined);
     setDeleteTarget(undefined);
@@ -411,6 +413,10 @@ export function TaskRail(props: TaskRailProps) {
     setArchiveTarget(undefined);
     setPendingLaunches(new Map());
   }, [props.projectId]);
+  useEffect(() => {
+    if (!closingTaskTab || props.tasks.some((task) => task.id === closingTaskTab.taskId && task.status === "open")) return;
+    setClosingTaskTab(undefined);
+  }, [closingTaskTab, props.tasks]);
   useEffect(() => {
     if (pendingLaunches.size === 0) return;
     const settled: string[] = [];
@@ -505,6 +511,12 @@ export function TaskRail(props: TaskRailProps) {
       return next;
     });
   }, [props.projectId]);
+  const confirmTaskTabClose = async (taskId: string) => {
+    if (closingTaskTab?.taskId !== taskId || closingTaskTab.busy) return;
+    setClosingTaskTab({ taskId, busy: true });
+    await props.setTaskClosed(taskId, true);
+    setClosingTaskTab((current) => current?.taskId === taskId ? undefined : current);
+  };
   const commitTaskTabRename = async (task: Task) => {
     if (!renamingTaskTab || renamingTaskTab.taskId !== task.id || renamingTaskTab.busy) return;
     const title = renamingTaskTab.title.trim();
@@ -558,6 +570,7 @@ export function TaskRail(props: TaskRailProps) {
                 const selected = task.id === selectedTask?.id;
                 const favorite = favoriteTaskIds.has(task.id);
                 const renaming = renamingTaskTab?.taskId === task.id;
+                const closing = closingTaskTab?.taskId === task.id;
                 const presentation = taskTabPresentationById.get(task.id);
                 const state = presentation?.attention?.label ?? (presentation?.liveAgentCount ? `${presentation.liveAgentCount} live ${presentation.liveAgentCount === 1 ? "agent" : "agents"}` : undefined);
                 return <div key={task.id} className={`task-item-tab${selected ? " selected" : ""}${favorite ? " favorited" : ""}`} data-tone={presentation?.tone}>
@@ -602,8 +615,18 @@ export function TaskRail(props: TaskRailProps) {
                     onDoubleClick={(event) => { event.preventDefault(); selectTask("active", task.id); setRenamingTaskTab({ taskId: task.id, title: task.title, busy: false, error: undefined }); }}
                   ><i className={`task-tab-dot ${presentation?.tone ?? "quiet"}`} aria-hidden="true" /><span>{task.title}</span>{presentation?.attention?.tone === "attention" ? <i className="task-tab-attention" aria-hidden="true" /> : null}</button>
                   }
-                  <button type="button" className="task-item-tab-favorite" aria-label={`${favorite ? "Unfavorite" : "Favorite"} ${task.title}`} aria-pressed={favorite} title={favorite ? "Remove from favorites" : "Favorite Task"} onClick={() => toggleTaskFavorite(task.id)}><Icon name="star" /></button>
-                  <button type="button" className="task-item-tab-close" aria-label={`Close ${task.title}`} title="Close Task" disabled={props.disabled || props.deletingTaskIds.has(task.id)} onClick={() => { void props.setTaskClosed(task.id, true); }}><Icon name="close" /></button>
+                  {closing ? <div className="task-item-tab-close-confirm" role="group" aria-label={`Close ${task.title}?`} onKeyDown={(event) => {
+                    if (event.key !== "Escape" || closingTaskTab.busy) return;
+                    event.preventDefault();
+                    setClosingTaskTab(undefined);
+                  }}>
+                    <span>Sure?</span>
+                    <button type="button" autoFocus aria-label={`Confirm close ${task.title}`} disabled={closingTaskTab.busy} onClick={() => { void confirmTaskTabClose(task.id); }}>{closingTaskTab.busy ? "…" : "Yes"}</button>
+                    <button type="button" aria-label={`Cancel close ${task.title}`} disabled={closingTaskTab.busy} onClick={() => setClosingTaskTab(undefined)}>No</button>
+                  </div> : <>
+                    <button type="button" className="task-item-tab-favorite" aria-label={`${favorite ? "Unfavorite" : "Favorite"} ${task.title}`} aria-pressed={favorite} title={favorite ? "Remove from favorites" : "Favorite Task"} onClick={() => toggleTaskFavorite(task.id)}><Icon name="star" /></button>
+                    <button type="button" className="task-item-tab-close" aria-label={`Close ${task.title}`} title="Close Task" disabled={props.disabled || props.deletingTaskIds.has(task.id)} onClick={() => setClosingTaskTab({ taskId: task.id, busy: false })}><Icon name="close" /></button>
+                  </>}
                 </div>;
               })}
               </div>
