@@ -4,7 +4,7 @@ import {
   appendVoiceFloatPcmBuffer,
   createVoicePcmCapture,
   createVoicePcmWav,
-  stewardReplyAfter,
+  updateVoiceTranscript,
   updateVoiceSilence,
   voiceProjectId,
 } from "../src/presentation/steward-voice-presentation";
@@ -53,18 +53,28 @@ describe("Steward voice presentation", () => {
     expect(voiceProjectId({}, overview)).toBe(projectId);
   });
 
-  it("selects only a Steward reply newer than the submitted voice turn", () => {
-    const reply = stewardReplyAfter(fixtureStewardTranscript, 1);
-    expect(reply?.author).toBe("steward");
-    expect(reply?.sequence).toBeGreaterThan(1);
-    expect(stewardReplyAfter(fixtureStewardTranscript, 10_000)).toBeUndefined();
+  it("queues every new Steward message once and advances past all authors", () => {
+    const messages = [
+      { ...fixtureStewardTranscript[2]!, sequence: 8, author: "steward" as const },
+      { ...fixtureStewardTranscript[0]!, sequence: 6, author: "user" as const },
+      { ...fixtureStewardTranscript[1]!, sequence: 7, author: "steward" as const },
+      { ...fixtureStewardTranscript[1]!, sequence: 7, author: "steward" as const },
+    ];
+
+    const update = updateVoiceTranscript(messages, 5);
+
+    expect(update.cursor).toBe(8);
+    expect(update.stewardMessages.map((message) => message.sequence)).toEqual([7, 8]);
+    expect(updateVoiceTranscript(messages, update.cursor).stewardMessages).toEqual([]);
   });
 
-  it("stops after speech followed by silence and always enforces the hard ceiling", () => {
+  it("stops spoken turns but rolls an entirely silent live capture at the hard ceiling", () => {
     const heard = updateVoiceSilence({ heardVoice: false, lastVoiceAtMs: 0 }, 900, -20);
     expect(heard.shouldStop).toBe(false);
-    expect(updateVoiceSilence(heard.state, 2_200, -60).shouldStop).toBe(true);
-    expect(updateVoiceSilence({ heardVoice: false, lastVoiceAtMs: 0 }, 30_000, -60).shouldStop).toBe(true);
+    expect(heard.shouldReset).toBe(false);
+    expect(updateVoiceSilence(heard.state, 2_200, -60)).toMatchObject({ shouldStop: true, shouldReset: false });
+    expect(updateVoiceSilence({ heardVoice: false, lastVoiceAtMs: 0 }, 30_000, -60))
+      .toMatchObject({ shouldStop: false, shouldReset: true });
   });
 });
 

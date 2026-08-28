@@ -14,6 +14,12 @@ export interface VoiceSilenceState {
 export interface VoiceSilenceUpdate {
   state: VoiceSilenceState;
   shouldStop: boolean;
+  shouldReset: boolean;
+}
+
+export interface VoiceTranscriptUpdate {
+  cursor: number;
+  stewardMessages: readonly StewardMessage[];
 }
 
 export interface VoicePcmBuffer {
@@ -125,13 +131,29 @@ export function voiceProjectId(
   return sessionProjectId ?? overview.projects[0]?.id;
 }
 
-export function stewardReplyAfter(
+/// Advances one live voice transcript cursor and returns every newly persisted
+/// Steward message in sequence order. The dock seeds the cursor when the live
+/// session opens, so history stays quiet while all later chat, Routine, and
+/// delivery updates are spoken exactly once.
+export function updateVoiceTranscript(
   messages: readonly StewardMessage[],
-  userSequence: number,
-): StewardMessage | undefined {
-  return messages.findLast(
-    (message) => message.author === "steward" && message.sequence > userSequence,
+  cursor: number,
+): VoiceTranscriptUpdate {
+  const nextCursor = messages.reduce(
+    (latest, message) => Math.max(latest, message.sequence),
+    cursor,
   );
+  const seen = new Set<number>();
+  const stewardMessages = messages
+    .filter((message) => {
+      if (message.author !== "steward" || message.sequence <= cursor || seen.has(message.sequence)) {
+        return false;
+      }
+      seen.add(message.sequence);
+      return true;
+    })
+    .sort((left, right) => left.sequence - right.sequence);
+  return { cursor: nextCursor, stewardMessages };
 }
 
 /// Ends a spoken turn after real speech followed by a short quiet window. A hard
@@ -148,9 +170,11 @@ export function updateVoiceSilence(
   const quietAfterVoice = state.heardVoice
     && durationMs >= MIN_TURN_MS
     && durationMs - state.lastVoiceAtMs >= SILENCE_AFTER_VOICE_MS;
+  const reachedCeiling = durationMs >= MAX_TURN_MS;
   return {
     state,
-    shouldStop: quietAfterVoice || durationMs >= MAX_TURN_MS,
+    shouldStop: quietAfterVoice || (state.heardVoice && reachedCeiling),
+    shouldReset: !state.heardVoice && reachedCeiling,
   };
 }
 
