@@ -3248,6 +3248,9 @@ fn provider_history_repair_reserves_the_exact_stopped_codex_session_and_clears_d
         .unwrap()
         .mcp_http_supported = false;
     runtime.configure_agent_observations(transport);
+    runtime.spawn_agent_terminal_hold("damaged-codex").unwrap();
+    assert!(runtime.terminal.contains_session("damaged-codex").unwrap());
+    assert!(runtime.agent_terminal_holds.contains("damaged-codex"));
 
     assert!(matches!(
         runtime.plan_provider_history_repair(json!({
@@ -3256,6 +3259,8 @@ fn provider_history_repair_reserves_the_exact_stopped_codex_session_and_clears_d
         })),
         Err(CoreError::InvalidParams(_))
     ));
+    assert!(runtime.terminal.contains_session("damaged-codex").unwrap());
+    assert!(runtime.agent_terminal_holds.contains("damaged-codex"));
     let plan = runtime
         .plan_provider_history_repair(json!({
             "sessionId": "damaged-codex",
@@ -3263,6 +3268,8 @@ fn provider_history_repair_reserves_the_exact_stopped_codex_session_and_clears_d
         }))
         .unwrap();
     assert_eq!(plan.session_id(), "damaged-codex");
+    assert!(!runtime.terminal.contains_session("damaged-codex").unwrap());
+    assert!(!runtime.agent_terminal_holds.contains("damaged-codex"));
     assert!(
         runtime
             .provider_history_repair_reservations
