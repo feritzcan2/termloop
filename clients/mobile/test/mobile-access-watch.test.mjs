@@ -24,6 +24,7 @@ import {
 import {
   transcriptionOf,
   validVoiceUpload,
+  voiceContainerOf,
   voiceUploadLimitBytes,
 } from "../scripts/mobile-access-transcribe.mjs";
 
@@ -37,10 +38,18 @@ describe("watch voice upload helpers", () => {
   it("accepts only recorded audio within the size ceiling", () => {
     expect(validVoiceUpload("audio/m4a", 1024)).toBe(true);
     expect(validVoiceUpload("audio/mp4; codecs=mp4a", 1024)).toBe(true);
+    expect(validVoiceUpload("audio/wav", 1024)).toBe(true);
     expect(validVoiceUpload("application/json", 1024)).toBe(false);
     expect(validVoiceUpload("audio/m4a", 0)).toBe(false);
     expect(validVoiceUpload("audio/m4a", voiceUploadLimitBytes + 1)).toBe(false);
     expect(validVoiceUpload(undefined, 1024)).toBe(false);
+  });
+
+  it("classifies only the recording container for privacy-safe diagnostics", () => {
+    expect(voiceContainerOf(Buffer.from("RIFF1234WAVEdata"))).toBe("wav");
+    expect(voiceContainerOf(Buffer.from("0000ftypM4A  "))).toBe("isobmff");
+    expect(voiceContainerOf(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))).toBe("webm");
+    expect(voiceContainerOf(Buffer.from("not audio"))).toBe("unknown");
   });
 
   it("reads the transcript and whether it stayed on device", () => {

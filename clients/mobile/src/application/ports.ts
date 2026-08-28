@@ -166,7 +166,7 @@ export interface StewardVoiceClip {
   /// file:// handling out of the transport avoids React Native fetch adapters
   /// re-encoding or partially reading a freshly finalized native recording.
   bytes: ArrayBuffer;
-  mediaType: "audio/m4a" | "audio/mp4" | "audio/webm";
+  mediaType: "audio/m4a" | "audio/mp4" | "audio/wav" | "audio/webm";
 }
 
 export interface StewardVoiceAppend {

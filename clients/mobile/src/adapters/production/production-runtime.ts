@@ -531,7 +531,7 @@ function validProjectId(value: string): boolean {
 
 function validStewardVoiceClip(clip: StewardVoiceClip): boolean {
   return clip.bytes.byteLength > 0 && clip.bytes.byteLength <= STEWARD_VOICE_LIMIT_BYTES
-    && ["audio/m4a", "audio/mp4", "audio/webm"].includes(clip.mediaType);
+    && ["audio/m4a", "audio/mp4", "audio/wav", "audio/webm"].includes(clip.mediaType);
 }
 
 function gatewayHttpEndpoint(connection: SavedConnection, pathname: string): URL {

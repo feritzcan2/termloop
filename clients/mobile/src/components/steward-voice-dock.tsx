@@ -1,5 +1,7 @@
 import {
+  AudioQuality,
   AudioModule,
+  IOSOutputFormat,
   RecordingPresets,
   setAudioModeAsync,
   useAudioPlayer,
@@ -12,6 +14,7 @@ import { useGlobalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -39,6 +42,29 @@ type VoicePhase = "idle" | "permission" | "listening" | "transcribing" | "waitin
 
 const REPLY_POLL_MS = 1_250;
 const REPLY_TIMEOUT_MS = 90_000;
+const IOS_STEWARD_RECORDING = {
+  ...RecordingPresets.HIGH_QUALITY,
+  extension: ".wav",
+  sampleRate: 16_000,
+  numberOfChannels: 1,
+  bitRate: 256_000,
+  ios: {
+    ...RecordingPresets.HIGH_QUALITY.ios,
+    extension: ".wav",
+    sampleRate: 16_000,
+    outputFormat: IOSOutputFormat.LINEARPCM,
+    audioQuality: AudioQuality.HIGH,
+    linearPCMBitDepth: 16,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat: false,
+  },
+};
+const STEWARD_RECORDING = Platform.OS === "ios"
+  ? IOS_STEWARD_RECORDING
+  : { ...RecordingPresets.HIGH_QUALITY, numberOfChannels: 1, isMeteringEnabled: true };
+const STEWARD_RECORDING_MEDIA_TYPE = Platform.OS === "ios"
+  ? "audio/wav"
+  : Platform.OS === "web" ? "audio/webm" : "audio/m4a";
 
 /// A global, deliberately small microphone. It expands in place instead of
 /// navigating away from the user's current Task/Session, then runs one bounded
@@ -60,11 +86,7 @@ export function StewardVoiceDock() {
   const [heard, setHeard] = useState<string | undefined>(undefined);
   const [reply, setReply] = useState<StewardMessage | undefined>(undefined);
 
-  const recorder = useAudioRecorder({
-    ...RecordingPresets.HIGH_QUALITY,
-    numberOfChannels: 1,
-    isMeteringEnabled: true,
-  });
+  const recorder = useAudioRecorder({ ...STEWARD_RECORDING, isMeteringEnabled: true });
   const recorderState = useAudioRecorderState(recorder, 100);
   const player = useAudioPlayer(null, { updateInterval: 100 });
   const playerStatus = useAudioPlayerStatus(player);
@@ -226,7 +248,7 @@ export function StewardVoiceDock() {
       const bytes = await new File(uri).arrayBuffer();
       const appended = await runtime.steward.sendVoice(connectionId, projectId, {
         bytes,
-        mediaType: "audio/m4a",
+        mediaType: STEWARD_RECORDING_MEDIA_TYPE,
       });
       if (conversation !== conversationRef.current || !expandedRef.current) return;
       setHeard(appended.transcript);

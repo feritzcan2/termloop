@@ -1018,7 +1018,7 @@ describe("production pipeline, launch, and Steward adapters", () => {
 
     await expect(runtime.steward.sendVoice(saved.id, fixtureProjects[0]!.id, {
       bytes: new Uint8Array([1, 2, 3]).buffer,
-      mediaType: "audio/m4a",
+      mediaType: "audio/wav",
     })).resolves.toEqual({ transcript: "canlı merhaba", userSequence: 19 });
     await expect(runtime.steward.speech(saved.id, fixtureProjects[0]!.id, 20))
       .resolves.toEqual(new Uint8Array([73, 68, 51]));
@@ -1026,7 +1026,7 @@ describe("production pipeline, launch, and Steward adapters", () => {
     expect(calls[0]).toMatchObject({
       url: `http://127.0.0.1:48100/steward/voice?project=${fixtureProjects[0]!.id}`,
       authorization: `Bearer ${saved.controlToken}`,
-      contentType: "audio/m4a",
+      contentType: "audio/wav",
       body: new Uint8Array([1, 2, 3]).buffer,
     });
     expect(calls[1]).toMatchObject({

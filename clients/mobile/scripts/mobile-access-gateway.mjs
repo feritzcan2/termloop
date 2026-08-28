@@ -39,6 +39,7 @@ import {
   ensureTranscriber,
   transcribeAudioFile,
   validVoiceUpload,
+  voiceContainerOf,
   voiceUploadLimitBytes,
 } from "./mobile-access-transcribe.mjs";
 
@@ -601,12 +602,14 @@ async function stewardVoiceSend(request, response) {
 }
 
 async function transcribeStewardAudio(runtime, audio, contentType) {
+  let providerStatus = "unreachable";
   try {
     const provider = await daemonVoiceFetch(runtime, "/voice/transcriptions", {
       method: "POST",
       headers: { "content-type": contentType },
       body: audio,
     });
+    providerStatus = String(provider.status);
     if (provider.ok) {
       const payload = await provider.json();
       const text = typeof payload?.text === "string" ? payload.text.trim() : "";
@@ -620,6 +623,11 @@ async function transcribeStewardAudio(runtime, audio, contentType) {
   try {
     await writeFile(audioFile, audio, { mode: 0o600 });
     return (await transcribeAudioFile(runtimeDir, audioFile)).text;
+  } catch (cause) {
+    process.stdout.write(
+      `${new Date().toISOString()} steward transcription failed provider=${providerStatus} container=${voiceContainerOf(audio)} bytes=${audio.length}\n`,
+    );
+    throw cause;
   } finally {
     await rm(audioFile, { force: true });
   }

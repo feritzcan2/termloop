@@ -35,6 +35,19 @@ export function validVoiceUpload(contentType, byteLength) {
   return allowedAudioTypes.has(type) && byteLength > 0 && byteLength <= voiceUploadLimitBytes;
 }
 
+/// Reports only the file container, never recorded content. This keeps failed
+/// device uploads diagnosable without retaining or logging the user's speech.
+export function voiceContainerOf(audio) {
+  const bytes = Buffer.isBuffer(audio) ? audio : Buffer.from(audio ?? []);
+  if (bytes.length >= 12
+    && bytes.subarray(0, 4).toString("ascii") === "RIFF"
+    && bytes.subarray(8, 12).toString("ascii") === "WAVE") return "wav";
+  if (bytes.length >= 12 && bytes.subarray(4, 8).toString("ascii") === "ftyp") return "isobmff";
+  if (bytes.length >= 4
+    && bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) return "webm";
+  return "unknown";
+}
+
 export function transcriptionOf(stdout) {
   const parsed = JSON.parse(String(stdout));
   const text = typeof parsed?.text === "string" ? parsed.text.trim() : "";
