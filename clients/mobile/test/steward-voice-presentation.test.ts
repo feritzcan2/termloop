@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createVoiceRecordingCompletion,
+  startVoiceRecording,
   stewardReplyAfter,
   updateVoiceSilence,
   voiceProjectId,
@@ -21,6 +22,28 @@ const overview = {
 };
 
 describe("Steward voice presentation", () => {
+  it("uses regular recording and waits for the native recorder to start", async () => {
+    let recordCalls = 0;
+    let checks = 0;
+    const recorder = {
+      record() { recordCalls += 1; },
+      get isRecording() {
+        checks += 1;
+        return checks >= 2;
+      },
+    };
+
+    await expect(startVoiceRecording(recorder, async () => undefined)).resolves.toBeUndefined();
+    expect(recordCalls).toBe(1);
+  });
+
+  it("rejects when the native recorder never starts", async () => {
+    const recorder = { record() {}, isRecording: false };
+
+    await expect(startVoiceRecording(recorder, async () => undefined))
+      .rejects.toThrow("Mikrofon kaydı başlatılamadı");
+  });
+
   it("waits for the native recorder finish event before exposing its file", async () => {
     const completion = createVoiceRecordingCompletion();
     let resolved = false;

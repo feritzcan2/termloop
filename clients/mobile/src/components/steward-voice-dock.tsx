@@ -1,7 +1,5 @@
 import {
-  AudioQuality,
   AudioModule,
-  IOSOutputFormat,
   RecordingPresets,
   type RecordingStatus,
   setAudioModeAsync,
@@ -30,6 +28,7 @@ import { useConnections } from "@/features/connection/connection-store";
 import { useOverview } from "@/features/overview/overview-store";
 import {
   createVoiceRecordingCompletion,
+  startVoiceRecording,
   stewardReplyAfter,
   updateVoiceSilence,
   voiceProjectId,
@@ -46,29 +45,12 @@ type VoicePhase = "idle" | "permission" | "listening" | "transcribing" | "waitin
 const REPLY_POLL_MS = 1_250;
 const REPLY_TIMEOUT_MS = 90_000;
 const RECORDING_FINALIZE_TIMEOUT_MS = 2_000;
-const IOS_STEWARD_RECORDING = {
+const STEWARD_RECORDING = {
   ...RecordingPresets.HIGH_QUALITY,
-  extension: ".wav",
-  sampleRate: 16_000,
   numberOfChannels: 1,
-  bitRate: 256_000,
-  ios: {
-    ...RecordingPresets.HIGH_QUALITY.ios,
-    extension: ".wav",
-    sampleRate: 16_000,
-    outputFormat: IOSOutputFormat.LINEARPCM,
-    audioQuality: AudioQuality.HIGH,
-    linearPCMBitDepth: 16,
-    linearPCMIsBigEndian: false,
-    linearPCMIsFloat: false,
-  },
+  isMeteringEnabled: true,
 };
-const STEWARD_RECORDING = Platform.OS === "ios"
-  ? IOS_STEWARD_RECORDING
-  : { ...RecordingPresets.HIGH_QUALITY, numberOfChannels: 1, isMeteringEnabled: true };
-const STEWARD_RECORDING_MEDIA_TYPE = Platform.OS === "ios"
-  ? "audio/wav"
-  : Platform.OS === "web" ? "audio/webm" : "audio/m4a";
+const STEWARD_RECORDING_MEDIA_TYPE = Platform.OS === "web" ? "audio/webm" : "audio/m4a";
 
 /// A global, deliberately small microphone. It expands in place instead of
 /// navigating away from the user's current Task/Session, then runs one bounded
@@ -92,7 +74,7 @@ export function StewardVoiceDock() {
 
   const recordingCompletionRef = useRef<VoiceRecordingCompletion | undefined>(undefined);
   const recorder = useAudioRecorder(
-    { ...STEWARD_RECORDING, isMeteringEnabled: true },
+    STEWARD_RECORDING,
     (status: RecordingStatus) => recordingCompletionRef.current?.receive(status),
   );
   const recorderState = useAudioRecorderState(recorder, 100);
@@ -187,7 +169,7 @@ export function StewardVoiceDock() {
       silenceRef.current = { heardVoice: false, lastVoiceAtMs: 0 };
       stoppingRef.current = false;
       recordingCompletionRef.current = createVoiceRecordingCompletion();
-      recorder.record({ forDuration: 30 });
+      await startVoiceRecording(recorder);
       transition("listening");
     } catch (cause) {
       if (conversation !== conversationRef.current) return;

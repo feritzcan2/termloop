@@ -28,10 +28,32 @@ export interface VoiceRecordingCompletion {
   receive(status: VoiceRecordingFinishStatus): void;
 }
 
+export interface VoiceRecorderStarter {
+  readonly isRecording: boolean;
+  record(): void;
+}
+
 const VOICE_THRESHOLD_DB = -43;
 const MIN_TURN_MS = 800;
 const SILENCE_AFTER_VOICE_MS = 1_250;
 const MAX_TURN_MS = 30_000;
+const RECORDING_START_POLL_MS = 50;
+const RECORDING_START_ATTEMPTS = 5;
+
+/// Expo's bounded iOS recording path reports an internal recording state even
+/// when AVAudioRecorder refuses to start. Use the regular recording path and
+/// verify the native recorder property before exposing a listening UI.
+export async function startVoiceRecording(
+  recorder: VoiceRecorderStarter,
+  wait: (milliseconds: number) => Promise<void> = delay,
+): Promise<void> {
+  recorder.record();
+  for (let attempt = 0; attempt < RECORDING_START_ATTEMPTS; attempt += 1) {
+    if (recorder.isRecording) return;
+    await wait(RECORDING_START_POLL_MS);
+  }
+  throw new Error("Mikrofon kaydı başlatılamadı. Yeniden dene.");
+}
 
 /// Native recorder stop calls return before every platform has closed and
 /// finalized its output file. Resolve only from the recorder's completion
@@ -110,4 +132,8 @@ export function updateVoiceSilence(
 
 function scalar(value: string | readonly string[] | undefined): string | undefined {
   return typeof value === "string" ? value : value?.[0];
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
