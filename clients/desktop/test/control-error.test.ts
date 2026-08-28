@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentForkErrorMessage, agentForkRequiresProviderHistoryRepair, controlErrorMessage, projectDeleteErrorMessage, providerHistoryRepairErrorMessage, sessionDismissErrorMessage, sessionRequiresProviderHistoryRepair } from "../src/renderer/control-error.js";
+import { agentForkErrorMessage, agentForkRequiresProviderHistoryRepair, controlErrorMessage, projectDeleteErrorMessage, providerHistoryRepairErrorMessage, sessionDismissErrorMessage, sessionRequiresProviderHistoryRepair, voiceCredentialErrorMessage } from "../src/renderer/control-error.js";
 
 describe("control error presentation", () => {
   it("renders a serialized control error message instead of the object itself", () => {
@@ -9,6 +9,17 @@ describe("control error presentation", () => {
   it("strips the Electron IPC wrapper so the rail shows the daemon's own message", () => {
     expect(controlErrorMessage(new Error("Error invoking remote method 'termloop:session-terminate': TermLoopControlError: record not found")))
       .toBe("record not found");
+  });
+
+  it("turns voice credential failures into actionable messages without reflecting secrets", () => {
+    expect(voiceCredentialErrorMessage(new Error("connectionProfileRequired")))
+      .toContain("select this computer");
+    expect(voiceCredentialErrorMessage(new Error("OpenAI voice credentials are unavailable")))
+      .toContain("secure credential storage is unavailable");
+    expect(voiceCredentialErrorMessage(new Error("invalid params: apiKey")))
+      .toContain("beginning with sk-");
+    expect(voiceCredentialErrorMessage(new Error("rejected sk-proj-secret-value")))
+      .toBe("OpenAI API key could not be saved.");
   });
 
   it("reads a terminate on an unknown Session as already stopped", () => {

@@ -405,7 +405,7 @@ type DesktopBridge = Omit<DesktopApi, ProfiledOperationName> & {
     : never;
 };
 
-export type MultiSourceDesktopApi = DesktopApi & {
+export type MultiSourceDesktopApi = Omit<DesktopApi, ProfiledOperationName> & {
   source(profileId: string): SourceDesktopApi;
 };
 

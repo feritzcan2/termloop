@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { VoiceCredentialsSetParams, VoiceSettingsResult } from "@termloop/contract/current";
 
 import type { MobileAccessPairingResult } from "../mobile-access.js";
+import { voiceCredentialErrorMessage } from "../control-error.js";
 
 export function MobileConnectDialog({ close, prepare, loadVoiceSettings, saveVoiceCredentials }: {
   close(): void;
@@ -49,8 +50,8 @@ export function MobileConnectDialog({ close, prepare, loadVoiceSettings, saveVoi
       const next = await saveVoiceCredentials({ apiKey });
       setVoiceConfigured(next.configured);
       setApiKey("");
-    } catch {
-      setVoiceError("OpenAI API key could not be saved.");
+    } catch (cause) {
+      setVoiceError(voiceCredentialErrorMessage(cause));
     } finally {
       setVoiceSaving(false);
     }

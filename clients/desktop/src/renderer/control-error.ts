@@ -11,6 +11,23 @@ export function controlErrorMessage(error: unknown): string {
   return unwrapped === message ? message : unwrapped.replace(ERROR_CLASS, "");
 }
 
+export function voiceCredentialErrorMessage(error: unknown): string {
+  const message = controlErrorMessage(error);
+  if (/connectionProfileRequired|unknownConnectionProfile/u.test(message)) {
+    return "TermLoop could not select this computer for secure key storage.";
+  }
+  if (/secure credential|voice credentials are unavailable/iu.test(message)) {
+    return "This computer's secure credential storage is unavailable. Unlock it and try again.";
+  }
+  if (/invalid params|apiKey/iu.test(message)) {
+    return "The OpenAI API key format is invalid. Paste the complete key beginning with sk-.";
+  }
+  if (/daemon|server|connection/iu.test(message)) {
+    return "TermLoop could not reach this computer's server. Reconnect and try again.";
+  }
+  return "OpenAI API key could not be saved.";
+}
+
 /// Dismissing a Session the daemon has already forgotten is not a failure the
 /// user can act on — the row is stale and the refresh that follows removes it.
 export function sessionDismissErrorMessage(error: unknown): string {

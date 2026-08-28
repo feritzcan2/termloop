@@ -495,7 +495,7 @@ export function DesktopApp() {
   const [shellNativeOverlaySuppressed, setShellNativeOverlaySuppressed] = useState(false);
   const [launchInspection, setLaunchInspection] = useState<{
     title: string;
-    preview: () => ReturnType<typeof desktopApi.agentPreview>;
+    preview: () => ReturnType<SourceDesktopApi["agentPreview"]>;
     launch: (launchTicket: string) => Promise<string | undefined>;
   }>();
   const projection = useSyncExternalStore(projectionStore.subscribe, projectionStore.getSnapshot);
@@ -543,6 +543,7 @@ export function DesktopApp() {
   const selectedProject = projection.projects.find((project) => project.id === presentation.selectedProjectId);
   const selectedConnectionProfileId = connectionProfileIdOf(selectedProject);
   const selectedSourceApi = desktopApi.source(selectedConnectionProfileId);
+  const localSourceApi = desktopApi.source("local");
   const assistantProjectId = selectedProject?.id ?? "";
   const projectSessions = useMemo(
     () => {
@@ -1008,7 +1009,7 @@ export function DesktopApp() {
   /// Both run launches differ only in which checkout they name, so the whole
   /// post-launch composition — auto-open intent, projection, focus — is shared.
   const admitRunSession = useCallback(async (
-    outcome: Awaited<ReturnType<typeof desktopApi.taskStartRun>>,
+    outcome: Awaited<ReturnType<SourceDesktopApi["taskStartRun"]>>,
     configurationId: string,
   ): Promise<string | undefined> => {
     if (!outcome.ok) {
@@ -2083,8 +2084,8 @@ export function DesktopApp() {
       errorLog={projection.errorLog}
       clearErrorLog={() => projectionStore.clearErrorLog()}
       prepareMobileAccess={desktopApi.mobileAccessPairing}
-      loadVoiceSettings={desktopApi.voiceSettingsGet}
-      saveVoiceCredentials={desktopApi.voiceCredentialsSet}
+      loadVoiceSettings={localSourceApi.voiceSettingsGet}
+      saveVoiceCredentials={localSourceApi.voiceCredentialsSet}
       listConnectionProfiles={desktopApi.connectionProfileList}
       connectConnectionProfile={async (input) => {
         const result = await desktopApi.connectionProfileConnect(input);
