@@ -119,7 +119,7 @@ const ROUTINE_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.playbook",
-    version: 11,
+    version: 12,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.playbook.md"),
 };
 
@@ -4046,6 +4046,50 @@ mod tests {
                 argument == "bypassPermissions" || argument == "--dangerously-skip-permissions"
             }));
         }
+    }
+
+    #[test]
+    fn playbook_builder_reviews_every_step_and_declares_the_new_snapshot_contract() {
+        let target = ImproverTarget::Playbook {
+            project_name: "Nucleus",
+        };
+        let template = target.template().unwrap();
+        let launch = prompt_improver_launch(target);
+        let delivered = launch.delivered_prompt().unwrap();
+
+        assert_eq!(template.version, 12);
+        assert_eq!(launch.provenance().template_version, 12);
+        for expected in [
+            "two compact review",
+            "show the complete normal path as one readable arrow sequence",
+            "present the complete detailed draft",
+            "configuration_version_write.content",
+            "\"activePipelineName\"",
+            "\"milestones\"",
+            "\"savedPipelines\"",
+            "\"workerId\"",
+            "\"preferredWorkerAgentId\"",
+            "Every saved pipeline contains exactly",
+            "Every `check` contains exactly",
+            "never send probe",
+        ] {
+            assert!(delivered.contains(expected), "missing {expected:?}");
+        }
+        for invalid_creation_shape in [
+            "`schemaVersion`",
+            "`activePipelineId`",
+            "`pipelines`",
+            "`workers`",
+            "`routines`",
+        ] {
+            assert!(
+                delivered.contains(invalid_creation_shape),
+                "missing rejected shape {invalid_creation_shape:?}"
+            );
+        }
+        assert!(!delivered.contains("at most five short bullets"));
+        assert!(!delivered.contains("playbook_update"));
+        assert!(!delivered.contains("playbook_read"));
     }
 
     #[test]
