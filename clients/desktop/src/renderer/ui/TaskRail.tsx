@@ -259,6 +259,7 @@ export type TaskRailProps = {
   /// and announces a successful archive rather than owning the archived list.
   archivedTaskCount: number;
   archivedTasksChanged(): void;
+  closeTaskAndWorktree(taskId: string, review?: TaskDeleteWorktreeReview): Promise<TaskDeleteWorktreeResult>;
   deleteTaskAndWorktree(taskId: string, review?: TaskDeleteWorktreeReview): Promise<TaskDeleteWorktreeResult>;
   openExternal(url: string, runSessionId?: string): Promise<void>;
   provisionRequestedTaskId?: string | undefined;
@@ -290,6 +291,7 @@ export function TaskRail(props: TaskRailProps) {
   }, [props.nowEpochMs]);
   const nowEpochMs = props.nowEpochMs ?? clockNowEpochMs;
   const [deleteTarget, setDeleteTarget] = useState<Task>();
+  const [closeTarget, setCloseTarget] = useState<Task>();
   const [bindTarget, setBindTarget] = useState<Task>();
   const [provisionTarget, setProvisionTarget] = useState<Task>();
   /// Seeded from the per-Project client-local memory so the suggestion
@@ -344,8 +346,11 @@ export function TaskRail(props: TaskRailProps) {
   const currentDeleteTarget = deleteTarget
     ? props.tasks.find((task) => task.id === deleteTarget.id) ?? deleteTarget
     : undefined;
+  const currentCloseTarget = closeTarget
+    ? props.tasks.find((task) => task.id === closeTarget.id) ?? closeTarget
+    : undefined;
   const overlayVisible = Boolean(
-    menu || editor || currentDeleteTarget || bindTarget || provisionTarget || cleanupTarget ||
+    menu || editor || currentDeleteTarget || currentCloseTarget || bindTarget || provisionTarget || cleanupTarget ||
     repairTarget || archiveTarget,
   );
   const renderTask = (task: Task, focused = false) => (
@@ -406,6 +411,7 @@ export function TaskRail(props: TaskRailProps) {
     setEditor(undefined);
     setMenu(undefined);
     setDeleteTarget(undefined);
+    setCloseTarget(undefined);
     setBindTarget(undefined);
     setProvisionTarget(undefined);
     setCleanupTarget(undefined);
@@ -513,6 +519,12 @@ export function TaskRail(props: TaskRailProps) {
   }, [props.projectId]);
   const confirmTaskTabClose = async (taskId: string) => {
     if (closingTaskTab?.taskId !== taskId || closingTaskTab.busy) return;
+    const task = props.tasks.find((candidate) => candidate.id === taskId);
+    if (task?.worktree) {
+      setClosingTaskTab(undefined);
+      setCloseTarget(task);
+      return;
+    }
     setClosingTaskTab({ taskId, busy: true });
     await props.setTaskClosed(taskId, true);
     setClosingTaskTab((current) => current?.taskId === taskId ? undefined : current);
@@ -569,6 +581,7 @@ export function TaskRail(props: TaskRailProps) {
                 {openTasks.map((task, index) => {
                 const selected = task.id === selectedTask?.id;
                 const favorite = favoriteTaskIds.has(task.id);
+                const deleting = props.deletingTaskIds.has(task.id);
                 const renaming = renamingTaskTab?.taskId === task.id;
                 const closing = closingTaskTab?.taskId === task.id;
                 const presentation = taskTabPresentationById.get(task.id);
@@ -605,15 +618,15 @@ export function TaskRail(props: TaskRailProps) {
                     data-task-tab-id={task.id}
                     data-tone={presentation?.tone}
                     aria-selected={selected}
-                    aria-label={`${task.title}${state ? `, ${state}` : ""}`}
-                    title={`${task.title}${state ? ` · ${state}` : ""}`}
+                    aria-label={`${task.title}${deleting ? ", Deleting" : state ? `, ${state}` : ""}`}
+                    title={`${task.title}${deleting ? " · Deleting…" : state ? ` · ${state}` : ""}`}
                     tabIndex={selected ? 0 : -1}
                     className="task-item-tab-select"
                     onKeyDown={(event) => selectTaskByKeyboard(event, index)}
                     onContextMenu={(event) => { event.preventDefault(); openMenu(task, event.clientX, event.clientY, event.currentTarget); }}
                     onClick={() => selectTask("active", task.id)}
                     onDoubleClick={(event) => { event.preventDefault(); selectTask("active", task.id); setRenamingTaskTab({ taskId: task.id, title: task.title, busy: false, error: undefined }); }}
-                  ><i className={`task-tab-dot ${presentation?.tone ?? "quiet"}`} aria-hidden="true" /><span>{task.title}</span>{presentation?.attention?.tone === "attention" ? <i className="task-tab-attention" aria-hidden="true" /> : null}</button>
+                  ><i className={`task-tab-dot ${presentation?.tone ?? "quiet"}`} aria-hidden="true" /><span>{deleting ? "Deleting…" : task.title}</span>{presentation?.attention?.tone === "attention" ? <i className="task-tab-attention" aria-hidden="true" /> : null}</button>
                   }
                   {closing ? <div className="task-item-tab-close-confirm" role="group" aria-label={`Close ${task.title}?`} onKeyDown={(event) => {
                     if (event.key !== "Escape" || closingTaskTab.busy) return;
@@ -625,7 +638,7 @@ export function TaskRail(props: TaskRailProps) {
                     <button type="button" aria-label={`Cancel close ${task.title}`} disabled={closingTaskTab.busy} onClick={() => setClosingTaskTab(undefined)}>No</button>
                   </div> : <>
                     <button type="button" className="task-item-tab-favorite" aria-label={`${favorite ? "Unfavorite" : "Favorite"} ${task.title}`} aria-pressed={favorite} title={favorite ? "Remove from favorites" : "Favorite Task"} onClick={() => toggleTaskFavorite(task.id)}><Icon name="star" /></button>
-                    <button type="button" className="task-item-tab-close" aria-label={`Close ${task.title}`} title="Close Task" disabled={props.disabled || props.deletingTaskIds.has(task.id)} onClick={() => setClosingTaskTab({ taskId: task.id, busy: false })}><Icon name="close" /></button>
+                    <button type="button" className="task-item-tab-close" aria-label={`Close ${task.title}`} title={task.worktree ? "Clean up worktree and close Task" : "Close Task"} disabled={props.disabled || deleting} onClick={() => setClosingTaskTab({ taskId: task.id, busy: false })}><Icon name="close" /></button>
                   </>}
                 </div>;
               })}
@@ -665,13 +678,13 @@ export function TaskRail(props: TaskRailProps) {
             {menuTask.worktree && menuTask.worktree_generation !== undefined ? <MenuButton icon="trash" label="Cleanup worktree" detail="Review and remove this checkout" action={() => perform(() => setCleanupTarget(menuTask))} /> : null}
             {menuTask.worktree_repair?.dismissible ? <MenuButton icon="close" label="Dismiss repair" detail="No Git mutation was invoked" action={() => perform(() => props.dismissTaskWorktreeRepair(menuTask.id, menuTask.worktree_repair!.operation_id))} /> : null}
             {menuTask.status === "open" ? (
-              <MenuButton icon="archive" label="Close Task" detail="Keep its current state" action={() => perform(() => props.setTaskClosed(menuTask.id, true))} />
+              <MenuButton icon="archive" label="Close Task" detail={menuTask.worktree ? "Remove its worktree, then close" : "Close completed work"} action={() => perform(() => menuTask.worktree ? setCloseTarget(menuTask) : props.setTaskClosed(menuTask.id, true))} />
             ) : (
               <MenuButton icon="reopen" label="Reopen Task" detail="Return it to open work" action={() => perform(() => props.setTaskClosed(menuTask.id, false))} />
             )}
             <MenuButton icon="archive" label="Archive Task" detail="Park safe context and remove it from active work" action={() => perform(() => setArchiveTarget(menuTask))} />
             <div className="context-menu-divider" />
-            <MenuButton icon="trash" label={menuTask.worktree ? "Delete Task and worktree" : "Delete Task"} detail={menuTask.worktree ? "Park Agents, remove checkout, then close Task" : "Remove its current record"} danger action={() => perform(() => setDeleteTarget(menuTask))} />
+            <MenuButton icon="trash" label={menuTask.worktree ? "Delete Task and worktree" : "Delete Task"} detail={menuTask.worktree ? "Stop Sessions, remove checkout, and permanently delete Task" : "Permanently remove its record"} danger action={() => perform(() => setDeleteTarget(menuTask))} />
           </div>
         </div>
       ) : null}
@@ -712,8 +725,14 @@ export function TaskRail(props: TaskRailProps) {
         task={currentDeleteTarget}
         inspect={props.inspectTaskWorktreeCleanup}
         close={() => setDeleteTarget(undefined)}
-        closeAfterWorktreeRemoval={Boolean(currentDeleteTarget.worktree)}
         remove={(review) => { void props.deleteTaskAndWorktree(currentDeleteTarget.id, review); }}
+      /> : null}
+      {currentCloseTarget ? <DeleteTaskDialog
+        task={currentCloseTarget}
+        inspect={props.inspectTaskWorktreeCleanup}
+        close={() => setCloseTarget(undefined)}
+        closeAfterWorktreeRemoval
+        remove={(review) => { void props.closeTaskAndWorktree(currentCloseTarget.id, review); }}
       /> : null}
       </OverlayPortal>
     </section>

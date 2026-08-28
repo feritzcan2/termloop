@@ -239,6 +239,7 @@ export type ShellProps = {
   restoreArchivedSession(sessionId: string): Promise<string | undefined>;
   deleteArchivedSession(sessionId: string): Promise<string | undefined>;
   restoreDeletedSession(sessionId: string): Promise<string | undefined>;
+  closeTaskAndWorktree(taskId: string, review?: TaskDeleteWorktreeReview): Promise<TaskDeleteWorktreeResult>;
   deleteTaskAndWorktree(taskId: string, review?: TaskDeleteWorktreeReview): Promise<TaskDeleteWorktreeResult>;
   deleteArchivedTaskAndWorktree(task: Task, review?: TaskDeleteWorktreeReview): Promise<TaskDeleteWorktreeResult>;
   openExternal(url: string, runSessionId?: string): Promise<void>;
@@ -1441,6 +1442,7 @@ export function Shell(props: ShellProps) {
             archiveTask={props.archiveTask}
             archivedTaskCount={archived.count}
             archivedTasksChanged={archived.reload}
+            closeTaskAndWorktree={props.closeTaskAndWorktree}
             deleteTaskAndWorktree={props.deleteTaskAndWorktree}
             openExternal={props.openExternal}
             provisionRequestedTaskId={provisionRequestedTaskId}
