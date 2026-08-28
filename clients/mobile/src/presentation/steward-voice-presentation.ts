@@ -47,13 +47,22 @@ export function createVoicePcmCapture(): VoicePcmCapture {
   };
 }
 
-/// Accumulates native signed 16-bit PCM buffers and derives the same dB meter
-/// used by the silence detector without relying on AVAudioRecorder's encoder.
-export function appendVoicePcmBuffer(
+/// Captures the iPhone's native float PCM stream, converts it to signed 16-bit
+/// PCM in JavaScript, and derives the dB meter used by the silence detector.
+/// Keeping the stream at the hardware's 48 kHz float format avoids Expo's
+/// silent AVAudioConverter failure for 16 kHz/int16 output.
+export function appendVoiceFloatPcmBuffer(
   current: VoicePcmCapture,
   buffer: VoicePcmBuffer,
 ): VoicePcmCapture {
-  const chunk = new Uint8Array(buffer.data.slice(0));
+  const floatBytes = new DataView(buffer.data);
+  const sampleCount = Math.floor(buffer.data.byteLength / 4);
+  const chunk = new Uint8Array(sampleCount * 2);
+  const pcm = new DataView(chunk.buffer);
+  for (let index = 0; index < sampleCount; index += 1) {
+    const sample = Math.max(-1, Math.min(1, floatBytes.getFloat32(index * 4, true)));
+    pcm.setInt16(index * 2, Math.round(sample < 0 ? sample * 32_768 : sample * 32_767), true);
+  }
   const byteLength = current.byteLength + chunk.byteLength;
   const bytesPerSecond = buffer.sampleRate * buffer.channels * 2;
   return {

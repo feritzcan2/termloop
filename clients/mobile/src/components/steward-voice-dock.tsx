@@ -23,7 +23,7 @@ import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
 import { useOverview } from "@/features/overview/overview-store";
 import {
-  appendVoicePcmBuffer,
+  appendVoiceFloatPcmBuffer,
   createVoicePcmCapture,
   createVoicePcmWav,
   stewardReplyAfter,
@@ -82,12 +82,12 @@ export function StewardVoiceDock() {
   const firstBufferRef = useRef<(() => void) | undefined>(undefined);
 
   const { stream } = useAudioStream({
-    sampleRate: 16_000,
+    sampleRate: 48_000,
     channels: 1,
-    encoding: "int16",
+    encoding: "float32",
     onBuffer(buffer) {
       if (!capturingRef.current) return;
-      const capture = appendVoicePcmBuffer(pcmCaptureRef.current, buffer);
+      const capture = appendVoiceFloatPcmBuffer(pcmCaptureRef.current, buffer);
       pcmCaptureRef.current = capture;
       setRecorderState({ durationMillis: capture.durationMillis, metering: capture.metering });
       firstBufferRef.current?.();

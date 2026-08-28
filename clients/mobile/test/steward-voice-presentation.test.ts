@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  appendVoicePcmBuffer,
+  appendVoiceFloatPcmBuffer,
   createVoicePcmCapture,
   createVoicePcmWav,
   stewardReplyAfter,
@@ -24,9 +24,10 @@ const overview = {
 
 describe("Steward voice presentation", () => {
   it("accumulates native PCM duration and metering before creating a WAV", () => {
-    const samples = new Int16Array([16_384, -16_384, 16_384, -16_384]);
-    const capture = appendVoicePcmBuffer(createVoicePcmCapture(), {
-      data: samples.buffer,
+    const nativeSamples = new Float32Array([0.5, -0.5, 0.5, -0.5]);
+    const expectedSamples = new Int16Array([16_384, -16_384, 16_384, -16_384]);
+    const capture = appendVoiceFloatPcmBuffer(createVoicePcmCapture(), {
+      data: nativeSamples.buffer,
       sampleRate: 4,
       channels: 1,
     });
@@ -40,8 +41,8 @@ describe("Steward voice presentation", () => {
     expect(ascii(view, 8, 4)).toBe("WAVE");
     expect(view.getUint32(24, true)).toBe(4);
     expect(view.getUint16(22, true)).toBe(1);
-    expect(view.getUint32(40, true)).toBe(samples.byteLength);
-    expect(new Int16Array(wav, 44)).toEqual(samples);
+    expect(view.getUint32(40, true)).toBe(expectedSamples.byteLength);
+    expect(new Int16Array(wav, 44)).toEqual(expectedSamples);
   });
 
   it("targets the route's Project, Task, or Session before falling back", () => {
