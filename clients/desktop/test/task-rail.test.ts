@@ -173,7 +173,7 @@ function agentStatus(sessionId: string, status: AgentStatus["status"]): AgentSta
   return { sessionId, status, source: "appServer", observedAtEpochMs: 1 };
 }
 
-type RailOptions = { task?: Task; tasks?: readonly Task[]; gitHostProjection?: GitHostProjection; branchCommitSummary?: BranchCommitSummary; runConfigurations?: readonly RunConfiguration[]; runRuntimes?: readonly RunRuntime[]; sessions?: readonly Session[]; agentGroups?: readonly import("../src/layout/model.js").AgentGroupLayout[]; statuses?: readonly AgentStatus[]; reviewReadySessionIds?: ReadonlySet<string>; selectedSessionId?: string; deleting?: boolean; archivedTaskCount?: number; nowEpochMs?: number; openTaskChanges?: TaskRailProps["openTaskChanges"]; openTaskDetail?(taskId: string): void; detailTaskId?: string };
+type RailOptions = { task?: Task; tasks?: readonly Task[]; gitHostProjection?: GitHostProjection; branchCommitSummary?: BranchCommitSummary; runConfigurations?: readonly RunConfiguration[]; runRuntimes?: readonly RunRuntime[]; sessions?: readonly Session[]; agentGroups?: readonly import("../src/layout/model.js").AgentGroupLayout[]; statuses?: readonly AgentStatus[]; reviewReadySessionIds?: ReadonlySet<string>; selectedSessionId?: string; deleting?: boolean; archivedTaskCount?: number; nowEpochMs?: number; openTaskChanges?: TaskRailProps["openTaskChanges"]; openTaskDetail?(taskId: string): void; detailTaskId?: string; closeTaskAndWorktree?: TaskRailProps["closeTaskAndWorktree"] };
 
 function railProps(options: RailOptions = {}): TaskRailProps {
   const unused = async (): Promise<never> => { throw new Error("unused test callback"); };
@@ -231,6 +231,7 @@ function railProps(options: RailOptions = {}): TaskRailProps {
     archiveTask: unused,
     archivedTaskCount: options.archivedTaskCount ?? 0,
     archivedTasksChanged: () => {},
+    closeTaskAndWorktree: options.closeTaskAndWorktree ?? unused,
     deleteTaskAndWorktree: unused,
     openExternal: async () => {},
     overlayVisibilityChanged: () => {},
@@ -595,7 +596,8 @@ describe("Task rail row anatomy", () => {
 
   it("keeps a background deletion visible and disables Task actions", () => {
     const markup = renderRail({ deleting: true });
-    expect(markup).toContain("Deleting");
+    expect(markup).toContain("Deleting…");
+    expect(markup).toContain('<span>Deleting…</span>');
     expect(markup).toContain('class="task-row deleting"');
     expect(markup).toContain('class="task-pulse"');
     expect(markup).toContain('class="task-item open" disabled=""');
@@ -1148,8 +1150,9 @@ describe("Task rail first-run UX", () => {
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
-  it("creates from the fixed leading button and confirms before closing an active Task from its tab", async () => {
+  it("confirms before routing a worktree Task through cleanup and close", async () => {
     const setTaskClosed = vi.fn(async () => {});
+    const closeTaskAndWorktree = vi.fn(async () => ({ status: "completed" } as const));
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
@@ -1157,6 +1160,7 @@ describe("Task rail first-run UX", () => {
     await act(async () => root.render(createElement(TaskRail, {
       ...railProps(),
       setTaskClosed,
+      closeTaskAndWorktree,
     })));
 
     const create = container.querySelector<HTMLButtonElement>('.task-item-tab-bar > [aria-label="Create Task"]');
@@ -1173,10 +1177,32 @@ describe("Task rail first-run UX", () => {
 
     await act(async () => container.querySelector<HTMLButtonElement>('.task-item-tab-close[aria-label="Close Compact launchers"]')!.click());
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Confirm close Compact launchers"]')!.click());
-    expect(setTaskClosed).toHaveBeenCalledWith("task-1", true);
+    expect(setTaskClosed).not.toHaveBeenCalled();
+    expect(closeTaskAndWorktree).not.toHaveBeenCalled();
+    expect(document.querySelector('[aria-labelledby="delete-task-title"]')?.textContent).toContain("Delete worktree and close Task");
 
     await act(async () => create!.click());
     expect(document.querySelector(".task-create-dialog")?.textContent).toContain("Create a Task");
+
+    await act(async () => root.unmount());
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+
+  it("closes a worktree-less Task directly after confirmation", async () => {
+    const setTaskClosed = vi.fn(async () => {});
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => root.render(createElement(TaskRail, {
+      ...railProps({ task: worktreeLessTask() }),
+      setTaskClosed,
+    })));
+
+    await act(async () => container.querySelector<HTMLButtonElement>('.task-item-tab-close')!.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Confirm close Compact launchers"]')!.click());
+    expect(setTaskClosed).toHaveBeenCalledWith("task-1", true);
 
     await act(async () => root.unmount());
     container.remove();

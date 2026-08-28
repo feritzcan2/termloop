@@ -1524,26 +1524,9 @@ export function DesktopApp() {
         return { status: "failed", message: "Inspect the worktree before removing it." };
       }
       let currentTask: Task | undefined = initialTask;
-      let parkedForClose = false;
-      if (initialTask.worktree) {
-        const archivePreview = await api.taskInspectArchive(taskId);
-        if (!archivePreview.can_archive) {
-          return {
-            status: "failed",
-            message: `Task Agents could not be parked safely: ${archivePreview.blockers.join(", ") || "archive refused"}.`,
-          };
-        }
-        const archived = await api.taskArchive(taskId, archivePreview.archive_ticket);
-        currentTask = archived.task;
-        parkedForClose = true;
-        await refreshProjection();
-      }
       const refresh = async () => {
         await refreshProjection();
-        currentTask = parkedForClose
-          ? (await api.taskList(initialTask.project_id, [taskId], "archived"))[0]
-            ?? projectionStore.getSnapshot().tasks.find((task) => task.id === taskId)
-          : projectionStore.getSnapshot().tasks.find((task) => task.id === taskId);
+        currentTask = projectionStore.getSnapshot().tasks.find((task) => task.id === taskId);
       };
       const result = await orchestrateTaskDelete({
         taskId,
@@ -1557,14 +1540,76 @@ export function DesktopApp() {
         cleanup: (params) => api.taskCleanupWorktree(params),
         forgetStale: (params) => api.taskForgetStaleWorktree(params),
         discardStale: (params) => api.taskDiscardStaleWorktree(params),
-        deleteTask: () => parkedForClose
-          ? api.taskFinalizeClosedWorktreeRemoval(taskId)
-          : api.taskDelete(taskId),
-        completion: parkedForClose ? "close" : "delete",
+        deleteTask: () => api.taskDelete(taskId),
         freshId: () => globalThis.crypto.randomUUID(),
         errorMessage: controlErrorMessage,
       });
-      const finalResult = parkedForClose && result.status !== "completed"
+      if (result.message) projectionStore.setMessage(result.message);
+      return result;
+    } catch (error) {
+      try {
+        await refreshProjection();
+      } catch {}
+      const message = controlErrorMessage(error);
+      projectionStore.setMessage(message);
+      return { status: "failed", message };
+    } finally {
+      setDeletingTaskIds((current) => {
+        if (!current.has(taskId)) return current;
+        const next = new Set(current);
+        next.delete(taskId);
+        return next;
+      });
+    }
+  }, []);
+  const closeTaskAndWorktree = useCallback(async (
+    taskId: string,
+    review?: TaskDeleteWorktreeReview,
+  ): Promise<TaskDeleteWorktreeResult> => {
+    setDeletingTaskIds((current) => current.has(taskId) ? current : new Set(current).add(taskId));
+    try {
+      const api = sourceApiForTask(taskId);
+      const initialTask = projectionStore.getSnapshot().tasks.find((task) => task.id === taskId);
+      if (!initialTask) return { status: "completed" };
+      if (!initialTask.worktree) {
+        await api.taskClose(taskId);
+        await refreshProjection();
+        return { status: "completed" };
+      }
+      if (!review) return { status: "failed", message: "Inspect the worktree before removing it." };
+      const archivePreview = await api.taskInspectArchive(taskId);
+      if (!archivePreview.can_archive) {
+        return {
+          status: "failed",
+          message: `Task Agents could not be parked safely: ${archivePreview.blockers.join(", ") || "archive refused"}.`,
+        };
+      }
+      const archived = await api.taskArchive(taskId, archivePreview.archive_ticket);
+      let currentTask: Task | undefined = archived.task;
+      await refreshProjection();
+      const refresh = async () => {
+        await refreshProjection();
+        currentTask = (await api.taskList(initialTask.project_id, [taskId], "archived"))[0]
+          ?? projectionStore.getSnapshot().tasks.find((task) => task.id === taskId);
+      };
+      const result = await orchestrateTaskDelete({
+        taskId,
+        review,
+        currentTask: () => currentTask,
+        currentSession: (sessionId) => projectionStore.getSnapshot().sessions.find((session) => session.id === sessionId),
+        inspect: () => api.taskInspectWorktreeCleanup(taskId),
+        refresh,
+        terminate: (sessionId) => api.sessionTerminate(sessionId),
+        close: (sessionId) => api.sessionClose(sessionId),
+        cleanup: (params) => api.taskCleanupWorktree(params),
+        forgetStale: (params) => api.taskForgetStaleWorktree(params),
+        discardStale: (params) => api.taskDiscardStaleWorktree(params),
+        deleteTask: () => api.taskFinalizeClosedWorktreeRemoval(taskId),
+        completion: "close",
+        freshId: () => globalThis.crypto.randomUUID(),
+        errorMessage: controlErrorMessage,
+      });
+      const finalResult = result.status !== "completed"
         ? { ...result, message: `Task and Agents remain safely parked in Archived. ${result.message}` }
         : result;
       if (finalResult.message) projectionStore.setMessage(finalResult.message);
@@ -2124,6 +2169,7 @@ export function DesktopApp() {
       restoreArchivedSession={restoreArchivedSession}
       deleteArchivedSession={deleteArchivedSession}
       restoreDeletedSession={restoreDeletedSession}
+      closeTaskAndWorktree={closeTaskAndWorktree}
       deleteTaskAndWorktree={deleteTaskAndWorktree}
       deleteArchivedTaskAndWorktree={deleteArchivedTaskAndWorktree}
       openExternal={openExternal}

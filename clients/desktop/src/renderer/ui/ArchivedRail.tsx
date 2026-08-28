@@ -110,7 +110,7 @@ export function ArchivedRail(props: ArchivedRailProps) {
           {props.tasks.map((task) => (
             <div key={task.id} className={`archived-row${props.deletingTaskIds.has(task.id) ? " deleting" : ""}`} role="listitem">
               <span className="archived-glyph" aria-hidden="true"><Icon name="archive" /></span>
-              <span className="archived-title" title={`${task.title} · ${archivedMeta(task)}`}>{task.title}</span>
+              <span className="archived-title" title={`${task.title} · ${props.deletingTaskIds.has(task.id) ? "Deleting…" : archivedMeta(task)}`}>{props.deletingTaskIds.has(task.id) ? "Deleting…" : task.title}</span>
               <span className="archived-actions">
                 <button
                   type="button"
