@@ -284,6 +284,7 @@ export type ShellProps = {
   setTerminalOccluded(occluded: boolean): void;
   subscribeNativeShellShortcut(listener: (shortcut: GhosttyShellShortcut) => void): () => void;
   setNativeOverlayOpen(open: boolean): void;
+  setNativeOverlaySuppressed(suppressed: boolean): void;
   overlayContainer: Element | undefined;
   openSessionInSplit(sessionId: string, direction: SplitDirection): void;
   openSessionInSplitAtPane(sessionId: string, paneId: string, direction: SplitDirection, placement: SplitPlacement): boolean;
@@ -950,6 +951,10 @@ export function Shell(props: ShellProps) {
     props.setNativeOverlayOpen(nativeOverlayOpen);
     return () => props.setNativeOverlayOpen(false);
   }, [nativeOverlayOpen, props.setNativeOverlayOpen]);
+  useEffect(() => {
+    props.setNativeOverlaySuppressed(mobileConnectOpen);
+    return () => props.setNativeOverlaySuppressed(false);
+  }, [mobileConnectOpen, props.setNativeOverlaySuppressed]);
   const terminalOccluded = shellTerminalOccluded(
     Boolean(changesSubject),
     sidebarDragging,

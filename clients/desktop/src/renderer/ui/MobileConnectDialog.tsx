@@ -19,7 +19,8 @@ export function MobileConnectDialog({ close, prepare, loadVoiceSettings, saveVoi
   useEffect(() => {
     let active = true;
     setResult(undefined);
-    void prepare()
+    void Promise.resolve()
+      .then(prepare)
       .then((value) => { if (active) setResult(value); })
       .catch((cause: unknown) => {
         if (!active) return;
@@ -33,7 +34,8 @@ export function MobileConnectDialog({ close, prepare, loadVoiceSettings, saveVoi
 
   useEffect(() => {
     let active = true;
-    void loadVoiceSettings()
+    void Promise.resolve()
+      .then(loadVoiceSettings)
       .then((value) => { if (active) setVoiceConfigured(value.configured); })
       .catch(() => { if (active) setVoiceError("Voice settings could not be loaded."); });
     return () => { active = false; };

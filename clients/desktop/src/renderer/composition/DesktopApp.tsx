@@ -58,7 +58,7 @@ import { executeProviderHistoryRepair, fixProviderHistoryAndRetry } from "./prov
 import { restartStewardSession, restartWorkerSession } from "./worker-restart.js";
 import { AssistantRefreshThrottle, timeoutRefreshScheduler } from "./assistant-refresh-throttle.js";
 import { presentedAgentStatus } from "../session-presentation.js";
-import { nativeTerminalSurfaceVisible, useNativeOverlayWindow } from "./native-overlay-window.js";
+import { nativeOverlayPassiveVisible, nativeTerminalSurfaceVisible, useNativeOverlayWindow } from "./native-overlay-window.js";
 import { OverlayPortal } from "../ui/OverlayPortal.js";
 import {
   MAX_CHANGE_REVIEW_MESSAGE_BYTES,
@@ -492,6 +492,7 @@ export function DesktopApp() {
   const [deletingTaskIds, setDeletingTaskIds] = useState<ReadonlySet<string>>(() => new Set());
   const [shellTerminalOccluded, setShellTerminalOccluded] = useState(false);
   const [shellNativeOverlayOpen, setShellNativeOverlayOpen] = useState(false);
+  const [shellNativeOverlaySuppressed, setShellNativeOverlaySuppressed] = useState(false);
   const [launchInspection, setLaunchInspection] = useState<{
     title: string;
     preview: () => ReturnType<typeof desktopApi.agentPreview>;
@@ -521,12 +522,16 @@ export function DesktopApp() {
       }
     }
   }, [projection.runRuntimes]);
-  const nativeOverlayActive = shellNativeOverlayOpen || Boolean(launchInspection);
+  const nativeOverlayActive = !shellNativeOverlaySuppressed
+    && (shellNativeOverlayOpen || Boolean(launchInspection));
   const nativeOverlayWasActive = useRef(false);
   const nativeOverlayContainer = useNativeOverlayWindow(
     terminalRendererKind() === "ghostty",
     nativeOverlayActive,
-    Boolean(presentation.selectedProjectId),
+    nativeOverlayPassiveVisible(
+      Boolean(presentation.selectedProjectId),
+      shellNativeOverlaySuppressed,
+    ),
     desktopApi.nativeOverlaySetVisible,
     desktopApi.nativeOverlaySetPassiveVisible,
     desktopApi.nativeOverlaySetPointerInteractive,
@@ -2213,6 +2218,7 @@ export function DesktopApp() {
       setTerminalOccluded={setShellTerminalOccluded}
       subscribeNativeShellShortcut={ghosttyBridge.onShellShortcut}
       setNativeOverlayOpen={setShellNativeOverlayOpen}
+      setNativeOverlaySuppressed={setShellNativeOverlaySuppressed}
       overlayContainer={nativeOverlayContainer}
       openSessionInSplit={openSessionInSplit}
       openSessionInSplitAtPane={openSessionInSplitAtPane}
