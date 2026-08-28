@@ -163,7 +163,6 @@ export function StewardVoiceDock() {
       const permission = await AudioModule.requestRecordingPermissionsAsync();
       if (!permission.granted) throw new Error("Mikrofon izni olmadan canlı konuşma başlatılamaz.");
       if (conversation !== conversationRef.current || !expandedRef.current) return;
-      player.pause();
       cleanSpeechFile();
       silenceRef.current = { heardVoice: false, lastVoiceAtMs: 0 };
       stoppingRef.current = false;
@@ -192,7 +191,7 @@ export function StewardVoiceDock() {
       setError(cause instanceof Error ? cause.message : "Mikrofon başlatılamadı.");
       transition("error");
     }
-  }, [cleanSpeechFile, connections.selected?.id, player, selectedProject, stream, transition]);
+  }, [cleanSpeechFile, connections.selected?.id, selectedProject, stream, transition]);
 
   const playReply = useCallback(async (
     conversation: number,
