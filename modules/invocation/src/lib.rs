@@ -119,7 +119,7 @@ const ROUTINE_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.playbook",
-    version: 14,
+    version: 15,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.playbook.md"),
 };
 
@@ -131,7 +131,7 @@ const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const WORKER_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.worker.executor",
-    version: 18,
+    version: 19,
     authored_body: include_str!("../../../resources/prompts/builtin.worker.executor.md"),
 };
 
@@ -4079,8 +4079,8 @@ mod tests {
         let launch = prompt_improver_launch(target);
         let delivered = launch.delivered_prompt().unwrap();
 
-        assert_eq!(template.version, 14);
-        assert_eq!(launch.provenance().template_version, 14);
+        assert_eq!(template.version, 15);
+        assert_eq!(launch.provenance().template_version, 15);
         for expected in [
             "two compact review",
             "show the complete normal path as one readable arrow sequence",
@@ -4098,6 +4098,10 @@ mod tests {
             "Project checkout cwd or",
             "task_agent_request",
             "Worker-to-Agent coordination among the recommended options",
+            "sole authority",
+            "never require the Worker to re-prove that Agent identity",
+            "attempt `task_agent_request` before reporting",
+            "ordinary unmet evidence and is `waiting`",
         ] {
             assert!(delivered.contains(expected), "missing {expected:?}");
         }
@@ -6075,7 +6079,7 @@ mod tests {
     #[test]
     fn pipeline_prompts_treat_a_step_title_as_a_label_not_a_yes_no_contract() {
         let worker = executor_prompt(ExecutorRole::Worker).unwrap();
-        assert_eq!(worker.provenance().template_version, 18);
+        assert_eq!(worker.provenance().template_version, 19);
         assert!(
             worker
                 .authored_preview()
@@ -6103,6 +6107,21 @@ mod tests {
                 .contains("`step.taskRead.arguments`")
         );
         assert!(worker.authored_preview().contains("terminal's cwd or HEAD"));
+        assert!(
+            worker
+                .authored_preview()
+                .contains("sole authority for the request target")
+        );
+        assert!(
+            worker
+                .authored_preview()
+                .contains("resolve and attempt that exposed capability")
+        );
+        assert!(
+            worker
+                .authored_preview()
+                .contains("absence of the outcome is not an access or configuration problem")
+        );
         assert!(
             worker
                 .authored_preview()
