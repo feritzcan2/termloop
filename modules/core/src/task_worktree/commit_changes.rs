@@ -245,11 +245,10 @@ impl TaskBranchCommitListPlan {
             .and_then(|runner| {
                 let repository = Path::new(&self.binding.repository_root);
                 match &self.recorded_base {
-                    Some((base_ref, base_oid)) => runner.list_branch_commits_with_recorded_base(
+                    Some((base_ref, _)) => runner.list_branch_commits_with_local_base(
                         repository,
                         self.binding.name.as_bytes(),
-                        base_ref.as_bytes(),
-                        base_oid.as_bytes(),
+                        Some(base_ref.as_bytes()),
                     ),
                     None => runner.list_branch_commits(repository, self.binding.name.as_bytes()),
                 }

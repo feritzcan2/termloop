@@ -7,6 +7,7 @@ use termloop_contract::current::{
     ControlSubscribeResult, ErrorCode, ProjectDeleteBlocker, ProjectionInvalidatedPayload,
     ProjectionTopic, ProtocolErrorDetails,
 };
+use termloop_core::companion_integrations::assistant_session::StewardWakeAdmission;
 use tokio::time::{Duration, Instant};
 
 use super::super::core_lock::{in_operation, record_operation_duration};
@@ -880,8 +881,14 @@ async fn dispatch_inner(
                                 state.clone(),
                             )
                             .await;
-                            result
-                                .map(|admitted| json!({"admitted":admitted,"coalesced":!admitted}))
+                            result.map(|admission| match admission {
+                                StewardWakeAdmission::Admitted => {
+                                    json!({"admitted":true,"coalesced":false})
+                                }
+                                StewardWakeAdmission::Coalesced => {
+                                    json!({"admitted":false,"coalesced":true})
+                                }
+                            })
                         }
                     }
                 }

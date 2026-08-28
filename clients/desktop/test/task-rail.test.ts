@@ -1483,6 +1483,21 @@ describe("Task rail create flow", () => {
     const claudeOption = [...container.querySelectorAll<HTMLButtonElement>(".start-chip")]
       .find((option) => option.textContent?.includes("Claude"))!;
     expect(claudeOption.getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector<HTMLSelectElement>("#create-agent-claude-model")?.value).toBe("opus[1m]");
+    expect(container.querySelector<HTMLSelectElement>("#create-agent-claude-permission")?.value).toBe("bypassPermissions");
+    expect(container.querySelector<HTMLSelectElement>("#create-agent-claude-reasoning")?.value).toBe("high");
+
+    await act(async () => {
+      const model = container.querySelector<HTMLSelectElement>("#create-agent-claude-model")!;
+      model.value = "sonnet";
+      model.dispatchEvent(new Event("change", { bubbles: true }));
+      const permission = container.querySelector<HTMLSelectElement>("#create-agent-claude-permission")!;
+      permission.value = "plan";
+      permission.dispatchEvent(new Event("change", { bubbles: true }));
+      const reasoning = container.querySelector<HTMLSelectElement>("#create-agent-claude-reasoning")!;
+      reasoning.value = "medium";
+      reasoning.dispatchEvent(new Event("change", { bubbles: true }));
+    });
 
     const submit = [...container.querySelectorAll<HTMLButtonElement>(".primary-button")]
       .find((button) => button.textContent === "Create & Start")!;
@@ -1513,9 +1528,9 @@ describe("Task rail create flow", () => {
     expect(launchTaskAgent).toHaveBeenCalledWith(
       "task-new",
       "claude",
-      "opus[1m]",
-      "bypassPermissions",
-      "high",
+      "sonnet",
+      "plan",
+      "medium",
       "Implement and verify this Task.",
     );
     expect(launchTaskTerminal).not.toHaveBeenCalled();

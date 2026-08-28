@@ -1017,6 +1017,110 @@ pub fn normalize_codex_resume_ref(raw: &str) -> Option<ResumeRef> {
 }
 
 const MAX_PENDING_CODEX_THREAD_RESUMES: usize = 8;
+const MAX_PENDING_CODEX_NEW_THREADS: usize = 8;
+
+#[derive(Default)]
+struct CodexAppServerThreadScope {
+    native_thread_id: Option<String>,
+    pending_new_thread_requests: VecDeque<String>,
+}
+
+impl CodexAppServerThreadScope {
+    fn observe_downstream_request(&mut self, raw: &str) {
+        let Ok(message) = serde_json::from_str::<serde_json::Value>(raw) else {
+            return;
+        };
+        match message.get("method").and_then(serde_json::Value::as_str) {
+            Some("thread/resume") => {
+                if let Some(native_thread_id) = message
+                    .pointer("/params/threadId")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|value| !value.is_empty())
+                {
+                    self.native_thread_id = Some(native_thread_id.to_owned());
+                }
+            }
+            Some("thread/start" | "thread/fork") => {
+                let Some(id) = message.get("id").and_then(json_rpc_id_key) else {
+                    return;
+                };
+                if self.pending_new_thread_requests.len() == MAX_PENDING_CODEX_NEW_THREADS {
+                    self.pending_new_thread_requests.pop_front();
+                }
+                self.pending_new_thread_requests.push_back(id);
+            }
+            _ => {}
+        }
+    }
+
+    fn observe_upstream_response(&mut self, raw: &str) {
+        let Ok(message) = serde_json::from_str::<serde_json::Value>(raw) else {
+            return;
+        };
+        let Some(id) = message.get("id").and_then(json_rpc_id_key) else {
+            return;
+        };
+        let Some(position) = self
+            .pending_new_thread_requests
+            .iter()
+            .position(|candidate| candidate == &id)
+        else {
+            return;
+        };
+        self.pending_new_thread_requests.remove(position);
+        if let Some(native_thread_id) = message
+            .pointer("/result/thread/id")
+            .and_then(serde_json::Value::as_str)
+            .filter(|value| !value.is_empty())
+        {
+            self.native_thread_id = Some(native_thread_id.to_owned());
+        }
+    }
+
+    fn observe_resume_ref(&mut self, resume_ref: &ResumeRef) {
+        self.native_thread_id = Some(resume_ref.native_session_id.clone());
+    }
+
+    fn admits_notification(&mut self, raw: &str) -> bool {
+        let Ok(message) = serde_json::from_str::<serde_json::Value>(raw) else {
+            return true;
+        };
+        let Some(method) = message.get("method").and_then(serde_json::Value::as_str) else {
+            return true;
+        };
+        let Some(native_thread_id) = codex_app_server_message_thread_id(&message) else {
+            // Older App Server notifications do not always carry a thread ID.
+            // Preserve their existing behavior because they cannot be scoped.
+            return true;
+        };
+        if self.native_thread_id.as_deref() == Some(native_thread_id) {
+            return true;
+        }
+        if method == "thread/started"
+            && (self.native_thread_id.is_none() || !self.pending_new_thread_requests.is_empty())
+        {
+            self.native_thread_id = Some(native_thread_id.to_owned());
+            return true;
+        }
+        // Until the client selects a thread, retain the old fail-open behavior.
+        // Once selected, global notifications for history probes, pickers, and
+        // other threads must not mutate this TermLoop Session's projection.
+        self.native_thread_id.is_none()
+    }
+}
+
+fn codex_app_server_message_thread_id(message: &serde_json::Value) -> Option<&str> {
+    message
+        .pointer("/params/threadId")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            message
+                .pointer("/params/thread/id")
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.is_empty())
+        })
+}
 
 fn observe_codex_thread_resume_request(raw: &str, pending: &mut VecDeque<String>) {
     let Ok(message) = serde_json::from_str::<serde_json::Value>(raw) else {
@@ -1117,48 +1221,55 @@ async fn proxy_codex_connection(
     let (mut upstream_write, mut upstream_read) = upstream.split();
     let (mut downstream_write, mut downstream_read) = downstream.split();
     let mut pending_thread_resumes = VecDeque::new();
+    let mut thread_scope = CodexAppServerThreadScope::default();
     loop {
         tokio::select! {
             frame = upstream_read.next() => match frame {
                 Some(Ok(message)) => {
                     if let Message::Text(text) = &message {
-                        if let Some(resume_ref) = normalize_codex_resume_ref(text) {
-                            let _ = signals.send(AgentRuntimeSignal {
-                                session_id: session_id.clone(),
-                                runtime_epoch,
-                                event: AgentRuntimeEvent::ResumeRefObserved(resume_ref),
-                            });
-                        }
+                        thread_scope.observe_upstream_response(text);
+                        let notification_is_in_scope = thread_scope.admits_notification(text);
                         if let Some(resume_ref) = normalize_codex_thread_resume_response(
                             text,
                             &mut pending_thread_resumes,
                         ) {
+                            thread_scope.observe_resume_ref(&resume_ref);
                             let _ = signals.send(AgentRuntimeSignal {
                                 session_id: session_id.clone(),
                                 runtime_epoch,
                                 event: AgentRuntimeEvent::ResumeRefObserved(resume_ref),
                             });
                         }
-                        if let Some(signal) = normalize_codex_app_server_message(text) {
-                            let _ = signals.send(AgentRuntimeSignal {
-                                session_id: session_id.clone(),
-                                runtime_epoch,
-                                event: AgentRuntimeEvent::Observation(signal),
-                            });
-                        }
-                        if let Some(plan) = normalize_codex_plan_update(text) {
-                            let _ = signals.send(AgentRuntimeSignal {
-                                session_id: session_id.clone(),
-                                runtime_epoch,
-                                event: AgentRuntimeEvent::PlanUpdated(plan),
-                            });
-                        }
-                        if let Some(settings) = normalize_codex_thread_settings(text) {
-                            let _ = signals.send(AgentRuntimeSignal {
-                                session_id: session_id.clone(),
-                                runtime_epoch,
-                                event: AgentRuntimeEvent::ThreadSettingsObserved(settings),
-                            });
+                        if notification_is_in_scope {
+                            if let Some(resume_ref) = normalize_codex_resume_ref(text) {
+                                thread_scope.observe_resume_ref(&resume_ref);
+                                let _ = signals.send(AgentRuntimeSignal {
+                                    session_id: session_id.clone(),
+                                    runtime_epoch,
+                                    event: AgentRuntimeEvent::ResumeRefObserved(resume_ref),
+                                });
+                            }
+                            if let Some(signal) = normalize_codex_app_server_message(text) {
+                                let _ = signals.send(AgentRuntimeSignal {
+                                    session_id: session_id.clone(),
+                                    runtime_epoch,
+                                    event: AgentRuntimeEvent::Observation(signal),
+                                });
+                            }
+                            if let Some(plan) = normalize_codex_plan_update(text) {
+                                let _ = signals.send(AgentRuntimeSignal {
+                                    session_id: session_id.clone(),
+                                    runtime_epoch,
+                                    event: AgentRuntimeEvent::PlanUpdated(plan),
+                                });
+                            }
+                            if let Some(settings) = normalize_codex_thread_settings(text) {
+                                let _ = signals.send(AgentRuntimeSignal {
+                                    session_id: session_id.clone(),
+                                    runtime_epoch,
+                                    event: AgentRuntimeEvent::ThreadSettingsObserved(settings),
+                                });
+                            }
                         }
                     }
                     if downstream_write.send(message).await.is_err() { break; }
@@ -1168,6 +1279,7 @@ async fn proxy_codex_connection(
             frame = downstream_read.next() => match frame {
                 Some(Ok(message)) => {
                     if let Message::Text(text) = &message {
+                        thread_scope.observe_downstream_request(text);
                         observe_codex_thread_resume_request(text, &mut pending_thread_resumes);
                     }
                     if upstream_write.send(message).await.is_err() { break; }
@@ -2413,6 +2525,72 @@ mod tests {
                 },),
             }
         );
+        drop(client);
+        bridge.shutdown().unwrap();
+        upstream.join().unwrap();
+    }
+
+    #[test]
+    fn codex_bridge_ignores_runtime_facts_from_an_unrelated_thread() {
+        use tokio_tungstenite::tungstenite::{Message, accept, connect};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let upstream_endpoint = format!("ws://{}", listener.local_addr().unwrap());
+        let resume_request =
+            r#"{"id":42,"method":"thread/resume","params":{"threadId":"thread-main"}}"#;
+        let resume_response = r#"{"id":42,"result":{"thread":{"id":"thread-main"}}}"#;
+        let history_probe_status = r#"{"method":"thread/status/changed","params":{"threadId":"thread-history-probe","status":{"type":"notLoaded"}}}"#;
+        let main_status = r#"{"method":"thread/status/changed","params":{"threadId":"thread-main","status":{"type":"idle"}}}"#;
+        let upstream = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut socket = accept(stream).unwrap();
+            assert_eq!(socket.read().unwrap(), Message::Text(resume_request.into()));
+            socket.send(Message::Text(resume_response.into())).unwrap();
+            socket
+                .send(Message::Text(history_probe_status.into()))
+                .unwrap();
+            socket.send(Message::Text(main_status.into())).unwrap();
+            let _ = socket.close(None);
+        });
+        let (signals, received) = std::sync::mpsc::channel();
+        let bridge =
+            CodexAppServerBridge::start(upstream_endpoint, "session-codex".into(), 77, signals)
+                .unwrap();
+        let (mut client, _) = connect(bridge.endpoint()).unwrap();
+        client.send(Message::Text(resume_request.into())).unwrap();
+        assert_eq!(
+            client.read().unwrap(),
+            Message::Text(resume_response.into())
+        );
+        assert_eq!(
+            client.read().unwrap(),
+            Message::Text(history_probe_status.into())
+        );
+        assert_eq!(client.read().unwrap(), Message::Text(main_status.into()));
+
+        assert_eq!(
+            received.recv_timeout(Duration::from_secs(2)).unwrap(),
+            AgentRuntimeSignal {
+                session_id: "session-codex".into(),
+                runtime_epoch: 77,
+                event: AgentRuntimeEvent::ResumeRefObserved(
+                    ResumeRef::for_provider(ResumeProvider::Codex, "thread-main".into()).unwrap(),
+                ),
+            }
+        );
+        assert_eq!(
+            received.recv_timeout(Duration::from_secs(2)).unwrap(),
+            AgentRuntimeSignal {
+                session_id: "session-codex".into(),
+                runtime_epoch: 77,
+                event: AgentRuntimeEvent::Observation(AgentSignal::Stopped),
+            }
+        );
+        assert!(matches!(
+            received.recv_timeout(Duration::from_millis(100)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ));
+
         drop(client);
         bridge.shutdown().unwrap();
         upstream.join().unwrap();

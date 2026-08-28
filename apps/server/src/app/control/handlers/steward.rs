@@ -2,6 +2,7 @@ use std::sync::atomic::Ordering;
 
 use serde_json::{Value, json};
 use termloop_contract::current::{self as protocol, ProjectionTopic};
+use termloop_core::companion_integrations::assistant_session::StewardWakeAdmission;
 
 use super::super::super::invalidation::InvalidationRequest;
 use super::super::super::{AppState, current_epoch_ms};
@@ -189,7 +190,7 @@ pub(in crate::app) async fn schedule_current_steward(
     wake_id: u64,
     reason: protocol::CompanionWakeReason,
     state: AppState,
-) -> Result<bool, termloop_core::CoreError> {
+) -> Result<StewardWakeAdmission, termloop_core::CoreError> {
     if state
         .core
         .lock()
@@ -201,15 +202,16 @@ pub(in crate::app) async fn schedule_current_steward(
             termloop_core::companion_integrations::assistant_session::compose_steward_wake(
                 steward_wake_kind(&reason),
             )?;
-        state
-            .core
-            .lock()
-            .await
-            .deliver_steward_wake(&project_id, generation, wake_id, &message)?;
-        return Ok(true);
+        let admission = state.core.lock().await.deliver_steward_wake(
+            &project_id,
+            generation,
+            wake_id,
+            &message,
+        )?;
+        return Ok(admission);
     }
     let Some(permit) = state.steward_launch_gate.try_admit(project_id.clone()) else {
-        return Ok(false);
+        return Ok(StewardWakeAdmission::Coalesced);
     };
     // A launch is an accepted handoff, not a completed process start. Remove
     // this exact wake before spawning; if execution fails, the task restores a
@@ -251,7 +253,7 @@ pub(in crate::app) async fn schedule_current_steward(
             }
         }
     });
-    Ok(true)
+    Ok(StewardWakeAdmission::Admitted)
 }
 
 fn steward_wake_kind(

@@ -149,7 +149,7 @@ fn branch_commit_cache_invalidation_advances_only_the_observation_sequence() {
 }
 
 #[test]
-fn managed_created_branch_uses_its_recorded_local_base_when_no_remote_exists() {
+fn managed_created_branch_tracks_its_current_local_base_when_no_remote_exists() {
     let mut fixture = Fixture::new();
     let (task_id, destination, _, _) = provision_cleanup_fixture(&mut fixture);
     let runner = GitRunner::discover().unwrap();
@@ -181,8 +181,8 @@ fn managed_created_branch_uses_its_recorded_local_base_when_no_remote_exists() {
     assert_eq!(summary[0]["count"], 2);
     assert_eq!(summary[0]["base_ref"], "refs/heads/main");
     assert_eq!(summary[0]["freshness"], "fresh");
-    assert_eq!(summary[0]["not_in_base"]["count"], 2);
-    assert_eq!(summary[0]["not_in_base"]["base_ref"], "refs/heads/main");
+    assert_eq!(summary[0]["not_in_base"]["count"], Value::Null);
+    assert_eq!(summary[0]["not_in_base"]["reason"], "baseRefUnavailable");
 
     let mut commits = None;
     for _ in 0..4 {
@@ -205,34 +205,6 @@ fn managed_created_branch_uses_its_recorded_local_base_when_no_remote_exists() {
     let commits = commits.expect("branch commit observation repeatedly timed out");
     assert_eq!(commits["base_ref"], "refs/heads/main");
     assert_eq!(commits["commits"].as_array().unwrap().len(), 2);
-
-    termloop_gitio::test_support::merge_fast_forward(
-        &runner,
-        &fixture.project_directory,
-        "feature/cleanup",
-    )
-    .unwrap();
-    let common_dir = runner
-        .inspect_repository(&fixture.project_directory)
-        .unwrap()
-        .common_dir;
-    fixture
-        .runtime
-        .invalidate_branch_commit_summaries_for_common_dir(&common_dir)
-        .unwrap();
-    let plan = fixture
-        .runtime
-        .plan_task_branch_commit_summary_list(json!({
-            "projectId": fixture.project_id,
-            "taskIds": [task_id],
-        }))
-        .unwrap();
-    let merged_summary = fixture
-        .runtime
-        .complete_task_branch_commit_summary_list(plan.observe_with_runner(&runner))
-        .unwrap();
-    assert_eq!(merged_summary[0]["count"], 2);
-    assert_eq!(merged_summary[0]["not_in_base"]["count"], 0);
 
     let plan = fixture
         .runtime
@@ -276,6 +248,44 @@ fn managed_created_branch_uses_its_recorded_local_base_when_no_remote_exists() {
         .unwrap();
     assert_eq!(all_diff["state"], "patch");
     assert!(all_diff["patch"].as_str().unwrap().contains("feature 2"));
+
+    termloop_gitio::test_support::merge_fast_forward(
+        &runner,
+        &fixture.project_directory,
+        "feature/cleanup",
+    )
+    .unwrap();
+    let common_dir = runner
+        .inspect_repository(&fixture.project_directory)
+        .unwrap()
+        .common_dir;
+    fixture
+        .runtime
+        .invalidate_branch_commit_summaries_for_common_dir(&common_dir)
+        .unwrap();
+    let plan = fixture
+        .runtime
+        .plan_task_branch_commit_summary_list(json!({
+            "projectId": fixture.project_id,
+            "taskIds": [task_id],
+        }))
+        .unwrap();
+    let merged_summary = fixture
+        .runtime
+        .complete_task_branch_commit_summary_list(plan.observe_with_runner(&runner))
+        .unwrap();
+    assert_eq!(merged_summary[0]["count"], 0);
+    assert_eq!(merged_summary[0]["not_in_base"]["count"], Value::Null);
+
+    let plan = fixture
+        .runtime
+        .plan_task_branch_commit_list(json!({ "taskId": task_id }))
+        .unwrap();
+    let commits = fixture
+        .runtime
+        .complete_task_branch_commit_list(plan.observe())
+        .unwrap();
+    assert!(commits["commits"].as_array().unwrap().is_empty());
     runner
         .remove_worktree_non_force(&fixture.project_directory, &destination)
         .unwrap();

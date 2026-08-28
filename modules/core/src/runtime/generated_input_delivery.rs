@@ -205,6 +205,18 @@ impl GeneratedInputDeliveryRuntime {
             .map(|delivery| delivery.submission.provenance())
     }
 
+    pub(crate) fn contains_submission(
+        &self,
+        session_id: &str,
+        runtime_epoch: u64,
+        submission: &GeneratedTerminalSubmission,
+    ) -> bool {
+        self.deliveries.get(session_id).is_some_and(|delivery| {
+            delivery.runtime_epoch == runtime_epoch
+                && crate::same_generated_terminal_submission(&delivery.submission, submission)
+        })
+    }
+
     pub fn accepts_new_submission(&self, session_id: &str, runtime_epoch: u64) -> bool {
         self.deliveries.get(session_id).is_none_or(|delivery| {
             delivery.runtime_epoch == runtime_epoch && delivery.state.accepts_replacement()

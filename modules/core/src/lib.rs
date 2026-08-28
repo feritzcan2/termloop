@@ -595,6 +595,15 @@ pub(crate) fn test_generated_terminal_submission(
     .unwrap()
 }
 
+fn same_generated_terminal_submission(
+    left: &termloop_invocation::GeneratedTerminalSubmission,
+    right: &termloop_invocation::GeneratedTerminalSubmission,
+) -> bool {
+    left.provenance() == right.provenance()
+        && left.paste_input() == right.paste_input()
+        && left.submit_input() == right.submit_input()
+}
+
 impl CoreRuntime {
     pub fn open(
         state_path: impl Into<std::path::PathBuf>,
@@ -1063,12 +1072,43 @@ impl CoreRuntime {
     }
 
     pub(crate) fn prune_stale_pending_assistant_wake_deliveries(&mut self) {
+        let sessions = self.store.sessions();
         let generated_input_deliveries = &self.generated_input_deliveries;
+        let agent_observations = &self.agent_observations;
+        let pending_generated_input_queues = &self.pending_generated_input_queues;
         self.pending_assistant_wake_deliveries
             .retain(|session_id, pending| {
-                generated_input_deliveries
-                    .state(session_id, pending.runtime_epoch())
-                    .is_some()
+                let runtime_epoch = pending.runtime_epoch();
+                let submission = pending.submission();
+                let session_is_current = pending.session_id() == session_id
+                    && sessions.iter().any(|session| {
+                        session.id == *session_id
+                            && session.runtime_epoch == runtime_epoch
+                            && session.lifecycle_state == "running"
+                    });
+                session_is_current
+                    && (generated_input_deliveries.contains_submission(
+                        session_id,
+                        runtime_epoch,
+                        submission,
+                    ) || agent_observations
+                        .get(session_id)
+                        .is_some_and(|capability| {
+                            capability.runtime_epoch == runtime_epoch
+                                && capability.pending_generated_input.as_ref().is_some_and(
+                                    |candidate| {
+                                        same_generated_terminal_submission(candidate, submission)
+                                    },
+                                )
+                        })
+                        || pending_generated_input_queues
+                            .get(session_id)
+                            .is_some_and(|queue| {
+                                queue.runtime_epoch == runtime_epoch
+                                    && queue.submissions.iter().any(|candidate| {
+                                        same_generated_terminal_submission(candidate, submission)
+                                    })
+                            }))
             });
         debug_assert!(self.pending_assistant_wake_deliveries.len() <= 256);
     }
@@ -2652,6 +2692,11 @@ mod tests {
                 wake_id: 11,
                 session_id: "steward-session".into(),
                 runtime_epoch: 8,
+                submission: companion_integrations::assistant_session::compose_steward_wake(
+                    companion_integrations::assistant_session::StewardWakeKind::ConfigurationChanged,
+                )
+                .unwrap()
+                .terminal_submission(),
                 confirmation_queued: false,
             },
         );

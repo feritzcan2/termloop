@@ -2304,7 +2304,9 @@ button.history-row-main { cursor: pointer; }
 /* Create-Task dialog: the worktree plan is one card — branch, base, and folder
    as hairline rows of a single object — with a switch to skip it and one quiet
    line to flip between a new and an existing branch. Start targets are
-   pressed-state chips, not checkboxes. */
+   pressed-state chips, not checkboxes; each selected agent exposes its own
+   concrete launch settings directly below them. */
+.task-create-dialog .dialog-body { max-height: min(72vh,650px); overflow-y: auto; overscroll-behavior: contain; }
 .plan-head { display: flex; align-items: baseline; gap: 8px; margin: 17px 0 7px; }
 .plan-heading { color: #636d71; font-size: 10px; font-weight: 750; letter-spacing: .13em; text-transform: uppercase; }
 .plan-sub { overflow: hidden; color: var(--text-muted); font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
@@ -2330,6 +2332,11 @@ button.history-row-main { cursor: pointer; }
 .start-chip.on { border-color: rgba(124,92,255,.55); background: var(--accent-wash); color: #e2dbff; }
 .start-chip.on svg { color: var(--accent-strong); }
 .start-chip:disabled { opacity: .45; }
+.start-agent-configurations { display: grid; gap: 6px; margin-top: 8px; }
+.start-agent-configuration { display: grid; gap: 8px; padding: 9px; border: 1px solid var(--border); border-radius: 9px; background: rgba(0,0,0,.12); }
+.start-agent-configuration-head { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font: 700 9.5px/1 var(--font-ui); }
+.start-agent-configuration-head svg { width: 11px; height: 11px; color: var(--accent-strong); }
+.start-agent-configuration .task-automation-launch-options { grid-template-columns: minmax(0,1.25fr) minmax(125px,1fr) minmax(88px,.75fr); }
 
 /* A relocatable helper row carries connector + drag handle + content: three
    in-flow children need three columns, or the content wraps into a broken
