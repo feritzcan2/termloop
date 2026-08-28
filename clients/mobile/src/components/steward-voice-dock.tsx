@@ -1,19 +1,15 @@
 import {
   AudioModule,
-  RecordingPresets,
-  type RecordingStatus,
   setAudioModeAsync,
   useAudioPlayer,
   useAudioPlayerStatus,
-  useAudioRecorder,
-  useAudioRecorderState,
+  useAudioStream,
 } from "expo-audio";
 import { File, Paths } from "expo-file-system";
 import { useGlobalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -27,12 +23,13 @@ import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
 import { useOverview } from "@/features/overview/overview-store";
 import {
-  createVoiceRecordingCompletion,
-  startVoiceRecording,
+  appendVoicePcmBuffer,
+  createVoicePcmCapture,
+  createVoicePcmWav,
   stewardReplyAfter,
   updateVoiceSilence,
   voiceProjectId,
-  type VoiceRecordingCompletion,
+  type VoicePcmCapture,
   type VoiceRouteParams,
   type VoiceSilenceState,
 } from "@/presentation/steward-voice-presentation";
@@ -44,13 +41,9 @@ type VoicePhase = "idle" | "permission" | "listening" | "transcribing" | "waitin
 
 const REPLY_POLL_MS = 1_250;
 const REPLY_TIMEOUT_MS = 90_000;
-const RECORDING_FINALIZE_TIMEOUT_MS = 2_000;
-const STEWARD_RECORDING = {
-  ...RecordingPresets.HIGH_QUALITY,
-  numberOfChannels: 1,
-  isMeteringEnabled: true,
-};
-const STEWARD_RECORDING_MEDIA_TYPE = Platform.OS === "web" ? "audio/webm" : "audio/m4a";
+const PCM_STREAM_START_TIMEOUT_MS = 2_000;
+const MIN_CAPTURE_MS = 250;
+const STEWARD_RECORDING_MEDIA_TYPE = "audio/wav";
 
 /// A global, deliberately small microphone. It expands in place instead of
 /// navigating away from the user's current Task/Session, then runs one bounded
@@ -71,15 +64,10 @@ export function StewardVoiceDock() {
   const [error, setError] = useState<string | undefined>(undefined);
   const [heard, setHeard] = useState<string | undefined>(undefined);
   const [reply, setReply] = useState<StewardMessage | undefined>(undefined);
-
-  const recordingCompletionRef = useRef<VoiceRecordingCompletion | undefined>(undefined);
-  const recorder = useAudioRecorder(
-    STEWARD_RECORDING,
-    (status: RecordingStatus) => recordingCompletionRef.current?.receive(status),
-  );
-  const recorderState = useAudioRecorderState(recorder, 100);
-  const player = useAudioPlayer(null, { updateInterval: 100 });
-  const playerStatus = useAudioPlayerStatus(player);
+  const [recorderState, setRecorderState] = useState<{ durationMillis: number; metering: number | undefined }>({
+    durationMillis: 0,
+    metering: undefined,
+  });
 
   const phaseRef = useRef<VoicePhase>("idle");
   const expandedRef = useRef(false);
@@ -89,6 +77,25 @@ export function StewardVoiceDock() {
   const speechFileRef = useRef<File | undefined>(undefined);
   const speakingConversationRef = useRef(0);
   const activeTargetRef = useRef<{ connectionId: string; projectId: string } | undefined>(undefined);
+  const pcmCaptureRef = useRef<VoicePcmCapture>(createVoicePcmCapture());
+  const capturingRef = useRef(false);
+  const firstBufferRef = useRef<(() => void) | undefined>(undefined);
+
+  const { stream } = useAudioStream({
+    sampleRate: 16_000,
+    channels: 1,
+    encoding: "int16",
+    onBuffer(buffer) {
+      if (!capturingRef.current) return;
+      const capture = appendVoicePcmBuffer(pcmCaptureRef.current, buffer);
+      pcmCaptureRef.current = capture;
+      setRecorderState({ durationMillis: capture.durationMillis, metering: capture.metering });
+      firstBufferRef.current?.();
+      firstBufferRef.current = undefined;
+    },
+  });
+  const player = useAudioPlayer(null, { updateInterval: 100 });
+  const playerStatus = useAudioPlayerStatus(player);
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? projects[0],
@@ -114,14 +121,15 @@ export function StewardVoiceDock() {
     setExpanded(false);
     player.pause();
     cleanSpeechFile();
-    if (recorder.isRecording) void recorder.stop().catch(() => undefined);
+    capturingRef.current = false;
+    firstBufferRef.current = undefined;
+    if (stream.isStreaming) stream.stop();
     stoppingRef.current = false;
     activeTargetRef.current = undefined;
-    recordingCompletionRef.current = undefined;
     transition("idle");
     setError(undefined);
     void setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
-  }, [cleanSpeechFile, player, recorder, transition]);
+  }, [cleanSpeechFile, player, stream, transition]);
 
   useEffect(() => {
     if (!expandedRef.current && routeProjectId !== undefined) setSelectedProjectId(routeProjectId);
@@ -157,26 +165,34 @@ export function StewardVoiceDock() {
       if (conversation !== conversationRef.current || !expandedRef.current) return;
       player.pause();
       cleanSpeechFile();
-      await setAudioModeAsync({
-        playsInSilentMode: true,
-        interruptionMode: "doNotMix",
-        allowsRecording: true,
-        shouldPlayInBackground: false,
-        shouldRouteThroughEarpiece: false,
-      });
-      await recorder.prepareToRecordAsync();
-      if (conversation !== conversationRef.current || !expandedRef.current) return;
       silenceRef.current = { heardVoice: false, lastVoiceAtMs: 0 };
       stoppingRef.current = false;
-      recordingCompletionRef.current = createVoiceRecordingCompletion();
-      await startVoiceRecording(recorder);
+      pcmCaptureRef.current = createVoicePcmCapture();
+      setRecorderState({ durationMillis: 0, metering: undefined });
+      capturingRef.current = true;
+      const firstBuffer = new Promise<void>((resolve) => { firstBufferRef.current = resolve; });
+      await stream.start();
+      await Promise.race([
+        firstBuffer,
+        delay(PCM_STREAM_START_TIMEOUT_MS).then(() => {
+          throw new Error("Mikrofondan ses verisi alınamadı. Yeniden dene.");
+        }),
+      ]);
+      if (conversation !== conversationRef.current || !expandedRef.current) {
+        capturingRef.current = false;
+        if (stream.isStreaming) stream.stop();
+        return;
+      }
       transition("listening");
     } catch (cause) {
+      capturingRef.current = false;
+      firstBufferRef.current = undefined;
+      if (stream.isStreaming) stream.stop();
       if (conversation !== conversationRef.current) return;
       setError(cause instanceof Error ? cause.message : "Mikrofon başlatılamadı.");
       transition("error");
     }
-  }, [cleanSpeechFile, connections.selected?.id, player, recorder, selectedProject, transition]);
+  }, [cleanSpeechFile, connections.selected?.id, player, selectedProject, stream, transition]);
 
   const playReply = useCallback(async (
     conversation: number,
@@ -232,19 +248,16 @@ export function StewardVoiceDock() {
     const projectId = activeTargetRef.current?.projectId;
     transition("transcribing");
     try {
-      const completion = recordingCompletionRef.current;
-      if (completion === undefined) throw new Error("Kaydedilen ses hazırlanamadı.");
-      await recorder.stop();
-      const uri = await Promise.race([
-        completion.finished,
-        delay(RECORDING_FINALIZE_TIMEOUT_MS).then(() => {
-          throw new Error("Kaydedilen ses tamamlanamadı. Yeniden dene.");
-        }),
-      ]);
+      capturingRef.current = false;
+      stream.stop();
+      const capture = pcmCaptureRef.current;
+      if (capture.durationMillis < MIN_CAPTURE_MS) {
+        throw new Error("Yeterli ses kaydedilemedi. Yeniden konuş.");
+      }
       if (connectionId === undefined || projectId === undefined) {
         throw new Error("Kaydedilen ses hazırlanamadı.");
       }
-      const bytes = await new File(uri).arrayBuffer();
+      const bytes = createVoicePcmWav(capture);
       const appended = await runtime.steward.sendVoice(connectionId, projectId, {
         bytes,
         mediaType: STEWARD_RECORDING_MEDIA_TYPE,
@@ -263,7 +276,7 @@ export function StewardVoiceDock() {
     } finally {
       stoppingRef.current = false;
     }
-  }, [playReply, recorder, runtime, transition, waitForReply]);
+  }, [playReply, runtime, stream, transition, waitForReply]);
 
   useEffect(() => {
     if (phase !== "listening") return;

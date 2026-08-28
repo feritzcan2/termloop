@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  createVoiceRecordingCompletion,
-  startVoiceRecording,
+  appendVoicePcmBuffer,
+  createVoicePcmCapture,
+  createVoicePcmWav,
   stewardReplyAfter,
   updateVoiceSilence,
   voiceProjectId,
@@ -22,47 +23,25 @@ const overview = {
 };
 
 describe("Steward voice presentation", () => {
-  it("uses regular recording and waits for the native recorder to start", async () => {
-    let recordCalls = 0;
-    let checks = 0;
-    const recorder = {
-      record() { recordCalls += 1; },
-      get isRecording() {
-        checks += 1;
-        return checks >= 2;
-      },
-    };
+  it("accumulates native PCM duration and metering before creating a WAV", () => {
+    const samples = new Int16Array([16_384, -16_384, 16_384, -16_384]);
+    const capture = appendVoicePcmBuffer(createVoicePcmCapture(), {
+      data: samples.buffer,
+      sampleRate: 4,
+      channels: 1,
+    });
 
-    await expect(startVoiceRecording(recorder, async () => undefined)).resolves.toBeUndefined();
-    expect(recordCalls).toBe(1);
-  });
+    expect(capture.durationMillis).toBe(1_000);
+    expect(capture.metering).toBeCloseTo(-6.02, 1);
 
-  it("rejects when the native recorder never starts", async () => {
-    const recorder = { record() {}, isRecording: false };
-
-    await expect(startVoiceRecording(recorder, async () => undefined))
-      .rejects.toThrow("Mikrofon kaydı başlatılamadı");
-  });
-
-  it("waits for the native recorder finish event before exposing its file", async () => {
-    const completion = createVoiceRecordingCompletion();
-    let resolved = false;
-    completion.finished.then(() => { resolved = true; });
-
-    completion.receive({ isFinished: false, hasError: false, error: null, url: "file:///partial.wav" });
-    await Promise.resolve();
-    expect(resolved).toBe(false);
-
-    completion.receive({ isFinished: true, hasError: false, error: null, url: "file:///final.wav" });
-    await expect(completion.finished).resolves.toBe("file:///final.wav");
-  });
-
-  it("rejects a failed native recording instead of uploading partial bytes", async () => {
-    const completion = createVoiceRecordingCompletion();
-
-    completion.receive({ isFinished: true, hasError: true, error: "encoder stopped", url: null });
-
-    await expect(completion.finished).rejects.toThrow("encoder stopped");
+    const wav = createVoicePcmWav(capture);
+    const view = new DataView(wav);
+    expect(ascii(view, 0, 4)).toBe("RIFF");
+    expect(ascii(view, 8, 4)).toBe("WAVE");
+    expect(view.getUint32(24, true)).toBe(4);
+    expect(view.getUint16(22, true)).toBe(1);
+    expect(view.getUint32(40, true)).toBe(samples.byteLength);
+    expect(new Int16Array(wav, 44)).toEqual(samples);
   });
 
   it("targets the route's Project, Task, or Session before falling back", () => {
@@ -87,3 +66,7 @@ describe("Steward voice presentation", () => {
     expect(updateVoiceSilence({ heardVoice: false, lastVoiceAtMs: 0 }, 30_000, -60).shouldStop).toBe(true);
   });
 });
+
+function ascii(view: DataView, offset: number, length: number): string {
+  return Array.from({ length }, (_, index) => String.fromCharCode(view.getUint8(offset + index))).join("");
+}

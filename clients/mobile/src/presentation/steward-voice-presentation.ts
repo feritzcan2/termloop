@@ -16,69 +16,84 @@ export interface VoiceSilenceUpdate {
   shouldStop: boolean;
 }
 
-export interface VoiceRecordingFinishStatus {
-  isFinished: boolean;
-  hasError: boolean;
-  error: string | null;
-  url: string | null;
+export interface VoicePcmBuffer {
+  data: ArrayBuffer;
+  sampleRate: number;
+  channels: number;
 }
 
-export interface VoiceRecordingCompletion {
-  finished: Promise<string>;
-  receive(status: VoiceRecordingFinishStatus): void;
-}
-
-export interface VoiceRecorderStarter {
-  readonly isRecording: boolean;
-  record(): void;
+export interface VoicePcmCapture {
+  chunks: readonly Uint8Array[];
+  byteLength: number;
+  sampleRate: number;
+  channels: number;
+  durationMillis: number;
+  metering: number | undefined;
 }
 
 const VOICE_THRESHOLD_DB = -43;
 const MIN_TURN_MS = 800;
 const SILENCE_AFTER_VOICE_MS = 1_250;
 const MAX_TURN_MS = 30_000;
-const RECORDING_START_POLL_MS = 50;
-const RECORDING_START_ATTEMPTS = 5;
 
-/// Expo's bounded iOS recording path reports an internal recording state even
-/// when AVAudioRecorder refuses to start. Use the regular recording path and
-/// verify the native recorder property before exposing a listening UI.
-export async function startVoiceRecording(
-  recorder: VoiceRecorderStarter,
-  wait: (milliseconds: number) => Promise<void> = delay,
-): Promise<void> {
-  recorder.record();
-  for (let attempt = 0; attempt < RECORDING_START_ATTEMPTS; attempt += 1) {
-    if (recorder.isRecording) return;
-    await wait(RECORDING_START_POLL_MS);
-  }
-  throw new Error("Mikrofon kaydı başlatılamadı. Yeniden dene.");
+export function createVoicePcmCapture(): VoicePcmCapture {
+  return {
+    chunks: [],
+    byteLength: 0,
+    sampleRate: 0,
+    channels: 0,
+    durationMillis: 0,
+    metering: undefined,
+  };
 }
 
-/// Native recorder stop calls return before every platform has closed and
-/// finalized its output file. Resolve only from the recorder's completion
-/// event so the caller never uploads a header-only recording.
-export function createVoiceRecordingCompletion(): VoiceRecordingCompletion {
-  let resolve!: (url: string) => void;
-  let reject!: (cause: Error) => void;
-  let settled = false;
-  const finished = new Promise<string>((onResolve, onReject) => {
-    resolve = onResolve;
-    reject = onReject;
-  });
+/// Accumulates native signed 16-bit PCM buffers and derives the same dB meter
+/// used by the silence detector without relying on AVAudioRecorder's encoder.
+export function appendVoicePcmBuffer(
+  current: VoicePcmCapture,
+  buffer: VoicePcmBuffer,
+): VoicePcmCapture {
+  const chunk = new Uint8Array(buffer.data.slice(0));
+  const byteLength = current.byteLength + chunk.byteLength;
+  const bytesPerSecond = buffer.sampleRate * buffer.channels * 2;
   return {
-    finished,
-    receive(status) {
-      if (!status.isFinished || settled) return;
-      settled = true;
-      const error = status.error?.trim();
-      if (status.hasError || status.url === null) {
-        reject(new Error(error && error.length > 0 ? error : "Kaydedilen ses tamamlanamadı."));
-        return;
-      }
-      resolve(status.url);
-    },
+    chunks: [...current.chunks, chunk],
+    byteLength,
+    sampleRate: buffer.sampleRate,
+    channels: buffer.channels,
+    durationMillis: bytesPerSecond > 0 ? byteLength / bytesPerSecond * 1_000 : 0,
+    metering: pcm16Decibels(chunk),
   };
+}
+
+/// Wraps captured little-endian signed 16-bit PCM in a canonical WAV container
+/// accepted by the Steward transcription endpoint.
+export function createVoicePcmWav(capture: VoicePcmCapture): ArrayBuffer {
+  if (capture.byteLength === 0 || capture.sampleRate <= 0 || capture.channels <= 0) {
+    throw new Error("Kaydedilen ses hazırlanamadı.");
+  }
+  const output = new ArrayBuffer(44 + capture.byteLength);
+  const view = new DataView(output);
+  writeAscii(view, 0, "RIFF");
+  view.setUint32(4, 36 + capture.byteLength, true);
+  writeAscii(view, 8, "WAVE");
+  writeAscii(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, capture.channels, true);
+  view.setUint32(24, capture.sampleRate, true);
+  view.setUint32(28, capture.sampleRate * capture.channels * 2, true);
+  view.setUint16(32, capture.channels * 2, true);
+  view.setUint16(34, 16, true);
+  writeAscii(view, 36, "data");
+  view.setUint32(40, capture.byteLength, true);
+  const bytes = new Uint8Array(output);
+  let offset = 44;
+  for (const chunk of capture.chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return output;
 }
 
 /// Keeps the global microphone pointed at the Project represented by the route.
@@ -134,6 +149,21 @@ function scalar(value: string | readonly string[] | undefined): string | undefin
   return typeof value === "string" ? value : value?.[0];
 }
 
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+function pcm16Decibels(bytes: Uint8Array): number | undefined {
+  const sampleCount = Math.floor(bytes.byteLength / 2);
+  if (sampleCount === 0) return undefined;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let squares = 0;
+  for (let index = 0; index < sampleCount; index += 1) {
+    const normalized = view.getInt16(index * 2, true) / 32_768;
+    squares += normalized * normalized;
+  }
+  const rootMeanSquare = Math.sqrt(squares / sampleCount);
+  return rootMeanSquare > 0 ? 20 * Math.log10(rootMeanSquare) : -160;
+}
+
+function writeAscii(view: DataView, offset: number, value: string): void {
+  for (let index = 0; index < value.length; index += 1) {
+    view.setUint8(offset + index, value.charCodeAt(index));
+  }
 }
