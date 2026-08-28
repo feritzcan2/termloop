@@ -1065,6 +1065,24 @@ mod tests {
         let old_capability = old_claim.capability.unwrap();
         assert_eq!(old_claim.result["step"]["milestoneId"], "pr-open");
         assert_eq!(old_claim.result["step"]["tasks"][0]["taskId"], "task-1");
+        assert_eq!(
+            old_claim.result["step"]["taskRead"],
+            json!({
+                "requiredBeforeVerdict": true,
+                "tool": "task_read",
+                "arguments": {
+                    "taskId": "task-1",
+                    "checkId": "task-1-check",
+                },
+            })
+        );
+        assert_eq!(
+            runtime
+                .tracker_check_task_id(&old_capability)
+                .unwrap()
+                .as_deref(),
+            Some("task-1")
+        );
 
         // Closing the focused Task changes the assignment to task-2 without
         // changing the milestone. Simulate the durable mutation without the

@@ -1101,19 +1101,15 @@ impl CoreRuntime {
             .is_ok()
     }
 
-    /// Proves that an authenticated Worker's current check is the Playbook
-    /// step claim for this exact Task. Server-side Task-read receipts use this
-    /// before a later verdict is admitted.
-    pub fn tracker_check_is_current_for_task(
+    /// Returns the exact focused Task for a current Playbook step check, or
+    /// `None` for a current scheduled Routine. Server-side Task-read receipts
+    /// use this to prevent one Task's read from authorizing another's verdict.
+    pub fn tracker_check_task_id(
         &self,
         capability: &TrackerCheckCapability,
-        task_id: &str,
-    ) -> bool {
-        self.tracker_check_is_current(capability)
-            && self
-                .claimed_step_task_id(&capability.tracker_id)
-                .as_deref()
-                == Some(task_id)
+    ) -> Result<Option<String>, CoreError> {
+        self.validate_current_check(capability, capability.claimed_at_epoch_ms)?;
+        Ok(self.claimed_step_task_id(&capability.tracker_id))
     }
 
     pub fn release_worker_routine_claim(&mut self, capability: &TrackerCheckCapability) -> bool {
@@ -1480,6 +1476,14 @@ fn assigned_routine_result(
             "approver": step.milestone.approver,
             "retryDelaySeconds": step.milestone.retry_delay_seconds,
             "finishWith": "worker_report_step_verdicts",
+            "taskRead": {
+                "requiredBeforeVerdict": true,
+                "tool": "task_read",
+                "arguments": {
+                    "taskId": step.waiting[0].task_id,
+                    "checkId": capability.check_id,
+                },
+            },
             "tasks": step
                 .waiting
                 .iter()
@@ -1972,6 +1976,7 @@ mod tests {
             Err(CoreError::RevisionConflict)
         ));
         assert!(runtime.tracker_check_is_current(&first));
+        assert_eq!(runtime.tracker_check_task_id(&first).unwrap(), None);
 
         let finding = WorkerRoutineFinding {
             id: "finding-1".into(),

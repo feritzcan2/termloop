@@ -119,7 +119,7 @@ const ROUTINE_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.playbook",
-    version: 12,
+    version: 13,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.playbook.md"),
 };
 
@@ -131,7 +131,7 @@ const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const WORKER_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.worker.executor",
-    version: 16,
+    version: 17,
     authored_body: include_str!("../../../resources/prompts/builtin.worker.executor.md"),
 };
 
@@ -4057,8 +4057,8 @@ mod tests {
         let launch = prompt_improver_launch(target);
         let delivered = launch.delivered_prompt().unwrap();
 
-        assert_eq!(template.version, 12);
-        assert_eq!(launch.provenance().template_version, 12);
+        assert_eq!(template.version, 13);
+        assert_eq!(launch.provenance().template_version, 13);
         for expected in [
             "two compact review",
             "show the complete normal path as one readable arrow sequence",
@@ -4072,6 +4072,8 @@ mod tests {
             "Every saved pipeline contains exactly",
             "Every `check` contains exactly",
             "never send probe",
+            "authenticated scoped",
+            "Project checkout cwd or",
         ] {
             assert!(delivered.contains(expected), "missing {expected:?}");
         }
@@ -6016,7 +6018,7 @@ mod tests {
     #[test]
     fn pipeline_prompts_treat_a_step_title_as_a_label_not_a_yes_no_contract() {
         let worker = executor_prompt(ExecutorRole::Worker).unwrap();
-        assert_eq!(worker.provenance().template_version, 16);
+        assert_eq!(worker.provenance().template_version, 17);
         assert!(
             worker
                 .authored_preview()
@@ -6036,6 +6038,18 @@ mod tests {
             worker
                 .authored_preview()
                 .contains("exactly one focused Task")
+        );
+        assert!(worker.authored_preview().contains("`step.tasks[0].taskId`"));
+        assert!(
+            worker
+                .authored_preview()
+                .contains("`step.taskRead.arguments`")
+        );
+        assert!(worker.authored_preview().contains("terminal's cwd or HEAD"));
+        assert!(
+            worker
+                .authored_preview()
+                .contains("rejects a step verdict unless")
         );
 
         let step = tracker_assignment_prompt(ExecutorRole::StepCheckTracker).unwrap();
