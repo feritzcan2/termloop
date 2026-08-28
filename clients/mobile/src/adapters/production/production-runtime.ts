@@ -52,7 +52,7 @@ const REPLAY_BATCH_SETTLE_MS = 16;
 const MAX_REPLAY_BATCH_BYTES = 1024 * 1024;
 const STEWARD_TRANSCRIPT_LIMIT = 60;
 const STEWARD_MESSAGE_LIMIT = 8_192;
-const STEWARD_VOICE_LIMIT_BYTES = 12 * 1024 * 1024;
+const STEWARD_VOICE_LIMIT_BYTES = 2 * 1024 * 1024;
 const STEWARD_SPEECH_LIMIT_BYTES = 10 * 1024 * 1024;
 const INITIAL_PROMPT_LIMIT = 4_096;
 const BRACKETED_PASTE_START = "\u001b[200~";
@@ -349,12 +349,6 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
         if (!validStewardVoiceClip(clip) || !validProjectId(projectId)) {
           throw new Error("This recording cannot be sent to the Steward.");
         }
-        const source = await request(clip.uri);
-        if (!source.ok) throw new Error("The recording could not be read.");
-        const body = await source.arrayBuffer();
-        if (body.byteLength === 0 || body.byteLength > STEWARD_VOICE_LIMIT_BYTES) {
-          throw new Error("Keep each voice turn under 12 MB.");
-        }
         const endpoint = gatewayHttpEndpoint(connection, "/steward/voice");
         endpoint.search = new URLSearchParams({ project: projectId }).toString();
         const response = await request(endpoint.toString(), {
@@ -363,7 +357,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
             authorization: `Bearer ${connection.controlToken}`,
             "content-type": clip.mediaType,
           },
-          body,
+          body: clip.bytes,
         });
         if (!response.ok) throw new Error(stewardVoiceFailure(response.status));
         const value: unknown = await response.json();
@@ -536,7 +530,7 @@ function validProjectId(value: string): boolean {
 }
 
 function validStewardVoiceClip(clip: StewardVoiceClip): boolean {
-  return clip.uri.length > 0 && clip.uri.length <= 4096
+  return clip.bytes.byteLength > 0 && clip.bytes.byteLength <= STEWARD_VOICE_LIMIT_BYTES
     && ["audio/m4a", "audio/mp4", "audio/webm"].includes(clip.mediaType);
 }
 
@@ -551,7 +545,7 @@ function gatewayHttpEndpoint(connection: SavedConnection, pathname: string): URL
 
 function stewardVoiceFailure(status: number): string {
   if (status === 401) return "This Mac no longer accepts the saved mobile credential.";
-  if (status === 413) return "Keep each voice turn under 12 MB.";
+  if (status === 413) return "Keep each voice turn under 2 MB.";
   if (status === 422) return "I could not hear speech in that recording.";
   if (status === 404) return "Your Mac's mobile access gateway needs an update.";
   return "Steward voice is unavailable. Try again shortly.";

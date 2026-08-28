@@ -194,7 +194,7 @@ describe("mock mobile runtime", () => {
     const appended = await runtime.steward.sendVoice(
       "connection-local-mac",
       "project-termloop-next",
-      { uri: "file:///mock.m4a", mediaType: "audio/m4a" },
+      { bytes: new Uint8Array([1, 2, 3]).buffer, mediaType: "audio/m4a" },
     );
     const transcript = await runtime.steward.transcript("connection-local-mac", "project-termloop-next");
 

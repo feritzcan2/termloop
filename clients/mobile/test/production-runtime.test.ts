@@ -994,9 +994,6 @@ describe("production pipeline, launch, and Steward adapters", () => {
     const calls: Array<{ url: string; authorization: string | null; contentType: string | null; body: unknown }> = [];
     const request: typeof fetch = async (input, init) => {
       const url = String(input);
-      if (url === "file:///voice-turn.m4a") {
-        return new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "audio/m4a" } });
-      }
       const headers = new Headers(init?.headers);
       calls.push({
         url,
@@ -1020,7 +1017,7 @@ describe("production pipeline, launch, and Steward adapters", () => {
     });
 
     await expect(runtime.steward.sendVoice(saved.id, fixtureProjects[0]!.id, {
-      uri: "file:///voice-turn.m4a",
+      bytes: new Uint8Array([1, 2, 3]).buffer,
       mediaType: "audio/m4a",
     })).resolves.toEqual({ transcript: "canlı merhaba", userSequence: 19 });
     await expect(runtime.steward.speech(saved.id, fixtureProjects[0]!.id, 20))
@@ -1030,6 +1027,7 @@ describe("production pipeline, launch, and Steward adapters", () => {
       url: `http://127.0.0.1:48100/steward/voice?project=${fixtureProjects[0]!.id}`,
       authorization: `Bearer ${saved.controlToken}`,
       contentType: "audio/m4a",
+      body: new Uint8Array([1, 2, 3]).buffer,
     });
     expect(calls[1]).toMatchObject({
       url: "http://127.0.0.1:48100/steward/speech",

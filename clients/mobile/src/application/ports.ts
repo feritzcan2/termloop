@@ -162,9 +162,10 @@ export interface AgentLaunchPort {
 export type StewardMessage = CompanionMessageDto;
 
 export interface StewardVoiceClip {
-  /// Device-local cache URI produced by the platform recorder. The production
-  /// adapter reads it and uploads only the bounded bytes; the URI is never sent.
-  uri: string;
+  /// Bounded recording bytes read by the platform-owned recorder UI. Keeping
+  /// file:// handling out of the transport avoids React Native fetch adapters
+  /// re-encoding or partially reading a freshly finalized native recording.
+  bytes: ArrayBuffer;
   mediaType: "audio/m4a" | "audio/mp4" | "audio/webm";
 }
 

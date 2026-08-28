@@ -223,8 +223,9 @@ export function StewardVoiceDock() {
       if (connectionId === undefined || projectId === undefined || uri === null) {
         throw new Error("Kaydedilen ses hazırlanamadı.");
       }
+      const bytes = await new File(uri).arrayBuffer();
       const appended = await runtime.steward.sendVoice(connectionId, projectId, {
-        uri,
+        bytes,
         mediaType: "audio/m4a",
       });
       if (conversation !== conversationRef.current || !expandedRef.current) return;
