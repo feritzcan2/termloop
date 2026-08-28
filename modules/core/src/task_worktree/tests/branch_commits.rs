@@ -181,8 +181,8 @@ fn managed_created_branch_tracks_its_current_local_base_when_no_remote_exists() 
     assert_eq!(summary[0]["count"], 2);
     assert_eq!(summary[0]["base_ref"], "refs/heads/main");
     assert_eq!(summary[0]["freshness"], "fresh");
-    assert_eq!(summary[0]["not_in_base"]["count"], Value::Null);
-    assert_eq!(summary[0]["not_in_base"]["reason"], "baseRefUnavailable");
+    assert_eq!(summary[0]["not_in_base"]["count"], 2);
+    assert_eq!(summary[0]["not_in_base"]["base_ref"], "refs/heads/main");
 
     let mut commits = None;
     for _ in 0..4 {
@@ -275,7 +275,7 @@ fn managed_created_branch_tracks_its_current_local_base_when_no_remote_exists() 
         .complete_task_branch_commit_summary_list(plan.observe_with_runner(&runner))
         .unwrap();
     assert_eq!(merged_summary[0]["count"], 0);
-    assert_eq!(merged_summary[0]["not_in_base"]["count"], Value::Null);
+    assert_eq!(merged_summary[0]["not_in_base"]["count"], 0);
 
     let plan = fixture
         .runtime

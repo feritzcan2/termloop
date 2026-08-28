@@ -26,6 +26,7 @@ fn counts_commits_not_reachable_from_the_local_remote_default_ref() {
         "refs/remotes/origin/HEAD",
         "refs/remotes/origin/main",
     ]);
+    repository.git(["update-ref", "refs/remotes/origin/development", "HEAD"]);
     repository.git(["checkout", "-b", "feature/count"]);
     for index in 1..=3 {
         fs::write(
@@ -84,6 +85,41 @@ fn counts_commits_not_reachable_from_the_local_remote_default_ref() {
         merged.state,
         BranchCommitState::Available { count: 0, .. }
     ));
+
+    let current_base = GitRunner::discover()
+        .unwrap()
+        .observe_branch_commit_summary_requests(
+            repository.root(),
+            &[
+                termloop_gitio::BranchCommitSummaryRequest::with_current_base(
+                    b"feature/count".to_vec(),
+                    b"refs/heads/development".to_vec(),
+                ),
+            ],
+        )
+        .unwrap()
+        .observations
+        .pop()
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        current_base.state,
+        BranchCommitState::Available { count: 3, ref base_ref }
+            if base_ref.as_bytes() == b"refs/remotes/origin/development"
+    ));
+    let current_base_commits = GitRunner::discover()
+        .unwrap()
+        .list_branch_commits_with_current_base(
+            repository.root(),
+            b"feature/count",
+            b"refs/heads/development",
+        )
+        .unwrap();
+    assert_eq!(current_base_commits.commits.len(), 3);
+    assert_eq!(
+        current_base_commits.base_ref.as_bytes(),
+        b"refs/remotes/origin/development"
+    );
 
     let recorded = GitRunner::discover()
         .unwrap()
@@ -159,10 +195,8 @@ fn no_remote_uses_only_the_caller_proven_exact_local_base() {
     ));
     assert!(matches!(
         observed.not_in_base,
-        BranchCommitState::Unavailable {
-            reason: BranchCommitUnavailable::BaseRefUnavailable,
-            ..
-        }
+        BranchCommitState::Available { count: 2, ref base_ref }
+            if base_ref.as_bytes() == b"refs/heads/main"
     ));
     let managed = runner
         .observe_branch_commit_summary_with_recorded_base(

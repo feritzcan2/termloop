@@ -136,6 +136,21 @@ impl GitRunner {
         self.list_branch_commits_with_base(repository_path, branch, Some(base_ref), Some(base_oid))
     }
 
+    pub fn list_branch_commits_with_current_base(
+        &self,
+        repository_path: &Path,
+        branch: &[u8],
+        base_ref: &[u8],
+    ) -> Result<BranchCommitListObservation, GitError> {
+        self.list_branch_commits_with_base_selection(
+            repository_path,
+            branch,
+            Some(base_ref),
+            None,
+            true,
+        )
+    }
+
     fn list_branch_commits_with_base(
         &self,
         repository_path: &Path,
@@ -143,22 +158,50 @@ impl GitRunner {
         base_ref: Option<&[u8]>,
         recorded_base_oid: Option<&[u8]>,
     ) -> Result<BranchCommitListObservation, GitError> {
+        self.list_branch_commits_with_base_selection(
+            repository_path,
+            branch,
+            base_ref,
+            recorded_base_oid,
+            false,
+        )
+    }
+
+    fn list_branch_commits_with_base_selection(
+        &self,
+        repository_path: &Path,
+        branch: &[u8],
+        base_ref: Option<&[u8]>,
+        recorded_base_oid: Option<&[u8]>,
+        use_current_base_ref: bool,
+    ) -> Result<BranchCommitListObservation, GitError> {
         // Reuse F2-11's exact-ref base resolution rather than accepting any
         // client-provided revision expression.
-        let summary = match (base_ref, recorded_base_oid) {
-            (Some(base_ref), Some(base_oid)) => self
+        let summary = match (base_ref, recorded_base_oid, use_current_base_ref) {
+            (Some(base_ref), None, true) => self
+                .observe_branch_commit_summary_requests(
+                    repository_path,
+                    &[crate::BranchCommitSummaryRequest::with_current_base(
+                        branch.to_vec(),
+                        base_ref.to_vec(),
+                    )],
+                )?
+                .observations
+                .pop()
+                .ok_or_else(parse_error)??,
+            (Some(base_ref), Some(base_oid), false) => self
                 .observe_branch_commit_summary_with_recorded_base(
                     repository_path,
                     branch,
                     base_ref,
                     base_oid,
                 )?,
-            (_, None) => self.observe_branch_commit_summary_with_local_base(
+            (_, None, false) => self.observe_branch_commit_summary_with_local_base(
                 repository_path,
                 branch,
                 base_ref,
             )?,
-            (None, Some(_)) => return Err(parse_error()),
+            _ => return Err(parse_error()),
         };
         let BranchCommitState::Available { base_ref, .. } = summary.state else {
             return Err(GitError::ParseFailed {

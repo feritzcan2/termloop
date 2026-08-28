@@ -189,14 +189,17 @@ impl TaskBranchCommitSummaryListPlan {
                         std::path::Path::new(&repository_root),
                         &targets
                             .iter()
-                            .map(|target| {
-                                BranchCommitSummaryRequest::new(
+                            .map(|target| match target.recorded_base.as_ref() {
+                                Some((base_ref, _)) => {
+                                    BranchCommitSummaryRequest::with_current_base(
+                                        target.binding.name.as_bytes().to_vec(),
+                                        base_ref.as_bytes().to_vec(),
+                                    )
+                                }
+                                None => BranchCommitSummaryRequest::new(
                                     target.binding.name.as_bytes().to_vec(),
-                                    target
-                                        .recorded_base
-                                        .as_ref()
-                                        .map(|(base_ref, _)| base_ref.as_bytes().to_vec()),
-                                )
+                                    None,
+                                ),
                             })
                             .collect::<Vec<_>>(),
                     )
