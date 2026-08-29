@@ -32,7 +32,7 @@ import {
   type VoiceRouteParams,
   type VoiceSilenceState,
 } from "@/presentation/steward-voice-presentation";
-import { useAppLifecycle } from "@/platform/app-lifecycle";
+import { stewardLiveActivity } from "@/platform/steward-live-activity";
 import { color, radius, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
@@ -50,14 +50,13 @@ const STEWARD_RECORDING_MEDIA_TYPE = "audio/wav";
 const SPEECH_RETRY_LIMIT = 2;
 const SPEECH_RETRY_MS = 2_000;
 
-/// A foreground live voice room for the selected Project. While expanded it
-/// follows the durable Steward transcript, speaks every new Steward message in
-/// order, and keeps microphone mute independent from incoming speech.
+/// A live voice room for the selected Project. Background audio keeps an
+/// unmuted session alive when the app leaves the foreground, while ActivityKit
+/// mirrors the room on the Lock Screen and Dynamic Island.
 export function StewardVoiceDock() {
   const runtime = useMobileRuntime();
   const connections = useConnections();
   const overview = useOverview();
-  const lifecycle = useAppLifecycle();
   const insets = useSafeAreaInsets();
   const routeParams = useGlobalSearchParams() as VoiceRouteParams;
   const routeProjectId = voiceProjectId(routeParams, overview.overview);
@@ -155,16 +154,13 @@ export function StewardVoiceDock() {
     activeTargetRef.current = undefined;
     transition("idle");
     setError(undefined);
-    void setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+    void stewardLiveActivity.end().catch(() => undefined);
+    void deactivateVoiceAudio().catch(() => undefined);
   }, [cleanSpeechFile, player, setMicrophone, stream, transition]);
 
   useEffect(() => {
     if (!expandedRef.current && routeProjectId !== undefined) setSelectedProjectId(routeProjectId);
   }, [routeProjectId]);
-
-  useEffect(() => {
-    if (!lifecycle.active && expandedRef.current) closeConversation();
-  }, [closeConversation, lifecycle.active]);
 
   useEffect(() => {
     const activeConnectionId = activeTargetRef.current?.connectionId;
@@ -192,6 +188,9 @@ export function StewardVoiceDock() {
     try {
       const permission = await AudioModule.requestRecordingPermissionsAsync();
       if (!permission.granted) throw new Error("Mikrofon izni olmadan canlı konuşma başlatılamaz.");
+      if (attempt !== captureAttemptRef.current || conversation !== conversationRef.current
+        || !expandedRef.current || !microphoneEnabledRef.current) return;
+      await configureVoiceRecordingAudio();
       if (attempt !== captureAttemptRef.current || conversation !== conversationRef.current
         || !expandedRef.current || !microphoneEnabledRef.current) return;
       cleanSpeechFile();
@@ -269,13 +268,7 @@ export function StewardVoiceDock() {
         file.write(audio);
         speechFileRef.current = file;
         speakingConversationRef.current = conversation;
-        await setAudioModeAsync({
-          playsInSilentMode: true,
-          interruptionMode: "doNotMix",
-          allowsRecording: false,
-          shouldPlayInBackground: false,
-          shouldRouteThroughEarpiece: false,
-        });
+        await configureVoicePlaybackAudio();
         player.replace(file.uri);
         player.play();
         return;
@@ -414,6 +407,17 @@ export function StewardVoiceDock() {
   }, [expanded, runtime, selectedProject?.id]);
 
   useEffect(() => {
+    const target = activeTargetRef.current;
+    if (!expanded || selectedProject === undefined || target?.projectId !== selectedProject.id) return;
+    void stewardLiveActivity.sync({
+      projectId: selectedProject.id,
+      projectName: selectedProject.name,
+      status: liveActivityStatus(phase, microphoneEnabled),
+      microphoneEnabled,
+    }).catch(() => undefined);
+  }, [expanded, microphoneEnabled, phase, selectedProject]);
+
+  useEffect(() => {
     if (!expanded || speechQueueRef.current.length === 0 || speechStartingRef.current) return;
     if (["connecting", "permission", "transcribing", "speaking"].includes(phase)) return;
     if (phase === "listening" && silenceRef.current.heardVoice) return;
@@ -434,7 +438,10 @@ export function StewardVoiceDock() {
     return () => clearTimeout(handle);
   }, [cleanSpeechFile, phase, playerStatus.didJustFinish, startListening, transition]);
 
-  useEffect(() => closeConversation, [closeConversation]);
+  useEffect(() => {
+    void stewardLiveActivity.end().catch(() => undefined);
+    return closeConversation;
+  }, [closeConversation]);
 
   const resetLiveTarget = useCallback((projectId: string) => {
     const connectionId = connections.selected?.id;
@@ -499,7 +506,7 @@ export function StewardVoiceDock() {
       setRecorderState({ durationMillis: 0, metering: undefined });
       if (phaseRef.current === "listening" || phaseRef.current === "permission") transition("idle");
       if (phaseRef.current !== "speaking") {
-        void setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+        void configureVoicePlaybackAudio().catch(() => undefined);
       }
       return;
     }
@@ -635,6 +642,49 @@ function voiceStatus(phase: VoicePhase, durationMs: number, microphoneEnabled: b
   return microphoneEnabled ? "Mikrofon açık" : "Mikrofon kapalı";
 }
 
+function liveActivityStatus(phase: VoicePhase, microphoneEnabled: boolean): string {
+  if (phase === "connecting") return "Bağlanıyor";
+  if (phase === "permission") return "Mikrofon hazırlanıyor";
+  if (phase === "listening") return "Dinliyor";
+  if (phase === "transcribing") return "Gönderiliyor";
+  if (phase === "speaking") return "Steward konuşuyor";
+  if (phase === "error") return "Bağlantı sorunu";
+  return microphoneEnabled ? "Mikrofon açık" : "Mikrofon kapalı";
+}
+
+async function configureVoiceRecordingAudio(): Promise<void> {
+  await setAudioModeAsync({
+    allowsRecording: true,
+    allowsBackgroundRecording: true,
+    shouldPlayInBackground: true,
+    shouldRouteThroughEarpiece: false,
+    playsInSilentMode: true,
+    interruptionMode: "doNotMix",
+  });
+}
+
+async function configureVoicePlaybackAudio(): Promise<void> {
+  await setAudioModeAsync({
+    allowsRecording: false,
+    allowsBackgroundRecording: false,
+    shouldPlayInBackground: true,
+    shouldRouteThroughEarpiece: false,
+    playsInSilentMode: true,
+    interruptionMode: "doNotMix",
+  });
+}
+
+async function deactivateVoiceAudio(): Promise<void> {
+  await setAudioModeAsync({
+    allowsRecording: false,
+    allowsBackgroundRecording: false,
+    shouldPlayInBackground: false,
+    shouldRouteThroughEarpiece: false,
+    playsInSilentMode: true,
+    interruptionMode: "doNotMix",
+  });
+}
+
 function voiceHint(phase: VoicePhase, microphoneEnabled: boolean): string {
   if (phase === "listening") return "Konuşman sessizlikte otomatik gönderilir; dokunursan mikrofon kapanır.";
   if (phase === "speaking") return microphoneEnabled
@@ -642,8 +692,8 @@ function voiceHint(phase: VoicePhase, microphoneEnabled: boolean): string {
     : "Mikrofon kapalı; yeni Steward mesajları yine okunur.";
   if (phase === "transcribing") return "Bu tur gönderiliyor; mikrofon durumunu istediğin an değiştirebilirsin.";
   if (phase === "error") return "Mikrofonu yeniden açabilir veya canlı akışı açık bırakabilirsin.";
-  if (!microphoneEnabled) return "Gelen Steward mesajları okunur; konuşmak için mikrofonu aç.";
-  return "Yeni Steward mesajları sırayla okunur.";
+  if (!microphoneEnabled) return "Canlı Activity açık kalır; konuşmak için mikrofonu aç.";
+  return "Ekranı kapatsan da dinlemeye ve yeni mesajları okumaya devam eder.";
 }
 
 function delay(ms: number): Promise<void> {

@@ -23,6 +23,7 @@
       "buildNumber": "202608272300",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
+        "NSSupportsLiveActivities": true,
         "NSLocalNetworkUsageDescription": "TermLoop connects to your Mac over your local network or Tailscale.",
         "NSMicrophoneUsageDescription": "TermLoop uses the microphone only while you are speaking live with Steward."
       }
@@ -62,8 +63,8 @@
         {
           "microphonePermission": "TermLoop uses the microphone only while you are speaking live with Steward.",
           "recordAudioAndroid": true,
-          "enableBackgroundRecording": false,
-          "enableBackgroundPlayback": false
+          "enableBackgroundRecording": true,
+          "enableBackgroundPlayback": true
         }
       ]
     ],

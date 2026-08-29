@@ -18,4 +18,10 @@ describe("native permission configuration", () => {
     expect(pluginOptions("expo-camera")?.recordAudioAndroid).toBe(false);
     expect(pluginOptions("expo-audio")?.recordAudioAndroid).toBe(true);
   });
+
+  it("enables iOS background voice audio and Live Activities", () => {
+    expect(app.expo.ios.infoPlist.NSSupportsLiveActivities).toBe(true);
+    expect(pluginOptions("expo-audio")?.enableBackgroundRecording).toBe(true);
+    expect(pluginOptions("expo-audio")?.enableBackgroundPlayback).toBe(true);
+  });
 });
