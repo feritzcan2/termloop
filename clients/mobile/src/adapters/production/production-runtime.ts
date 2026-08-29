@@ -21,6 +21,12 @@ import type {
   SavedConnection,
   SecureConnectionRepository,
 } from "@/platform/secure-connections";
+import {
+  mobileDiagnostics,
+  websocketEndpointLabel,
+  type MobileDiagnosticReporter,
+  type MobileDiagnosticValue,
+} from "../../platform/mobile-diagnostics";
 import { parsePairingCode } from "../../platform/pairing-code";
 import { MobileControlClient, MobileControlError } from "./mobile-control-client";
 import {
@@ -57,6 +63,7 @@ const STEWARD_SPEECH_LIMIT_BYTES = 10 * 1024 * 1024;
 const INITIAL_PROMPT_LIMIT = 4_096;
 const BRACKETED_PASTE_START = "\u001b[200~";
 const BRACKETED_PASTE_END = "\u001b[201~";
+let terminalDiagnosticSequence = 0;
 
 /// The daemon returns the newest messages first; a chat reads oldest first.
 function orderedTranscript(messages: readonly StewardMessage[]): StewardMessage[] {
@@ -125,8 +132,8 @@ export interface DataSocket {
   readonly readyState: number;
   onopen: (() => void) | null;
   onmessage: ((event: { data: unknown }) => void) | null;
-  onerror: (() => void) | null;
-  onclose: (() => void) | null;
+  onerror: ((event?: { type?: string }) => void) | null;
+  onclose: ((event?: { code?: number; reason?: string; wasClean?: boolean }) => void) | null;
   send(data: string | ArrayBuffer | Uint8Array): void;
   close(): void;
 }
@@ -135,6 +142,7 @@ export type DataSocketFactory = (url: string) => DataSocket;
 
 export interface ProductionRuntimeOptions {
   readonly repository: SecureConnectionRepository;
+  readonly diagnostics?: MobileDiagnosticReporter;
   readonly controlSocketFactory?: SocketFactory;
   readonly terminalSocketFactory?: DataSocketFactory;
   readonly fetch?: typeof fetch;
@@ -148,6 +156,7 @@ export interface ProductionRuntimeOptions {
 }
 
 export function createProductionRuntime(options: ProductionRuntimeOptions): MobileRuntime {
+  const diagnostics = options.diagnostics ?? mobileDiagnostics;
   const controlSocketFactory = options.controlSocketFactory
     ?? ((url: string) => new WebSocket(url) as never);
   const terminalSocketFactory = options.terminalSocketFactory
@@ -170,6 +179,8 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
       connection.controlUrl,
       connection.controlToken,
       controlSocketFactory,
+      diagnostics,
+      connection.id,
     );
     controlClients.set(connection.id, {
       url: connection.controlUrl,
@@ -300,7 +311,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
           launchTicket,
         });
         const namedSession = await namePromptedSession(control, session, prompt);
-        return await launchResult(connection, namedSession, prompt, terminalSocketFactory);
+        return await launchResult(connection, namedSession, prompt, terminalSocketFactory, diagnostics);
       },
       async previewProject(connectionId, project, selection) {
         const control = controlClient(await resolve(connectionId));
@@ -324,7 +335,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
           launchTicket,
         });
         const namedSession = await namePromptedSession(control, session, prompt);
-        return await launchResult(connection, namedSession, prompt, terminalSocketFactory);
+        return await launchResult(connection, namedSession, prompt, terminalSocketFactory, diagnostics);
       },
     },
 
@@ -440,7 +451,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
     terminal: {
       async attach(connectionId, session, onEvent) {
         const connection = await resolve(connectionId);
-        return attachTerminal(connection, session, onEvent, terminalSocketFactory);
+        return attachTerminal(connection, session, onEvent, terminalSocketFactory, diagnostics);
       },
     },
     images: {
@@ -612,7 +623,20 @@ async function attachTerminal(
   session: { id: string; runtime_epoch: number },
   onEvent: (event: TerminalEvent) => void,
   socketFactory: DataSocketFactory,
+  diagnostics: MobileDiagnosticReporter,
 ): Promise<TerminalAttachment> {
+  const attachmentId = `terminal-${++terminalDiagnosticSequence}`;
+  const report = (
+    event: string,
+    details: Readonly<Record<string, MobileDiagnosticValue | undefined>> = {},
+  ) => diagnostics.report("terminal", event, {
+    connectionId: connection.id,
+    ...diagnostics.correlation(),
+    sessionId: session.id,
+    runtimeEpoch: session.runtime_epoch,
+    attachmentId,
+    ...details,
+  });
   let socket: DataSocket | undefined;
   let sequence = 1n;
   let detached = false;
@@ -626,6 +650,7 @@ async function attachTerminal(
   let replayBytes = 0;
   let inbound = Promise.resolve();
   let successfulConnections = 0;
+  let connectionAttempt = 0;
   let resolveFirst: (() => void) | undefined;
   let rejectFirst: ((cause: Error) => void) | undefined;
   const reconnectWaiters = new Set<{
@@ -637,6 +662,9 @@ async function attachTerminal(
   const firstConnection = new Promise<void>((resolve, reject) => {
     resolveFirst = resolve;
     rejectFirst = reject;
+  });
+  report("attachment_started", {
+    endpoint: websocketEndpointLabel(connection.terminalUrl),
   });
 
   const clearAuthenticationTimer = () => {
@@ -663,6 +691,13 @@ async function attachTerminal(
   const settleReconnectWaiters = (cause?: Error) => {
     const waiters = [...reconnectWaiters];
     reconnectWaiters.clear();
+    if (waiters.length > 0) {
+      report("reconnect_waiters_settled", {
+        waiterCount: waiters.length,
+        ok: cause === undefined,
+        reason: cause?.message,
+      });
+    }
     for (const waiter of waiters) {
       clearTimeout(waiter.timeout);
       if (cause === undefined) waiter.resolve();
@@ -673,6 +708,7 @@ async function attachTerminal(
   const flushReplay = () => {
     clearReplayTimer();
     if (detached || replayBytes === 0) return;
+    const chunkCount = replayChunks.length;
     const bytes = new Uint8Array(replayBytes);
     let offset = 0;
     for (const chunk of replayChunks) {
@@ -681,6 +717,10 @@ async function attachTerminal(
     }
     replayChunks = [];
     replayBytes = 0;
+    report("replay_received", {
+      bytes: bytes.byteLength,
+      chunks: chunkCount,
+    });
     onEvent({ type: "replay", bytes });
   };
 
@@ -695,7 +735,7 @@ async function attachTerminal(
     replayTimer = setTimeout(flushReplay, REPLAY_BATCH_SETTLE_MS);
   };
 
-  const failFirst = (message: string) => {
+  const failFirst = (message: string, reason = "initialConnectionFailed") => {
     if (rejectFirst === undefined) return;
     const reject = rejectFirst;
     resolveFirst = undefined;
@@ -703,12 +743,24 @@ async function attachTerminal(
     detached = true;
     clearConnectionTimer();
     clearAuthenticationTimer();
-    socket?.close();
+    const failed = socket;
+    socket = undefined;
+    report("attachment_failed", {
+      reason,
+      connectionAttempt,
+      successfulConnections,
+    });
+    failed?.close();
     reject(new Error(message));
   };
 
-  const scheduleReconnect = () => {
+  const scheduleReconnect = (reason: string) => {
     if (detached || reconnectTimer !== undefined) return;
+    report("reconnect_scheduled", {
+      reason,
+      delayMs: reconnectDelay,
+      successfulConnections,
+    });
     onEvent({ type: "state", state: "connectionLost" });
     reconnectTimer = setTimeout(() => {
       reconnectTimer = undefined;
@@ -717,26 +769,50 @@ async function attachTerminal(
     }, reconnectDelay);
   };
 
-  const handleClosed = (closed: DataSocket) => {
+  const handleClosed = (
+    closed: DataSocket,
+    reason: string,
+    close?: { code?: number; reason?: string; wasClean?: boolean },
+  ) => {
     if (socket !== closed) return;
+    report("connection_closed", {
+      reason,
+      connectionAttempt,
+      authenticated,
+      successfulConnections,
+      closeCode: close?.code,
+      closeReasonLength: close?.reason?.length,
+      wasClean: close?.wasClean,
+    });
     socket = undefined;
     authenticated = false;
     clearConnectionTimer();
     clearAuthenticationTimer();
     discardReplay();
-    if (resolveFirst !== undefined) failFirst("Terminal connection failed.");
-    else scheduleReconnect();
+    if (resolveFirst !== undefined) failFirst("Terminal connection failed.", reason);
+    else scheduleReconnect(reason);
   };
 
   const connect = () => {
     if (detached) return;
+    connectionAttempt += 1;
+    const attempt = connectionAttempt;
+    const startedAtEpochMs = Date.now();
+    report("connection_started", {
+      connectionAttempt: attempt,
+      reconnectDelayMs: reconnectDelay,
+    });
     onEvent({ type: "state", state: "connecting" });
     let next: DataSocket;
     try {
       next = socketFactory(connection.terminalUrl);
-    } catch {
-      if (resolveFirst !== undefined) failFirst("Terminal connection failed.");
-      else scheduleReconnect();
+    } catch (cause: unknown) {
+      report("connection_factory_failed", {
+        connectionAttempt: attempt,
+        causeType: cause instanceof Error ? cause.name : typeof cause,
+      });
+      if (resolveFirst !== undefined) failFirst("Terminal connection failed.", "socketFactoryFailed");
+      else scheduleReconnect("socketFactoryFailed");
       return;
     }
     socket = next;
@@ -746,25 +822,63 @@ async function attachTerminal(
       /// iOS can leave a WebSocket in CONNECTING without ever emitting open,
       /// error, or close after foregrounding. Treat that silence as a failed
       /// transport so the bounded reconnect loop can create a new socket.
-      handleClosed(next);
+      report("connection_timeout", {
+        connectionAttempt: attempt,
+        durationMs: Date.now() - startedAtEpochMs,
+      });
+      handleClosed(next, "connectTimeout");
       next.close();
     }, CONNECT_TIMEOUT_MS);
     next.onopen = () => {
       if (socket !== next || detached) return;
       clearConnectionTimer();
-      next.send(authenticationBytes(connection.terminalToken));
+      report("connection_opened", {
+        connectionAttempt: attempt,
+        durationMs: Date.now() - startedAtEpochMs,
+      });
+      try {
+        next.send(authenticationBytes(connection.terminalToken));
+      } catch (cause: unknown) {
+        report("authentication_send_failed", {
+          connectionAttempt: attempt,
+          causeType: cause instanceof Error ? cause.name : typeof cause,
+        });
+        handleClosed(next, "authenticationSendFailed");
+        next.close();
+        return;
+      }
       authenticationTimer = setTimeout(() => {
-        if (resolveFirst !== undefined) failFirst("Terminal authentication timed out.");
-        else next.close();
+        report("authentication_timeout", {
+          connectionAttempt: attempt,
+          durationMs: Date.now() - startedAtEpochMs,
+        });
+        if (resolveFirst !== undefined) failFirst("Terminal authentication timed out.", "authenticationTimeout");
+        else {
+          handleClosed(next, "authenticationTimeout");
+          next.close();
+        }
       }, AUTH_TIMEOUT_MS);
     };
     next.onmessage = (event) => {
       inbound = inbound
         .then(() => handleMessage(next, event.data))
-        .catch(() => next.close());
+        .catch((cause: unknown) => {
+          report("message_handling_failed", {
+            connectionAttempt: attempt,
+            causeType: cause instanceof Error ? cause.name : typeof cause,
+          });
+          handleClosed(next, "messageHandlingFailed");
+          next.close();
+        });
     };
-    next.onerror = () => handleClosed(next);
-    next.onclose = () => handleClosed(next);
+    next.onerror = (event) => {
+      report("socket_error", {
+        connectionAttempt: attempt,
+        eventType: event?.type,
+      });
+      handleClosed(next, "socketError");
+    };
+    next.onclose = (event) => handleClosed(next, "socketClose", event);
   };
 
   const handleMessage = async (source: DataSocket, data: unknown) => {
@@ -773,15 +887,27 @@ async function attachTerminal(
     if (!authenticated) {
       const response = new TextDecoder().decode(bytes);
       if (response === "TLAUTH") {
-        failFirst("Terminal credential was refused.");
+        report("authentication_refused", { connectionAttempt });
+        failFirst("Terminal credential was refused.", "credentialRefused");
         return;
       }
-      if (response !== "TLOK") return;
+      if (response !== "TLOK") {
+        report("authentication_response_ignored", {
+          connectionAttempt,
+          responseBytes: bytes.byteLength,
+        });
+        return;
+      }
       clearAuthenticationTimer();
       authenticated = true;
       reconnectDelay = MIN_RECONNECT_MS;
       if (successfulConnections > 0) onEvent({ type: "reset" });
       successfulConnections += 1;
+      report("authenticated", {
+        connectionAttempt,
+        successfulConnections,
+        reconnected: successfulConnections > 1,
+      });
       onEvent({ type: "state", state: "connected" });
       source.send(encodeFrame(session.id, session.runtime_epoch, sequence++, KIND_ATTACH));
       settleReconnectWaiters();
@@ -795,9 +921,21 @@ async function attachTerminal(
     try {
       frame = decodeFrame(bytes);
     } catch {
+      report("invalid_frame_ignored", {
+        connectionAttempt,
+        bytes: bytes.byteLength,
+      });
       return;
     }
-    if (frame.sessionId !== session.id || frame.epoch !== session.runtime_epoch) return;
+    if (frame.sessionId !== session.id || frame.epoch !== session.runtime_epoch) {
+      report("stale_frame_ignored", {
+        connectionAttempt,
+        sessionMatched: frame.sessionId === session.id,
+        epochMatched: frame.epoch === session.runtime_epoch,
+        frameKind: frame.kind,
+      });
+      return;
+    }
     if (frame.kind === KIND_REPLAY_OUTPUT) {
       queueReplay(frame.payload);
       return;
@@ -806,10 +944,20 @@ async function attachTerminal(
     /// visible before a following gap, live byte, or exit state.
     flushReplay();
     if (frame.kind === KIND_OUTPUT) onEvent({ type: "live", bytes: frame.payload });
-    else if (frame.kind === KIND_GAP) onEvent({ type: "gap", droppedFrames: decodeGapCount(frame.payload) });
-    else if (frame.kind === KIND_EOF) onEvent({ type: "eof" });
-    else if (frame.kind === KIND_ERROR) source.close();
-    else if (frame.kind === KIND_ACK) return;
+    else if (frame.kind === KIND_GAP) {
+      const droppedFrames = decodeGapCount(frame.payload);
+      report("output_gap", { connectionAttempt, droppedFrames });
+      onEvent({ type: "gap", droppedFrames });
+    } else if (frame.kind === KIND_EOF) {
+      report("terminal_eof", { connectionAttempt });
+      onEvent({ type: "eof" });
+    } else if (frame.kind === KIND_ERROR) {
+      report("server_frame_error", {
+        connectionAttempt,
+        errorBytes: frame.payload.byteLength,
+      });
+      source.close();
+    } else if (frame.kind === KIND_ACK) return;
   };
 
   connect();
@@ -835,19 +983,34 @@ async function attachTerminal(
         /// Browser WebSocket implementations can throw before delivering `close`.
         /// Enter the same bounded reconnect path immediately so presentation cannot
         /// remain permanently disconnected behind a socket that is already unusable.
-        handleClosed(target);
+        report("input_send_failed", {
+          connectionAttempt,
+          inputBytes: bytes.byteLength,
+          causeType: cause instanceof Error ? cause.name : typeof cause,
+        });
+        handleClosed(target, "inputSendFailed");
         target.close();
         throw cause;
       }
     },
     reconnect() {
       if (detached) return Promise.reject(new Error("Terminal is detached."));
+      report("forced_reconnect_started", {
+        connectionAttempt,
+        authenticated,
+        successfulConnections,
+        reconnectWaiters: reconnectWaiters.size + 1,
+      });
       const waiting = new Promise<void>((resolve, reject) => {
         const waiter = {
           resolve,
           reject,
           timeout: setTimeout(() => {
             reconnectWaiters.delete(waiter);
+            report("forced_reconnect_timeout", {
+              connectionAttempt,
+              reconnectWaiters: reconnectWaiters.size,
+            });
             reject(new Error("Terminal did not reconnect."));
           }, FORCE_RECONNECT_TIMEOUT_MS),
         };
@@ -870,6 +1033,12 @@ async function attachTerminal(
     },
     async detach() {
       if (detached) return;
+      report("attachment_detached", {
+        connectionAttempt,
+        authenticated,
+        successfulConnections,
+        reconnectWaiters: reconnectWaiters.size,
+      });
       detached = true;
       if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
       clearConnectionTimer();
@@ -887,6 +1056,7 @@ async function launchResult(
   session: { id: string; runtime_epoch: number },
   prompt: string | undefined,
   socketFactory: DataSocketFactory,
+  diagnostics: MobileDiagnosticReporter,
 ): Promise<{ sessionId: string; runtimeEpoch: number; promptSubmitted: boolean | null }> {
   const content = prompt === undefined ? undefined : launchPrompt(prompt);
   if (content === undefined) {
@@ -895,7 +1065,7 @@ async function launchResult(
 
   let attachment: TerminalAttachment | undefined;
   try {
-    attachment = await attachTerminal(connection, session, () => {}, socketFactory);
+    attachment = await attachTerminal(connection, session, () => {}, socketFactory, diagnostics);
     const encoder = new TextEncoder();
     await attachment.input(encoder.encode(`${BRACKETED_PASTE_START}${content}${BRACKETED_PASTE_END}`));
     await attachment.input(new Uint8Array([13]));

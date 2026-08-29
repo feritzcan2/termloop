@@ -25,6 +25,12 @@ import type {
 } from "@termloop/contract/current";
 import { validateMethodResult } from "@termloop/contract/current";
 
+import {
+  mobileDiagnostics,
+  websocketEndpointLabel,
+  type MobileDiagnosticReporter,
+} from "../../platform/mobile-diagnostics";
+
 export const MOBILE_API_VERSION = 1 as const;
 
 type MobileControlMethod =
@@ -112,6 +118,7 @@ const RETRYABLE_READ_METHODS: ReadonlySet<MobileControlMethod> = new Set([
 
 interface PendingMobileCall {
   readonly method: MobileControlMethod;
+  readonly startedAtEpochMs: number;
   readonly resolve: (value: unknown) => void;
   readonly reject: (error: Error) => void;
   readonly timeout: ReturnType<typeof setTimeout>;
@@ -138,13 +145,18 @@ export class MobileControlClient {
   private counter = 0;
   private generation = 0;
   private socket: ReturnType<SocketFactory> | undefined;
-  private connecting: Promise<ReturnType<SocketFactory>> | undefined;
+  private connecting: {
+    readonly promise: Promise<ReturnType<SocketFactory>>;
+    readonly socket: ReturnType<SocketFactory>;
+  } | undefined;
   private readonly pending = new Map<string, PendingMobileCall>();
 
   constructor(
     private readonly url: string,
     private readonly token: string,
     private readonly socketFactory: SocketFactory,
+    private readonly diagnostics: MobileDiagnosticReporter = mobileDiagnostics,
+    private readonly connectionId: string = "unspecified",
   ) {}
 
   version() {
@@ -164,6 +176,12 @@ export class MobileControlClient {
       if (!(cause instanceof MobileControlTransportError) || !RETRYABLE_READ_METHODS.has(method)) {
         throw cause;
       }
+      this.diagnostics.report("control", "request_retry", {
+        connectionId: this.connectionId,
+        method,
+        reason: cause.message,
+        nextAttempt: 2,
+      });
       return await this.callOnce(method, params);
     }
   }
@@ -176,21 +194,42 @@ export class MobileControlClient {
       throw new MobileControlError("Too many mobile control requests are in flight.", "serviceBusy");
     }
     const id = String(++this.counter);
+    const timeoutMs = SLOW_METHOD_TIMEOUT_MS[method] ?? REQUEST_TIMEOUT_MS;
+    const startedAtEpochMs = Date.now();
+    this.diagnostics.report("control", "request_started", {
+      connectionId: this.connectionId,
+      ...this.diagnostics.correlation(),
+      requestId: id,
+      method,
+      timeoutMs,
+      pendingRequests: this.pending.size + 1,
+      transportState: this.transportState(),
+    });
     return await new Promise<MobileControlResults[M]>((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (!this.pending.delete(id)) return;
         const error = new MobileControlTransportError("request timeout");
+        this.diagnostics.report("control", "request_timeout", {
+          connectionId: this.connectionId,
+          requestId: id,
+          method,
+          durationMs: Date.now() - startedAtEpochMs,
+          pendingRequests: this.pending.size,
+          transportState: this.transportState(),
+          generation: this.generation,
+        });
         reject(error);
         /// iOS can suspend a foreground WebSocket without delivering `close` to
         /// JavaScript. Once one request times out, that transport is no longer
         /// evidence of a usable connection: retaining it makes every later probe
         /// reuse the same silent socket until the whole app is restarted.
-        const socket = this.socket;
+        const socket = this.socket ?? this.connecting?.socket;
         this.disconnect(this.generation, error);
         socket?.close();
-      }, SLOW_METHOD_TIMEOUT_MS[method] ?? REQUEST_TIMEOUT_MS);
+      }, timeoutMs);
       this.pending.set(id, {
         method,
+        startedAtEpochMs,
         resolve: resolve as (value: unknown) => void,
         reject,
         timeout,
@@ -201,27 +240,55 @@ export class MobileControlClient {
           socket.send(JSON.stringify({
             id,
             mobileApiVersion: MOBILE_API_VERSION,
+            ...this.diagnostics.correlation(),
+            controlGeneration: this.generation,
             token: this.token,
             method,
             params,
           }));
-        } catch {
+          this.diagnostics.report("control", "request_sent", {
+            connectionId: this.connectionId,
+            requestId: id,
+            method,
+            generation: this.generation,
+          });
+        } catch (cause: unknown) {
           const error = new MobileControlTransportError("connection failed");
+          this.diagnostics.report("control", "request_send_failed", {
+            connectionId: this.connectionId,
+            requestId: id,
+            method,
+            generation: this.generation,
+            causeType: cause instanceof Error ? cause.name : typeof cause,
+          });
           this.disconnect(this.generation, error);
           socket.close();
         }
-      }).catch(() => {
+      }).catch((cause: unknown) => {
         const pending = this.pending.get(id);
         if (!pending) return;
         this.pending.delete(id);
         clearTimeout(pending.timeout);
+        this.diagnostics.report("control", "request_connection_failed", {
+          connectionId: this.connectionId,
+          requestId: id,
+          method,
+          durationMs: Date.now() - startedAtEpochMs,
+          causeType: cause instanceof Error ? cause.name : typeof cause,
+        });
         pending.reject(new MobileControlTransportError("connection failed"));
       });
     });
   }
 
   close(): void {
-    const socket = this.socket;
+    const socket = this.socket ?? this.connecting?.socket;
+    this.diagnostics.report("control", "client_closed", {
+      connectionId: this.connectionId,
+      generation: this.generation,
+      pendingRequests: this.pending.size,
+      transportState: this.transportState(),
+    });
     this.generation += 1;
     this.socket = undefined;
     this.connecting = undefined;
@@ -231,13 +298,36 @@ export class MobileControlClient {
 
   private connected(): Promise<ReturnType<SocketFactory>> {
     if (this.socket) return Promise.resolve(this.socket);
-    if (this.connecting) return this.connecting;
+    if (this.connecting) return this.connecting.promise;
     const generation = ++this.generation;
-    const socket = this.socketFactory(this.url);
+    const startedAtEpochMs = Date.now();
+    this.diagnostics.report("control", "connection_started", {
+      connectionId: this.connectionId,
+      generation,
+      endpoint: websocketEndpointLabel(this.url),
+      pendingRequests: this.pending.size,
+    });
+    let socket: ReturnType<SocketFactory>;
+    try {
+      socket = this.socketFactory(this.url);
+    } catch (cause: unknown) {
+      this.diagnostics.report("control", "connection_factory_failed", {
+        connectionId: this.connectionId,
+        generation,
+        causeType: cause instanceof Error ? cause.name : typeof cause,
+      });
+      throw cause;
+    }
     const connecting = new Promise<ReturnType<SocketFactory>>((resolve, reject) => {
       let opened = false;
       socket.addEventListener("open", () => {
         if (generation !== this.generation) {
+          this.diagnostics.report("control", "connection_superseded", {
+            connectionId: this.connectionId,
+            generation,
+            currentGeneration: this.generation,
+            durationMs: Date.now() - startedAtEpochMs,
+          });
           socket.close();
           reject(new MobileControlTransportError("connection superseded"));
           return;
@@ -245,61 +335,149 @@ export class MobileControlClient {
         opened = true;
         this.socket = socket;
         this.connecting = undefined;
+        this.diagnostics.report("control", "connection_opened", {
+          connectionId: this.connectionId,
+          generation,
+          durationMs: Date.now() - startedAtEpochMs,
+          pendingRequests: this.pending.size,
+        });
         resolve(socket);
       }, { once: true });
       socket.addEventListener("message", (event) => this.receive(generation, event));
-      socket.addEventListener("error", () => {
+      socket.addEventListener("error", (event) => {
+        this.diagnostics.report("control", "connection_error", {
+          connectionId: this.connectionId,
+          generation,
+          opened,
+          stale: generation !== this.generation,
+          durationMs: Date.now() - startedAtEpochMs,
+          eventType: isRecord(event) && typeof event.type === "string" ? event.type : undefined,
+        });
         if (!opened) reject(new MobileControlTransportError("connection failed"));
         this.disconnect(generation, new MobileControlTransportError("connection failed"));
         socket.close();
       }, { once: true });
-      socket.addEventListener("close", () => {
+      socket.addEventListener("close", (event) => {
+        this.diagnostics.report("control", "connection_closed", {
+          connectionId: this.connectionId,
+          generation,
+          opened,
+          stale: generation !== this.generation,
+          durationMs: Date.now() - startedAtEpochMs,
+          closeCode: isRecord(event) && typeof event.code === "number" ? event.code : undefined,
+          closeReasonLength: isRecord(event) && typeof event.reason === "string"
+            ? event.reason.length
+            : undefined,
+          wasClean: isRecord(event) && typeof event.wasClean === "boolean" ? event.wasClean : undefined,
+        });
         if (!opened) reject(new MobileControlTransportError("connection closed"));
         this.disconnect(generation, new MobileControlTransportError("connection closed"));
       }, { once: true });
     });
-    this.connecting = connecting;
+    this.connecting = { promise: connecting, socket };
     return connecting;
   }
 
   private receive(generation: number, event: { data: unknown }): void {
-    if (generation !== this.generation) return;
+    if (generation !== this.generation) {
+      this.diagnostics.report("control", "stale_response_ignored", {
+        connectionId: this.connectionId,
+        generation,
+        currentGeneration: this.generation,
+      });
+      return;
+    }
     let response: unknown;
     try {
       response = JSON.parse(typeof event.data === "string" ? event.data : String(event.data));
     } catch {
+      this.diagnostics.report("control", "invalid_response", {
+        connectionId: this.connectionId,
+        generation,
+        reason: "invalidJson",
+      });
       const socket = this.socket;
       this.disconnect(generation, new Error("invalid mobile gateway response"));
       socket?.close();
       return;
     }
     if (!isRecord(response)) {
+      this.diagnostics.report("control", "invalid_response", {
+        connectionId: this.connectionId,
+        generation,
+        reason: "notObject",
+      });
       const socket = this.socket;
       this.disconnect(generation, new Error("invalid mobile gateway response"));
       socket?.close();
       return;
     }
-    if (typeof response.id !== "string") return;
+    if (typeof response.id !== "string") {
+      this.diagnostics.report("control", "invalid_response", {
+        connectionId: this.connectionId,
+        generation,
+        reason: "missingRequestId",
+      });
+      return;
+    }
     const pending = this.pending.get(response.id);
-    if (!pending) return;
+    if (!pending) {
+      this.diagnostics.report("control", "orphan_response_ignored", {
+        connectionId: this.connectionId,
+        generation,
+        requestId: response.id,
+      });
+      return;
+    }
     this.pending.delete(response.id);
     clearTimeout(pending.timeout);
     if (response.ok !== true) {
       const error = isRecord(response.error) ? response.error : undefined;
       const message = typeof error?.message === "string" ? error.message : "request failed";
       const code = typeof error?.code === "string" ? error.code : undefined;
+      this.diagnostics.report("control", "request_completed", {
+        connectionId: this.connectionId,
+        requestId: response.id,
+        method: pending.method,
+        ok: false,
+        errorCode: code,
+        durationMs: Date.now() - pending.startedAtEpochMs,
+        pendingRequests: this.pending.size,
+      });
       pending.reject(new MobileControlError(message, code));
       return;
     }
     try {
       pending.resolve(decodeResult(pending.method, response.result));
+      this.diagnostics.report("control", "request_completed", {
+        connectionId: this.connectionId,
+        requestId: response.id,
+        method: pending.method,
+        ok: true,
+        durationMs: Date.now() - pending.startedAtEpochMs,
+        pendingRequests: this.pending.size,
+      });
     } catch (cause) {
+      this.diagnostics.report("control", "invalid_response", {
+        connectionId: this.connectionId,
+        generation,
+        requestId: response.id,
+        method: pending.method,
+        reason: "invalidResult",
+      });
       pending.reject(cause instanceof Error ? cause : new Error("invalid mobile gateway response"));
     }
   }
 
   private disconnect(generation: number, error: Error): void {
     if (generation !== this.generation) return;
+    this.diagnostics.report("control", "transport_disconnected", {
+      connectionId: this.connectionId,
+      generation,
+      reason: error.message,
+      pendingRequests: this.pending.size,
+      transportState: this.transportState(),
+    });
     this.generation += 1;
     this.socket = undefined;
     this.connecting = undefined;
@@ -311,8 +489,20 @@ export class MobileControlClient {
     this.pending.clear();
     for (const request of pending) {
       clearTimeout(request.timeout);
+      this.diagnostics.report("control", "request_interrupted", {
+        connectionId: this.connectionId,
+        method: request.method,
+        reason: error.message,
+        durationMs: Date.now() - request.startedAtEpochMs,
+      });
       request.reject(error);
     }
+  }
+
+  private transportState(): "connected" | "connecting" | "disconnected" {
+    if (this.socket !== undefined) return "connected";
+    if (this.connecting !== undefined) return "connecting";
+    return "disconnected";
   }
 }
 

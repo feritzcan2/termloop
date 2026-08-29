@@ -9,6 +9,7 @@ import {
 import { AppState } from "react-native";
 
 import { reduceAppLifecycle, type AppLifecycleMachine } from "./app-lifecycle-state";
+import { mobileDiagnostics } from "./mobile-diagnostics";
 
 export interface AppLifecycleState {
   readonly active: boolean;
@@ -30,8 +31,59 @@ export function AppLifecycleProvider({ children }: PropsWithChildren) {
   }));
 
   useEffect(() => {
-    const subscription = AppState.addEventListener("change", dispatch);
-    return () => subscription.remove();
+    let observed = state;
+    let backgroundStartedAtEpochMs = observed.backgrounded ? Date.now() : undefined;
+    mobileDiagnostics.updateLifecycle({
+      nativeState: AppState.currentState,
+      foregroundRevision: observed.foregroundRevision,
+    });
+    mobileDiagnostics.report("lifecycle", "initialized", {
+      nativeState: AppState.currentState,
+      active: observed.active,
+      backgrounded: observed.backgrounded,
+      foregroundRevision: observed.foregroundRevision,
+    });
+    const subscription = AppState.addEventListener("change", (nativeState) => {
+      const previous = observed;
+      observed = reduceAppLifecycle(observed, nativeState);
+      const backgroundDurationMs = previous.backgrounded && !observed.backgrounded
+        && backgroundStartedAtEpochMs !== undefined
+        ? Math.max(0, Date.now() - backgroundStartedAtEpochMs)
+        : undefined;
+      mobileDiagnostics.updateLifecycle({
+        nativeState,
+        foregroundRevision: observed.foregroundRevision,
+        ...(backgroundDurationMs === undefined ? {} : { backgroundDurationMs }),
+      });
+      mobileDiagnostics.report("lifecycle", "native_state", {
+        nativeState,
+        previousActive: previous.active,
+        nextActive: observed.active,
+        backgrounded: observed.backgrounded,
+        foregroundRevision: observed.foregroundRevision,
+        changed: observed !== previous,
+      });
+      if (!previous.backgrounded && observed.backgrounded) {
+        backgroundStartedAtEpochMs = Date.now();
+        mobileDiagnostics.report("lifecycle", "backgrounded");
+      } else if (previous.backgrounded && !observed.backgrounded) {
+        mobileDiagnostics.report("lifecycle", "foregrounded", {
+          backgroundDurationMs: backgroundStartedAtEpochMs === undefined
+            ? undefined : backgroundDurationMs,
+          foregroundRevision: observed.foregroundRevision,
+        });
+        backgroundStartedAtEpochMs = undefined;
+      }
+      dispatch(nativeState);
+    });
+    return () => {
+      mobileDiagnostics.report("lifecycle", "provider_unmounted", {
+        active: observed.active,
+        backgrounded: observed.backgrounded,
+        foregroundRevision: observed.foregroundRevision,
+      });
+      subscription.remove();
+    };
   }, []);
 
   return createElement(AppLifecycleContext.Provider, {

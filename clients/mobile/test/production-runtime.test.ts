@@ -19,6 +19,7 @@ import {
   type SecretStore,
 } from "../src/platform/secure-connections";
 import { createWatchTargetSettings } from "../src/platform/watch-target-settings";
+import { createMobileDiagnosticReporter } from "../src/platform/mobile-diagnostics";
 import {
   fixtureAgentCapabilities,
   fixtureAgentStatuses,
@@ -85,6 +86,91 @@ describe("secure connection repository", () => {
 });
 
 describe("production control adapter", () => {
+  it("correlates control requests with the current mobile run without logging request parameters", async () => {
+    const diagnosticLines: string[] = [];
+    const diagnostics = createMobileDiagnosticReporter((line) => diagnosticLines.push(line));
+    diagnostics.updateLifecycle({
+      nativeState: "active",
+      foregroundRevision: 3,
+      backgroundDurationMs: 2_500,
+    });
+    let sent: Record<string, unknown> | undefined;
+    const client = new MobileControlClient(saved.controlUrl, saved.controlToken, () => {
+      const listeners = new Map<string, Array<(event: { data?: string }) => void>>();
+      const emit = (type: string, event: { data?: string } = {}) => {
+        for (const listener of listeners.get(type) ?? []) listener(event);
+      };
+      queueMicrotask(() => emit("open"));
+      return {
+        addEventListener(type, listener) {
+          const current = listeners.get(type) ?? [];
+          current.push(listener);
+          listeners.set(type, current);
+        },
+        send(data) {
+          sent = JSON.parse(data) as Record<string, unknown>;
+          queueMicrotask(() => emit("message", { data: JSON.stringify({
+            id: sent?.id,
+            ok: true,
+            result: controlResult("system.version"),
+          }) }));
+        },
+        close() {},
+      } satisfies SocketLike;
+    }, diagnostics, saved.id);
+
+    await expect(client.version()).resolves.toMatchObject({ product: "TermLoop" });
+
+    expect(sent).toMatchObject({
+      mobileRunId: diagnostics.runId,
+      mobileAppState: "active",
+      foregroundRevision: 3,
+      backgroundDurationMs: 2_500,
+      controlGeneration: 1,
+      method: "system.version",
+    });
+    const records = diagnosticLines.map((line) => JSON.parse(line.replace("[termloop-mobile] ", "")));
+    expect(records.map(({ event }) => event)).toEqual([
+      "request_started",
+      "connection_started",
+      "connection_opened",
+      "request_sent",
+      "request_completed",
+    ]);
+    expect(diagnosticLines.join("\n")).not.toContain(saved.controlToken);
+  });
+
+  it("closes each still-connecting socket before retrying an unreachable Mac", async () => {
+    vi.useFakeTimers();
+    try {
+      const sockets: Array<{ closed: boolean }> = [];
+      const runtime = createProductionRuntime({
+        repository: fixedRepository(saved),
+        controlSocketFactory() {
+          const state = { closed: false };
+          sockets.push(state);
+          return {
+            addEventListener() {},
+            send() { throw new Error("socket never opened"); },
+            close() { state.closed = true; },
+          } satisfies SocketLike;
+        },
+        terminalSocketFactory: () => { throw new Error("terminal not used"); },
+      });
+
+      const probe = runtime.connections.list();
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      await expect(probe).resolves.toEqual([
+        expect.objectContaining({ availability: "offline" }),
+      ]);
+      expect(sockets).toHaveLength(2);
+      expect(sockets.every(({ closed }) => closed)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("retries a safe read on a fresh socket after a foreground zombie times out", async () => {
     vi.useFakeTimers();
     try {
@@ -572,8 +658,10 @@ describe("production terminal adapter", () => {
     vi.useFakeTimers();
     try {
       const sockets: FakeDataSocket[] = [];
+      const diagnosticLines: string[] = [];
       const runtime = createProductionRuntime({
         repository: fixedRepository(saved),
+        diagnostics: createMobileDiagnosticReporter((line) => diagnosticLines.push(line)),
         controlSocketFactory: () => { throw new Error("control not used"); },
         terminalSocketFactory: () => {
           const socket = new FakeDataSocket();
@@ -603,6 +691,16 @@ describe("production terminal adapter", () => {
       expect(events.slice(-3)).toEqual(["state:connecting", "reset", "state:connected"]);
       expect(decodeFrame(new Uint8Array(sockets[1]!.sent[1] as ArrayBuffer)).kind).toBe(KIND_ATTACH);
       await attachment.detach();
+      const diagnosticEvents = diagnosticLines.map((line) =>
+        (JSON.parse(line.replace("[termloop-mobile] ", "")) as { event: string }).event
+      );
+      expect(diagnosticEvents).toEqual(expect.arrayContaining([
+        "attachment_started",
+        "authenticated",
+        "connection_closed",
+        "reconnect_scheduled",
+        "attachment_detached",
+      ]));
     } finally {
       vi.useRealTimers();
     }

@@ -5,6 +5,10 @@ import http from "node:http";
 import path from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 import {
+  createGatewayDiagnosticReporter,
+  mobileDiagnosticContext,
+} from "./mobile-access-diagnostics.mjs";
+import {
   apnsPayload,
   attentionTransitions,
   isStewardOrWorkerSession,
@@ -95,6 +99,7 @@ const MOBILE_FULL_CONTROL_METHODS = new Set([
   "companion.proposalRespond",
 ]);
 let controlRequestSequence = 0;
+let downstreamConnectionSequence = 0;
 const upstreamControlConnections = new Map();
 const MAX_UPSTREAM_CONTROL_IN_FLIGHT = 128;
 
@@ -102,6 +107,7 @@ const configFile = process.argv[2];
 if (!configFile) throw new Error("usage: mobile-access-gateway <config-file>");
 const config = validateConfig(JSON.parse(await readFile(configFile, "utf8")));
 await boundLog();
+const diagnostics = createGatewayDiagnosticReporter((line) => process.stdout.write(`${line}\n`));
 const sockets = new Set();
 const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 4 * 1024 * 1024 });
 
@@ -201,21 +207,45 @@ const server = http.createServer(async (request, response) => {
 server.on("upgrade", (request, socket, head) => {
   const pathname = safePathname(request.url);
   if (pathname !== "/control" && pathname !== "/terminal") {
+    diagnostics.report("downstream", "upgrade_refused", { reason: "unsupportedPath" });
     socket.destroy();
     return;
   }
   websocketServer.handleUpgrade(request, socket, head, (client) => {
+    const connectionId = ++downstreamConnectionSequence;
+    const channel = pathname === "/control" ? "control" : "terminal";
+    const startedAtEpochMs = Date.now();
     sockets.add(client);
-    client.once("close", () => sockets.delete(client));
-    if (pathname === "/control") acceptControl(client);
-    else acceptTerminal(client);
+    diagnostics.report("downstream", "accepted", { connectionId, channel });
+    client.once("error", (error) => {
+      diagnostics.report("downstream", "socket_error", {
+        connectionId,
+        channel,
+        errorType: error?.name,
+      });
+    });
+    client.once("close", (code, reason) => {
+      sockets.delete(client);
+      diagnostics.report("downstream", "closed", {
+        connectionId,
+        channel,
+        closeCode: code,
+        closeReasonBytes: reason?.byteLength,
+        lifetimeMs: Date.now() - startedAtEpochMs,
+      });
+    });
+    if (pathname === "/control") acceptControl(client, connectionId);
+    else acceptTerminal(client, connectionId);
   });
 });
 
 server.listen(config.port, "127.0.0.1", () => {
   // A restart loop is otherwise indistinguishable from a silent gateway, so
   // record the one fact every diagnosis starts from. Never log credentials.
-  process.stdout.write(`${new Date().toISOString()} gateway listening pid=${process.pid} port=${config.port}\n`);
+  diagnostics.report("gateway", "listening", { port: config.port });
+});
+server.on("error", (error) => {
+  diagnostics.report("gateway", "server_error", { errorType: error?.name });
 });
 if (config.push !== undefined) startAttentionMonitor();
 // Compile the wrist transcriber before the first request needs it: a cold
@@ -228,11 +258,20 @@ ensureTranscriber(path.dirname(configFile)).catch(() => {
 // safe: later writes resume at the new end. A crash loop restarts the process,
 // which is exactly when this bound gets re-applied.
 async function boundLog() {
-  if (config.logFile === undefined) return;
+  if (config.logFile === undefined) return false;
   try {
-    if ((await stat(config.logFile)).size > LOG_LIMIT_BYTES) await truncate(config.logFile, 0);
+    if ((await stat(config.logFile)).size <= LOG_LIMIT_BYTES) return false;
+    await truncate(config.logFile, 0);
+    return true;
   } catch { /* A missing or unreadable log must never stop mobile access. */ }
+  return false;
 }
+
+setInterval(() => {
+  void boundLog().then((truncated) => {
+    if (truncated) diagnostics.report("gateway", "log_truncated", { limitBytes: LOG_LIMIT_BYTES });
+  });
+}, 60_000).unref();
 
 async function registerPushDevice(request, response) {
   if (config.push === undefined) return json(response, 404, { registered: false });
@@ -1051,48 +1090,87 @@ async function readPushDevices() {
   }
 }
 
-async function acceptControl(client) {
-  const first = await firstMessage(client);
-  if (first === undefined || first.isBinary) return refuse(client, "invalid control request");
+async function acceptControl(client, connectionId) {
+  const first = await firstMessage(client, connectionId, "control");
+  if (first === undefined || first.isBinary) {
+    diagnostics.report("control", "authentication_refused", {
+      connectionId,
+      reason: first === undefined ? "missingFirstMessage" : "binaryFirstMessage",
+    });
+    return refuse(client, "invalid control request");
+  }
   let request;
   try {
     request = JSON.parse(first.data.toString("utf8"));
   } catch {
+    diagnostics.report("control", "authentication_refused", {
+      connectionId,
+      reason: "invalidJson",
+    });
     return refuse(client, "invalid control request");
   }
   if (!constantTimeEqual(request?.token, config.controlToken)) {
+    diagnostics.report("control", "authentication_refused", {
+      connectionId,
+      reason: "invalidCredential",
+    });
     return refuse(client, "invalid credential");
   }
 
   if (Object.hasOwn(request, "mobileApiVersion")) {
+    const correlation = mobileDiagnosticContext(request);
+    diagnostics.report("control", "mobile_authenticated", {
+      connectionId,
+      ...correlation,
+    });
     client.on("message", (data, isBinary) => {
-      if (isBinary) return mobileControlResponse(client, "invalid", false, undefined, {
-        code: "invalidMessage",
-        message: "Mobile control requests must be JSON text.",
-      });
+      if (isBinary) {
+        diagnostics.report("control", "request_refused", {
+          connectionId,
+          reason: "binaryMessage",
+          ...correlation,
+        });
+        return mobileControlResponse(client, "invalid", false, undefined, {
+          code: "invalidMessage",
+          message: "Mobile control requests must be JSON text.",
+        });
+      }
       let next;
       try { next = JSON.parse(data.toString("utf8")); } catch {
+        diagnostics.report("control", "request_refused", {
+          connectionId,
+          reason: "invalidJson",
+          ...correlation,
+        });
         return mobileControlResponse(client, "invalid", false, undefined, {
           code: "invalidMessage",
           message: "Mobile control request is invalid.",
         });
       }
       if (!constantTimeEqual(next?.token, config.controlToken)) {
+        diagnostics.report("control", "request_refused", {
+          connectionId,
+          reason: "invalidCredential",
+          ...mobileDiagnosticContext(next),
+        });
         return mobileControlResponse(client, typeof next?.id === "string" ? next.id : "invalid", false, undefined, {
           code: "unauthenticated",
           message: "Mobile control credential is invalid.",
         });
       }
-      void acceptMobileControl(client, next);
+      void acceptMobileControl(client, next, connectionId);
     });
-    void acceptMobileControl(client, request);
+    void acceptMobileControl(client, request, connectionId);
     return;
   }
+
+  diagnostics.report("control", "legacy_authenticated", { connectionId });
 
   let runtime;
   try {
     runtime = await currentRuntime();
   } catch {
+    diagnostics.report("control", "runtime_unavailable", { connectionId, clientKind: "legacy" });
     return unavailable(client);
   }
   const clientProtocolVersion = request.protocolVersion;
@@ -1104,10 +1182,13 @@ async function acceptControl(client) {
     upstream,
     () => upstream.send(JSON.stringify(request)),
     (data, isBinary) => legacyControlResponse(data, isBinary, request.method, clientProtocolVersion),
+    { connectionId, channel: "control", clientKind: "legacy" },
   );
 }
 
-async function acceptMobileControl(client, request) {
+async function acceptMobileControl(client, request, connectionId) {
+  const startedAtEpochMs = Date.now();
+  const correlation = mobileDiagnosticContext(request);
   const id = typeof request.id === "string" && request.id.length > 0 && request.id.length <= 128
     ? request.id
     : undefined;
@@ -1116,6 +1197,12 @@ async function acceptMobileControl(client, request) {
   if (id === undefined || request.mobileApiVersion !== MOBILE_API_VERSION
     || !(readOnlyMethod || fullMethod)
     || !isRecord(request.params)) {
+    diagnostics.report("control", "request_refused", {
+      connectionId,
+      requestId: id,
+      reason: request.mobileApiVersion === MOBILE_API_VERSION ? "invalidMethodOrParams" : "unsupportedMobileApi",
+      ...correlation,
+    });
     return mobileControlResponse(client, id ?? "invalid", false, undefined, {
       code: request.mobileApiVersion === MOBILE_API_VERSION ? "methodNotFound" : "unsupportedMobileApi",
       message: request.mobileApiVersion === MOBILE_API_VERSION
@@ -1123,11 +1210,28 @@ async function acceptMobileControl(client, request) {
         : "This TermLoop Mobile API version is not supported.",
     });
   }
+  diagnostics.report("control", "request_started", {
+    connectionId,
+    requestId: id,
+    method: request.method,
+    authority: fullMethod ? "full" : "readOnly",
+    ...correlation,
+  });
   try {
     const runtime = await currentRuntime();
     // A discovery file without the full credential keeps every read working and
     // refuses only the named full-token methods, the same way the Watch reads do.
     if (fullMethod && runtime.fullToken === undefined) {
+      diagnostics.report("control", "request_completed", {
+        connectionId,
+        requestId: id,
+        method: request.method,
+        ok: false,
+        errorCode: "unauthenticated",
+        durationMs: Date.now() - startedAtEpochMs,
+        delivered: client.readyState === WebSocket.OPEN,
+        ...correlation,
+      });
       return mobileControlResponse(client, id, false, undefined, {
         code: "unauthenticated",
         message: "This Mac did not publish a credential for this action.",
@@ -1138,79 +1242,159 @@ async function acceptMobileControl(client, request) {
       request.method,
       request.params,
       fullMethod ? runtime.fullToken : runtime.readOnlyToken,
+      {
+        downstreamConnectionId: connectionId,
+        downstreamRequestId: id,
+        ...correlation,
+      },
     );
+    diagnostics.report("control", "request_completed", {
+      connectionId,
+      requestId: id,
+      method: request.method,
+      ok: true,
+      durationMs: Date.now() - startedAtEpochMs,
+      delivered: client.readyState === WebSocket.OPEN,
+      ...correlation,
+    });
     return mobileControlResponse(client, id, true, result);
   } catch (cause) {
     const error = cause instanceof UpstreamControlError
       ? cause.controlError
       : { code: "operationFailed", message: "TermLoop is restarting. Try again shortly." };
+    diagnostics.report("control", "request_completed", {
+      connectionId,
+      requestId: id,
+      method: request.method,
+      ok: false,
+      errorCode: error.code,
+      causeType: cause instanceof Error ? cause.name : typeof cause,
+      durationMs: Date.now() - startedAtEpochMs,
+      delivered: client.readyState === WebSocket.OPEN,
+      ...correlation,
+    });
     return mobileControlResponse(client, id, false, undefined, error);
   }
 }
 
-async function acceptTerminal(client) {
-  const first = await firstMessage(client);
-  if (first === undefined || !first.isBinary) return refuse(client, "invalid terminal authentication");
+async function acceptTerminal(client, connectionId) {
+  const first = await firstMessage(client, connectionId, "terminal");
+  if (first === undefined || !first.isBinary) {
+    diagnostics.report("terminal", "authentication_refused", {
+      connectionId,
+      reason: first === undefined ? "missingFirstMessage" : "textFirstMessage",
+    });
+    return refuse(client, "invalid terminal authentication");
+  }
   const expected = Buffer.concat([Buffer.from("TL01"), Buffer.from(config.terminalToken)]);
-  if (!constantTimeBufferEqual(first.data, expected)) return refuse(client, "invalid credential");
+  if (!constantTimeBufferEqual(first.data, expected)) {
+    diagnostics.report("terminal", "authentication_refused", {
+      connectionId,
+      reason: "invalidCredential",
+      authenticationBytes: first.data.byteLength,
+    });
+    return refuse(client, "invalid credential");
+  }
+  diagnostics.report("terminal", "mobile_authenticated", { connectionId });
 
   let runtime;
   try {
     runtime = await currentRuntime();
   } catch {
+    diagnostics.report("terminal", "runtime_unavailable", { connectionId });
     return unavailable(client);
   }
   const upstream = new WebSocket(runtime.terminalUrl, { maxPayload: 4 * 1024 * 1024 });
   bridge(client, upstream, () => {
     upstream.send(Buffer.concat([Buffer.from("TL01"), Buffer.from(runtime.terminalToken)]));
-  });
+  }, undefined, { connectionId, channel: "terminal", clientKind: "mobile" });
 }
 
-function bridge(client, upstream, onOpen, transformDownstream) {
+function bridge(client, upstream, onOpen, transformDownstream, context) {
   let opened = false;
+  const startedAtEpochMs = Date.now();
+  let downstreamMessages = 0;
+  let downstreamBytes = 0;
+  let upstreamMessages = 0;
+  let upstreamBytes = 0;
+  diagnostics.report("upstream", "connection_started", context);
   upstream.once("open", () => {
     opened = true;
+    diagnostics.report("upstream", "connection_opened", {
+      ...context,
+      durationMs: Date.now() - startedAtEpochMs,
+    });
     onOpen();
     client.on("message", (data, isBinary) => {
+      downstreamMessages += 1;
+      downstreamBytes += rawBuffer(data).byteLength;
       if (upstream.readyState === WebSocket.OPEN) upstream.send(data, { binary: isBinary });
     });
   });
   upstream.on("message", (data, isBinary) => {
+    upstreamMessages += 1;
+    upstreamBytes += rawBuffer(data).byteLength;
     if (client.readyState !== WebSocket.OPEN) return;
     const next = transformDownstream?.(data, isBinary) ?? { data, isBinary };
     client.send(next.data, { binary: next.isBinary });
   });
-  upstream.once("error", () => {
+  upstream.once("error", (error) => {
+    diagnostics.report("upstream", "socket_error", {
+      ...context,
+      opened,
+      errorType: error?.name,
+      durationMs: Date.now() - startedAtEpochMs,
+    });
     upstream.terminate();
     unavailable(client);
   });
-  upstream.once("close", (code) => {
+  upstream.once("close", (code, reason) => {
+    diagnostics.report("upstream", "connection_closed", {
+      ...context,
+      opened,
+      closeCode: code,
+      closeReasonBytes: reason?.byteLength,
+      lifetimeMs: Date.now() - startedAtEpochMs,
+      downstreamMessages,
+      downstreamBytes,
+      upstreamMessages,
+      upstreamBytes,
+    });
     if (client.readyState === WebSocket.OPEN) client.close(safeCloseCode(code), "upstream closed");
   });
   client.once("close", () => {
     if (upstream.readyState === WebSocket.OPEN || upstream.readyState === WebSocket.CONNECTING) {
       // This legacy raw bridge owns a dedicated upstream connection. Once the
       // downstream closes no response has a consumer, so release it immediately.
+      diagnostics.report("upstream", "terminated_after_downstream_close", {
+        ...context,
+        opened,
+        lifetimeMs: Date.now() - startedAtEpochMs,
+      });
       upstream.terminate();
     }
   });
   setTimeout(() => {
     if (!opened && upstream.readyState === WebSocket.CONNECTING) {
+      diagnostics.report("upstream", "connection_timeout", {
+        ...context,
+        durationMs: Date.now() - startedAtEpochMs,
+      });
       upstream.terminate();
       unavailable(client);
     }
   }, 5_000).unref();
 }
 
-function callCurrentControl(runtime, method, params, token = runtime.readOnlyToken) {
+function callCurrentControl(runtime, method, params, token = runtime.readOnlyToken, trace = {}) {
   const role = constantTimeEqual(token, runtime.readOnlyToken) ? "readOnly" : "full";
   let connection = upstreamControlConnections.get(role);
   if (connection === undefined || !connection.matches(runtime, token)) {
     connection?.close();
-    connection = new CurrentControlConnection(runtime, token);
+    connection = new CurrentControlConnection(runtime, token, role);
     upstreamControlConnections.set(role, connection);
   }
-  return connection.call(method, params);
+  return connection.call(method, params, trace);
 }
 
 class CurrentControlConnection {
@@ -1219,9 +1403,10 @@ class CurrentControlConnection {
   #generation = 0;
   #pending = new Map();
 
-  constructor(runtime, token) {
+  constructor(runtime, token, role) {
     this.runtime = runtime;
     this.token = token;
+    this.role = role;
   }
 
   matches(runtime, token) {
@@ -1230,22 +1415,52 @@ class CurrentControlConnection {
       && constantTimeEqual(this.token, token);
   }
 
-  call(method, params) {
+  call(method, params, trace) {
     if (this.#pending.size >= MAX_UPSTREAM_CONTROL_IN_FLIGHT) {
+      diagnostics.report("upstreamControl", "request_refused", {
+        role: this.role,
+        method,
+        reason: "inFlightLimit",
+        pendingRequests: this.#pending.size,
+        ...trace,
+      });
       return Promise.reject(new UpstreamControlError({
         code: "serviceBusy",
         message: "Too many gateway control requests are in flight.",
       }));
     }
     const id = `mobile-gateway-${++controlRequestSequence}`;
+    const startedAtEpochMs = Date.now();
+    diagnostics.report("upstreamControl", "request_started", {
+      role: this.role,
+      requestId: id,
+      method,
+      pendingRequests: this.#pending.size + 1,
+      generation: this.#generation,
+      ...trace,
+    });
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (!this.#pending.delete(id)) return;
+        diagnostics.report("upstreamControl", "request_timeout", {
+          role: this.role,
+          requestId: id,
+          method,
+          durationMs: Date.now() - startedAtEpochMs,
+          pendingRequests: this.#pending.size,
+          generation: this.#generation,
+          ...trace,
+        });
         this.#cancel(id);
+        const stalled = this.#socket === undefined ? this.#connecting?.socket : undefined;
+        if (stalled !== undefined) {
+          this.#disconnect(this.#generation, new Error("control connection timed out"));
+          stalled.terminate();
+        }
         reject(new Error("control request timed out"));
       }, 5_000);
       timeout.unref();
-      this.#pending.set(id, { resolve, reject, timeout });
+      this.#pending.set(id, { resolve, reject, timeout, method, startedAtEpochMs, trace });
       Promise.resolve().then(() => this.#connected()).then((socket) => {
         if (!this.#pending.has(id)) return;
         try {
@@ -1256,22 +1471,52 @@ class CurrentControlConnection {
             method,
             params,
           }));
-        } catch {
+          diagnostics.report("upstreamControl", "request_sent", {
+            role: this.role,
+            requestId: id,
+            method,
+            generation: this.#generation,
+            ...trace,
+          });
+        } catch (cause) {
+          diagnostics.report("upstreamControl", "request_send_failed", {
+            role: this.role,
+            requestId: id,
+            method,
+            generation: this.#generation,
+            causeType: cause instanceof Error ? cause.name : typeof cause,
+            ...trace,
+          });
           socket.terminate();
           this.#disconnect(this.#generation, new Error("control connection failed"));
         }
-      }).catch(() => {
+      }).catch((cause) => {
         const pending = this.#pending.get(id);
         if (pending === undefined) return;
         this.#pending.delete(id);
         clearTimeout(pending.timeout);
+        diagnostics.report("upstreamControl", "request_connection_failed", {
+          role: this.role,
+          requestId: id,
+          method,
+          durationMs: Date.now() - startedAtEpochMs,
+          causeType: cause instanceof Error ? cause.name : typeof cause,
+          ...trace,
+        });
         pending.reject(new Error("control connection failed"));
       });
     });
   }
 
   close() {
-    const socket = this.#socket;
+    const socket = this.#socket ?? this.#connecting?.socket;
+    diagnostics.report("upstreamControl", "client_closed", {
+      role: this.role,
+      generation: this.#generation,
+      pendingRequests: this.#pending.size,
+      transportState: this.#socket !== undefined ? "connected"
+        : this.#connecting !== undefined ? "connecting" : "disconnected",
+    });
     this.#generation += 1;
     this.#socket = undefined;
     this.#connecting = undefined;
@@ -1281,13 +1526,25 @@ class CurrentControlConnection {
 
   #connected() {
     if (this.#socket !== undefined) return Promise.resolve(this.#socket);
-    if (this.#connecting !== undefined) return this.#connecting;
+    if (this.#connecting !== undefined) return this.#connecting.promise;
     const generation = ++this.#generation;
+    const startedAtEpochMs = Date.now();
+    diagnostics.report("upstreamControl", "connection_started", {
+      role: this.role,
+      generation,
+      pendingRequests: this.#pending.size,
+    });
     const socket = new WebSocket(this.runtime.controlUrl, { maxPayload: 4 * 1024 * 1024 });
-    this.#connecting = new Promise((resolve, reject) => {
+    const promise = new Promise((resolve, reject) => {
       let opened = false;
       socket.once("open", () => {
         if (generation !== this.#generation) {
+          diagnostics.report("upstreamControl", "connection_superseded", {
+            role: this.role,
+            generation,
+            currentGeneration: this.#generation,
+            durationMs: Date.now() - startedAtEpochMs,
+          });
           socket.terminate();
           reject(new Error("control connection superseded"));
           return;
@@ -1295,25 +1552,61 @@ class CurrentControlConnection {
         opened = true;
         this.#socket = socket;
         this.#connecting = undefined;
+        diagnostics.report("upstreamControl", "connection_opened", {
+          role: this.role,
+          generation,
+          durationMs: Date.now() - startedAtEpochMs,
+          pendingRequests: this.#pending.size,
+        });
         resolve(socket);
       });
       socket.on("message", (data, isBinary) => this.#receive(generation, data, isBinary));
-      socket.once("error", () => {
+      socket.once("error", (error) => {
+        diagnostics.report("upstreamControl", "connection_error", {
+          role: this.role,
+          generation,
+          opened,
+          stale: generation !== this.#generation,
+          durationMs: Date.now() - startedAtEpochMs,
+          errorType: error?.name,
+        });
         if (!opened) reject(new Error("control connection failed"));
         this.#disconnect(generation, new Error("control connection failed"));
         socket.terminate();
       });
-      socket.once("close", () => {
+      socket.once("close", (code, reason) => {
+        diagnostics.report("upstreamControl", "connection_closed", {
+          role: this.role,
+          generation,
+          opened,
+          stale: generation !== this.#generation,
+          durationMs: Date.now() - startedAtEpochMs,
+          closeCode: code,
+          closeReasonBytes: reason?.byteLength,
+        });
         if (!opened) reject(new Error("control connection closed"));
         this.#disconnect(generation, new Error("control connection closed"));
       });
     });
-    return this.#connecting;
+    this.#connecting = { promise, socket };
+    return promise;
   }
 
   #receive(generation, data, isBinary) {
-    if (generation !== this.#generation) return;
+    if (generation !== this.#generation) {
+      diagnostics.report("upstreamControl", "stale_response_ignored", {
+        role: this.role,
+        generation,
+        currentGeneration: this.#generation,
+      });
+      return;
+    }
     if (isBinary) {
+      diagnostics.report("upstreamControl", "invalid_response", {
+        role: this.role,
+        generation,
+        reason: "binaryMessage",
+      });
       const socket = this.#socket;
       this.#disconnect(generation, new Error("binary control response"));
       socket?.terminate();
@@ -1321,23 +1614,56 @@ class CurrentControlConnection {
     }
     let response;
     try { response = JSON.parse(data.toString("utf8")); } catch {
+      diagnostics.report("upstreamControl", "invalid_response", {
+        role: this.role,
+        generation,
+        reason: "invalidJson",
+      });
       const socket = this.#socket;
       this.#disconnect(generation, new Error("invalid control response"));
       socket?.terminate();
       return;
     }
     if (!isRecord(response)) {
+      diagnostics.report("upstreamControl", "invalid_response", {
+        role: this.role,
+        generation,
+        reason: "notObject",
+      });
       const socket = this.#socket;
       this.#disconnect(generation, new Error("invalid control response"));
       socket?.terminate();
       return;
     }
-    if (typeof response.id !== "string") return;
+    if (typeof response.id !== "string") {
+      diagnostics.report("upstreamControl", "invalid_response", {
+        role: this.role,
+        generation,
+        reason: "missingRequestId",
+      });
+      return;
+    }
     const pending = this.#pending.get(response.id);
-    if (pending === undefined) return;
+    if (pending === undefined) {
+      diagnostics.report("upstreamControl", "orphan_response_ignored", {
+        role: this.role,
+        generation,
+        requestId: response.id,
+      });
+      return;
+    }
     this.#pending.delete(response.id);
     clearTimeout(pending.timeout);
     if (response.ok === true) {
+      diagnostics.report("upstreamControl", "request_completed", {
+        role: this.role,
+        requestId: response.id,
+        method: pending.method,
+        ok: true,
+        durationMs: Date.now() - pending.startedAtEpochMs,
+        pendingRequests: this.#pending.size,
+        ...pending.trace,
+      });
       pending.resolve(response.result);
       return;
     }
@@ -1349,6 +1675,16 @@ class CurrentControlConnection {
           : "TermLoop could not complete the request.",
       }
       : { code: "operationFailed", message: "TermLoop could not complete the request." };
+    diagnostics.report("upstreamControl", "request_completed", {
+      role: this.role,
+      requestId: response.id,
+      method: pending.method,
+      ok: false,
+      errorCode: error.code,
+      durationMs: Date.now() - pending.startedAtEpochMs,
+      pendingRequests: this.#pending.size,
+      ...pending.trace,
+    });
     pending.reject(new UpstreamControlError(error));
   }
 
@@ -1371,6 +1707,12 @@ class CurrentControlConnection {
 
   #disconnect(generation, error) {
     if (generation !== this.#generation) return;
+    diagnostics.report("upstreamControl", "transport_disconnected", {
+      role: this.role,
+      generation,
+      reason: error.message,
+      pendingRequests: this.#pending.size,
+    });
     this.#generation += 1;
     this.#socket = undefined;
     this.#connecting = undefined;
@@ -1382,6 +1724,13 @@ class CurrentControlConnection {
     this.#pending.clear();
     for (const request of pending) {
       clearTimeout(request.timeout);
+      diagnostics.report("upstreamControl", "request_interrupted", {
+        role: this.role,
+        method: request.method,
+        reason: error.message,
+        durationMs: Date.now() - request.startedAtEpochMs,
+        ...request.trace,
+      });
       request.reject(error);
     }
   }
@@ -1431,15 +1780,40 @@ async function currentRuntime() {
   };
 }
 
-function firstMessage(socket) {
+function firstMessage(socket, connectionId, channel) {
   return new Promise((resolve) => {
-    const timeout = setTimeout(() => resolve(undefined), 5_000);
+    const startedAtEpochMs = Date.now();
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      diagnostics.report(channel, "first_message_timeout", {
+        connectionId,
+        durationMs: Date.now() - startedAtEpochMs,
+      });
+      resolve(undefined);
+    }, 5_000);
     socket.once("message", (data, isBinary) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timeout);
-      resolve({ data: rawBuffer(data), isBinary });
+      const bytes = rawBuffer(data);
+      diagnostics.report(channel, "first_message_received", {
+        connectionId,
+        binary: isBinary,
+        bytes: bytes.byteLength,
+        durationMs: Date.now() - startedAtEpochMs,
+      });
+      resolve({ data: bytes, isBinary });
     });
     socket.once("close", () => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timeout);
+      diagnostics.report(channel, "closed_before_first_message", {
+        connectionId,
+        durationMs: Date.now() - startedAtEpochMs,
+      });
       resolve(undefined);
     });
   });
@@ -1550,10 +1924,15 @@ function safePathname(value) {
 }
 
 function refuse(socket, reason) {
+  diagnostics.report("gateway", "socket_refused", {
+    closeCode: 1008,
+    reason,
+  });
   if (socket.readyState === WebSocket.OPEN) socket.close(1008, reason);
 }
 
 function unavailable(socket) {
+  diagnostics.report("gateway", "socket_unavailable", { closeCode: 1013 });
   if (socket.readyState === WebSocket.OPEN) socket.close(1013, "TermLoop is starting");
 }
 
@@ -1562,6 +1941,7 @@ function safeCloseCode(code) {
 }
 
 function shutdown() {
+  diagnostics.report("gateway", "shutdown_started", { openSockets: sockets.size });
   for (const socket of sockets) socket.close(1001, "gateway restarting");
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1_000).unref();
