@@ -60,6 +60,7 @@ import { AssistantRefreshThrottle, timeoutRefreshScheduler } from "./assistant-r
 import { presentedAgentStatus } from "../session-presentation.js";
 import { nativeOverlayPassiveVisible, nativeTerminalSurfaceVisible, useNativeOverlayWindow } from "./native-overlay-window.js";
 import { OverlayPortal } from "../ui/OverlayPortal.js";
+import { selectProjectWithTerminalFocus } from "./project-navigation.js";
 import {
   MAX_CHANGE_REVIEW_MESSAGE_BYTES,
   reviewMessageByteLength,
@@ -734,8 +735,9 @@ export function DesktopApp() {
   }, []);
 
   const selectProject = useCallback((projectId: string) => {
-    presentationStore.getState().selectProject(projectId);
-      void refreshProjection().catch((error) => projectionStore.setMessage(controlErrorMessage(error)));
+    const presentation = presentationStore.getState();
+    selectProjectWithTerminalFocus(presentation, projectId, focusTerminalSoon);
+    void refreshProjection().catch((error) => projectionStore.setMessage(controlErrorMessage(error)));
   }, []);
   const selectSession = useCallback((sessionId: string) => {
     if (selectedProject) {

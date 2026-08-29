@@ -14,6 +14,24 @@ describe("Ghostty native host visibility", () => {
     expect(handler).not.toContain("ghostty_surface_set_occlusion(e->surface, !visible);");
   });
 
+  it("restores Chromium focus before hiding a focused native surface", () => {
+    const focusMethods = source.slice(
+      source.indexOf("- (void)focusSurface"),
+      source.indexOf("// -- keyboard / IME"),
+    );
+    const visibilityHandler = source.slice(
+      source.indexOf("static Napi::Value SetSurfaceVisible"),
+      source.indexOf("static Napi::Value FocusSurface"),
+    );
+    const restore = visibilityHandler.indexOf("[e->view restoreFocusIfOwned]");
+    const hide = visibilityHandler.indexOf("e->view.hidden = !visible;");
+
+    expect(focusMethods).toContain("self.restorationResponder = current;");
+    expect(focusMethods).toContain("[window makeFirstResponder:responder]");
+    expect(restore).toBeGreaterThanOrEqual(0);
+    expect(restore).toBeLessThan(hide);
+  });
+
   it("routes AppKit command key equivalents through Ghostty bindings", () => {
     const handler = source.slice(
       source.indexOf("- (BOOL)performKeyEquivalent"),

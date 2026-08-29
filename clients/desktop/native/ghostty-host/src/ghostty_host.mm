@@ -259,7 +259,10 @@ static void notifyShellShortcut(const char *shortcut) {
 @property(nonatomic, assign) BOOL shiftReleased;
 @property(nonatomic, strong) NSMutableAttributedString *markedText;
 @property(nonatomic, strong, nullable) NSMutableArray<NSString *> *keyTextAccumulator;
+@property(nonatomic, weak, nullable) NSResponder *restorationResponder;
 - (void)syncSurfaceSize;
+- (void)focusSurface;
+- (void)restoreFocusIfOwned;
 @end
 
 @implementation TLGhosttyView
@@ -329,6 +332,27 @@ static void notifyShellShortcut(const char *shortcut) {
   if (accepted && self.surface) ghostty_surface_set_focus(self.surface, false);
   if (accepted) self.surfaceFocused = NO;
   return accepted;
+}
+
+- (void)focusSurface {
+  NSWindow *window = self.window;
+  if (window == nil || window.firstResponder == self) return;
+  NSResponder *current = window.firstResponder;
+  if ([current isKindOfClass:[TLGhosttyView class]]) {
+    current = ((TLGhosttyView *)current).restorationResponder;
+  }
+  if (current != nil) self.restorationResponder = current;
+  [window makeFirstResponder:self];
+}
+
+- (void)restoreFocusIfOwned {
+  NSWindow *window = self.window;
+  if (window == nil || window.firstResponder != self) return;
+  NSResponder *responder = self.restorationResponder;
+  self.restorationResponder = nil;
+  if (responder != nil && [window makeFirstResponder:responder]) return;
+  if ([window makeFirstResponder:self.superview]) return;
+  [window makeFirstResponder:nil];
 }
 
 // -- keyboard / IME ---------------------------------------------------------
@@ -684,7 +708,7 @@ static void notifyShellShortcut(const char *shortcut) {
 }
 
 - (void)mouseDown:(NSEvent *)event {
-  [self.window makeFirstResponder:self];
+  [self focusSurface];
   [self reportMousePos:event];
   if (self.surface)
     ghostty_surface_mouse_button(self.surface, GHOSTTY_MOUSE_PRESS,
@@ -1001,6 +1025,7 @@ static Napi::Value SetSurfaceVisible(const Napi::CallbackInfo &info) {
       entryForId(info[0].As<Napi::Number>().Uint32Value());
   if (e == nullptr) return env.Undefined();
   const bool visible = info[1].As<Napi::Boolean>().Value();
+  if (!visible) [e->view restoreFocusIfOwned];
   e->view.hidden = !visible;
   // Despite the API name, Ghostty expects whether the surface is visible,
   // matching NSWindow.occlusionState.contains(.visible). Passing the inverse
@@ -1014,7 +1039,7 @@ static Napi::Value FocusSurface(const Napi::CallbackInfo &info) {
   SurfaceEntry *e =
       entryForId(info[0].As<Napi::Number>().Uint32Value());
   if (e == nullptr) return env.Undefined();
-  [e->view.window makeFirstResponder:e->view];
+  [e->view focusSurface];
   return env.Undefined();
 }
 
@@ -1101,6 +1126,7 @@ static Napi::Value DestroySurface(const Napi::CallbackInfo &info) {
   const uint32_t id = info[0].As<Napi::Number>().Uint32Value();
   SurfaceEntry *e = entryForId(id);
   if (e == nullptr) return env.Undefined();
+  [e->view restoreFocusIfOwned];
   e->view.surface = nullptr;
   e->callbacks->alive.store(false, std::memory_order_release);
   ghostty_surface_free(e->surface);
