@@ -8,6 +8,8 @@ import {
   View,
 } from "react-native";
 
+import { StewardVoiceProjectSelector } from "@/components/steward-voice-project-selector";
+import { canSwitchVoiceProject } from "@/presentation/steward-voice-project-selection";
 import type {
   VoiceMode,
   VoicePhase,
@@ -24,6 +26,8 @@ import { fontFamily } from "@/theme/typography";
 export interface StewardVoiceControlsProps {
   readonly active: boolean;
   readonly expanded: boolean;
+  readonly projects: readonly { id: string; name: string }[];
+  readonly selectedProjectId: string | undefined;
   readonly projectName: string;
   readonly phase: VoicePhase;
   readonly replyActivity: VoiceStewardActivity;
@@ -42,6 +46,7 @@ export interface StewardVoiceControlsProps {
   readonly onEnd: () => void;
   readonly onToggleMicrophone: () => void;
   readonly onReplay: () => void;
+  readonly onSelectProject: (projectId: string) => void;
   readonly onModeChange: (mode: VoiceMode) => void;
   readonly onBeginCorrection: () => void;
   readonly onDraftChange: (value: string) => void;
@@ -93,6 +98,13 @@ export function StewardVoiceControls(props: StewardVoiceControlsProps) {
               <Text style={styles.chevron}>⌄</Text>
             </Pressable>
           </View>
+
+          <StewardVoiceProjectSelector
+            disabled={!canSwitchVoiceProject(props.phase)}
+            onSelect={props.onSelectProject}
+            projects={props.projects}
+            selectedProjectId={props.selectedProjectId}
+          />
 
           <View style={styles.modeRow}>
             <ModeButton

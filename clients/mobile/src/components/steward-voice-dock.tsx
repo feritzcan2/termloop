@@ -20,6 +20,10 @@ import {
 } from "@/features/connection/connection-store";
 import { useOverview } from "@/features/overview/overview-store";
 import {
+  enabledVoiceProjects,
+  switchableVoiceProject,
+} from "@/presentation/steward-voice-project-selection";
+import {
   appendVoiceFloatPcmBuffer,
   createVoicePcmCapture,
   createVoicePcmWav,
@@ -71,10 +75,7 @@ export function StewardVoiceDock() {
   const routeParams = useGlobalSearchParams() as VoiceRouteParams;
   const routeProjectId = voiceProjectId(routeParams, overview.overview);
   const stewardEnabledProjectIds = overview.overview?.stewardEnabledProjectIds ?? [];
-  const projects = useMemo(() => {
-    const enabled = new Set(stewardEnabledProjectIds);
-    return (overview.overview?.projects ?? []).filter((project) => enabled.has(project.id));
-  }, [overview.overview?.projects, stewardEnabledProjectIds]);
+  const projects = useMemo(() => enabledVoiceProjects(overview.overview), [overview.overview]);
 
   const [sessionActive, setSessionActive] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -646,12 +647,12 @@ export function StewardVoiceDock() {
     return () => clearInterval(handle);
   }, [overview.refresh, phase, sessionActive]);
 
-  const endConversation = useCallback(() => {
+  const resetConversation = useCallback((collapseDetails: boolean) => {
     conversationRef.current += 1;
     sessionActiveRef.current = false;
-    expandedRef.current = false;
+    expandedRef.current = !collapseDetails;
     setSessionActive(false);
-    setExpanded(false);
+    setExpanded(!collapseDetails);
     setMicrophone(false);
     clearReviewTimers();
     player.pause();
@@ -670,20 +671,30 @@ export function StewardVoiceDock() {
     bootstrappingRef.current = false;
     pollFailureSinceRef.current = null;
     activeTargetRef.current = undefined;
+    receiptRef.current = {
+      initialized: false,
+      acknowledgedSequence: 0,
+      pendingUserSequence: null,
+    };
     setUnreadCount(0);
+    setLastReply(undefined);
     setError(undefined);
     setTurns([]);
     turnsRef.current = [];
     setDraft("");
+    setEditingDraft(false);
     draftRef.current = "";
     activeTurnIdRef.current = undefined;
     transition("ready");
-    void stewardLiveActivity.end().catch(() => undefined);
-    void deactivateVoiceAudio().catch(() => undefined);
   }, [cleanSpeechFile, clearReviewTimers, player, setMicrophone, stopCapture, transition]);
 
-  const openConversation = useCallback(() => {
-    const project = projects.find((candidate) => candidate.id === routeProjectId) ?? selectedProject;
+  const endConversation = useCallback(() => {
+    resetConversation(true);
+    void stewardLiveActivity.end().catch(() => undefined);
+    void deactivateVoiceAudio().catch(() => undefined);
+  }, [resetConversation]);
+
+  const startConversation = useCallback((project: { id: string }, microphoneInitiallyEnabled: boolean) => {
     const connectionId = connections.selected?.id;
     const conversation = conversationRef.current + 1;
     conversationRef.current = conversation;
@@ -693,7 +704,7 @@ export function StewardVoiceDock() {
     setSessionActive(true);
     setExpanded(true);
     setMode("single");
-    setMicrophone(true);
+    setMicrophone(microphoneInitiallyEnabled);
     setError(undefined);
     setTurns([]);
     turnsRef.current = [];
@@ -702,7 +713,7 @@ export function StewardVoiceDock() {
     speechBlockedRef.current = false;
     setUnreadCount(0);
     transcriptSeededRef.current = false;
-    if (project === undefined || connectionId === undefined) {
+    if (connectionId === undefined) {
       setMicrophone(false);
       setError("Önce çevrimiçi bir Mac ve Steward projesi seç.");
       transition("error");
@@ -712,7 +723,26 @@ export function StewardVoiceDock() {
     const target = { connectionId, projectId: project.id };
     activeTargetRef.current = target;
     void beginSession(conversation, target);
-  }, [beginSession, connections.selected?.id, projects, routeProjectId, selectedProject, setMicrophone, transition]);
+  }, [beginSession, connections.selected?.id, setMicrophone, transition]);
+
+  const openConversation = useCallback(() => {
+    const project = projects.find((candidate) => candidate.id === routeProjectId) ?? selectedProject;
+    if (project === undefined) return;
+    startConversation(project, true);
+  }, [projects, routeProjectId, selectedProject, startConversation]);
+
+  const selectProject = useCallback((projectId: string) => {
+    if (bootstrappingRef.current || pollingRef.current) return;
+    const project = switchableVoiceProject(
+      projects,
+      activeTargetRef.current?.projectId,
+      projectId,
+      phaseRef.current,
+    );
+    if (project === undefined) return;
+    resetConversation(false);
+    startConversation(project, false);
+  }, [projects, resetConversation, startConversation]);
 
   const toggleMicrophone = useCallback(() => {
     if (microphoneEnabledRef.current) {
@@ -835,6 +865,7 @@ export function StewardVoiceDock() {
         onEnd={endConversation}
         onModeChange={changeMode}
         onReplay={replayLastReply}
+        onSelectProject={selectProject}
         onStart={openConversation}
         onToggleExpanded={() => {
           expandedRef.current = !expandedRef.current;
@@ -842,8 +873,10 @@ export function StewardVoiceDock() {
         }}
         onToggleMicrophone={toggleMicrophone}
         phase={phase}
+        projects={projects}
         projectName={selectedProject?.name ?? "Steward"}
         replyActivity={replyActivity}
+        selectedProjectId={selectedProject?.id}
         turns={turns}
         unreadCount={unreadCount}
       />
