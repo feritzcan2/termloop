@@ -9,6 +9,7 @@ import {
   updateVoiceTranscript,
   updateVoiceSilence,
   voiceDetailsMaxHeight,
+  voiceDockWidth,
   voiceProjectId,
   voiceTurnForReply,
 } from "../src/presentation/steward-voice-presentation";
@@ -32,6 +33,13 @@ describe("Steward voice presentation", () => {
     expect(voiceDetailsMaxHeight(667)).toBe(320);
     expect(voiceDetailsMaxHeight(932)).toBe(420);
     expect(voiceDetailsMaxHeight(Number.NaN)).toBe(320);
+  });
+
+  it("keeps the floating voice dock inside the device's horizontal insets", () => {
+    expect(voiceDockWidth(320)).toBe(292);
+    expect(voiceDockWidth(393)).toBe(365);
+    expect(voiceDockWidth(1_024)).toBe(560);
+    expect(voiceDockWidth(Number.NaN)).toBe(362);
   });
 
   it("accumulates native PCM duration and metering before creating a WAV", () => {

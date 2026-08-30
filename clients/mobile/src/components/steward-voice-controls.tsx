@@ -13,7 +13,10 @@ import type {
   VoicePhase,
   VoiceTurn,
 } from "@/presentation/steward-voice-presentation";
-import { voiceDetailsMaxHeight } from "@/presentation/steward-voice-presentation";
+import {
+  voiceDetailsMaxHeight,
+  voiceDockWidth,
+} from "@/presentation/steward-voice-presentation";
 import { color, radius, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
@@ -44,7 +47,7 @@ export interface StewardVoiceControlsProps {
 }
 
 export function StewardVoiceControls(props: StewardVoiceControlsProps) {
-  const { height: viewportHeight } = useWindowDimensions();
+  const { height: viewportHeight, width: viewportWidth } = useWindowDimensions();
 
   if (!props.active) {
     return (
@@ -65,7 +68,7 @@ export function StewardVoiceControls(props: StewardVoiceControlsProps) {
   const microphoneDisabled = ["connecting", "permission", "transcribing", "sending"].includes(props.phase);
 
   return (
-    <View style={styles.shell}>
+    <View style={[styles.shell, { width: voiceDockWidth(viewportWidth) }]}>
       {props.expanded ? (
         <ScrollView
           contentContainerStyle={styles.details}
@@ -330,7 +333,6 @@ const styles = StyleSheet.create({
     backgroundColor: color.success, borderWidth: 1.5, borderColor: color.bgApp,
   },
   shell: {
-    width: "100%",
     maxWidth: 560,
     borderRadius: radius.sheet,
     borderWidth: 1,

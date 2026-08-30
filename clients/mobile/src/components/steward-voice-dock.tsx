@@ -38,6 +38,10 @@ import {
 } from "@/presentation/steward-voice-presentation";
 import { stewardLiveActivity } from "@/platform/steward-live-activity";
 import { stewardLocalSpeech } from "@/platform/steward-local-speech";
+import {
+  configureStewardAudioSession,
+  stewardVoiceAudioErrorMessage,
+} from "@/platform/steward-voice-audio";
 import { space } from "@/theme/tokens";
 
 interface QueuedSpeech {
@@ -298,7 +302,7 @@ export function StewardVoiceDock() {
       if (!stillCurrent || conversation !== conversationRef.current) return;
       stopCapture();
       setMicrophone(false);
-      setError(describe(cause, "Mikrofon başlatılamadı."));
+      setError(stewardVoiceAudioErrorMessage(cause, "Mikrofon başlatılamadı."));
       transition("error");
     }
   }, [cleanSpeechFile, setMicrophone, stopCapture, stream, transition]);
@@ -492,6 +496,7 @@ export function StewardVoiceDock() {
         await finishSpeech(queued, conversation);
         return;
       }
+      await configureVoicePlaybackAudio();
       const audio = await runtime.steward.speech(target.connectionId, target.projectId, queued.message.sequence);
       if (conversation !== conversationRef.current || !sessionActiveRef.current) return;
       cleanSpeechFile();
@@ -499,7 +504,6 @@ export function StewardVoiceDock() {
       file.write(audio);
       speechFileRef.current = file;
       speakingConversationRef.current = conversation;
-      await configureVoicePlaybackAudio();
       player.replace(file.uri);
       player.play();
       return;
@@ -526,7 +530,9 @@ export function StewardVoiceDock() {
         if (turnId !== undefined) {
           changeTurns((current) => updateVoiceTurn(current, turnId, { status: "answered" }));
         }
-        setError(`${describe(remoteCause, "Mac sesi üretilemedi.")} ${describe(localCause, "iPhone da okuyamadı.")}`);
+        const remoteMessage = stewardVoiceAudioErrorMessage(remoteCause, "Mac sesi üretilemedi.");
+        const localMessage = stewardVoiceAudioErrorMessage(localCause, "iPhone da okuyamadı.");
+        setError(remoteMessage === localMessage ? remoteMessage : `${remoteMessage} ${localMessage}`);
         transition("error");
       }
     } finally {
@@ -776,6 +782,7 @@ export function StewardVoiceDock() {
   return (
     <KeyboardAvoidingView
       behavior="position"
+      contentContainerStyle={styles.overlayContent}
       pointerEvents="box-none"
       style={[styles.overlay, { bottom: insets.bottom + 8 }]}
     >
@@ -829,25 +836,25 @@ function liveActivityStatus(phase: VoicePhase): string {
 }
 
 async function configureVoiceRecordingAudio(): Promise<void> {
-  await setAudioModeAsync({
+  await configureStewardAudioSession(() => setAudioModeAsync({
     allowsRecording: true,
     allowsBackgroundRecording: true,
     shouldPlayInBackground: true,
     shouldRouteThroughEarpiece: false,
     playsInSilentMode: true,
     interruptionMode: "doNotMix",
-  });
+  }));
 }
 
 async function configureVoicePlaybackAudio(): Promise<void> {
-  await setAudioModeAsync({
+  await configureStewardAudioSession(() => setAudioModeAsync({
     allowsRecording: false,
     allowsBackgroundRecording: false,
     shouldPlayInBackground: true,
     shouldRouteThroughEarpiece: false,
     playsInSilentMode: true,
     interruptionMode: "doNotMix",
-  });
+  }));
 }
 
 async function deactivateVoiceAudio(): Promise<void> {
@@ -877,4 +884,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: space.screen,
   },
+  overlayContent: { width: "100%", alignItems: "center" },
 });

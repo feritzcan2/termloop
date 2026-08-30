@@ -96,6 +96,16 @@ export function voiceDetailsMaxHeight(viewportHeight: number): number {
   return Math.max(220, Math.min(420, Math.floor(safeHeight * 0.48)));
 }
 
+/// Resolves the floating sheet to an explicit device width. A percentage width
+/// inside KeyboardAvoidingView's `position` wrapper can otherwise resolve
+/// against the sheet's own 560pt max width and center part of it off-screen.
+export function voiceDockWidth(viewportWidth: number): number {
+  const safeWidth = Number.isFinite(viewportWidth) && viewportWidth > 0
+    ? viewportWidth
+    : 390;
+  return Math.max(0, Math.min(560, Math.floor(safeWidth - 28)));
+}
+
 export function createVoicePcmCapture(): VoicePcmCapture {
   return {
     chunks: [],
