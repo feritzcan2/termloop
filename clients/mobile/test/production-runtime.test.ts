@@ -18,8 +18,9 @@ import {
   type SavedConnection,
   type SecretStore,
 } from "../src/platform/secure-connections";
-import { createWatchTargetSettings } from "../src/platform/watch-target-settings";
 import { createMobileDiagnosticReporter } from "../src/platform/mobile-diagnostics";
+import { createStewardVoiceReceiptStore } from "../src/platform/steward-voice-receipts";
+import { createWatchTargetSettings } from "../src/platform/watch-target-settings";
 import {
   fixtureAgentCapabilities,
   fixtureAgentStatuses,
@@ -82,6 +83,29 @@ describe("secure connection repository", () => {
 
     expect(await settings.get(saved.id)).toBe("project-1");
     expect(await repository.get(saved.id)).toEqual(saved);
+  });
+
+  it("persists only the Steward delivery receipt, not transcript content", async () => {
+    const store = memorySecretStore();
+    const receipts = createStewardVoiceReceiptStore(store);
+
+    expect(await receipts.read("macbook", "project-1")).toEqual({
+      initialized: false,
+      acknowledgedSequence: 0,
+      pendingUserSequence: null,
+    });
+    await receipts.write("macbook", "project-1", {
+      initialized: true,
+      acknowledgedSequence: 21,
+      pendingUserSequence: 24,
+    });
+
+    expect(await receipts.read("macbook", "project-1")).toEqual({
+      initialized: true,
+      acknowledgedSequence: 21,
+      pendingUserSequence: 24,
+    });
+    expect([...store.values.values()].join(" ")).not.toContain("Steward reply");
   });
 });
 
@@ -1088,8 +1112,15 @@ describe("production pipeline, launch, and Steward adapters", () => {
     expect(methods).toEqual([]);
   });
 
-  it("uploads voice and downloads speech through the owner-authenticated gateway", async () => {
+  it("previews voice, commits the corrected transcript, and downloads speech", async () => {
     const calls: Array<{ url: string; authorization: string | null; contentType: string | null; body: unknown }> = [];
+    const methods: string[] = [];
+    const requests: Array<{
+      method: string;
+      params: Record<string, unknown>;
+      mobileApiVersion: number | undefined;
+      protocolVersion: string | undefined;
+    }> = [];
     const request: typeof fetch = async (input, init) => {
       const url = String(input);
       const headers = new Headers(init?.headers);
@@ -1099,8 +1130,8 @@ describe("production pipeline, launch, and Steward adapters", () => {
         contentType: headers.get("content-type"),
         body: init?.body,
       });
-      if (url.includes("/steward/voice")) {
-        return Response.json({ transcript: "  canlı merhaba  ", message: { sequence: 19 } });
+      if (url.endsWith("/steward/transcribe")) {
+        return Response.json({ transcript: "  yanlış peynir  " });
       }
       if (url.endsWith("/steward/speech")) {
         return new Response(new Uint8Array([73, 68, 51]));
@@ -1109,20 +1140,22 @@ describe("production pipeline, launch, and Steward adapters", () => {
     };
     const runtime = createProductionRuntime({
       repository: fixedRepository(saved),
-      controlSocketFactory: controlSocketFactory([], []),
+      controlSocketFactory: controlSocketFactory(methods, requests),
       terminalSocketFactory: () => { throw new Error("terminal not used"); },
       fetch: request,
     });
 
-    await expect(runtime.steward.sendVoice(saved.id, fixtureProjects[0]!.id, {
+    await expect(runtime.steward.transcribeVoice(saved.id, {
       bytes: new Uint8Array([1, 2, 3]).buffer,
       mediaType: "audio/wav",
-    })).resolves.toEqual({ transcript: "canlı merhaba", userSequence: 19 });
+    })).resolves.toBe("yanlış peynir");
+    await expect(runtime.steward.commitVoice(saved.id, fixtureProjects[0]!.id, "  doğru payment  "))
+      .resolves.toEqual({ transcript: "doğru payment", userSequence: fixtureStewardTranscript[0]!.sequence });
     await expect(runtime.steward.speech(saved.id, fixtureProjects[0]!.id, 20))
       .resolves.toEqual(new Uint8Array([73, 68, 51]));
 
     expect(calls[0]).toMatchObject({
-      url: `http://127.0.0.1:48100/steward/voice?project=${fixtureProjects[0]!.id}`,
+      url: "http://127.0.0.1:48100/steward/transcribe",
       authorization: `Bearer ${saved.controlToken}`,
       contentType: "audio/wav",
       body: new Uint8Array([1, 2, 3]).buffer,
@@ -1131,6 +1164,12 @@ describe("production pipeline, launch, and Steward adapters", () => {
       url: "http://127.0.0.1:48100/steward/speech",
       authorization: `Bearer ${saved.controlToken}`,
       contentType: "application/json",
+    });
+    expect(methods).toEqual(["companion.transcriptAppend"]);
+    expect(requests[0]?.params).toEqual({
+      projectId: fixtureProjects[0]!.id,
+      inputMode: "voice",
+      content: "doğru payment",
     });
   });
 

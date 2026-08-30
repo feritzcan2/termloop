@@ -191,14 +191,18 @@ describe("mock mobile runtime", () => {
   it("marks a mocked recording as a voice turn", async () => {
     const runtime = createMockRuntime();
 
-    const appended = await runtime.steward.sendVoice(
+    const preview = await runtime.steward.transcribeVoice(
+      "connection-local-mac",
+      { bytes: new Uint8Array([1, 2, 3]).buffer, mediaType: "audio/m4a" },
+    );
+    const appended = await runtime.steward.commitVoice(
       "connection-local-mac",
       "project-termloop-next",
-      { bytes: new Uint8Array([1, 2, 3]).buffer, mediaType: "audio/m4a" },
+      preview,
     );
     const transcript = await runtime.steward.transcript("connection-local-mac", "project-termloop-next");
 
-    expect(appended.transcript).toBe("Mock voice turn");
+    expect(appended.transcript).toBe(preview);
     expect(transcript.find((message) => message.sequence === appended.userSequence)?.inputMode).toBe("voice");
   });
 

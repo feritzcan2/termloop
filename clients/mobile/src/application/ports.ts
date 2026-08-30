@@ -14,6 +14,7 @@ import type {
 
 export type ConnectionAvailability =
   | "online"
+  | "reconnecting"
   | "offline"
   | "revoked"
   | "updateRequired";
@@ -174,14 +175,28 @@ export interface StewardVoiceAppend {
   userSequence: number;
 }
 
+export interface StewardVoiceReceipt {
+  readonly initialized: boolean;
+  readonly acknowledgedSequence: number;
+  readonly pendingUserSequence: number | null;
+}
+
+export interface StewardVoiceReceiptStore {
+  read(connectionId: string, projectId: string): Promise<StewardVoiceReceipt>;
+  write(connectionId: string, projectId: string, receipt: StewardVoiceReceipt): Promise<void>;
+}
+
 export interface StewardPort {
   transcript(connectionId: string, projectId: string): Promise<readonly StewardMessage[]>;
   /// Appends one user message. The daemon's own chat wake brings the Steward up,
   /// exactly as it does for the desktop and Watch chats.
   send(connectionId: string, projectId: string, content: string): Promise<readonly StewardMessage[]>;
-  /// Transcribes one bounded recording on the Mac, appends it as a live voice
-  /// turn, and returns the sequence that a later Steward reply must follow.
-  sendVoice(connectionId: string, projectId: string, clip: StewardVoiceClip): Promise<StewardVoiceAppend>;
+  /// Transcribes one bounded recording without appending it. The caller shows
+  /// this preview so a recognition mistake can be corrected before delivery.
+  transcribeVoice(connectionId: string, clip: StewardVoiceClip): Promise<string>;
+  /// Appends the user-confirmed transcript as a voice turn and returns the
+  /// sequence that a later Steward reply must follow.
+  commitVoice(connectionId: string, projectId: string, transcript: string): Promise<StewardVoiceAppend>;
   /// Returns daemon-generated speech bytes for the exact persisted Steward
   /// message. Provider credentials never cross this port.
   speech(connectionId: string, projectId: string, sequence: number): Promise<Uint8Array>;
@@ -257,6 +272,7 @@ export interface MobileRuntime {
   playbook: PlaybookPort;
   agentLaunch: AgentLaunchPort;
   steward: StewardPort;
+  voiceReceipts: StewardVoiceReceiptStore;
   terminal: TerminalPort;
   images: SessionImagePort;
   notifications: NotificationRegistrationPort;

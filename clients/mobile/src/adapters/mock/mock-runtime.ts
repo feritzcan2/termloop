@@ -79,6 +79,11 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
   const launches: { taskId: string; agentId: string; launchTicket: string }[] = [];
   const projectLaunches: { projectId: string; agentId: string; launchTicket: string }[] = [];
   const watchTargets = new Map<string, string>();
+  const voiceReceipts = new Map<string, {
+    initialized: boolean;
+    acknowledgedSequence: number;
+    pendingUserSequence: number | null;
+  }>();
   let transcript: StewardMessage[] = fixtureStewardTranscript.map((message) => ({ ...message }));
   // A counter rather than a read of the last message: two appends inside one
   // reply would otherwise both claim the same sequence, and the production
@@ -106,6 +111,15 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
 
   return {
     kind: "mock",
+    voiceReceipts: {
+      async read(connectionId, projectId) {
+        return voiceReceipts.get(`${connectionId}:${projectId}`)
+          ?? { initialized: false, acknowledgedSequence: 0, pendingUserSequence: null };
+      },
+      async write(connectionId, projectId, receipt) {
+        voiceReceipts.set(`${connectionId}:${projectId}`, { ...receipt });
+      },
+    },
     connections: {
       async list() {
         return profiles.map((profile) => ({ ...profile }));
@@ -243,9 +257,13 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
         ];
         return transcript.map((message) => ({ ...message }));
       },
-      async sendVoice(connectionId) {
+      async transcribeVoice(connectionId) {
         if (connectionId !== profiles[0]?.id) throw new Error("mock connection not found");
-        const user = appended("user", "reply", "Mock voice turn", "voice");
+        return "Mock voice turn";
+      },
+      async commitVoice(connectionId, _projectId, voiceTranscript) {
+        if (connectionId !== profiles[0]?.id) throw new Error("mock connection not found");
+        const user = appended("user", "reply", voiceTranscript, "voice");
         transcript = [
           ...transcript,
           user,

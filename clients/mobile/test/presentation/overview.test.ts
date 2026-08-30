@@ -340,6 +340,10 @@ describe("task presentation", () => {
 describe("connection presentation", () => {
   it("blocks every availability that cannot be read, and only those", () => {
     expect(connectionPresentation("online").block).toBeUndefined();
+    expect(connectionPresentation("reconnecting")).toMatchObject({
+      dot: "connecting",
+      block: undefined,
+    });
     expect(connectionPresentation("offline").block).toBe("offline");
     expect(connectionPresentation("revoked").block).toBe("revoked");
     expect(connectionPresentation("updateRequired").block).toBe("updateRequired");

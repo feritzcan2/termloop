@@ -383,6 +383,21 @@ describe("watch facade over the gateway", () => {
       });
       expect(mobileVoiceWithWatchToken.status).toBe(401);
       const ownerAuthorization = { authorization: `Bearer ${"c".repeat(64)}` };
+      const mobileTranscribeWithWatchToken = await fetch(`${base}/steward/transcribe`, {
+        method: "POST",
+        headers: { ...authorization, "content-type": "audio/m4a" },
+        body: Buffer.from("fake m4a bytes"),
+      });
+      expect(mobileTranscribeWithWatchToken.status).toBe(401);
+      const appendCountBeforePreview = tokensSeen.filter((entry) => entry.method === "companion.transcriptAppend").length;
+      const mobilePreview = await (await fetch(`${base}/steward/transcribe`, {
+        method: "POST",
+        headers: { ...ownerAuthorization, "content-type": "audio/m4a" },
+        body: Buffer.from("fake m4a bytes"),
+      })).json();
+      expect(mobilePreview).toEqual({ transcript: "OpenAI saatten sesli mesaj" });
+      expect(tokensSeen.filter((entry) => entry.method === "companion.transcriptAppend"))
+        .toHaveLength(appendCountBeforePreview);
       const mobileVoice = await (await fetch(`${base}/steward/voice?project=p1`, {
         method: "POST",
         headers: { ...ownerAuthorization, "content-type": "audio/m4a" },

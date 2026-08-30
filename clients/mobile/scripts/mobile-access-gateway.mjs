@@ -129,6 +129,10 @@ const server = http.createServer(async (request, response) => {
     await mobileStewardVoiceSend(request, response);
     return;
   }
+  if (request.method === "POST" && request.url === "/steward/transcribe") {
+    await mobileStewardTranscribe(request, response);
+    return;
+  }
   if (request.method === "POST" && request.url === "/steward/speech") {
     await mobileStewardSpeech(request, response);
     return;
@@ -608,36 +612,52 @@ async function mobileStewardVoiceSend(request, response) {
   return stewardVoiceSend(request, response);
 }
 
+async function mobileStewardTranscribe(request, response) {
+  if (!ownerAuthorized(request)) return json(response, 401, {});
+  const transcription = await transcribeStewardRequest(request);
+  if (transcription.status !== 200) {
+    return json(response, transcription.status, { error: transcription.error });
+  }
+  return json(response, 200, { transcript: transcription.text });
+}
+
 async function stewardVoiceSend(request, response) {
   const projectId = new URL(request.url, "http://127.0.0.1").searchParams.get("project") ?? "";
   if (!/^[A-Za-z0-9-]{1,64}$/.test(projectId)) return json(response, 400, { error: "invalid project" });
+  const transcription = await transcribeStewardRequest(request);
+  if (transcription.status !== 200) {
+    return json(response, transcription.status, { error: transcription.error });
+  }
+  try {
+    const message = await appendStewardMessage(projectId, transcription.text.slice(0, 8192), "voice");
+    return json(response, 200, { transcript: transcription.text, message });
+  } catch {
+    return json(response, 503, { error: "transcription unavailable" });
+  }
+}
+
+async function transcribeStewardRequest(request) {
   let audio;
   try {
     audio = await readBinaryBody(request, voiceUploadLimitBytes);
   } catch {
-    return json(response, 413, { error: "recording too large" });
+    return { status: 413, error: "recording too large" };
   }
   if (!validVoiceUpload(request.headers["content-type"], audio.length)) {
-    return json(response, 400, { error: "invalid recording" });
+    return { status: 400, error: "invalid recording" };
   }
-  let status = 503;
-  let payload = { error: "transcription unavailable" };
   try {
     const runtime = await currentRuntime();
     if (runtime.fullToken === undefined) throw new Error("TermLoop is unavailable");
     const text = await transcribeStewardAudio(runtime, audio, request.headers["content-type"]);
     if (text.length === 0) {
-      status = 422;
-      payload = { error: "no speech recognized" };
-    } else {
-      const message = await appendStewardMessage(projectId, text.slice(0, 8192), "voice");
-      status = 200;
-      payload = { transcript: text, message };
+      return { status: 422, error: "no speech recognized" };
     }
+    return { status: 200, text };
   } catch {
     // Keep the generic response. Provider and credential details stay private.
+    return { status: 503, error: "transcription unavailable" };
   }
-  return json(response, status, payload);
 }
 
 async function transcribeStewardAudio(runtime, audio, contentType) {

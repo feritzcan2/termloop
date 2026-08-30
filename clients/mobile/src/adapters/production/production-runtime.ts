@@ -12,6 +12,7 @@ import type {
   SelectedImage,
   StewardMessage,
   StewardVoiceClip,
+  StewardVoiceReceiptStore,
   TerminalAttachment,
   TerminalEvent,
 } from "@/application/ports";
@@ -153,6 +154,7 @@ export interface ProductionRuntimeOptions {
     ): Promise<boolean>;
   };
   readonly watchTargetSettings?: WatchTargetSettings;
+  readonly voiceReceipts?: StewardVoiceReceiptStore;
 }
 
 export function createProductionRuntime(options: ProductionRuntimeOptions): MobileRuntime {
@@ -163,6 +165,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
     ?? ((url: string) => new WebSocket(url) as unknown as DataSocket);
   const request = options.fetch ?? fetch;
   const watchTargetSettings = options.watchTargetSettings ?? noWatchTargetSettings;
+  const voiceReceipts = options.voiceReceipts ?? noVoiceReceipts;
   const controlClients = new Map<string, {
     readonly url: string;
     readonly token: string;
@@ -230,6 +233,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
 
   return {
     kind: "production",
+    voiceReceipts,
     connections: {
       async list() {
         const saved = await options.repository.list();
@@ -355,13 +359,12 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
         const result = await control.call("companion.transcriptList", { projectId, limit: STEWARD_TRANSCRIPT_LIMIT });
         return orderedTranscript(result.messages);
       },
-      async sendVoice(connectionId, projectId, clip) {
+      async transcribeVoice(connectionId, clip) {
         const connection = await resolve(connectionId);
-        if (!validStewardVoiceClip(clip) || !validProjectId(projectId)) {
-          throw new Error("This recording cannot be sent to the Steward.");
+        if (!validStewardVoiceClip(clip)) {
+          throw new Error("This recording cannot be transcribed.");
         }
-        const endpoint = gatewayHttpEndpoint(connection, "/steward/voice");
-        endpoint.search = new URLSearchParams({ project: projectId }).toString();
+        const endpoint = gatewayHttpEndpoint(connection, "/steward/transcribe");
         const response = await request(endpoint.toString(), {
           method: "POST",
           headers: {
@@ -373,12 +376,23 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
         if (!response.ok) throw new Error(stewardVoiceFailure(response.status));
         const value: unknown = await response.json();
         const transcript = (value as { transcript?: unknown } | null)?.transcript;
-        const userSequence = (value as { message?: { sequence?: unknown } } | null)?.message?.sequence;
-        if (typeof transcript !== "string" || transcript.trim().length === 0
-          || !Number.isSafeInteger(userSequence) || Number(userSequence) < 1) {
+        if (typeof transcript !== "string" || transcript.trim().length === 0) {
           throw new Error("Your Mac returned an invalid voice transcript.");
         }
-        return { transcript: transcript.trim(), userSequence: Number(userSequence) };
+        return transcript.trim();
+      },
+      async commitVoice(connectionId, projectId, transcript) {
+        const control = controlClient(await resolve(connectionId));
+        const trimmed = transcript.trim();
+        if (!validProjectId(projectId) || trimmed.length === 0 || trimmed.length > STEWARD_MESSAGE_LIMIT) {
+          throw new Error("Correct the transcript before sending it to the Steward.");
+        }
+        const result = await control.call("companion.transcriptAppend", {
+          projectId,
+          inputMode: "voice",
+          content: trimmed,
+        });
+        return { transcript: trimmed, userSequence: result.message.sequence };
       },
       async speech(connectionId, projectId, sequence) {
         const connection = await resolve(connectionId);
@@ -527,6 +541,13 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
 const noWatchTargetSettings: WatchTargetSettings = {
   async get() { return null; },
   async set() {},
+};
+
+const noVoiceReceipts: StewardVoiceReceiptStore = {
+  async read() {
+    return { initialized: false, acknowledgedSequence: 0, pendingUserSequence: null };
+  },
+  async write() {},
 };
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;

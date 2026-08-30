@@ -9,6 +9,8 @@ import { useAppLifecycle } from "@/platform/app-lifecycle";
 /// gets to finish before the next tick is even considered. A poll faster than the thing
 /// it polls cannot converge — see the in-flight guard below.
 const ACTIVE_PROBE_MS = 15_000;
+const RECONNECT_PROBE_MS = 3_000;
+export const CONNECTION_RECONNECT_GRACE_MS = 12_000;
 
 /// Which saved Mac the app is currently reading, and the catalog it came from.
 ///
@@ -42,10 +44,12 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
   const [connections, setConnections] = useState<readonly ConnectionProfile[]>([]);
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [reloads, setReloads] = useState(0);
+  const connectionsRef = useRef<readonly ConnectionProfile[]>([]);
   /// Whether a probe is currently in flight. A tick that lands mid-probe must be dropped
   /// rather than restarting the effect: the restart's cleanup marks the running attempt
   /// stale, so its result is discarded when it finally arrives.
   const probing = useRef(false);
+  const unreachableSince = useRef(new Map<string, number>());
 
   useEffect(() => {
     if (!lifecycle.active) return;
@@ -57,7 +61,31 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
       (profiles) => {
         probing.current = false;
         if (!active) return;
-        setConnections(profiles);
+        const now = Date.now();
+        let reconnecting = false;
+        const knownIds = new Set(profiles.map((profile) => profile.id));
+        for (const connectionId of unreachableSince.current.keys()) {
+          if (!knownIds.has(connectionId)) unreachableSince.current.delete(connectionId);
+        }
+        const nextConnections: ConnectionProfile[] = profiles.map((profile) => {
+          if (profile.availability !== "offline") {
+            unreachableSince.current.delete(profile.id);
+            return profile;
+          }
+          const startedAt = unreachableSince.current.get(profile.id) ?? now;
+          unreachableSince.current.set(profile.id, startedAt);
+          if (now - startedAt >= CONNECTION_RECONNECT_GRACE_MS) return profile;
+          reconnecting = true;
+          const previous = connectionsRef.current.find((candidate) => candidate.id === profile.id);
+          return {
+            ...profile,
+            availability: "reconnecting",
+            productVersion: profile.productVersion ?? previous?.productVersion ?? null,
+            contractIdentity: profile.contractIdentity ?? previous?.contractIdentity ?? null,
+          };
+        });
+        connectionsRef.current = nextConnections;
+        setConnections(nextConnections);
         setLoad("ready");
         /// One resume of the last-used Mac per cold start. Any explicit tap wins,
         /// which is why this only fills an empty selection and never replaces one.
@@ -66,6 +94,11 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
             ? current
             : preferredConnectionId(profiles)
         ));
+        if (reconnecting) {
+          setTimeout(() => {
+            if (active && !probing.current) setReloads((count) => count + 1);
+          }, RECONNECT_PROBE_MS);
+        }
       },
       (cause: unknown) => {
         probing.current = false;

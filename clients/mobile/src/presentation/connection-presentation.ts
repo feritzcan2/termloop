@@ -28,6 +28,12 @@ const presentation: Record<ConnectionAvailability, ConnectionPresentation> = {
     summary: "Connected.",
     block: undefined,
   },
+  reconnecting: {
+    dot: "connecting",
+    label: "Reconnecting",
+    summary: "Trying to reach this Mac again. Showing its last known data meanwhile.",
+    block: undefined,
+  },
   offline: {
     dot: "offline",
     label: "Offline",

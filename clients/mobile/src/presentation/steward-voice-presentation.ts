@@ -1,4 +1,42 @@
-import type { MobileOverview, StewardMessage } from "@/application/ports";
+import type {
+  MobileOverview,
+  StewardMessage,
+  StewardVoiceReceipt,
+} from "@/application/ports";
+
+export type VoiceMode = "single" | "handsFree";
+
+export type VoicePhase =
+  | "connecting"
+  | "ready"
+  | "permission"
+  | "listening"
+  | "transcribing"
+  | "reviewing"
+  | "sending"
+  | "thinking"
+  | "speaking"
+  | "reconnecting"
+  | "offline"
+  | "error";
+
+export type VoiceTurnStatus =
+  | "received"
+  | "sent"
+  | "thinking"
+  | "answered"
+  | "speaking"
+  | "spoken"
+  | "failed";
+
+export interface VoiceTurn {
+  readonly id: string;
+  readonly transcript: string;
+  readonly status: VoiceTurnStatus;
+  readonly userSequence: number | null;
+  readonly reply: StewardMessage | null;
+  readonly error: string | null;
+}
 
 export interface VoiceRouteParams {
   projectId?: string | readonly string[] | undefined;
@@ -20,6 +58,12 @@ export interface VoiceSilenceUpdate {
 export interface VoiceTranscriptUpdate {
   cursor: number;
   stewardMessages: readonly StewardMessage[];
+}
+
+export interface VoiceTranscriptResume {
+  readonly cursor: number;
+  readonly receipt: StewardVoiceReceipt;
+  readonly stewardMessages: readonly StewardMessage[];
 }
 
 export interface VoicePcmBuffer {
@@ -113,7 +157,7 @@ export function createVoicePcmWav(capture: VoicePcmCapture): ArrayBuffer {
 
 /// Keeps the global microphone pointed at the Project represented by the route.
 /// Routes without a Project fall back to the first Project on the selected Mac;
-/// the expanded dock still exposes every Project as an explicit chip.
+/// an active voice session then keeps that target stable until it is ended.
 export function voiceProjectId(
   params: VoiceRouteParams,
   overview: MobileOverview | undefined,
@@ -132,9 +176,8 @@ export function voiceProjectId(
 }
 
 /// Advances one live voice transcript cursor and returns every newly persisted
-/// Steward message in sequence order. The dock seeds the cursor when the live
-/// session opens, so history stays quiet while all later chat, Routine, and
-/// delivery updates are spoken exactly once.
+/// Steward message in sequence order. Durable resume establishes the opening
+/// cursor; polling then speaks later chat, Routine, and delivery updates once.
 export function updateVoiceTranscript(
   messages: readonly StewardMessage[],
   cursor: number,
@@ -154,6 +197,57 @@ export function updateVoiceTranscript(
     })
     .sort((left, right) => left.sequence - right.sequence);
   return { cursor: nextCursor, stewardMessages };
+}
+
+/// Rebuilds delivery state from the daemon transcript and the tiny local receipt.
+/// The first activation starts at "now" so old chat history is not read aloud;
+/// every later activation returns only replies that never finished speaking.
+export function resumeVoiceTranscript(
+  messages: readonly StewardMessage[],
+  receipt: StewardVoiceReceipt,
+): VoiceTranscriptResume {
+  const cursor = messages.reduce((latest, message) => Math.max(latest, message.sequence), 0);
+  if (!receipt.initialized && receipt.pendingUserSequence === null) {
+    return {
+      cursor,
+      receipt: { initialized: true, acknowledgedSequence: cursor, pendingUserSequence: null },
+      stewardMessages: [],
+    };
+  }
+  const seen = new Set<number>();
+  const stewardMessages = messages
+    .filter((message) => {
+      if (message.author !== "steward"
+        || message.sequence <= receipt.acknowledgedSequence
+        || seen.has(message.sequence)) return false;
+      seen.add(message.sequence);
+      return true;
+    })
+    .sort((left, right) => left.sequence - right.sequence);
+  return {
+    cursor,
+    receipt: { ...receipt, initialized: true },
+    stewardMessages,
+  };
+}
+
+export function updateVoiceTurn(
+  turns: readonly VoiceTurn[],
+  turnId: string,
+  update: Partial<Omit<VoiceTurn, "id">>,
+): VoiceTurn[] {
+  return turns.map((turn) => turn.id === turnId ? { ...turn, ...update } : turn);
+}
+
+export function voiceTurnForReply(
+  turns: readonly VoiceTurn[],
+  pendingUserSequence: number | null,
+  reply: StewardMessage,
+): string | undefined {
+  if (pendingUserSequence === null || reply.sequence <= pendingUserSequence) return undefined;
+  return [...turns]
+    .reverse()
+    .find((turn) => turn.userSequence === pendingUserSequence && turn.reply === null)?.id;
 }
 
 /// Ends a spoken turn after real speech followed by a short quiet window. A hard

@@ -8,39 +8,42 @@ import {
 import { File, Paths } from "expo-file-system";
 import { useGlobalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { KeyboardAvoidingView, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import type { StewardMessage } from "@/application/ports";
+import type { StewardMessage, StewardVoiceReceipt } from "@/application/ports";
+import { StewardVoiceControls } from "@/components/steward-voice-controls";
 import { useMobileRuntime } from "@/composition/runtime-context";
-import { useConnections } from "@/features/connection/connection-store";
+import {
+  CONNECTION_RECONNECT_GRACE_MS,
+  useConnections,
+} from "@/features/connection/connection-store";
 import { useOverview } from "@/features/overview/overview-store";
 import {
   appendVoiceFloatPcmBuffer,
   createVoicePcmCapture,
   createVoicePcmWav,
-  updateVoiceTranscript,
+  resumeVoiceTranscript,
   updateVoiceSilence,
+  updateVoiceTranscript,
+  updateVoiceTurn,
   voiceProjectId,
+  voiceTurnForReply,
+  type VoiceMode,
   type VoicePcmCapture,
+  type VoicePhase,
   type VoiceRouteParams,
   type VoiceSilenceState,
+  type VoiceTurn,
 } from "@/presentation/steward-voice-presentation";
 import { stewardLiveActivity } from "@/platform/steward-live-activity";
-import { color, radius, space } from "@/theme/tokens";
-import { fontFamily } from "@/theme/typography";
-
-type VoicePhase = "connecting" | "idle" | "permission" | "listening" | "transcribing" | "speaking" | "error";
+import { stewardLocalSpeech } from "@/platform/steward-local-speech";
+import { space } from "@/theme/tokens";
 
 interface QueuedSpeech {
-  message: StewardMessage;
-  attempts: number;
+  readonly message: StewardMessage;
+  readonly attempts: number;
+  readonly acknowledge: boolean;
 }
 
 const TRANSCRIPT_POLL_MS = 1_250;
@@ -48,11 +51,12 @@ const PCM_STREAM_START_TIMEOUT_MS = 2_000;
 const MIN_CAPTURE_MS = 250;
 const STEWARD_RECORDING_MEDIA_TYPE = "audio/wav";
 const SPEECH_RETRY_LIMIT = 2;
-const SPEECH_RETRY_MS = 2_000;
+const SPEECH_RETRY_MS = 1_500;
+const REVIEW_AUTO_SEND_MS = 5_000;
 
-/// A live voice room for the selected Project. Background audio keeps an
-/// unmuted session alive when the app leaves the foreground, while ActivityKit
-/// mirrors the room on the Lock Screen and Dynamic Island.
+/// The voice session is independent from its detail sheet. Collapsing the sheet
+/// keeps transcript polling, speech delivery, background recording, and the Live
+/// Activity alive; only the explicit × ends the session.
 export function StewardVoiceDock() {
   const runtime = useMobileRuntime();
   const connections = useConnections();
@@ -62,37 +66,64 @@ export function StewardVoiceDock() {
   const routeProjectId = voiceProjectId(routeParams, overview.overview);
   const projects = overview.overview?.projects ?? [];
 
+  const [sessionActive, setSessionActive] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(routeProjectId);
-  const [phase, setPhase] = useState<VoicePhase>("idle");
+  const [phase, setPhase] = useState<VoicePhase>("ready");
+  const [mode, setMode] = useState<VoiceMode>("single");
   const [microphoneEnabled, setMicrophoneEnabled] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
-  const [heard, setHeard] = useState<string | undefined>(undefined);
-  const [reply, setReply] = useState<StewardMessage | undefined>(undefined);
+  const [turns, setTurns] = useState<readonly VoiceTurn[]>([]);
+  const [draft, setDraft] = useState("");
+  const [editingDraft, setEditingDraft] = useState(false);
+  const [autoSendSeconds, setAutoSendSeconds] = useState<number | null>(null);
+  const [lastReply, setLastReply] = useState<StewardMessage | undefined>(undefined);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [recorderState, setRecorderState] = useState<{ durationMillis: number; metering: number | undefined }>({
     durationMillis: 0,
     metering: undefined,
   });
+  const [speechQueueRevision, setSpeechQueueRevision] = useState(0);
 
-  const phaseRef = useRef<VoicePhase>("idle");
+  const sessionActiveRef = useRef(false);
   const expandedRef = useRef(false);
+  const phaseRef = useRef<VoicePhase>("ready");
+  const modeRef = useRef<VoiceMode>("single");
   const microphoneEnabledRef = useRef(false);
   const conversationRef = useRef(0);
   const captureAttemptRef = useRef(0);
   const stoppingRef = useRef(false);
   const silenceRef = useRef<VoiceSilenceState>({ heardVoice: false, lastVoiceAtMs: 0 });
-  const speechFileRef = useRef<File | undefined>(undefined);
-  const speakingConversationRef = useRef(0);
   const activeTargetRef = useRef<{ connectionId: string; projectId: string } | undefined>(undefined);
+  const receiptRef = useRef<StewardVoiceReceipt>({
+    initialized: false,
+    acknowledgedSequence: 0,
+    pendingUserSequence: null,
+  });
   const transcriptCursorRef = useRef(0);
   const transcriptSeededRef = useRef(false);
+  const bootstrappingRef = useRef(false);
+  const pollingRef = useRef(false);
+  const pollFailureSinceRef = useRef<number | null>(null);
   const speechQueueRef = useRef<QueuedSpeech[]>([]);
+  const queuedSequencesRef = useRef(new Set<number>());
+  const activeSpeechRef = useRef<QueuedSpeech | undefined>(undefined);
+  const speechBlockedRef = useRef(false);
   const speechStartingRef = useRef(false);
   const speechRetryAtRef = useRef(0);
-  const [speechQueueRevision, setSpeechQueueRevision] = useState(0);
+  const speechFileRef = useRef<File | undefined>(undefined);
+  const speakingConversationRef = useRef(0);
   const pcmCaptureRef = useRef<VoicePcmCapture>(createVoicePcmCapture());
   const capturingRef = useRef(false);
   const firstBufferRef = useRef<(() => void) | undefined>(undefined);
+  const turnsRef = useRef<readonly VoiceTurn[]>([]);
+  const draftRef = useRef("");
+  const activeTurnIdRef = useRef<string | undefined>(undefined);
+  const turnCounterRef = useRef(0);
+  const reviewDeadlineRef = useRef(0);
+  const reviewTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const reviewIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const commitDraftRef = useRef<() => void>(() => undefined);
 
   const { stream } = useAudioStream({
     sampleRate: 48_000,
@@ -109,6 +140,10 @@ export function StewardVoiceDock() {
   });
   const player = useAudioPlayer(null, { updateInterval: 100 });
   const playerStatus = useAudioPlayerStatus(player);
+  const playerRef = useRef(player);
+  const streamRef = useRef(stream);
+  playerRef.current = player;
+  streamRef.current = stream;
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? projects[0],
@@ -125,61 +160,103 @@ export function StewardVoiceDock() {
     setMicrophoneEnabled(enabled);
   }, []);
 
+  const changeTurns = useCallback((update: (current: readonly VoiceTurn[]) => readonly VoiceTurn[]) => {
+    const next = update(turnsRef.current);
+    turnsRef.current = next;
+    setTurns(next);
+  }, []);
+
   const cleanSpeechFile = useCallback(() => {
     const file = speechFileRef.current;
     speechFileRef.current = undefined;
     if (file?.exists) {
-      try { file.delete(); } catch { /* The cache can evict speech first. */ }
+      try { file.delete(); } catch { /* The cache may evict speech first. */ }
     }
   }, []);
 
-  const closeConversation = useCallback(() => {
-    conversationRef.current += 1;
+  const clearReviewTimers = useCallback(() => {
+    if (reviewTimeoutRef.current !== undefined) clearTimeout(reviewTimeoutRef.current);
+    if (reviewIntervalRef.current !== undefined) clearInterval(reviewIntervalRef.current);
+    reviewTimeoutRef.current = undefined;
+    reviewIntervalRef.current = undefined;
+    reviewDeadlineRef.current = 0;
+    setAutoSendSeconds(null);
+  }, []);
+
+  const stopCapture = useCallback(() => {
     captureAttemptRef.current += 1;
-    expandedRef.current = false;
-    setExpanded(false);
-    setMicrophone(false);
-    player.pause();
-    cleanSpeechFile();
     capturingRef.current = false;
     firstBufferRef.current = undefined;
     if (stream.isStreaming) stream.stop();
-    stoppingRef.current = false;
-    speechStartingRef.current = false;
-    speechRetryAtRef.current = 0;
-    speechQueueRef.current = [];
-    transcriptCursorRef.current = 0;
-    transcriptSeededRef.current = false;
-    setSpeechQueueRevision((revision) => revision + 1);
-    activeTargetRef.current = undefined;
-    transition("idle");
-    setError(undefined);
-    void stewardLiveActivity.end().catch(() => undefined);
-    void deactivateVoiceAudio().catch(() => undefined);
-  }, [cleanSpeechFile, player, setMicrophone, stream, transition]);
+    pcmCaptureRef.current = createVoicePcmCapture();
+    silenceRef.current = { heardVoice: false, lastVoiceAtMs: 0 };
+    setRecorderState({ durationMillis: 0, metering: undefined });
+  }, [stream]);
 
-  useEffect(() => {
-    if (!expandedRef.current && routeProjectId !== undefined) setSelectedProjectId(routeProjectId);
-  }, [routeProjectId]);
+  const persistReceipt = useCallback(async (receipt: StewardVoiceReceipt) => {
+    receiptRef.current = receipt;
+    const target = activeTargetRef.current;
+    if (target === undefined) return;
+    await runtime.voiceReceipts.write(target.connectionId, target.projectId, receipt);
+  }, [runtime]);
 
-  useEffect(() => {
-    const activeConnectionId = activeTargetRef.current?.connectionId;
-    if (expandedRef.current && activeConnectionId !== undefined
-      && activeConnectionId !== connections.selected?.id) {
-      closeConversation();
+  const enqueueSpeech = useCallback((message: StewardMessage, acknowledge = true, force = false) => {
+    if (acknowledge) {
+      if (message.sequence <= receiptRef.current.acknowledgedSequence) return;
+      if (!force && queuedSequencesRef.current.has(message.sequence)) return;
+      queuedSequencesRef.current.add(message.sequence);
+      setUnreadCount(queuedSequencesRef.current.size);
     }
-  }, [closeConversation, connections.selected?.id]);
+    const turnId = voiceTurnForReply(turnsRef.current, receiptRef.current.pendingUserSequence, message);
+    if (turnId !== undefined) {
+      changeTurns((current) => updateVoiceTurn(current, turnId, { status: "answered", reply: message }));
+    }
+    setLastReply(message);
+    speechQueueRef.current.push({ message, attempts: 0, acknowledge });
+    setSpeechQueueRevision((revision) => revision + 1);
+  }, [changeTurns]);
+
+  const ingestTranscript = useCallback(async (messages: readonly StewardMessage[]) => {
+    const latestSteward = [...messages]
+      .filter((message) => message.author === "steward")
+      .sort((left, right) => right.sequence - left.sequence)[0];
+    if (latestSteward !== undefined) setLastReply(latestSteward);
+
+    if (!transcriptSeededRef.current) {
+      const resumed = resumeVoiceTranscript(messages, receiptRef.current);
+      transcriptCursorRef.current = resumed.cursor;
+      transcriptSeededRef.current = true;
+      if (resumed.receipt !== receiptRef.current) await persistReceipt(resumed.receipt);
+      const pending = resumed.receipt.pendingUserSequence;
+      if (pending !== null && !turnsRef.current.some((turn) => turn.userSequence === pending)) {
+        const user = messages.find((message) => message.author === "user" && message.sequence === pending);
+        changeTurns((current) => [...current, {
+          id: `persisted-${pending}`,
+          transcript: user?.content ?? "Önceki sesli mesaj",
+          status: "thinking",
+          userSequence: pending,
+          reply: null,
+          error: null,
+        }]);
+      }
+      for (const message of resumed.stewardMessages) enqueueSpeech(message);
+      return;
+    }
+
+    const update = updateVoiceTranscript(messages, transcriptCursorRef.current);
+    transcriptCursorRef.current = update.cursor;
+    for (const message of update.stewardMessages) enqueueSpeech(message);
+  }, [changeTurns, enqueueSpeech, persistReceipt]);
 
   const startListening = useCallback(async (conversation: number) => {
-    if (conversation !== conversationRef.current || !expandedRef.current
+    if (conversation !== conversationRef.current || !sessionActiveRef.current
       || !microphoneEnabledRef.current || phaseRef.current === "speaking"
-      || phaseRef.current === "transcribing") return;
+      || ["transcribing", "reviewing", "sending"].includes(phaseRef.current)) return;
     const attempt = captureAttemptRef.current + 1;
     captureAttemptRef.current = attempt;
-    const target = activeTargetRef.current;
-    if (target === undefined) {
-      setError("Önce çevrimiçi bir Mac ve Steward projesi seç.");
+    if (activeTargetRef.current === undefined) {
       setMicrophone(false);
+      setError("Önce çevrimiçi bir Mac ve Steward projesi seç.");
       transition("error");
       return;
     }
@@ -187,12 +264,12 @@ export function StewardVoiceDock() {
     setError(undefined);
     try {
       const permission = await AudioModule.requestRecordingPermissionsAsync();
-      if (!permission.granted) throw new Error("Mikrofon izni olmadan canlı konuşma başlatılamaz.");
+      if (!permission.granted) throw new Error("Mikrofon izni olmadan konuşma başlatılamaz.");
       if (attempt !== captureAttemptRef.current || conversation !== conversationRef.current
-        || !expandedRef.current || !microphoneEnabledRef.current) return;
+        || !sessionActiveRef.current || !microphoneEnabledRef.current) return;
       await configureVoiceRecordingAudio();
       if (attempt !== captureAttemptRef.current || conversation !== conversationRef.current
-        || !expandedRef.current || !microphoneEnabledRef.current) return;
+        || !sessionActiveRef.current || !microphoneEnabledRef.current) return;
       cleanSpeechFile();
       silenceRef.current = { heardVoice: false, lastVoiceAtMs: 0 };
       stoppingRef.current = false;
@@ -208,32 +285,187 @@ export function StewardVoiceDock() {
         }),
       ]);
       if (attempt !== captureAttemptRef.current || conversation !== conversationRef.current
-        || !expandedRef.current || !microphoneEnabledRef.current) {
-        capturingRef.current = false;
-        if (stream.isStreaming) stream.stop();
-        if (conversation === conversationRef.current && expandedRef.current) transition("idle");
+        || !sessionActiveRef.current || !microphoneEnabledRef.current) {
+        if (attempt === captureAttemptRef.current) {
+          stopCapture();
+          if (conversation === conversationRef.current && sessionActiveRef.current) transition("ready");
+        }
         return;
       }
       transition("listening");
     } catch (cause) {
-      capturingRef.current = false;
-      firstBufferRef.current = undefined;
-      if (stream.isStreaming) stream.stop();
-      if (attempt !== captureAttemptRef.current || conversation !== conversationRef.current) return;
+      const stillCurrent = attempt === captureAttemptRef.current;
+      if (!stillCurrent || conversation !== conversationRef.current) return;
+      stopCapture();
       setMicrophone(false);
-      setError(cause instanceof Error ? cause.message : "Mikrofon başlatılamadı.");
+      setError(describe(cause, "Mikrofon başlatılamadı."));
       transition("error");
     }
-  }, [cleanSpeechFile, setMicrophone, stream, transition]);
+  }, [cleanSpeechFile, setMicrophone, stopCapture, stream, transition]);
+
+  const beginReview = useCallback((transcript: string) => {
+    clearReviewTimers();
+    turnCounterRef.current += 1;
+    const id = `turn-${Date.now()}-${turnCounterRef.current}`;
+    activeTurnIdRef.current = id;
+    draftRef.current = transcript;
+    setDraft(transcript);
+    setEditingDraft(false);
+    changeTurns((current) => [...current, {
+      id,
+      transcript,
+      status: "received",
+      userSequence: null,
+      reply: null,
+      error: null,
+    }]);
+    expandedRef.current = true;
+    setExpanded(true);
+    transition("reviewing");
+    reviewDeadlineRef.current = Date.now() + REVIEW_AUTO_SEND_MS;
+    setAutoSendSeconds(Math.ceil(REVIEW_AUTO_SEND_MS / 1_000));
+    reviewIntervalRef.current = setInterval(() => {
+      setAutoSendSeconds(Math.max(1, Math.ceil((reviewDeadlineRef.current - Date.now()) / 1_000)));
+    }, 250);
+    reviewTimeoutRef.current = setTimeout(() => commitDraftRef.current(), REVIEW_AUTO_SEND_MS);
+  }, [changeTurns, clearReviewTimers, transition]);
+
+  const stopAndPreview = useCallback(async () => {
+    if (phaseRef.current !== "listening" || stoppingRef.current) return;
+    stoppingRef.current = true;
+    const conversation = conversationRef.current;
+    const target = activeTargetRef.current;
+    const capture = pcmCaptureRef.current;
+    captureAttemptRef.current += 1;
+    capturingRef.current = false;
+    firstBufferRef.current = undefined;
+    if (stream.isStreaming) stream.stop();
+    transition("transcribing");
+    if (modeRef.current === "single") setMicrophone(false);
+    try {
+      if (capture.durationMillis < MIN_CAPTURE_MS) throw new Error("Yeterli ses kaydedilemedi. Yeniden konuş.");
+      if (target === undefined) throw new Error("Kaydedilen ses hazırlanamadı.");
+      const transcript = await runtime.steward.transcribeVoice(target.connectionId, {
+        bytes: createVoicePcmWav(capture),
+        mediaType: STEWARD_RECORDING_MEDIA_TYPE,
+      });
+      if (conversation !== conversationRef.current || !sessionActiveRef.current) return;
+      setError(undefined);
+      beginReview(transcript);
+    } catch (cause) {
+      if (conversation !== conversationRef.current) return;
+      setError(describe(cause, "Konuşma yazıya çevrilemedi."));
+      transition("error");
+    } finally {
+      stoppingRef.current = false;
+      pcmCaptureRef.current = createVoicePcmCapture();
+      setRecorderState({ durationMillis: 0, metering: undefined });
+    }
+  }, [beginReview, runtime, setMicrophone, stream, transition]);
+
+  const commitDraft = useCallback(async () => {
+    if (phaseRef.current !== "reviewing") return;
+    const text = draftRef.current.trim();
+    const turnId = activeTurnIdRef.current;
+    const target = activeTargetRef.current;
+    if (text.length === 0 || turnId === undefined || target === undefined) return;
+    clearReviewTimers();
+    setEditingDraft(false);
+    changeTurns((current) => updateVoiceTurn(current, turnId, {
+      transcript: text,
+      status: "sent",
+      error: null,
+    }));
+    transition("sending");
+    try {
+      const appended = await runtime.steward.commitVoice(target.connectionId, target.projectId, text);
+      if (!sessionActiveRef.current || target !== activeTargetRef.current) return;
+      changeTurns((current) => updateVoiceTurn(current, turnId, {
+        transcript: appended.transcript,
+        status: "thinking",
+        userSequence: appended.userSequence,
+      }));
+      const receipt = {
+        ...receiptRef.current,
+        initialized: true,
+        pendingUserSequence: appended.userSequence,
+      };
+      try {
+        await persistReceipt(receipt);
+      } catch {
+        receiptRef.current = receipt;
+        setError("Mesaj gönderildi; okundu bilgisi bu kez telefona kaydedilemedi.");
+      }
+      draftRef.current = "";
+      activeTurnIdRef.current = undefined;
+      setDraft("");
+      transition("thinking");
+    } catch (cause) {
+      if (!sessionActiveRef.current) return;
+      const message = describe(cause, "Sesli mesaj gönderilemedi.");
+      changeTurns((current) => updateVoiceTurn(current, turnId, { status: "failed", error: message }));
+      setError(message);
+      setEditingDraft(true);
+      transition("reviewing");
+    }
+  }, [changeTurns, clearReviewTimers, persistReceipt, runtime, transition]);
+  commitDraftRef.current = () => { void commitDraft(); };
+
+  useEffect(() => {
+    if (phase !== "listening") return;
+    const update = updateVoiceSilence(silenceRef.current, recorderState.durationMillis, recorderState.metering);
+    silenceRef.current = update.state;
+    if (update.shouldStop) void stopAndPreview();
+    if (update.shouldReset) {
+      silenceRef.current = { heardVoice: false, lastVoiceAtMs: 0 };
+      pcmCaptureRef.current = createVoicePcmCapture();
+      setRecorderState({ durationMillis: 0, metering: undefined });
+    }
+  }, [phase, recorderState.durationMillis, recorderState.metering, stopAndPreview]);
+
+  const finishSpeech = useCallback(async (queued: QueuedSpeech, conversation: number) => {
+    if (conversation !== conversationRef.current || !sessionActiveRef.current) return;
+    activeSpeechRef.current = undefined;
+    cleanSpeechFile();
+    const pending = receiptRef.current.pendingUserSequence;
+    const turnId = turnsRef.current.find((turn) => turn.reply?.sequence === queued.message.sequence)?.id
+      ?? voiceTurnForReply(turnsRef.current, pending, queued.message);
+    if (turnId !== undefined) {
+      changeTurns((current) => updateVoiceTurn(current, turnId, { status: "spoken", reply: queued.message }));
+    }
+    if (queued.acknowledge) {
+      queuedSequencesRef.current.delete(queued.message.sequence);
+      setUnreadCount(queuedSequencesRef.current.size);
+      const receipt: StewardVoiceReceipt = {
+        initialized: true,
+        acknowledgedSequence: Math.max(receiptRef.current.acknowledgedSequence, queued.message.sequence),
+        pendingUserSequence: pending !== null && queued.message.sequence > pending ? null : pending,
+      };
+      try {
+        await persistReceipt(receipt);
+      } catch {
+        receiptRef.current = receipt;
+        setError("Cevap okundu; okundu bilgisi bu kez telefona kaydedilemedi.");
+      }
+    }
+    if (modeRef.current === "single") setMicrophone(false);
+    transition(receiptRef.current.pendingUserSequence === null ? "ready" : "thinking");
+    setSpeechQueueRevision((revision) => revision + 1);
+    if (speechQueueRef.current.length === 0
+      && modeRef.current === "handsFree" && microphoneEnabledRef.current) {
+      setTimeout(() => { void startListening(conversation); }, 450);
+    }
+  }, [changeTurns, cleanSpeechFile, persistReceipt, setMicrophone, startListening, transition]);
 
   const playNextSpeech = useCallback(async (conversation: number) => {
-    if (speechStartingRef.current || conversation !== conversationRef.current || !expandedRef.current) return;
-    if (["connecting", "permission", "transcribing", "speaking"].includes(phaseRef.current)) return;
+    if (speechStartingRef.current || activeSpeechRef.current !== undefined
+      || conversation !== conversationRef.current || !sessionActiveRef.current) return;
+    if (["connecting", "permission", "transcribing", "reviewing", "sending", "speaking"].includes(phaseRef.current)) return;
     if (phaseRef.current === "listening" && silenceRef.current.heardVoice) return;
     const retryDelay = speechRetryAtRef.current - Date.now();
     if (retryDelay > 0) {
       setTimeout(() => {
-        if (conversation === conversationRef.current && expandedRef.current) {
+        if (conversation === conversationRef.current && sessionActiveRef.current) {
           setSpeechQueueRevision((revision) => revision + 1);
         }
       }, retryDelay);
@@ -241,162 +473,144 @@ export function StewardVoiceDock() {
     }
     const queued = speechQueueRef.current.shift();
     if (queued === undefined) return;
-    speechRetryAtRef.current = 0;
     speechStartingRef.current = true;
-    setSpeechQueueRevision((revision) => revision + 1);
-    const target = activeTargetRef.current;
-    if (phaseRef.current === "listening") {
-      captureAttemptRef.current += 1;
-      capturingRef.current = false;
-      firstBufferRef.current = undefined;
-      if (stream.isStreaming) stream.stop();
-      pcmCaptureRef.current = createVoicePcmCapture();
-      setRecorderState({ durationMillis: 0, metering: undefined });
+    speechRetryAtRef.current = 0;
+    activeSpeechRef.current = queued;
+    if (phaseRef.current === "listening") stopCapture();
+    const turnId = turnsRef.current.find((turn) => turn.reply?.sequence === queued.message.sequence)?.id;
+    if (turnId !== undefined) {
+      changeTurns((current) => updateVoiceTurn(current, turnId, { status: "speaking" }));
     }
-    setReply(queued.message);
+    setLastReply(queued.message);
     setError(undefined);
     transition("speaking");
+    const target = activeTargetRef.current;
     try {
       if (target === undefined) throw new Error("Steward ses hedefi artık kullanılamıyor.");
       if (runtime.kind === "mock") {
-        await delay(500);
-      } else {
-        const audio = await runtime.steward.speech(target.connectionId, target.projectId, queued.message.sequence);
-        if (conversation !== conversationRef.current || !expandedRef.current) return;
-        cleanSpeechFile();
-        const file = new File(Paths.cache, `termloop-steward-${conversation}-${queued.message.sequence}.mp3`);
-        file.write(audio);
-        speechFileRef.current = file;
-        speakingConversationRef.current = conversation;
-        await configureVoicePlaybackAudio();
-        player.replace(file.uri);
-        player.play();
+        await delay(400);
+        await finishSpeech(queued, conversation);
         return;
       }
-    } catch (cause) {
-      if (conversation !== conversationRef.current) return;
+      const audio = await runtime.steward.speech(target.connectionId, target.projectId, queued.message.sequence);
+      if (conversation !== conversationRef.current || !sessionActiveRef.current) return;
+      cleanSpeechFile();
+      const file = new File(Paths.cache, `termloop-steward-${conversation}-${queued.message.sequence}.mp3`);
+      file.write(audio);
+      speechFileRef.current = file;
+      speakingConversationRef.current = conversation;
+      await configureVoicePlaybackAudio();
+      player.replace(file.uri);
+      player.play();
+      return;
+    } catch (remoteCause) {
+      if (conversation !== conversationRef.current || !sessionActiveRef.current) return;
       if (queued.attempts < SPEECH_RETRY_LIMIT) {
+        activeSpeechRef.current = undefined;
         speechQueueRef.current.unshift({ ...queued, attempts: queued.attempts + 1 });
         speechRetryAtRef.current = Date.now() + SPEECH_RETRY_MS;
-      } else {
-        speechRetryAtRef.current = 0;
+        transition(receiptRef.current.pendingUserSequence === null ? "ready" : "thinking");
+        setSpeechQueueRevision((revision) => revision + 1);
+        return;
       }
-      setError(cause instanceof Error ? cause.message : "Steward mesajı seslendirilemedi.");
+      try {
+        await configureVoicePlaybackAudio();
+        const spoken = await stewardLocalSpeech.speak(queued.message.content);
+        if (!spoken) throw new Error("iPhone seslendirmesi kullanılamıyor.");
+        await finishSpeech(queued, conversation);
+        return;
+      } catch (localCause) {
+        activeSpeechRef.current = undefined;
+        speechBlockedRef.current = true;
+        speechQueueRef.current.unshift(queued);
+        if (turnId !== undefined) {
+          changeTurns((current) => updateVoiceTurn(current, turnId, { status: "answered" }));
+        }
+        setError(`${describe(remoteCause, "Mac sesi üretilemedi.")} ${describe(localCause, "iPhone da okuyamadı.")}`);
+        transition("error");
+      }
     } finally {
       speechStartingRef.current = false;
     }
-    if (conversation !== conversationRef.current || !expandedRef.current) return;
-    cleanSpeechFile();
-    transition("idle");
-    setSpeechQueueRevision((revision) => revision + 1);
-    if (speechQueueRef.current.length === 0 && microphoneEnabledRef.current) {
-      setTimeout(() => { void startListening(conversation); }, 350);
-    }
-  }, [cleanSpeechFile, player, runtime, startListening, stream, transition]);
-
-  const stopAndSend = useCallback(async () => {
-    if (phaseRef.current !== "listening" || stoppingRef.current) return;
-    stoppingRef.current = true;
-    const conversation = conversationRef.current;
-    const connectionId = activeTargetRef.current?.connectionId;
-    const projectId = activeTargetRef.current?.projectId;
-    transition("transcribing");
-    try {
-      capturingRef.current = false;
-      stream.stop();
-      const capture = pcmCaptureRef.current;
-      if (capture.durationMillis < MIN_CAPTURE_MS) {
-        throw new Error("Yeterli ses kaydedilemedi. Yeniden konuş.");
-      }
-      if (connectionId === undefined || projectId === undefined) {
-        throw new Error("Kaydedilen ses hazırlanamadı.");
-      }
-      const bytes = createVoicePcmWav(capture);
-      const appended = await runtime.steward.sendVoice(connectionId, projectId, {
-        bytes,
-        mediaType: STEWARD_RECORDING_MEDIA_TYPE,
-      });
-      if (conversation !== conversationRef.current || !expandedRef.current) return;
-      setHeard(appended.transcript);
-      setError(undefined);
-    } catch (cause) {
-      if (conversation !== conversationRef.current) return;
-      setError(cause instanceof Error ? cause.message : "Canlı konuşma tamamlanamadı.");
-    } finally {
-      stoppingRef.current = false;
-      if (conversation === conversationRef.current && expandedRef.current) {
-        transition("idle");
-        setSpeechQueueRevision((revision) => revision + 1);
-        if (speechQueueRef.current.length === 0 && microphoneEnabledRef.current) {
-          setTimeout(() => {
-            if (phaseRef.current === "idle" && speechQueueRef.current.length === 0) {
-              void startListening(conversation);
-            }
-          }, 350);
-        }
-      }
-    }
-  }, [runtime, startListening, stream, transition]);
+  }, [changeTurns, cleanSpeechFile, finishSpeech, player, runtime, stopCapture, transition]);
 
   useEffect(() => {
-    if (phase !== "listening") return;
-    const update = updateVoiceSilence(
-      silenceRef.current,
-      recorderState.durationMillis,
-      recorderState.metering,
-    );
-    silenceRef.current = update.state;
-    if (update.shouldStop) void stopAndSend();
-    if (update.shouldReset) {
-      silenceRef.current = { heardVoice: false, lastVoiceAtMs: 0 };
-      pcmCaptureRef.current = createVoicePcmCapture();
-      setRecorderState({ durationMillis: 0, metering: undefined });
-    }
-  }, [phase, recorderState.durationMillis, recorderState.metering, stopAndSend]);
+    if (!sessionActive || speechQueueRef.current.length === 0 || speechStartingRef.current
+      || activeSpeechRef.current !== undefined || speechBlockedRef.current) return;
+    if (["connecting", "permission", "transcribing", "reviewing", "sending", "speaking"].includes(phase)) return;
+    if (phase === "listening" && silenceRef.current.heardVoice) return;
+    void playNextSpeech(conversationRef.current);
+  }, [phase, playNextSpeech, sessionActive, speechQueueRevision]);
 
-  const beginLiveConversation = useCallback(async (
+  useEffect(() => {
+    if (phase !== "speaking" || !playerStatus.didJustFinish) return;
+    const queued = activeSpeechRef.current;
+    if (queued !== undefined) void finishSpeech(queued, speakingConversationRef.current);
+  }, [finishSpeech, phase, playerStatus.didJustFinish]);
+
+  const beginSession = useCallback(async (
     conversation: number,
     target: { connectionId: string; projectId: string },
   ) => {
+    bootstrappingRef.current = true;
     transition("connecting");
     try {
+      const receipt = await runtime.voiceReceipts.read(target.connectionId, target.projectId);
+      if (conversation !== conversationRef.current || !sessionActiveRef.current) return;
+      receiptRef.current = receipt;
+      transcriptCursorRef.current = receipt.acknowledgedSequence;
       const messages = await runtime.steward.transcript(target.connectionId, target.projectId);
-      if (conversation !== conversationRef.current || !expandedRef.current) return;
-      transcriptCursorRef.current = updateVoiceTranscript(messages, 0).cursor;
-      transcriptSeededRef.current = true;
-      transition("idle");
-      if (microphoneEnabledRef.current) void startListening(conversation);
-    } catch (cause) {
+      if (conversation !== conversationRef.current || !sessionActiveRef.current) return;
+      await ingestTranscript(messages);
+      pollFailureSinceRef.current = null;
+      setError(undefined);
+      transition(receiptRef.current.pendingUserSequence === null ? "ready" : "thinking");
+      if (speechQueueRef.current.length > 0) setSpeechQueueRevision((revision) => revision + 1);
+      else if (microphoneEnabledRef.current) void startListening(conversation);
+    } catch {
       if (conversation !== conversationRef.current) return;
-      setMicrophone(false);
-      setError(cause instanceof Error ? cause.message : "Canlı Steward akışı başlatılamadı.");
-      transition("error");
+      transcriptSeededRef.current = false;
+      pollFailureSinceRef.current = Date.now();
+      setError(undefined);
+      transition("reconnecting");
+    } finally {
+      bootstrappingRef.current = false;
     }
-  }, [runtime, setMicrophone, startListening, transition]);
+  }, [ingestTranscript, runtime, startListening, transition]);
 
   useEffect(() => {
-    if (!expanded) return;
+    if (!sessionActive) return;
     let cancelled = false;
-    let polling = false;
     const poll = async () => {
       const target = activeTargetRef.current;
-      if (polling || target === undefined || !transcriptSeededRef.current) return;
-      polling = true;
+      if (cancelled || pollingRef.current || bootstrappingRef.current || target === undefined) return;
+      pollingRef.current = true;
       try {
         const messages = await runtime.steward.transcript(target.connectionId, target.projectId);
-        if (cancelled || target !== activeTargetRef.current || !expandedRef.current) return;
-        const update = updateVoiceTranscript(messages, transcriptCursorRef.current);
-        transcriptCursorRef.current = update.cursor;
-        if (update.stewardMessages.length > 0) {
-          speechQueueRef.current.push(...update.stewardMessages.map((message) => ({ message, attempts: 0 })));
-          setSpeechQueueRevision((revision) => revision + 1);
+        if (cancelled || target !== activeTargetRef.current || !sessionActiveRef.current) return;
+        await ingestTranscript(messages);
+        pollFailureSinceRef.current = null;
+        if (["reconnecting", "offline"].includes(phaseRef.current)) {
+          setError(undefined);
+          transition(receiptRef.current.pendingUserSequence === null ? "ready" : "thinking");
+          if (microphoneEnabledRef.current && speechQueueRef.current.length === 0) {
+            void startListening(conversationRef.current);
+          }
         }
       } catch (cause) {
-        if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : "Yeni Steward mesajları alınamadı.");
+        if (cancelled) return;
+        const startedAt = pollFailureSinceRef.current ?? Date.now();
+        pollFailureSinceRef.current = startedAt;
+        const interruptible = ["ready", "thinking", "reconnecting", "offline", "error"].includes(phaseRef.current);
+        if (interruptible && Date.now() - startedAt < CONNECTION_RECONNECT_GRACE_MS) {
+          setError(undefined);
+          transition("reconnecting");
+        } else if (interruptible) {
+          setError(describe(cause, "Mac’e ulaşılamıyor. Yeniden bağlanmayı sürdürüyorum."));
+          transition("offline");
         }
       } finally {
-        polling = false;
+        pollingRef.current = false;
       }
     };
     const handle = setInterval(() => { void poll(); }, TRANSCRIPT_POLL_MS);
@@ -404,84 +618,64 @@ export function StewardVoiceDock() {
       cancelled = true;
       clearInterval(handle);
     };
-  }, [expanded, runtime, selectedProject?.id]);
+  }, [ingestTranscript, runtime, sessionActive, startListening, transition]);
 
-  useEffect(() => {
-    const target = activeTargetRef.current;
-    if (!expanded || selectedProject === undefined || target?.projectId !== selectedProject.id) return;
-    void stewardLiveActivity.sync({
-      projectId: selectedProject.id,
-      projectName: selectedProject.name,
-      status: liveActivityStatus(phase, microphoneEnabled),
-      microphoneEnabled,
-    }).catch(() => undefined);
-  }, [expanded, microphoneEnabled, phase, selectedProject]);
-
-  useEffect(() => {
-    if (!expanded || speechQueueRef.current.length === 0 || speechStartingRef.current) return;
-    if (["connecting", "permission", "transcribing", "speaking"].includes(phase)) return;
-    if (phase === "listening" && silenceRef.current.heardVoice) return;
-    void playNextSpeech(conversationRef.current);
-  }, [expanded, phase, playNextSpeech, speechQueueRevision]);
-
-  useEffect(() => {
-    if (phase !== "speaking" || !playerStatus.didJustFinish) return;
-    const conversation = speakingConversationRef.current;
+  const endConversation = useCallback(() => {
+    conversationRef.current += 1;
+    sessionActiveRef.current = false;
+    expandedRef.current = false;
+    setSessionActive(false);
+    setExpanded(false);
+    setMicrophone(false);
+    clearReviewTimers();
+    player.pause();
+    stewardLocalSpeech.stop();
     cleanSpeechFile();
-    transition("idle");
-    setSpeechQueueRevision((revision) => revision + 1);
-    const handle = setTimeout(() => {
-      if (speechQueueRef.current.length === 0 && microphoneEnabledRef.current) {
-        void startListening(conversation);
-      }
-    }, 550);
-    return () => clearTimeout(handle);
-  }, [cleanSpeechFile, phase, playerStatus.didJustFinish, startListening, transition]);
-
-  useEffect(() => {
-    void stewardLiveActivity.end().catch(() => undefined);
-    return closeConversation;
-  }, [closeConversation]);
-
-  const resetLiveTarget = useCallback((projectId: string) => {
-    const connectionId = connections.selected?.id;
-    if (connectionId === undefined) return;
-    const conversation = conversationRef.current + 1;
-    conversationRef.current = conversation;
-    captureAttemptRef.current += 1;
-    cleanSpeechFile();
-    capturingRef.current = false;
-    firstBufferRef.current = undefined;
-    if (stream.isStreaming) stream.stop();
+    stopCapture();
+    stoppingRef.current = false;
     speechStartingRef.current = false;
     speechRetryAtRef.current = 0;
     speechQueueRef.current = [];
+    speechBlockedRef.current = false;
+    queuedSequencesRef.current.clear();
+    activeSpeechRef.current = undefined;
     transcriptCursorRef.current = 0;
     transcriptSeededRef.current = false;
-    activeTargetRef.current = { connectionId, projectId };
-    setSelectedProjectId(projectId);
-    setHeard(undefined);
-    setReply(undefined);
+    bootstrappingRef.current = false;
+    pollFailureSinceRef.current = null;
+    activeTargetRef.current = undefined;
+    setUnreadCount(0);
     setError(undefined);
-    setSpeechQueueRevision((revision) => revision + 1);
-    void beginLiveConversation(conversation, { connectionId, projectId });
-  }, [beginLiveConversation, cleanSpeechFile, connections.selected?.id, stream]);
+    setTurns([]);
+    turnsRef.current = [];
+    setDraft("");
+    draftRef.current = "";
+    activeTurnIdRef.current = undefined;
+    transition("ready");
+    void stewardLiveActivity.end().catch(() => undefined);
+    void deactivateVoiceAudio().catch(() => undefined);
+  }, [cleanSpeechFile, clearReviewTimers, player, setMicrophone, stopCapture, transition]);
 
   const openConversation = useCallback(() => {
     const project = projects.find((candidate) => candidate.id === routeProjectId) ?? selectedProject;
     const connectionId = connections.selected?.id;
     const conversation = conversationRef.current + 1;
     conversationRef.current = conversation;
+    sessionActiveRef.current = true;
     expandedRef.current = true;
+    modeRef.current = "single";
+    setSessionActive(true);
     setExpanded(true);
+    setMode("single");
     setMicrophone(true);
-    setHeard(undefined);
-    setReply(undefined);
     setError(undefined);
+    setTurns([]);
+    turnsRef.current = [];
+    queuedSequencesRef.current.clear();
     speechQueueRef.current = [];
-    transcriptCursorRef.current = 0;
+    speechBlockedRef.current = false;
+    setUnreadCount(0);
     transcriptSeededRef.current = false;
-    setSpeechQueueRevision((revision) => revision + 1);
     if (project === undefined || connectionId === undefined) {
       setMicrophone(false);
       setError("Önce çevrimiçi bir Mac ve Steward projesi seç.");
@@ -491,165 +685,147 @@ export function StewardVoiceDock() {
     setSelectedProjectId(project.id);
     const target = { connectionId, projectId: project.id };
     activeTargetRef.current = target;
-    void beginLiveConversation(conversation, target);
-  }, [beginLiveConversation, connections.selected?.id, projects, routeProjectId, selectedProject, setMicrophone, transition]);
+    void beginSession(conversation, target);
+  }, [beginSession, connections.selected?.id, projects, routeProjectId, selectedProject, setMicrophone, transition]);
 
   const toggleMicrophone = useCallback(() => {
     if (microphoneEnabledRef.current) {
       setMicrophone(false);
-      captureAttemptRef.current += 1;
-      capturingRef.current = false;
-      firstBufferRef.current = undefined;
-      if (stream.isStreaming) stream.stop();
-      pcmCaptureRef.current = createVoicePcmCapture();
-      silenceRef.current = { heardVoice: false, lastVoiceAtMs: 0 };
-      setRecorderState({ durationMillis: 0, metering: undefined });
-      if (phaseRef.current === "listening" || phaseRef.current === "permission") transition("idle");
-      if (phaseRef.current !== "speaking") {
-        void configureVoicePlaybackAudio().catch(() => undefined);
-      }
+      stopCapture();
+      if (["listening", "permission"].includes(phaseRef.current)) transition("ready");
+      if (phaseRef.current !== "speaking") void configureVoicePlaybackAudio().catch(() => undefined);
       return;
     }
     setMicrophone(true);
     setError(undefined);
-    if (phaseRef.current === "idle" || phaseRef.current === "error") {
-      void startListening(conversationRef.current);
+    if (["ready", "error"].includes(phaseRef.current)) void startListening(conversationRef.current);
+  }, [setMicrophone, startListening, stopCapture, transition]);
+
+  const changeMode = useCallback((next: VoiceMode) => {
+    modeRef.current = next;
+    setMode(next);
+    if (next === "single") {
+      setMicrophone(false);
+      if (["listening", "permission"].includes(phaseRef.current)) {
+        stopCapture();
+        transition("ready");
+      }
+      return;
     }
-  }, [setMicrophone, startListening, stream, transition]);
+    setMicrophone(true);
+    if (["ready", "error"].includes(phaseRef.current)) void startListening(conversationRef.current);
+  }, [setMicrophone, startListening, stopCapture, transition]);
 
-  const status = voiceStatus(phase, recorderState.durationMillis, microphoneEnabled);
+  const beginCorrection = useCallback(() => {
+    if (phaseRef.current !== "reviewing") return;
+    clearReviewTimers();
+    setEditingDraft(true);
+  }, [clearReviewTimers]);
 
-  if (!expanded) {
-    return (
-      <View pointerEvents="box-none" style={[styles.overlay, { bottom: insets.bottom + 9 }]}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Steward'la canlı konuş"
-          accessibilityHint="Mikrofonu açar ve mevcut proje bağlamında canlı konuşmayı başlatır"
-          onPress={openConversation}
-          style={({ pressed }) => [styles.compactButton, pressed && styles.pressed]}
-        >
-          <MicrophoneGlyph />
-          <View style={styles.liveDot} />
-        </Pressable>
-      </View>
-    );
+  const changeDraft = useCallback((value: string) => {
+    draftRef.current = value;
+    setDraft(value);
+    const turnId = activeTurnIdRef.current;
+    if (turnId !== undefined) {
+      changeTurns((current) => updateVoiceTurn(current, turnId, { transcript: value, status: "received" }));
+    }
+  }, [changeTurns]);
+
+  const replayLastReply = useCallback(() => {
+    const blocked = speechQueueRef.current[0];
+    if (speechBlockedRef.current && blocked !== undefined) {
+      speechBlockedRef.current = false;
+      speechQueueRef.current[0] = { ...blocked, attempts: 0 };
+      transition(receiptRef.current.pendingUserSequence === null ? "ready" : "thinking");
+      setSpeechQueueRevision((revision) => revision + 1);
+      return;
+    }
+    if (lastReply === undefined) return;
+    const acknowledge = lastReply.sequence > receiptRef.current.acknowledgedSequence;
+    enqueueSpeech(lastReply, acknowledge, true);
+  }, [enqueueSpeech, lastReply, transition]);
+
+  useEffect(() => {
+    if (!sessionActiveRef.current && routeProjectId !== undefined) setSelectedProjectId(routeProjectId);
+  }, [routeProjectId]);
+
+  useEffect(() => {
+    const activeConnectionId = activeTargetRef.current?.connectionId;
+    if (sessionActiveRef.current && activeConnectionId !== undefined
+      && activeConnectionId !== connections.selected?.id) endConversation();
+  }, [connections.selected?.id, endConversation]);
+
+  useEffect(() => {
+    const target = activeTargetRef.current;
+    if (!sessionActive || selectedProject === undefined || target?.projectId !== selectedProject.id) return;
+    void stewardLiveActivity.sync({
+      projectId: selectedProject.id,
+      projectName: selectedProject.name,
+      status: liveActivityStatus(phase),
+      microphoneEnabled,
+    }).catch(() => undefined);
+  }, [microphoneEnabled, phase, selectedProject, sessionActive]);
+
+  useEffect(() => () => {
+    playerRef.current.pause();
+    stewardLocalSpeech.stop();
+    if (streamRef.current.isStreaming) streamRef.current.stop();
+    void stewardLiveActivity.end().catch(() => undefined);
+  }, []);
+
+  return (
+    <KeyboardAvoidingView
+      behavior="position"
+      pointerEvents="box-none"
+      style={[styles.overlay, { bottom: insets.bottom + 8 }]}
+    >
+      <StewardVoiceControls
+        active={sessionActive}
+        autoSendSeconds={autoSendSeconds}
+        canReplay={lastReply !== undefined}
+        draft={draft}
+        durationMillis={recorderState.durationMillis}
+        editingDraft={editingDraft}
+        error={error}
+        expanded={expanded}
+        microphoneEnabled={microphoneEnabled}
+        mode={mode}
+        onBeginCorrection={beginCorrection}
+        onCommitDraft={() => { void commitDraft(); }}
+        onDraftChange={changeDraft}
+        onEnd={endConversation}
+        onModeChange={changeMode}
+        onReplay={replayLastReply}
+        onStart={openConversation}
+        onToggleExpanded={() => {
+          expandedRef.current = !expandedRef.current;
+          setExpanded(expandedRef.current);
+        }}
+        onToggleMicrophone={toggleMicrophone}
+        phase={phase}
+        projectName={selectedProject?.name ?? "Steward"}
+        turns={turns}
+        unreadCount={unreadCount}
+      />
+    </KeyboardAvoidingView>
+  );
+}
+
+function liveActivityStatus(phase: VoicePhase): string {
+  switch (phase) {
+    case "connecting": return "Bağlanıyor";
+    case "ready": return "Hazır";
+    case "permission": return "Mikrofon hazırlanıyor";
+    case "listening": return "Dinliyor";
+    case "transcribing": return "Yazıya çeviriyor";
+    case "reviewing": return "Onay bekliyor";
+    case "sending": return "Gönderiliyor";
+    case "thinking": return "Steward düşünüyor";
+    case "speaking": return "Steward konuşuyor";
+    case "reconnecting": return "Yeniden bağlanıyor";
+    case "offline": return "Mac’e ulaşılamıyor";
+    case "error": return "Tekrar denemeye hazır";
   }
-
-  return (
-    <View pointerEvents="box-none" style={[styles.overlay, { bottom: insets.bottom + 8 }]}>
-      <View style={styles.sheet} accessibilityViewIsModal>
-        <View style={styles.sheetHeader}>
-          <View>
-            <Text style={styles.eyebrow}>STEWARD • CANLI</Text>
-            <Text style={styles.title}>Canlı konuşma açık.</Text>
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Canlı konuşmayı kapat"
-            hitSlop={10}
-            onPress={closeConversation}
-            style={styles.closeButton}
-          >
-            <Text style={styles.closeGlyph}>×</Text>
-          </Pressable>
-        </View>
-
-        {projects.length > 1 ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.projects}>
-            {projects.map((project) => (
-              <Pressable
-                key={project.id}
-                disabled={!(["idle", "error"].includes(phase))}
-                onPress={() => resetLiveTarget(project.id)}
-                style={[styles.projectChip, project.id === selectedProject?.id && styles.projectChipSelected]}
-              >
-                <Text style={[styles.projectLabel, project.id === selectedProject?.id && styles.projectLabelSelected]}>
-                  {project.name}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        ) : (
-          <Text style={styles.projectName}>{selectedProject?.name ?? "Proje seçilmedi"}</Text>
-        )}
-
-        <View style={styles.turns}>
-          {heard === undefined ? null : (
-            <Text style={styles.turnText} numberOfLines={2}>
-              <Text style={styles.turnLabel}>Sen  </Text>{heard}
-            </Text>
-          )}
-          {reply === undefined ? null : (
-            <Text style={styles.turnText} numberOfLines={3}>
-              <Text style={styles.stewardLabel}>Steward  </Text>{reply.content}
-            </Text>
-          )}
-          {error === undefined ? null : <Text style={styles.error}>{error}</Text>}
-        </View>
-
-        <View style={styles.controlRow}>
-          <View style={styles.statusZone}>
-            <Text style={styles.status}>{status}</Text>
-            <Text style={styles.hint}>{voiceHint(phase, microphoneEnabled)}</Text>
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={microphoneEnabled ? "Mikrofonu kapat" : "Mikrofonu aç"}
-            accessibilityHint="Canlı Steward oturumundaki mikrofonu açar veya sessize alır"
-            onPress={toggleMicrophone}
-            style={({ pressed }) => [
-              styles.voiceButton,
-              microphoneEnabled ? styles.voiceButtonListening : styles.voiceButtonMuted,
-              ["connecting", "permission", "transcribing"].includes(phase) && styles.voiceButtonBusy,
-              pressed && styles.pressed,
-            ]}
-          >
-            <MicrophoneGlyph large active={microphoneEnabled} muted={!microphoneEnabled} />
-          </Pressable>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-function MicrophoneGlyph({
-  large = false,
-  active = false,
-  muted = false,
-}: {
-  large?: boolean;
-  active?: boolean;
-  muted?: boolean;
-}) {
-  return (
-    <View style={[styles.mic, large && styles.micLarge]} accessible={false}>
-      <View style={[styles.micCapsule, large && styles.micCapsuleLarge, active && styles.micCapsuleActive]} />
-      <View style={[styles.micCradle, large && styles.micCradleLarge]} />
-      <View style={[styles.micStem, large && styles.micStemLarge]} />
-      {muted ? <View style={[styles.micMutedSlash, large && styles.micMutedSlashLarge]} /> : null}
-    </View>
-  );
-}
-
-function voiceStatus(phase: VoicePhase, durationMs: number, microphoneEnabled: boolean): string {
-  if (phase === "listening") return `Dinliyorum  ${Math.max(0, Math.round(durationMs / 100) / 10).toFixed(1)} sn`;
-  if (phase === "connecting") return "Canlı akış bağlanıyor";
-  if (phase === "permission") return "Mikrofon hazırlanıyor";
-  if (phase === "transcribing") return "Sözlerin yazıya çevriliyor";
-  if (phase === "speaking") return "Steward konuşuyor";
-  if (phase === "error") return "Canlı akışta sorun var";
-  return microphoneEnabled ? "Mikrofon açık" : "Mikrofon kapalı";
-}
-
-function liveActivityStatus(phase: VoicePhase, microphoneEnabled: boolean): string {
-  if (phase === "connecting") return "Bağlanıyor";
-  if (phase === "permission") return "Mikrofon hazırlanıyor";
-  if (phase === "listening") return "Dinliyor";
-  if (phase === "transcribing") return "Gönderiliyor";
-  if (phase === "speaking") return "Steward konuşuyor";
-  if (phase === "error") return "Bağlantı sorunu";
-  return microphoneEnabled ? "Mikrofon açık" : "Mikrofon kapalı";
 }
 
 async function configureVoiceRecordingAudio(): Promise<void> {
@@ -685,15 +861,8 @@ async function deactivateVoiceAudio(): Promise<void> {
   });
 }
 
-function voiceHint(phase: VoicePhase, microphoneEnabled: boolean): string {
-  if (phase === "listening") return "Konuşman sessizlikte otomatik gönderilir; dokunursan mikrofon kapanır.";
-  if (phase === "speaking") return microphoneEnabled
-    ? "Yanıt bitince mikrofon yeniden dinlemeye başlar."
-    : "Mikrofon kapalı; yeni Steward mesajları yine okunur.";
-  if (phase === "transcribing") return "Bu tur gönderiliyor; mikrofon durumunu istediğin an değiştirebilirsin.";
-  if (phase === "error") return "Mikrofonu yeniden açabilir veya canlı akışı açık bırakabilirsin.";
-  if (!microphoneEnabled) return "Canlı Activity açık kalır; konuşmak için mikrofonu aç.";
-  return "Ekranı kapatsan da dinlemeye ve yeni mesajları okumaya devam eder.";
+function describe(cause: unknown, fallback: string): string {
+  return cause instanceof Error ? cause.message : fallback;
 }
 
 function delay(ms: number): Promise<void> {
@@ -708,129 +877,4 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: space.screen,
   },
-  compactButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: color.accent,
-    borderWidth: 1,
-    borderColor: color.accentStrong,
-    shadowColor: "#000",
-    shadowOpacity: 0.34,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 8,
-  },
-  pressed: { opacity: 0.76, transform: [{ scale: 0.97 }] },
-  liveDot: {
-    position: "absolute",
-    right: 3,
-    top: 3,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: color.success,
-    borderWidth: 1.5,
-    borderColor: color.bgApp,
-  },
-  sheet: {
-    width: "100%",
-    maxWidth: 520,
-    borderRadius: radius.sheet,
-    borderWidth: 1,
-    borderColor: color.borderStrong,
-    backgroundColor: color.bgRaised,
-    padding: space.lg,
-    gap: space.md,
-    shadowColor: "#000",
-    shadowOpacity: 0.42,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 14,
-  },
-  sheetHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
-  eyebrow: {
-    color: color.success,
-    fontFamily: fontFamily.mono,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1.2,
-  },
-  title: { color: color.text, fontSize: 18, fontWeight: "700", marginTop: 2 },
-  closeButton: { width: 36, height: 36, alignItems: "flex-end", justifyContent: "flex-start" },
-  closeGlyph: { color: color.textSecondary, fontSize: 28, lineHeight: 29 },
-  projects: { gap: space.sm },
-  projectChip: {
-    minHeight: 32,
-    justifyContent: "center",
-    paddingHorizontal: 11,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: color.borderStrong,
-    backgroundColor: color.bgApp,
-  },
-  projectChipSelected: { borderColor: color.accentStrong, backgroundColor: color.accentWash },
-  projectLabel: { color: color.textSecondary, fontSize: 12, fontWeight: "600" },
-  projectLabelSelected: { color: color.accentStrong },
-  projectName: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 11 },
-  turns: { minHeight: 42, gap: space.xs },
-  turnText: { color: color.textSecondary, fontSize: 13, lineHeight: 18 },
-  turnLabel: { color: color.text, fontWeight: "700" },
-  stewardLabel: { color: color.accentStrong, fontWeight: "700" },
-  error: { color: color.danger, fontSize: 12, lineHeight: 17 },
-  controlRow: { flexDirection: "row", alignItems: "center", gap: space.lg },
-  statusZone: { flex: 1, minWidth: 0, gap: 2 },
-  status: { color: color.text, fontFamily: fontFamily.mono, fontSize: 12, fontWeight: "700" },
-  hint: { color: color.textMuted, fontSize: 11, lineHeight: 15 },
-  voiceButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: color.accent,
-    borderWidth: 2,
-    borderColor: color.accentStrong,
-  },
-  voiceButtonListening: { backgroundColor: color.danger, borderColor: "#ff9aa2" },
-  voiceButtonMuted: { backgroundColor: color.bgApp, borderColor: color.borderStrong },
-  voiceButtonBusy: { opacity: 0.82 },
-  mic: { width: 20, height: 25, alignItems: "center" },
-  micLarge: { width: 28, height: 34 },
-  micCapsule: {
-    width: 9,
-    height: 15,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: color.onAccent,
-  },
-  micCapsuleLarge: { width: 13, height: 21, borderRadius: 8, borderWidth: 2.5 },
-  micCapsuleActive: { backgroundColor: color.onAccent },
-  micCradle: {
-    position: "absolute",
-    top: 8,
-    width: 16,
-    height: 11,
-    borderLeftWidth: 2,
-    borderRightWidth: 2,
-    borderBottomWidth: 2,
-    borderColor: color.onAccent,
-    borderBottomLeftRadius: 9,
-    borderBottomRightRadius: 9,
-  },
-  micCradleLarge: { top: 11, width: 22, height: 15, borderWidth: 0, borderLeftWidth: 2.5, borderRightWidth: 2.5, borderBottomWidth: 2.5 },
-  micStem: { width: 2, height: 5, backgroundColor: color.onAccent },
-  micStemLarge: { width: 2.5, height: 7 },
-  micMutedSlash: {
-    position: "absolute",
-    top: 1,
-    width: 2,
-    height: 25,
-    borderRadius: 1,
-    backgroundColor: color.danger,
-    transform: [{ rotate: "-42deg" }],
-  },
-  micMutedSlashLarge: { top: 0, height: 34, width: 3, borderRadius: 1.5 },
 });
