@@ -99,10 +99,6 @@ impl OpenAiVoiceService {
             .map_err(|_| VoiceProviderError::InvalidInput)?;
         let form = multipart::Form::new()
             .text("model", "gpt-transcribe")
-            // Steward voice is a Turkish-first surface. Pinning the ISO-639-1
-            // language prevents short or noisy turns from being decoded as a
-            // phonetically similar language before the user can correct them.
-            .text("language", "tr")
             .part("file", part);
         let response = self
             .client
@@ -144,7 +140,7 @@ impl OpenAiVoiceService {
                 model: "gpt-4o-mini-tts",
                 voice: "marin",
                 input: text,
-                instructions: "Türkçe konuş. Sıcak, sakin ve doğal bir tonda; kısa duraklamalarla, net telaffuzla ve telefon ya da Apple Watch hoparlöründe kolay anlaşılacak şekilde seslendir.",
+                instructions: "Speak in the same language as the input text. Use a warm, calm, natural tone with short pauses and clear pronunciation suitable for a phone or watch speaker.",
                 response_format: "mp3",
             })
             .send()
@@ -260,7 +256,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn transcription_request_pins_turkish_language() {
+    async fn transcription_request_keeps_language_detection_automatic() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
@@ -312,7 +308,7 @@ mod tests {
         let request = server.await.unwrap();
         assert!(request.starts_with("POST /audio/transcriptions HTTP/1.1\r\n"));
         assert!(request.contains("name=\"model\"\r\n\r\ngpt-transcribe\r\n"));
-        assert!(request.contains("name=\"language\"\r\n\r\ntr\r\n"));
+        assert!(!request.contains("name=\"language\""));
         assert!(request.contains("name=\"file\"; filename=\"voice-turn.wav\""));
     }
 

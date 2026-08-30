@@ -54,16 +54,6 @@ export function transcriptionOf(stdout) {
   return { text, onDevice: parsed?.onDevice === true };
 }
 
-/// Steward voice is Turkish-first, while technical names may legitimately be
-/// English. Accept Latin text and punctuation, but reject a cloud result that
-/// switched the whole utterance into an unrelated writing system so the
-/// tr-TR Apple recognizer can retry it.
-export function acceptableTurkishTranscript(text) {
-  const value = String(text ?? "").trim();
-  if (value.length === 0) return false;
-  return !/[\p{Script=Cyrillic}\p{Script=Greek}\p{Script=Arabic}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(value);
-}
-
 function runTool(file, args) {
   return new Promise((resolve, reject) => {
     execFile(file, args, { timeout: 30_000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
@@ -97,9 +87,9 @@ export async function ensureTranscriber(cacheDir) {
   return executable;
 }
 
-export async function transcribeAudioFile(cacheDir, audioFile, locale = "tr-TR") {
+export async function transcribeAudioFile(cacheDir, audioFile, locale) {
   const executable = await ensureTranscriber(cacheDir);
-  const args = [audioFile, locale];
+  const args = locale === undefined ? [audioFile] : [audioFile, locale];
   if (/\.[cm]?js$/i.test(executable)) {
     return transcriptionOf(await runTool(process.execPath, [executable, ...args]));
   }

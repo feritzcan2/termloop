@@ -22,7 +22,6 @@ import {
   validWatchReply,
 } from "../scripts/mobile-access-terminal-input.mjs";
 import {
-  acceptableTurkishTranscript,
   transcriptionOf,
   validVoiceUpload,
   voiceContainerOf,
@@ -60,13 +59,6 @@ describe("watch voice upload helpers", () => {
     expect(() => transcriptionOf("not json")).toThrow();
   });
 
-  it("accepts Turkish and technical Latin text but rejects unrelated scripts", () => {
-    expect(acceptableTurkishTranscript("Nucleus PR'ını development'a gönder")).toBe(true);
-    expect(acceptableTurkishTranscript("Ödeme durumunu Jira'dan kontrol et")).toBe(true);
-    expect(acceptableTurkishTranscript("Проверь статус оплаты")).toBe(false);
-    expect(acceptableTurkishTranscript("支払い状況を確認して")).toBe(false);
-    expect(acceptableTurkishTranscript("   ")).toBe(false);
-  });
 });
 
 describe("watch terminal input helpers", () => {

@@ -1,6 +1,7 @@
 import AVFoundation
 import ExpoModulesCore
 import Foundation
+import NaturalLanguage
 
 public final class StewardLocalSpeechModule: Module {
   private var speaker: StewardLocalSpeaker?
@@ -48,7 +49,7 @@ private final class StewardLocalSpeaker: NSObject, AVSpeechSynthesizerDelegate {
       try session.setActive(true)
       completion = promise
       let utterance = AVSpeechUtterance(string: trimmed)
-      utterance.voice = AVSpeechSynthesisVoice(language: "tr-TR")
+      utterance.voice = speechVoice(for: trimmed)
       utterance.rate = 0.47
       utterance.pitchMultiplier = 0.98
       currentUtterance = utterance
@@ -83,5 +84,15 @@ private final class StewardLocalSpeaker: NSObject, AVSpeechSynthesizerDelegate {
     currentUtterance = nil
     completion.resolve(spoken)
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+  }
+
+  private func speechVoice(for text: String) -> AVSpeechSynthesisVoice? {
+    let recognizer = NLLanguageRecognizer()
+    recognizer.processString(text)
+    if let language = recognizer.dominantLanguage?.rawValue,
+       let voice = AVSpeechSynthesisVoice(language: language) {
+      return voice
+    }
+    return Locale.preferredLanguages.first.flatMap { AVSpeechSynthesisVoice(language: $0) }
   }
 }

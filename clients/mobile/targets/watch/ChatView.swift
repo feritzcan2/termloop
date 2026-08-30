@@ -1,4 +1,5 @@
 import AVFoundation
+import NaturalLanguage
 import SwiftUI
 
 struct ChatMessage: Codable, Identifiable, Equatable {
@@ -89,7 +90,7 @@ final class SpeechPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate, AVS
         }
         player = nil
         let utterance = AVSpeechUtterance(string: String(fallbackText.prefix(1_500)))
-        utterance.voice = AVSpeechSynthesisVoice(language: "tr-TR")
+        utterance.voice = speechVoice(for: fallbackText)
         utterance.rate = 0.47
         utterance.pitchMultiplier = 0.98
         isSpeaking = true
@@ -103,6 +104,16 @@ final class SpeechPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate, AVS
         synthesizer.stopSpeaking(at: .immediate)
         isSpeaking = false
         try? AVAudioSession.sharedInstance().setActive(false)
+    }
+
+    private func speechVoice(for text: String) -> AVSpeechSynthesisVoice? {
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(text)
+        if let language = recognizer.dominantLanguage?.rawValue,
+           let voice = AVSpeechSynthesisVoice(language: language) {
+            return voice
+        }
+        return Locale.preferredLanguages.first.flatMap { AVSpeechSynthesisVoice(language: $0) }
     }
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {

@@ -40,7 +40,6 @@ import {
 } from "./mobile-access-terminal-input.mjs";
 import { readTerminalNotificationPreview } from "./mobile-access-terminal-preview.mjs";
 import {
-  acceptableTurkishTranscript,
   ensureTranscriber,
   transcribeAudioFile,
   validVoiceUpload,
@@ -66,6 +65,7 @@ const MOBILE_CONTROL_METHODS = new Set([
   "agent.statusList",
   "agent.capabilityList",
   "task.list",
+  "steward.configurationGet",
 ]);
 /// Methods outside the daemon's read-only scope that a paired phone may still
 /// reach, each named individually and routed on the full token exactly as the
@@ -673,16 +673,11 @@ async function transcribeStewardAudio(runtime, audio, contentType) {
     if (provider.ok) {
       const payload = await provider.json();
       const text = typeof payload?.text === "string" ? payload.text.trim() : "";
-      if (text.length > 0 && text.length <= 64 * 1024 && acceptableTurkishTranscript(text)) {
+      if (text.length > 0 && text.length <= 64 * 1024) {
         process.stdout.write(
           `${new Date().toISOString()} steward transcription provider=openai status=${provider.status} container=${voiceContainerOf(audio)} bytes=${audio.length}\n`,
         );
         return text;
-      }
-      if (text.length > 0 && !acceptableTurkishTranscript(text)) {
-        process.stdout.write(
-          `${new Date().toISOString()} steward transcription provider=openai status=${provider.status} rejected=unexpected-script container=${voiceContainerOf(audio)} bytes=${audio.length}\n`,
-        );
       }
     }
   } catch {
