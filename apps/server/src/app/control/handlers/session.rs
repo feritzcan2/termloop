@@ -2453,7 +2453,7 @@ async fn run_automatic_resume_attempt_inner(
     trigger: &'static str,
     attempt_deadline: Instant,
 ) {
-    let first = run_agent_resume_session(
+    let result = run_agent_resume_session(
         json!({ "sessionId": &session_id }),
         state,
         permit,
@@ -2463,7 +2463,11 @@ async fn run_automatic_resume_attempt_inner(
         attempt_deadline,
     )
     .await;
-    if !should_retry_daemon_startup_timeout(trigger, &first) || *state.resume_shutdown.borrow() {
+    if *state.resume_shutdown.borrow() {
+        return;
+    }
+    if !should_retry_daemon_startup_timeout(trigger, &result) {
+        fresh_start_failed_persistent_assistant(&session_id, state).await;
         return;
     }
 
@@ -2481,6 +2485,53 @@ async fn run_automatic_resume_attempt_inner(
         Instant::now() + AGENT_RESUME_ATTEMPT_TIMEOUT,
     )
     .await;
+    if !*state.resume_shutdown.borrow() {
+        fresh_start_failed_persistent_assistant(&session_id, state).await;
+    }
+}
+
+async fn fresh_start_failed_persistent_assistant(session_id: &str, state: &AppState) {
+    let target = match state
+        .core
+        .lock()
+        .await
+        .retire_failed_persistent_assistant_for_fresh_start(session_id)
+    {
+        Ok(Some(target)) => target,
+        Ok(None) => return,
+        Err(error) => {
+            tracing::warn!(%error, session_id, "failed to retire persistent assistant for fresh start");
+            return;
+        }
+    };
+    let revision = state.core.lock().await.state_revision();
+    let _ = state.invalidation_requests.try_send(InvalidationRequest {
+        topics: vec![
+            ProjectionTopic::Session,
+            ProjectionTopic::AgentStatus,
+            ProjectionTopic::Steward,
+            ProjectionTopic::Worker,
+            ProjectionTopic::Routine,
+        ],
+        state_revision: revision,
+        observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
+    });
+
+    let fresh = match target {
+        termloop_core::companion_integrations::assistant_session::PersistentAssistantFreshStart::Steward { project_id } => {
+            super::launch_current_steward(&project_id, state).await.map(|_| ())
+        }
+        termloop_core::companion_integrations::assistant_session::PersistentAssistantFreshStart::Worker { worker_id } => {
+            super::launch_current_worker(&worker_id, state).await
+        }
+    };
+    match fresh {
+        Ok(()) => tracing::info!(
+            session_id,
+            "persistent assistant resumed with a fresh conversation"
+        ),
+        Err(error) => tracing::warn!(%error, session_id, "persistent assistant fresh start failed"),
+    }
 }
 
 fn should_retry_daemon_startup_timeout(

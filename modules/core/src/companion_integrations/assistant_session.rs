@@ -28,6 +28,12 @@ pub enum PersistentAssistantIdentity {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PersistentAssistantFreshStart {
+    Steward { project_id: String },
+    Worker { worker_id: String },
+}
+
 #[derive(Debug, Clone)]
 pub struct PersistentAssistantTarget {
     pub identity: PersistentAssistantIdentity,
@@ -523,6 +529,82 @@ impl CoreRuntime {
         })
     }
 
+    /// Retires a failed persistent-assistant conversation so its current
+    /// configuration can launch a fresh provider conversation. This is allowed
+    /// only after resume cleanup proved that no provider or PTY ownership is
+    /// left; ambiguous ownership must remain visible for explicit recovery.
+    pub fn retire_failed_persistent_assistant_for_fresh_start(
+        &mut self,
+        session_id: &str,
+    ) -> Result<Option<PersistentAssistantFreshStart>, CoreError> {
+        let session = self
+            .store
+            .sessions()
+            .iter()
+            .find(|session| session.id == session_id)
+            .cloned()
+            .ok_or(CoreError::NotFound)?;
+        if session.lifecycle_state != "resumeFailed"
+            || matches!(
+                session.resume_failure,
+                Some(
+                    termloop_domain::ResumeFailureReason::RuntimeOwnershipUncertain
+                        | termloop_domain::ResumeFailureReason::RuntimeConflict
+                )
+            )
+            || self.resume_reservations.contains(session_id)
+            || self
+                .terminal
+                .contains_session(session_id)
+                .map_err(crate::terminal_error)?
+            || self.codex_runtimes.contains_key(session_id)
+        {
+            return Ok(None);
+        }
+
+        let steward = self
+            .store
+            .steward_configurations()
+            .iter()
+            .find(|configuration| {
+                configuration.enabled
+                    && configuration.executor_session_id.as_deref() == Some(session_id)
+                    && configuration.project_id == session.project_id
+            })
+            .map(|configuration| PersistentAssistantFreshStart::Steward {
+                project_id: configuration.project_id.clone(),
+            });
+        let worker = self
+            .store
+            .worker_configurations()
+            .iter()
+            .find(|configuration| {
+                configuration.enabled
+                    && configuration.executor_session_id.as_deref() == Some(session_id)
+                    && configuration.project_id == session.project_id
+            })
+            .map(|configuration| PersistentAssistantFreshStart::Worker {
+                worker_id: configuration.id.clone(),
+            });
+        let target = match (steward, worker) {
+            (Some(target), None) | (None, Some(target)) => target,
+            _ => return Ok(None),
+        };
+
+        self.release_agent_terminal_hold(session_id)?;
+        self.store
+            .delete_session_descriptor(&self.write_authority, session_id)
+            .map_err(crate::store_error)?;
+        self.agent_observations.remove(session_id);
+        self.mcp_authorizer.remove(session_id);
+        self.pending_assistant_wake_deliveries.remove(session_id);
+        self.agent_conversation_activity.remove(session_id);
+        self.resume_ready.remove(session_id);
+        self.resume_failure_reaps.remove(session_id);
+        self.pending_agent_resume_refs.remove(session_id);
+        Ok(Some(target))
+    }
+
     pub fn admit_persistent_assistant_launch(
         &mut self,
         plan: PersistentAssistantLaunchPlan,
@@ -830,8 +912,198 @@ pub fn tracker_role(kind: TrackerKind) -> termloop_invocation::ExecutorRole {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::companion_integrations::steward::{
+        AssistantAvailability, StewardConfigurationUpdate,
+    };
     use termloop_store::{Store, issue_core_write_authority_for_composition};
     use termloop_terminal::TerminalService;
+
+    fn assistant_session(id: &str, project_id: &str, cwd: &std::path::Path) -> SessionRecord {
+        SessionRecord {
+            id: id.into(),
+            project_id: project_id.into(),
+            name: Some(id.into()),
+            kind: SessionKind::Agent,
+            process: ProcessDescriptor {
+                program: "codex".into(),
+                args: vec![],
+                cwd: cwd.to_string_lossy().into_owned(),
+                agent_id: Some("codex".into()),
+                template_ref: Some("builtin.assistant.activation".into()),
+                template_version: Some(3),
+            },
+            lifecycle_state: "running".into(),
+            runtime_epoch: 7,
+            archived_at_epoch_ms: None,
+            ask_to_source_session_id: None,
+            run_configuration_id: None,
+            improver_target: None,
+            ask_to_continuation: None,
+            resume_ref: None,
+            resume_launch_guard: None,
+            resume_failure: None,
+            launch_selection: Default::default(),
+        }
+    }
+
+    #[test]
+    fn failed_steward_and_worker_resumes_retire_only_after_ownership_is_safe() {
+        let path = std::env::temp_dir().join(format!(
+            "termloop-core-assistant-fresh-fallback-{}-{}.json",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let folder = path.with_extension("project");
+        std::fs::create_dir_all(&folder).unwrap();
+        let mut runtime = CoreRuntime::new(
+            Store::open(&path).unwrap(),
+            issue_core_write_authority_for_composition(),
+            TerminalService::default(),
+            7,
+        )
+        .unwrap();
+        let project_id = runtime
+            .handle("project.create", json!({"name":"Demo","folderPath":folder}))
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        runtime
+            .set_steward_configuration(StewardConfigurationUpdate {
+                project_id: &project_id,
+                agent_id: "codex",
+                model: "default".into(),
+                permission: "bypassPermissions".into(),
+                reasoning: "default".into(),
+                enabled: true,
+                system_prompt: String::new(),
+                expected_revision: runtime.state_revision(),
+                capability: AssistantAvailability::Proven,
+                updated_at_epoch_ms: 1,
+            })
+            .unwrap();
+        runtime
+            .create_worker_configuration(
+                "worker-1".into(),
+                &project_id,
+                "Worker".into(),
+                "codex",
+                true,
+                "default".into(),
+                "bypassPermissions".into(),
+                "default".into(),
+                60,
+                String::new(),
+                String::new(),
+                runtime.state_revision(),
+                AssistantAvailability::Proven,
+                2,
+            )
+            .unwrap();
+
+        runtime
+            .store
+            .attach_steward_executor_session(
+                &runtime.write_authority,
+                assistant_session("steward-failed", &project_id, &folder),
+                &project_id,
+                1,
+                3,
+            )
+            .unwrap();
+        runtime
+            .store
+            .attach_worker_executor_session(
+                &runtime.write_authority,
+                assistant_session("worker-failed", &project_id, &folder),
+                "worker-1",
+                1,
+                3,
+            )
+            .unwrap();
+        runtime
+            .store
+            .mark_session_resume_failed(
+                &runtime.write_authority,
+                "steward-failed",
+                termloop_domain::ResumeFailureReason::ProviderHistoryDamaged,
+            )
+            .unwrap();
+        runtime
+            .store
+            .mark_session_resume_failed(
+                &runtime.write_authority,
+                "worker-failed",
+                termloop_domain::ResumeFailureReason::ResumeRejected,
+            )
+            .unwrap();
+
+        assert_eq!(
+            runtime
+                .retire_failed_persistent_assistant_for_fresh_start("steward-failed")
+                .unwrap(),
+            Some(PersistentAssistantFreshStart::Steward {
+                project_id: project_id.clone(),
+            })
+        );
+        assert_eq!(
+            runtime
+                .retire_failed_persistent_assistant_for_fresh_start("worker-failed")
+                .unwrap(),
+            Some(PersistentAssistantFreshStart::Worker {
+                worker_id: "worker-1".into(),
+            })
+        );
+        assert!(
+            runtime
+                .request_persistent_steward_launch(&project_id)
+                .is_some()
+        );
+        assert!(
+            runtime
+                .request_persistent_worker_launch("worker-1")
+                .is_some()
+        );
+        assert!(
+            runtime
+                .store
+                .sessions()
+                .iter()
+                .all(|session| !matches!(session.id.as_str(), "steward-failed" | "worker-failed"))
+        );
+
+        runtime
+            .store
+            .attach_steward_executor_session(
+                &runtime.write_authority,
+                assistant_session("steward-uncertain", &project_id, &folder),
+                &project_id,
+                1,
+                4,
+            )
+            .unwrap();
+        runtime
+            .store
+            .mark_session_resume_failed(
+                &runtime.write_authority,
+                "steward-uncertain",
+                termloop_domain::ResumeFailureReason::RuntimeOwnershipUncertain,
+            )
+            .unwrap();
+        assert_eq!(
+            runtime
+                .retire_failed_persistent_assistant_for_fresh_start("steward-uncertain")
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            runtime.steward_executor_session_id(&project_id).as_deref(),
+            Some("steward-uncertain")
+        );
+
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir_all(folder);
+    }
 
     #[test]
     fn repeated_steward_wake_coalesces_while_first_submission_waits_for_idle() {
