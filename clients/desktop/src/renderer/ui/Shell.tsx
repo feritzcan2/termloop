@@ -51,10 +51,11 @@ import { SidebarSessionDndProvider, isProjectRelocationDragCandidate, isTaskRelo
 import { ActiveAgentRail } from "./ActiveAgentRail.js";
 import { HistoryRail } from "./HistoryRail.js";
 import { playbookBuilderSession } from "../prompt-improver-session-link.js";
-import { WorkspaceViewSwitch, type WorkspaceView } from "./WorkspaceViewSwitch.js";
+import { WorkspaceViewSwitch } from "./WorkspaceViewSwitch.js";
 import type { GhosttyShellShortcut } from "../../ghostty-shell-shortcut.js";
 import { persistActiveAgentFavoriteToggle, readActiveAgentFavorites } from "../active-agent-favorites.js";
 import { readActiveAgentActivityMemory, updateActiveAgentActivityMemory, writeActiveAgentActivityMemory } from "../active-agent-activity-memory.js";
+import { readWorkspaceViewMemory, rememberWorkspaceView, workspaceViewForProject, type WorkspaceView } from "../workspace-view-memory.js";
 import { SessionTabStrip } from "./SessionTabStrip.js";
 import { TaskSourcesPanel, type TaskSourceActions } from "./TaskSourcesPanel.js";
 import type { TaskCreateOutcome } from "./task-dialogs/task-editor.js";
@@ -512,7 +513,11 @@ export function Shell(props: ShellProps) {
   }, []);
   const [railMode, setRailMode] = useState<RailMode>("workspace");
   const [contextBankRefreshToken, setContextBankRefreshToken] = useState(0);
-  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("agents");
+  const [workspaceViewMemory, setWorkspaceViewMemory] = useState(readWorkspaceViewMemory);
+  const workspaceView = workspaceViewForProject(workspaceViewMemory, props.selectedProject?.id);
+  const setWorkspaceView = useCallback((view: WorkspaceView) => {
+    setWorkspaceViewMemory((current) => rememberWorkspaceView(current, props.selectedProject?.id, view));
+  }, [props.selectedProject?.id]);
   const [activeAgentFavorites, setActiveAgentFavorites] = useState(readActiveAgentFavorites);
   const [activeAgentActivityMemory, setActiveAgentActivityMemory] = useState(readActiveAgentActivityMemory);
   const [assistantSelection, setAssistantSelection] = useState<AssistantSelection>();
@@ -838,7 +843,7 @@ export function Shell(props: ShellProps) {
       setStagePage(undefined);
       dismissChangesBeforeNavigation(dismissChanges, setAssistantSelection, selection);
     },
-    [dismissChanges],
+    [dismissChanges, setWorkspaceView],
   );
   const toggleRail = useCallback(
     (mode: Exclude<RailMode, "workspace">) => setRailMode((current) => current === mode ? "workspace" : mode),
@@ -847,14 +852,15 @@ export function Shell(props: ShellProps) {
   const revealStewardRail = useCallback(() => {
     setRailMode("workspace");
     setWorkspaceView("steward");
-  }, []);
+  }, [setWorkspaceView]);
   const selectWorkspaceView = useCallback((view: WorkspaceView) => {
     setRailMode("workspace");
-    setWorkspaceView(view);
     if (view === "steward" && !assistantSelection && props.selectedProject) {
       openAssistant({ kind: "steward" });
+      return;
     }
-  }, [assistantSelection, openAssistant, props.selectedProject]);
+    setWorkspaceView(view);
+  }, [assistantSelection, openAssistant, props.selectedProject, setWorkspaceView]);
   const assistantStageVisible = shellAssistantStageVisible(railMode, workspaceView, assistantSelection);
   const mcpLibrary = useSettingsLibrary(
     props.loadMcpToolSettings,
