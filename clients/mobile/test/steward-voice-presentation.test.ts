@@ -8,6 +8,7 @@ import {
   updateVoiceTurn,
   updateVoiceTranscript,
   updateVoiceSilence,
+  voiceDetailsMaxHeight,
   voiceProjectId,
   voiceTurnForReply,
 } from "../src/presentation/steward-voice-presentation";
@@ -26,6 +27,13 @@ const overview = {
 };
 
 describe("Steward voice presentation", () => {
+  it("keeps voice details inside compact and large phone viewports", () => {
+    expect(voiceDetailsMaxHeight(568)).toBe(272);
+    expect(voiceDetailsMaxHeight(667)).toBe(320);
+    expect(voiceDetailsMaxHeight(932)).toBe(420);
+    expect(voiceDetailsMaxHeight(Number.NaN)).toBe(320);
+  });
+
   it("accumulates native PCM duration and metering before creating a WAV", () => {
     const nativeSamples = new Float32Array([0.5, -0.5, 0.5, -0.5]);
     const expectedSamples = new Int16Array([16_384, -16_384, 16_384, -16_384]);

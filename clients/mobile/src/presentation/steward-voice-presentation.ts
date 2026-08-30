@@ -86,6 +86,16 @@ const MIN_TURN_MS = 800;
 const SILENCE_AFTER_VOICE_MS = 1_250;
 const MAX_TURN_MS = 30_000;
 
+/// Leaves enough room for the app header and the fixed voice bar even on a
+/// compact iPhone. Extra transcript/model text scrolls inside the detail sheet
+/// instead of growing the overlay beyond the screen.
+export function voiceDetailsMaxHeight(viewportHeight: number): number {
+  const safeHeight = Number.isFinite(viewportHeight) && viewportHeight > 0
+    ? viewportHeight
+    : 667;
+  return Math.max(220, Math.min(420, Math.floor(safeHeight * 0.48)));
+}
+
 export function createVoicePcmCapture(): VoicePcmCapture {
   return {
     chunks: [],

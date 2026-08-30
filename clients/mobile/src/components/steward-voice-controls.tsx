@@ -1,8 +1,10 @@
 import {
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 
@@ -11,6 +13,7 @@ import type {
   VoicePhase,
   VoiceTurn,
 } from "@/presentation/steward-voice-presentation";
+import { voiceDetailsMaxHeight } from "@/presentation/steward-voice-presentation";
 import { color, radius, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
@@ -41,6 +44,8 @@ export interface StewardVoiceControlsProps {
 }
 
 export function StewardVoiceControls(props: StewardVoiceControlsProps) {
+  const { height: viewportHeight } = useWindowDimensions();
+
   if (!props.active) {
     return (
       <Pressable
@@ -62,7 +67,12 @@ export function StewardVoiceControls(props: StewardVoiceControlsProps) {
   return (
     <View style={styles.shell}>
       {props.expanded ? (
-        <View style={styles.details}>
+        <ScrollView
+          contentContainerStyle={styles.details}
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
+          style={[styles.detailsViewport, { maxHeight: voiceDetailsMaxHeight(viewportHeight) }]}
+        >
           <View style={styles.detailsHeader}>
             <View style={styles.headingZone}>
               <Text style={styles.eyebrow}>STEWARD • CANLI</Text>
@@ -111,7 +121,7 @@ export function StewardVoiceControls(props: StewardVoiceControlsProps) {
                   value={props.draft}
                 />
               ) : (
-                <Text style={styles.draftText}>{props.draft}</Text>
+                <Text numberOfLines={4} style={styles.draftText}>{props.draft}</Text>
               )}
               <View style={styles.reviewActions}>
                 <Pressable
@@ -163,7 +173,7 @@ export function StewardVoiceControls(props: StewardVoiceControlsProps) {
           )}
 
           {props.error === undefined ? null : <Text style={styles.error}>{props.error}</Text>}
-        </View>
+        </ScrollView>
       ) : null}
 
       <View style={styles.bar}>
@@ -333,7 +343,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     elevation: 14,
   },
-  details: { padding: space.lg, gap: space.md, borderBottomWidth: 1, borderBottomColor: color.rule },
+  detailsViewport: { borderBottomWidth: 1, borderBottomColor: color.rule },
+  details: { padding: space.lg, gap: space.md },
   detailsHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   headingZone: { flex: 1 },
   eyebrow: { color: color.success, fontFamily: fontFamily.mono, fontSize: 10, fontWeight: "800", letterSpacing: 1.2 },
