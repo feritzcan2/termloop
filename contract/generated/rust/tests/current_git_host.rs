@@ -40,10 +40,14 @@ fn git_host_projection_is_read_only_strict_and_provider_discriminated() {
             "head_repository_owner":"acme",
             "head_repository_project":null,
             "head_repository_name":"widget",
-            "checks":"passing",
-            "review":"approved",
-            "mergeability":"mergeable",
-            "updated_at_epoch_ms":1
+            "check_rollup":"passing",
+            "check_rollup_source":"githubStatusCheckRollup",
+            "review_signal":"approved",
+            "review_signal_source":"githubReviewDecision",
+            "merge_conflict":"noneDetected",
+            "merge_conflict_source":"githubMergeable",
+            "activity_at_epoch_ms":1,
+            "activity_at_source":"githubUpdatedAt"
         }],
         "truncated":false,
         "candidate_truncated":false,
@@ -66,7 +70,10 @@ fn git_host_projection_is_read_only_strict_and_provider_discriminated() {
         "url":"https://dev.azure.com/fiber-teams/Fiber%20Tests/_git/widget/pullrequest/42",
         "state":"open", "base_branch":"main", "head_branch":"feature",
         "head_repository_owner":"fiber-teams", "head_repository_project":"Forks", "head_repository_name":"widget-fork",
-        "checks":"unknown", "review":"reviewRequired", "mergeability":"unknown", "updated_at_epoch_ms":1
+        "check_rollup":"unsupported", "check_rollup_source":"unsupported",
+        "review_signal":"reviewRequired", "review_signal_source":"azureRequiredReviewerVotes",
+        "merge_conflict":"unknown", "merge_conflict_source":"azureMergeStatus",
+        "activity_at_epoch_ms":1, "activity_at_source":"azureLifecycleApproximation"
     });
     azure[0]["matches"]
         .as_array_mut()
@@ -92,6 +99,14 @@ fn git_host_projection_is_read_only_strict_and_provider_discriminated() {
     assert!(!validate_method_result(
         "gitHost.pullRequestList",
         &wrong_url
+    ));
+    let mut invented_azure_checks = azure.clone();
+    invented_azure_checks[0]["matches"][1]["check_rollup"] = json!("passing");
+    invented_azure_checks[0]["matches"][1]["check_rollup_source"] =
+        json!("githubStatusCheckRollup");
+    assert!(!validate_method_result(
+        "gitHost.pullRequestList",
+        &invented_azure_checks
     ));
     let mut wrong_task_identity = azure.clone();
     wrong_task_identity[0]["repository_host"] = json!("github.com");

@@ -113,6 +113,8 @@ pub enum CheckState {
     Passing,
     Failing,
     Pending,
+    NotReported,
+    Unsupported,
     Unknown,
 }
 
@@ -122,6 +124,7 @@ pub enum ReviewState {
     Approved,
     ChangesRequested,
     ReviewRequired,
+    NotReported,
     Unknown,
 }
 
@@ -1070,7 +1073,8 @@ fn map_checks(node: &Value) -> CheckState {
         Some("SUCCESS") => CheckState::Passing,
         Some("FAILURE" | "ERROR") => CheckState::Failing,
         Some("PENDING" | "EXPECTED") => CheckState::Pending,
-        _ => CheckState::Unknown,
+        None => CheckState::NotReported,
+        Some(_) => CheckState::Unknown,
     }
 }
 
@@ -1079,7 +1083,8 @@ fn map_review(value: Option<&str>) -> ReviewState {
         Some("APPROVED") => ReviewState::Approved,
         Some("CHANGES_REQUESTED") => ReviewState::ChangesRequested,
         Some("REVIEW_REQUIRED") => ReviewState::ReviewRequired,
-        _ => ReviewState::Unknown,
+        None => ReviewState::NotReported,
+        Some(_) => ReviewState::Unknown,
     }
 }
 
@@ -1686,14 +1691,13 @@ fn normalize_azure_summary(
         head_repository_owner: query.repository.organization.clone(),
         head_repository_project: Some(head_repository_project),
         head_repository_name,
-        checks: CheckState::Unknown,
+        checks: CheckState::Unsupported,
         review: map_azure_review(row.get("reviewers")?),
         mergeability: match row.get("mergeStatus").and_then(Value::as_str) {
             Some("succeeded") => Mergeability::Mergeable,
             Some("conflicts") => Mergeability::Conflicting,
-            Some("notSet" | "queued" | "rejectedByPolicy" | "failure") | None => {
-                Mergeability::Unknown
-            }
+            Some("rejectedByPolicy") => Mergeability::Blocked,
+            Some("notSet" | "queued" | "failure") | None => Mergeability::Unknown,
             Some(_) => return None,
         },
         updated_at_epoch_ms,
@@ -1705,7 +1709,7 @@ fn map_azure_review(value: &Value) -> ReviewState {
         return ReviewState::Unknown;
     };
     if reviewers.is_empty() {
-        return ReviewState::Unknown;
+        return ReviewState::NotReported;
     }
     let mut saw_zero = false;
     for reviewer in reviewers {
@@ -2074,7 +2078,7 @@ mod tests {
     }
 
     #[test]
-    fn azure_scan_is_bounded_and_empty_required_reviewers_are_unknown() {
+    fn azure_scan_marks_checks_unsupported_and_empty_required_reviewers_not_reported() {
         let query = azure_query();
         let rows = (1..=17).map(azure_row).collect::<Vec<_>>();
         let scan = parse_azure_pull_request_scan(query, None, &serde_json::to_vec(&rows).unwrap())
@@ -2082,11 +2086,23 @@ mod tests {
         assert!(scan.truncated);
         assert_eq!(scan.pull_requests.len(), 16);
         assert_eq!(scan.pull_requests[0].provider, GitHostProvider::AzureDevOps);
-        assert_eq!(scan.pull_requests[0].review, ReviewState::Unknown);
+        assert_eq!(scan.pull_requests[0].checks, CheckState::Unsupported);
+        assert_eq!(scan.pull_requests[0].review, ReviewState::NotReported);
         assert_eq!(
             scan.pull_requests[0].url,
             "https://dev.azure.com/fiber-teams/Fiber%20Tests/_git/Widget/pullrequest/1"
         );
+    }
+
+    #[test]
+    fn azure_policy_rejection_is_an_explicit_blocker() {
+        let query = azure_query();
+        let mut row = azure_row(1);
+        row["mergeStatus"] = json!("rejectedByPolicy");
+        let scan =
+            parse_azure_pull_request_scan(query, None, &serde_json::to_vec(&vec![row]).unwrap())
+                .unwrap();
+        assert_eq!(scan.pull_requests[0].mergeability, Mergeability::Blocked);
     }
 
     #[test]

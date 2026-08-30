@@ -97,10 +97,14 @@ pub struct GitHostPullRequestSummary {
     pub head_repository_owner: String,
     pub head_repository_project: Option<String>,
     pub head_repository_name: String,
-    pub checks: String,
-    pub review: String,
-    pub mergeability: String,
-    pub updated_at_epoch_ms: u64,
+    pub check_rollup: String,
+    pub check_rollup_source: String,
+    pub review_signal: String,
+    pub review_signal_source: String,
+    pub merge_conflict: String,
+    pub merge_conflict_source: String,
+    pub activity_at_epoch_ms: u64,
+    pub activity_at_source: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -1458,8 +1462,8 @@ fn project_task(
     }
     summaries.sort_by(|left, right| {
         right
-            .updated_at_epoch_ms
-            .cmp(&left.updated_at_epoch_ms)
+            .activity_at_epoch_ms
+            .cmp(&left.activity_at_epoch_ms)
             .then_with(|| left.provider.cmp(&right.provider))
             .then_with(|| left.host.cmp(&right.host))
             .then_with(|| left.repository_owner.cmp(&right.repository_owner))
@@ -1694,6 +1698,7 @@ fn cache_summary(summary: &termloop_providers::PullRequestSummary) -> CachedPull
 }
 
 fn projection_summary(summary: &CachedPullRequest) -> GitHostPullRequestSummary {
+    let github = summary.provider == "github";
     GitHostPullRequestSummary {
         provider: summary.provider.clone(),
         host: summary.host.clone(),
@@ -1709,10 +1714,44 @@ fn projection_summary(summary: &CachedPullRequest) -> GitHostPullRequestSummary 
         head_repository_owner: summary.head_repository_owner.clone(),
         head_repository_project: summary.head_repository_project.clone(),
         head_repository_name: summary.head_repository_name.clone(),
-        checks: summary.checks.clone(),
-        review: summary.review.clone(),
-        mergeability: summary.mergeability.clone(),
-        updated_at_epoch_ms: summary.updated_at_epoch_ms,
+        check_rollup: if github {
+            summary.checks.clone()
+        } else {
+            "unsupported".into()
+        },
+        check_rollup_source: if github {
+            "githubStatusCheckRollup"
+        } else {
+            "unsupported"
+        }
+        .into(),
+        review_signal: summary.review.clone(),
+        review_signal_source: if github {
+            "githubReviewDecision"
+        } else {
+            "azureRequiredReviewerVotes"
+        }
+        .into(),
+        merge_conflict: match summary.mergeability.as_str() {
+            "mergeable" => "noneDetected",
+            "conflicting" => "conflicting",
+            "blocked" => "policyBlocked",
+            _ => "unknown",
+        }
+        .into(),
+        merge_conflict_source: if github {
+            "githubMergeable"
+        } else {
+            "azureMergeStatus"
+        }
+        .into(),
+        activity_at_epoch_ms: summary.updated_at_epoch_ms,
+        activity_at_source: if github {
+            "githubUpdatedAt"
+        } else {
+            "azureLifecycleApproximation"
+        }
+        .into(),
     }
 }
 
@@ -1781,6 +1820,8 @@ fn checks_name(value: CheckState) -> &'static str {
         CheckState::Passing => "passing",
         CheckState::Failing => "failing",
         CheckState::Pending => "pending",
+        CheckState::NotReported => "notReported",
+        CheckState::Unsupported => "unsupported",
         CheckState::Unknown => "unknown",
     }
 }
@@ -1790,6 +1831,7 @@ fn review_name(value: ReviewState) -> &'static str {
         ReviewState::Approved => "approved",
         ReviewState::ChangesRequested => "changesRequested",
         ReviewState::ReviewRequired => "reviewRequired",
+        ReviewState::NotReported => "notReported",
         ReviewState::Unknown => "unknown",
     }
 }
@@ -2007,9 +2049,19 @@ mod tests {
             head_repository_name: "Widget Fork".into(),
             checks: "unknown".into(),
             review: "unknown".into(),
-            mergeability: "unknown".into(),
+            mergeability: "blocked".into(),
             updated_at_epoch_ms: 10,
         };
+        let projection = projection_summary(&summary);
+        assert_eq!(projection.check_rollup, "unsupported");
+        assert_eq!(projection.check_rollup_source, "unsupported");
+        assert_eq!(
+            projection.review_signal_source,
+            "azureRequiredReviewerVotes"
+        );
+        assert_eq!(projection.merge_conflict, "policyBlocked");
+        assert_eq!(projection.merge_conflict_source, "azureMergeStatus");
+        assert_eq!(projection.activity_at_source, "azureLifecycleApproximation");
         let mut row = ProviderCacheRow {
             key: cache_key(&ProviderQuery::Azure(alias.clone())),
             matches: vec![summary.clone()],

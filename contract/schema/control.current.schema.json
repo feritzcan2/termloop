@@ -9712,7 +9712,18 @@
         "passing",
         "failing",
         "pending",
+        "notReported",
+        "unsupported",
         "unknown"
+      ]
+    },
+    "gitHostCheckRollupSource": {
+      "x-codegen": true,
+      "x-codegen-name": "GitHostCheckRollupSource",
+      "type": "string",
+      "enum": [
+        "githubStatusCheckRollup",
+        "unsupported"
       ]
     },
     "gitHostReviewState": {
@@ -9723,18 +9734,46 @@
         "approved",
         "changesRequested",
         "reviewRequired",
+        "notReported",
         "unknown"
       ]
     },
-    "gitHostMergeability": {
+    "gitHostReviewSignalSource": {
       "x-codegen": true,
-      "x-codegen-name": "GitHostMergeability",
+      "x-codegen-name": "GitHostReviewSignalSource",
       "type": "string",
       "enum": [
-        "mergeable",
+        "githubReviewDecision",
+        "azureRequiredReviewerVotes"
+      ]
+    },
+    "gitHostMergeConflictState": {
+      "x-codegen": true,
+      "x-codegen-name": "GitHostMergeConflictState",
+      "type": "string",
+      "enum": [
+        "noneDetected",
         "conflicting",
-        "blocked",
+        "policyBlocked",
         "unknown"
+      ]
+    },
+    "gitHostMergeConflictSource": {
+      "x-codegen": true,
+      "x-codegen-name": "GitHostMergeConflictSource",
+      "type": "string",
+      "enum": [
+        "githubMergeable",
+        "azureMergeStatus"
+      ]
+    },
+    "gitHostActivityAtSource": {
+      "x-codegen": true,
+      "x-codegen-name": "GitHostActivityAtSource",
+      "type": "string",
+      "enum": [
+        "githubUpdatedAt",
+        "azureLifecycleApproximation"
       ]
     },
     "gitHostPullRequestSummaryDto": {
@@ -9757,10 +9796,14 @@
         "head_repository_owner",
         "head_repository_project",
         "head_repository_name",
-        "checks",
-        "review",
-        "mergeability",
-        "updated_at_epoch_ms"
+        "check_rollup",
+        "check_rollup_source",
+        "review_signal",
+        "review_signal_source",
+        "merge_conflict",
+        "merge_conflict_source",
+        "activity_at_epoch_ms",
+        "activity_at_source"
       ],
       "properties": {
         "provider": {
@@ -9845,19 +9888,31 @@
           "minLength": 1,
           "maxLength": 100
         },
-        "checks": {
+        "check_rollup": {
           "$ref": "#/$defs/gitHostChecksState"
         },
-        "review": {
+        "check_rollup_source": {
+          "$ref": "#/$defs/gitHostCheckRollupSource"
+        },
+        "review_signal": {
           "$ref": "#/$defs/gitHostReviewState"
         },
-        "mergeability": {
-          "$ref": "#/$defs/gitHostMergeability"
+        "review_signal_source": {
+          "$ref": "#/$defs/gitHostReviewSignalSource"
         },
-        "updated_at_epoch_ms": {
+        "merge_conflict": {
+          "$ref": "#/$defs/gitHostMergeConflictState"
+        },
+        "merge_conflict_source": {
+          "$ref": "#/$defs/gitHostMergeConflictSource"
+        },
+        "activity_at_epoch_ms": {
           "type": "integer",
           "minimum": 0,
           "x-rust-type": "u64"
+        },
+        "activity_at_source": {
+          "$ref": "#/$defs/gitHostActivityAtSource"
         }
       },
       "allOf": [
@@ -9882,6 +9937,18 @@
               },
               "head_repository_project": {
                 "type": "null"
+              },
+              "check_rollup_source": {
+                "const": "githubStatusCheckRollup"
+              },
+              "review_signal_source": {
+                "const": "githubReviewDecision"
+              },
+              "merge_conflict_source": {
+                "const": "githubMergeable"
+              },
+              "activity_at_source": {
+                "const": "githubUpdatedAt"
               },
               "url": {
                 "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$"
@@ -9914,6 +9981,21 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 64
+              },
+              "check_rollup": {
+                "const": "unsupported"
+              },
+              "check_rollup_source": {
+                "const": "unsupported"
+              },
+              "review_signal_source": {
+                "const": "azureRequiredReviewerVotes"
+              },
+              "merge_conflict_source": {
+                "const": "azureMergeStatus"
+              },
+              "activity_at_source": {
+                "const": "azureLifecycleApproximation"
               },
               "url": {
                 "pattern": "^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$"

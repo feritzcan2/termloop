@@ -1066,6 +1066,14 @@ mod tests {
         assert_eq!(old_claim.result["step"]["milestoneId"], "pr-open");
         assert_eq!(old_claim.result["step"]["tasks"][0]["taskId"], "task-1");
         assert_eq!(
+            old_claim.result["step"]["tasks"][0]["lastEvidenceKind"],
+            "previousWorkerVerdict"
+        );
+        assert_eq!(
+            old_claim.result["step"]["tasks"][0]["lastEvidenceIndependentlyVerified"],
+            false
+        );
+        assert_eq!(
             old_claim.result["step"]["taskRead"],
             json!({
                 "requiredBeforeVerdict": true,

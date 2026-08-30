@@ -76,10 +76,14 @@ function pullRequest(number: number): GitHostProjection["matches"][number] {
     head_repository_owner: "acme",
     head_repository_project: null,
     head_repository_name: "widget",
-    checks: "passing",
-    review: "approved",
-    mergeability: "mergeable",
-    updated_at_epoch_ms: number,
+    check_rollup: "passing",
+    check_rollup_source: "githubStatusCheckRollup",
+    review_signal: "approved",
+    review_signal_source: "githubReviewDecision",
+    merge_conflict: "noneDetected",
+    merge_conflict_source: "githubMergeable",
+    activity_at_epoch_ms: number,
+    activity_at_source: "githubUpdatedAt",
   };
 }
 
