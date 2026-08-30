@@ -2445,7 +2445,7 @@ button.history-row-main { cursor: pointer; }
 .td-mini.agent-claude:hover svg { color: var(--agent-claude); }
 .td-mini.agent-codex:hover svg { color: var(--agent-codex); }
 .td-launch { display: flex; flex-wrap: wrap; gap: 4px; }
-.td-pipeline .td-meter { margin: 2px 0 14px; }
+.td-pipeline .td-meter { height: 2px; margin: 0 0 10px; }
 .td-steward summary { display: flex; align-items: center; gap: 8px; list-style: none; cursor: pointer; }
 .td-steward summary::-webkit-details-marker { display: none; }
 .td-steward summary::before { content: ""; width: 5px; height: 5px; border-right: 1px solid var(--td-dim); border-bottom: 1px solid var(--td-dim); transform: rotate(-45deg); transition: transform 110ms ease; }
@@ -2462,20 +2462,20 @@ button.history-row-main { cursor: pointer; }
    the spine is the segment each step draws below its own node, so the solid
    run stops exactly where the Task is standing. */
 .td-spine { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
-.td-step { position: relative; display: grid; grid-template-columns: 26px minmax(0,1fr); align-items: start; gap: 16px; padding: 0 0 2px; }
-.td-step:not(:last-child)::after { content: ""; position: absolute; top: 30px; bottom: -2px; left: 12px; width: 0; border-left: 1px solid var(--border-strong); }
+.td-step { position: relative; display: grid; grid-template-columns: 22px minmax(0,1fr); align-items: start; gap: 12px; padding: 0; }
+.td-step:not(:last-child)::after { content: ""; position: absolute; top: 24px; bottom: 0; left: 10px; width: 0; border-left: 1px solid var(--border-strong); }
 .td-step.passed:not(:last-child)::after { border-left-color: rgba(92,201,149,.42); }
 .td-step.waiting:not(:last-child)::after, .td-step.ahead:not(:last-child)::after { border-left-style: dashed; border-left-color: rgba(255,255,255,.15); }
-.td-node { display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid var(--border-strong); border-radius: 50%; background: #24282b; color: var(--td-dim); font: 700 11.5px/1 var(--font-mono); }
+.td-node { display: grid; place-items: center; width: 21px; height: 21px; border: 1px solid var(--border-strong); border-radius: 50%; background: #24282b; color: var(--td-dim); font: 700 10.5px/1 var(--font-mono); }
 /* A human gate is a square node on the Playbook board; the ladder keeps that
    shape so the two surfaces name the same thing the same way. */
 .td-step.human .td-node { border-radius: 7px; }
 .td-step.passed .td-node { border-color: rgba(92,201,149,.55); background: rgba(92,201,149,.16); color: #86dbb1; }
-.td-step.waiting .td-node { border-color: var(--accent); background: var(--accent-wash); color: #c3b4ff; box-shadow: 0 0 0 4px rgba(124,92,255,.12); }
+.td-step.waiting .td-node { border-color: var(--accent); background: var(--accent-wash); color: #c3b4ff; box-shadow: 0 0 0 3px rgba(124,92,255,.12); }
 .td-step.ahead .td-node { color: var(--td-ghost); }
-.td-step-body { min-width: 0; padding-bottom: 18px; }
-.td-step-title-row { display: flex; align-items: baseline; gap: 10px; }
-.td-step-title { flex: 0 1 auto; min-width: 0; margin: 2px 0 0; color: var(--td-text); font-size: 14.5px; font-weight: 600; line-height: 1.45; }
+.td-step-body { min-width: 0; padding-bottom: 8px; }
+.td-step-title-row { display: flex; align-items: baseline; gap: 10px; min-height: 21px; }
+.td-step-title { flex: 0 1 auto; min-width: 0; margin: 0; overflow: hidden; color: var(--td-text); font-size: 12.5px; font-weight: 600; line-height: 21px; text-overflow: ellipsis; white-space: nowrap; }
 .td-step.passed .td-step-title { color: var(--td-body); font-weight: 560; }
 .td-step.ahead .td-step-title { color: var(--td-ghost); font-weight: 560; }
 .td-gate { flex: none; padding: 2px 7px; border: 1px solid rgba(217,170,95,.3); border-radius: 999px; background: rgba(217,170,95,.1); color: #e0be86; font: 700 9.5px/1.5 var(--font-mono); letter-spacing: .07em; text-transform: uppercase; }
@@ -2483,21 +2483,21 @@ button.history-row-main { cursor: pointer; }
 /* The recorded answer keeps its whole sentence on every rung. A trimmed one
    sends the reader hunting for a tooltip, and the answer is the only reason to
    look back at a cleared stage at all. */
-.td-evidence { margin: 6px 0 0; max-width: 66ch; color: var(--td-body); font-size: 13.5px; line-height: 1.65; }
+.td-evidence { margin: 4px 0 0; max-width: 66ch; color: var(--td-body); font-size: 12.5px; line-height: 1.6; }
 .td-evidence.quiet { margin-top: 4px; color: var(--td-dim); font-size: 12.5px; line-height: 1.6; }
 .td-step.ahead .td-evidence.quiet { color: var(--td-ghost); }
 
 /* The one open card on the page: the question being asked right now. */
-.td-step.waiting .td-step-body { margin-top: -7px; padding: 13px 16px 14px; border: 1px solid rgba(124,92,255,.3); border-radius: 12px; background: linear-gradient(180deg, rgba(124,92,255,.08), rgba(124,92,255,.02)); }
-.td-step.waiting .td-step-title { margin-top: 0; color: #fff; font-size: 15px; font-weight: 640; }
-.td-step-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 10px; }
-.td-step:not(.waiting) .td-step-foot { margin-top: 7px; }
+.td-step.waiting .td-step-body { margin: -3px 0 8px; padding: 9px 12px 10px; border: 1px solid rgba(124,92,255,.3); border-radius: 9px; background: linear-gradient(180deg, rgba(124,92,255,.08), rgba(124,92,255,.02)); }
+.td-step.waiting .td-step-title { color: #fff; font-size: 13px; font-weight: 640; overflow: visible; white-space: normal; line-height: 1.4; }
+.td-step-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 8px; }
+.td-step:not(.waiting) .td-step-foot { margin-top: 0; }
 .td-step-foot:empty { display: none; }
-.td-answers { color: var(--td-dim); font: 11.5px/1.5 var(--font-mono); }
+.td-answers { color: var(--td-dim); font: 10.5px/1.5 var(--font-mono); }
 .td-answers.blocked { color: var(--warning); }
-.td-timing { color: var(--td-dim); font: 11.5px/1.5 var(--font-mono); }
+.td-timing { color: var(--td-dim); font: 10.5px/1.5 var(--font-mono); }
 .td-step.waiting .td-timing { color: var(--accent-strong); }
-.td-check-now { height: 26px; margin-left: auto; padding: 0 12px; border: 1px solid rgba(124,92,255,.45); border-radius: 7px; background: rgba(124,92,255,.14); color: #ddd5ff; font: 640 12px/1 var(--font-ui); }
+.td-check-now { height: 23px; margin-left: auto; padding: 0 10px; border: 1px solid rgba(124,92,255,.45); border-radius: 7px; background: rgba(124,92,255,.14); color: #ddd5ff; font: 640 12px/1 var(--font-ui); }
 .td-check-now:hover:not(:disabled) { border-color: rgba(124,92,255,.75); background: rgba(124,92,255,.24); color: #fff; }
 
 /* Moving a Task by hand is a correction, not the page's subject. One of these
@@ -2505,17 +2505,17 @@ button.history-row-main { cursor: pointer; }
    a rung only offers its own once a pointer or the keyboard is on it. The
    control stays in the document either way, and a device with no hover keeps
    them all visible rather than hiding a correction behind a gesture. */
-.td-set-position { flex: none; margin-left: auto; padding: 0; border: 0; background: none; color: var(--td-dim); font: 600 11.5px/1.5 var(--font-ui); opacity: 0; transition: opacity 120ms ease; }
+.td-set-position { flex: none; margin-left: auto; padding: 0; border: 0; background: none; color: var(--td-dim); font: 600 10.5px/1.5 var(--font-ui); opacity: 0; transition: opacity 120ms ease; }
 .td-step:hover .td-set-position, .td-step:focus-within .td-set-position, .td-step.terminus .td-set-position { opacity: 1; }
 .td-set-position:hover:not(:disabled) { color: #c3b4ff; text-decoration: underline; text-underline-offset: 2px; }
 .td-set-position:disabled { opacity: .45; }
 @media (hover: none) { .td-set-position { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .td-set-position { transition: none; } }
 
-.td-step.terminus .td-node { width: 11px; height: 11px; justify-self: center; margin-top: 7px; border-radius: 50%; }
+.td-step.terminus .td-node { width: 9px; height: 9px; justify-self: center; margin-top: 6px; border-radius: 50%; }
 .td-step.terminus .td-step-body { display: flex; align-items: center; gap: 12px; padding-bottom: 0; }
 .td-step.terminus .td-set-position { margin-left: 0; }
-.td-terminus { display: inline-block; padding: 5px 13px; border: 1px dashed var(--border-strong); border-radius: 999px; color: var(--td-dim); font: 700 10.5px/1.4 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; }
+.td-terminus { display: inline-block; padding: 2px 9px; border: 1px dashed var(--border-strong); border-radius: 999px; color: var(--td-dim); font: 700 10.5px/1.4 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; }
 .td-step.terminus.passed .td-terminus { border-style: solid; border-color: rgba(92,201,149,.5); background: rgba(92,201,149,.1); color: #86dbb1; }
 .td-empty { display: grid; justify-items: start; gap: 14px; max-width: 58ch; padding: 22px 24px; border: 1px dashed var(--border-strong); border-radius: 14px; }
 .td-empty p { margin: 0; color: var(--td-body); font-size: 13px; line-height: 1.65; }
@@ -2826,3 +2826,9 @@ button.history-row-main { cursor: pointer; }
 .task-archive-list .task-meta-branch { font-size: 9.5px; }
 .task-archive-list .task-meta-worktree { min-height: 15px; padding: 0 5px 0 4px; font-size: 8px; }
 .task-archive-list .task-meta-worktree svg { width: 9px; height: 9px; }
+/* Cleared and upcoming rungs are one line each: title, then who answers or
+   when it cleared, tucked onto the same baseline. */
+.td-step:not(.waiting):not(.terminus) .td-step-body { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 12px; }
+.td-step:not(.waiting):not(.terminus) .td-step-title-row { flex: 1 1 auto; min-width: 0; }
+.td-step:not(.waiting):not(.terminus) .td-step-foot { flex: none; }
+.td-gate { font-size: 8.5px; padding: 1px 6px; }

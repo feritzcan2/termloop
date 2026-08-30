@@ -1031,6 +1031,15 @@ static Napi::Value SetSurfaceVisible(const Napi::CallbackInfo &info) {
   // matching NSWindow.occlusionState.contains(.visible). Passing the inverse
   // leaves the native view present while pausing its renderer.
   ghostty_surface_set_occlusion(e->surface, visible);
+  if (visible) {
+    // Unhiding an embedded CAMetalLayer does not itself guarantee that its
+    // drawable is repainted. In particular, reopening the desktop window can
+    // expose the last partially presented atlas until an AppKit resize forces
+    // a synchronous draw. Refreshing only schedules work on Ghostty's render
+    // loop; draw now gives the newly visible layer the same full repaint that
+    // a window resize would have triggered.
+    ghostty_surface_draw(e->surface);
+  }
   return env.Undefined();
 }
 

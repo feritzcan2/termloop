@@ -14,6 +14,21 @@ describe("Ghostty native host visibility", () => {
     expect(handler).not.toContain("ghostty_surface_set_occlusion(e->surface, !visible);");
   });
 
+  it("forces a full draw when a hidden native surface becomes visible", () => {
+    const handler = source.slice(
+      source.indexOf("static Napi::Value SetSurfaceVisible"),
+      source.indexOf("static Napi::Value FocusSurface"),
+    );
+    const unhide = handler.indexOf("e->view.hidden = !visible;");
+    const visibility = handler.indexOf("ghostty_surface_set_occlusion(e->surface, visible);");
+    const draw = handler.indexOf("ghostty_surface_draw(e->surface);");
+
+    expect(handler).toContain("if (visible)");
+    expect(unhide).toBeGreaterThanOrEqual(0);
+    expect(visibility).toBeGreaterThan(unhide);
+    expect(draw).toBeGreaterThan(visibility);
+  });
+
   it("restores Chromium focus before hiding a focused native surface", () => {
     const focusMethods = source.slice(
       source.indexOf("- (void)focusSurface"),

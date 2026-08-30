@@ -574,6 +574,7 @@ function PipelineStep({ step, nowEpochMs, running, settingPosition, controlsBusy
     <li
       className={`td-step ${step.standing}${step.milestone.gate === "human" ? " human" : ""}`}
       aria-current={step.standing === "waiting" ? "step" : undefined}
+      title={step.standing !== "waiting" ? evidence : undefined}
     >
       <span className="td-node" aria-hidden="true">{step.position}</span>
       <div className="td-step-body">
@@ -620,8 +621,10 @@ function PipelineStep({ step, nowEpochMs, running, settingPosition, controlsBusy
             {/* Cleared stages keep their whole sentence: the answer a Routine
                 recorded is the only reason to look back at a stage at all, and
                 a trimmed one sends the reader hunting for a tooltip. */}
-            {evidence ? <p className="td-evidence quiet">{evidence}</p> : null}
-            <div className="td-step-foot">
+            {/* Off the standing rung, the recorded answer folds into the row's
+                tooltip: the page is about the question being asked now, and a
+                cleared stage earns one line, not a paragraph. */}
+            <div className="td-step-foot" title={evidence}>
               {/* A stage still ahead is worth naming its judge for: a Routine
                   that is missing or switched off will never move this Task, and
                   seeing that now beats discovering it on arrival. */}

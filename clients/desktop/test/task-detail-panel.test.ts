@@ -439,13 +439,15 @@ describe("the Task detail page on screen", () => {
     await unmount();
   });
 
-  it("keeps a cleared question's whole recorded answer on the page", async () => {
+  it("keeps a cleared question's recorded answer one hover away", async () => {
     const { container, unmount } = await mount();
 
     // The sentence itself is the evidence; it is never handed to a tooltip.
-    const cleared = container.querySelector(".td-step.passed .td-evidence");
-    expect(cleared?.textContent).toBe("Branch has 3 commits and no agent is working.");
-    expect(cleared?.getAttribute("title")).toBeNull();
+    // A cleared rung is one line; its whole recorded answer rides on the row
+    // tooltip rather than spending a paragraph on a settled question.
+    expect(container.querySelector(".td-step.passed .td-evidence")).toBeNull();
+    expect(container.querySelector(".td-step.passed")?.getAttribute("title"))
+      .toBe("Branch has 3 commits and no agent is working.");
 
     await unmount();
   });
