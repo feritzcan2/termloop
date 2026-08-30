@@ -46,8 +46,8 @@ pub(super) use skills::{
     create_skill_definition, get_skill_catalog, get_skill_definition, save_skill_definition,
     set_skill_deployment,
 };
-pub(in crate::app) use steward::schedule_current_steward;
 pub(super) use steward::{delete_steward_configuration, set_steward_configuration};
+pub(in crate::app) use steward::{launch_current_steward, schedule_current_steward};
 pub(in crate::app) use worker::launch_current_worker;
 pub(super) use worker::{
     create_worker_configuration, delete_worker_configuration, update_worker_configuration,

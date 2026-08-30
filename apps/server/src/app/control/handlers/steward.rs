@@ -275,7 +275,7 @@ fn steward_wake_kind(
 }
 
 /// Launches the one persistent normal Agent Session for an enabled Steward.
-async fn launch_current_steward(
+pub(in crate::app) async fn launch_current_steward(
     requested_project_id: &str,
     state: &AppState,
 ) -> Result<Option<Value>, termloop_core::CoreError> {
