@@ -99,6 +99,10 @@ impl OpenAiVoiceService {
             .map_err(|_| VoiceProviderError::InvalidInput)?;
         let form = multipart::Form::new()
             .text("model", "gpt-transcribe")
+            // Steward voice is a Turkish-first surface. Pinning the ISO-639-1
+            // language prevents short or noisy turns from being decoded as a
+            // phonetically similar language before the user can correct them.
+            .text("language", "tr")
             .part("file", part);
         let response = self
             .client
@@ -235,6 +239,8 @@ fn valid_api_key_bytes(value: &[u8]) -> bool {
 mod tests {
     use super::*;
     use termloop_platform::test_support::MemorySecureCredentialStore;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
 
     #[test]
     fn api_keys_are_bounded_and_never_accept_whitespace() {
@@ -251,6 +257,63 @@ mod tests {
         assert_eq!(service.credentials_configured(), Ok(false));
         service.set_api_key("sk-12345678901234567").unwrap();
         assert_eq!(service.credentials_configured(), Ok(true));
+    }
+
+    #[tokio::test]
+    async fn transcription_request_pins_turkish_language() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 4096];
+            let (body_start, content_length) = loop {
+                let count = stream.read(&mut buffer).await.unwrap();
+                assert_ne!(count, 0, "HTTP request ended before its multipart body");
+                request.extend_from_slice(&buffer[..count]);
+                let Some(headers_end) = request.windows(4).position(|bytes| bytes == b"\r\n\r\n")
+                else {
+                    continue;
+                };
+                let headers = String::from_utf8_lossy(&request[..headers_end]);
+                let content_length = headers
+                    .lines()
+                    .find_map(|line| {
+                        line.to_ascii_lowercase()
+                            .strip_prefix("content-length: ")
+                            .map(str::to_owned)
+                    })
+                    .and_then(|value| value.trim().parse::<usize>().ok())
+                    .expect("multipart request has a content length");
+                break (headers_end + 4, content_length);
+            };
+            while request.len() < body_start + content_length {
+                let count = stream.read(&mut buffer).await.unwrap();
+                assert_ne!(count, 0, "HTTP request ended before its multipart body");
+                request.extend_from_slice(&buffer[..count]);
+            }
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 18\r\nconnection: close\r\n\r\n{\"text\":\"merhaba\"}")
+                .await
+                .unwrap();
+            String::from_utf8_lossy(&request).into_owned()
+        });
+
+        let credentials = Arc::new(MemorySecureCredentialStore::default());
+        let service = OpenAiVoiceService::with_api_base(credentials, &format!("http://{address}"));
+        service.set_api_key("sk-12345678901234567").unwrap();
+
+        assert_eq!(
+            service
+                .transcribe(b"RIFF-recording".to_vec(), "audio/wav")
+                .await,
+            Ok("merhaba".into())
+        );
+        let request = server.await.unwrap();
+        assert!(request.starts_with("POST /audio/transcriptions HTTP/1.1\r\n"));
+        assert!(request.contains("name=\"model\"\r\n\r\ngpt-transcribe\r\n"));
+        assert!(request.contains("name=\"language\"\r\n\r\ntr\r\n"));
+        assert!(request.contains("name=\"file\"; filename=\"voice-turn.wav\""));
     }
 
     #[test]

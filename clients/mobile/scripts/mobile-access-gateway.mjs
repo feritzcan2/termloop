@@ -40,6 +40,7 @@ import {
 } from "./mobile-access-terminal-input.mjs";
 import { readTerminalNotificationPreview } from "./mobile-access-terminal-preview.mjs";
 import {
+  acceptableTurkishTranscript,
   ensureTranscriber,
   transcribeAudioFile,
   validVoiceUpload,
@@ -672,7 +673,17 @@ async function transcribeStewardAudio(runtime, audio, contentType) {
     if (provider.ok) {
       const payload = await provider.json();
       const text = typeof payload?.text === "string" ? payload.text.trim() : "";
-      if (text.length > 0 && text.length <= 64 * 1024) return text;
+      if (text.length > 0 && text.length <= 64 * 1024 && acceptableTurkishTranscript(text)) {
+        process.stdout.write(
+          `${new Date().toISOString()} steward transcription provider=openai status=${provider.status} container=${voiceContainerOf(audio)} bytes=${audio.length}\n`,
+        );
+        return text;
+      }
+      if (text.length > 0 && !acceptableTurkishTranscript(text)) {
+        process.stdout.write(
+          `${new Date().toISOString()} steward transcription provider=openai status=${provider.status} rejected=unexpected-script container=${voiceContainerOf(audio)} bytes=${audio.length}\n`,
+        );
+      }
     }
   } catch {
     // The no-secret local recognizer below preserves the existing wrist path.
@@ -681,7 +692,11 @@ async function transcribeStewardAudio(runtime, audio, contentType) {
   const audioFile = path.join(runtimeDir, `watch-voice-${randomUUID()}.m4a`);
   try {
     await writeFile(audioFile, audio, { mode: 0o600 });
-    return (await transcribeAudioFile(runtimeDir, audioFile)).text;
+    const transcription = await transcribeAudioFile(runtimeDir, audioFile);
+    process.stdout.write(
+      `${new Date().toISOString()} steward transcription provider=${transcription.onDevice ? "apple-on-device" : "apple-speech"} status=200 container=${voiceContainerOf(audio)} bytes=${audio.length}\n`,
+    );
+    return transcription.text;
   } catch (cause) {
     process.stdout.write(
       `${new Date().toISOString()} steward transcription failed provider=${providerStatus} container=${voiceContainerOf(audio)} bytes=${audio.length}\n`,
