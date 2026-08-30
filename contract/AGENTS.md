@@ -26,6 +26,8 @@
 
 ## Invariants
 
+- All schema-authored MCP descriptions and other model-facing copy are written
+  in English, including illustrative user-intent examples.
 - PTY output/input is binary framed data, never JSON or base64.
 - Steward presence carries only nullable byte-activity time and active command
   label fields. Companion semantics use a closed kind enum and bounded refs,

@@ -5817,7 +5817,7 @@ mod tests {
     fn ask_to_follow_up_is_visible_versioned_and_terminal_safe() {
         let prompt = ask_to_follow_up_prompt(
             "request-2",
-            "İlk cevabını dikkate alıp bir örnek daha ver.\nKısa tut.",
+            "Consider your first answer and give one more example.\nKeep it brief.",
         )
         .unwrap();
         assert_eq!(
@@ -5831,12 +5831,12 @@ mod tests {
                 ("request_id", "request-2"),
                 (
                     "message",
-                    "İlk cevabını dikkate alıp bir örnek daha ver.\nKısa tut."
+                    "Consider your first answer and give one more example.\nKeep it brief."
                 )
             ]
         );
         assert!(prompt.delivered_prompt().contains("request-2"));
-        assert!(prompt.delivered_prompt().contains("İlk cevabını"));
+        assert!(prompt.delivered_prompt().contains("Consider your first answer"));
         assert!(!prompt.delivered_prompt().contains("{{"));
         assert_terminal_submission(prompt.terminal_input_sequence(), prompt.delivered_prompt());
 

@@ -317,8 +317,8 @@ mod tests {
         let request = SpeechRequest {
             model: "gpt-4o-mini-tts",
             voice: "marin",
-            input: "Merhaba",
-            instructions: "Net konuş.",
+            input: "Hello",
+            instructions: "Speak clearly.",
             response_format: "mp3",
         };
 
@@ -327,8 +327,8 @@ mod tests {
             serde_json::json!({
                 "model": "gpt-4o-mini-tts",
                 "voice": "marin",
-                "input": "Merhaba",
-                "instructions": "Net konuş.",
+                "input": "Hello",
+                "instructions": "Speak clearly.",
                 "response_format": "mp3",
             })
         );

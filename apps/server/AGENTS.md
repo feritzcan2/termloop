@@ -23,6 +23,8 @@
 
 ## Invariants
 
+- All server-authored role instructions and other model-facing copy are written
+  in English, including illustrative user-intent examples.
 - Bind loopback by default and publish discovery with private permissions.
 - Authenticate and capability-check before method dispatch. Different client
   roles receive distinct scopes; denied calls emit `capabilityDenied`. `/mcp`
