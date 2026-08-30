@@ -173,8 +173,8 @@ struct ChatView: View {
     @State private var expandedMessage: ChatMessage?
     @State private var controlsPresented = false
     @State private var sending = false
-    @State private var lastSpokenSequence = 0
     @State private var awaitingReplySince: Int?
+    @State private var speakingReplySequence: Int?
     @State private var didAutoStart = false
     @State private var liveConversation = false
 
@@ -246,7 +246,7 @@ struct ChatView: View {
                 .disabled(sending || recorder.phase == .transcribing)
                 Spacer()
                 Button {
-                    speakReplies.toggle()
+                    speakerTapped()
                 } label: {
                     Image(systemName: speakReplies ? "speaker.wave.2.fill" : "speaker.slash")
                         .font(.system(size: 14))
@@ -283,12 +283,10 @@ struct ChatView: View {
         }
         .task { await run() }
         .onChange(of: projectId) { _, _ in
-            messages = []
-            Task { await refresh() }
+            targetChanged()
         }
         .onChange(of: connectionId) { _, _ in
-            messages = []
-            Task { await refresh() }
+            targetChanged()
         }
         .onChange(of: appState.autoTalkRequested) { _, requested in
             if requested { autoTalk() }
@@ -301,6 +299,10 @@ struct ChatView: View {
                 liveConversation = false
                 recorder.cancel()
                 speech.cancel()
+                speakingReplySequence = nil
+            } else if phase == .active {
+                restoreAwaitingReply()
+                Task { await refresh() }
             }
         }
         .onDisappear {
@@ -313,12 +315,19 @@ struct ChatView: View {
     private var footerLabel: String {
         let status: String
         if speech.isSpeaking { status = "stew konuşuyor…" }
+        else if speakingReplySequence != nil { status = "ses hazırlanıyor…" }
         else {
             switch recorder.phase {
             case .listening: status = "dinliyorum…"
             case .transcribing: status = "yazıya çevriliyor…"
             case .denied: status = "mikrofon izni kapalı"
-            case .idle: status = awaitingReplySince == nil ? "" : "stew düşünüyor…"
+            case .idle:
+                if let since = awaitingReplySince {
+                    let replyReady = messages.contains { $0.author == "steward" && $0.sequence > since }
+                    status = replyReady && !speakReplies ? "cevap hazır • sesi aç" : "stew düşünüyor…"
+                } else {
+                    status = ""
+                }
             }
         }
         if liveConversation { return status.isEmpty ? "canlı konuşma" : "canlı • \(status)" }
@@ -366,6 +375,17 @@ struct ChatView: View {
         }
     }
 
+    private func speakerTapped() {
+        if speakReplies {
+            speakReplies = false
+            speech.cancel()
+            speakingReplySequence = nil
+            return
+        }
+        speakReplies = true
+        announceReplyIfArrived()
+    }
+
     private func presentDictation() {
         DictationPresenter.present { text in
             guard let text, !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
@@ -378,6 +398,9 @@ struct ChatView: View {
     private func autoTalk() {
         appState.autoTalkRequested = false
         liveConversation = true
+        // "Hızlı konuş" is explicitly a spoken, hands-free mode. A stale
+        // one-off mute preference must not silently turn it into text chat.
+        speakReplies = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             listen()
         }
@@ -385,9 +408,11 @@ struct ChatView: View {
 
     private func run() async {
         await loadProjects()
+        restoreAwaitingReply()
         if autoStart && !didAutoStart {
             didAutoStart = true
             liveConversation = true
+            speakReplies = true
             listen()
         }
         while !Task.isCancelled {
@@ -432,6 +457,7 @@ struct ChatView: View {
         if !connectionId.isEmpty && !projectId.isEmpty {
             WatchSelectionStore.chatTarget = WatchProjectTarget(connectionId: connectionId, projectId: projectId)
         }
+        restoreAwaitingReply()
     }
 
     private func refresh() async {
@@ -444,10 +470,10 @@ struct ChatView: View {
         ) else { return }
         // Land on the newest message only when something new arrived, so
         // browsing old pages is never yanked back by the poll.
-        let previousLast = messages.last?.sequence
-        messages = list.messages
-        if let last = messages.last?.sequence, last != previousLast {
-            selectedSequence = last
+        let previousNewest = messages.map(\.sequence).max()
+        messages = list.messages.sorted { $0.sequence < $1.sequence }
+        if let newest = messages.last?.sequence, newest != previousNewest {
+            selectedSequence = newest
         }
         announceReplyIfArrived()
     }
@@ -472,8 +498,7 @@ struct ChatView: View {
             Haptics.failed()
             return
         }
-        awaitingReplySince = sent.message.sequence
-        lastSpokenSequence = sent.message.sequence
+        awaitReply(after: sent.message.sequence)
         messages.append(sent.message)
         selectedSequence = sent.message.sequence
     }
@@ -493,8 +518,7 @@ struct ChatView: View {
             Haptics.failed()
             return false
         }
-        awaitingReplySince = sent.message.sequence
-        lastSpokenSequence = sent.message.sequence
+        awaitReply(after: sent.message.sequence)
         messages.append(sent.message)
         selectedSequence = sent.message.sequence
         return true
@@ -512,8 +536,7 @@ struct ChatView: View {
             Haptics.failed()
             return false
         }
-        awaitingReplySince = sent.message.sequence
-        lastSpokenSequence = sent.message.sequence
+        awaitReply(after: sent.message.sequence)
         messages.append(sent.message)
         selectedSequence = sent.message.sequence
         Haptics.delivered()
@@ -524,33 +547,71 @@ struct ChatView: View {
     // already on screen when the page opens stays silent.
     private func announceReplyIfArrived() {
         guard let since = awaitingReplySince,
-              let reply = messages.last(where: { $0.author == "steward" && $0.sequence > since })
+              speakingReplySequence == nil,
+              let reply = messages
+                .filter({ $0.author == "steward" && $0.sequence > since })
+                .max(by: { $0.sequence < $1.sequence })
         else { return }
-        awaitingReplySince = nil
-        if reply.sequence > lastSpokenSequence {
-            lastSpokenSequence = reply.sequence
-            Haptics.reply()
-            if speakReplies {
-                Task { await speak(reply) }
-            } else if liveConversation {
-                scheduleNextListen()
-            }
+        guard speakReplies else { return }
+        speakingReplySequence = reply.sequence
+        Haptics.reply()
+        Task { await speak(reply, after: since) }
+    }
+
+    private func speak(_ reply: ChatMessage, after userSequence: Int) async {
+        let targetConnectionId = connectionId
+        let targetProjectId = projectId
+        guard !targetConnectionId.isEmpty, !targetProjectId.isEmpty else {
+            speakingReplySequence = nil
+            return
+        }
+        let audio: Data?
+        if let credential = CredentialStore.credential(id: targetConnectionId) {
+            audio = try? await GatewayAPI.postBinary(
+                credential: credential,
+                path: "/watch/speech",
+                body: StewardSpeechRequest(projectId: targetProjectId, sequence: reply.sequence)
+            )
+        } else {
+            audio = nil
+        }
+        guard scenePhase == .active,
+              connectionId == targetConnectionId,
+              projectId == targetProjectId,
+              awaitingReplySince == userSequence,
+              speakingReplySequence == reply.sequence
+        else {
+            speakingReplySequence = nil
+            return
+        }
+        speech.play(audio, fallbackText: reply.content) {
+            StewardReplyStore.clear(
+                sequence: userSequence,
+                connectionId: targetConnectionId,
+                projectId: targetProjectId
+            )
+            if awaitingReplySince == userSequence { awaitingReplySince = nil }
+            speakingReplySequence = nil
+            if liveConversation { scheduleNextListen() }
         }
     }
 
-    private func speak(_ reply: ChatMessage) async {
-        guard let credential = CredentialStore.credential(id: connectionId), !projectId.isEmpty else {
-            if liveConversation { scheduleNextListen() }
-            return
-        }
-        let audio = try? await GatewayAPI.postBinary(
-            credential: credential,
-            path: "/watch/speech",
-            body: StewardSpeechRequest(projectId: projectId, sequence: reply.sequence)
-        )
-        speech.play(audio, fallbackText: reply.content) {
-            if liveConversation { scheduleNextListen() }
-        }
+    private func awaitReply(after sequence: Int) {
+        awaitingReplySince = sequence
+        speakingReplySequence = nil
+        StewardReplyStore.remember(sequence: sequence, connectionId: connectionId, projectId: projectId)
+    }
+
+    private func restoreAwaitingReply() {
+        awaitingReplySince = StewardReplyStore.sequence(connectionId: connectionId, projectId: projectId)
+    }
+
+    private func targetChanged() {
+        messages = []
+        speech.cancel()
+        speakingReplySequence = nil
+        restoreAwaitingReply()
+        Task { await refresh() }
     }
 
     private func scheduleNextListen() {
