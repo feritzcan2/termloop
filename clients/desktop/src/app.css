@@ -1497,6 +1497,20 @@ button.folder-crumb:hover { background: rgba(255,255,255,.07); color: var(--text
 @media (max-width: 760px) { .prompt-settings-layout { grid-template-columns: 1fr; } .prompt-list { max-height: 190px; } .prompt-editor textarea { min-height: 260px; } }
 .confirm-copy { margin: 0; color: var(--text-secondary); font-size: 10.5px; line-height: 1.55; }
 .confirm-copy code { padding: 1px 4px; border-radius: 3px; background: rgba(255,255,255,.06); font: 9.5px var(--font-mono); }
+.project-delete-dialog { width: min(520px, calc(100vw - 32px)); }
+.project-delete-blockers { margin-top: 13px; padding: 10px; border: 1px solid rgba(225,117,126,.3); border-radius: 8px; background: rgba(225,117,126,.055); }
+.project-delete-blockers h3 { margin: 0 0 8px; color: #ef9aa1; font: 750 9px/1.35 var(--font-ui); letter-spacing: .09em; text-transform: uppercase; }
+.project-delete-blockers ul { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.project-delete-blockers li { display: grid; min-width: 0; grid-template-columns: 19px minmax(0,1fr) auto; align-items: center; gap: 7px; padding: 7px 8px; border: 1px solid var(--border); border-radius: 6px; background: rgba(0,0,0,.12); }
+.project-delete-blocker-icon { display: grid; place-items: center; color: var(--warning); }
+.project-delete-blocker-icon svg { width: 12px; height: 12px; }
+.project-delete-blocker-copy { display: grid; min-width: 0; gap: 2px; }
+.project-delete-blocker-copy strong { overflow: hidden; color: var(--text); font: 650 10.5px/1.3 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
+.project-delete-blocker-copy small { overflow: hidden; color: var(--text-muted); font: 9px/1.3 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.project-delete-blocker-status { color: var(--warning); font: 700 8.5px/1.3 var(--font-ui); white-space: nowrap; }
+.project-delete-blocker-status.safe { color: var(--success); }
+.project-delete-safe { display: flex; align-items: flex-start; gap: 6px; margin: 9px 1px 0; color: var(--success); font-size: 9.5px; line-height: 1.4; }
+.project-delete-safe > span:first-child { flex: none; font-weight: 800; }
 .danger-button { height: 30px; padding: 0 10px; border: 1px solid rgba(225,117,126,.35); border-radius: 7px; background: rgba(225,117,126,.12); color: #ef9aa1; font-size: 10.5px; font-weight: 620; }
 .danger-button:hover:not(:disabled) { background: rgba(225,117,126,.2); color: #ffc0c5; }
 .delete-check-status { display: flex; align-items: center; gap: 6px; min-height: 16px; }
