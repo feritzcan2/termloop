@@ -401,23 +401,29 @@ struct ChatView: View {
         // "Hızlı konuş" is explicitly a spoken, hands-free mode. A stale
         // one-off mute preference must not silently turn it into text chat.
         speakReplies = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            listen()
+        Task {
+            // A previous turn may have completed while watchOS suspended the
+            // app. Read it before opening the microphone again; recording and
+            // playback must never compete for the same audio session.
+            await refresh()
+            scheduleInitialListen()
         }
     }
 
     private func run() async {
         await loadProjects()
         restoreAwaitingReply()
-        if autoStart && !didAutoStart {
+        let shouldAutoStart = autoStart && !didAutoStart
+        if shouldAutoStart {
             didAutoStart = true
             liveConversation = true
             speakReplies = true
-            listen()
         }
+        await refresh()
+        if shouldAutoStart { scheduleInitialListen() }
         while !Task.isCancelled {
-            await refresh()
             try? await Task.sleep(for: .seconds(awaitingReplySince == nil ? 6 : 3))
+            await refresh()
         }
     }
 
@@ -547,6 +553,7 @@ struct ChatView: View {
     // already on screen when the page opens stays silent.
     private func announceReplyIfArrived() {
         guard let since = awaitingReplySince,
+              recorder.phase == .idle,
               speakingReplySequence == nil,
               let reply = messages
                 .filter({ $0.author == "steward" && $0.sequence > since })
@@ -612,6 +619,18 @@ struct ChatView: View {
         speakingReplySequence = nil
         restoreAwaitingReply()
         Task { await refresh() }
+    }
+
+    private func scheduleInitialListen() {
+        guard liveConversation, awaitingReplySince == nil else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            guard liveConversation, scenePhase == .active,
+                  awaitingReplySince == nil,
+                  speakingReplySequence == nil,
+                  recorder.phase == .idle, !speech.isSpeaking, !sending
+            else { return }
+            listen()
+        }
     }
 
     private func scheduleNextListen() {
