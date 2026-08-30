@@ -53,13 +53,13 @@ pub use settings_improvement::{SettingsImproverEntry, settings_entry_kind};
 pub use skills::{SkillCatalogPlan, SkillDeploymentAgent, SkillDeploymentPlan};
 pub use task_source::{
     JiraTaskSourceRefreshObserver, TaskSourceBoard, TaskSourceBoardList, TaskSourceBoardObserver,
-    TaskSourceBoardSelection, TaskSourceCandidateView, TaskSourceConfiguration, TaskSourceDelete,
-    TaskSourceFailure, TaskSourceImport, TaskSourceImportPolicy, TaskSourceJiraObserver,
-    TaskSourceMutation, TaskSourceRefreshApply, TaskSourceRefreshObserver,
-    TaskSourceRefreshOutcome, TaskSourceRefreshPlan, TaskSourceRuntimeStatus, TaskSourceStatus,
-    TaskSourceStatusList, TaskSourceStatusSelection, TaskSourceView,
-    UnavailableTaskSourceRefreshObserver, task_source_candidate_json, task_source_failure_wire,
-    task_source_view_json,
+    TaskSourceBoardSelection, TaskSourceCandidateSnapshot, TaskSourceCandidateView,
+    TaskSourceConfiguration, TaskSourceDelete, TaskSourceFailure, TaskSourceImport,
+    TaskSourceImportPolicy, TaskSourceJiraObserver, TaskSourceMutation, TaskSourceRefreshApply,
+    TaskSourceRefreshObserver, TaskSourceRefreshOutcome, TaskSourceRefreshPlan,
+    TaskSourceRuntimeStatus, TaskSourceStatus, TaskSourceStatusList, TaskSourceStatusSelection,
+    TaskSourceView, UnavailableTaskSourceRefreshObserver, task_source_candidate_json,
+    task_source_failure_wire, task_source_view_json,
 };
 pub use task_worktree::archive::TaskArchiveRetirementPlan;
 pub use task_worktree::{

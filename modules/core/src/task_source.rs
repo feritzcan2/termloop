@@ -51,10 +51,42 @@ pub enum TaskSourceRuntimeStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TaskSourceCandidateObservation {
-    issue: JiraIssueSnapshot,
+    candidate: TaskSourceCandidateSnapshot,
     matches_scope: bool,
     observed_generation: u64,
     observation_sequence: u64,
+}
+
+/// Provider-neutral work item observed from a configured Task Source.
+///
+/// Provider adapters normalize into this shape at the refresh boundary so Task
+/// creation policy does not need to know whether the source is Jira or a future
+/// issue provider.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskSourceCandidateSnapshot {
+    pub external_id: String,
+    pub external_ref: String,
+    pub url: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub status_name: String,
+    pub assignee_display: Option<String>,
+    pub updated_at: String,
+}
+
+impl From<JiraIssueSnapshot> for TaskSourceCandidateSnapshot {
+    fn from(issue: JiraIssueSnapshot) -> Self {
+        Self {
+            external_id: issue.external_id,
+            external_ref: issue.key,
+            url: issue.url,
+            title: issue.summary,
+            description: issue.description,
+            status_name: issue.status_name,
+            assignee_display: issue.assignee_display,
+            updated_at: issue.updated_at,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -91,7 +123,7 @@ pub struct TaskSourceView {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskSourceCandidateView {
     pub source_id: String,
-    pub issue: JiraIssueSnapshot,
+    pub candidate: TaskSourceCandidateSnapshot,
     pub state: &'static str,
     pub task_id: Option<String>,
     pub observed_generation: u64,
@@ -569,12 +601,13 @@ impl CoreRuntime {
                 let mut current_ids = HashSet::new();
                 let mut candidates = Vec::with_capacity(result.issues.len().min(50));
                 for issue in result.issues.into_iter().take(50) {
-                    if !current_ids.insert(issue.external_id.clone()) {
+                    let candidate = TaskSourceCandidateSnapshot::from(issue);
+                    if !current_ids.insert(candidate.external_id.clone()) {
                         truncated = true;
                         continue;
                     }
                     candidates.push(TaskSourceCandidateObservation {
-                        issue,
+                        candidate,
                         matches_scope: true,
                         observed_generation: source.generation,
                         observation_sequence: sequence,
@@ -584,7 +617,7 @@ impl CoreRuntime {
                     if candidates.len() >= 50 {
                         break;
                     }
-                    if !current_ids.contains(&previous.issue.external_id) {
+                    if !current_ids.contains(&previous.candidate.external_id) {
                         let mut previous = previous.clone();
                         previous.matches_scope = false;
                         previous.observed_generation = source.generation;
@@ -672,7 +705,7 @@ impl CoreRuntime {
             let candidate = self.current_candidate_observation(source_id, external_id)?;
             if self.find_linked_task(&source, external_id).is_some()
                 || self
-                    .find_possible_legacy_task(&source, &candidate.issue)
+                    .find_possible_legacy_task(&source, &candidate.candidate)
                     .is_some()
             {
                 return Err(CoreError::InvalidParams("externalId".into()));
@@ -739,7 +772,7 @@ impl CoreRuntime {
             .current_candidate_observation(source_id, external_id)?
             .clone();
         if self
-            .find_possible_legacy_task(&source, &candidate.issue)
+            .find_possible_legacy_task(&source, &candidate.candidate)
             .is_some()
         {
             return Err(CoreError::InvalidParams("externalId".into()));
@@ -761,8 +794,8 @@ impl CoreRuntime {
         let task = TaskRecord {
             id: task_id,
             project_id: source.project_id,
-            title: imported_title(&candidate.issue),
-            brief: imported_brief(&candidate.issue),
+            title: imported_title(&candidate.candidate),
+            brief: imported_brief(&candidate.candidate),
             status: TaskStatus::Open,
             archived_at_epoch_ms: None,
             branch: None,
@@ -777,11 +810,11 @@ impl CoreRuntime {
         let link = IssueLink {
             task_id: task.id.clone(),
             provider: IssueLinkProvider::Jira,
-            external_ref: candidate.issue.key,
+            external_ref: candidate.candidate.external_ref,
             source_id: Some(source.id),
-            external_id: Some(candidate.issue.external_id),
-            external_updated_at: Some(candidate.issue.updated_at),
-            url: Some(candidate.issue.url),
+            external_id: Some(candidate.candidate.external_id),
+            external_updated_at: Some(candidate.candidate.updated_at),
+            url: Some(candidate.candidate.url),
             sync_authority: IssueLinkSyncAuthority::None,
         };
         self.store
@@ -844,7 +877,7 @@ impl CoreRuntime {
                 runtime
                     .candidates
                     .iter()
-                    .find(|candidate| candidate.issue.external_id == external_id)
+                    .find(|candidate| candidate.candidate.external_id == external_id)
             })
             .ok_or(CoreError::NotFound)
     }
@@ -869,16 +902,16 @@ impl CoreRuntime {
         source: &TaskSourceConfiguration,
         candidate: &TaskSourceCandidateObservation,
     ) -> TaskSourceCandidateView {
-        let linked = self.find_linked_issue(source, &candidate.issue.external_id);
+        let linked = self.find_linked_issue(source, &candidate.candidate.external_id);
         let possible_duplicate = linked
             .is_none()
-            .then(|| self.find_possible_legacy_task(source, &candidate.issue))
+            .then(|| self.find_possible_legacy_task(source, &candidate.candidate))
             .flatten();
         let state = if let Some((link, _)) = linked {
             if link
                 .external_updated_at
                 .as_deref()
-                .is_some_and(|updated_at| updated_at != candidate.issue.updated_at)
+                .is_some_and(|updated_at| updated_at != candidate.candidate.updated_at)
             {
                 "changed"
             } else {
@@ -889,7 +922,7 @@ impl CoreRuntime {
         } else if source
             .ignored_external_ids
             .iter()
-            .any(|value| value == &candidate.issue.external_id)
+            .any(|value| value == &candidate.candidate.external_id)
         {
             "ignored"
         } else if !candidate.matches_scope {
@@ -899,7 +932,7 @@ impl CoreRuntime {
         };
         TaskSourceCandidateView {
             source_id: source.id.clone(),
-            issue: candidate.issue.clone(),
+            candidate: candidate.candidate.clone(),
             state,
             task_id: linked
                 .map(|(_, task)| task.id.clone())
@@ -941,18 +974,20 @@ impl CoreRuntime {
     fn find_possible_legacy_task<'a>(
         &'a self,
         source: &TaskSourceConfiguration,
-        issue: &JiraIssueSnapshot,
+        candidate: &TaskSourceCandidateSnapshot,
     ) -> Option<&'a TaskRecord> {
         let task_id = self.store.issue_links().iter().find_map(|link| {
             (link.provider == IssueLinkProvider::Jira
                 && link.source_id.is_none()
                 && link.external_id.is_none()
-                && link.external_ref.eq_ignore_ascii_case(&issue.key)
+                && link
+                    .external_ref
+                    .eq_ignore_ascii_case(&candidate.external_ref)
                 && link
                     .url
                     .as_deref()
                     .is_some_and(|url| same_jira_site(url, &source.site_base_url))
-                && same_jira_site(&issue.url, &source.site_base_url))
+                && same_jira_site(&candidate.url, &source.site_base_url))
             .then_some(link.task_id.as_str())
         })?;
         self.store.tasks().iter().find(|task| task.id == task_id)
@@ -1094,12 +1129,12 @@ fn truncate_utf8(value: &str, max_bytes: usize) -> String {
     value[..end].to_owned()
 }
 
-fn imported_title(issue: &JiraIssueSnapshot) -> String {
-    truncate_utf8(issue.summary.trim(), TITLE_LIMIT)
+fn imported_title(candidate: &TaskSourceCandidateSnapshot) -> String {
+    truncate_utf8(candidate.title.trim(), TITLE_LIMIT)
 }
 
-fn imported_brief(issue: &JiraIssueSnapshot) -> Option<String> {
-    issue
+fn imported_brief(candidate: &TaskSourceCandidateSnapshot) -> Option<String> {
+    candidate
         .description
         .as_deref()
         .map(str::trim)
@@ -1260,6 +1295,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(imported.task["title"], "Initial summary");
+        assert_eq!(imported.task["brief"], "Initial description");
         let repeated = fixture
             .runtime
             .import_task_source_candidate(
