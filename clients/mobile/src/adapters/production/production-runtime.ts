@@ -440,12 +440,12 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
           control.call("session.list"),
           control.call("agent.statusList"),
         ]);
-        const [taskPages, stewardProjectIds] = await Promise.all([
+        const [taskPages, stewardConfigurations] = await Promise.all([
           Promise.all(projects.map((project) => listActiveTasks(control, project.id))),
           Promise.all(projects.map(async (project) => {
             try {
               const result = await control.call("steward.configurationGet", { projectId: project.id });
-              return result.configuration?.enabled === true ? project.id : undefined;
+              return result.configuration?.enabled === true ? result.configuration : undefined;
             } catch (cause: unknown) {
               // Older mobile gateways do not expose this read. Keep the rest of
               // the overview usable, but default voice to unavailable until the
@@ -456,9 +456,22 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
           })),
         ]);
         const tasks = taskPages.flat();
-        const stewardEnabledProjectIds = stewardProjectIds
-          .filter((projectId): projectId is string => projectId !== undefined);
-        return { projects, stewardEnabledProjectIds, tasks, sessions, agentStatuses };
+        const enabledStewards = stewardConfigurations
+          .filter((configuration): configuration is NonNullable<typeof configuration> => configuration !== undefined);
+        const stewardEnabledProjectIds = enabledStewards.map((configuration) => configuration.projectId);
+        const stewardExecutorSessionIds = Object.fromEntries(enabledStewards.flatMap((configuration) => (
+          configuration.executorSessionId === null
+            ? []
+            : [[configuration.projectId, configuration.executorSessionId]]
+        )));
+        return {
+          projects,
+          stewardEnabledProjectIds,
+          stewardExecutorSessionIds,
+          tasks,
+          sessions,
+          agentStatuses,
+        };
       },
     },
 

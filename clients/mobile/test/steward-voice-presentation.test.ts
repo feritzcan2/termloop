@@ -11,6 +11,7 @@ import {
   voiceDetailsMaxHeight,
   voiceDockWidth,
   voiceProjectId,
+  voiceStewardActivity,
   voiceTurnForReply,
 } from "../src/presentation/steward-voice-presentation";
 import {
@@ -23,6 +24,7 @@ import {
 const overview = {
   projects: fixtureProjects,
   stewardEnabledProjectIds: fixtureProjects.map((project) => project.id),
+  stewardExecutorSessionIds: {},
   tasks: fixtureTasks,
   sessions: fixtureSessions,
   agentStatuses: [],
@@ -81,6 +83,50 @@ describe("Steward voice presentation", () => {
     expect(voiceProjectId({ taskId: fixtureTasks[0]!.id }, disabled)).toBeUndefined();
     expect(voiceProjectId({ sessionId: fixtureSessions[0]!.id }, disabled)).toBeUndefined();
     expect(voiceProjectId({}, disabled)).toBeUndefined();
+  });
+
+  it("shows thinking only while the configured Steward executor is really working", () => {
+    const projectId = fixtureProjects[0]!.id;
+    const executorSessionId = "steward-executor";
+    const executor = {
+      ...fixtureSessions[0]!,
+      id: executorSessionId,
+      project_id: projectId,
+      name: "Project Steward",
+      lifecycle_state: "running" as const,
+    };
+    const snapshot = {
+      ...overview,
+      stewardExecutorSessionIds: { [projectId]: executorSessionId },
+      sessions: [executor],
+    };
+    const activity = (status: "working" | "compacting" | "awaitingInput" | "idle" | "failed" | "interrupted") => (
+      voiceStewardActivity(projectId, {
+        ...snapshot,
+        agentStatuses: [{ sessionId: executorSessionId, status, source: "hook", observedAtEpochMs: 10 }],
+      })
+    );
+
+    expect(voiceStewardActivity(projectId, overview).label).toBe("Cevap bekleniyor");
+    expect(activity("working")).toMatchObject({ id: "working", label: "Steward düşünüyor", tone: "active" });
+    expect(activity("compacting").id).toBe("compacting");
+    expect(activity("awaitingInput").id).toBe("needsInput");
+    expect(activity("idle").id).toBe("waiting");
+    expect(activity("failed").id).toBe("failed");
+    expect(activity("interrupted").id).toBe("interrupted");
+    expect(voiceStewardActivity(projectId, {
+      ...snapshot,
+      agentStatuses: [
+        { sessionId: fixtureSessions[0]!.id, status: "working", source: "hook", observedAtEpochMs: 11 },
+        { sessionId: executorSessionId, status: "idle", source: "hook", observedAtEpochMs: 10 },
+      ],
+    }).id).toBe("waiting");
+
+    expect(voiceStewardActivity(projectId, {
+      ...snapshot,
+      sessions: [{ ...executor, lifecycle_state: "exited" as const }],
+      agentStatuses: [{ sessionId: executorSessionId, status: "working", source: "hook", observedAtEpochMs: 10 }],
+    }).id).toBe("unavailable");
   });
 
   it("queues every new Steward message once and advances past all authors", () => {

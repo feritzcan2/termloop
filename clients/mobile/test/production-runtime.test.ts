@@ -309,6 +309,9 @@ describe("production control adapter", () => {
     const overview = await runtime.control.loadOverview(saved.id);
     expect(overview.projects).toEqual(fixtureProjects);
     expect(overview.stewardEnabledProjectIds).toEqual(fixtureProjects.map((project) => project.id));
+    expect(overview.stewardExecutorSessionIds).toEqual({
+      [fixtureProjects[0]!.id]: "steward-session",
+    });
     expect(overview.tasks).toEqual(fixtureTasks);
     expect(overview.sessions).toEqual(fixtureSessions);
     expect(overview.agentStatuses).toEqual(fixtureAgentStatuses);
@@ -1349,7 +1352,7 @@ function controlResult(
         permission: "default",
         reasoning: "default",
         enabled: true,
-        executorSessionId: null,
+        executorSessionId: "steward-session",
         generation: 1,
         updatedAtEpochMs: 1,
         systemPrompt: "",

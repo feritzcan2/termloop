@@ -35,6 +35,9 @@ export interface MobileOverview {
   /// Voice presentation treats absence from this list as unavailable rather than
   /// inferring availability from Project or Session presence.
   stewardEnabledProjectIds: readonly string[];
+  /// Exact executor Session ids from the authoritative Steward configurations.
+  /// Voice status uses this projection instead of guessing from Session names.
+  stewardExecutorSessionIds: Readonly<Record<string, string>>;
   tasks: readonly TaskDto[];
   sessions: readonly SessionDto[];
   agentStatuses: readonly AgentStatusDto[];

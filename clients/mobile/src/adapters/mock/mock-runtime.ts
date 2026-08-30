@@ -134,6 +134,7 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
         return {
           projects: fixtureProjects.map((project) => ({ ...project })),
           stewardEnabledProjectIds: fixtureProjects.map((project) => project.id),
+          stewardExecutorSessionIds: {},
           tasks: fixtureTasks.map((task) => ({ ...task })),
           sessions: fixtureSessions.map((session) => ({ ...session })),
           agentStatuses: fixtureAgentStatuses.map((status) => ({ ...status })),

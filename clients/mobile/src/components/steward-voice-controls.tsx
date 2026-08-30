@@ -11,6 +11,7 @@ import {
 import type {
   VoiceMode,
   VoicePhase,
+  VoiceStewardActivity,
   VoiceTurn,
 } from "@/presentation/steward-voice-presentation";
 import {
@@ -25,6 +26,7 @@ export interface StewardVoiceControlsProps {
   readonly expanded: boolean;
   readonly projectName: string;
   readonly phase: VoicePhase;
+  readonly replyActivity: VoiceStewardActivity;
   readonly durationMillis: number;
   readonly microphoneEnabled: boolean;
   readonly mode: VoiceMode;
@@ -162,7 +164,7 @@ export function StewardVoiceControls(props: StewardVoiceControlsProps) {
                 <View key={turn.id} style={styles.turn}>
                   <View style={styles.turnHeading}>
                     <Text style={styles.turnAuthor}>Sen</Text>
-                    <Text style={styles.turnStatus}>{turnStatus(turn)}</Text>
+                    <Text style={styles.turnStatus}>{turnStatus(turn, props.replyActivity.label)}</Text>
                   </View>
                   <Text numberOfLines={2} style={styles.turnText}>{turn.transcript}</Text>
                   {turn.reply === null ? null : (
@@ -187,7 +189,7 @@ export function StewardVoiceControls(props: StewardVoiceControlsProps) {
           style={({ pressed }) => [styles.statusZone, pressed && styles.pressed]}
         >
           <View style={styles.projectLine}>
-            <View style={[styles.stateDot, dotStyle(props.phase)]} />
+            <View style={[styles.stateDot, dotStyle(props.phase, props.replyActivity)]} />
             <Text numberOfLines={1} style={styles.projectName}>{props.projectName}</Text>
             {props.unreadCount > 0 ? (
               <View style={styles.badge}>
@@ -196,7 +198,7 @@ export function StewardVoiceControls(props: StewardVoiceControlsProps) {
             ) : null}
           </View>
           <Text numberOfLines={1} style={styles.status}>
-            {voiceStatus(props.phase, props.durationMillis)}
+            {voiceStatus(props.phase, props.durationMillis, props.replyActivity.label)}
           </Text>
         </Pressable>
 
@@ -274,7 +276,7 @@ function MicrophoneGlyph({ active = false, muted = false }: { active?: boolean; 
   );
 }
 
-function voiceStatus(phase: VoicePhase, durationMs: number): string {
+function voiceStatus(phase: VoicePhase, durationMs: number, replyActivityLabel: string): string {
   switch (phase) {
     case "connecting": return "Mac’e bağlanıyor";
     case "ready": return "Hazır · mikrofon kapalı";
@@ -283,7 +285,7 @@ function voiceStatus(phase: VoicePhase, durationMs: number): string {
     case "transcribing": return "Yazıya çeviriyor";
     case "reviewing": return "Metni kontrol et";
     case "sending": return "Gönderiliyor";
-    case "thinking": return "Steward düşünüyor";
+    case "thinking": return replyActivityLabel;
     case "speaking": return "Steward konuşuyor";
     case "reconnecting": return "Mac’e yeniden ulaşılıyor";
     case "offline": return "Mac’e ulaşılamıyor";
@@ -291,11 +293,11 @@ function voiceStatus(phase: VoicePhase, durationMs: number): string {
   }
 }
 
-function turnStatus(turn: VoiceTurn): string {
+function turnStatus(turn: VoiceTurn, replyActivityLabel: string): string {
   switch (turn.status) {
     case "received": return "alındı";
     case "sent": return "gönderiliyor";
-    case "thinking": return "Steward düşünüyor";
+    case "thinking": return replyActivityLabel;
     case "answered": return "cevap geldi";
     case "speaking": return "seslendiriliyor";
     case "spoken": return "okundu";
@@ -303,7 +305,12 @@ function turnStatus(turn: VoiceTurn): string {
   }
 }
 
-function dotStyle(phase: VoicePhase) {
+function dotStyle(phase: VoicePhase, replyActivity: VoiceStewardActivity) {
+  if (phase === "thinking") {
+    if (replyActivity.tone === "danger") return styles.dotDanger;
+    if (replyActivity.tone === "attention") return styles.dotWarning;
+    if (replyActivity.tone === "active") return styles.dotLive;
+  }
   if (["offline", "error"].includes(phase)) return styles.dotDanger;
   if (["reconnecting", "connecting"].includes(phase)) return styles.dotWarning;
   if (["listening", "speaking"].includes(phase)) return styles.dotLive;

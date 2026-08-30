@@ -28,6 +28,7 @@ import {
   updateVoiceTranscript,
   updateVoiceTurn,
   voiceProjectId,
+  voiceStewardActivity,
   voiceTurnForReply,
   type VoiceMode,
   type VoicePcmCapture,
@@ -57,6 +58,7 @@ const STEWARD_RECORDING_MEDIA_TYPE = "audio/wav";
 const SPEECH_RETRY_LIMIT = 2;
 const SPEECH_RETRY_MS = 1_500;
 const REVIEW_AUTO_SEND_MS = 5_000;
+const STEWARD_STATUS_REFRESH_MS = 2_500;
 
 /// The voice session is independent from its detail sheet. Collapsing the sheet
 /// keeps transcript polling, speech delivery, background recording, and the Live
@@ -156,6 +158,10 @@ export function StewardVoiceDock() {
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? projects[0],
     [projects, selectedProjectId],
+  );
+  const replyActivity = voiceStewardActivity(
+    sessionActive ? activeTargetRef.current?.projectId : selectedProject?.id,
+    overview.overview,
   );
 
   const transition = useCallback((next: VoicePhase) => {
@@ -630,6 +636,16 @@ export function StewardVoiceDock() {
     };
   }, [ingestTranscript, runtime, sessionActive, startListening, transition]);
 
+  /// The shared overview intentionally refreshes slowly during ordinary browsing.
+  /// While one voice turn is pending, refresh its authoritative executor status
+  /// often enough that "Steward düşünüyor" follows the real working transition.
+  useEffect(() => {
+    if (!sessionActive || phase !== "thinking") return;
+    overview.refresh();
+    const handle = setInterval(overview.refresh, STEWARD_STATUS_REFRESH_MS);
+    return () => clearInterval(handle);
+  }, [overview.refresh, phase, sessionActive]);
+
   const endConversation = useCallback(() => {
     conversationRef.current += 1;
     sessionActiveRef.current = false;
@@ -777,10 +793,10 @@ export function StewardVoiceDock() {
     void stewardLiveActivity.sync({
       projectId: selectedProject.id,
       projectName: selectedProject.name,
-      status: liveActivityStatus(phase),
+      status: liveActivityStatus(phase, replyActivity.label),
       microphoneEnabled,
     }).catch(() => undefined);
-  }, [microphoneEnabled, phase, selectedProject, sessionActive]);
+  }, [microphoneEnabled, phase, replyActivity.label, selectedProject, sessionActive]);
 
   useEffect(() => () => {
     playerRef.current.pause();
@@ -827,6 +843,7 @@ export function StewardVoiceDock() {
         onToggleMicrophone={toggleMicrophone}
         phase={phase}
         projectName={selectedProject?.name ?? "Steward"}
+        replyActivity={replyActivity}
         turns={turns}
         unreadCount={unreadCount}
       />
@@ -834,7 +851,7 @@ export function StewardVoiceDock() {
   );
 }
 
-function liveActivityStatus(phase: VoicePhase): string {
+function liveActivityStatus(phase: VoicePhase, replyActivityLabel: string): string {
   switch (phase) {
     case "connecting": return "Bağlanıyor";
     case "ready": return "Hazır";
@@ -843,7 +860,7 @@ function liveActivityStatus(phase: VoicePhase): string {
     case "transcribing": return "Yazıya çeviriyor";
     case "reviewing": return "Onay bekliyor";
     case "sending": return "Gönderiliyor";
-    case "thinking": return "Steward düşünüyor";
+    case "thinking": return replyActivityLabel;
     case "speaking": return "Steward konuşuyor";
     case "reconnecting": return "Yeniden bağlanıyor";
     case "offline": return "Mac’e ulaşılamıyor";

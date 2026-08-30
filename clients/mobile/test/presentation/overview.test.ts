@@ -34,6 +34,7 @@ const now = 1_786_617_600_000;
 const baseOverview: MobileOverview = {
   projects: fixtureProjects,
   stewardEnabledProjectIds: fixtureProjects.map((project) => project.id),
+  stewardExecutorSessionIds: {},
   tasks: fixtureTasks,
   sessions: fixtureSessions,
   agentStatuses: fixtureAgentStatuses,
@@ -84,6 +85,7 @@ describe("project overview sectioning", () => {
     const secondOverview: MobileOverview = {
       projects: fixtureProjects.map((project) => ({ ...project, id: `second-${project.id}` })),
       stewardEnabledProjectIds: [],
+      stewardExecutorSessionIds: {},
       tasks: [],
       sessions: [],
       agentStatuses: [],

@@ -66,6 +66,22 @@ export interface VoiceTranscriptResume {
   readonly stewardMessages: readonly StewardMessage[];
 }
 
+export type VoiceStewardActivityId =
+  | "waiting"
+  | "working"
+  | "compacting"
+  | "needsInput"
+  | "restarting"
+  | "failed"
+  | "interrupted"
+  | "unavailable";
+
+export interface VoiceStewardActivity {
+  readonly id: VoiceStewardActivityId;
+  readonly label: string;
+  readonly tone: "neutral" | "active" | "attention" | "danger";
+}
+
 export interface VoicePcmBuffer {
   data: ArrayBuffer;
   sampleRate: number;
@@ -206,6 +222,47 @@ export function voiceProjectId(
       : undefined;
   }
   return overview.projects.find((project) => enabledProjectIds.has(project.id))?.id;
+}
+
+const voiceStewardActivities: Record<VoiceStewardActivityId, VoiceStewardActivity> = {
+  waiting: { id: "waiting", label: "Cevap bekleniyor", tone: "neutral" },
+  working: { id: "working", label: "Steward düşünüyor", tone: "active" },
+  compacting: { id: "compacting", label: "Steward konuşmayı özetliyor", tone: "active" },
+  needsInput: { id: "needsInput", label: "Steward senden bilgi bekliyor", tone: "attention" },
+  restarting: { id: "restarting", label: "Steward yeniden başlıyor", tone: "attention" },
+  failed: { id: "failed", label: "Steward yanıt veremedi", tone: "danger" },
+  interrupted: { id: "interrupted", label: "Steward durduruldu", tone: "danger" },
+  unavailable: { id: "unavailable", label: "Steward kullanılamıyor", tone: "danger" },
+};
+
+/// Describes only the configured executor for this Project. A locally pending
+/// voice turn remains "waiting" until the daemon reports that exact Session as
+/// working; an ordinary Agent in the same Project can never make Steward appear
+/// active.
+export function voiceStewardActivity(
+  projectId: string | undefined,
+  overview: MobileOverview | undefined,
+): VoiceStewardActivity {
+  if (projectId === undefined || overview === undefined) return voiceStewardActivities.waiting;
+  const executorSessionId = overview.stewardExecutorSessionIds[projectId];
+  if (executorSessionId === undefined) return voiceStewardActivities.waiting;
+  const executor = overview.sessions.find((session) => session.id === executorSessionId);
+  if (executor === undefined || executor.project_id !== projectId) return voiceStewardActivities.waiting;
+  if (executor.lifecycle_state === "resuming") return voiceStewardActivities.restarting;
+  if (executor.lifecycle_state !== "running") return voiceStewardActivities.unavailable;
+  const status = overview.agentStatuses.find((candidate) => candidate.sessionId === executorSessionId)?.status;
+  switch (status) {
+    case "working": return voiceStewardActivities.working;
+    case "compacting": return voiceStewardActivities.compacting;
+    case "awaitingInput": return voiceStewardActivities.needsInput;
+    case "failed": return voiceStewardActivities.failed;
+    case "interrupted": return voiceStewardActivities.interrupted;
+    case "exited": return voiceStewardActivities.unavailable;
+    case "unknown":
+    case "idle":
+    case undefined:
+      return voiceStewardActivities.waiting;
+  }
 }
 
 /// Advances one live voice transcript cursor and returns every newly persisted
