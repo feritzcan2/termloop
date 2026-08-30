@@ -52,6 +52,10 @@ describe("mobile control scope", () => {
 
       const capabilities = await call(harness.port, "agent.capabilityList");
       expect(capabilities.ok).toBe(true);
+      const stewardConfiguration = await call(harness.port, "steward.configurationGet", {
+        projectId: "project-1",
+      });
+      expect(stewardConfiguration.ok).toBe(true);
 
       const changes = await call(harness.port, "task.worktreeChangeList", { taskId: "task-1" });
       expect(changes.ok).toBe(true);
@@ -95,6 +99,7 @@ describe("mobile control scope", () => {
       expect(seen.find((entry) => entry.method === "session.launchAgent").token).toBe("f".repeat(64));
       expect(seen.find((entry) => entry.method === "session.rename").token).toBe("f".repeat(64));
       expect(seen.find((entry) => entry.method === "agent.capabilityList").token).toBe("r".repeat(64));
+      expect(seen.find((entry) => entry.method === "steward.configurationGet").token).toBe("r".repeat(64));
     } finally {
       await harness.close();
     }
@@ -137,6 +142,10 @@ describe("mobile control scope", () => {
       // than taking the whole phone offline.
       const allowed = await call(harness.port, "project.list");
       expect(allowed.ok).toBe(true);
+      const stewardConfiguration = await call(harness.port, "steward.configurationGet", {
+        projectId: "project-1",
+      });
+      expect(stewardConfiguration.ok).toBe(true);
     } finally {
       await harness.close();
     }

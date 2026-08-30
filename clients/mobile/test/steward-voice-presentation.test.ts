@@ -22,6 +22,7 @@ import {
 
 const overview = {
   projects: fixtureProjects,
+  stewardEnabledProjectIds: fixtureProjects.map((project) => project.id),
   tasks: fixtureTasks,
   sessions: fixtureSessions,
   agentStatuses: [],
@@ -70,6 +71,16 @@ describe("Steward voice presentation", () => {
     expect(voiceProjectId({ taskId: fixtureTasks[0]!.id }, overview)).toBe(fixtureTasks[0]!.project_id);
     expect(voiceProjectId({ sessionId: fixtureSessions[0]!.id }, overview)).toBe(fixtureSessions[0]!.project_id);
     expect(voiceProjectId({}, overview)).toBe(projectId);
+  });
+
+  it("hides voice for explicitly scoped Projects without an enabled Steward", () => {
+    const projectId = fixtureProjects[0]!.id;
+    const disabled = { ...overview, stewardEnabledProjectIds: [] };
+
+    expect(voiceProjectId({ projectId }, disabled)).toBeUndefined();
+    expect(voiceProjectId({ taskId: fixtureTasks[0]!.id }, disabled)).toBeUndefined();
+    expect(voiceProjectId({ sessionId: fixtureSessions[0]!.id }, disabled)).toBeUndefined();
+    expect(voiceProjectId({}, disabled)).toBeUndefined();
   });
 
   it("queues every new Steward message once and advances past all authors", () => {

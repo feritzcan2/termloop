@@ -175,24 +175,37 @@ export function createVoicePcmWav(capture: VoicePcmCapture): ArrayBuffer {
   return output;
 }
 
-/// Keeps the global microphone pointed at the Project represented by the route.
-/// Routes without a Project fall back to the first Project on the selected Mac;
-/// an active voice session then keeps that target stable until it is ended.
+/// Keeps the global microphone pointed at an enabled Steward represented by the
+/// route. An explicitly scoped but disabled Project never falls through to a
+/// different Project; only an unscoped route may select the first enabled one.
 export function voiceProjectId(
   params: VoiceRouteParams,
   overview: MobileOverview | undefined,
 ): string | undefined {
   if (overview === undefined) return undefined;
+  const enabledProjectIds = new Set(overview.stewardEnabledProjectIds);
   const projectId = scalar(params.projectId);
-  if (projectId !== undefined && overview.projects.some((project) => project.id === projectId)) {
-    return projectId;
+  if (projectId !== undefined) {
+    return overview.projects.some((project) => project.id === projectId)
+      && enabledProjectIds.has(projectId)
+      ? projectId
+      : undefined;
   }
   const taskId = scalar(params.taskId);
-  const taskProjectId = overview.tasks.find((task) => task.id === taskId)?.project_id;
-  if (taskProjectId !== undefined) return taskProjectId;
+  if (taskId !== undefined) {
+    const taskProjectId = overview.tasks.find((task) => task.id === taskId)?.project_id;
+    return taskProjectId !== undefined && enabledProjectIds.has(taskProjectId)
+      ? taskProjectId
+      : undefined;
+  }
   const sessionId = scalar(params.sessionId);
-  const sessionProjectId = overview.sessions.find((session) => session.id === sessionId)?.project_id;
-  return sessionProjectId ?? overview.projects[0]?.id;
+  if (sessionId !== undefined) {
+    const sessionProjectId = overview.sessions.find((session) => session.id === sessionId)?.project_id;
+    return sessionProjectId !== undefined && enabledProjectIds.has(sessionProjectId)
+      ? sessionProjectId
+      : undefined;
+  }
+  return overview.projects.find((project) => enabledProjectIds.has(project.id))?.id;
 }
 
 /// Advances one live voice transcript cursor and returns every newly persisted

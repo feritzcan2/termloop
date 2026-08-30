@@ -133,6 +133,7 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
         if (connectionId !== profiles[0]?.id) throw new Error("mock connection not found");
         return {
           projects: fixtureProjects.map((project) => ({ ...project })),
+          stewardEnabledProjectIds: fixtureProjects.map((project) => project.id),
           tasks: fixtureTasks.map((task) => ({ ...task })),
           sessions: fixtureSessions.map((session) => ({ ...session })),
           agentStatuses: fixtureAgentStatuses.map((status) => ({ ...status })),

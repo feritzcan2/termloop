@@ -31,6 +31,10 @@ export interface ConnectionProfile {
 
 export interface MobileOverview {
   projects: readonly ProjectDto[];
+  /// Project ids whose authoritative Steward configuration exists and is enabled.
+  /// Voice presentation treats absence from this list as unavailable rather than
+  /// inferring availability from Project or Session presence.
+  stewardEnabledProjectIds: readonly string[];
   tasks: readonly TaskDto[];
   sessions: readonly SessionDto[];
   agentStatuses: readonly AgentStatusDto[];

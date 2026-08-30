@@ -22,6 +22,7 @@ import type {
   TaskWorktreeChangeListResult,
   TaskWorktreeDiffResult,
   TaskWorktreePreImageResult,
+  StewardConfigurationGetResult,
 } from "@termloop/contract/current";
 import { validateMethodResult } from "@termloop/contract/current";
 
@@ -43,6 +44,7 @@ type MobileControlMethod =
   | "task.worktreeChangeList"
   | "task.worktreeDiff"
   | "task.worktreePreImage"
+  | "steward.configurationGet"
   | "playbook.get"
   | "playbook.runtime"
   | "playbook.taskPositionSet"
@@ -68,6 +70,7 @@ interface MobileControlResults {
   "task.worktreeChangeList": TaskWorktreeChangeListResult;
   "task.worktreeDiff": TaskWorktreeDiffResult;
   "task.worktreePreImage": TaskWorktreePreImageResult;
+  "steward.configurationGet": StewardConfigurationGetResult;
   "playbook.get": PlaybookGetResult;
   "playbook.runtime": PlaybookRuntimeResult;
   "playbook.taskPositionSet": PlaybookTaskPositionSetResult;
@@ -110,6 +113,7 @@ const RETRYABLE_READ_METHODS: ReadonlySet<MobileControlMethod> = new Set([
   "task.worktreeChangeList",
   "task.worktreeDiff",
   "task.worktreePreImage",
+  "steward.configurationGet",
   "playbook.get",
   "playbook.runtime",
   "routine.configurationList",
@@ -568,6 +572,9 @@ function decodeResult<M extends MobileControlMethod>(
       return value as MobileControlResults[M];
     }
     case "agent.capabilityList":
+      if (!validateMethodResult(method, value)) throw incompatible(method);
+      return value as MobileControlResults[M];
+    case "steward.configurationGet":
       if (!validateMethodResult(method, value)) throw incompatible(method);
       return value as MobileControlResults[M];
     case "playbook.get": {

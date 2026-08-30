@@ -33,6 +33,7 @@ const now = 1_786_617_600_000;
 /// drifted from the wire.
 const baseOverview: MobileOverview = {
   projects: fixtureProjects,
+  stewardEnabledProjectIds: fixtureProjects.map((project) => project.id),
   tasks: fixtureTasks,
   sessions: fixtureSessions,
   agentStatuses: fixtureAgentStatuses,
@@ -82,6 +83,7 @@ describe("project overview sectioning", () => {
   it("keeps each Project's Mac location when flattening several connections", () => {
     const secondOverview: MobileOverview = {
       projects: fixtureProjects.map((project) => ({ ...project, id: `second-${project.id}` })),
+      stewardEnabledProjectIds: [],
       tasks: [],
       sessions: [],
       agentStatuses: [],

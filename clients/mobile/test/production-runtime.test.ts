@@ -308,6 +308,7 @@ describe("production control adapter", () => {
 
     const overview = await runtime.control.loadOverview(saved.id);
     expect(overview.projects).toEqual(fixtureProjects);
+    expect(overview.stewardEnabledProjectIds).toEqual(fixtureProjects.map((project) => project.id));
     expect(overview.tasks).toEqual(fixtureTasks);
     expect(overview.sessions).toEqual(fixtureSessions);
     expect(overview.agentStatuses).toEqual(fixtureAgentStatuses);
@@ -317,6 +318,7 @@ describe("production control adapter", () => {
       "task.list",
       "session.list",
       "agent.statusList",
+      "steward.configurationGet",
     ]));
     expect(requests.find(({ method }) => method === "task.list")?.params).toEqual({
       projectId: fixtureProjects[0]?.id,
@@ -1338,6 +1340,37 @@ function controlResult(
   if (method === "session.list") return fixtureSessions;
   if (method === "agent.statusList") return fixtureAgentStatuses;
   if (method === "agent.capabilityList") return fixtureAgentCapabilities;
+  if (method === "steward.configurationGet") {
+    return {
+      configuration: {
+        projectId,
+        agentId: "codex",
+        model: "default",
+        permission: "default",
+        reasoning: "default",
+        enabled: true,
+        executorSessionId: null,
+        generation: 1,
+        updatedAtEpochMs: 1,
+        systemPrompt: "",
+      },
+      defaultSystemPrompt: "Steward",
+      promptContext: {
+        initialPrompt: "initial",
+        instructionsPrompt: "instructions",
+        instructionDelivery: "codexDeveloperInstructions",
+        protectedPrompt: "protected",
+        wakePrompt: "wake",
+      },
+      stateRevision: 1,
+      supervisorAvailability: "available",
+      presence: {
+        lastActivityAtEpochMs: null,
+        activeCommandLabel: null,
+        pendingProposal: false,
+      },
+    };
+  }
   if (method === "playbook.get") return { playbook: fixturePlaybook, stateRevision: 11 };
   if (method === "playbook.runtime") return fixturePlaybookRuntime;
   if (method === "routine.configurationList") {

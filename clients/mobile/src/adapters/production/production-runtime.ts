@@ -440,10 +440,25 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
           control.call("session.list"),
           control.call("agent.statusList"),
         ]);
-        const tasks = (await Promise.all(
-          projects.map((project) => listActiveTasks(control, project.id)),
-        )).flat();
-        return { projects, tasks, sessions, agentStatuses };
+        const [taskPages, stewardProjectIds] = await Promise.all([
+          Promise.all(projects.map((project) => listActiveTasks(control, project.id))),
+          Promise.all(projects.map(async (project) => {
+            try {
+              const result = await control.call("steward.configurationGet", { projectId: project.id });
+              return result.configuration?.enabled === true ? project.id : undefined;
+            } catch (cause: unknown) {
+              // Older mobile gateways do not expose this read. Keep the rest of
+              // the overview usable, but default voice to unavailable until the
+              // Mac gateway is updated instead of guessing from Session presence.
+              if (cause instanceof MobileControlError && cause.code === "methodNotFound") return undefined;
+              throw cause;
+            }
+          })),
+        ]);
+        const tasks = taskPages.flat();
+        const stewardEnabledProjectIds = stewardProjectIds
+          .filter((projectId): projectId is string => projectId !== undefined);
+        return { projects, stewardEnabledProjectIds, tasks, sessions, agentStatuses };
       },
     },
 

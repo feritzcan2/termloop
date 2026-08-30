@@ -68,7 +68,11 @@ export function StewardVoiceDock() {
   const insets = useSafeAreaInsets();
   const routeParams = useGlobalSearchParams() as VoiceRouteParams;
   const routeProjectId = voiceProjectId(routeParams, overview.overview);
-  const projects = overview.overview?.projects ?? [];
+  const stewardEnabledProjectIds = overview.overview?.stewardEnabledProjectIds ?? [];
+  const projects = useMemo(() => {
+    const enabled = new Set(stewardEnabledProjectIds);
+    return (overview.overview?.projects ?? []).filter((project) => enabled.has(project.id));
+  }, [overview.overview?.projects, stewardEnabledProjectIds]);
 
   const [sessionActive, setSessionActive] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -762,6 +766,12 @@ export function StewardVoiceDock() {
   }, [connections.selected?.id, endConversation]);
 
   useEffect(() => {
+    const activeProjectId = activeTargetRef.current?.projectId;
+    if (sessionActiveRef.current && activeProjectId !== undefined
+      && !stewardEnabledProjectIds.includes(activeProjectId)) endConversation();
+  }, [endConversation, stewardEnabledProjectIds]);
+
+  useEffect(() => {
     const target = activeTargetRef.current;
     if (!sessionActive || selectedProject === undefined || target?.projectId !== selectedProject.id) return;
     void stewardLiveActivity.sync({
@@ -778,6 +788,12 @@ export function StewardVoiceDock() {
     if (streamRef.current.isStreaming) streamRef.current.stop();
     void stewardLiveActivity.end().catch(() => undefined);
   }, []);
+
+  const activeProjectId = activeTargetRef.current?.projectId;
+  const voiceAvailable = sessionActive
+    ? activeProjectId !== undefined && stewardEnabledProjectIds.includes(activeProjectId)
+    : routeProjectId !== undefined;
+  if (!voiceAvailable) return null;
 
   return (
     <KeyboardAvoidingView
