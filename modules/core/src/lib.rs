@@ -1410,6 +1410,7 @@ impl CoreRuntime {
             runtime_epoch,
             provider_sequence_baseline,
             provider_state,
+            provider_source,
             provider_signal,
             notification_type,
             submission,
@@ -1428,6 +1429,7 @@ impl CoreRuntime {
                                 .map(|observation| observation.sequence)
                                 .unwrap_or(0),
                             capability.observation.map(|observation| observation.state),
+                            capability.observation.map(|observation| observation.source),
                             capability.last_signal,
                             capability.last_notification_type.clone(),
                             submission.clone(),
@@ -1494,15 +1496,7 @@ impl CoreRuntime {
             runtime_epoch,
             provider_sequence_baseline,
             submission,
-            if provider_queue_ready {
-                runtime::generated_input_delivery::GeneratedInputSettlement::ProviderQueue
-            } else if agent_id == "codex" {
-                runtime::generated_input_delivery::GeneratedInputSettlement::CodexComposerRender
-            } else if agent_id == "claude" {
-                runtime::generated_input_delivery::GeneratedInputSettlement::ComposerRender
-            } else {
-                runtime::generated_input_delivery::GeneratedInputSettlement::OutputActivity
-            },
+            generated_input_settlement(agent_id, provider_source, provider_queue_ready),
         ) {
             return Err(CoreError::ConversationBusy);
         }
@@ -2589,6 +2583,30 @@ fn generated_input_may_enter_provider_queue(
     )
 }
 
+fn generated_input_settlement(
+    agent_id: &str,
+    provider_source: Option<AgentSignalSource>,
+    provider_queue_ready: bool,
+) -> runtime::generated_input_delivery::GeneratedInputSettlement {
+    use runtime::generated_input_delivery::GeneratedInputSettlement;
+
+    if provider_queue_ready {
+        GeneratedInputSettlement::ProviderQueue
+    } else if agent_id == "codex" && provider_source != Some(AgentSignalSource::DaemonBridge) {
+        // Without App Server's structured idle observation, the terminal must
+        // prove that Codex's current composer prompt is on screen.
+        GeneratedInputSettlement::CodexComposerRender
+    } else if matches!(agent_id, "codex" | "claude") {
+        // App Server idle already proves Codex is accepting a new turn. Keep
+        // the terminal's bracketed-paste handshake as the transport gate, but
+        // do not depend on a TUI glyph that may have rendered before tracking
+        // began or may change independently of the structured protocol.
+        GeneratedInputSettlement::ComposerRender
+    } else {
+        GeneratedInputSettlement::OutputActivity
+    }
+}
+
 fn unavailable_composer_cause(
     provider_state: Option<AgentState>,
     provider_signal: Option<termloop_agents::AgentSignal>,
@@ -2668,6 +2686,24 @@ fn generated_input_settlement_evidence_name(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn codex_app_server_idle_uses_structured_composer_readiness() {
+        use runtime::generated_input_delivery::GeneratedInputSettlement;
+
+        assert_eq!(
+            generated_input_settlement("codex", Some(AgentSignalSource::DaemonBridge), false),
+            GeneratedInputSettlement::ComposerRender
+        );
+        assert_eq!(
+            generated_input_settlement("codex", Some(AgentSignalSource::Transcript), false),
+            GeneratedInputSettlement::CodexComposerRender
+        );
+        assert_eq!(
+            generated_input_settlement("codex", None, true),
+            GeneratedInputSettlement::ProviderQueue
+        );
+    }
 
     #[test]
     fn steward_wake_confirmation_is_emitted_once_and_retires_exact_pending_identity() {

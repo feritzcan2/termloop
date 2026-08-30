@@ -666,7 +666,10 @@ impl GeneratedInputDeliveryRuntime {
                 }
                 delivery.provider_ack_signal.take();
                 record_delivery_failure(delivery, failure);
-                if let Some((_, user_input_activity)) = delivery.provider_confirmation {
+                if unwritten_readiness_failure(delivery, failure) {
+                    delivery.provider_confirmation = None;
+                    delivery.state = GeneratedInputDeliveryState::Blocked;
+                } else if let Some((_, user_input_activity)) = delivery.provider_confirmation {
                     record_confirmation_activity(delivery, user_input_activity);
                     delivery.state =
                         if manual_recovery_is_attributed(delivery, failure, user_input_activity) {
@@ -685,7 +688,10 @@ impl GeneratedInputDeliveryRuntime {
                 }
                 delivery.provider_ack_signal.take();
                 record_delivery_failure(delivery, failure);
-                if let Some((_, user_input_activity)) = delivery.provider_confirmation {
+                if unwritten_readiness_failure(delivery, failure) {
+                    delivery.provider_confirmation = None;
+                    delivery.state = GeneratedInputDeliveryState::Failed;
+                } else if let Some((_, user_input_activity)) = delivery.provider_confirmation {
                     record_confirmation_activity(delivery, user_input_activity);
                     delivery.state =
                         if manual_recovery_is_attributed(delivery, failure, user_input_activity) {
@@ -714,6 +720,14 @@ impl GeneratedInputDeliveryRuntime {
         };
         if delivery.runtime_epoch != runtime_epoch
             || provider_sequence <= delivery.provider_sequence_baseline
+        {
+            return false;
+        }
+        // A provider turn after composer readiness already timed out belongs
+        // to manual user input, not to this still-unwritten submission.
+        if delivery
+            .failure
+            .is_some_and(|failure| unwritten_readiness_failure(delivery, failure))
         {
             return false;
         }
@@ -884,6 +898,14 @@ fn manual_recovery_is_attributed(
             | GeneratedInputDeliveryFailure::UserInputInterleaved
             | GeneratedInputDeliveryFailure::SubmitWriteFailed
     ) && submission_content_unchanged(delivery, activity)
+}
+
+fn unwritten_readiness_failure(
+    delivery: &GeneratedInputDelivery,
+    failure: GeneratedInputDeliveryFailure,
+) -> bool {
+    failure == GeneratedInputDeliveryFailure::ComposerNotReady
+        && !delivery.paste_started.load(Ordering::Acquire)
 }
 
 #[derive(Debug)]
@@ -1516,6 +1538,67 @@ mod tests {
                 .unwrap()
                 .user_input_mutated,
             Some(true)
+        );
+    }
+
+    #[test]
+    fn manual_turn_before_paste_does_not_confirm_an_undelivered_submission() {
+        let mut runtime = GeneratedInputDeliveryRuntime::default();
+        runtime.deliveries.insert(
+            "session".into(),
+            GeneratedInputDelivery {
+                id: 3,
+                runtime_epoch: 7,
+                provider_sequence_baseline: 10,
+                submission: test_submission(),
+                state: GeneratedInputDeliveryState::WritingPaste,
+                failure: None,
+                original_failure: None,
+                cancel_cause: None,
+                cancel_notification_type: None,
+                paste_started: Arc::new(AtomicBool::new(false)),
+                paste_receipted: false,
+                settlement_evidence: None,
+                submit_receipted: false,
+                submit_attempts: 0,
+                protocol_reply_waits: 0,
+                user_input_mutated: None,
+                output_activity: OutputActivityDiagnostics::default(),
+                user_input_sequence_baseline: 4,
+                user_input_mutation_sequence_baseline: 3,
+                provider_confirmation: None,
+                cancel_submit: Arc::new(AtomicBool::new(false)),
+                provider_ack_signal: None,
+            },
+        );
+
+        assert!(!runtime.confirm_provider_submission("session", 7, 11, Some(activity(5, 4))));
+        assert_eq!(
+            runtime.state("session", 7),
+            Some(GeneratedInputDeliveryState::WritingPaste)
+        );
+        assert!(runtime.apply_transport_event(GeneratedInputRuntimeEvent {
+            session_id: "session".into(),
+            runtime_epoch: 7,
+            delivery_id: 3,
+            outcome: GeneratedInputTransportOutcome::Blocked(
+                GeneratedInputDeliveryFailure::ComposerNotReady,
+            ),
+            diagnostics: GeneratedInputTransportDiagnostics::default(),
+        }));
+        assert_eq!(
+            runtime.state("session", 7),
+            Some(GeneratedInputDeliveryState::Blocked)
+        );
+        assert_eq!(
+            runtime.failure("session", 7),
+            Some(GeneratedInputDeliveryFailure::ComposerNotReady)
+        );
+        assert!(!runtime.confirm_provider_submission("session", 7, 12, Some(activity(6, 5))));
+        assert!(!runtime.confirm_provider_progress("session", 7, 13));
+        assert_eq!(
+            runtime.state("session", 7),
+            Some(GeneratedInputDeliveryState::Blocked)
         );
     }
 
