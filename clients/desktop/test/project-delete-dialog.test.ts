@@ -4,7 +4,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TaskWorktreeCleanupPreviewDto } from "@termloop/contract/current";
-import type { Project, Task } from "../src/renderer/model.js";
+import type { Project, Task, TaskDeleteWorktreeResult } from "../src/renderer/model.js";
 import { DeleteProjectDialog, type DeleteProjectDialogProps } from "../src/renderer/ui/project-dialogs/delete-project-dialog.js";
 
 function project(): Project {
@@ -49,6 +49,20 @@ function stalePreview(value: Task, forgetAvailable = true): TaskWorktreeCleanupP
       forget_status: forgetAvailable ? "available" : "unavailable",
       disposal_status: "unavailable",
       blockers: ["repositoryUnavailable"],
+    },
+  };
+}
+
+function managedPreview(value: Task): TaskWorktreeCleanupPreviewDto {
+  return {
+    ...stalePreview(value, false),
+    decision: "refused",
+    blockers: ["ignoredContent"],
+    destructive_cleanup: { status: "available", eligible_blockers: ["ignoredContent"] },
+    stale_resolution: {
+      forget_status: "unavailable",
+      disposal_status: "unavailable",
+      blockers: ["observationFailed"],
     },
   };
 }
@@ -142,6 +156,64 @@ describe("Project delete stale worktrees", () => {
     expect(reviewTasks).toHaveBeenCalledOnce();
     expect(props.deleteBlockingTask).not.toHaveBeenCalled();
     expect(props.deleteProject).not.toHaveBeenCalled();
+  });
+
+  it("force-cleans managed content and shows each destructive phase before deleting the Project", async () => {
+    const managed = task("managed", "Managed checkout", "/projects/managed");
+    const preview = managedPreview(managed);
+    let finishCleanup!: (result: TaskDeleteWorktreeResult) => void;
+    let finishProjectDelete!: (failure: string | undefined) => void;
+    const cleanup = new Promise<TaskDeleteWorktreeResult>((resolve) => { finishCleanup = resolve; });
+    const projectDelete = new Promise<string | undefined>((resolve) => { finishProjectDelete = resolve; });
+    const deleteBlockingTask = vi.fn(() => cleanup);
+    const deleteProject = vi.fn(() => projectDelete);
+    const { host, props } = await render({
+      tasks: [managed],
+      inspectTaskWorktreeCleanup: vi.fn(async () => preview),
+      deleteBlockingTask,
+      deleteProject,
+    });
+    const submit = host.querySelector<HTMLButtonElement>("#confirm-delete-project")!;
+
+    expect(host.textContent).toContain("Ready to remove");
+    expect(host.textContent).toContain("permanently deletes every removable worktree directory");
+    expect(submit.textContent).toContain("Force cleanup 1 worktree & delete");
+
+    await act(async () => { submit.click(); await Promise.resolve(); });
+    expect(host.textContent).toContain("Deleting…");
+    expect(host.textContent).toContain("Removing Task worktrees one at a time…");
+
+    await act(async () => { finishCleanup({ status: "completed" }); await cleanup; });
+    expect(deleteBlockingTask).toHaveBeenCalledWith(managed, { preview, kind: "cleanup" });
+    expect(host.textContent).toContain("Removed");
+    expect(host.textContent).toContain("Worktrees removed. Deleting Project…");
+
+    await act(async () => { finishProjectDelete(undefined); await projectDelete; });
+    expect(props.close).toHaveBeenCalledOnce();
+  });
+
+  it("deletes an explicitly disposable stale directory instead of merely forgetting it", async () => {
+    const stale = task("stale", "Disposable stale checkout", "/projects/stale");
+    const preview: TaskWorktreeCleanupPreviewDto = {
+      ...stalePreview(stale),
+      stale_resolution: {
+        forget_status: "available",
+        disposal_status: "available",
+        blockers: [],
+      },
+    };
+    const { host, props } = await render({
+      tasks: [stale],
+      inspectTaskWorktreeCleanup: vi.fn(async () => preview),
+    });
+
+    await act(async () => host.querySelector<HTMLButtonElement>("#confirm-delete-project")!.click());
+
+    expect(props.deleteBlockingTask).toHaveBeenCalledWith(stale, {
+      preview,
+      kind: "discardStaleDirectory",
+    });
+    expect(props.deleteProject).toHaveBeenCalledWith("project-1");
   });
 
   it("stops before Project deletion when a reviewed stale binding changes", async () => {

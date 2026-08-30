@@ -1509,8 +1509,14 @@ button.folder-crumb:hover { background: rgba(255,255,255,.07); color: var(--text
 .project-delete-blocker-copy small { overflow: hidden; color: var(--text-muted); font: 9px/1.3 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .project-delete-blocker-status { color: var(--warning); font: 700 8.5px/1.3 var(--font-ui); white-space: nowrap; }
 .project-delete-blocker-status.safe { color: var(--success); }
+.project-delete-blocker-status.working { color: var(--accent-strong); }
+.project-delete-blocker-status.done { color: var(--success); }
+.project-delete-blocker-status.failed { color: var(--danger); }
 .project-delete-safe { display: flex; align-items: flex-start; gap: 6px; margin: 9px 1px 0; color: var(--success); font-size: 9.5px; line-height: 1.4; }
 .project-delete-safe > span:first-child { flex: none; font-weight: 800; }
+.project-delete-force { display: flex; align-items: flex-start; gap: 6px; margin: 9px 1px 0; color: #ef9aa1; font-size: 9.5px; line-height: 1.4; }
+.project-delete-force svg { flex: none; width: 11px; height: 11px; margin-top: 1px; }
+.project-delete-progress { display: flex; align-items: center; gap: 6px; margin: 9px 1px 0; color: var(--accent-strong); font-size: 9.5px; line-height: 1.4; }
 .danger-button { height: 30px; padding: 0 10px; border: 1px solid rgba(225,117,126,.35); border-radius: 7px; background: rgba(225,117,126,.12); color: #ef9aa1; font-size: 10.5px; font-weight: 620; }
 .danger-button:hover:not(:disabled) { background: rgba(225,117,126,.2); color: #ffc0c5; }
 .delete-check-status { display: flex; align-items: center; gap: 6px; min-height: 16px; }
