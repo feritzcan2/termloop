@@ -6,6 +6,7 @@ import { fontFamily } from "@/theme/typography";
 export interface StewardVoiceProjectOption {
   readonly id: string;
   readonly name: string;
+  readonly connectionName: string;
 }
 
 export interface StewardVoiceProjectSelectorProps {
@@ -29,7 +30,7 @@ export function StewardVoiceProjectSelector(props: StewardVoiceProjectSelectorPr
           const disabled = selected || props.disabled;
           return (
             <Pressable
-              accessibilityLabel={`${project.name} projesiyle konuş`}
+              accessibilityLabel={`${project.connectionName} üzerindeki ${project.name} projesiyle konuş`}
               accessibilityRole="button"
               accessibilityState={{ disabled, selected }}
               disabled={disabled}
@@ -48,6 +49,7 @@ export function StewardVoiceProjectSelector(props: StewardVoiceProjectSelectorPr
               >
                 {project.name}
               </Text>
+              <Text numberOfLines={1} style={styles.connectionName}>{project.connectionName}</Text>
             </Pressable>
           );
         })}
@@ -68,7 +70,7 @@ const styles = StyleSheet.create({
   options: { gap: space.sm, paddingRight: space.sm },
   option: {
     maxWidth: 190,
-    minHeight: 38,
+    minHeight: 48,
     justifyContent: "center",
     paddingHorizontal: 13,
     borderRadius: radius.pill,
@@ -79,6 +81,7 @@ const styles = StyleSheet.create({
   optionSelected: { borderColor: color.success, backgroundColor: "#273c35" },
   optionText: { color: color.textSecondary, fontSize: 12, fontWeight: "700" },
   optionTextSelected: { color: color.success },
+  connectionName: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 9, marginTop: 2 },
   disabled: { opacity: 0.38 },
   pressed: { opacity: 0.74, transform: [{ scale: 0.98 }] },
 });

@@ -2092,9 +2092,13 @@ button.folder-crumb:hover { background: rgba(255,255,255,.07); color: var(--text
 .active-agent-list { display: grid; gap: 1px; padding: 0 7px; }
 .active-agent-row { grid-template-columns: minmax(0,1fr) 20px; gap: 1px; padding-right: 4px; }
 .active-agent-row.has-worktree-changes { grid-template-columns: minmax(0,1fr) 20px 64px; }
-.active-agent-helper { gap: 0; margin: -1px 4px 2px 9px; padding-left: 0; }
-.active-agent-helper::before { display: block; top: -7px; bottom: 15px; left: -8px; }
-.active-agent-helper .ask-to-helper-detach { top: 8px; left: -14px; }
+/* Extend the helper's real box through the detach control. Keeping the button
+   outside that box made the parent lose :hover before the pointer could reach
+   it, so the control disappeared while crossing the connector. The matching
+   margin/padding offsets preserve the row, connector, and button positions. */
+.active-agent-helper { gap: 0; margin: -1px 4px 2px -5px; padding-left: 14px; }
+.active-agent-helper::before { display: block; top: -7px; bottom: 15px; left: 6px; }
+.active-agent-helper .ask-to-helper-detach { top: 8px; left: 0; }
 .active-agent-helper-row { display: block; }
 .active-agent-helper-row .active-agent-row { min-width: 0; padding-right: 0; }
 .active-agent-row .session-item { min-height: 36px; grid-template-columns: 20px minmax(0,1fr) 10px; gap: 6px; padding: 3px 7px; border-radius: 6px; }

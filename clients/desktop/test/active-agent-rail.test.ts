@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -69,6 +70,17 @@ function props(sessions: readonly Session[], statuses: readonly AgentStatus[], r
 }
 
 describe("Active Agent rail", () => {
+  it("keeps the nested-agent detach control inside the helper hover area", async () => {
+    const stylesheet = await readFile(new URL("../src/app.css", import.meta.url), "utf8");
+
+    expect(stylesheet).toContain(
+      ".active-agent-helper { gap: 0; margin: -1px 4px 2px -5px; padding-left: 14px; }",
+    );
+    expect(stylesheet).toContain(
+      ".active-agent-helper .ask-to-helper-detach { top: 8px; left: 0; }",
+    );
+  });
+
   it("buckets action, current activity, and resting agents while preserving ties", () => {
     const workingOne = agent("working-one");
     const workingTwo = agent("working-two");
