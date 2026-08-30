@@ -2,8 +2,10 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 
 import type { ConnectionProfile } from "@/application/ports";
 import { useMobileRuntime } from "@/composition/runtime-context";
-import { connectionPresentation } from "@/presentation/connection-presentation";
 import { useAppLifecycle } from "@/platform/app-lifecycle";
+import { preferredConnectionId } from "./connection-resilience";
+
+export { preferredConnectionId } from "./connection-resilience";
 
 /// Longer than the generated control client's 12s request timeout, so a probe always
 /// gets to finish before the next tick is even considered. A poll faster than the thing
@@ -48,18 +50,27 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
   /// Whether a probe is currently in flight. A tick that lands mid-probe must be dropped
   /// rather than restarting the effect: the restart's cleanup marks the running attempt
   /// stale, so its result is discarded when it finally arrives.
-  const probing = useRef(false);
+  const probeSequence = useRef(0);
+  const activeProbe = useRef<number | undefined>(undefined);
   const unreachableSince = useRef(new Map<string, number>());
+
+  useEffect(() => {
+    /// iOS can retain a WebSocket object across suspension after its network path
+    /// has disappeared. Close cached transports before JavaScript suspends; the
+    /// first catalog/overview reads after foregrounding then share one fresh path.
+    if (!lifecycle.active) runtime.connections.resetTransports();
+  }, [runtime, lifecycle.active]);
 
   useEffect(() => {
     if (!lifecycle.active) return;
     let active = true;
-    probing.current = true;
+    const probe = ++probeSequence.current;
+    activeProbe.current = probe;
     setLoad((current) => (current === "ready" ? current : "loading"));
     setError(undefined);
     runtime.connections.list().then(
       (profiles) => {
-        probing.current = false;
+        if (activeProbe.current === probe) activeProbe.current = undefined;
         if (!active) return;
         const now = Date.now();
         let reconnecting = false;
@@ -96,12 +107,12 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
         ));
         if (reconnecting) {
           setTimeout(() => {
-            if (active && !probing.current) setReloads((count) => count + 1);
+            if (active && activeProbe.current === undefined) setReloads((count) => count + 1);
           }, RECONNECT_PROBE_MS);
         }
       },
       (cause: unknown) => {
-        probing.current = false;
+        if (activeProbe.current === probe) activeProbe.current = undefined;
         if (!active) return;
         setError(describe(cause));
         setLoad("failed");
@@ -121,7 +132,7 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
       /// to answer, so every probe is replaced a moment before it settles and the
       /// catalog never leaves `loading` — a permanent spinner produced by the retry
       /// loop itself rather than by the network.
-      if (probing.current) return;
+      if (activeProbe.current !== undefined) return;
       setReloads((count) => count + 1);
     }, ACTIVE_PROBE_MS);
     return () => clearInterval(timer);
@@ -157,16 +168,6 @@ export function useConnections(): ConnectionStore {
   const store = useContext(ConnectionContext);
   if (!store) throw new Error("Connection provider is missing");
   return store;
-}
-
-/// The Mac the app opens on: the most recently connected one that can actually be
-/// read. An unreachable or update-blocked Mac is never auto-selected, because
-/// landing the user on a dead screen is worse than landing them on the list.
-function preferredConnectionId(profiles: readonly ConnectionProfile[]): string | undefined {
-  const usable = profiles
-    .filter((profile) => connectionPresentation(profile.availability).block === undefined)
-    .sort((left, right) => (right.lastConnectedAtEpochMs ?? 0) - (left.lastConnectedAtEpochMs ?? 0));
-  return usable[0]?.id;
 }
 
 function describe(cause: unknown): string {

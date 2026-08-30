@@ -45,6 +45,10 @@ export interface MobileOverview {
 
 export interface ConnectionCatalogPort {
   list(): Promise<ConnectionProfile[]>;
+  /// Drops cached WebSocket transports without removing any saved Mac. The
+  /// lifecycle owner calls this around background transitions so a suspended
+  /// native socket is never reused as foreground connectivity evidence.
+  resetTransports(): void;
   pair(code: string): Promise<string>;
 }
 

@@ -52,8 +52,8 @@ const keyBytes: Record<TerminalKey, readonly number[]> = {
 /// reads a line and immediately redraws can otherwise consume the newline while the
 /// pasted text is still arriving, and the turn is submitted half-written.
 const SUBMIT_SETTLE_MS = 60;
-const INITIAL_ATTACH_RETRY_MS = 500;
-const MAX_ATTACH_RETRY_MS = 2_000;
+const INITIAL_ATTACH_RETRY_MS = 1_000;
+const MAX_ATTACH_RETRY_MS = 30_000;
 
 export interface TerminalSession {
   readonly buffer: TerminalBuffer;
@@ -106,7 +106,8 @@ export function useTerminalSession(
   const runtimeEpoch = session?.runtime_epoch;
 
   useEffect(() => {
-    if (connectionId === undefined || sessionId === undefined || runtimeEpoch === undefined) return;
+    if (!lifecycle.active
+      || connectionId === undefined || sessionId === undefined || runtimeEpoch === undefined) return;
     const continuityKey = terminalContinuityKey(connectionId, sessionId, runtimeEpoch);
     const cached = terminalContinuityCache.get(continuityKey);
     let active = true;
@@ -236,7 +237,7 @@ export function useTerminalSession(
       if (open) void open.detach();
       setBuffer(detached);
     };
-  }, [runtime, connectionId, sessionId, runtimeEpoch, reconnectRevision]);
+  }, [runtime, connectionId, sessionId, runtimeEpoch, reconnectRevision, lifecycle.active]);
 
   const canSend = buffer.stream === "live" && error === undefined;
 
@@ -270,17 +271,6 @@ export function useTerminalSession(
       }
     });
   }, []);
-
-  useEffect(() => {
-    if (lifecycle.foregroundRevision === 0) return;
-    /// Closing the terminal socket while iOS is already suspending JavaScript can
-    /// leave its native transport alive but unusable. Keep the attachment across
-    /// backgrounding, then replace and authenticate its socket once execution is
-    /// foregrounded again. This also keeps one event closure responsible for the
-    /// connectionLost -> connected transition, so a late cleanup cannot overwrite
-    /// the newly-live composer with a detached state.
-    reconnect();
-  }, [lifecycle.foregroundRevision, reconnect]);
 
   const submit = useCallback((text: string) => {
     const open = attachment.current;

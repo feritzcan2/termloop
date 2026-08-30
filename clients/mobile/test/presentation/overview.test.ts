@@ -2,6 +2,8 @@ import type { AgentStatusDto, SessionDto, TaskDto } from "@termloop/contract/cur
 import { describe, expect, it } from "vitest";
 
 import type { ConnectionProfile, MobileOverview } from "../../src/application/ports";
+import { preferredConnectionId } from "../../src/features/connection/connection-resilience";
+import { snapshotWhileUnavailable } from "../../src/features/overview/overview-resilience";
 import {
   buildLocatedProjectSummaries,
   buildProjectOverview,
@@ -359,6 +361,32 @@ describe("connection presentation", () => {
     const words = `${copy.title} ${copy.body} ${copy.resolution}`.toLowerCase();
     expect(words).not.toContain("anyway");
     expect(words).not.toContain("ignore");
+  });
+
+  it("keeps a saved Mac selected and its last projection visible through a transient outage", () => {
+    const offline: ConnectionProfile = {
+      ...mac("offline-mac", "Offline Mac"),
+      availability: "offline",
+      lastConnectedAtEpochMs: 200,
+    };
+    expect(preferredConnectionId([offline])).toBe("offline-mac");
+
+    const previous = {
+      load: "failed" as const,
+      error: "request timeout",
+      overview: baseOverview,
+      refreshing: true,
+      reviewReadySessionIds: new Set<string>(),
+      readAtEpochMs: 100,
+    };
+    expect(snapshotWhileUnavailable("offline", previous)).toMatchObject({
+      load: "ready",
+      error: undefined,
+      overview: previous.overview,
+      refreshing: false,
+      readAtEpochMs: 100,
+    });
+    expect(snapshotWhileUnavailable("revoked", previous).overview).toBeUndefined();
   });
 
   it("shortens a contract identity while keeping enough to compare two of them", () => {

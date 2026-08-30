@@ -88,6 +88,10 @@ interface MobileControlResults {
 }
 
 const REQUEST_TIMEOUT_MS = 5_000;
+/// A successful control response is stronger reachability evidence than another
+/// dedicated version probe. Reusing it for one foreground polling window avoids
+/// making the health check race the overview reads on the same WebSocket.
+const REACHABILITY_EVIDENCE_MS = 30_000;
 /// Starting an Agent provisions a checkout and waits for the provider to come up,
 /// so it cannot answer inside the read budget every other call lives in. The
 /// longer window is per method rather than global: a slow read still fails fast.
@@ -154,6 +158,9 @@ export class MobileControlClient {
     readonly socket: ReturnType<SocketFactory>;
   } | undefined;
   private readonly pending = new Map<string, PendingMobileCall>();
+  private cachedVersion: MobileControlResults["system.version"] | undefined;
+  private versionProbe: Promise<MobileControlResults["system.version"]> | undefined;
+  private lastSuccessfulResponseAtEpochMs = 0;
 
   constructor(
     private readonly url: string,
@@ -164,7 +171,21 @@ export class MobileControlClient {
   ) {}
 
   version() {
-    return this.call("system.version");
+    if (this.cachedVersion !== undefined
+      && Date.now() - this.lastSuccessfulResponseAtEpochMs <= REACHABILITY_EVIDENCE_MS) {
+      return Promise.resolve(this.cachedVersion);
+    }
+    if (this.versionProbe !== undefined) return this.versionProbe;
+    const probe: Promise<MobileControlResults["system.version"]> = this.call("system.version").then((version) => {
+      this.cachedVersion = version;
+      return version;
+    });
+    this.versionProbe = probe;
+    void probe.then(
+      () => { if (this.versionProbe === probe) this.versionProbe = undefined; },
+      () => { if (this.versionProbe === probe) this.versionProbe = undefined; },
+    );
+    return probe;
   }
 
   async call<M extends MobileControlMethod>(
@@ -452,7 +473,9 @@ export class MobileControlClient {
       return;
     }
     try {
-      pending.resolve(decodeResult(pending.method, response.result));
+      const result = decodeResult(pending.method, response.result);
+      this.lastSuccessfulResponseAtEpochMs = Date.now();
+      pending.resolve(result);
       this.diagnostics.report("control", "request_completed", {
         connectionId: this.connectionId,
         requestId: response.id,

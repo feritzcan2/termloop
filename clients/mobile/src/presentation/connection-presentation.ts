@@ -72,7 +72,7 @@ export interface ConnectionBlockCopy {
 const blockCopy: Record<ConnectionBlock, ConnectionBlockCopy> = {
   offline: {
     title: "Not connected",
-    body: "This Mac is not reachable right now, so its projects are not shown.",
+    body: "This Mac is not reachable right now. Home keeps its last known project and agent status visible while reconnecting.",
     resolution: "Reconnecting automatically. Keep Tailscale connected and make sure the Mac is awake with TermLoop running.",
   },
   revoked: {

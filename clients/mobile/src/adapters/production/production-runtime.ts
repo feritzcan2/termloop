@@ -48,8 +48,9 @@ import {
 const AUTH_TIMEOUT_MS = 5_000;
 const CONNECT_TIMEOUT_MS = 5_000;
 const FORCE_RECONNECT_TIMEOUT_MS = 12_000;
-const MIN_RECONNECT_MS = 250;
-const MAX_RECONNECT_MS = 2_000;
+const MIN_RECONNECT_MS = 500;
+const MAX_RECONNECT_MS = 30_000;
+const STABLE_CONNECTION_MS = 30_000;
 const MAX_INPUT_FRAME_BYTES = 16 * 1024;
 /// A replay is a frozen bounded snapshot, but the wire must split it into 16 KiB
 /// frames. Publishing every transport frame separately makes React reconcile dozens
@@ -251,6 +252,10 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
             return profile(connection, "offline");
           }
         }));
+      },
+      resetTransports() {
+        for (const connection of controlClients.values()) connection.client.close();
+        controlClients.clear();
       },
       async pair(code) {
         const connection = parsePairingCode(code);
@@ -695,6 +700,7 @@ async function attachTerminal(
   let connectionTimer: ReturnType<typeof setTimeout> | undefined;
   let authenticationTimer: ReturnType<typeof setTimeout> | undefined;
   let replayTimer: ReturnType<typeof setTimeout> | undefined;
+  let stabilityTimer: ReturnType<typeof setTimeout> | undefined;
   let replayChunks: Uint8Array[] = [];
   let replayBytes = 0;
   let inbound = Promise.resolve();
@@ -729,6 +735,11 @@ async function attachTerminal(
   const clearReplayTimer = () => {
     if (replayTimer !== undefined) clearTimeout(replayTimer);
     replayTimer = undefined;
+  };
+
+  const clearStabilityTimer = () => {
+    if (stabilityTimer !== undefined) clearTimeout(stabilityTimer);
+    stabilityTimer = undefined;
   };
 
   const discardReplay = () => {
@@ -792,6 +803,7 @@ async function attachTerminal(
     detached = true;
     clearConnectionTimer();
     clearAuthenticationTimer();
+    clearStabilityTimer();
     const failed = socket;
     socket = undefined;
     report("attachment_failed", {
@@ -837,6 +849,7 @@ async function attachTerminal(
     authenticated = false;
     clearConnectionTimer();
     clearAuthenticationTimer();
+    clearStabilityTimer();
     discardReplay();
     if (resolveFirst !== undefined) failFirst("Terminal connection failed.", reason);
     else scheduleReconnect(reason);
@@ -949,7 +962,12 @@ async function attachTerminal(
       }
       clearAuthenticationTimer();
       authenticated = true;
-      reconnectDelay = MIN_RECONNECT_MS;
+      clearStabilityTimer();
+      stabilityTimer = setTimeout(() => {
+        if (socket !== source || !authenticated || detached) return;
+        reconnectDelay = MIN_RECONNECT_MS;
+        report("connection_stabilized", { connectionAttempt, stableForMs: STABLE_CONNECTION_MS });
+      }, STABLE_CONNECTION_MS);
       if (successfulConnections > 0) onEvent({ type: "reset" });
       successfulConnections += 1;
       report("authenticated", {
@@ -1074,6 +1092,7 @@ async function attachTerminal(
       authenticated = false;
       clearConnectionTimer();
       clearAuthenticationTimer();
+      clearStabilityTimer();
       discardReplay();
       onEvent({ type: "state", state: "connectionLost" });
       stale?.close();
@@ -1092,6 +1111,7 @@ async function attachTerminal(
       if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
       clearConnectionTimer();
       clearAuthenticationTimer();
+      clearStabilityTimer();
       discardReplay();
       settleReconnectWaiters(new Error("Terminal is detached."));
       socket?.close();

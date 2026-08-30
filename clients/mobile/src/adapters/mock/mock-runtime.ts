@@ -124,6 +124,7 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
       async list() {
         return profiles.map((profile) => ({ ...profile }));
       },
+      resetTransports() {},
       async pair() {
         return profiles[0]!.id;
       },

@@ -320,7 +320,10 @@ function xml(value) {
 
 async function findTailscale() {
   const candidates = hostPlatform === "darwin"
-    ? ["tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale"]
+    // Prefer the CLI shipped by the GUI app. A Homebrew client can target a
+    // different daemon generation and made installs appear healthy while Serve
+    // was actually owned by the app extension.
+    ? ["/Applications/Tailscale.app/Contents/MacOS/Tailscale", "tailscale"]
     : ["tailscale", "/usr/bin/tailscale"];
   for (const candidate of candidates) {
     try { await execFile(candidate, ["version"]); return candidate; } catch { /* Try next path. */ }

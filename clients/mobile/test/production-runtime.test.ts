@@ -331,6 +331,13 @@ describe("production control adapter", () => {
     expect(requests.every(({ mobileApiVersion }) => mobileApiVersion === MOBILE_API_VERSION)).toBe(true);
     expect(requests.every(({ protocolVersion }) => protocolVersion === undefined)).toBe(true);
     expect(socketCount).toBe(1);
+
+    await runtime.connections.list();
+    expect(methods.filter((method) => method === "system.version")).toHaveLength(1);
+    runtime.connections.resetTransports();
+    await runtime.connections.list();
+    expect(methods.filter((method) => method === "system.version")).toHaveLength(2);
+    expect(socketCount).toBe(2);
   });
 
   it("requires an app update only when the stable mobile API version is unsupported", async () => {
@@ -711,7 +718,7 @@ describe("production terminal adapter", () => {
 
       sockets[0]!.drop();
       expect(events.at(-1)).toBe("state:connectionLost");
-      await vi.advanceTimersByTimeAsync(250);
+      await vi.advanceTimersByTimeAsync(500);
       expect(sockets).toHaveLength(2);
       sockets[1]!.open();
       sockets[1]!.message("TLOK");
@@ -730,6 +737,46 @@ describe("production terminal adapter", () => {
         "reconnect_scheduled",
         "attachment_detached",
       ]));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("backs off when authenticated sockets repeatedly flap before becoming stable", async () => {
+    vi.useFakeTimers();
+    try {
+      const sockets: FakeDataSocket[] = [];
+      const runtime = createProductionRuntime({
+        repository: fixedRepository(saved),
+        controlSocketFactory: () => { throw new Error("control not used"); },
+        terminalSocketFactory: () => {
+          const socket = new FakeDataSocket();
+          sockets.push(socket);
+          return socket;
+        },
+      });
+      const attaching = runtime.terminal.attach(
+        saved.id,
+        { ...fixtureSessions[0]!, id: sessionId, runtime_epoch: 17 },
+        () => {},
+      );
+      await waitFor(() => sockets.length === 1);
+      sockets[0]!.open();
+      sockets[0]!.message("TLOK");
+      const attachment = await attaching;
+
+      sockets[0]!.drop();
+      await vi.advanceTimersByTimeAsync(500);
+      sockets[1]!.open();
+      sockets[1]!.message("TLOK");
+      await Promise.resolve();
+      sockets[1]!.drop();
+      await vi.advanceTimersByTimeAsync(999);
+      expect(sockets).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(sockets).toHaveLength(3);
+
+      await attachment.detach();
     } finally {
       vi.useRealTimers();
     }
@@ -760,12 +807,12 @@ describe("production terminal adapter", () => {
       const attachment = await attaching;
 
       sockets[0]!.drop();
-      await vi.advanceTimersByTimeAsync(250);
+      await vi.advanceTimersByTimeAsync(500);
       expect(sockets).toHaveLength(2);
 
       await vi.advanceTimersByTimeAsync(5_000);
       expect(sockets[1]!.closed).toBe(true);
-      await vi.advanceTimersByTimeAsync(500);
+      await vi.advanceTimersByTimeAsync(1_000);
       expect(sockets).toHaveLength(3);
       sockets[2]!.open();
       sockets[2]!.message("TLOK");
@@ -847,7 +894,7 @@ describe("production terminal adapter", () => {
         .rejects.toThrow("socket write failed");
       expect(events.at(-1)).toBe("state:connectionLost");
 
-      await vi.advanceTimersByTimeAsync(250);
+      await vi.advanceTimersByTimeAsync(500);
       expect(sockets).toHaveLength(2);
       sockets[1]!.open();
       sockets[1]!.message("TLOK");

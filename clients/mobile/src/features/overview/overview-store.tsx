@@ -1,11 +1,22 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
 
-import type { MobileOverview } from "@/application/ports";
 import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
 import { connectionPresentation } from "@/presentation/connection-presentation";
 import { reconcileReviewReadySessions, statusMap } from "@/presentation/agent-review-policy";
 import { useAppLifecycle } from "@/platform/app-lifecycle";
+import {
+  emptyOverviewSnapshot as emptySnapshot,
+  snapshotWhileUnavailable,
+  type ConnectionOverviewSnapshot,
+  type OverviewLoad,
+} from "./overview-resilience";
+
+export {
+  snapshotWhileUnavailable,
+  type ConnectionOverviewSnapshot,
+  type OverviewLoad,
+} from "./overview-resilience";
 
 /// Longer than the control client's request timeout, and this read fans out to several
 /// calls, so it is slower than a bare version probe. Refreshing faster than the read can
@@ -19,17 +30,6 @@ const ACTIVE_REFRESH_MS = 15_000;
 /// One read per connection rather than one per screen: Task detail, the overview, and
 /// the Project selector are three depths of the same projection, and refetching per
 /// screen is how two surfaces start disagreeing about the same Task.
-
-export type OverviewLoad = "idle" | "loading" | "ready" | "failed";
-
-export interface ConnectionOverviewSnapshot {
-  load: OverviewLoad;
-  error: string | undefined;
-  overview: MobileOverview | undefined;
-  refreshing: boolean;
-  reviewReadySessionIds: ReadonlySet<string>;
-  readAtEpochMs: number | undefined;
-}
 
 export interface OverviewStore extends ConnectionOverviewSnapshot {
   /// Every readable Mac is loaded concurrently. Navigation still selects one
@@ -51,7 +51,8 @@ export function OverviewProvider({ children }: PropsWithChildren) {
   const previousStatuses = useRef<ReadonlyMap<string, ReadonlyMap<string, string>>>(new Map());
   /// See `connection-store`: a tick that lands mid-read must be dropped, not allowed to
   /// restart the effect and discard the answer that was already on its way.
-  const reading = useRef(false);
+  const readSequence = useRef(0);
+  const activeRead = useRef<number | undefined>(undefined);
 
   const readableConnections = connections.filter(
     (connection) => connectionPresentation(connection.availability).block === undefined,
@@ -63,12 +64,17 @@ export function OverviewProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!lifecycle.active) return;
     const readableIds = new Set(readableConnections.map(({ id }) => id));
+    const knownIds = new Set(connections.map(({ id }) => id));
     setByConnection((current) => {
       const next = new Map<string, ConnectionOverviewSnapshot>();
       for (const connection of connections) {
         const previous = current.get(connection.id);
         if (!readableIds.has(connection.id)) {
-          next.set(connection.id, emptySnapshot());
+          /// A transient offline verdict must not make the Mac, its Projects, or
+          /// its Agents disappear from Home. Retain only an already-observed
+          /// projection and let the connection warning mark it as stale. Revoked
+          /// and incompatible Macs still lose the projection immediately.
+          next.set(connection.id, snapshotWhileUnavailable(connection.availability, previous));
         } else {
           next.set(connection.id, {
             ...(previous ?? emptySnapshot()),
@@ -81,14 +87,15 @@ export function OverviewProvider({ children }: PropsWithChildren) {
       return next;
     });
     previousStatuses.current = new Map(
-      [...previousStatuses.current].filter(([connectionId]) => readableIds.has(connectionId)),
+      [...previousStatuses.current].filter(([connectionId]) => knownIds.has(connectionId)),
     );
+    const read = ++readSequence.current;
     if (readableConnections.length === 0) {
-      reading.current = false;
+      activeRead.current = undefined;
       return;
     }
     let active = true;
-    reading.current = true;
+    activeRead.current = read;
     void Promise.all(readableConnections.map(async ({ id: connectionId }) => {
       try {
         const nextOverview = await runtime.control.loadOverview(connectionId);
@@ -127,7 +134,7 @@ export function OverviewProvider({ children }: PropsWithChildren) {
         });
       }
     })).finally(() => {
-      if (active) reading.current = false;
+      if (active && activeRead.current === read) activeRead.current = undefined;
     });
     return () => { active = false; };
   }, [runtime, connectionScope, reloads, lifecycle.active, lifecycle.foregroundRevision]);
@@ -135,7 +142,7 @@ export function OverviewProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!lifecycle.active || readableConnections.length === 0) return;
     const timer = setInterval(() => {
-      if (reading.current) return;
+      if (activeRead.current !== undefined) return;
       setReloads((count) => count + 1);
     }, ACTIVE_REFRESH_MS);
     return () => clearInterval(timer);
@@ -170,17 +177,6 @@ export function OverviewProvider({ children }: PropsWithChildren) {
   );
 
   return <OverviewContext.Provider value={value}>{children}</OverviewContext.Provider>;
-}
-
-function emptySnapshot(): ConnectionOverviewSnapshot {
-  return {
-    load: "idle",
-    error: undefined,
-    overview: undefined,
-    refreshing: false,
-    reviewReadySessionIds: new Set(),
-    readAtEpochMs: undefined,
-  };
 }
 
 export function useOverview(): OverviewStore {

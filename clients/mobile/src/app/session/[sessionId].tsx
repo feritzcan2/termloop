@@ -333,7 +333,7 @@ export default function SessionRoute() {
                 placeholder={
                   terminal.canSend
                     ? session.kind === "Agent" ? `Message ${agentName(session)}…` : "Type a command…"
-                    : "Not connected"
+                    : exited ? "Session ended" : "Reconnecting…"
                 }
                 placeholderTextColor={color.textMuted}
                 accessibilityLabel="Terminal input"

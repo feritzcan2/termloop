@@ -7,6 +7,36 @@ import { WebSocket, WebSocketServer } from "ws";
 import { describe, expect, it } from "vitest";
 
 describe("persistent mobile access gateway", () => {
+  it("preserves the full capped log generation before continuing in place", async () => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), "termloop-mobile-log-"));
+    const runtimeFile = path.join(directory, "runtime.json");
+    const gatewayConfig = path.join(directory, "gateway.json");
+    const logFile = path.join(directory, "gateway.log");
+    const evidence = `${"x".repeat((4 * 1024 * 1024) + 1)}incident-at-cap\n`;
+    writeFileSync(runtimeFile, runtime(49999, "r", "t"));
+    writeFileSync(logFile, evidence);
+    const gatewayPort = await freePort();
+    writeFileSync(gatewayConfig, JSON.stringify({
+      version: 1,
+      runtimeFile,
+      port: gatewayPort,
+      controlToken: "c".repeat(64),
+      terminalToken: "m".repeat(64),
+      logFile,
+    }));
+    const gateway = spawn(process.execPath, [path.resolve("scripts/mobile-access-gateway.mjs"), gatewayConfig], {
+      cwd: path.resolve("."), stdio: "ignore",
+    });
+    try {
+      await waitForHealth(gatewayPort);
+      expect(readFileSync(`${logFile}.overflow`, "utf8")).toBe(evidence);
+      expect(readFileSync(logFile, "utf8")).toBe("");
+      if (process.platform !== "win32") expect(statSync(`${logFile}.overflow`).mode & 0o777).toBe(0o600);
+    } finally {
+      gateway.kill("SIGTERM");
+    }
+  });
+
   it("stages an owner-selected image in the running agent's ignored runtime directory", async () => {
     const directory = mkdtempSync(path.join(os.tmpdir(), "termloop-mobile-image-"));
     const cwd = path.join(directory, "project");

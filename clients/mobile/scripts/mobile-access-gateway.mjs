@@ -1,6 +1,6 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { execFile } from "node:child_process";
-import { chmod, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, truncate, unlink, writeFile } from "node:fs/promises";
+import { chmod, copyFile, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, truncate, unlink, writeFile } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
@@ -8,6 +8,10 @@ import {
   createGatewayDiagnosticReporter,
   mobileDiagnosticContext,
 } from "./mobile-access-diagnostics.mjs";
+import {
+  sweepWebSocketHeartbeats,
+  trackWebSocketHeartbeat,
+} from "./mobile-access-heartbeat.mjs";
 import {
   apnsPayload,
   attentionTransitions,
@@ -49,6 +53,7 @@ import {
 
 const MOBILE_API_VERSION = 1;
 const LOG_LIMIT_BYTES = 4 * 1024 * 1024;
+const DOWNSTREAM_HEARTBEAT_MS = 30_000;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const IMAGE_RETENTION_MS = 24 * 60 * 60 * 1_000;
 const IMAGE_MEDIA_TYPES = new Map([
@@ -221,6 +226,7 @@ server.on("upgrade", (request, socket, head) => {
     const channel = pathname === "/control" ? "control" : "terminal";
     const startedAtEpochMs = Date.now();
     sockets.add(client);
+    trackWebSocketHeartbeat(client, { connectionId, channel });
     diagnostics.report("downstream", "accepted", { connectionId, channel });
     client.once("error", (error) => {
       diagnostics.report("downstream", "socket_error", {
@@ -244,6 +250,13 @@ server.on("upgrade", (request, socket, head) => {
   });
 });
 
+const heartbeatTimer = setInterval(() => {
+  sweepWebSocketHeartbeats(sockets, ({ connectionId, channel }) => {
+    diagnostics.report("downstream", "heartbeat_timeout", { connectionId, channel });
+  });
+}, DOWNSTREAM_HEARTBEAT_MS);
+heartbeatTimer.unref();
+
 server.listen(config.port, "127.0.0.1", () => {
   // A restart loop is otherwise indistinguishable from a silent gateway, so
   // record the one fact every diagnosis starts from. Never log credentials.
@@ -259,13 +272,17 @@ ensureTranscriber(path.dirname(configFile)).catch(() => {
   // The first transcription request will retry the build and surface failure.
 });
 
-// The supervisor holds this file open in append mode, so truncating in place is
-// safe: later writes resume at the new end. A crash loop restarts the process,
-// which is exactly when this bound gets re-applied.
+// The supervisor holds this file open in append mode, so copying then truncating
+// in place keeps its descriptor valid. Preserve one complete overflow generation:
+// losing the exact interval that crossed the cap made the hardest incidents
+// impossible to diagnose.
 async function boundLog() {
   if (config.logFile === undefined) return false;
   try {
     if ((await stat(config.logFile)).size <= LOG_LIMIT_BYTES) return false;
+    const overflowFile = `${config.logFile}.overflow`;
+    await copyFile(config.logFile, overflowFile);
+    await chmod(overflowFile, 0o600);
     await truncate(config.logFile, 0);
     return true;
   } catch { /* A missing or unreadable log must never stop mobile access. */ }
@@ -274,7 +291,7 @@ async function boundLog() {
 
 setInterval(() => {
   void boundLog().then((truncated) => {
-    if (truncated) diagnostics.report("gateway", "log_truncated", { limitBytes: LOG_LIMIT_BYTES });
+    if (truncated) diagnostics.report("gateway", "log_rotated", { limitBytes: LOG_LIMIT_BYTES });
   });
 }, 60_000).unref();
 
@@ -1461,14 +1478,17 @@ class CurrentControlConnection {
     }
     const id = `mobile-gateway-${++controlRequestSequence}`;
     const startedAtEpochMs = Date.now();
-    diagnostics.report("upstreamControl", "request_started", {
-      role: this.role,
-      requestId: id,
-      method,
-      pendingRequests: this.#pending.size + 1,
-      generation: this.#generation,
-      ...trace,
-    });
+    const downstreamRequest = trace?.downstreamConnectionId !== undefined;
+    if (downstreamRequest) {
+      diagnostics.report("upstreamControl", "request_started", {
+        role: this.role,
+        requestId: id,
+        method,
+        pendingRequests: this.#pending.size + 1,
+        generation: this.#generation,
+        ...trace,
+      });
+    }
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (!this.#pending.delete(id)) return;
@@ -1501,13 +1521,15 @@ class CurrentControlConnection {
             method,
             params,
           }));
-          diagnostics.report("upstreamControl", "request_sent", {
-            role: this.role,
-            requestId: id,
-            method,
-            generation: this.#generation,
-            ...trace,
-          });
+          if (downstreamRequest) {
+            diagnostics.report("upstreamControl", "request_sent", {
+              role: this.role,
+              requestId: id,
+              method,
+              generation: this.#generation,
+              ...trace,
+            });
+          }
         } catch (cause) {
           diagnostics.report("upstreamControl", "request_send_failed", {
             role: this.role,
@@ -1685,15 +1707,17 @@ class CurrentControlConnection {
     this.#pending.delete(response.id);
     clearTimeout(pending.timeout);
     if (response.ok === true) {
-      diagnostics.report("upstreamControl", "request_completed", {
-        role: this.role,
-        requestId: response.id,
-        method: pending.method,
-        ok: true,
-        durationMs: Date.now() - pending.startedAtEpochMs,
-        pendingRequests: this.#pending.size,
-        ...pending.trace,
-      });
+      if (pending.trace?.downstreamConnectionId !== undefined) {
+        diagnostics.report("upstreamControl", "request_completed", {
+          role: this.role,
+          requestId: response.id,
+          method: pending.method,
+          ok: true,
+          durationMs: Date.now() - pending.startedAtEpochMs,
+          pendingRequests: this.#pending.size,
+          ...pending.trace,
+        });
+      }
       pending.resolve(response.result);
       return;
     }
@@ -1971,6 +1995,7 @@ function safeCloseCode(code) {
 }
 
 function shutdown() {
+  clearInterval(heartbeatTimer);
   diagnostics.report("gateway", "shutdown_started", { openSockets: sockets.size });
   for (const socket of sockets) socket.close(1001, "gateway restarting");
   server.close(() => process.exit(0));

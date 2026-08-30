@@ -16,7 +16,6 @@ import { Row } from "@/components/row";
 import { useConnections } from "@/features/connection/connection-store";
 import { useOverview } from "@/features/overview/overview-store";
 import { buildLocatedProjectSummaries } from "@/presentation/attention-overview";
-import { connectionPresentation } from "@/presentation/connection-presentation";
 import { color, space } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
 
@@ -40,8 +39,8 @@ export default function HomeRoute() {
   const snapshots = [...overview.byConnection.values()];
   const projectReadsSettled = connections.load !== "loading"
     && snapshots.every((snapshot) => !snapshot.refreshing && snapshot.load !== "loading");
-  const unavailableNames = connections.connections
-    .filter((connection) => connectionPresentation(connection.availability).block !== undefined)
+  const offlineNames = connections.connections
+    .filter((connection) => connection.availability === "offline")
     .map((connection) => connection.name);
   const failedNames = connections.connections
     .filter((connection) => overview.byConnection.get(connection.id)?.load === "failed")
@@ -129,10 +128,10 @@ export default function HomeRoute() {
           />
         )}
 
-        {unavailableNames.length === 0 ? null : (
+        {offlineNames.length === 0 ? null : (
           <Banner
             kind="warning"
-            message={`${unavailableNames.join(", ")} şu anda çevrimdışı; bağlanınca projeleri bu listeye eklenecek.`}
+            message={`${offlineNames.join(", ")} şu anda çevrimdışı; son bilinen proje ve agent durumu gösteriliyor, yeniden bağlantı otomatik deneniyor.`}
           />
         )}
 
