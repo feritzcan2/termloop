@@ -1680,6 +1680,9 @@ export function Shell(props: ShellProps) {
               listRoutines={props.assistantActions.listRoutines}
               listRoutineRuntime={props.assistantActions.listRoutineRuntime}
               runRoutineNow={props.assistantActions.runRoutineNow}
+              agentCapabilities={props.agentCapabilities}
+              launchTerminal={props.launchTaskTerminal}
+              launchAgent={props.launchTaskAgent}
             /> : stagePage?.kind === "skill" ? <SkillEditorPanel
               key={stagePage.id}
               skillId={stagePage.id}

@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, memo, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useDraggable, useDroppable, type DraggableAttributes, type DraggableSyntheticListeners } from "@dnd-kit/core";
 import type { AgentGroupLayout } from "../../layout/model.js";
 import { agentName, basename, canDismissTaskWorktreeProvisioning, isLiveSession, taskJiraIssueKey, type AgentStatus, type BranchCommitSummary, type GitHostProjection, type RunConfiguration, type RunRuntime, type Session, type Task, type TaskDeleteWorktreeResult, type TaskDeleteWorktreeReview } from "../model.js";
@@ -19,7 +19,6 @@ import { isAssistantSession } from "./AssistantRail.js";
 import { isProjectRelocationDragCandidate, isTaskRelocationDragCandidate, useOptionalSidebarSessionDnd, type SessionDropPlacement } from "./SidebarSessionDnd.js";
 import { readWorktreeParentPath, writeWorktreeParentPath } from "../worktree-parent-memory.js";
 import { readTaskCollapsed, writeTaskCollapsed } from "../task-collapse-memory.js";
-import { readTaskTabSelection, writeTaskTabSelection, type TaskTabStatus } from "../task-tab-memory.js";
 import { readFavoriteTaskIds, writeFavoriteTaskIds } from "../task-favorite-memory.js";
 import { AgentPlanDisclosure } from "./AgentPlanDisclosure.js";
 import { RunSessionLine, TaskRunLaunchers, runCommandsBySessionId, runtimesBySessionId } from "./TaskRuns.js";
@@ -27,13 +26,24 @@ import type { RunImprovement } from "./TaskRuns.js";
 import { AgentGroupFrame, agentSessionClusterMembers, agentSessionClusters, type AgentSessionCluster } from "./AgentGroup.js";
 
 type MenuState = { taskId: string; x: number; y: number; invoker: HTMLElement };
-type TaskListTab = TaskTabStatus;
 let taskRowRenderCount = 0;
 
-function rememberedTaskTabs(projectId: string | undefined): Partial<Record<TaskListTab, string>> {
-  const active = readTaskTabSelection(projectId, "active");
-  const closed = readTaskTabSelection(projectId, "closed");
-  return { ...(active ? { active } : {}), ...(closed ? { closed } : {}) };
+/// Archive paging keeps a Project with hundreds of closed Tasks from mounting
+/// every row at once; search appears once the list outgrows a single glance.
+const ARCHIVE_PAGE_SIZE = 30;
+const ARCHIVE_SEARCH_THRESHOLD = 8;
+
+/// Case-insensitive match over the facts a person remembers a closed Task by:
+/// its title, branch, and ticket key. Every whitespace-separated word must hit.
+export function filterArchivedTasks(tasks: readonly Task[], query: string): Task[] {
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [...tasks];
+  return tasks.filter((task) => {
+    const haystack = [task.title, task.brief ?? "", task.branch?.name ?? "", task.jira_url ? taskJiraIssueKey(task.jira_url) ?? "" : ""]
+      .join(" ")
+      .toLowerCase();
+    return words.every((word) => haystack.includes(word));
+  });
 }
 
 export function taskRowRenders(): number {
@@ -274,13 +284,16 @@ export type TaskRailProps = {
 };
 
 export function TaskRail(props: TaskRailProps) {
-  const [selectedTab, setSelectedTab] = useState<TaskListTab>("active");
-  const [selectedTaskIds, setSelectedTaskIds] = useState<Partial<Record<TaskListTab, string>>>(() => rememberedTaskTabs(props.projectId));
+  /// The rail is a board of every active Task plus a folded archive. Only the
+  /// archive keeps view state: whether it is open, the search text, and how
+  /// many of the (potentially hundreds of) closed rows have been paged in.
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archiveQuery, setArchiveQuery] = useState("");
+  const [archivePageCount, setArchivePageCount] = useState(1);
   const [favoriteTaskIds, setFavoriteTaskIds] = useState<ReadonlySet<string>>(() => readFavoriteTaskIds(props.projectId));
   const [renamingTaskTab, setRenamingTaskTab] = useState<{ taskId: string; title: string; busy: boolean; error: string | undefined }>();
   const [closingTaskTab, setClosingTaskTab] = useState<{ taskId: string; busy: boolean }>();
   const taskListId = useId();
-  const taskTabsRef = useRef<HTMLDivElement>(null);
   const [editor, setEditor] = useState<EditorState>();
   const [menu, setMenu] = useState<MenuState>();
   const [clockNowEpochMs, setClockNowEpochMs] = useState(Date.now);
@@ -331,17 +344,14 @@ export function TaskRail(props: TaskRailProps) {
     props.reviewReadySessionIds,
     favoriteTaskIds,
   );
-  const closedTasks = props.tasks.filter((task) => task.status === "closed");
-  const taskTabPresentationById = useMemo(() => new Map(props.tasks.map((task) => {
-    const sessions = taskSessions(task, props.sessionsById);
-    const attention = agentAttention(sessions, props.statusesById, props.reviewReadySessionIds);
-    const stage = taskStage(task, props.deletingTaskIds.has(task.id), props.provisioningTaskIds?.has(task.id));
-    return [task.id, {
-      attention,
-      tone: taskRowTone(stage, attention),
-      liveAgentCount: sessions.filter((session) => session.kind === "Agent" && isLiveSession(session)).length,
-    }] as const;
-  })), [props.tasks, props.sessionsById, props.statusesById, props.reviewReadySessionIds, props.deletingTaskIds, props.provisioningTaskIds]);
+  /// Newest-closed first: `updated_at_epoch_ms` is the last write Core made to
+  /// the Task, and closing is that write for an archived-by-closing Task.
+  const closedTasks = useMemo(() => props.tasks
+    .filter((task) => task.status === "closed")
+    .sort((left, right) => right.updated_at_epoch_ms - left.updated_at_epoch_ms), [props.tasks]);
+  const archiveMatches = useMemo(() => filterArchivedTasks(closedTasks, archiveQuery), [closedTasks, archiveQuery]);
+  const archiveVisible = archiveMatches.slice(0, archivePageCount * ARCHIVE_PAGE_SIZE);
+  const archiveRemaining = archiveMatches.length - archiveVisible.length;
   const menuTask = menu ? props.tasks.find((task) => task.id === menu.taskId) : undefined;
   const currentDeleteTarget = deleteTarget
     ? props.tasks.find((task) => task.id === deleteTarget.id) ?? deleteTarget
@@ -358,6 +368,18 @@ export function TaskRail(props: TaskRailProps) {
       key={`${props.projectId ?? "unknown"}:${task.id}`}
       projectId={props.projectId}
       task={task}
+      favorite={favoriteTaskIds.has(task.id)}
+      toggleFavorite={task.status === "open" ? toggleTaskFavorite : undefined}
+      renaming={renamingTaskTab?.taskId === task.id ? renamingTaskTab : undefined}
+      beginRename={task.status === "open" ? beginTaskRename : undefined}
+      changeRename={changeTaskRename}
+      cancelRename={cancelTaskRename}
+      commitRename={commitTaskTabRename}
+      closing={closingTaskTab?.taskId === task.id ? closingTaskTab : undefined}
+      beginClose={task.status === "open" ? beginTaskClose : undefined}
+      cancelClose={cancelTaskClose}
+      confirmClose={confirmTaskTabClose}
+      disabled={props.disabled ?? false}
       gitHostProjection={gitHostByTask.get(task.id)}
       branchCommitSummary={branchCommitsByTask.get(task.id)}
       runConfigurations={props.runConfigurations}
@@ -403,8 +425,9 @@ export function TaskRail(props: TaskRailProps) {
   );
 
   useEffect(() => {
-    setSelectedTab("active");
-    setSelectedTaskIds(rememberedTaskTabs(props.projectId));
+    setArchiveOpen(false);
+    setArchiveQuery("");
+    setArchivePageCount(1);
     setFavoriteTaskIds(readFavoriteTaskIds(props.projectId));
     setRenamingTaskTab(undefined);
     setClosingTaskTab(undefined);
@@ -495,19 +518,6 @@ export function TaskRail(props: TaskRailProps) {
     closeMenu();
     void action();
   };
-  const selectAdjacentTab = (event: KeyboardEvent<HTMLButtonElement>, tab: TaskListTab) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    setSelectedTab(tab);
-    event.currentTarget.parentElement
-      ?.querySelector<HTMLButtonElement>(`[data-task-list-tab="${tab}"]`)
-      ?.focus();
-  };
-  const selectedTask = openTasks.find((task) => task.id === selectedTaskIds.active) ?? openTasks[0];
-  const selectTask = useCallback((status: TaskListTab, taskId: string) => {
-    setSelectedTaskIds((current) => ({ ...current, [status]: taskId }));
-    writeTaskTabSelection(props.projectId, status, taskId);
-  }, [props.projectId]);
   const toggleTaskFavorite = useCallback((taskId: string) => {
     setFavoriteTaskIds((current) => {
       const next = new Set(current);
@@ -517,6 +527,8 @@ export function TaskRail(props: TaskRailProps) {
       return next;
     });
   }, [props.projectId]);
+  const beginTaskClose = useCallback((taskId: string) => setClosingTaskTab({ taskId, busy: false }), []);
+  const cancelTaskClose = useCallback(() => setClosingTaskTab(undefined), []);
   const confirmTaskTabClose = async (taskId: string) => {
     if (closingTaskTab?.taskId !== taskId || closingTaskTab.busy) return;
     const task = props.tasks.find((candidate) => candidate.id === taskId);
@@ -529,6 +541,10 @@ export function TaskRail(props: TaskRailProps) {
     await props.setTaskClosed(taskId, true);
     setClosingTaskTab((current) => current?.taskId === taskId ? undefined : current);
   };
+  const beginTaskRename = useCallback((task: Task) => setRenamingTaskTab({ taskId: task.id, title: task.title, busy: false, error: undefined }), []);
+  const changeTaskRename = useCallback((taskId: string, title: string) =>
+    setRenamingTaskTab((current) => current?.taskId === taskId ? { ...current, title, error: undefined } : current), []);
+  const cancelTaskRename = useCallback(() => setRenamingTaskTab(undefined), []);
   const commitTaskTabRename = async (task: Task) => {
     if (!renamingTaskTab || renamingTaskTab.taskId !== task.id || renamingTaskTab.busy) return;
     const title = renamingTaskTab.title.trim();
@@ -544,127 +560,74 @@ export function TaskRail(props: TaskRailProps) {
       setRenamingTaskTab(undefined);
     }
   };
-  useEffect(() => {
-    if (!selectedTask || selectedTaskIds.active === selectedTask.id) return;
-    selectTask("active", selectedTask.id);
-  }, [selectTask, selectedTask, selectedTaskIds.active]);
-  useEffect(() => {
-    taskTabsRef.current
-      ?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
-      ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-  }, [selectedTask?.id]);
-  const selectTaskByKeyboard = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
-    let nextIndex: number | undefined;
-    if (event.key === "ArrowLeft") nextIndex = index === 0 ? openTasks.length - 1 : index - 1;
-    if (event.key === "ArrowRight") nextIndex = index === openTasks.length - 1 ? 0 : index + 1;
-    if (event.key === "Home") nextIndex = 0;
-    if (event.key === "End") nextIndex = openTasks.length - 1;
-    if (nextIndex === undefined) return;
-    event.preventDefault();
-    const next = openTasks[nextIndex];
-    if (!next) return;
-    selectTask("active", next.id);
-    taskTabsRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]?.focus();
-  };
 
   return (
     <section className="rail-section task-section" aria-label="Project Tasks">
-      <div className="task-list-tabs" role="tablist" aria-label="Task status">
-        <button type="button" role="tab" data-task-list-tab="active" aria-selected={selectedTab === "active"} aria-controls={taskListId} tabIndex={selectedTab === "active" ? 0 : -1} className={selectedTab === "active" ? "selected" : undefined} onKeyDown={(event) => selectAdjacentTab(event, "closed")} onClick={() => setSelectedTab("active")}>Active</button>
-        <button type="button" role="tab" data-task-list-tab="closed" aria-selected={selectedTab === "closed"} aria-controls={taskListId} tabIndex={selectedTab === "closed" ? 0 : -1} className={selectedTab === "closed" ? "selected" : undefined} onKeyDown={(event) => selectAdjacentTab(event, "active")} onClick={() => setSelectedTab("closed")}>Closed</button>
+      <div className="task-board-head">
+        <h3 className="task-board-title">
+          Active
+          {openTasks.length > 0 ? <span className="task-board-count" aria-label={`${openTasks.length} active ${openTasks.length === 1 ? "Task" : "Tasks"}`}>{openTasks.length}</span> : null}
+        </h3>
+        <button type="button" className="task-board-create" aria-label="Create Task" title="Create Task" disabled={props.disabled} onClick={() => setEditor({ mode: "create" })}><Icon name="add" /></button>
       </div>
-        <div id={taskListId} className="task-status-panel" role="tabpanel" aria-label={`${selectedTab === "active" ? "Active" : "Closed"} Tasks`}>
-          {selectedTab === "active" && openTasks.length > 0 ? (
-            <div className="task-item-tab-bar">
-              <button type="button" className="task-tab-create" aria-label="Create Task" title="Create Task" disabled={props.disabled} onClick={() => setEditor({ mode: "create" })}><Icon name="add" /></button>
-              <div ref={taskTabsRef} className="task-item-tabs" role="tablist" aria-label="Active Task selection">
-                {openTasks.map((task, index) => {
-                const selected = task.id === selectedTask?.id;
-                const favorite = favoriteTaskIds.has(task.id);
-                const deleting = props.deletingTaskIds.has(task.id);
-                const renaming = renamingTaskTab?.taskId === task.id;
-                const closing = closingTaskTab?.taskId === task.id;
-                const presentation = taskTabPresentationById.get(task.id);
-                const state = presentation?.attention?.label ?? (presentation?.liveAgentCount ? `${presentation.liveAgentCount} live ${presentation.liveAgentCount === 1 ? "agent" : "agents"}` : undefined);
-                return <div key={task.id} className={`task-item-tab${selected ? " selected" : ""}${favorite ? " favorited" : ""}`} data-tone={presentation?.tone}>
-                  {renaming ? <input
-                    autoFocus
-                    id={`${taskListId}-task-${index}`}
-                    className="task-item-tab-rename"
-                    data-task-tab-id={task.id}
-                    value={renamingTaskTab.title}
-                    maxLength={160}
-                    disabled={renamingTaskTab.busy}
-                    aria-label={`Rename ${task.title}`}
-                    aria-invalid={Boolean(renamingTaskTab.error)}
-                    title={renamingTaskTab.error ?? "Enter to save · Escape to cancel"}
-                    onFocus={(event) => event.currentTarget.select()}
-                    onChange={(event) => setRenamingTaskTab((current) => current?.taskId === task.id ? { ...current, title: event.target.value, error: undefined } : current)}
-                    onClick={(event) => event.stopPropagation()}
-                    onBlur={() => { void commitTaskTabRename(task); }}
-                    onKeyDown={(event) => {
-                      event.stopPropagation();
-                      if (event.key === "Enter") event.currentTarget.blur();
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        setRenamingTaskTab(undefined);
-                      }
-                    }}
-                  /> : <button
-                    type="button"
-                    role="tab"
-                    id={`${taskListId}-task-${index}`}
-                    aria-controls={`${taskListId}-selected-task`}
-                    data-task-tab-id={task.id}
-                    data-tone={presentation?.tone}
-                    aria-selected={selected}
-                    aria-label={`${task.title}${deleting ? ", Deleting" : state ? `, ${state}` : ""}`}
-                    title={`${task.title}${deleting ? " · Deleting…" : state ? ` · ${state}` : ""}`}
-                    tabIndex={selected ? 0 : -1}
-                    className="task-item-tab-select"
-                    onKeyDown={(event) => selectTaskByKeyboard(event, index)}
-                    onContextMenu={(event) => { event.preventDefault(); openMenu(task, event.clientX, event.clientY, event.currentTarget); }}
-                    onClick={() => selectTask("active", task.id)}
-                    onDoubleClick={(event) => { event.preventDefault(); selectTask("active", task.id); setRenamingTaskTab({ taskId: task.id, title: task.title, busy: false, error: undefined }); }}
-                  ><i className={`task-tab-dot ${presentation?.tone ?? "quiet"}`} aria-hidden="true" /><span>{deleting ? "Deleting…" : task.title}</span>{presentation?.attention?.tone === "attention" ? <i className="task-tab-attention" aria-hidden="true" /> : null}</button>
-                  }
-                  {closing ? <div className="task-item-tab-close-confirm" role="group" aria-label={`Close ${task.title}?`} onKeyDown={(event) => {
-                    if (event.key !== "Escape" || closingTaskTab.busy) return;
-                    event.preventDefault();
-                    setClosingTaskTab(undefined);
-                  }}>
-                    <span>Sure?</span>
-                    <button type="button" autoFocus aria-label={`Confirm close ${task.title}`} disabled={closingTaskTab.busy} onClick={() => { void confirmTaskTabClose(task.id); }}>{closingTaskTab.busy ? "…" : "Yes"}</button>
-                    <button type="button" aria-label={`Cancel close ${task.title}`} disabled={closingTaskTab.busy} onClick={() => setClosingTaskTab(undefined)}>No</button>
-                  </div> : <>
-                    <button type="button" className="task-item-tab-favorite" aria-label={`${favorite ? "Unfavorite" : "Favorite"} ${task.title}`} aria-pressed={favorite} title={favorite ? "Remove from favorites" : "Favorite Task"} onClick={() => toggleTaskFavorite(task.id)}><Icon name="star" /></button>
-                    <button type="button" className="task-item-tab-close" aria-label={`Close ${task.title}`} title={task.worktree ? "Clean up worktree and close Task" : "Close Task"} disabled={props.disabled || deleting} onClick={() => setClosingTaskTab({ taskId: task.id, busy: false })}><Icon name="close" /></button>
-                  </>}
-                </div>;
-              })}
+      {/* Every active Task is on the board at once: with a handful open there is
+          nothing to select between, so each one renders as its own full card. */}
+      <div className="task-list task-board" role="list" aria-label="Active Tasks">
+        {openTasks.map((task) => renderTask(task, true))}
+        {/* A first-ever visitor gets the one-sentence model and the primary
+            action; anyone with existing closed or archived Tasks already
+            knows it and gets the quiet line back. */}
+        {openTasks.length === 0 ? (
+          props.tasks.length === 0 && props.archivedTaskCount === 0 ? (
+            <div className="task-empty">
+              <p className="task-empty-copy">A Task is one piece of work with its own Git checkout — a worktree. Terminals and agents you start inside it stay grouped under it.</p>
+              <button type="button" className="task-empty-create" disabled={props.disabled} onClick={() => setEditor({ mode: "create" })}><Icon name="add" />Create your first Task</button>
+              <p className="task-empty-hint">Just exploring? The buttons above open a Terminal, Claude, or Codex in the Project folder without a Task.</p>
+            </div>
+          ) : <p className="rail-empty">No active Tasks. Create one to start.</p>
+        ) : null}
+      </div>
+      {/* Closed Tasks are an archive, not a second board: folded by default,
+          searchable once open, and paged so hundreds of rows never mount at
+          once. Nothing here is rendered while folded. */}
+      {closedTasks.length > 0 ? (
+        <div className={`task-archive${archiveOpen ? " open" : ""}`}>
+          <button
+            type="button"
+            className="task-archive-toggle"
+            aria-expanded={archiveOpen}
+            aria-controls={`${taskListId}-archive`}
+            onClick={() => setArchiveOpen((current) => !current)}
+          >
+            <Icon name="chevronDown" />
+            <span>Closed</span>
+            <span className="task-archive-count">{closedTasks.length}</span>
+          </button>
+          {archiveOpen ? (
+            <div id={`${taskListId}-archive`} className="task-archive-body">
+              {closedTasks.length > ARCHIVE_SEARCH_THRESHOLD ? (
+                <input
+                  type="search"
+                  className="task-archive-search"
+                  placeholder="Search closed Tasks"
+                  aria-label="Search closed Tasks"
+                  value={archiveQuery}
+                  onChange={(event) => { setArchiveQuery(event.target.value); setArchivePageCount(1); }}
+                />
+              ) : null}
+              <div className="task-list task-archive-list" role="list" aria-label="Closed Tasks">
+                {archiveVisible.map((task) => renderTask(task))}
+                {archiveMatches.length === 0 ? <p className="rail-empty">No closed Tasks match.</p> : null}
               </div>
+              {archiveRemaining > 0 ? (
+                <button type="button" className="task-archive-more" onClick={() => setArchivePageCount((current) => current + 1)}>
+                  Show {Math.min(archiveRemaining, ARCHIVE_PAGE_SIZE)} more
+                </button>
+              ) : null}
             </div>
           ) : null}
-          <div id={`${taskListId}-selected-task`} role={selectedTab === "active" ? "tabpanel" : undefined} aria-labelledby={selectedTab === "active" && selectedTask ? `${taskListId}-task-${openTasks.indexOf(selectedTask)}` : undefined}>
-          <div className="task-list" role="list" aria-label={`${selectedTab === "active" ? "Active" : "Closed"} Tasks`}>
-          {selectedTab === "active" && selectedTask ? renderTask(selectedTask, true) : null}
-          {selectedTab === "closed" ? closedTasks.map((task) => renderTask(task)) : null}
-          {/* A first-ever visitor gets the one-sentence model and the primary
-              action; anyone with existing closed or archived Tasks already
-              knows it and gets the quiet line back. */}
-          {selectedTab === "active" && openTasks.length === 0 ? (
-            props.tasks.length === 0 && props.archivedTaskCount === 0 ? (
-              <div className="task-empty">
-                <p className="task-empty-copy">A Task is one piece of work with its own Git checkout — a worktree. Terminals and agents you start inside it stay grouped under it.</p>
-                <button type="button" className="task-empty-create" disabled={props.disabled} onClick={() => setEditor({ mode: "create" })}><Icon name="add" />Create your first Task</button>
-                <p className="task-empty-hint">Just exploring? The buttons above open a Terminal, Claude, or Codex in the Project folder without a Task.</p>
-              </div>
-            ) : <p className="rail-empty">No active Tasks. Create one to start.</p>
-          ) : null}
-          {selectedTab === "closed" && closedTasks.length === 0 ? <p className="rail-empty">No closed Tasks.</p> : null}
-          </div>
-          </div>
         </div>
+      ) : null}
       <OverlayPortal container={props.overlayContainer}>
       {menu && menuTask && !props.deletingTaskIds.has(menuTask.id) ? (
         <div className="context-menu-layer" onKeyDown={(event) => { if (event.key === "Escape") closeMenu(); }}>
@@ -821,6 +784,18 @@ type TaskGroupProps = {
   provisioning: boolean;
   nowEpochMs: number;
   focused: boolean;
+  favorite: boolean;
+  toggleFavorite: ((taskId: string) => void) | undefined;
+  renaming: { title: string; busy: boolean; error: string | undefined } | undefined;
+  beginRename: ((task: Task) => void) | undefined;
+  changeRename(taskId: string, title: string): void;
+  cancelRename(): void;
+  commitRename(task: Task): Promise<void>;
+  closing: { busy: boolean } | undefined;
+  beginClose: ((taskId: string) => void) | undefined;
+  cancelClose(): void;
+  confirmClose(taskId: string): Promise<void>;
+  disabled: boolean;
 };
 
 /// One Task rendered as the legacy worktree group: a quiet header line, then the
@@ -975,7 +950,31 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
             place at the same time; with the detail already showing, the click
             toggles that disclosure instead. Editing stays in the actions menu
             so a first click can never open a modal. */}
-        <button
+        {/* Inline rename takes the title button's own grid cell so the card keeps
+            its shape; Enter saves, Escape cancels, blur saves. */}
+        {props.renaming ? <input
+          autoFocus
+          className="task-rename"
+          data-task-rename-id={task.id}
+          value={props.renaming.title}
+          maxLength={160}
+          disabled={props.renaming.busy}
+          aria-label={`Rename ${task.title}`}
+          aria-invalid={Boolean(props.renaming.error)}
+          title={props.renaming.error ?? "Enter to save · Escape to cancel"}
+          onFocus={(event) => event.currentTarget.select()}
+          onChange={(event) => props.changeRename(task.id, event.target.value)}
+          onClick={(event) => event.stopPropagation()}
+          onBlur={() => { void props.commitRename(task); }}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.key === "Enter") event.currentTarget.blur();
+            if (event.key === "Escape") {
+              event.preventDefault();
+              props.cancelRename();
+            }
+          }}
+        /> :         <button
           type="button"
           className={`task-item ${task.status}${props.detailOpen ? " showing-detail" : ""}`}
           disabled={props.deleting}
@@ -984,6 +983,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
           aria-label={`Open ${taskRowAccessibleName({ task, stage, attention, divergence, changeCount, integration, commitCount })}`}
           title={task.brief ? `${task.title} — ${task.brief}` : task.title}
           onClick={rowClick}
+          onDoubleClick={props.beginRename ? (event) => { event.preventDefault(); props.beginRename!(task); } : undefined}
           onContextMenu={(event) => { event.preventDefault(); props.openMenu(task, event.clientX, event.clientY, event.currentTarget); }}
           onKeyDown={(event) => {
             if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
@@ -1000,7 +1000,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
               {task.brief ? <small className="task-focus-brief">{task.brief}</small> : null}
             </span> : <strong className="task-title">{task.title}</strong>}
           </span>
-        </button>
+        </button>}
         {/* One dot per live agent, loudest first, capped so the title keeps its
             width. Clicking a dot opens that agent's terminal without expanding
             the Task; the full Session rows stay behind the chevron. */}
@@ -1020,7 +1020,32 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
             {liveAgents.length > 4 ? <span className="task-agents-more" aria-hidden="true">+{liveAgents.length - 4}</span> : null}
           </span>
         ) : null}
-        <div className="row-actions">
+        {props.closing ? <div className="task-close-confirm" role="group" aria-label={`Close ${task.title}?`} onKeyDown={(event) => {
+          if (event.key !== "Escape" || props.closing!.busy) return;
+          event.preventDefault();
+          props.cancelClose();
+        }}>
+          <span>Close?</span>
+          <button type="button" autoFocus aria-label={`Confirm close ${task.title}`} disabled={props.closing.busy} onClick={() => { void props.confirmClose(task.id); }}>{props.closing.busy ? "…" : "Yes"}</button>
+          <button type="button" aria-label={`Cancel close ${task.title}`} disabled={props.closing.busy} onClick={props.cancelClose}>No</button>
+        </div> : null}
+        <div className={`row-actions${props.favorite ? " has-favorite" : ""}`}>
+          {props.toggleFavorite && !props.deleting ? <button
+            type="button"
+            className="row-action task-favorite"
+            aria-label={`${props.favorite ? "Unfavorite" : "Favorite"} ${task.title}`}
+            aria-pressed={props.favorite}
+            title={props.favorite ? "Remove from favorites" : "Favorite Task"}
+            onClick={() => props.toggleFavorite!(task.id)}
+          ><Icon name="star" /></button> : null}
+          {props.beginClose && !props.deleting ? <button
+            type="button"
+            className="row-action task-close"
+            aria-label={`Close ${task.title}`}
+            title={task.worktree ? "Clean up worktree and close Task" : "Close Task"}
+            disabled={props.disabled}
+            onClick={() => props.beginClose!(task.id)}
+          ><Icon name="close" /></button> : null}
           <button
             type="button"
             className="row-action"
@@ -1046,10 +1071,6 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         openIntegration={openIntegration}
         openIssue={() => { if (task.jira_url) void props.openExternal(task.jira_url); }}
       />
-      {props.focused && !props.deleting ? <dl className="task-focus-facts">
-        <div><dt>Status</dt><dd className={attention?.tone}>{attention ? `${attention.label} — ${attention.agent}` : stage.summary}</dd></div>
-        <div><dt>Checkout</dt><dd title={task.worktree?.path ?? "No worktree created"}>{task.worktree ? basename(task.worktree.path) : "Not created"}</dd></div>
-      </dl> : null}
       {action ? (
         action.kind === "nextStep" ? (
           <button
@@ -1218,7 +1239,13 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
   && left.deleting === right.deleting
   && left.nowEpochMs === right.nowEpochMs
   && left.agentCapabilities === right.agentCapabilities
-  && left.setupRunImprovement === right.setupRunImprovement);
+  && left.setupRunImprovement === right.setupRunImprovement
+  && left.focused === right.focused
+  && left.detailOpen === right.detailOpen
+  && left.favorite === right.favorite
+  && left.renaming === right.renaming
+  && left.closing === right.closing
+  && left.disabled === right.disabled);
 
 function TaskSessionRow({ session, dropPlacement, children }: {
   session: Session;
@@ -1266,7 +1293,7 @@ function TaskSessionRow({ session, dropPlacement, children }: {
   );
 }
 
-type TaskMetaLineProps = {
+export type TaskMetaLineProps = {
   task: Task;
   stage: TaskStage;
   divergence: TaskDivergence | undefined;
@@ -1315,7 +1342,7 @@ function Signal({ tone, label, title, ariaLabel, onClick }: {
 ///
 /// A Task being deleted states its stage and nothing else: every other item
 /// here is a fact about to disappear.
-function TaskMetaLine(props: TaskMetaLineProps) {
+export function TaskMetaLine(props: TaskMetaLineProps) {
   const { task, stage, divergence, changeCount, branchChanges, integration } = props;
   const deleting = stage.id === "deleting";
   /// A closed Task keeps its identity but stops asking for anything: its

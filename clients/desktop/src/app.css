@@ -292,51 +292,52 @@ kbd { padding: 2px 5px; border: 1px solid rgba(255,255,255,.07); border-radius: 
    so a settled list reads as grey with one or two lit rows. Type encodes
    provenance: the UI face is what a person wrote, the mono face is what
    TermLoop observed. */
-.task-list-tabs { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 3px; margin: 6px 10px 0; padding: 3px; border-radius: 7px; background: rgba(0,0,0,.12); }
-.task-list-tabs button { min-height: 24px; padding: 0 8px; border: 0; border-radius: 5px; background: transparent; color: var(--sidebar-dimmer); font: 600 9.5px/1 var(--font-ui); }
-.task-list-tabs button:hover { background: rgba(255,255,255,.04); color: var(--sidebar-text); }
-.task-list-tabs button:focus-visible { outline: 1px solid var(--accent-strong); outline-offset: 1px; }
-.task-list-tabs button.selected { background: var(--accent-wash); color: var(--accent-strong); }
-.task-status-panel { min-width: 0; }
-.task-item-tab-bar { display: flex; min-width: 0; align-items: center; gap: 4px; margin-top: 5px; padding: 0 10px 5px; }
-.task-tab-create { display: grid; flex: 0 0 27px; width: 27px; height: 27px; place-items: center; padding: 0; border: 1px solid rgba(255,255,255,.07); border-radius: 6px; background: rgba(255,255,255,.025); color: var(--sidebar-dimmer); }
-.task-tab-create:hover { border-color: rgba(124,92,255,.3); background: var(--accent-wash); color: var(--sidebar-text); }
-.task-tab-create:focus-visible { outline: 1px solid var(--accent-strong); outline-offset: -1px; }
-.task-tab-create svg { width: 13px; height: 13px; }
-.task-item-tabs { display: flex; min-width: 0; gap: 3px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; scroll-snap-type: x proximity; }
-.task-item-tabs::-webkit-scrollbar { display: none; }
-.task-item-tab { position: relative; flex: 0 0 auto; min-width: 76px; max-width: 142px; height: 27px; border: 1px solid transparent; border-radius: 6px; color: var(--sidebar-dimmer); scroll-snap-align: nearest; }
-.task-item-tab:hover { border-color: rgba(255,255,255,.06); background: rgba(255,255,255,.035); color: var(--sidebar-text); }
-.task-item-tab.selected { border-color: rgba(124,92,255,.24); background: var(--accent-wash); color: var(--sidebar-text); }
-.task-item-tab-select { display: grid; grid-template-columns: 7px minmax(44px,1fr) 5px; align-items: center; gap: 5px; width: 100%; height: 100%; padding: 0 8px; border: 0; border-radius: inherit; background: transparent; color: inherit; text-align: left; }
-.task-item-tab-select:focus-visible { outline: 1px solid var(--accent-strong); outline-offset: -1px; }
-.task-item-tab-select > span { min-width: 0; overflow: hidden; font: 600 9.5px/1 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
-.task-item-tab-rename { width: 100%; height: 100%; padding: 0 42px 0 8px; border: 0; border-radius: inherit; outline: 1px solid var(--accent-strong); outline-offset: -1px; background: rgba(0,0,0,.16); color: var(--sidebar-text); font: 600 9.5px/1 var(--font-ui); }
-.task-item-tab-rename[aria-invalid="true"] { outline-color: var(--danger); }
-.task-item-tab.favorited .task-item-tab-select { padding-right: 42px; }
-.task-item-tab:hover .task-item-tab-select, .task-item-tab:focus-within .task-item-tab-select { padding-right: 42px; }
-.task-item-tab-favorite, .task-item-tab-close { position: absolute; z-index: 1; top: 4px; display: grid; width: 18px; height: 18px; place-items: center; padding: 0; border: 0; border-radius: 4px; background: color-mix(in srgb, var(--sidebar-bg) 82%, transparent); color: var(--sidebar-dimmer); opacity: 0; pointer-events: none; }
-.task-item-tab-favorite { right: 21px; }
-.task-item-tab-close { right: 3px; }
-.task-item-tab:hover .task-item-tab-favorite, .task-item-tab:hover .task-item-tab-close, .task-item-tab:focus-within .task-item-tab-favorite, .task-item-tab:focus-within .task-item-tab-close { opacity: 1; pointer-events: auto; }
-.task-item-tab-favorite[aria-pressed="true"] { color: var(--accent-strong); opacity: .8; pointer-events: auto; }
-.task-item-tab-favorite[aria-pressed="true"] svg { fill: currentColor; }
-.task-item-tab-favorite:hover, .task-item-tab-close:hover { background: rgba(255,255,255,.1); color: var(--sidebar-text); }
-.task-item-tab-favorite:focus-visible, .task-item-tab-close:focus-visible { outline: 1px solid var(--accent-strong); }
-.task-item-tab-favorite svg, .task-item-tab-close svg { width: 11px; height: 11px; }
-.task-item-tab-close-confirm { position: absolute; z-index: 2; inset: 0; display: flex; align-items: center; justify-content: flex-end; gap: 3px; padding: 0 4px; border-radius: inherit; background: color-mix(in srgb, var(--sidebar-bg) 92%, var(--danger)); color: var(--sidebar-text); }
-.task-item-tab-close-confirm > span { margin-right: auto; padding-left: 2px; font: 600 9px/1 var(--font-ui); }
-.task-item-tab-close-confirm > button { min-width: 25px; height: 19px; padding: 0 4px; border: 0; border-radius: 4px; background: rgba(255,255,255,.07); color: var(--sidebar-text); font: 600 8.5px/1 var(--font-ui); }
-.task-item-tab-close-confirm > button:first-of-type { background: color-mix(in srgb, var(--danger) 24%, transparent); color: color-mix(in srgb, var(--danger) 45%, white); }
-.task-item-tab-close-confirm > button:hover { background: rgba(255,255,255,.13); }
-.task-item-tab-close-confirm > button:focus-visible { outline: 1px solid var(--accent-strong); outline-offset: 0; }
-.task-tab-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sidebar-dimmer); }
-.task-tab-dot.working { background: var(--agent-status-working); }
-.task-tab-dot.review { background: var(--agent-status-review); }
-.task-tab-dot.attention { background: var(--agent-status-awaiting); }
-.task-tab-dot.busy { background: var(--state-running); }
-.task-tab-dot.blocked, .task-tab-dot.interrupted { background: var(--danger); }
-.task-tab-attention { width: 5px; height: 5px; border-radius: 50%; background: var(--agent-status-awaiting); box-shadow: 0 0 0 2px rgba(255,143,107,.14); animation: task-pulse 1.5s ease-out infinite; }
+/* The rail is a board: a small header naming the active set with its count and
+   the create action, then every active Task as its own card. With a handful
+   of open Tasks there is nothing to select between, so no tab strip exists. */
+.task-board-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 8px 12px 0; }
+.task-board-title { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--sidebar-dimmer); font: 700 9px/1 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; }
+.task-board-count { display: inline-grid; min-width: 16px; height: 16px; place-items: center; padding: 0 4px; border-radius: 999px; background: rgba(255,255,255,.06); color: var(--sidebar-dim); font: 700 9px/1 var(--font-mono); letter-spacing: 0; }
+.task-board-create { display: grid; width: 22px; height: 22px; place-items: center; padding: 0; border: 1px solid rgba(255,255,255,.07); border-radius: 6px; background: rgba(255,255,255,.025); color: var(--sidebar-dimmer); }
+.task-board-create:hover:not(:disabled) { border-color: rgba(124,92,255,.3); background: var(--accent-wash); color: var(--sidebar-text); }
+.task-board-create:focus-visible { outline: 1px solid var(--accent-strong); outline-offset: -1px; }
+.task-board-create svg { width: 12px; height: 12px; }
+/* Closed Tasks are an archive folded under the board: one disclosure row with
+   the count, and inside it a search box plus a paged, single-line list. */
+.task-archive { margin: 2px 0 6px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,.05); }
+.task-archive-toggle { display: flex; width: calc(100% - 16px); align-items: center; gap: 5px; margin: 0 8px; padding: 5px 6px; border: 0; border-radius: 6px; background: transparent; color: var(--sidebar-dimmer); font: 700 9px/1 var(--font-mono); letter-spacing: .14em; text-align: left; text-transform: uppercase; }
+.task-archive-toggle:hover { background: var(--hover); color: var(--sidebar-text); }
+.task-archive-toggle:focus-visible { outline: 1px solid var(--accent-strong); outline-offset: -1px; }
+.task-archive-toggle svg { width: 11px; height: 11px; transition: transform 110ms ease; }
+.task-archive-toggle[aria-expanded="false"] svg { transform: rotate(-90deg); }
+.task-archive-count { margin-left: auto; color: var(--sidebar-dimmer); letter-spacing: 0; }
+.task-archive-body { display: grid; gap: 2px; }
+.task-archive-search { width: calc(100% - 24px); min-height: 24px; margin: 2px 12px 0; padding: 0 8px; border: 1px solid rgba(255,255,255,.08); border-radius: 6px; background: rgba(0,0,0,.16); color: var(--sidebar-text); font: 10.5px/1 var(--font-ui); }
+.task-archive-search::placeholder { color: var(--sidebar-dimmer); }
+.task-archive-search:focus-visible { outline: 1px solid var(--accent-strong); outline-offset: -1px; }
+.task-archive-list { padding: 3px 0 2px; }
+.task-archive-list .task-group + .task-group { margin-top: 1px; }
+.task-archive-more { display: block; width: calc(100% - 24px); min-height: 24px; margin: 0 12px 4px; border: 1px dashed rgba(255,255,255,.1); border-radius: 6px; background: transparent; color: var(--sidebar-dim); font: 600 9.5px/1 var(--font-ui); }
+.task-archive-more:hover { border-color: rgba(124,92,255,.35); background: var(--accent-wash); color: var(--sidebar-text); }
+/* Inline rename overlays the title inside the card. */
+.task-rename { min-width: 0; width: 100%; height: 27px; margin: 0; padding: 0 8px 0 22px; border: 1px solid rgba(124,92,255,.45); border-radius: 6px; outline: 0; background: rgba(0,0,0,.14); color: var(--sidebar-text); font: 600 12.5px/1 var(--font-ui); letter-spacing: -.01em; }
+.task-rename::selection { background: rgba(124,92,255,.3); }
+.task-rename:focus, .task-rename:focus-visible { border-color: rgba(124,92,255,.6); outline: 0; box-shadow: none; }
+.task-group.focused .task-rename { height: 26px; }
+.task-rename[aria-invalid="true"] { border-color: var(--danger); }
+.task-row:has(.task-rename) .row-actions, .task-row:has(.task-rename) .task-agents { display: none; }
+/* Closing asks once, in place, without a modal for a worktree-less Task. */
+.task-close-confirm { position: absolute; z-index: 2; top: 3px; right: 6px; display: flex; align-items: center; gap: 3px; height: 21px; padding: 0 4px 0 7px; border-radius: 6px; background: color-mix(in srgb, var(--sidebar-bg) 92%, var(--danger)); color: var(--sidebar-text); }
+.task-close-confirm > span { font: 600 9px/1 var(--font-ui); }
+.task-close-confirm > button { min-width: 25px; height: 17px; padding: 0 4px; border: 0; border-radius: 4px; background: rgba(255,255,255,.07); color: var(--sidebar-text); font: 600 8.5px/1 var(--font-ui); }
+.task-close-confirm > button:first-of-type { background: color-mix(in srgb, var(--danger) 24%, transparent); color: color-mix(in srgb, var(--danger) 45%, white); }
+.task-close-confirm > button:hover { background: rgba(255,255,255,.13); }
+.task-close-confirm > button:focus-visible { outline: 1px solid var(--accent-strong); outline-offset: 0; }
+.row-actions .task-favorite[aria-pressed="true"] { color: var(--accent-strong); }
+.row-actions .task-favorite[aria-pressed="true"] svg { fill: currentColor; }
+.task-row .row-actions.has-favorite { opacity: 1; pointer-events: auto; }
+.task-row .row-actions.has-favorite > :not(.task-favorite) { opacity: 0; pointer-events: none; }
+.task-row:hover .row-actions.has-favorite > :not(.task-favorite), .row-actions.has-favorite:focus-within > :not(.task-favorite) { opacity: 1; pointer-events: auto; }
 .task-list { padding: 5px 0 7px; }
 .task-group { padding: 0 7px; }
 .task-group + .task-group { margin-top: 7px; }
@@ -346,8 +347,15 @@ kbd { padding: 2px 5px; border: 1px solid rgba(255,255,255,.07); border-radius: 
    the frame away and a long list of collapsed Tasks stays a flat ledger. */
 .task-group[data-disclosed] { margin-right: 4px; margin-left: 4px; padding: 2px 3px 4px; border: 1px solid var(--rule); border-radius: 9px; background: rgba(255,255,255,.016); }
 .task-group[data-disclosed] + .task-group, .task-group + .task-group[data-disclosed] { margin-top: 5px; }
-.task-group.focused { margin: 1px 8px 7px; padding: 8px 8px 10px; border: 1px solid rgba(255,255,255,.075); border-radius: 10px; background: linear-gradient(180deg, rgba(255,255,255,.028), rgba(255,255,255,.012)); }
-.task-group.focused[data-disclosed] { margin: 1px 8px 7px; padding: 8px 8px 10px; }
+.task-board { padding: 6px 0 4px; }
+.task-group.focused { margin: 0 8px 6px; padding: 7px 7px 8px; border: 1px solid rgba(255,255,255,.06); border-radius: 9px; background: rgba(255,255,255,.018); }
+.task-group.focused[data-disclosed] { margin: 0 8px 6px; padding: 7px 7px 8px; }
+.task-group.focused:has(.task-item.showing-detail) { border-color: rgba(124,92,255,.28); background: rgba(124,92,255,.05); }
+.task-group.focused .task-toggle { height: 24px; }
+.task-group.focused .task-item { padding: 2px 7px 3px; }
+.task-group.focused .task-item.showing-detail { background: transparent; }
+.task-group.focused .task-next-step { margin-left: 28px; }
+.task-group.focused .task-launch { padding-left: 0; }
 .task-row { display: grid; grid-template-columns: 14px minmax(0,1fr) auto; align-items: start; }
 .task-toggle { width: 14px; height: 27px; }
 .task-toggle svg { width: 11px; height: 11px; }
@@ -360,8 +368,8 @@ kbd { padding: 2px 5px; border: 1px solid rgba(255,255,255,.07); border-radius: 
 .task-item.closed .task-title { text-decoration: line-through; text-decoration-color: var(--sidebar-dimmer); }
 .task-headline { display: flex; min-width: 0; flex: 1; align-items: center; gap: 7px; }
 .task-focus-copy { display: grid; min-width: 0; flex: 1; gap: 3px; }
-.task-focus-copy .task-title { overflow: visible; font-size: 14px; line-height: 1.25; text-overflow: clip; white-space: normal; }
-.task-focus-brief { display: -webkit-box; overflow: hidden; color: var(--sidebar-dim); font: 10.5px/1.4 var(--font-ui); -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.task-focus-copy .task-title { display: -webkit-box; overflow: hidden; font-size: 12.5px; line-height: 1.35; text-overflow: clip; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.task-focus-brief { display: -webkit-box; overflow: hidden; color: var(--sidebar-dim); font: 10px/1.4 var(--font-ui); -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 /* One dot answers "what does this Task want" for the whole row; the same tone
    vocabulary as `.row-rail` (see `renderer/row-tone.ts`), rendered as a point
    so every row spends the same three pixels on it. */
@@ -422,14 +430,7 @@ kbd { padding: 2px 5px; border: 1px solid rgba(255,255,255,.07); border-radius: 
    land on 15px of glyph. */
 .task-signal { display: inline-flex; min-width: 0; max-width: 100%; min-height: 20px; align-items: center; overflow: hidden; border: 0; padding: 0; background: transparent; color: var(--sidebar-dim); font: 10px/1.5 var(--font-mono); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .task-meta .task-signal { flex: 0 1 auto; }
-.task-group.focused .task-meta { padding: 3px 5px 0 30px; }
-.task-focus-facts { display: grid; gap: 5px; margin: 7px 5px 3px 30px; padding: 7px 8px; border: 1px solid rgba(255,255,255,.05); border-radius: 7px; background: rgba(0,0,0,.08); }
-.task-focus-facts > div { display: grid; min-width: 0; grid-template-columns: 48px minmax(0,1fr); align-items: baseline; gap: 7px; }
-.task-focus-facts dt { color: var(--sidebar-dimmer); font: 700 8px/1.35 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
-.task-focus-facts dd { min-width: 0; margin: 0; overflow: hidden; color: var(--sidebar-dim); font: 9.5px/1.4 var(--font-ui); text-overflow: ellipsis; white-space: nowrap; }
-.task-focus-facts dd.attention { color: var(--agent-status-awaiting); }
-.task-focus-facts dd.review { color: var(--agent-status-review); }
-.task-focus-facts dd.working { color: var(--agent-status-working); }
+.task-group.focused .task-meta { padding: 2px 5px 0 28px; }
 button.task-signal { cursor: pointer; }
 button.task-signal:hover { color: var(--sidebar-text); text-decoration: underline; text-underline-offset: 2px; }
 .task-signal.quiet { color: var(--sidebar-dim); }
@@ -2407,39 +2408,60 @@ button.history-row-main { cursor: pointer; }
   display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column;
   width: 100%; height: 100%; overflow: hidden; background: #24282b;
 }
-.td-header { display: grid; flex: none; grid-template-columns: minmax(0,1fr) auto; align-items: start; gap: 16px; padding: 20px 20px 18px 26px; border-bottom: 1px solid var(--border); }
-.td-heading { display: grid; gap: 10px; min-width: 0; }
-.td-title-row { display: flex; min-width: 0; align-items: center; gap: 12px; }
-.td-heading h1 { margin: 0; overflow: hidden; color: var(--td-text); font-size: 20px; font-weight: 650; letter-spacing: -.02em; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
-.td-status { flex: none; padding: 3px 9px; border: 1px solid var(--border-strong); border-radius: 999px; background: rgba(255,255,255,.04); color: var(--td-dim); font: 700 10.5px/1.3 var(--font-mono); letter-spacing: .09em; text-transform: uppercase; }
-.td-status.open { border-color: rgba(124,92,255,.42); background: var(--accent-wash); color: #c3b4ff; }
+.td-header { display: grid; flex: none; grid-template-columns: minmax(0,1fr) auto; align-items: start; gap: 16px; padding: 18px 20px 14px 26px; border-bottom: 1px solid var(--border); }
+.td-heading { display: grid; gap: 6px; min-width: 0; }
+.td-title-row { display: flex; min-width: 0; align-items: flex-start; gap: 12px; }
+/* The title is the sidebar card's, one size up: it wraps to two lines rather
+   than truncating, because the page exists to read the whole thing. */
+.td-heading h1 { display: -webkit-box; margin: 0; overflow: hidden; color: var(--td-text); font-size: 18px; font-weight: 650; letter-spacing: -.02em; line-height: 1.3; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.td-status { flex: none; margin-top: 3px; padding: 3px 9px; border: 1px solid var(--border-strong); border-radius: 999px; background: rgba(255,255,255,.04); color: var(--td-dim); font: 700 10.5px/1.3 var(--font-mono); letter-spacing: .09em; text-transform: uppercase; }
+.td-brief { margin: 0; max-width: 72ch; color: var(--td-body); font-size: 12.5px; line-height: 1.6; }
+/* The meta line is the rail component re-read at page scale. */
+.td-header .task-meta { padding: 2px 0 0; }
+.td-header .task-meta-branch, .td-header .task-meta-sep, .td-header .task-signal { font-size: 11.5px; }
+.td-header .task-meta-branch { color: var(--td-body); }
 
-/* What the Task is bound to, one fact per chip. The branch name is the part a
-   reader comes here to read off, so it keeps the brightest ink of the three. */
-.td-identity { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
-.td-chip { display: inline-flex; min-width: 0; max-width: 100%; align-items: center; gap: 6px; padding: 3px 9px 3px 7px; border: 1px solid var(--border); border-radius: 7px; background: rgba(255,255,255,.03); color: var(--td-body); font: 12px/1.5 var(--font-mono); }
-.td-chip svg { flex: none; width: 12px; height: 12px; color: var(--td-dim); }
-.td-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.td-chip.branch > span { color: var(--td-text); }
-
-.td-body { display: grid; flex: 1; grid-template-columns: minmax(0,1fr) 336px; min-height: 0; gap: 0; }
-/* Two independent scroll regions: a long ladder must not push the facts
-   column off screen, and the column keeps its full-height edge either way. */
-.td-main { min-width: 0; overflow: auto; padding: 26px 32px 48px; }
-.td-section-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px 16px; max-width: 780px; margin-bottom: 14px; }
-.td-section-head h2 { margin: 0; color: var(--td-text); font-size: 15px; font-weight: 620; letter-spacing: -.01em; }
+/* One column, sections in order of use: what needs the reader, the Sessions
+   they can open or start, the work to review, then the pipeline. Everything
+   the old facts column held now lives in one of these. */
+.td-body { display: grid; flex: 1; align-content: start; gap: 0; min-height: 0; overflow: auto; padding: 0 26px 48px; }
+.td-block { display: grid; gap: 10px; max-width: 760px; padding: 16px 0 18px; border-bottom: 1px solid var(--rule); }
+.td-block:last-child { border-bottom: 0; }
+.td-block > h2, .td-block-head h2, .td-steward summary h2 { margin: 0; color: var(--td-dim); font: 700 10.5px/1 var(--font-mono); letter-spacing: .13em; text-transform: uppercase; }
+.td-block-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; min-height: 24px; }
+.td-block .td-note { margin: 0; }
+.td-now { padding-top: 14px; }
+.td-now-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.td-now-item { display: flex; align-items: center; gap: 10px; min-height: 30px; padding: 3px 12px 3px 10px; border: 1px solid transparent; border-radius: 9px; color: var(--td-text); font-size: 13px; }
+.td-now-item.attention { border-color: rgba(255,143,107,.32); background: rgba(255,143,107,.09); color: #ffb59d; }
+.td-now-item.review { border-color: rgba(102,179,255,.32); background: rgba(102,179,255,.09); color: #a8d0ff; }
+.td-now-item.busy { border-color: rgba(230,122,20,.32); background: rgba(230,122,20,.09); color: #eaa465; }
+.td-now-item.blocked { border-color: rgba(225,117,126,.35); background: rgba(225,117,126,.1); color: #ef9aa1; }
+.td-now-text { min-width: 0; flex: 1; }
+.td-mini { display: inline-flex; flex: none; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border: 1px solid var(--border-strong); border-radius: 6px; background: rgba(255,255,255,.04); color: var(--td-body); font: 600 11.5px/1 var(--font-ui); }
+.td-mini svg { width: 12px; height: 12px; color: var(--td-dim); }
+.td-mini:hover:not(:disabled) { border-color: rgba(124,92,255,.45); background: var(--accent-wash); color: #fff; }
+.td-mini:hover:not(:disabled) svg { color: var(--accent-strong); }
+.td-mini.agent-claude:hover svg { color: var(--agent-claude); }
+.td-mini.agent-codex:hover svg { color: var(--agent-codex); }
+.td-launch { display: flex; flex-wrap: wrap; gap: 4px; }
+.td-pipeline .td-meter { margin: 2px 0 14px; }
+.td-steward summary { display: flex; align-items: center; gap: 8px; list-style: none; cursor: pointer; }
+.td-steward summary::-webkit-details-marker { display: none; }
+.td-steward summary::before { content: ""; width: 5px; height: 5px; border-right: 1px solid var(--td-dim); border-bottom: 1px solid var(--td-dim); transform: rotate(-45deg); transition: transform 110ms ease; }
+.td-steward[open] summary::before { transform: rotate(45deg); }
 .td-progress { color: var(--td-dim); font: 12px/1.4 var(--font-mono); }
 .td-note { max-width: 68ch; margin: 0 0 16px; color: var(--td-body); font-size: 12.5px; line-height: 1.65; }
 
 /* How much of the ladder is already behind this Task, before a word is read. */
-.td-meter { overflow: hidden; max-width: 780px; height: 3px; margin: 0 0 22px; border-radius: 999px; background: rgba(255,255,255,.07); }
+.td-meter { overflow: hidden; height: 3px; margin: 0 0 22px; border-radius: 999px; background: rgba(255,255,255,.07); }
 .td-meter i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, rgba(92,201,149,.5), #5cc995); transition: width 220ms ease; }
 .td-meter.away i { background: rgba(255,255,255,.24); }
 
 /* The ladder. One grid column for the node, one for everything the step says;
    the spine is the segment each step draws below its own node, so the solid
    run stops exactly where the Task is standing. */
-.td-spine { display: grid; gap: 0; max-width: 780px; margin: 0; padding: 0; list-style: none; }
+.td-spine { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
 .td-step { position: relative; display: grid; grid-template-columns: 26px minmax(0,1fr); align-items: start; gap: 16px; padding: 0 0 2px; }
 .td-step:not(:last-child)::after { content: ""; position: absolute; top: 30px; bottom: -2px; left: 12px; width: 0; border-left: 1px solid var(--border-strong); }
 .td-step.passed:not(:last-child)::after { border-left-color: rgba(92,201,149,.42); }
@@ -2505,15 +2527,6 @@ button.history-row-main { cursor: pointer; }
    this page allowed to be loud. Plain is not faint, though — every fact here is
    set at reading contrast, and the ones that open something look like rows a
    pointer can land on. */
-.td-side { display: grid; align-content: start; gap: 0; min-width: 0; overflow: auto; border-left: 1px solid var(--border); background: rgba(0,0,0,.11); }
-.td-panel { display: grid; gap: 10px; padding: 18px 20px; border-bottom: 1px solid var(--rule); }
-.td-panel h2 { margin: 0; color: var(--td-dim); font: 700 10.5px/1 var(--font-mono); letter-spacing: .13em; text-transform: uppercase; }
-.td-panel .td-note { margin: 0; }
-.td-panel:last-child { border-bottom: 0; }
-.td-stage { margin: 0; color: var(--td-body); font-size: 12.5px; line-height: 1.65; }
-.td-flag { display: inline-block; margin-right: 8px; padding: 2px 7px; border: 1px solid var(--border-strong); border-radius: 999px; color: var(--td-dim); font: 700 9.5px/1.5 var(--font-mono); letter-spacing: .07em; text-transform: uppercase; }
-.td-stage.busy .td-flag { border-color: rgba(230,122,20,.38); background: rgba(230,122,20,.12); color: #eaa465; }
-.td-stage.blocked .td-flag { border-color: rgba(225,117,126,.38); background: rgba(225,117,126,.12); color: #ef9aa1; }
 .td-facts { display: grid; justify-items: start; gap: 1px; }
 .td-fact { display: inline-flex; align-items: center; gap: 8px; padding: 5px 0; color: var(--td-body); font: 12.5px/1.5 var(--font-mono); }
 .td-fact-dot { flex: none; box-sizing: content-box; width: 6px; height: 6px; margin: 0 3px 0 4px; border-radius: 50%; background: currentColor; }
@@ -2530,15 +2543,15 @@ button.history-row-main { cursor: pointer; }
 
 /* The pull request rows are a rail component borrowed onto a lighter, closer
    surface, so they re-read at this page's scale instead of the sidebar's. */
-.td-side .task-pr-list { gap: 1px; padding: 2px 0 0; }
-.td-side .task-pr { min-height: 38px; margin-left: -8px; padding: 5px 8px; border-radius: 7px; font-size: 12px; gap: 0 8px; }
-.td-side .task-pr:hover { background: var(--hover); }
-.td-side .task-pr .task-signal-label { color: var(--td-text); }
-.td-side .task-pr-head { color: var(--td-body); }
-.td-side .task-pr-base, .td-side .task-pr-state { color: var(--td-dim); }
-.td-side .task-pr-title { color: var(--td-dim); font-size: 11.5px; }
-.td-side .task-pr:hover .task-pr-head, .td-side .task-pr:hover .task-signal-label { color: #fff; }
-.td-side .task-pr-external { width: 22px; height: 22px; color: var(--td-dim); font-size: 13px; }
+.td-block .task-pr-list { gap: 1px; padding: 2px 0 0; }
+.td-block .task-pr { min-height: 38px; margin-left: -8px; padding: 5px 8px; border-radius: 7px; font-size: 12px; gap: 0 8px; }
+.td-block .task-pr:hover { background: var(--hover); }
+.td-block .task-pr .task-signal-label { color: var(--td-text); }
+.td-block .task-pr-head { color: var(--td-body); }
+.td-block .task-pr-base, .td-block .task-pr-state { color: var(--td-dim); }
+.td-block .task-pr-title { color: var(--td-dim); font-size: 11.5px; }
+.td-block .task-pr:hover .task-pr-head, .td-block .task-pr:hover .task-signal-label { color: #fff; }
+.td-block .task-pr-external { width: 22px; height: 22px; color: var(--td-dim); font-size: 13px; }
 
 .td-agents { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
 .td-agent { display: grid; grid-template-columns: 8px minmax(0,1fr) auto; align-items: center; gap: 10px; width: 100%; margin-left: -8px; padding: 7px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--td-body); text-align: left; }
@@ -2555,17 +2568,6 @@ button.history-row-main { cursor: pointer; }
 .td-prose { margin: 0; max-height: 320px; overflow: auto; color: var(--td-body); font-size: 12.5px; line-height: 1.7; white-space: pre-wrap; }
 .td-prose.mono { font: 12px/1.7 var(--font-mono); }
 
-/* Below the split the facts fall under the ladder rather than squeezing it. */
-@media (max-width: 1040px) {
-  .td-body { grid-template-columns: minmax(0,1fr); overflow: auto; }
-  .td-main, .td-side { overflow: visible; }
-  .td-main { padding: 22px 22px 32px; }
-  .td-side { border-top: 1px solid var(--border); border-left: 0; }
-}
-
-/* The Task row that currently owns the stage. */
-.task-item.showing-detail .task-title { color: #fff; }
-.task-item.showing-detail { background: rgba(124,92,255,.1); }
 
 /* Task Sources — Project-level Jira review page on the terminal stage. */
 .task-sources { overflow: hidden; }
@@ -2802,3 +2804,25 @@ button.history-row-main { cursor: pointer; }
   .task-source-intake-settings-controls { grid-template-columns: 1fr; align-items: stretch; }
   .task-source-intake-settings-controls > .primary-button { justify-self: start; }
 }
+/* On a board card the hover actions sit where the agent dots live; the dots
+   yield while the pointer is there so the two never stack. */
+.task-group.focused .task-row:hover .task-agents, .task-group.focused .task-row:focus-within .task-agents { opacity: 0; pointer-events: none; }
+.task-group.focused .task-row .row-actions { top: 3px; right: 4px; }
+/* The card surface is not the sidebar surface, so the fade behind the hover
+   actions must match the card or it prints a darker smear over the title. */
+.task-group.focused .task-row .row-actions { padding-left: 22px; background: linear-gradient(90deg, rgba(48,53,55,0), #363b3e 45%); }
+.task-group.focused .task-row .row-actions .row-action { background: rgba(255,255,255,.08); }
+/* Archive rows are one dense line each: a dimmer, smaller title with no
+   strike-through, and a quieter meta line. Reading a list of a hundred struck
+   titles is worse than reading a hundred grey ones. */
+.task-archive-list .task-group { padding: 0 5px; }
+.task-archive-list .task-item { min-height: 24px; padding: 3px 8px; }
+.task-archive-list .task-item.closed { opacity: 1; }
+.task-archive-list .task-item.closed .task-title { color: var(--sidebar-dim); font-size: 11.5px; font-weight: 500; text-decoration: none; }
+.task-archive-list .task-item.closed:hover .task-title { color: var(--sidebar-text); }
+.task-archive-list .task-dot.quiet { background: rgba(255,255,255,.18); }
+.task-archive-list .task-toggle { height: 24px; }
+.task-archive-list .task-meta { padding-bottom: 3px; }
+.task-archive-list .task-meta-branch { font-size: 9.5px; }
+.task-archive-list .task-meta-worktree { min-height: 15px; padding: 0 5px 0 4px; font-size: 8px; }
+.task-archive-list .task-meta-worktree svg { width: 9px; height: 9px; }

@@ -10,7 +10,6 @@ import {
   stepEvidence,
   stepIsCheckable,
   stepTiming,
-  taskIdentityFacts,
   taskPipelineView,
   type TaskPipelineStep,
 } from "../src/renderer/ui/TaskDetailPanel.js";
@@ -288,37 +287,6 @@ describe("what a step tells the reader", () => {
   });
 });
 
-describe("the Task's identity chips", () => {
-  function task(overrides: Partial<Task> = {}): Task {
-    return {
-      id: "task-1",
-      project_id: "project-1",
-      title: "Ship the pipeline page",
-      brief: null,
-      jira_url: null,
-      status: "open",
-      archived_at_epoch_ms: null,
-      branch: { name: "task/pipeline-page", repository_path: "/repository" },
-      worktree: { path: "/repository-worktrees/pipeline-page", created_at_epoch_ms: NOW },
-      rank: 1,
-      created_at_epoch_ms: NOW,
-      updated_at_epoch_ms: NOW,
-      ...overrides,
-    } as Task;
-  }
-
-  it("names the branch, the worktree leaf, and the issue in that order", () => {
-    expect(taskIdentityFacts(task({ jira_url: "https://example.atlassian.net/browse/UKIE-42" }))
-      .map((fact) => fact.label))
-      .toEqual(["task/pipeline-page", "pipeline-page", "UKIE-42"]);
-  });
-
-  it("says a Task has no branch rather than leaving the chips empty", () => {
-    expect(taskIdentityFacts(task({ branch: null, worktree: null })).map((fact) => fact.label))
-      .toEqual(["No branch"]);
-  });
-});
-
 describe("the Task detail page on screen", () => {
   function detailTask(overrides: Partial<Task> = {}): Task {
     return {
@@ -430,12 +398,20 @@ describe("the Task detail page on screen", () => {
     await unmount();
   });
 
-  it("carries the Task's bindings as separate chips beside its status", async () => {
+  it("heads the page with the sidebar's own meta line and no status pill while open", async () => {
     const { container, unmount } = await mount();
 
-    expect([...container.querySelectorAll(".td-chip")].map((chip) => chip.textContent))
-      .toEqual(["task/pipeline-page", "pipeline-page"]);
-    expect(container.querySelector(".td-status")?.textContent).toBe("Open");
+    expect(container.querySelector(".td-chip")).toBeNull();
+    expect(container.querySelector(".td-header .task-meta-branch")?.textContent).toBe("task/pipeline-page");
+    expect(container.querySelector(".td-status")).toBeNull();
+    // The fixture's checkout is still being observed, so that is the one thing
+    // "Now" says; a healthy Task prints no reassurance line here at all.
+    expect(container.querySelectorAll(".td-now-item")).toHaveLength(1);
+    expect(container.textContent).not.toContain("Ready to run agents");
+    // Sections in order of use, one column.
+    expect([...container.querySelectorAll(".td-body > .td-block > h2, .td-body > .td-block .td-block-head h2")].map((h) => h.textContent))
+      .toEqual(["Now", "Sessions", "Changes", "Pipeline"]);
+    expect(container.querySelector(".td-side")).toBeNull();
 
     await unmount();
   });
@@ -609,7 +585,8 @@ describe("the Task detail page on screen", () => {
       ]),
     });
 
-    expect(container.querySelector(".td-note")?.textContent).toContain("closed");
+    expect(container.querySelector(".td-status")?.textContent).toBe("Closed");
+    expect(container.querySelector(".td-pipeline .td-note")?.textContent).toContain("closed");
     expect(container.querySelector(".td-check-now")).toBeNull();
     expect(container.querySelector(".td-progress")?.textContent)
       .toBe("Dev PR to production · 1 of 3 cleared");

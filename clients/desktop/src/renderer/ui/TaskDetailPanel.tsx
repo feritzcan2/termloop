@@ -4,15 +4,16 @@ import type {
   PlaybookStepProgressDto, PlaybookTaskPositionSetParams, PlaybookTaskPositionSetResult,
   RoutineConfigurationListResult, RoutineRunNowResult, RoutineRuntimeListResult,
 } from "@termloop/contract/current";
+import type { AgentCapabilityDto } from "@termloop/contract/current";
 import type { AgentStatus, BranchCommitSummary, GitHostProjection, Session, Task } from "../model.js";
-import { basename, sessionLabel, taskJiraIssueKey } from "../model.js";
-import { sessionState } from "../session-presentation.js";
+import { sessionLabel, taskJiraIssueKey } from "../model.js";
+import { agentAttention, sessionState } from "../session-presentation.js";
 import {
   integrationTone, taskChangeCount, taskChangedFileLabel, taskDivergence, taskIntegration, taskStage,
 } from "../task-presentation.js";
 import { playbookRelativeMinutes } from "./playbook-policy.js";
-import { GitHostPullRequests } from "./TaskRail.js";
-import { Icon, type IconName } from "./Icon.js";
+import { GitHostPullRequests, TaskMetaLine } from "./TaskRail.js";
+import { Icon } from "./Icon.js";
 import { pullRequestIdentity, type ChangesOpenSource } from "../change-source.js";
 
 /* ------------------------------------------------------------- derivation */
@@ -164,32 +165,6 @@ export function stepIsCheckable(step: TaskPipelineStep): boolean {
     && step.routine.enabled;
 }
 
-export type TaskIdentityFact = { id: "branch" | "worktree" | "issue"; icon: IconName; label: string; title: string };
-
-/** What this Task is bound to, in the order that answers "where does this work
-    live". One fact per chip rather than one run-on line, because the branch name
-    is the part a reader comes here to copy and it has to survive being scanned
-    next to a folder leaf and an issue key. */
-export function taskIdentityFacts(task: Task): TaskIdentityFact[] {
-  const facts: TaskIdentityFact[] = [{
-    id: "branch",
-    icon: "branch",
-    label: task.branch ? task.branch.name : "No branch",
-    title: task.branch ? `Task branch ${task.branch.name}` : "No branch is bound to this Task.",
-  }];
-  if (task.worktree) {
-    facts.push({
-      id: "worktree", icon: "folder", label: basename(task.worktree.path), title: task.worktree.path,
-    });
-  }
-  if (task.jira_url) {
-    facts.push({
-      id: "issue", icon: "task", label: taskJiraIssueKey(task.jira_url), title: task.jira_url,
-    });
-  }
-  return facts;
-}
-
 /* -------------------------------------------------------------- component */
 
 export type TaskDetailPanelProps = {
@@ -215,6 +190,11 @@ export type TaskDetailPanelProps = {
   listRoutines(): Promise<RoutineConfigurationListResult>;
   listRoutineRuntime(): Promise<RoutineRuntimeListResult>;
   runRoutineNow(routineId: string, taskId?: string): Promise<RoutineRunNowResult>;
+  /** Launchers are optional: a host without them (tests, a read-only stage)
+      simply shows no Start row. */
+  agentCapabilities?: readonly AgentCapabilityDto[] | undefined;
+  launchTerminal?: ((taskId: string) => Promise<unknown>) | undefined;
+  launchAgent?: ((taskId: string, agentId: string) => Promise<unknown>) | undefined;
 };
 
 export function TaskDetailPanel(props: TaskDetailPanelProps) {
@@ -340,11 +320,51 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
     ? props.branchCommitSummary.count
     : null;
   const brief = task.steward_brief_markdown?.trim() ?? "";
+  const attention = useMemo(
+    () => agentAttention(props.sessions, props.statusesById, props.reviewReadySessionIds),
+    [props.sessions, props.statusesById, props.reviewReadySessionIds],
+  );
+  const launchers = (props.agentCapabilities ?? []).filter((capability) => capability.available);
+  const canLaunch = stage.id === "ready" && (props.launchTerminal || props.launchAgent);
 
   const cleared = view ? (view.placement === "done" ? view.steps.length : view.passedCount) : 0;
   const clearedPercent = view && view.steps.length > 0
     ? Math.round((cleared / view.steps.length) * 100)
     : 0;
+  const firstPullRequest = props.gitHostProjection?.matches[0];
+  const openPullRequest = (pullRequest: GitHostProjection["matches"][number]) => props.openChanges({
+    kind: "pullRequest",
+    pullRequest: pullRequestIdentity(pullRequest),
+    freshnessGeneration: props.gitHostProjection?.freshness_generation ?? 0,
+  });
+  /// The header meta line is the sidebar card's, one to one, so the two
+  /// surfaces name the same facts in the same words and colours.
+  const branchChanges = commitCount
+    ? {
+        label: `${commitCount} ${commitCount === 1 ? "commit" : "commits"}`,
+        title: `Review the combined changes from ${commitCount} ${commitCount === 1 ? "commit" : "commits"} on this Task branch since its base.`,
+        ariaLabel: `Review all branch changes in ${task.title}`,
+        open: () => props.openChanges({ kind: "commits" }),
+      }
+    : undefined;
+  const openIntegration = integration?.action === "pullRequest" && integration.pullRequest
+    ? () => openPullRequest(integration.pullRequest!)
+    : integration?.action === "commits"
+      ? () => props.openChanges({ kind: "commits" })
+      : undefined;
+  /// "Now" exists only when something is actually asking for the reader: an
+  /// agent waiting on them, a checkout that is not healthy, or a diverged
+  /// branch. A healthy, quiet Task prints no reassurance line at all.
+  const now: { tone: string; text: string; detail?: string | undefined; act?: { label: string; run(): void } }[] = [];
+  if (attention && attention.tone !== "working") {
+    now.push({
+      tone: attention.tone,
+      text: `${attention.agent} — ${attention.label}`,
+      act: { label: "Open terminal", run: () => props.selectSession(attention.sessionId) },
+    });
+  }
+  if (stage.tone !== "quiet") now.push({ tone: stage.tone, text: stage.flag ?? stage.summary, detail: stage.flag ? stage.summary : undefined });
+  if (divergence) now.push({ tone: "attention", text: divergence.text, detail: divergence.title });
 
   return (
     <section className="task-detail" aria-label={`Task ${task.title}`}>
@@ -352,15 +372,20 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
         <div className="td-heading">
           <div className="td-title-row">
             <h1 title={task.title}>{task.title}</h1>
-            <span className={`td-status ${task.status}`}>{task.status === "closed" ? "Closed" : "Open"}</span>
+            {task.status === "closed" ? <span className="td-status closed">Closed</span> : null}
           </div>
-          <div className="td-identity">
-            {taskIdentityFacts(task).map((fact) => (
-              <span key={fact.id} className={`td-chip ${fact.id}`} title={fact.title}>
-                <Icon name={fact.icon} /><span>{fact.label}</span>
-              </span>
-            ))}
-          </div>
+          {task.brief?.trim() ? <p className="td-brief">{task.brief}</p> : null}
+          <TaskMetaLine
+            task={task}
+            stage={stage}
+            divergence={divergence}
+            changeCount={changeCount}
+            branchChanges={branchChanges}
+            integration={integration}
+            openChanges={() => props.openChanges({ kind: "local" })}
+            openIntegration={openIntegration}
+            openIssue={() => { if (task.jira_url) void props.openExternal(task.jira_url); }}
+          />
         </div>
         <button
           type="button"
@@ -372,15 +397,106 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
       </header>
       {error ? <p className="ap-error" role="alert">{error}</p> : null}
       <div className="td-body">
-        <div className="td-main">
-          <div className="td-section-head">
-            <h2>Delivery pipeline</h2>
+        {now.length > 0 ? (
+          <section className="td-block td-now" aria-label="Needs attention">
+            <h2>Now</h2>
+            <ul className="td-now-list">
+              {now.map((item, index) => (
+                <li key={index} className={`td-now-item ${item.tone}`} title={item.detail}>
+                  <i className="td-fact-dot" aria-hidden="true" />
+                  <span className="td-now-text">{item.text}</span>
+                  {item.act ? <button type="button" className="td-mini" onClick={item.act.run}>{item.act.label}</button> : null}
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        <section className="td-block" aria-label="Sessions">
+          <div className="td-block-head">
+            <h2>Sessions</h2>
+            {canLaunch ? (
+              <div className="td-launch" role="group" aria-label={`Start a new Session in ${task.title}`}>
+                {props.launchTerminal ? <button type="button" className="td-mini" onClick={() => void props.launchTerminal!(task.id)}><Icon name="terminal" />Terminal</button> : null}
+                {props.launchAgent ? launchers.map((capability) => (
+                  <button
+                    key={capability.agent_id}
+                    type="button"
+                    className={`td-mini agent-${capability.agent_id}`}
+                    title={`New ${capability.label} Session${capability.integration_level === "launchOnly" ? " (launch only)" : ""}`}
+                    onClick={() => void props.launchAgent!(task.id, capability.agent_id)}
+                  ><Icon name={capability.agent_id === "claude" ? "claude" : capability.agent_id === "codex" ? "codex" : "agent"} />{capability.label}</button>
+                )) : null}
+              </div>
+            ) : null}
+          </div>
+          {props.sessions.length === 0
+            ? <p className="td-note">No Session is running in this Task.</p>
+            : <ul className="td-agents">
+              {props.sessions.map((session) => {
+                const state = sessionState(session, props.statusesById.get(session.id), props.reviewReadySessionIds.has(session.id));
+                return (
+                  <li key={session.id}>
+                    <button
+                      type="button"
+                      className="td-agent"
+                      title={`${sessionLabel(session)} — ${state.summary} Opens its terminal.`}
+                      onClick={() => props.selectSession(session.id)}
+                    >
+                      <i className={`td-agent-dot ${state.tone}`} aria-hidden="true" />
+                      <span className="td-agent-name">{sessionLabel(session)}</span>
+                      {state.label ? <span className="td-agent-state">{state.label}</span> : null}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>}
+        </section>
+
+        <section className="td-block" aria-label="Changes">
+          <h2>Changes</h2>
+          <div className="td-facts">
+            <button
+              type="button"
+              className="td-fact-action"
+              disabled={!task.worktree}
+              title={task.worktree ? "Open the changed files in this worktree" : "This Task has no worktree yet"}
+              onClick={() => props.openChanges({ kind: "local" })}
+            >
+              <Icon name="edit" />
+              <span>{changeCount ? taskChangedFileLabel(changeCount) : "No uncommitted changes"}</span>
+            </button>
+            {commitCount ? (
+              <button
+                type="button"
+                className="td-fact-action"
+                title="Open the commits on this Task branch"
+                onClick={() => props.openChanges({ kind: "commits" })}
+              >
+                <Icon name="branch" />
+                <span>{commitCount} {commitCount === 1 ? "commit" : "commits"} on this branch</span>
+              </button>
+            ) : null}
+            {integration && !firstPullRequest ? (
+              <span className={`td-fact ${integrationTone(integration, Boolean(changeCount))}`} title={integration.title}>
+                <i className="td-fact-dot" aria-hidden="true" />{integration.label}
+              </span>
+            ) : null}
+          </div>
+          <GitHostPullRequests
+            projection={props.gitHostProjection}
+            openChanges={openPullRequest}
+            openExternal={props.openExternal}
+          />
+        </section>
+
+        <section className="td-block td-pipeline" aria-label="Delivery pipeline">
+          <div className="td-block-head">
+            <h2>Pipeline</h2>
             {view ? <span className="td-progress">{view.pipelineName} · {pipelineProgressLabel(view)}</span> : null}
           </div>
           {loading && !view ? <p className="td-note">Reading the pipeline…</p>
             : view ? <>
-              {/* How much of the ladder is behind this Task, before a single
-                  stage title is read. */}
               <div className={`td-meter ${view.placement}`} aria-hidden="true">
                 <i style={{ width: `${clearedPercent}%` }} />
               </div>
@@ -403,9 +519,6 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
                     setPosition={setPosition}
                   />
                 ))}
-                {/* The destination is the last station on the same ladder, so
-                    the spine runs into it rather than leaving a pill floating
-                    under the stages. */}
                 <li className={`td-step terminus ${view.placement === "done" ? "passed" : "ahead"}`}>
                   <span className="td-node" aria-hidden="true" />
                   <div className="td-step-body">
@@ -430,112 +543,14 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
                 <Icon name="sparkles" />Build the pipeline
               </button>
             </div>}
-        </div>
-        <aside className="td-side" aria-label="Task facts">
-          <section className="td-panel">
-            <h2>State</h2>
-            <p className={`td-stage ${stage.tone}`} title={stage.summary}>
-              {stage.flag ? <span className="td-flag">{stage.flag}</span> : null}
-              {stage.summary}
-            </p>
-            {divergence ? (
-              <p className="td-fact warn" title={divergence.title}>
-                <i className="td-fact-dot" aria-hidden="true" />{divergence.text}
-              </p>
-            ) : null}
-          </section>
-          <section className="td-panel">
-            <h2>Work</h2>
-            <div className="td-facts">
-              <button
-                type="button"
-                className="td-fact-action"
-                disabled={!task.worktree}
-                title={task.worktree ? "Open the changed files in this worktree" : "This Task has no worktree yet"}
-                onClick={() => props.openChanges({ kind: "local" })}
-              >
-                <Icon name="edit" />
-                <span>{changeCount ? taskChangedFileLabel(changeCount) : "No uncommitted changes"}</span>
-              </button>
-              {commitCount ? (
-                <button
-                  type="button"
-                  className="td-fact-action"
-                  title="Open the commits on this Task branch"
-                  onClick={() => props.openChanges({ kind: "commits" })}
-                >
-                  <Icon name="branch" />
-                  <span>{commitCount} {commitCount === 1 ? "commit" : "commits"} on this branch</span>
-                </button>
-              ) : null}
-              {/* Several integration verdicts are a single word — "Open",
-                  "Merged", "Conflicts". A tone dot makes that word read as the
-                  state it is, the same way an agent's state reads below. */}
-              {integration ? (
-                <span className={`td-fact ${integrationTone(integration, Boolean(changeCount))}`} title={integration.title}>
-                  <i className="td-fact-dot" aria-hidden="true" />{integration.label}
-                </span>
-              ) : null}
-              {task.jira_url ? (
-                <button
-                  type="button"
-                  className="td-fact-action"
-                  title={task.jira_url}
-                  onClick={() => { if (task.jira_url) void props.openExternal(task.jira_url); }}
-                >
-                  <Icon name="task" />
-                  <span>{taskJiraIssueKey(task.jira_url)}</span>
-                  <Icon name="external" className="td-fact-external" />
-                </button>
-              ) : null}
-            </div>
-            <GitHostPullRequests
-              projection={props.gitHostProjection}
-              openChanges={(pullRequest) => props.openChanges({
-                kind: "pullRequest",
-                pullRequest: pullRequestIdentity(pullRequest),
-                freshnessGeneration: props.gitHostProjection?.freshness_generation ?? 0,
-              })}
-              openExternal={props.openExternal}
-            />
-          </section>
-          <section className="td-panel">
-            <h2>Agents</h2>
-            {props.sessions.length === 0
-              ? <p className="td-note">No agent is running in this Task.</p>
-              : <ul className="td-agents">
-                {props.sessions.map((session) => {
-                  const state = sessionState(session, props.statusesById.get(session.id), props.reviewReadySessionIds.has(session.id));
-                  return (
-                    <li key={session.id}>
-                      <button
-                        type="button"
-                        className="td-agent"
-                        title={`${sessionLabel(session)} — ${state.summary} Opens its terminal.`}
-                        onClick={() => props.selectSession(session.id)}
-                      >
-                        <i className={`td-agent-dot ${state.tone}`} aria-hidden="true" />
-                        <span className="td-agent-name">{sessionLabel(session)}</span>
-                        {state.label ? <span className="td-agent-state">{state.label}</span> : null}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>}
-          </section>
-          {task.brief?.trim() ? (
-            <section className="td-panel">
-              <h2>Brief</h2>
-              <p className="td-prose">{task.brief}</p>
-            </section>
-          ) : null}
-          {brief ? (
-            <section className="td-panel">
-              <h2>Steward brief</h2>
-              <p className="td-prose mono">{brief}</p>
-            </section>
-          ) : null}
-        </aside>
+        </section>
+
+        {brief ? (
+          <details className="td-block td-steward">
+            <summary><h2>Steward brief</h2></summary>
+            <p className="td-prose mono">{brief}</p>
+          </details>
+        ) : null}
       </div>
     </section>
   );
