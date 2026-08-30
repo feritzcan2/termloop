@@ -829,6 +829,13 @@ fn task_read_projection(
         "branchCommitSummary": branch_commits.as_array().and_then(|items| items.first()).cloned(),
         "pullRequest": pull_requests.as_array().and_then(|items| items.first()).cloned(),
         "agentStatuses": agent_statuses,
+        "evidenceSemantics": {
+            "task": "durableTermLoopRecordNotDeliveryCompletionEvidence",
+            "branchCommitSummary": "boundedGitObservation",
+            "pullRequest": "providerProjectionUseEachSignalSourceAndFreshness",
+            "agentStatus": "runtimeObservation",
+            "agentPlan": "agentReportedClaimNotIndependentlyVerified",
+        },
     })
 }
 
@@ -2139,6 +2146,14 @@ mod tests {
         assert_eq!(projection["branchCommitSummary"]["count"], 2);
         assert_eq!(projection["pullRequest"]["matches"][0]["number"], 42);
         assert_eq!(projection["agentStatuses"][0]["sessionId"], "agent-1");
+        assert_eq!(
+            projection["evidenceSemantics"]["agentPlan"],
+            "agentReportedClaimNotIndependentlyVerified"
+        );
+        assert_eq!(
+            projection["evidenceSemantics"]["pullRequest"],
+            "providerProjectionUseEachSignalSourceAndFreshness"
+        );
 
         let unavailable =
             task_read_projection(json!({ "id": "task-2" }), json!([]), json!([]), json!([]));

@@ -1456,6 +1456,8 @@ fn assigned_routine_result(
         "context": {
             "revision": routine.context_revision,
             "markdown": routine.context_markdown,
+            "evidenceKind": "workerAuthoredMemory",
+            "independentlyVerified": false,
             "scanSinceEpochMs": scan_since,
             "lastFinishedAtEpochMs": routine.last_attempt_at_epoch_ms,
             "recentSourceKeys": routine.recent_source_keys,
@@ -1493,6 +1495,8 @@ fn assigned_routine_result(
                         "title": task.title,
                         "dueAtEpochMs": task.due_at_epoch_ms,
                         "lastEvidence": task.last_evidence,
+                        "lastEvidenceKind": "previousWorkerVerdict",
+                        "lastEvidenceIndependentlyVerified": false,
                     })
                 })
                 .collect::<Vec<_>>(),
@@ -2442,6 +2446,11 @@ mod tests {
             .claim_next_worker_routine(&project_id, "worker-session", "check-context".into(), 500)
             .unwrap();
         assert_eq!(claim.result["context"]["revision"], 2);
+        assert_eq!(
+            claim.result["context"]["evidenceKind"],
+            "workerAuthoredMemory"
+        );
+        assert_eq!(claim.result["context"]["independentlyVerified"], false);
         assert_eq!(
             claim.result["context"]["markdown"],
             "# User context\nWatch the release channel."

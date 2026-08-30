@@ -131,7 +131,7 @@ const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const WORKER_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.worker.executor",
-    version: 19,
+    version: 20,
     authored_body: include_str!("../../../resources/prompts/builtin.worker.executor.md"),
 };
 
@@ -167,7 +167,7 @@ const CI_PR_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const STEP_CHECK_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.tracker.step-check",
-    version: 7,
+    version: 8,
     authored_body: include_str!("../../../resources/prompts/builtin.tracker.step-check.md"),
 };
 
@@ -3837,7 +3837,7 @@ mod tests {
             (
                 ExecutorRole::StepCheckTracker,
                 "builtin.tracker.step-check",
-                7,
+                8,
             ),
             (ExecutorRole::CustomTracker, "builtin.tracker.custom", 4),
         ];
@@ -5836,7 +5836,11 @@ mod tests {
             ]
         );
         assert!(prompt.delivered_prompt().contains("request-2"));
-        assert!(prompt.delivered_prompt().contains("Consider your first answer"));
+        assert!(
+            prompt
+                .delivered_prompt()
+                .contains("Consider your first answer")
+        );
         assert!(!prompt.delivered_prompt().contains("{{"));
         assert_terminal_submission(prompt.terminal_input_sequence(), prompt.delivered_prompt());
 
@@ -6012,9 +6016,7 @@ mod tests {
         assert!(
             prompt
                 .authored_preview()
-                .contains(
-                    "every user-visible `steward_suggest` message concisely and decisively",
-                )
+                .contains("every user-visible `steward_suggest` message concisely and decisively",)
         );
         assert!(
             prompt
@@ -6095,7 +6097,7 @@ mod tests {
     #[test]
     fn pipeline_prompts_treat_a_step_title_as_a_label_not_a_yes_no_contract() {
         let worker = executor_prompt(ExecutorRole::Worker).unwrap();
-        assert_eq!(worker.provenance().template_version, 19);
+        assert_eq!(worker.provenance().template_version, 20);
         assert!(
             worker
                 .authored_preview()
@@ -6143,9 +6145,11 @@ mod tests {
                 .authored_preview()
                 .contains("rejects a step verdict unless")
         );
+        assert!(worker.authored_preview().contains("self-report"));
+        assert!(worker.authored_preview().contains("`unsupported`"));
 
         let step = tracker_assignment_prompt(ExecutorRole::StepCheckTracker).unwrap();
-        assert_eq!(step.provenance().template_version, 7);
+        assert_eq!(step.provenance().template_version, 8);
         assert!(step.delivered_preview().contains("Its `title` is a label"));
         assert!(
             step.delivered_preview()
@@ -6155,6 +6159,8 @@ mod tests {
             step.delivered_preview()
                 .contains("exactly one focused Task")
         );
+        assert!(step.delivered_preview().contains("Agent plan completion"));
+        assert!(step.delivered_preview().contains("`notReported`"));
         assert!(!step.delivered_preview().contains("one yes/no question"));
     }
 

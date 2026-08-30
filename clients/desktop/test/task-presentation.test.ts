@@ -278,7 +278,10 @@ describe("Task facts", () => {
         provider: "github", host: "github.com", repository_owner: "o", repository_project: null, repository_name: "r",
         number: 7, title: "Ship", url: "https://example.test/7", state: "merged", base_branch: "main",
         head_branch: "feature/work", head_repository_owner: "o", head_repository_project: null, head_repository_name: "r",
-        checks: "passing", review: "approved", mergeability: "unknown", updated_at_epoch_ms: 1,
+        check_rollup: "passing", check_rollup_source: "githubStatusCheckRollup",
+        review_signal: "approved", review_signal_source: "githubReviewDecision",
+        merge_conflict: "unknown", merge_conflict_source: "githubMergeable",
+        activity_at_epoch_ms: 1, activity_at_source: "githubUpdatedAt",
       }],
       truncated: false, candidate_truncated: false, freshness_generation: 1,
       last_success_observed_at_epoch_ms: 1, last_attempt_observed_at_epoch_ms: 1,
@@ -301,7 +304,10 @@ describe("Task facts", () => {
         provider: "github", host: "github.com", repository_owner: "o", repository_project: null, repository_name: "r",
         number: 7, title: "Ship", url: "https://example.test/7", state: "open", base_branch: "development",
         head_branch: "UKIE-804", head_repository_owner: "o", head_repository_project: null, head_repository_name: "r",
-        checks: "pending", review: "reviewRequired", mergeability: "mergeable", updated_at_epoch_ms: 1,
+        check_rollup: "pending", check_rollup_source: "githubStatusCheckRollup",
+        review_signal: "reviewRequired", review_signal_source: "githubReviewDecision",
+        merge_conflict: "noneDetected", merge_conflict_source: "githubMergeable",
+        activity_at_epoch_ms: 1, activity_at_source: "githubUpdatedAt",
       }],
       truncated: false, candidate_truncated: false, freshness_generation: 1,
       last_success_observed_at_epoch_ms: 1, last_attempt_observed_at_epoch_ms: 1,
@@ -315,6 +321,33 @@ describe("Task facts", () => {
     expect(taskIntegration(projection, durableBranchInBase)).toMatchObject({
       tone: "quiet",
       label: "Checks pending",
+      action: "pullRequest",
+    });
+
+    projection.matches[0]!.check_rollup = "passing";
+    projection.matches[0]!.review_signal = "approved";
+    expect(taskIntegration(projection, durableBranchInBase)).toMatchObject({
+      tone: "review",
+      label: "Signals positive",
+      action: "pullRequest",
+    });
+
+    projection.matches[0]!.provider = "azureDevOps";
+    projection.matches[0]!.check_rollup = "unsupported";
+    projection.matches[0]!.check_rollup_source = "unsupported";
+    projection.matches[0]!.review_signal_source = "azureRequiredReviewerVotes";
+    projection.matches[0]!.merge_conflict_source = "azureMergeStatus";
+    projection.matches[0]!.activity_at_source = "azureLifecycleApproximation";
+    expect(taskIntegration(projection, durableBranchInBase)).toMatchObject({
+      tone: "quiet",
+      label: "CI not observed",
+      action: "pullRequest",
+    });
+
+    projection.matches[0]!.merge_conflict = "policyBlocked";
+    expect(taskIntegration(projection, durableBranchInBase)).toMatchObject({
+      tone: "attention",
+      label: "Policy blocked",
       action: "pullRequest",
     });
   });

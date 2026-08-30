@@ -345,20 +345,26 @@ function pullRequestVerdict(pullRequest: GitHostProjection["matches"][number]): 
   if (pullRequest.state === "draft") {
     return { tone: "quiet", label: "Draft", title: "The pull request is still a draft.", action: "pullRequest" };
   }
-  if (pullRequest.checks === "failing") {
-    return { tone: "attention", label: "Checks failing", title: "The pull request is open and at least one reported check is failing.", action: "pullRequest" };
+  if (pullRequest.check_rollup === "failing") {
+    return { tone: "attention", label: "Checks failing", title: "The GitHub status-check rollup for the latest pull request commit is failing.", action: "pullRequest" };
   }
-  if (pullRequest.review === "changesRequested") {
-    return { tone: "attention", label: "Changes requested", title: "The pull request is open and changes have been requested.", action: "pullRequest" };
+  if (pullRequest.review_signal === "changesRequested") {
+    return { tone: "attention", label: "Changes requested", title: "The configured review signal reports that changes were requested.", action: "pullRequest" };
   }
-  if (pullRequest.mergeability === "conflicting") {
+  if (pullRequest.merge_conflict === "conflicting") {
     return { tone: "attention", label: "Conflicts", title: "The pull request is open and the provider reports merge conflicts.", action: "pullRequest" };
   }
-  if (pullRequest.checks === "passing" && pullRequest.review === "approved" && pullRequest.mergeability === "mergeable") {
-    return { tone: "review", label: "Ready to merge", title: "Reported checks pass, review is approved, and the pull request is mergeable.", action: "pullRequest" };
+  if (pullRequest.merge_conflict === "policyBlocked") {
+    return { tone: "attention", label: "Policy blocked", title: "Azure DevOps reports that a repository policy blocks the pull request.", action: "pullRequest" };
   }
-  if (pullRequest.checks === "pending") {
-    return { tone: "quiet", label: "Checks pending", title: "The pull request is open and reported checks are still pending.", action: "pullRequest" };
+  if (pullRequest.check_rollup === "passing" && pullRequest.review_signal === "approved" && pullRequest.merge_conflict === "noneDetected") {
+    return { tone: "review", label: "Signals positive", title: "The GitHub check rollup passes, the provider review decision is approved, and no merge conflict is reported; other merge gates are not evaluated.", action: "pullRequest" };
+  }
+  if (pullRequest.check_rollup === "pending") {
+    return { tone: "quiet", label: "Checks pending", title: "The GitHub status-check rollup is pending.", action: "pullRequest" };
+  }
+  if (pullRequest.check_rollup === "unsupported") {
+    return { tone: "quiet", label: "CI not observed", title: "TermLoop does not observe Azure DevOps build validation or CI status for this pull request.", action: "pullRequest" };
   }
   return { tone: "quiet", label: "Open", title: "The pull request is open and has not been reported as merged.", action: "pullRequest" };
 }
