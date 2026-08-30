@@ -26,7 +26,7 @@ import { fontFamily } from "@/theme/typography";
 export interface StewardVoiceControlsProps {
   readonly active: boolean;
   readonly expanded: boolean;
-  readonly projects: readonly { id: string; name: string }[];
+  readonly projects: readonly { id: string; name: string; connectionName: string }[];
   readonly selectedProjectId: string | undefined;
   readonly projectName: string;
   readonly phase: VoicePhase;

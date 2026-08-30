@@ -20,8 +20,10 @@ import {
 } from "@/features/connection/connection-store";
 import { useOverview } from "@/features/overview/overview-store";
 import {
-  enabledVoiceProjects,
-  switchableVoiceProject,
+  enabledVoiceTargets,
+  switchableVoiceTarget,
+  voiceTargetId,
+  type VoiceProjectTarget,
 } from "@/presentation/steward-voice-project-selection";
 import {
   appendVoiceFloatPcmBuffer,
@@ -73,13 +75,26 @@ export function StewardVoiceDock() {
   const overview = useOverview();
   const insets = useSafeAreaInsets();
   const routeParams = useGlobalSearchParams() as VoiceRouteParams;
-  const routeProjectId = voiceProjectId(routeParams, overview.overview);
-  const stewardEnabledProjectIds = overview.overview?.stewardEnabledProjectIds ?? [];
-  const projects = useMemo(() => enabledVoiceProjects(overview.overview), [overview.overview]);
+  const targets = useMemo(() => enabledVoiceTargets(connections.connections.map((connection) => ({
+    connectionId: connection.id,
+    connectionName: connection.name,
+    overview: overview.byConnection.get(connection.id)?.overview,
+  }))), [connections.connections, overview.byConnection]);
+  const routeScoped = hasVoiceRouteScope(routeParams);
+  const routeConnectionId = routeValue(routeParams.connectionId) ?? connections.selectedId;
+  const routeOverview = routeConnectionId === undefined
+    ? undefined
+    : overview.byConnection.get(routeConnectionId)?.overview;
+  const routeProjectId = voiceProjectId(routeParams, routeOverview);
+  const routeTarget = routeConnectionId === undefined || routeProjectId === undefined
+    ? undefined
+    : targets.find((target) => (
+      target.connectionId === routeConnectionId && target.projectId === routeProjectId
+    ));
 
   const [sessionActive, setSessionActive] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(routeProjectId);
+  const [selectedTargetId, setSelectedTargetId] = useState<string | undefined>(undefined);
   const [phase, setPhase] = useState<VoicePhase>("ready");
   const [mode, setMode] = useState<VoiceMode>("single");
   const [microphoneEnabled, setMicrophoneEnabled] = useState(false);
@@ -156,13 +171,19 @@ export function StewardVoiceDock() {
   playerRef.current = player;
   streamRef.current = stream;
 
-  const selectedProject = useMemo(
-    () => projects.find((project) => project.id === selectedProjectId) ?? projects[0],
-    [projects, selectedProjectId],
-  );
+  const selectedTarget = routeScoped
+    ? routeTarget
+    : targets.find((target) => target.id === selectedTargetId) ?? routeTarget ?? targets[0];
+  const activeTarget = sessionActive && activeTargetRef.current !== undefined
+    ? targets.find((target) => (
+      target.connectionId === activeTargetRef.current?.connectionId
+      && target.projectId === activeTargetRef.current?.projectId
+    ))
+    : undefined;
+  const displayedTarget = sessionActive ? activeTarget : selectedTarget;
   const replyActivity = voiceStewardActivity(
-    sessionActive ? activeTargetRef.current?.projectId : selectedProject?.id,
-    overview.overview,
+    displayedTarget?.projectId,
+    displayedTarget?.overview,
   );
 
   const transition = useCallback((next: VoicePhase) => {
@@ -694,8 +715,7 @@ export function StewardVoiceDock() {
     void deactivateVoiceAudio().catch(() => undefined);
   }, [resetConversation]);
 
-  const startConversation = useCallback((project: { id: string }, microphoneInitiallyEnabled: boolean) => {
-    const connectionId = connections.selected?.id;
+  const startConversation = useCallback((target: VoiceProjectTarget, microphoneInitiallyEnabled: boolean) => {
     const conversation = conversationRef.current + 1;
     conversationRef.current = conversation;
     sessionActiveRef.current = true;
@@ -713,36 +733,32 @@ export function StewardVoiceDock() {
     speechBlockedRef.current = false;
     setUnreadCount(0);
     transcriptSeededRef.current = false;
-    if (connectionId === undefined) {
-      setMicrophone(false);
-      setError("Önce çevrimiçi bir Mac ve Steward projesi seç.");
-      transition("error");
-      return;
-    }
-    setSelectedProjectId(project.id);
-    const target = { connectionId, projectId: project.id };
-    activeTargetRef.current = target;
-    void beginSession(conversation, target);
-  }, [beginSession, connections.selected?.id, setMicrophone, transition]);
+    setSelectedTargetId(target.id);
+    const activeTarget = { connectionId: target.connectionId, projectId: target.projectId };
+    activeTargetRef.current = activeTarget;
+    void beginSession(conversation, activeTarget);
+  }, [beginSession, setMicrophone]);
 
   const openConversation = useCallback(() => {
-    const project = projects.find((candidate) => candidate.id === routeProjectId) ?? selectedProject;
-    if (project === undefined) return;
-    startConversation(project, true);
-  }, [projects, routeProjectId, selectedProject, startConversation]);
+    if (selectedTarget === undefined) return;
+    startConversation(selectedTarget, true);
+  }, [selectedTarget, startConversation]);
 
-  const selectProject = useCallback((projectId: string) => {
+  const selectProject = useCallback((targetId: string) => {
     if (bootstrappingRef.current || pollingRef.current) return;
-    const project = switchableVoiceProject(
-      projects,
-      activeTargetRef.current?.projectId,
-      projectId,
+    const currentTarget = activeTargetRef.current;
+    const target = switchableVoiceTarget(
+      targets,
+      currentTarget === undefined
+        ? selectedTarget?.id
+        : voiceTargetId(currentTarget.connectionId, currentTarget.projectId),
+      targetId,
       phaseRef.current,
     );
-    if (project === undefined) return;
+    if (target === undefined) return;
     resetConversation(false);
-    startConversation(project, false);
-  }, [projects, resetConversation, startConversation]);
+    startConversation(target, false);
+  }, [resetConversation, selectedTarget?.id, startConversation, targets]);
 
   const toggleMicrophone = useCallback(() => {
     if (microphoneEnabledRef.current) {
@@ -802,31 +818,25 @@ export function StewardVoiceDock() {
   }, [enqueueSpeech, lastReply, transition]);
 
   useEffect(() => {
-    if (!sessionActiveRef.current && routeProjectId !== undefined) setSelectedProjectId(routeProjectId);
-  }, [routeProjectId]);
-
-  useEffect(() => {
-    const activeConnectionId = activeTargetRef.current?.connectionId;
-    if (sessionActiveRef.current && activeConnectionId !== undefined
-      && activeConnectionId !== connections.selected?.id) endConversation();
-  }, [connections.selected?.id, endConversation]);
-
-  useEffect(() => {
-    const activeProjectId = activeTargetRef.current?.projectId;
-    if (sessionActiveRef.current && activeProjectId !== undefined
-      && !stewardEnabledProjectIds.includes(activeProjectId)) endConversation();
-  }, [endConversation, stewardEnabledProjectIds]);
+    if (!sessionActiveRef.current && routeTarget !== undefined) setSelectedTargetId(routeTarget.id);
+  }, [routeTarget]);
 
   useEffect(() => {
     const target = activeTargetRef.current;
-    if (!sessionActive || selectedProject === undefined || target?.projectId !== selectedProject.id) return;
+    if (sessionActiveRef.current && target !== undefined && !targets.some((candidate) => (
+      candidate.connectionId === target.connectionId && candidate.projectId === target.projectId
+    ))) endConversation();
+  }, [endConversation, targets]);
+
+  useEffect(() => {
+    if (!sessionActive || activeTarget === undefined) return;
     void stewardLiveActivity.sync({
-      projectId: selectedProject.id,
-      projectName: selectedProject.name,
+      projectId: activeTarget.projectId,
+      projectName: activeTarget.projectName,
       status: liveActivityStatus(phase, replyActivity.label),
       microphoneEnabled,
     }).catch(() => undefined);
-  }, [microphoneEnabled, phase, replyActivity.label, selectedProject, sessionActive]);
+  }, [activeTarget, microphoneEnabled, phase, replyActivity.label, sessionActive]);
 
   useEffect(() => () => {
     playerRef.current.pause();
@@ -835,10 +845,7 @@ export function StewardVoiceDock() {
     void stewardLiveActivity.end().catch(() => undefined);
   }, []);
 
-  const activeProjectId = activeTargetRef.current?.projectId;
-  const voiceAvailable = sessionActive
-    ? activeProjectId !== undefined && stewardEnabledProjectIds.includes(activeProjectId)
-    : routeProjectId !== undefined;
+  const voiceAvailable = sessionActive ? activeTarget !== undefined : selectedTarget !== undefined;
   if (!voiceAvailable) return null;
 
   return (
@@ -873,15 +880,29 @@ export function StewardVoiceDock() {
         }}
         onToggleMicrophone={toggleMicrophone}
         phase={phase}
-        projects={projects}
-        projectName={selectedProject?.name ?? "Steward"}
+        projects={targets.map((target) => ({
+          id: target.id,
+          name: target.projectName,
+          connectionName: target.connectionName,
+        }))}
+        projectName={displayedTarget?.projectName ?? "Steward"}
         replyActivity={replyActivity}
-        selectedProjectId={selectedProject?.id}
+        selectedProjectId={displayedTarget?.id}
         turns={turns}
         unreadCount={unreadCount}
       />
     </KeyboardAvoidingView>
   );
+}
+
+function hasVoiceRouteScope(params: VoiceRouteParams): boolean {
+  return [params.projectId, params.taskId, params.sessionId].some((value) => (
+    value !== undefined && value.length > 0
+  ));
+}
+
+function routeValue(value: string | readonly string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 function liveActivityStatus(phase: VoicePhase, replyActivityLabel: string): string {

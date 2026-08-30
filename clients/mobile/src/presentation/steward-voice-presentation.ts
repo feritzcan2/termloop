@@ -39,6 +39,7 @@ export interface VoiceTurn {
 }
 
 export interface VoiceRouteParams {
+  connectionId?: string | readonly string[] | undefined;
   projectId?: string | readonly string[] | undefined;
   taskId?: string | readonly string[] | undefined;
   sessionId?: string | readonly string[] | undefined;
