@@ -902,7 +902,7 @@ function hasVoiceRouteScope(params: VoiceRouteParams): boolean {
 }
 
 function routeValue(value: string | readonly string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
+  return typeof value === "string" ? value : value?.[0];
 }
 
 function liveActivityStatus(phase: VoicePhase, replyActivityLabel: string): string {
