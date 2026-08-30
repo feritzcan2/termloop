@@ -114,6 +114,7 @@ export function useTerminalSession(
     let reconcilingReplay = cached !== undefined;
     let attachRetry: ReturnType<typeof setTimeout> | undefined;
     let attachRetryDelay = INITIAL_ATTACH_RETRY_MS;
+    let ownedAttachment: TerminalAttachment | undefined;
     /// A fresh decoder per attachment. Carrying one across attachments would let a
     /// half-decoded character from the previous stream corrupt the first line of the
     /// next one.
@@ -198,9 +199,14 @@ export function useTerminalSession(
       ).then(
         (value) => {
           if (active) {
+            ownedAttachment = value;
             attachment.current = value;
             attachRetryDelay = INITIAL_ATTACH_RETRY_MS;
             setError(undefined);
+            /// The port promise resolves only after authentication. Reaffirm that
+            /// fact at the hook boundary: a retained route can batch its old
+            /// `reconnecting` cleanup after the adapter's first connected event.
+            onEvent({ type: "state", state: "connected" });
           } else void value.detach();
         },
         () => {
@@ -232,8 +238,8 @@ export function useTerminalSession(
         });
       }
       projection.current = undefined;
-      const open = attachment.current;
-      attachment.current = undefined;
+      const open = ownedAttachment;
+      if (attachment.current === open) attachment.current = undefined;
       if (open) void open.detach();
       setBuffer(detached);
     };

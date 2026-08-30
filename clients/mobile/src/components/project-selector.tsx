@@ -2,10 +2,13 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { StatusDot } from "@/components/primitives";
 import { useConnections } from "@/features/connection/connection-store";
 import { useOverview } from "@/features/overview/overview-store";
 import { buildLocatedProjectSummaries } from "@/presentation/attention-overview";
 import type { ProjectSummary } from "@/presentation/attention-overview";
+import { connectionPresentation } from "@/presentation/connection-presentation";
+import { projectSelectorGroups } from "@/presentation/project-selector-model";
 import { color, geometry, radius, space, toneColor } from "@/theme/tokens";
 import { fontFamily, text } from "@/theme/typography";
 
@@ -39,6 +42,7 @@ export function ProjectSelector({ current, variant }: {
       reviewReadySessionIds: snapshot.reviewReadySessionIds,
     }];
   }));
+  const groups = projectSelectorGroups(connections.connections, projects);
 
   return (
     <View style={mini ? styles.miniWrap : styles.wrap}>
@@ -87,42 +91,69 @@ export function ProjectSelector({ current, variant }: {
                   </Text>
                 </View>
               </Pressable>
-              <View style={styles.menuDivider} />
-              {projects.map(({ connection, summary }) => {
-                const selected = connection.id === connections.selectedId
-                  && summary.project.id === current?.project.id;
+              {groups.map(({ connection, projects: connectionProjects }) => {
+                const presentation = connectionPresentation(connection.availability);
                 return (
-                  <Pressable
-                    key={`${connection.id}:${summary.project.id}`}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                    accessibilityLabel={`${summary.project.name}, ${connection.name} üzerinde, ${summary.summaryLine}`}
-                    onPress={() => {
-                      setOpen(false);
-                      if (!selected) {
-                        connections.select(connection.id);
-                        router.replace({
-                          pathname: "/project/[projectId]",
-                          params: { projectId: summary.project.id, connectionId: connection.id },
-                        });
-                      }
-                    }}
-                    style={({ pressed }) => [
-                      styles.item,
-                      selected && styles.itemSelected,
-                      pressed && !selected ? styles.itemPressed : null,
-                    ]}
-                  >
-                    <ProjectAvatar name={summary.project.name} size={21} />
-                    <View style={styles.itemBody}>
-                      <Text style={styles.itemTitle} numberOfLines={1}>{summary.project.name}</Text>
-                      <Text style={styles.itemLocation} numberOfLines={1}>{connection.name}</Text>
-                      <Text style={styles.itemDetail} numberOfLines={1}>{summary.summaryLine}</Text>
+                  <View key={connection.id}>
+                    <View style={styles.menuDivider} />
+                    <View
+                      style={styles.computerHeader}
+                      accessibilityLabel={`${connection.name}, ${presentation.label}, ${connectionProjects.length} projects`}
+                    >
+                      <ProjectAvatar name={connection.name} size={19} />
+                      <View style={styles.itemBody}>
+                        <Text style={styles.computerName} numberOfLines={1}>{connection.name}</Text>
+                        <Text style={styles.computerStatus} numberOfLines={1}>
+                          {presentation.label} · {connectionProjects.length} {connectionProjects.length === 1 ? "project" : "projects"}
+                        </Text>
+                      </View>
+                      <StatusDot kind={presentation.dot} />
                     </View>
-                    {summary.tone === "quiet" || summary.tone === "done" ? null : (
-                      <View style={[styles.toneDot, { backgroundColor: toneColor[summary.tone] }]} />
-                    )}
-                  </Pressable>
+                    {connectionProjects.length === 0 ? (
+                      <View style={styles.emptyComputer}>
+                        <Text style={styles.emptyComputerText}>
+                          {connection.availability === "online"
+                            ? "No projects on this Mac."
+                            : `No cached projects. ${presentation.summary}`}
+                        </Text>
+                      </View>
+                    ) : connectionProjects.map(({ summary }) => {
+                      const selected = connection.id === connections.selectedId
+                        && summary.project.id === current?.project.id;
+                      return (
+                        <Pressable
+                          key={`${connection.id}:${summary.project.id}`}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                          accessibilityLabel={`${summary.project.name}, ${connection.name} üzerinde, ${summary.summaryLine}`}
+                          onPress={() => {
+                            setOpen(false);
+                            if (!selected) {
+                              connections.select(connection.id);
+                              router.replace({
+                                pathname: "/project/[projectId]",
+                                params: { projectId: summary.project.id, connectionId: connection.id },
+                              });
+                            }
+                          }}
+                          style={({ pressed }) => [
+                            styles.projectItem,
+                            selected && styles.itemSelected,
+                            pressed && !selected ? styles.itemPressed : null,
+                          ]}
+                        >
+                          <ProjectAvatar name={summary.project.name} size={21} />
+                          <View style={styles.itemBody}>
+                            <Text style={styles.itemTitle} numberOfLines={1}>{summary.project.name}</Text>
+                            <Text style={styles.itemDetail} numberOfLines={1}>{summary.summaryLine}</Text>
+                          </View>
+                          {summary.tone === "quiet" || summary.tone === "done" ? null : (
+                            <View style={[styles.toneDot, { backgroundColor: toneColor[summary.tone] }]} />
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
                 );
               })}
             </ScrollView>
@@ -206,9 +237,30 @@ const styles = StyleSheet.create({
   },
   itemSelected: { backgroundColor: color.accentWash },
   itemPressed: { backgroundColor: color.bgHover },
+  computerHeader: {
+    minHeight: 42,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    paddingHorizontal: space.sm,
+    paddingVertical: 5,
+  },
+  computerName: { ...text.rowTitle, fontFamily: fontFamily.mono, fontSize: 12.5 },
+  computerStatus: { color: color.textSecondary, fontSize: 10.5 },
+  projectItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    minHeight: geometry.touchTarget,
+    marginLeft: 16,
+    paddingHorizontal: space.sm,
+    paddingVertical: 5,
+    borderRadius: radius.control,
+  },
+  emptyComputer: { minHeight: 32, justifyContent: "center", paddingLeft: 52, paddingRight: space.sm },
+  emptyComputerText: { color: color.textMuted, fontSize: 10.5 },
   itemBody: { flex: 1, minWidth: 0, gap: 1 },
   itemTitle: { ...text.rowTitle, fontFamily: fontFamily.mono, fontSize: 13 },
-  itemLocation: { color: color.accentStrong, fontFamily: fontFamily.mono, fontSize: 10, fontWeight: "700" },
   itemDetail: { color: color.textSecondary, fontSize: 11 },
   toneDot: { width: 7, height: 7, borderRadius: 4 },
   menuDivider: { height: StyleSheet.hairlineWidth, marginVertical: 4, marginHorizontal: 5, backgroundColor: color.border },

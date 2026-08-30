@@ -2,6 +2,7 @@ import type { AgentStatusDto, SessionDto, TaskDto } from "@termloop/contract/cur
 import { describe, expect, it } from "vitest";
 
 import type { ConnectionProfile, MobileOverview } from "../../src/application/ports";
+import { connectionRouteParams } from "../../src/features/connection/connection-route";
 import { preferredConnectionId } from "../../src/features/connection/connection-resilience";
 import { snapshotWhileUnavailable } from "../../src/features/overview/overview-resilience";
 import {
@@ -13,6 +14,7 @@ import {
 import { connectionBlockCopy, connectionPresentation, shortContractIdentity } from "../../src/presentation/connection-presentation";
 import { ellipsizeMiddle, shortenPath } from "../../src/presentation/dto-readers";
 import { relativeAge, relativeAgeSentence } from "../../src/presentation/relative-time";
+import { projectSelectorGroups } from "../../src/presentation/project-selector-model";
 import {
   provisioningFailureNote,
   taskAtAGlance,
@@ -387,6 +389,24 @@ describe("connection presentation", () => {
       readAtEpochMs: 100,
     });
     expect(snapshotWhileUnavailable("revoked", previous).overview).toBeUndefined();
+  });
+
+  it("keeps every paired Mac as its own selector group and carries its identity into retained routes", () => {
+    const home = mac("mac-home", "Home Mac");
+    const offline = { ...mac("mac-away", "Away Mac"), availability: "offline" as const };
+    const located = buildLocatedProjectSummaries([{ connection: home, overview: baseOverview }]);
+
+    expect(projectSelectorGroups([home, offline], located).map((group) => ({
+      connectionId: group.connection.id,
+      projectCount: group.projects.length,
+    }))).toEqual([
+      { connectionId: "mac-home", projectCount: baseOverview.projects.length },
+      { connectionId: "mac-away", projectCount: 0 },
+    ]);
+    expect(connectionRouteParams("mac-away", { sessionId: "session-1" })).toEqual({
+      sessionId: "session-1",
+      connectionId: "mac-away",
+    });
   });
 
   it("shortens a contract identity while keeping enough to compare two of them", () => {

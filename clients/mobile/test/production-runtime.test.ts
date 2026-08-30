@@ -648,6 +648,42 @@ describe("production terminal adapter", () => {
     expect(socket.closed).toBe(true);
   });
 
+  it("cleanly reattaches the same retained Session after visiting another route", async () => {
+    const sockets: FakeDataSocket[] = [];
+    const runtime = createProductionRuntime({
+      repository: fixedRepository(saved),
+      controlSocketFactory: () => { throw new Error("control not used"); },
+      terminalSocketFactory: () => {
+        const socket = new FakeDataSocket();
+        sockets.push(socket);
+        return socket;
+      },
+    });
+    const states: string[] = [];
+    const attach = () => runtime.terminal.attach(
+      saved.id,
+      { ...fixtureSessions[0]!, id: sessionId, runtime_epoch: 17 },
+      (event) => { if (event.type === "state") states.push(event.state); },
+    );
+
+    const firstAttaching = attach();
+    await waitFor(() => sockets.length === 1);
+    sockets[0]!.open();
+    sockets[0]!.message("TLOK");
+    const first = await firstAttaching;
+    await first.detach();
+
+    const secondAttaching = attach();
+    await waitFor(() => sockets.length === 2);
+    sockets[1]!.open();
+    sockets[1]!.message("TLOK");
+    const second = await secondAttaching;
+
+    expect(states).toEqual(["connecting", "connected", "connecting", "connected"]);
+    await expect(second.input(new TextEncoder().encode("returned"))).resolves.toBeUndefined();
+    await second.detach();
+  });
+
   it("publishes an idle replay burst after its short batching window", async () => {
     vi.useFakeTimers();
     try {

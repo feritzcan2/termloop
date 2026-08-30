@@ -10,6 +10,7 @@ import { Row } from "@/components/row";
 import { MockBadge, Screen, ScreenHeader } from "@/components/screen";
 import { WorkspaceTabs, type WorkspaceTabId } from "@/components/workspace-tabs";
 import { useConnections } from "@/features/connection/connection-store";
+import { connectionRouteParams } from "@/features/connection/connection-route";
 import { useOverview } from "@/features/overview/overview-store";
 import {
   buildProjectOverview,
@@ -128,7 +129,9 @@ export default function ProjectRoute() {
                 disabled={model.project === undefined}
                 onPress={() => router.push({
                   pathname: "/launch/[taskId]",
-                  params: { taskId: `project:${model.project?.id ?? projectId}` },
+                  params: connectionRouteParams(connections.selectedId, {
+                    taskId: `project:${model.project?.id ?? projectId}`,
+                  }),
                 })}
               />
               <WorkspaceAction
@@ -201,7 +204,7 @@ export default function ProjectRoute() {
                             disabled={!row.attachable}
                             onPress={() => router.push({
                               pathname: "/session/[sessionId]",
-                              params: { sessionId: row.sessionId },
+                              params: connectionRouteParams(connections.selectedId, { sessionId: row.sessionId }),
                             })}
                           />
                         </View>
@@ -232,7 +235,7 @@ export default function ProjectRoute() {
                           minHeight={geometry.taskRowMinHeight}
                           onPress={() => router.push({
                             pathname: "/task/[taskId]",
-                            params: { taskId: row.taskId },
+                            params: connectionRouteParams(connections.selectedId, { taskId: row.taskId }),
                           })}
                         />
                       </View>
@@ -250,6 +253,7 @@ export default function ProjectRoute() {
 
 function AgentRowView({ row, nowMs }: { row: AgentRow; nowMs: number }) {
   const router = useRouter();
+  const connections = useConnections();
   const store = useOverview();
   const taskId = row.taskId;
   const detail = [row.taskTitle, row.relationship, row.runner ?? row.folder]
@@ -270,7 +274,7 @@ function AgentRowView({ row, nowMs }: { row: AgentRow; nowMs: number }) {
           store.dismissReview(row.sessionId);
           router.push({
             pathname: "/session/[sessionId]",
-            params: { sessionId: row.sessionId },
+            params: connectionRouteParams(connections.selectedId, { sessionId: row.sessionId }),
           });
         }}
       />
@@ -281,7 +285,7 @@ function AgentRowView({ row, nowMs }: { row: AgentRow; nowMs: number }) {
             accessibilityLabel={`Open Task ${row.taskTitle ?? taskId}`}
             onPress={() => router.push({
               pathname: "/task/[taskId]",
-              params: { taskId },
+              params: connectionRouteParams(connections.selectedId, { taskId }),
             })}
           />
           <AgentTaskAction
@@ -289,7 +293,7 @@ function AgentRowView({ row, nowMs }: { row: AgentRow; nowMs: number }) {
             accessibilityLabel={`Open changes for Task ${row.taskTitle ?? taskId}`}
             onPress={() => router.push({
               pathname: "/task/[taskId]/changes",
-              params: { taskId },
+              params: connectionRouteParams(connections.selectedId, { taskId }),
             })}
           />
         </View>

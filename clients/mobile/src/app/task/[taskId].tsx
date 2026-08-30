@@ -1,6 +1,6 @@
 import type { TaskDto } from "@termloop/contract/current";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import {
@@ -15,6 +15,7 @@ import {
 } from "@/components/primitives";
 import { TaskPipeline } from "@/components/task-pipeline";
 import { useConnections } from "@/features/connection/connection-store";
+import { connectionRouteParams } from "@/features/connection/connection-route";
 import { launchBlockedReason } from "@/presentation/agent-launch-presentation";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { ProjectSelector } from "@/components/project-selector";
@@ -45,13 +46,21 @@ import { fontFamily, text } from "@/theme/typography";
 /// phone tap. So each degraded section states the fact and names the Mac as the place
 /// to act, rather than offering a control the client would then have to refuse.
 export default function TaskRoute() {
-  const { taskId } = useLocalSearchParams<{ taskId: string }>();
+  const { taskId, connectionId } = useLocalSearchParams<{ taskId: string; connectionId?: string }>();
   const router = useRouter();
   const store = useOverview();
-  const { selected } = useConnections();
+  const connections = useConnections();
+  const selectingConnection = connectionId !== undefined && connections.selectedId !== connectionId;
+  const selected = selectingConnection ? undefined : connections.selected;
   const [briefExpanded, setBriefExpanded] = useState(false);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [tab, setTab] = useState<"overview" | "playbook">("overview");
+
+  useEffect(() => {
+    if (connectionId !== undefined && connections.selectedId !== connectionId) {
+      connections.select(connectionId);
+    }
+  }, [connectionId, connections.select, connections.selectedId]);
 
   const task = store.overview?.tasks.find((candidate) => candidate.id === taskId);
   const summaries = useMemo(
@@ -65,7 +74,7 @@ export default function TaskRoute() {
   );
   const nowMs = store.readAtEpochMs ?? 0;
 
-  if (store.load === "loading" || store.load === "idle") {
+  if (selectingConnection || store.load === "loading" || store.load === "idle") {
     return (
       <Screen>
         <ScreenHeader back="Project" title="Task" right={<MockBadge />} />
@@ -128,7 +137,7 @@ export default function TaskRoute() {
                 nowEpochMs={nowMs}
                 openSteward={() => router.push({
                   pathname: "/steward/[projectId]",
-                  params: { projectId: task.project_id },
+                  params: connectionRouteParams(selected?.id, { projectId: task.project_id }),
                 })}
               />
             )}
@@ -151,19 +160,25 @@ export default function TaskRoute() {
           <PrimaryButton
             label={attached.length > 0 ? "Start another agent" : "Start agent"}
             disabled={selected === undefined || launchBlockedReason(task) !== undefined}
-            onPress={() => router.push({ pathname: "/launch/[taskId]", params: { taskId: task.id } })}
+            onPress={() => router.push({
+              pathname: "/launch/[taskId]",
+              params: connectionRouteParams(selected?.id, { taskId: task.id }),
+            })}
           />
           {changeCount === undefined ? null : (
             <SecondaryButton
               label={taskChangeLabel(changeCount)}
-              onPress={() => router.push({ pathname: "/task/[taskId]/changes", params: { taskId: task.id } })}
+              onPress={() => router.push({
+                pathname: "/task/[taskId]/changes",
+                params: connectionRouteParams(selected?.id, { taskId: task.id }),
+              })}
             />
           )}
           <SecondaryButton
             label="Ask Steward"
             onPress={() => router.push({
               pathname: "/steward/[projectId]",
-              params: { projectId: task.project_id },
+              params: connectionRouteParams(selected?.id, { projectId: task.project_id }),
             })}
           />
         </View>
@@ -188,7 +203,7 @@ export default function TaskRoute() {
                     disabled={!row.attachable}
                     onPress={() => router.push({
                       pathname: "/session/[sessionId]",
-                      params: { sessionId: row.sessionId },
+                      params: connectionRouteParams(selected?.id, { sessionId: row.sessionId }),
                     })}
                   />
                 </View>

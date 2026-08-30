@@ -19,6 +19,7 @@ import { ProjectSelector } from "@/components/project-selector";
 import { MockBadge, Screen, ScreenHeader } from "@/components/screen";
 import { TerminalView } from "@/components/terminal-view";
 import { useConnections } from "@/features/connection/connection-store";
+import { connectionRouteParams } from "@/features/connection/connection-route";
 import { useOverview } from "@/features/overview/overview-store";
 import { takePendingSessionInput } from "@/features/terminal/pending-session-input";
 import { useTerminalSession, type TerminalKey } from "@/features/terminal/use-terminal-session";
@@ -75,9 +76,9 @@ export default function SessionRoute() {
   const [imageSending, setImageSending] = useState(false);
   const [fontSizeIndex, setFontSizeIndex] = useState(1);
 
-  const selectingNotificationConnection = connectionId !== undefined
+  const selectingRouteConnection = connectionId !== undefined
     && connections.selectedId !== connectionId;
-  const session = selectingNotificationConnection
+  const session = selectingRouteConnection
     ? undefined
     : store.overview?.sessions.find((candidate) => candidate.id === sessionId);
   const status = store.overview?.agentStatuses.find((candidate) => candidate.sessionId === sessionId);
@@ -124,7 +125,7 @@ export default function SessionRoute() {
       <Screen edges={["top", "bottom"]}>
         <ScreenHeader back="Project" title="Session" right={<MockBadge />} />
         <View style={styles.centre}>
-          {store.load === "ready" && !selectingNotificationConnection
+          {store.load === "ready" && !selectingRouteConnection
             ? <Banner kind="warning" message="This session is no longer in the connected Mac's projection." />
             : <ActivityIndicator color={color.accentStrong} />}
         </View>
@@ -213,7 +214,7 @@ export default function SessionRoute() {
                 <Pressable
                   onPress={() => router.push({
                     pathname: "/task/[taskId]/changes",
-                    params: { taskId: changesTaskId },
+                    params: connectionRouteParams(connections.selectedId, { taskId: changesTaskId }),
                   })}
                   accessibilityRole="button"
                   accessibilityLabel="Changes in this agent's worktree"

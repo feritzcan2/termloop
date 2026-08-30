@@ -35,10 +35,16 @@ const POLL_MS = 6_000;
 /// It is also how a pipeline gets built from a phone: ask the Steward, and it
 /// edits the Playbook through its own Project-scoped commands.
 export default function StewardRoute() {
-  const { projectId } = useLocalSearchParams<{ projectId: string }>();
+  const { projectId, connectionId: routeConnectionId } = useLocalSearchParams<{
+    projectId: string;
+    connectionId?: string;
+  }>();
   const router = useRouter();
   const runtime = useMobileRuntime();
-  const { selected } = useConnections();
+  const connections = useConnections();
+  const selectingConnection = routeConnectionId !== undefined
+    && connections.selectedId !== routeConnectionId;
+  const selected = selectingConnection ? undefined : connections.selected;
   const store = useOverview();
   const project = store.overview?.projects.find((candidate) => candidate.id === projectId);
   const connectionId = selected?.id;
@@ -49,6 +55,12 @@ export default function StewardRoute() {
   const [busy, setBusy] = useState(false);
   const scroll = useRef<ScrollView | null>(null);
   const nowMs = store.readAtEpochMs ?? 0;
+
+  useEffect(() => {
+    if (routeConnectionId !== undefined && connections.selectedId !== routeConnectionId) {
+      connections.select(routeConnectionId);
+    }
+  }, [connections.select, connections.selectedId, routeConnectionId]);
 
   const read = useCallback(async () => {
     if (connectionId === undefined || projectId === undefined) return;
@@ -97,6 +109,15 @@ export default function StewardRoute() {
       setBusy(false);
     }
   }, [connectionId, projectId, read, runtime]);
+
+  if (selectingConnection) {
+    return (
+      <Screen>
+        <ScreenHeader back="Project" title="Steward" />
+        <View style={styles.centre}><ActivityIndicator color={color.accentStrong} /></View>
+      </Screen>
+    );
+  }
 
   return (
     <Screen>
