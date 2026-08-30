@@ -671,6 +671,19 @@ describe("Task rail row anatomy", () => {
     expect(closed).toContain('class="task-item closed"');
   });
 
+  it("marks only closed Tasks that still retain a worktree", async () => {
+    const retained = { ...launchableTask(), status: "closed" as const };
+    const retainedMarkup = await renderRailTab({ task: retained }, "closed");
+    expect(retainedMarkup).toContain('class="task-meta-worktree"');
+    expect(retainedMarkup).toContain("Worktree attached");
+    expect(retainedMarkup).toContain(`Worktree still attached: ${retained.worktree!.path}`);
+
+    const detached = { ...worktreeLessTask(), status: "closed" as const };
+    const detachedMarkup = await renderRailTab({ task: detached }, "closed");
+    expect(detachedMarkup).not.toContain("task-meta-worktree");
+    expect(detachedMarkup).not.toContain("Worktree attached");
+  });
+
   it("explains a failed worktree in words and offers the retry as a recovery step", () => {
     const task = {
       ...worktreeLessTask(),

@@ -1327,8 +1327,9 @@ function TaskMetaLine(props: TaskMetaLineProps) {
   /// put the key in the title, printing it again is pure repetition.
   const jiraKey = task.jira_url ? taskJiraIssueKey(task.jira_url) : undefined;
   const showJira = Boolean(task.jira_url && jiraKey && !task.title.includes(jiraKey));
-  /// The worktree path rides the branch tooltip: the row itself never spends
-  /// width on the folder, but the full path stays one hover away.
+  /// Active Tasks keep the worktree path in the branch tooltip. Closed Tasks
+  /// surface the binding as a badge because that lingering checkout blocks
+  /// Project deletion and needs to remain obvious even while the row is folded.
   const worktreeSuffix = task.worktree ? ` · Worktree ${task.worktree.path}` : "";
   return (
     <div className="task-meta">
@@ -1337,6 +1338,19 @@ function TaskMetaLine(props: TaskMetaLineProps) {
           {stage.tone === "busy" ? <span className="task-pulse" aria-hidden="true" /> : null}
           {stage.flag}
         </em>
+      ) : null}
+      {quiet && task.worktree ? (
+        <>
+          <small
+            className="task-meta-worktree"
+            title={`Worktree still attached: ${task.worktree.path}`}
+            aria-label={`Worktree attached at ${task.worktree.path}`}
+          >
+            <Icon name="folder" />
+            Worktree attached
+          </small>
+          {separator}
+        </>
       ) : null}
       {/* A diverged checkout replaces the branch token instead of joining it:
           "on <checked-out>" is the operative fact, and the Task branch it

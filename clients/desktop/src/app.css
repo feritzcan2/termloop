@@ -411,6 +411,10 @@ kbd { padding: 2px 5px; border: 1px solid rgba(255,255,255,.07); border-radius: 
 .task-meta-flag { display: inline-flex; flex: none; align-items: center; gap: 5px; font: 700 9px/1.5 var(--font-mono); letter-spacing: .09em; text-transform: uppercase; white-space: nowrap; }
 .task-meta-flag.busy { color: var(--state-running); }
 .task-meta-flag.blocked { color: var(--state-error); }
+/* A closed Task can look finished while its checkout still blocks Project
+   deletion. Keep that binding visible as a compact warning before the branch. */
+.task-meta-worktree { display: inline-flex; flex: none; align-items: center; gap: 4px; min-height: 18px; padding: 0 6px 0 5px; border: 1px solid color-mix(in srgb, var(--warning) 38%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--warning) 11%, transparent); color: var(--warning); font: 700 9px/1 var(--font-ui); letter-spacing: .01em; }
+.task-meta-worktree svg { width: 10px; height: 10px; }
 .task-meta-branch { min-width: 24px; flex: 0 9999 auto; overflow: hidden; color: var(--sidebar-dim); font: 10px/1.5 var(--font-mono); text-overflow: ellipsis; }
 .task-meta-branch.none { color: var(--sidebar-dimmer); }
 .task-meta-sep { flex: none; color: var(--sidebar-dimmer); font: 10px/1.5 var(--font-mono); }
