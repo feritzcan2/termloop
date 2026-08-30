@@ -96,7 +96,8 @@ describe("Task stale delete confirmation", () => {
     expect(radios).toHaveLength(2);
     expect(radios[0]?.checked).toBe(true);
     const submit = host.querySelector<HTMLButtonElement>("button.danger-button")!;
-    expect(submit.textContent).toContain("keep folder");
+    expect(host.textContent).toContain("Forget the stale worktree binding");
+    expect(submit.textContent).toContain("don't touch files");
 
     await act(async () => submit.click());
     expect(remove).toHaveBeenCalledWith({ preview, kind: "forgetStaleBinding" });

@@ -42,7 +42,7 @@ pub struct ObservedTaskWorktreeStaleResolution {
     pub(super) proof: Option<ManagedWorktreeProof>,
     target_path: String,
     mode: WorktreeStaleResolutionMode,
-    facts: TaskWorktreeCleanupFacts,
+    facts: Result<TaskWorktreeCleanupFacts, CoreError>,
     target_kind: Option<StaleResolutionTargetKind>,
     runner: GitRunner,
     stale_target: Result<termloop_platform::StaleDisposalTargetFacts, CoreError>,
@@ -107,11 +107,26 @@ impl TaskWorktreeStaleResolutionPlan {
         let runner =
             GitRunner::discover_with_timeout(termloop_gitio::CLEANUP_GIT_SUBPROCESS_DEADLINE)
                 .map_err(map_git_observation_error)?;
-        let facts = observe_stale_resolution_facts(&runner, &self.task, self.proof.as_ref())?;
-        let target_kind = stale_resolution_target_kind(
-            &facts,
-            is_generation_zero_legacy_binding(&self.task, self.proof.as_ref()),
-        );
+        let (facts, target_kind) =
+            match observe_stale_resolution_facts(&runner, &self.task, self.proof.as_ref()) {
+                Ok(facts) => {
+                    let target_kind = stale_resolution_target_kind(
+                        &facts,
+                        is_generation_zero_legacy_binding(&self.task, self.proof.as_ref()),
+                    );
+                    (Ok(facts), target_kind)
+                }
+                Err(error)
+                    if self.mode == WorktreeStaleResolutionMode::ForgetBinding
+                        && matches!(error, CoreError::RepositoryUnavailable) =>
+                {
+                    // The exact Task/proof/generation/path tuple remains the
+                    // authority for this record-only path. Disposal still
+                    // returns the observation failure above without mutation.
+                    (Err(error), None)
+                }
+                Err(error) => return Err(error),
+            };
         let stale_target = termloop_platform::inspect_stale_disposal_target(
             Path::new(&self.target_path),
             &self.protected_descendants,
@@ -412,7 +427,7 @@ impl CoreRuntime {
             self.ensure_current_unverified_binding(&observed.task)?;
         }
         if observed.mode == WorktreeStaleResolutionMode::DiscardDirectory
-            && both_absent(&observed.facts)
+            && observed.facts.as_ref().is_ok_and(both_absent)
             && self
                 .store
                 .stale_resolution_operations()
@@ -454,11 +469,15 @@ impl CoreRuntime {
                 .task_projection(&completed.task)
                 .map(TaskWorktreeStaleResolutionProgress::Return);
         }
-        let mut blockers = stale_observation_blockers(
-            &observed.facts,
-            is_generation_zero_legacy_binding(&observed.task, observed.proof.as_ref()),
-            observed.mode,
-        );
+        let mut blockers = match &observed.facts {
+            Ok(facts) => stale_observation_blockers(
+                facts,
+                is_generation_zero_legacy_binding(&observed.task, observed.proof.as_ref()),
+                observed.mode,
+            ),
+            Err(_) if observed.mode == WorktreeStaleResolutionMode::ForgetBinding => Vec::new(),
+            Err(error) => vec![stale_observation_error_blocker(error)],
+        };
         if !blockers.is_empty() {
             return Err(stale_resolution_refused(&observed, blockers));
         }
