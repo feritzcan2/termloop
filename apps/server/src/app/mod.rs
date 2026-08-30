@@ -101,6 +101,7 @@ struct AppState {
     skill_manager: termloop_platform::SkillManager,
     secure_credentials: Arc<dyn termloop_platform::SecureCredentialStore>,
     voice: termloop_core::VoiceService,
+    voice_settings: voice::VoiceSettingsStore,
     task_source_credential_states:
         Arc<StdMutex<HashMap<String, control::TaskSourceCredentialPresence>>>,
     task_source_refresh_observer: Arc<dyn termloop_core::TaskSourceJiraObserver>,
@@ -455,6 +456,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let secure_credentials: Arc<dyn termloop_platform::SecureCredentialStore> =
         Arc::new(termloop_platform::NativeSecureCredentialStore);
     let voice = termloop_core::VoiceService::new(secure_credentials.clone());
+    let voice_settings = voice::VoiceSettingsStore::open(&state_directory);
     let state = AppState {
         access_plane,
         attachments,
@@ -473,6 +475,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         skill_manager,
         secure_credentials,
         voice,
+        voice_settings,
         task_source_credential_states: Arc::new(StdMutex::new(HashMap::new())),
         task_source_refresh_observer,
         terminal: terminal.clone(),

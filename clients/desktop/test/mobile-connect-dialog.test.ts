@@ -26,8 +26,8 @@ describe("mobile connection dialog", () => {
     await act(async () => root.render(createElement(MobileConnectDialog, {
       close: vi.fn(),
       prepare: async () => ({ ok: true as const, qrSvg: '<svg data-test="qr"></svg>' }),
-      loadVoiceSettings: async () => ({ configured: false }),
-      saveVoiceCredentials: async () => ({ configured: true }),
+      loadVoiceSettings: async () => ({ configured: false, transcriptionKeywords: "" }),
+      saveVoiceCredentials: async ({ transcriptionKeywords }) => ({ configured: true, transcriptionKeywords }),
     })));
     await act(async () => undefined);
 
@@ -43,8 +43,8 @@ describe("mobile connection dialog", () => {
     await act(async () => root.render(createElement(MobileConnectDialog, {
       close: vi.fn(),
       prepare,
-      loadVoiceSettings: async () => ({ configured: true }),
-      saveVoiceCredentials: async () => ({ configured: true }),
+      loadVoiceSettings: async () => ({ configured: true, transcriptionKeywords: "" }),
+      saveVoiceCredentials: async ({ transcriptionKeywords }) => ({ configured: true, transcriptionKeywords }),
     })));
     await act(async () => undefined);
     expect(container.textContent).toContain("Tailscale is not connected.");
@@ -59,8 +59,8 @@ describe("mobile connection dialog", () => {
     await act(async () => root.render(createElement(MobileConnectDialog, {
       close: vi.fn(),
       prepare: async () => { throw new Error("Pairing service unavailable."); },
-      loadVoiceSettings: async () => ({ configured: false }),
-      saveVoiceCredentials: async () => ({ configured: true }),
+      loadVoiceSettings: async () => ({ configured: false, transcriptionKeywords: "" }),
+      saveVoiceCredentials: async ({ transcriptionKeywords }) => ({ configured: true, transcriptionKeywords }),
     })));
     await act(async () => undefined);
 
@@ -72,8 +72,8 @@ describe("mobile connection dialog", () => {
     await act(async () => root.render(createElement(MobileConnectDialog, {
       close: vi.fn(),
       prepare: () => { throw new Error("Pairing bridge unavailable."); },
-      loadVoiceSettings: async () => ({ configured: false }),
-      saveVoiceCredentials: async () => ({ configured: true }),
+      loadVoiceSettings: async () => ({ configured: false, transcriptionKeywords: "" }),
+      saveVoiceCredentials: async ({ transcriptionKeywords }) => ({ configured: true, transcriptionKeywords }),
     })));
     await act(async () => undefined);
 
@@ -85,13 +85,42 @@ describe("mobile connection dialog", () => {
     await act(async () => root.render(createElement(MobileConnectDialog, {
       close: vi.fn(),
       prepare: async () => ({ ok: true as const, qrSvg: "<svg></svg>" }),
-      loadVoiceSettings: async () => ({ configured: true }),
-      saveVoiceCredentials: async () => ({ configured: true }),
+      loadVoiceSettings: async () => ({ configured: true, transcriptionKeywords: "" }),
+      saveVoiceCredentials: async ({ transcriptionKeywords }) => ({ configured: true, transcriptionKeywords }),
     })));
     await act(async () => undefined);
 
     expect(container.textContent).toContain("Ready — the API key is stored");
     expect((container.querySelector('input[aria-label="OpenAI API key"]') as HTMLInputElement).type).toBe("password");
     expect(container.textContent).not.toContain("sk-proj-secret");
+  });
+
+  it("loads and saves user-configured transcription terms without a language lock", async () => {
+    const saveVoiceCredentials = vi.fn(async ({ transcriptionKeywords }: { transcriptionKeywords: string }) => ({
+      configured: true,
+      transcriptionKeywords,
+    }));
+    await act(async () => root.render(createElement(MobileConnectDialog, {
+      close: vi.fn(),
+      prepare: async () => ({ ok: true as const, qrSvg: "<svg></svg>" }),
+      loadVoiceSettings: async () => ({ configured: true, transcriptionKeywords: "Existing term" }),
+      saveVoiceCredentials,
+    })));
+    await act(async () => undefined);
+
+    const input = container.querySelector('input[aria-label="Speech recognition terms"]') as HTMLInputElement;
+    expect(input.value).toBe("Existing term");
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, "Existing term, New name");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => (container.querySelectorAll(".mobile-connect-voice-form button")[1] as HTMLButtonElement).click());
+
+    expect(saveVoiceCredentials).toHaveBeenCalledWith({
+      apiKey: null,
+      transcriptionKeywords: "Existing term, New name",
+    });
+    expect(container.textContent).toContain("without fixing the spoken language");
   });
 });

@@ -85,14 +85,18 @@ final class SpeechPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate, AVS
            player.prepareToPlay() {
             self.player = player
             player.delegate = self
+            player.volume = 1
+            player.enableRate = true
+            player.rate = 1.12
             isSpeaking = true
             if player.play() { return }
         }
         player = nil
         let utterance = AVSpeechUtterance(string: String(fallbackText.prefix(1_500)))
         utterance.voice = speechVoice(for: fallbackText)
-        utterance.rate = 0.47
+        utterance.rate = 0.5
         utterance.pitchMultiplier = 0.98
+        utterance.volume = 1
         isSpeaking = true
         synthesizer.speak(utterance)
     }
@@ -130,7 +134,7 @@ final class SpeechPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate, AVS
 
     private func activatePlaybackSession() {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .spokenAudio)
+        try? session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers])
         try? session.setActive(true)
     }
 

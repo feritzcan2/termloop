@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -14,6 +15,9 @@ const OPENAI_CREDENTIAL_SERVICE: &str = "ai.termloop.openai";
 const OPENAI_CREDENTIAL_ACCOUNT: &str = "voice";
 const MAX_AUDIO_BYTES: usize = 2 * 1024 * 1024;
 const MAX_TRANSCRIPT_BYTES: usize = 64 * 1024;
+const MAX_TRANSCRIPTION_KEYWORDS_BYTES: usize = 4 * 1024;
+const MAX_TRANSCRIPTION_KEYWORDS: usize = 64;
+const MAX_TRANSCRIPTION_KEYWORD_CHARS: usize = 80;
 const MAX_SPEECH_INPUT_BYTES: usize = 8 * 1024;
 const MAX_SPEECH_BYTES: usize = 10 * 1024 * 1024;
 
@@ -83,6 +87,7 @@ impl OpenAiVoiceService {
         &self,
         audio: Vec<u8>,
         media_type: &str,
+        transcription_keywords: &str,
     ) -> Result<String, VoiceProviderError> {
         let (file_name, upload_media_type) = match media_type {
             "audio/m4a" | "audio/mp4" => ("voice-turn.m4a", "audio/mp4"),
@@ -93,13 +98,17 @@ impl OpenAiVoiceService {
             return Err(VoiceProviderError::InvalidInput);
         }
         let authorization = self.authorization().await?;
+        let keywords = normalize_transcription_keywords(transcription_keywords)?;
         let part = multipart::Part::bytes(audio)
             .file_name(file_name)
             .mime_str(upload_media_type)
             .map_err(|_| VoiceProviderError::InvalidInput)?;
-        let form = multipart::Form::new()
+        let mut form = multipart::Form::new()
             .text("model", "gpt-transcribe")
             .part("file", part);
+        for keyword in keywords {
+            form = form.text("keywords[]", keyword);
+        }
         let response = self
             .client
             .post(format!("{}/audio/transcriptions", self.api_base))
@@ -140,7 +149,7 @@ impl OpenAiVoiceService {
                 model: "gpt-4o-mini-tts",
                 voice: "marin",
                 input: text,
-                instructions: "Speak in the same language as the input text. Use a warm, calm, natural tone with short pauses and clear pronunciation suitable for a phone or watch speaker.",
+                instructions: "Speak in the same language as the input text. Use a warm, clear, projected voice that is easy to hear from a small phone or watch speaker. Keep a brisk natural pace with short pauses.",
                 response_format: "mp3",
             })
             .send()
@@ -161,6 +170,10 @@ impl OpenAiVoiceService {
             return Err(VoiceProviderError::ProviderUnavailable);
         }
         Ok(bytes.to_vec())
+    }
+
+    pub fn normalized_transcription_keywords(value: &str) -> Result<String, VoiceProviderError> {
+        normalize_transcription_keywords(value).map(|keywords| keywords.join(", "))
     }
 
     async fn authorization(&self) -> Result<HeaderValue, VoiceProviderError> {
@@ -199,6 +212,35 @@ struct SpeechRequest<'a> {
 fn credential_key() -> SecureCredentialKey {
     SecureCredentialKey::new(OPENAI_CREDENTIAL_SERVICE, OPENAI_CREDENTIAL_ACCOUNT)
         .expect("fixed OpenAI credential key is valid")
+}
+
+fn normalize_transcription_keywords(value: &str) -> Result<Vec<String>, VoiceProviderError> {
+    if value.len() > MAX_TRANSCRIPTION_KEYWORDS_BYTES
+        || value
+            .chars()
+            .any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t'))
+    {
+        return Err(VoiceProviderError::InvalidInput);
+    }
+    let mut seen = HashSet::new();
+    let mut keywords = Vec::new();
+    for candidate in value.split([',', '\n', '\r']) {
+        let keyword = candidate.trim();
+        if keyword.is_empty() {
+            continue;
+        }
+        if keyword.chars().count() > MAX_TRANSCRIPTION_KEYWORD_CHARS {
+            return Err(VoiceProviderError::InvalidInput);
+        }
+        let identity = keyword.to_lowercase();
+        if seen.insert(identity) {
+            keywords.push(keyword.to_owned());
+        }
+        if keywords.len() > MAX_TRANSCRIPTION_KEYWORDS {
+            return Err(VoiceProviderError::InvalidInput);
+        }
+    }
+    Ok(keywords)
 }
 
 fn credential_store_error(error: SecureCredentialError) -> VoiceProviderError {
@@ -255,6 +297,27 @@ mod tests {
         assert_eq!(service.credentials_configured(), Ok(true));
     }
 
+    #[test]
+    fn transcription_keywords_are_bounded_normalized_and_deduplicated() {
+        assert_eq!(
+            OpenAiVoiceService::normalized_transcription_keywords(" John, Payment\njohn \t"),
+            Ok("John, Payment".into())
+        );
+        assert_eq!(
+            OpenAiVoiceService::normalized_transcription_keywords("  \n"),
+            Ok(String::new())
+        );
+        assert_eq!(
+            OpenAiVoiceService::normalized_transcription_keywords(
+                &(0..65)
+                    .map(|index| format!("word-{index}"))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ),
+            Err(VoiceProviderError::InvalidInput)
+        );
+    }
+
     #[tokio::test]
     async fn transcription_request_keeps_language_detection_automatic() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -301,7 +364,11 @@ mod tests {
 
         assert_eq!(
             service
-                .transcribe(b"RIFF-recording".to_vec(), "audio/wav")
+                .transcribe(
+                    b"RIFF-recording".to_vec(),
+                    "audio/wav",
+                    "John, Payment, john",
+                )
                 .await,
             Ok("merhaba".into())
         );
@@ -309,6 +376,9 @@ mod tests {
         assert!(request.starts_with("POST /audio/transcriptions HTTP/1.1\r\n"));
         assert!(request.contains("name=\"model\"\r\n\r\ngpt-transcribe\r\n"));
         assert!(!request.contains("name=\"language\""));
+        assert!(request.contains("name=\"keywords[]\"\r\n\r\nJohn\r\n"));
+        assert!(request.contains("name=\"keywords[]\"\r\n\r\nPayment\r\n"));
+        assert_eq!(request.matches("name=\"keywords[]\"").count(), 2);
         assert!(request.contains("name=\"file\"; filename=\"voice-turn.wav\""));
     }
 

@@ -180,7 +180,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:632086c8442797379cee653bcb0ef087554029f71d5c85991cba53c8d2e46aa3";
+    "sha256:b20543036fdddf1430b80fbba5c4698af593e9fe93cf19b11393319e81ba5731";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -4848,13 +4848,17 @@ pub struct CompanionTranscriptAppendParams {
 #[serde(deny_unknown_fields)]
 pub struct VoiceSettingsResult {
     pub configured: bool,
+    #[serde(rename = "transcriptionKeywords")]
+    pub transcription_keywords: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct VoiceCredentialsSetParams {
-    #[serde(rename = "apiKey")]
-    pub api_key: String,
+    #[serde(rename = "apiKey", deserialize_with = "deserialize_required_nullable")]
+    pub api_key: Option<String>,
+    #[serde(rename = "transcriptionKeywords")]
+    pub transcription_keywords: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -19086,9 +19090,14 @@ fn validate_voice_settings_result(value: &Value) -> bool {
         object
             .get("configured")
             .is_some_and(|field| field.is_boolean())
+            && object.get("transcriptionKeywords").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() <= 4096 && text.len() <= 4096)
+            })
             && object
                 .keys()
-                .all(|key| ["configured"].contains(&key.as_str()))
+                .all(|key| ["configured", "transcriptionKeywords"].contains(&key.as_str()))
     })
 }
 
@@ -19104,13 +19113,19 @@ fn validate_voice_settings_result(value: &Value) -> bool {
 fn validate_voice_credentials_set_params(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
         object.get("apiKey").is_some_and(|field| {
-            field.as_str().is_some_and(|text| {
+            (field.as_str().is_some_and(|text| {
                 text.chars().count() >= 20
                     && text.chars().count() <= 512
                     && text.len() <= 512
                     && contract_pattern_matches("^sk-\\S+$", text)
-            })
-        }) && object.keys().all(|key| ["apiKey"].contains(&key.as_str()))
+            }) || field.is_null())
+        }) && object.get("transcriptionKeywords").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() <= 4096 && text.len() <= 4096)
+        }) && object
+            .keys()
+            .all(|key| ["apiKey", "transcriptionKeywords"].contains(&key.as_str()))
     })
 }
 

@@ -10784,11 +10784,17 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "configured"
+        "configured",
+        "transcriptionKeywords"
       ],
       "properties": {
         "configured": {
           "type": "boolean"
+        },
+        "transcriptionKeywords": {
+          "type": "string",
+          "maxLength": 4096,
+          "x-utf8-max-bytes": 4096
         }
       }
     },
@@ -10798,15 +10804,24 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "apiKey"
+        "apiKey",
+        "transcriptionKeywords"
       ],
       "properties": {
         "apiKey": {
-          "type": "string",
+          "type": [
+            "string",
+            "null"
+          ],
           "minLength": 20,
           "maxLength": 512,
           "pattern": "^sk-\\S+$",
           "x-utf8-max-bytes": 512
+        },
+        "transcriptionKeywords": {
+          "type": "string",
+          "maxLength": 4096,
+          "x-utf8-max-bytes": 4096
         }
       }
     },
