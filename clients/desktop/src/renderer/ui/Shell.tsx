@@ -75,6 +75,7 @@ import type {
   TailscaleServerDiscovery,
 } from "../../connection-profile-types.js";
 import { ProjectDialog, ProjectDetailsDialog } from "./project-dialogs/project-dialogs.js";
+import { DeleteProjectDialog } from "./project-dialogs/delete-project-dialog.js";
 import { BackgroundSessionRelocation, type BackgroundSessionRelocationIntent } from "../background-session-relocation.js";
 import type { FolderPickerActions } from "./project-dialogs/folder-picker.js";
 import {
@@ -1844,7 +1845,23 @@ export function Shell(props: ShellProps) {
         updateProject={props.updateProject}
         pickLocalFolder={props.pickLocalFolder}
       /> : null}
-      {deleteProjectOpen && props.selectedProject ? <DeleteProjectDialog project={props.selectedProject} close={() => setDeleteProjectOpen(false)} deleteProject={props.deleteProject} /> : null}
+      {deleteProjectOpen && props.selectedProject ? <DeleteProjectDialog
+        key={props.selectedProject.id}
+        project={props.selectedProject}
+        tasks={[...props.projectTasks, ...archived.tasks]}
+        tasksLoading={archived.loading}
+        close={() => setDeleteProjectOpen(false)}
+        deleteProject={props.deleteProject}
+        inspectTaskWorktreeCleanup={props.inspectTaskWorktreeCleanup}
+        deleteBlockingTask={async (task, review) => {
+          const result = task.archived_at_epoch_ms === null
+            ? await props.deleteTaskAndWorktree(task.id, review)
+            : await props.deleteArchivedTaskAndWorktree(task, review);
+          if (task.archived_at_epoch_ms !== null && result.status === "completed") archived.reload();
+          return result;
+        }}
+        reviewTasks={() => { setDeleteProjectOpen(false); selectWorkspaceView("overview"); }}
+      /> : null}
       {renameTarget ? <RenameSessionDialog session={renameTarget} close={() => setRenameSessionId(undefined)} rename={(name) => props.renameSession(renameTarget.id, name)} /> : null}
       {providerHistoryRepairSession ? <ProviderHistoryRepairDialog
         session={providerHistoryRepairSession}
@@ -2227,19 +2244,6 @@ function SplitDivider({ split, resize }: { split: SplitNode; resize(splitId: str
     resize(split.id, split.ratio + (increase ? 0.05 : -0.05));
   };
   return <div className="split-divider" role="separator" tabIndex={0} aria-label={split.direction === "horizontal" ? "Resize left and right panes" : "Resize top and bottom panes"} aria-orientation={split.direction === "horizontal" ? "vertical" : "horizontal"} aria-valuemin={15} aria-valuemax={85} aria-valuenow={Math.round(split.ratio * 100)} onKeyDown={keyDown} onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); dragging.current = true; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={updateFromPointer} onPointerUp={(event) => { dragging.current = false; event.currentTarget.releasePointerCapture(event.pointerId); }} onPointerCancel={() => { dragging.current = false; }} />;
-}
-
-function DeleteProjectDialog({ project, close, deleteProject }: { project: Project; close(): void; deleteProject(projectId: string): Promise<string | undefined> }) {
-  const [error, setError] = useState<string>();
-  const [busy, setBusy] = useState(false);
-  const submit = async () => {
-    setBusy(true); setError(undefined);
-    try {
-      const failure = await deleteProject(project.id);
-      if (failure) setError(failure); else close();
-    } finally { setBusy(false); }
-  };
-  return <div className="dialog-layer" onKeyDown={(event) => event.key === "Escape" && close()}><button className="dialog-backdrop" aria-label="Cancel deleting Project" onClick={close} /><section className="dialog-card" role="dialog" aria-modal="true" aria-labelledby="delete-project-title"><header className="dialog-header"><div><span className="dialog-eyebrow danger-eyebrow">Delete Project</span><h2 id="delete-project-title">Remove {project.name} from TermLoop?</h2></div><button className="icon-button quiet" aria-label="Close dialog" onClick={close}><Icon name="close" /></button></header><div className="dialog-body"><p className="confirm-copy">This force-closes the Project's Sessions and removes everything TermLoop keeps for this Project, including its bounded configuration versions. Your own files in <strong>{project.folder_path}</strong> stay untouched.</p><p className="field-help">Deletion is blocked only while one of its Tasks still has a worktree.</p>{error ? <p className="form-error" role="alert">{error}</p> : null}</div><footer className="dialog-actions"><button className="secondary-button" disabled={busy} onClick={close}>Cancel</button><button id="confirm-delete-project" className="danger-button" disabled={busy} onClick={() => void submit()}>{busy ? "Deleting…" : "Delete Project"}</button></footer></section></div>;
 }
 
 function RenameSessionDialog({ session, close, rename }: { session: Session; close(): void; rename(name: string | null): Promise<string | undefined> }) {
