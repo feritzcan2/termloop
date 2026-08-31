@@ -1024,8 +1024,9 @@ fn restart_reconcile_resumes_current_assistants_and_sweeps_only_obsolete_debris(
         debris.lifecycle_state = "exited".into();
         store.state.sessions.push(debris);
     }
-    // Live assistants retain their exact logical Session and provider-native
-    // conversation identities across the daemon epoch.
+    // Current assistants retain their exact logical Session and provider-native
+    // conversation identities across the daemon epoch, even when a previous
+    // daemon already observed their process exit.
     let mut live = assistant_session(
         "steward-live",
         "project-a",
@@ -1038,6 +1039,7 @@ fn restart_reconcile_resumes_current_assistants_and_sweeps_only_obsolete_debris(
     )
     .unwrap();
     live.resume_ref = Some(steward_resume_ref.clone());
+    live.lifecycle_state = "exited".into();
     store.state.sessions.push(live);
     let mut configuration = steward_configuration("project-a", 1, true);
     configuration.executor_session_id = Some("steward-live".into());
@@ -1054,6 +1056,7 @@ fn restart_reconcile_resumes_current_assistants_and_sweeps_only_obsolete_debris(
     )
     .unwrap();
     worker_live.resume_ref = Some(worker_resume_ref.clone());
+    worker_live.lifecycle_state = "exited".into();
     store.state.sessions.push(worker_live);
     let mut worker = worker_configuration("worker-1", "project-a", 1, true);
     worker.executor_session_id = Some("worker-live".into());
@@ -1075,6 +1078,13 @@ fn restart_reconcile_resumes_current_assistants_and_sweeps_only_obsolete_debris(
     let mut exited_ordinary = ordinary_agent_session("ordinary-exited", "project-a");
     exited_ordinary.lifecycle_state = "exited".into();
     store.state.sessions.push(exited_ordinary);
+    store.state.agent_conversation_readiness = ["steward-live", "worker-live", "ordinary-exited"]
+        .into_iter()
+        .map(|session_id| AgentConversationReadinessRecord {
+            session_id: session_id.into(),
+            readiness: AgentConversationReadiness::Unconfirmed,
+        })
+        .collect();
 
     store.reconcile_restart(&authority).unwrap();
 
@@ -1157,7 +1167,7 @@ fn restart_reconcile_resumes_current_assistants_and_sweeps_only_obsolete_debris(
             .unwrap()
             .lifecycle_state,
         "resumeFailed",
-        "a failed resume stays available for explicit same-conversation Retry"
+        "reconciliation must preserve the failed resume for Core's startup fallback"
     );
     assert_eq!(
         store.steward_configurations()[0]
