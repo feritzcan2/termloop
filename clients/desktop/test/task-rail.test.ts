@@ -1728,35 +1728,49 @@ describe("Task rail live activity", () => {
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
-  it("discloses the row and opens the detail on a click, toggling once the detail is showing", async () => {
+  it("opens the loudest live Session on a card click, and the detail only when nothing runs", async () => {
     writeTaskCollapsed("project-1", "task-1", true);
     const openTaskDetail = vi.fn();
+    const selectSession = vi.fn();
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    await act(async () => root.render(createElement(TaskRail, railProps({ openTaskDetail }))));
+    await act(async () => root.render(createElement(TaskRail, { ...railProps({ openTaskDetail }), selectSession })));
 
+    /// No Session: the click discloses the row and puts the detail on the
+    /// stage, and a repeat click re-raises the same intent instead of folding.
     expect(container.querySelector(".task-children")).toBeNull();
     const row = () => container.querySelector<HTMLButtonElement>(".task-item")!;
     await act(async () => row().click());
     expect(openTaskDetail).toHaveBeenCalledWith("task-1");
     expect(container.querySelector(".task-children")).not.toBeNull();
-    /// The disclosure persists like a chevron expand.
     expect(readTaskCollapsed("project-1", "task-1", true)).toBe(false);
+    await act(async () => row().click());
+    expect(openTaskDetail).toHaveBeenCalledTimes(2);
+    expect(selectSession).not.toHaveBeenCalled();
+    expect(container.querySelector(".task-open-hint")?.textContent).toBe("Open details");
 
-    /// With the detail on the stage, a repeat press folds the row back and the
-    /// next one grows it again, without re-raising the detail intent.
-    await act(async () => root.render(createElement(TaskRail, railProps({ openTaskDetail, detailTaskId: "task-1" }))));
+    /// A live agent takes the click over: the card is the way into its
+    /// terminal, from the row and from the card surface around it alike.
+    const agent = agentSession("live-agent");
+    await act(async () => root.render(createElement(TaskRail, {
+      ...railProps({ openTaskDetail, sessions: [agent], statuses: [agentStatus(agent.id, "working")] }),
+      selectSession,
+    })));
+    expect(container.querySelector(".task-open-hint")?.textContent).toBe("Open Codex");
     await act(async () => row().click());
-    expect(container.querySelector(".task-children")).toBeNull();
-    expect(readTaskCollapsed("project-1", "task-1", false)).toBe(true);
-    await act(async () => row().click());
-    expect(container.querySelector(".task-children")).not.toBeNull();
-    expect(openTaskDetail).toHaveBeenCalledTimes(1);
+    expect(selectSession).toHaveBeenCalledWith(agent.id);
+    await act(async () => container.querySelector<HTMLElement>(".task-group.focused")!.click());
+    expect(selectSession).toHaveBeenCalledTimes(2);
+    /// Clicks that land on a real control keep their own meaning.
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Open details for Compact launchers"]')!.click());
+    expect(openTaskDetail).toHaveBeenCalledTimes(3);
+    expect(selectSession).toHaveBeenCalledTimes(2);
 
     await act(async () => root.unmount());
     container.remove();
+    window.localStorage.removeItem("termloop.taskCollapse.v1");
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 });
