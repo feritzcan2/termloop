@@ -1266,7 +1266,7 @@ describe("Task rail first-run UX", () => {
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
-  it("renames an active Task inline after a title double click", async () => {
+  it("renames an active Task inline from the actions menu", async () => {
     const task = launchableTask();
     const updateTask = vi.fn(async () => undefined);
     const container = document.createElement("div");
@@ -1276,7 +1276,10 @@ describe("Task rail first-run UX", () => {
     await act(async () => root.render(createElement(TaskRail, { ...railProps({ task }), updateTask })));
 
     await act(async () => container.querySelector<HTMLButtonElement>('.task-item[data-task-id="task-1"]')!
-      .dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
+    const rename = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      .find((item) => item.textContent?.includes("Rename"))!;
+    await act(async () => rename.click());
     const input = container.querySelector<HTMLInputElement>('[aria-label="Rename Compact launchers"]')!;
     expect(input.value).toBe("Compact launchers");
     await act(async () => typeInto(input, "Renamed from card"));
@@ -1767,6 +1770,10 @@ describe("Task rail live activity", () => {
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Open details for Compact launchers"]')!.click());
     expect(openTaskDetail).toHaveBeenCalledTimes(3);
     expect(selectSession).toHaveBeenCalledTimes(2);
+    /// A double click reaches the detail page even while a live agent owns the
+    /// single click.
+    await act(async () => row().dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    expect(openTaskDetail).toHaveBeenCalledTimes(4);
 
     await act(async () => root.unmount());
     container.remove();

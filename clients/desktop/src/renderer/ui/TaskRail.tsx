@@ -371,7 +371,6 @@ export function TaskRail(props: TaskRailProps) {
       favorite={favoriteTaskIds.has(task.id)}
       toggleFavorite={task.status === "open" ? toggleTaskFavorite : undefined}
       renaming={renamingTaskTab?.taskId === task.id ? renamingTaskTab : undefined}
-      beginRename={task.status === "open" ? beginTaskRename : undefined}
       changeRename={changeTaskRename}
       cancelRename={cancelTaskRename}
       commitRename={commitTaskTabRename}
@@ -636,6 +635,7 @@ export function TaskRail(props: TaskRailProps) {
             <header><strong>{menuTask.title}</strong><span>{menuTask.worktree ? menuTask.worktree.path : "No worktree yet"}</span></header>
             <MenuButton icon="focus" label="Open details" detail="Pipeline, changes, and Sessions" action={() => perform(() => props.openTaskDetail(menuTask.id))} />
             <MenuButton icon="edit" label="Edit Task" detail="Title and brief" action={() => perform(() => setEditTask(menuTask))} />
+            {menuTask.status === "open" ? <MenuButton icon="edit" label="Rename" detail="Inline · Enter to save" action={() => perform(() => beginTaskRename(menuTask))} /> : null}
             {!menuTask.branch ? <MenuButton icon="branch" label="Use existing branch" detail="Link a local branch to this Task" action={() => perform(() => setBindTarget(menuTask))} /> : null}
             {!menuTask.worktree ? <MenuButton icon="terminal" label="Create worktree" detail={menuTask.worktree_provisioning?.status === "failed" ? "Retry with reviewed values" : "A separate checkout for this Task"} action={() => perform(() => setProvisionTarget(menuTask))} /> : null}
             {canDismissTaskWorktreeProvisioning(menuTask) ? <MenuButton icon="close" label="Dismiss failure" detail="Clear the failed attempt" action={() => perform(() => props.dismissTaskWorktreeProvisioning(menuTask.id, menuTask.worktree_provisioning!.operation_id))} /> : null}
@@ -788,7 +788,6 @@ type TaskGroupProps = {
   favorite: boolean;
   toggleFavorite: ((taskId: string) => void) | undefined;
   renaming: { title: string; busy: boolean; error: string | undefined } | undefined;
-  beginRename: ((task: Task) => void) | undefined;
   changeRename(taskId: string, title: string): void;
   cancelRename(): void;
   commitRename(task: Task): Promise<void>;
@@ -950,6 +949,16 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         if (event.defaultPrevented || target.closest("button, input, a, summary, .task-children")) return;
         rowClick();
       }}
+      /* A double click is "show me the Task itself": the detail page, from the
+         card surface and the title row alike. Controls with their own meaning
+         (hover actions, launchers, Session rows) stay out of it. */
+      onDoubleClick={props.deleting ? undefined : (event) => {
+        const target = event.target as HTMLElement;
+        const control = target.closest("button, input, a, summary");
+        if (control && !control.classList.contains("task-item")) return;
+        if (target.closest(".task-children")) return;
+        props.openDetail(task.id);
+      }}
     >
       {props.focused && !props.deleting ? (
         <span className="task-open-hint" aria-hidden="true">{primaryLabel ? `Open ${primaryLabel}` : "Open details"}</span>
@@ -1001,7 +1010,6 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
           aria-label={`Open ${primaryLabel ? `${primaryLabel} in ` : ""}${taskRowAccessibleName({ task, stage, attention, divergence, changeCount, integration, commitCount })}`}
           title={task.brief ? `${task.title} — ${task.brief}` : task.title}
           onClick={rowClick}
-          onDoubleClick={props.beginRename ? (event) => { event.preventDefault(); props.beginRename!(task); } : undefined}
           onContextMenu={(event) => { event.preventDefault(); props.openMenu(task, event.clientX, event.clientY, event.currentTarget); }}
           onKeyDown={(event) => {
             if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
