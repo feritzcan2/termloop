@@ -121,6 +121,9 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
       },
     },
     connections: {
+      subscribeChanges() {
+        return () => {};
+      },
       async list() {
         return profiles.map((profile) => ({ ...profile }));
       },
@@ -140,6 +143,9 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
           sessions: fixtureSessions.map((session) => ({ ...session })),
           agentStatuses: fixtureAgentStatuses.map((status) => ({ ...status })),
         };
+      },
+      subscribeInvalidations() {
+        return () => {};
       },
     },
     worktreeChanges: {

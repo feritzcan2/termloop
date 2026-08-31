@@ -14,6 +14,13 @@ const payload = {
   terminalToken: "terminal-token-1234567890",
 };
 
+const relay = {
+  url: "wss://relay.example.com/v1/relay",
+  roomId: "a".repeat(32),
+  token: "b".repeat(43),
+  encryptionKey: "c".repeat(43),
+};
+
 describe("mobile pair code", () => {
   it("maps one versioned pasted payload into a secure connection record", () => {
     expect(parsePairingCode(`TLMP1:${JSON.stringify(payload)}`)).toEqual({
@@ -29,10 +36,20 @@ describe("mobile pair code", () => {
     });
   });
 
+  it("maps a relay-backed pair code without exposing credentials in its URL", () => {
+    expect(parsePairingCode(`TLMP1:${JSON.stringify({ ...payload, version: 2, relay })}`))
+      .toMatchObject({
+        id: payload.connectionId,
+        relay,
+      });
+  });
+
   it("rejects unknown fields and unsupported versions", () => {
     expect(() => parsePairingCode(`TLMP1:${JSON.stringify({ ...payload, extra: true })}`))
       .toThrow("incomplete or unsupported");
     expect(() => parsePairingCode(`TLMP1:${JSON.stringify({ ...payload, version: 2 })}`))
+      .toThrow("incomplete or unsupported");
+    expect(() => parsePairingCode(`TLMP1:${JSON.stringify({ ...payload, version: 3 })}`))
       .toThrow("incomplete or unsupported");
   });
 });

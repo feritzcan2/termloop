@@ -16,7 +16,7 @@ export interface MobileDiagnosticReporter {
     readonly backgroundDurationMs?: number;
   }): void;
   report(
-    area: "control" | "lifecycle" | "terminal",
+    area: "connection" | "control" | "lifecycle" | "terminal",
     event: string,
     details?: Readonly<Record<string, MobileDiagnosticValue | undefined>>,
   ): void;

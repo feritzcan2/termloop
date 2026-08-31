@@ -8,6 +8,7 @@ import {
   createGatewayDiagnosticReporter,
   mobileDiagnosticContext,
 } from "./mobile-access-diagnostics.mjs";
+import { createOutboundMobileRelay } from "./mobile-access-relay.mjs";
 import {
   sweepWebSocketHeartbeats,
   trackWebSocketHeartbeat,
@@ -52,6 +53,7 @@ import {
 } from "./mobile-access-transcribe.mjs";
 
 const MOBILE_API_VERSION = 1;
+const MOBILE_TRANSPORT_VERSION = 2;
 const LOG_LIMIT_BYTES = 4 * 1024 * 1024;
 const DOWNSTREAM_HEARTBEAT_MS = 30_000;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -115,12 +117,22 @@ const config = validateConfig(JSON.parse(await readFile(configFile, "utf8")));
 await boundLog();
 const diagnostics = createGatewayDiagnosticReporter((line) => process.stdout.write(`${line}\n`));
 const sockets = new Set();
+const outboundRelay = createOutboundMobileRelay({
+  relay: config.relay,
+  diagnostics,
+  acceptPeer(peer) {
+    const connectionId = ++downstreamConnectionSequence;
+    void acceptMobile(peer, connectionId);
+    return connectionId;
+  },
+});
+const relayHealth = outboundRelay.health;
 const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 4 * 1024 * 1024 });
 
 const server = http.createServer(async (request, response) => {
   if (request.url === "/health") {
     response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-    response.end(JSON.stringify({ ready: true }));
+    response.end(JSON.stringify({ ready: true, relay: relayHealth }));
     return;
   }
   if (request.method === "POST" && request.url === "/push/register") {
@@ -216,14 +228,15 @@ const server = http.createServer(async (request, response) => {
 
 server.on("upgrade", (request, socket, head) => {
   const pathname = safePathname(request.url);
-  if (pathname !== "/control" && pathname !== "/terminal") {
+  if (pathname !== "/control" && pathname !== "/terminal" && pathname !== "/mobile") {
     diagnostics.report("downstream", "upgrade_refused", { reason: "unsupportedPath" });
     socket.destroy();
     return;
   }
   websocketServer.handleUpgrade(request, socket, head, (client) => {
     const connectionId = ++downstreamConnectionSequence;
-    const channel = pathname === "/control" ? "control" : "terminal";
+    const channel = pathname === "/control" ? "control"
+      : pathname === "/terminal" ? "terminal" : "mobile";
     const startedAtEpochMs = Date.now();
     sockets.add(client);
     trackWebSocketHeartbeat(client, { connectionId, channel });
@@ -246,7 +259,8 @@ server.on("upgrade", (request, socket, head) => {
       });
     });
     if (pathname === "/control") acceptControl(client, connectionId);
-    else acceptTerminal(client, connectionId);
+    else if (pathname === "/terminal") acceptTerminal(client, connectionId);
+    else acceptMobile(client, connectionId);
   });
 });
 
@@ -261,6 +275,7 @@ server.listen(config.port, "127.0.0.1", () => {
   // A restart loop is otherwise indistinguishable from a silent gateway, so
   // record the one fact every diagnosis starts from. Never log credentials.
   diagnostics.report("gateway", "listening", { port: config.port });
+  outboundRelay.start();
 });
 server.on("error", (error) => {
   diagnostics.report("gateway", "server_error", { errorType: error?.name });
@@ -1357,6 +1372,204 @@ async function acceptTerminal(client, connectionId) {
   }, undefined, { connectionId, channel: "terminal", clientKind: "mobile" });
 }
 
+/// Unified phone transport. Authentication proves both authorities before the
+/// socket becomes usable: the read/control credential alone can never become a
+/// terminal-input credential. Control remains JSON text and every PTY byte stays
+/// in the existing TL01 binary data plane, so multiplexing does not smuggle
+/// terminal content through JSON or duplicate the daemon protocol.
+async function acceptMobile(client, connectionId) {
+  const first = await firstMessage(client, connectionId, "mobile");
+  if (first === undefined || first.isBinary) {
+    diagnostics.report("mobile", "authentication_refused", {
+      connectionId,
+      reason: first === undefined ? "missingFirstMessage" : "binaryFirstMessage",
+    });
+    return refuse(client, "invalid mobile authentication");
+  }
+  let authentication;
+  try { authentication = JSON.parse(first.data.toString("utf8")); } catch {
+    diagnostics.report("mobile", "authentication_refused", { connectionId, reason: "invalidJson" });
+    return refuse(client, "invalid mobile authentication");
+  }
+  if (authentication?.type !== "mobile.authenticate"
+    || authentication.mobileTransportVersion !== MOBILE_TRANSPORT_VERSION
+    || !constantTimeEqual(authentication.controlToken, config.controlToken)
+    || !constantTimeEqual(authentication.terminalToken, config.terminalToken)) {
+    diagnostics.report("mobile", "authentication_refused", {
+      connectionId,
+      reason: authentication?.mobileTransportVersion === MOBILE_TRANSPORT_VERSION
+        ? "invalidCredential" : "unsupportedTransport",
+      ...mobileDiagnosticContext(authentication),
+    });
+    return refuse(client, "invalid credential");
+  }
+
+  let runtime;
+  try { runtime = await currentRuntime(); } catch {
+    diagnostics.report("mobile", "runtime_unavailable", { connectionId });
+    return unavailable(client);
+  }
+  const startedAtEpochMs = Date.now();
+  const upstream = new WebSocket(runtime.terminalUrl, { maxPayload: 4 * 1024 * 1024 });
+  let terminalReady = false;
+  let subscription;
+  const timeout = setTimeout(() => {
+    if (terminalReady) return;
+    diagnostics.report("mobile", "authentication_timeout", {
+      connectionId,
+      durationMs: Date.now() - startedAtEpochMs,
+    });
+    upstream.terminate();
+    unavailable(client);
+  }, 5_000);
+  timeout.unref();
+
+  upstream.once("open", () => {
+    upstream.send(Buffer.concat([Buffer.from("TL01"), Buffer.from(runtime.terminalToken)]));
+  });
+  upstream.on("message", (data, isBinary) => {
+    if (!terminalReady) {
+      if (isBinary || data.toString("utf8") !== "TLOK") {
+        clearTimeout(timeout);
+        diagnostics.report("mobile", "upstream_authentication_refused", { connectionId });
+        upstream.terminate();
+        return refuse(client, "upstream credential refused");
+      }
+      terminalReady = true;
+      clearTimeout(timeout);
+      diagnostics.report("mobile", "authenticated", {
+        connectionId,
+        durationMs: Date.now() - startedAtEpochMs,
+        ...mobileDiagnosticContext(authentication),
+      });
+      client.send(JSON.stringify({
+        event: "mobile.ready",
+        mobileTransportVersion: MOBILE_TRANSPORT_VERSION,
+      }));
+      subscription = subscribeMobileInvalidations(runtime, client, connectionId);
+      client.on("message", (nextData, nextIsBinary) => {
+        if (nextIsBinary) {
+          if (upstream.readyState === WebSocket.OPEN) upstream.send(nextData, { binary: true });
+          return;
+        }
+        let request;
+        try { request = JSON.parse(nextData.toString("utf8")); } catch {
+          diagnostics.report("mobile", "request_refused", { connectionId, reason: "invalidJson" });
+          return mobileControlResponse(client, "invalid", false, undefined, {
+            code: "invalidMessage",
+            message: "Mobile control request is invalid.",
+          });
+        }
+        if (!constantTimeEqual(request?.token, config.controlToken)) {
+          diagnostics.report("mobile", "request_refused", {
+            connectionId,
+            reason: "invalidCredential",
+            ...mobileDiagnosticContext(request),
+          });
+          return mobileControlResponse(
+            client,
+            typeof request?.id === "string" ? request.id : "invalid",
+            false,
+            undefined,
+            { code: "unauthenticated", message: "Mobile control credential is invalid." },
+          );
+        }
+        void acceptMobileControl(client, request, connectionId);
+      });
+      return;
+    }
+    if (client.readyState === WebSocket.OPEN) client.send(data, { binary: isBinary });
+  });
+  upstream.once("error", (error) => {
+    clearTimeout(timeout);
+    diagnostics.report("mobile", "upstream_error", {
+      connectionId,
+      terminalReady,
+      errorType: error?.name,
+    });
+    upstream.terminate();
+    unavailable(client);
+  });
+  upstream.once("close", (code, reason) => {
+    clearTimeout(timeout);
+    subscription?.close();
+    diagnostics.report("mobile", "upstream_closed", {
+      connectionId,
+      terminalReady,
+      closeCode: code,
+      closeReasonBytes: reason?.byteLength,
+      lifetimeMs: Date.now() - startedAtEpochMs,
+    });
+    if (client.readyState === WebSocket.OPEN) client.close(safeCloseCode(code), "upstream closed");
+  });
+  client.once("close", () => {
+    subscription?.close();
+    if (upstream.readyState === WebSocket.OPEN || upstream.readyState === WebSocket.CONNECTING) {
+      upstream.terminate();
+    }
+  });
+}
+
+function subscribeMobileInvalidations(runtime, client, connectionId) {
+  let socket;
+  let stopped = false;
+  let retry;
+  let delayMs = 500;
+  let generation = 0;
+  const connect = () => {
+    if (stopped || client.readyState !== WebSocket.OPEN) return;
+    const currentGeneration = ++generation;
+    socket = new WebSocket(runtime.controlUrl, { maxPayload: 1024 * 1024 });
+    const requestId = `mobile-subscription-${connectionId}-${currentGeneration}`;
+    socket.once("open", () => {
+      socket.send(JSON.stringify({
+        id: requestId,
+        protocolVersion: runtime.protocolVersion,
+        token: runtime.readOnlyToken,
+        method: "control.subscribe",
+        params: {
+          topics: ["project", "task", "session", "agentStatus", "companion", "steward", "worker", "routine", "keepAwake"],
+        },
+      }));
+    });
+    socket.on("message", (data, isBinary) => {
+      if (isBinary || stopped || currentGeneration !== generation) return;
+      let message;
+      try { message = JSON.parse(data.toString("utf8")); } catch { return socket.close(1002, "invalid control event"); }
+      if (message?.id === requestId && message.ok === true) {
+        delayMs = 500;
+        diagnostics.report("mobile", "invalidation_subscription_ready", { connectionId });
+        return;
+      }
+      if (message?.event !== "projection.invalidated" || !isRecord(message.payload)) return;
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({ event: "projection.invalidated", payload: message.payload }));
+      }
+    });
+    socket.once("error", () => socket.terminate());
+    socket.once("close", () => {
+      if (stopped || currentGeneration !== generation || client.readyState !== WebSocket.OPEN) return;
+      const waitMs = delayMs;
+      delayMs = Math.min(30_000, delayMs * 2);
+      diagnostics.report("mobile", "invalidation_subscription_retry", { connectionId, delayMs: waitMs });
+      retry = setTimeout(connect, waitMs);
+      retry.unref();
+    });
+  };
+  connect();
+  return {
+    close() {
+      if (stopped) return;
+      stopped = true;
+      generation += 1;
+      if (retry !== undefined) clearTimeout(retry);
+      if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
+        socket.terminate();
+      }
+    },
+  };
+}
+
 function bridge(client, upstream, onOpen, transformDownstream, context) {
   let opened = false;
   const startedAtEpochMs = Date.now();
@@ -1893,9 +2106,30 @@ function validateConfig(value) {
     };
   }
   if (value.watchToken !== undefined) result.watchToken = boundedToken(value.watchToken);
+  if (value.relay !== undefined) result.relay = validateRelayConfig(value.relay);
   // Absent on Linux, where the service manager owns retention.
   if (typeof value.logFile === "string" && value.logFile.length > 0) result.logFile = value.logFile;
   return result;
+}
+
+function validateRelayConfig(value) {
+  const url = new URL(requiredString(value?.url));
+  const local = url.protocol === "ws:"
+    && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
+  if (!(url.protocol === "wss:" || local)
+    || url.username || url.password || url.search || url.hash
+    || url.pathname.replace(/\/$/, "") !== "/v1/relay"
+    || !/^[a-f0-9]{32}$/.test(value.roomId)
+    || !/^[A-Za-z0-9_-]{32,128}$/.test(value.token)
+    || !/^[A-Za-z0-9_-]{43}$/.test(value.encryptionKey)) {
+    throw new Error("mobile relay config is invalid");
+  }
+  return {
+    url: url.toString(),
+    roomId: value.roomId,
+    token: value.token,
+    encryptionKey: value.encryptionKey,
+  };
 }
 
 function readBody(request, maxBytes) {
@@ -1998,6 +2232,7 @@ function shutdown() {
   clearInterval(heartbeatTimer);
   diagnostics.report("gateway", "shutdown_started", { openSockets: sockets.size });
   for (const socket of sockets) socket.close(1001, "gateway restarting");
+  outboundRelay.stop();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1_000).unref();
 }

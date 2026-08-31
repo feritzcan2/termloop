@@ -158,6 +158,94 @@ fi
       .toBeLessThan(reloadCalls.lastIndexOf(`bootstrap ${domain} ${plistFile}`));
   }, 20_000);
 
+  it.skipIf(process.platform === "win32")("removes the gateway from the Tailscale Serve data path when relayed", async () => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), "termloop-mobile-relay-access-"));
+    const runtime = path.join(directory, "runtime.json");
+    const serveCalls = path.join(directory, "serve-calls.txt");
+    const launchState = path.join(directory, "launch-state");
+    const tailscale = path.join(directory, "tailscale");
+    const launchctl = path.join(directory, "launchctl");
+    const state = path.join(directory, "state");
+    const launchAgentDirectory = path.join(directory, "LaunchAgents");
+    writeFileSync(runtime, JSON.stringify({
+      protocolVersion: `sha256:${"c".repeat(64)}`,
+      controlUrl: "ws://127.0.0.1:48300/control",
+      terminalUrl: "ws://127.0.0.1:48300/terminal",
+      token: "full-control-must-not-ship",
+      readOnlyToken: "m".repeat(64),
+      terminalToken: "n".repeat(64),
+    }));
+    writeFileSync(tailscale, `#!/bin/sh
+if [ "$1" = "status" ]; then
+  printf '%s' '{"BackendState":"Running","Self":{"Online":true,"DNSName":"relay-mac.example.ts.net.","HostName":"Relay Mac"}}'
+elif [ "$1" = "serve" ]; then
+  printf '%s' "$*" > "$CALL_LOG"
+elif [ "$1" = "version" ]; then
+  printf '%s' '1.0'
+else
+  exit 2
+fi
+`);
+    chmodSync(tailscale, 0o700);
+    writeFileSync(launchctl, `#!/bin/sh
+if [ "$1" = "print" ]; then
+  [ -f "$LAUNCH_STATE" ]
+elif [ "$1" = "bootstrap" ]; then
+  : > "$LAUNCH_STATE"
+fi
+`);
+    chmodSync(launchctl, 0o700);
+
+    const command = [
+      path.resolve("scripts/mobile-access.mjs"),
+      "--runtime", runtime,
+      "--tailscale-bin", tailscale,
+      "--launchctl-bin", launchctl,
+      "--state-dir", state,
+      "--launch-agent-dir", launchAgentDirectory,
+      "--gateway-port", "49444",
+      "--relay-url", "wss://relay.example.com/v1/relay",
+      "--platform", "darwin",
+      "--test-platform",
+      "--skip-gateway-wait",
+      "--print",
+    ];
+    const environment = {
+      ...process.env,
+      CALL_LOG: serveCalls,
+      LAUNCH_STATE: launchState,
+    };
+    const { stdout } = await execFile(process.execPath, command, {
+      cwd: path.resolve("."), env: environment, encoding: "utf8",
+    });
+
+    const code = stdout.split("\n")[0];
+    const payload = JSON.parse(code.slice("TLMP1:".length));
+    expect(payload).toMatchObject({
+      version: 2,
+      name: "Relay Mac",
+      relay: {
+        url: "wss://relay.example.com/v1/relay",
+      },
+    });
+    expect(payload.relay.roomId).toMatch(/^[a-f0-9]{32}$/);
+    expect(payload.relay.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(payload.relay.encryptionKey).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(payload.relay.url).not.toContain(payload.relay.token);
+    expect(readFileSync(serveCalls, "utf8"))
+      .toBe("serve --https=443 --set-path=/ --yes off");
+
+    const config = JSON.parse(readFileSync(path.join(state, "gateway.json"), "utf8"));
+    expect(config.relay).toEqual(payload.relay);
+    const { stdout: repeated } = await execFile(process.execPath, command, {
+      cwd: path.resolve("."), env: environment, encoding: "utf8",
+    });
+    const repeatedPayload = JSON.parse(repeated.split("\n")[0].slice("TLMP1:".length));
+    expect(repeatedPayload.relay).toEqual(payload.relay);
+    expect(readFileSync(serveCalls, "utf8"))
+      .toBe("serve --https=443 --set-path=/ --yes off");
+  }, 20_000);
+
   it.skipIf(process.platform === "win32")("installs and restarts a persistent systemd user service on Linux", async () => {
     const directory = mkdtempSync(path.join(os.tmpdir(), "termloop-mobile-access-linux-"));
     const runtime = path.join(directory, "runtime.json");

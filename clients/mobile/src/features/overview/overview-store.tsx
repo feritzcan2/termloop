@@ -21,7 +21,8 @@ export {
 /// Longer than the control client's request timeout, and this read fans out to several
 /// calls, so it is slower than a bare version probe. Refreshing faster than the read can
 /// finish replaces each attempt just before it answers.
-const ACTIVE_REFRESH_MS = 15_000;
+const FALLBACK_REFRESH_MS = 120_000;
+const INVALIDATION_DEBOUNCE_MS = 120;
 
 /// Every readable Mac's Project/Task/Session/Agent-status projection, loaded once and
 /// shared by every screen that reads it. The selected connection remains a facade for
@@ -53,6 +54,9 @@ export function OverviewProvider({ children }: PropsWithChildren) {
   /// restart the effect and discard the answer that was already on its way.
   const readSequence = useRef(0);
   const activeRead = useRef<number | undefined>(undefined);
+  const pendingInvalidation = useRef(false);
+  const invalidationTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const lastInvalidations = useRef(new Map<string, string>());
 
   const readableConnections = connections.filter(
     (connection) => connectionPresentation(connection.availability).block === undefined,
@@ -89,6 +93,9 @@ export function OverviewProvider({ children }: PropsWithChildren) {
     previousStatuses.current = new Map(
       [...previousStatuses.current].filter(([connectionId]) => knownIds.has(connectionId)),
     );
+    for (const connectionId of lastInvalidations.current.keys()) {
+      if (!knownIds.has(connectionId)) lastInvalidations.current.delete(connectionId);
+    }
     const read = ++readSequence.current;
     if (readableConnections.length === 0) {
       activeRead.current = undefined;
@@ -134,17 +141,51 @@ export function OverviewProvider({ children }: PropsWithChildren) {
         });
       }
     })).finally(() => {
-      if (active && activeRead.current === read) activeRead.current = undefined;
+      if (active && activeRead.current === read) {
+        activeRead.current = undefined;
+        if (pendingInvalidation.current) {
+          pendingInvalidation.current = false;
+          setReloads((count) => count + 1);
+        }
+      }
     });
     return () => { active = false; };
   }, [runtime, connectionScope, reloads, lifecycle.active, lifecycle.foregroundRevision]);
 
   useEffect(() => {
     if (!lifecycle.active || readableConnections.length === 0) return;
+    const subscriptions = readableConnections.map(({ id: connectionId }) => (
+      runtime.control.subscribeInvalidations(connectionId, (event) => {
+        const revision = `${event.stateRevision}:${event.observationSequence}`;
+        if (lastInvalidations.current.get(connectionId) === revision) return;
+        // A daemon restart may reset either counter. Invalidations are hints and
+        // reads remain authoritative, so reject only exact redelivery rather
+        // than suppressing a valid lower sequence for the rest of this app run.
+        lastInvalidations.current.set(connectionId, revision);
+        if (invalidationTimer.current !== undefined) clearTimeout(invalidationTimer.current);
+        invalidationTimer.current = setTimeout(() => {
+          invalidationTimer.current = undefined;
+          if (activeRead.current !== undefined) {
+            pendingInvalidation.current = true;
+            return;
+          }
+          setReloads((count) => count + 1);
+        }, INVALIDATION_DEBOUNCE_MS);
+      })
+    ));
+    return () => {
+      for (const unsubscribe of subscriptions) unsubscribe();
+      if (invalidationTimer.current !== undefined) clearTimeout(invalidationTimer.current);
+      invalidationTimer.current = undefined;
+    };
+  }, [runtime, lifecycle.active, connectionScope]);
+
+  useEffect(() => {
+    if (!lifecycle.active || readableConnections.length === 0) return;
     const timer = setInterval(() => {
       if (activeRead.current !== undefined) return;
       setReloads((count) => count + 1);
-    }, ACTIVE_REFRESH_MS);
+    }, FALLBACK_REFRESH_MS);
     return () => clearInterval(timer);
   }, [lifecycle.active, connectionScope]);
 

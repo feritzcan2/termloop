@@ -5,7 +5,9 @@ import type { TerminalEvent } from "../src/application/ports";
 import { createProductionRuntime, type DataSocket } from "../src/adapters/production/production-runtime";
 import { MOBILE_API_VERSION, MobileControlClient } from "../src/adapters/production/mobile-control-client";
 import {
+  KIND_ACK,
   KIND_ATTACH,
+  KIND_DETACH,
   KIND_GAP,
   KIND_INPUT,
   KIND_OUTPUT,
@@ -73,6 +75,19 @@ describe("secure connection repository", () => {
     })).rejects.toThrow("credential-free");
   });
 
+  it("refuses a cleartext relay outside loopback", async () => {
+    const repository = createSecureConnectionRepository(memorySecretStore());
+    await expect(repository.save({
+      ...saved,
+      relay: {
+        url: "ws://relay.example.com/v1/relay",
+        roomId: "a".repeat(32),
+        token: "b".repeat(43),
+        encryptionKey: "c".repeat(43),
+      },
+    })).rejects.toThrow("secure");
+  });
+
   it("keeps a Watch destination per Mac without changing its connection record", async () => {
     const store = memorySecretStore();
     const repository = createSecureConnectionRepository(store);
@@ -110,6 +125,182 @@ describe("secure connection repository", () => {
 });
 
 describe("production control adapter", () => {
+  it("uses one authenticated mobile socket for control and logical terminal subscriptions", async () => {
+    const terminalKinds: number[] = [];
+    const controlMethods: string[] = [];
+    let socketCount = 0;
+    let socketCloseCount = 0;
+    let endpoint = "";
+    const runtime = createProductionRuntime({
+      repository: fixedRepository(saved),
+      multiplexSocketFactory(url) {
+        socketCount += 1;
+        endpoint = url;
+        const socket: DataSocket = {
+          binaryType: "blob",
+          readyState: 1,
+          onopen: null,
+          onmessage: null,
+          onerror: null,
+          onclose: null,
+          send(data) {
+            if (typeof data === "string") {
+              const message = JSON.parse(data) as {
+                type?: string;
+                id?: string;
+                method?: string;
+                controlToken?: string;
+                terminalToken?: string;
+              };
+              if (message.type === "mobile.authenticate") {
+                expect(message.controlToken).toBe(saved.controlToken);
+                expect(message.terminalToken).toBe(saved.terminalToken);
+                queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({
+                  event: "mobile.ready",
+                  mobileTransportVersion: 2,
+                }) }));
+                return;
+              }
+              controlMethods.push(message.method ?? "");
+              queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({
+                id: message.id,
+                ok: true,
+                result: controlResult(message.method ?? ""),
+              }) }));
+              return;
+            }
+            const frame = decodeFrame(data instanceof Uint8Array ? data : new Uint8Array(data));
+            terminalKinds.push(frame.kind);
+            if (frame.kind === KIND_ATTACH) {
+              queueMicrotask(() => socket.onmessage?.({ data: encodeFrame(
+                frame.sessionId,
+                frame.epoch,
+                frame.sequence,
+                KIND_ACK,
+              ) }));
+            }
+          },
+          close() { socketCloseCount += 1; },
+        };
+        queueMicrotask(() => socket.onopen?.());
+        return socket;
+      },
+      controlSocketFactory: () => { throw new Error("legacy control transport used"); },
+      terminalSocketFactory: () => { throw new Error("legacy terminal transport used"); },
+    });
+
+    await expect(runtime.connections.list()).resolves.toEqual([
+      expect.objectContaining({ availability: "online" }),
+    ]);
+    const events: TerminalEvent[] = [];
+    const attachment = await runtime.terminal.attach(
+      saved.id,
+      { id: sessionId, runtime_epoch: 7 },
+      (event) => events.push(event),
+    );
+    await attachment.detach();
+
+    expect(socketCount).toBe(1);
+    expect(endpoint).toBe("ws://127.0.0.1:48100/mobile");
+    expect(controlMethods).toEqual(["system.version"]);
+    expect(terminalKinds).toEqual([KIND_ATTACH, KIND_DETACH]);
+    expect(events).toContainEqual({ type: "state", state: "connected" });
+    expect(socketCloseCount).toBe(0);
+  });
+
+  it("reattaches multiplexed terminals after a transport fault and rejects stale output", async () => {
+    vi.useFakeTimers();
+    try {
+      const sockets: DataSocket[] = [];
+      const terminalFrames: Array<{ generation: number; kind: number }> = [];
+      const runtime = createProductionRuntime({
+        repository: fixedRepository(saved),
+        multiplexSocketFactory() {
+          const generation = sockets.length + 1;
+          const socket: DataSocket = {
+            binaryType: "blob",
+            readyState: 1,
+            onopen: null,
+            onmessage: null,
+            onerror: null,
+            onclose: null,
+            send(data) {
+              if (typeof data === "string") {
+                const message = JSON.parse(data) as { type?: string };
+                if (message.type === "mobile.authenticate") {
+                  queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({
+                    event: "mobile.ready",
+                    mobileTransportVersion: 2,
+                  }) }));
+                }
+                return;
+              }
+              const frame = decodeFrame(data instanceof Uint8Array ? data : new Uint8Array(data));
+              terminalFrames.push({ generation, kind: frame.kind });
+              if (frame.kind === KIND_ATTACH) {
+                queueMicrotask(() => socket.onmessage?.({ data: encodeFrame(
+                  frame.sessionId,
+                  frame.epoch,
+                  frame.sequence,
+                  KIND_ACK,
+                ) }));
+              }
+            },
+            close() {},
+          };
+          sockets.push(socket);
+          queueMicrotask(() => socket.onopen?.());
+          return socket;
+        },
+        controlSocketFactory: () => { throw new Error("legacy control transport used"); },
+        terminalSocketFactory: () => { throw new Error("legacy terminal transport used"); },
+      });
+      const events: TerminalEvent[] = [];
+      const attachment = await runtime.terminal.attach(
+        saved.id,
+        { id: sessionId, runtime_epoch: 7 },
+        (event) => events.push(event),
+      );
+      const first = sockets[0]!;
+      first.onmessage?.({ data: encodeFrame(
+        sessionId, 7, 1n, KIND_OUTPUT, new TextEncoder().encode("one"),
+      ) });
+      first.onmessage?.({ data: encodeFrame(
+        sessionId, 7, 1n, KIND_OUTPUT, new TextEncoder().encode("duplicate"),
+      ) });
+      first.onmessage?.({ data: encodeFrame(
+        sessionId, 7, 3n, KIND_OUTPUT, new TextEncoder().encode("three"),
+      ) });
+      await waitFor(() => events.filter((event) => event.type === "live").length === 2);
+      expect(events.filter((event) => event.type === "live").map((event) => (
+        event.type === "live" ? new TextDecoder().decode(event.bytes) : ""
+      ))).toEqual(["one", "three"]);
+      expect(events).toContainEqual({ type: "gap", droppedFrames: 1 });
+
+      first.onclose?.({ code: 1006, wasClean: false });
+      expect(events.at(-1)).toEqual({ type: "state", state: "connectionLost" });
+      await vi.advanceTimersByTimeAsync(500);
+      await waitFor(() => sockets.length === 2
+        && events.filter((event) => event.type === "state" && event.state === "connected").length === 2);
+      expect(events).toContainEqual({ type: "reset" });
+      expect(terminalFrames.filter((frame) => frame.kind === KIND_ATTACH)).toEqual([
+        { generation: 1, kind: KIND_ATTACH },
+        { generation: 2, kind: KIND_ATTACH },
+      ]);
+
+      sockets[1]!.onmessage?.({ data: encodeFrame(
+        sessionId, 7, 1n, KIND_OUTPUT, new TextEncoder().encode("fresh"),
+      ) });
+      await waitFor(() => events.filter((event) => event.type === "live").length === 3);
+      expect(events.at(-1)).toMatchObject({ type: "live" });
+
+      await attachment.detach();
+      runtime.connections.resetTransports();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("correlates control requests with the current mobile run without logging request parameters", async () => {
     const diagnosticLines: string[] = [];
     const diagnostics = createMobileDiagnosticReporter((line) => diagnosticLines.push(line));

@@ -31,6 +31,12 @@ import {
 import { parsePairingCode } from "../../platform/pairing-code";
 import { MobileControlClient, MobileControlError } from "./mobile-control-client";
 import {
+  dataSocketMessageBytes,
+  type DataSocket,
+  type DataSocketFactory,
+} from "./data-socket";
+import { MobileConnectionCoordinator } from "./mobile-connection-coordinator";
+import {
   FRAME_MAGIC,
   KIND_ACK,
   KIND_ATTACH,
@@ -129,24 +135,16 @@ async function namePromptedSession(
   }
 }
 
-export interface DataSocket {
-  binaryType: string;
-  readonly readyState: number;
-  onopen: (() => void) | null;
-  onmessage: ((event: { data: unknown }) => void) | null;
-  onerror: ((event?: { type?: string }) => void) | null;
-  onclose: ((event?: { code?: number; reason?: string; wasClean?: boolean }) => void) | null;
-  send(data: string | ArrayBuffer | Uint8Array): void;
-  close(): void;
-}
-
-export type DataSocketFactory = (url: string) => DataSocket;
+export type { DataSocket } from "./data-socket";
 
 export interface ProductionRuntimeOptions {
   readonly repository: SecureConnectionRepository;
   readonly diagnostics?: MobileDiagnosticReporter;
   readonly controlSocketFactory?: SocketFactory;
   readonly terminalSocketFactory?: DataSocketFactory;
+  /// Enables the v2 route-independent `/mobile` transport. Kept injectable so
+  /// legacy adapter tests can exercise the v1 control/terminal fallbacks.
+  readonly multiplexSocketFactory?: DataSocketFactory;
   readonly fetch?: typeof fetch;
   readonly watchBridge?: {
     syncCredentials(
@@ -167,6 +165,11 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
   const request = options.fetch ?? fetch;
   const watchTargetSettings = options.watchTargetSettings ?? noWatchTargetSettings;
   const voiceReceipts = options.voiceReceipts ?? noVoiceReceipts;
+  const connectionChangeListeners = new Set<() => void>();
+  const coordinators = new Map<string, {
+    readonly coordinator: MobileConnectionCoordinator;
+    readonly unsubscribeStatus: () => void;
+  }>();
   const controlClients = new Map<string, {
     readonly url: string;
     readonly token: string;
@@ -174,6 +177,8 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
   }>();
 
   const controlClient = (connection: SavedConnection): MobileControlClient => {
+    const multiplex = connectionCoordinator(connection);
+    if (multiplex !== undefined) return multiplex.control;
     const current = controlClients.get(connection.id);
     if (current?.url === connection.controlUrl && current.token === connection.controlToken) {
       return current.client;
@@ -194,10 +199,39 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
     return next;
   };
 
+  const connectionCoordinator = (connection: SavedConnection): MobileConnectionCoordinator | undefined => {
+    if (options.multiplexSocketFactory === undefined) return undefined;
+    const current = coordinators.get(connection.id);
+    if (current?.coordinator.matches(connection)) return current.coordinator;
+    current?.unsubscribeStatus();
+    current?.coordinator.close();
+    const coordinator = new MobileConnectionCoordinator(
+      connection,
+      options.multiplexSocketFactory,
+      diagnostics,
+    );
+    const unsubscribeStatus = coordinator.subscribeStatus(() => {
+      for (const listener of connectionChangeListeners) listener();
+    });
+    coordinators.set(connection.id, { coordinator, unsubscribeStatus });
+    return coordinator;
+  };
+
   const resolve = async (connectionId: string): Promise<SavedConnection> => {
     const connection = await options.repository.get(connectionId);
     if (connection === undefined) throw new Error("Saved Mac was not found.");
     return connection;
+  };
+
+  const attachConnectionTerminal = (
+    connection: SavedConnection,
+    session: { id: string; runtime_epoch: number },
+    onEvent: (event: TerminalEvent) => void,
+  ): Promise<TerminalAttachment> => {
+    const coordinator = connectionCoordinator(connection);
+    return coordinator === undefined
+      ? attachTerminal(connection, session, onEvent, terminalSocketFactory, diagnostics)
+      : coordinator.attachTerminal(session, onEvent);
   };
 
   const syncWatchCatalog = async (): Promise<boolean> => {
@@ -236,6 +270,18 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
     kind: "production",
     voiceReceipts,
     connections: {
+      subscribeChanges(listener) {
+        let active = true;
+        connectionChangeListeners.add(listener);
+        void options.repository.list().then((saved) => {
+          if (!active) return;
+          for (const connection of saved) connectionCoordinator(connection);
+        }, () => {});
+        return () => {
+          active = false;
+          connectionChangeListeners.delete(listener);
+        };
+      },
       async list() {
         const saved = await options.repository.list();
         return Promise.all(saved.map(async (connection): Promise<ConnectionProfile> => {
@@ -256,6 +302,11 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
       resetTransports() {
         for (const connection of controlClients.values()) connection.client.close();
         controlClients.clear();
+        for (const connection of coordinators.values()) {
+          connection.unsubscribeStatus();
+          connection.coordinator.close();
+        }
+        coordinators.clear();
       },
       async pair(code) {
         const connection = parsePairingCode(code);
@@ -320,7 +371,11 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
           launchTicket,
         });
         const namedSession = await namePromptedSession(control, session, prompt);
-        return await launchResult(connection, namedSession, prompt, terminalSocketFactory, diagnostics);
+        return await launchResult(
+          namedSession,
+          prompt,
+          (launched, onEvent) => attachConnectionTerminal(connection, launched, onEvent),
+        );
       },
       async previewProject(connectionId, project, selection) {
         const control = controlClient(await resolve(connectionId));
@@ -344,7 +399,11 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
           launchTicket,
         });
         const namedSession = await namePromptedSession(control, session, prompt);
-        return await launchResult(connection, namedSession, prompt, terminalSocketFactory, diagnostics);
+        return await launchResult(
+          namedSession,
+          prompt,
+          (launched, onEvent) => attachConnectionTerminal(connection, launched, onEvent),
+        );
       },
     },
 
@@ -478,6 +537,18 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
           agentStatuses,
         };
       },
+      subscribeInvalidations(connectionId, listener) {
+        let disposed = false;
+        let unsubscribe: (() => void) | undefined;
+        void resolve(connectionId).then((connection) => {
+          if (disposed) return;
+          unsubscribe = connectionCoordinator(connection)?.subscribeInvalidations(listener);
+        });
+        return () => {
+          disposed = true;
+          unsubscribe?.();
+        };
+      },
     },
 
     worktreeChanges: {
@@ -498,7 +569,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
     terminal: {
       async attach(connectionId, session, onEvent) {
         const connection = await resolve(connectionId);
-        return attachTerminal(connection, session, onEvent, terminalSocketFactory, diagnostics);
+        return attachConnectionTerminal(connection, session, onEvent);
       },
     },
     images: {
@@ -945,7 +1016,7 @@ async function attachTerminal(
 
   const handleMessage = async (source: DataSocket, data: unknown) => {
     if (socket !== source || detached) return;
-    const bytes = await messageBytes(data);
+    const bytes = await dataSocketMessageBytes(data);
     if (!authenticated) {
       const response = new TextDecoder().decode(bytes);
       if (response === "TLAUTH") {
@@ -1121,11 +1192,12 @@ async function attachTerminal(
 }
 
 async function launchResult(
-  connection: SavedConnection,
   session: { id: string; runtime_epoch: number },
   prompt: string | undefined,
-  socketFactory: DataSocketFactory,
-  diagnostics: MobileDiagnosticReporter,
+  attach: (
+    session: { id: string; runtime_epoch: number },
+    onEvent: (event: TerminalEvent) => void,
+  ) => Promise<TerminalAttachment>,
 ): Promise<{ sessionId: string; runtimeEpoch: number; promptSubmitted: boolean | null }> {
   const content = prompt === undefined ? undefined : launchPrompt(prompt);
   if (content === undefined) {
@@ -1134,7 +1206,7 @@ async function launchResult(
 
   let attachment: TerminalAttachment | undefined;
   try {
-    attachment = await attachTerminal(connection, session, () => {}, socketFactory, diagnostics);
+    attachment = await attach(session, () => {});
     const encoder = new TextEncoder();
     await attachment.input(encoder.encode(`${BRACKETED_PASTE_START}${content}${BRACKETED_PASTE_END}`));
     await attachment.input(new Uint8Array([13]));
@@ -1162,16 +1234,4 @@ function authenticationBytes(token: string): Uint8Array {
   bytes.set(magic, 0);
   bytes.set(credential, magic.byteLength);
   return bytes;
-}
-
-async function messageBytes(data: unknown): Promise<Uint8Array> {
-  if (typeof data === "string") return new TextEncoder().encode(data);
-  if (data instanceof ArrayBuffer) return new Uint8Array(data);
-  if (ArrayBuffer.isView(data)) {
-    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength).slice();
-  }
-  if (typeof Blob !== "undefined" && data instanceof Blob) {
-    return new Uint8Array(await data.arrayBuffer());
-  }
-  throw new Error("Terminal message type is unsupported.");
 }

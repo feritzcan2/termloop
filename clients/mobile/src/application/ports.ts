@@ -45,6 +45,9 @@ export interface MobileOverview {
 
 export interface ConnectionCatalogPort {
   list(): Promise<ConnectionProfile[]>;
+  /// Signals a proven transport transition for any saved Mac. The catalog then
+  /// performs its normal authoritative probe; the event itself is not status.
+  subscribeChanges(listener: () => void): () => void;
   /// Drops cached WebSocket transports without removing any saved Mac. The
   /// lifecycle owner calls this around background transitions so a suspended
   /// native socket is never reused as foreground connectivity evidence.
@@ -54,6 +57,17 @@ export interface ConnectionCatalogPort {
 
 export interface ControlReadPort {
   loadOverview(connectionId: string): Promise<MobileOverview>;
+  /// A hint that one or more authoritative projections changed. Revisions make
+  /// duplicate/out-of-order delivery harmless; consumers still perform normal
+  /// reads, so events never become a second source of domain truth.
+  subscribeInvalidations(
+    connectionId: string,
+    listener: (event: {
+      readonly stateRevision: number;
+      readonly observationSequence: number;
+      readonly topics: readonly string[];
+    }) => void,
+  ): () => void;
 }
 
 /// A bounded, read-only snapshot of one Task's local checkout. The observation id

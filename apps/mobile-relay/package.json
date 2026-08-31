@@ -1,0 +1,21 @@
+{
+  "name": "@termloop/mobile-relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit && tsc --noEmit -p test/tsconfig.json",
+    "test": "vitest run",
+    "types": "wrangler types --include-runtime=false",
+    "types:check": "wrangler types --include-runtime=false --check",
+    "deploy:dry": "wrangler deploy --dry-run"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.22.0",
+    "@cloudflare/workers-types": "5.20260831.1",
+    "@types/node": "26.1.2",
+    "typescript": "~6.0.3",
+    "vitest": "4.1.11",
+    "wrangler": "4.127.1"
+  }
+}

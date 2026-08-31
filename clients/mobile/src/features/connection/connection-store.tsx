@@ -10,7 +10,7 @@ export { preferredConnectionId } from "./connection-resilience";
 /// Longer than the generated control client's 12s request timeout, so a probe always
 /// gets to finish before the next tick is even considered. A poll faster than the thing
 /// it polls cannot converge — see the in-flight guard below.
-const ACTIVE_PROBE_MS = 15_000;
+const FALLBACK_PROBE_MS = 60_000;
 const RECONNECT_PROBE_MS = 3_000;
 export const CONNECTION_RECONNECT_GRACE_MS = 12_000;
 
@@ -53,6 +53,7 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
   const probeSequence = useRef(0);
   const activeProbe = useRef<number | undefined>(undefined);
   const unreachableSince = useRef(new Map<string, number>());
+  const pendingTransportChange = useRef(false);
 
   useEffect(() => {
     /// iOS can retain a WebSocket object across suspension after its network path
@@ -110,6 +111,12 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
             if (active && activeProbe.current === undefined) setReloads((count) => count + 1);
           }, RECONNECT_PROBE_MS);
         }
+        if (pendingTransportChange.current) {
+          pendingTransportChange.current = false;
+          queueMicrotask(() => {
+            if (active) setReloads((count) => count + 1);
+          });
+        }
       },
       (cause: unknown) => {
         if (activeProbe.current === probe) activeProbe.current = undefined;
@@ -120,6 +127,17 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
     );
     return () => { active = false; };
   }, [runtime, reloads, lifecycle.active, lifecycle.foregroundRevision]);
+
+  useEffect(() => {
+    if (!lifecycle.active) return;
+    return runtime.connections.subscribeChanges(() => {
+      if (activeProbe.current !== undefined) {
+        pendingTransportChange.current = true;
+        return;
+      }
+      setReloads((count) => count + 1);
+    });
+  }, [runtime, lifecycle.active]);
 
   // The phone never asks the user to tap Retry just because the Mac, Tailscale,
   // Wi-Fi, or daemon was briefly unavailable. While visible it keeps probing the
@@ -134,7 +152,7 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
       /// loop itself rather than by the network.
       if (activeProbe.current !== undefined) return;
       setReloads((count) => count + 1);
-    }, ACTIVE_PROBE_MS);
+    }, FALLBACK_PROBE_MS);
     return () => clearInterval(timer);
   }, [lifecycle.active]);
 
