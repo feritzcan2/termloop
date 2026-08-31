@@ -598,6 +598,8 @@ button.task-signal.issue:hover { color: var(--warning); }
 /* One scroll for the whole rail: Tasks and the Project Sessions below them move
    together, so a long Task list never traps its own scrollbar. */
 .sidebar-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-color: #272d2f transparent; }
+.workspace-rail-cache { display: contents; }
+.workspace-rail-cache[hidden] { display: none; }
 .session-navigation { padding: 0 0 12px; }
 .active-agent-rail + .session-navigation { border-top: 1px solid var(--rule); padding-top: 9px; }
 .session-group + .session-group { margin-top: 13px; }

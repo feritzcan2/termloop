@@ -52,6 +52,7 @@ import { ActiveAgentRail } from "./ActiveAgentRail.js";
 import { HistoryRail } from "./HistoryRail.js";
 import { playbookBuilderSession } from "../prompt-improver-session-link.js";
 import { WorkspaceViewSwitch } from "./WorkspaceViewSwitch.js";
+import { WorkspaceRailCache } from "./WorkspaceRailCache.js";
 import type { GhosttyShellShortcut } from "../../ghostty-shell-shortcut.js";
 import { persistActiveAgentFavoriteToggle, readActiveAgentFavorites } from "../active-agent-favorites.js";
 import { readActiveAgentActivityMemory, updateActiveAgentActivityMemory, writeActiveAgentActivityMemory } from "../active-agent-activity-memory.js";
@@ -1394,7 +1395,7 @@ export function Shell(props: ShellProps) {
             openPrompt={openPromptPage}
             improvePrompt={props.selectedProject ? improvePrompt : undefined}
             reload={promptLibrary.reload}
-          /> : workspaceView === "overview" ? <TaskRail
+          /> : <><WorkspaceRailCache visible={workspaceView === "overview"}><TaskRail
             projectId={props.selectedProject?.id}
             projectFolder={props.selectedProject?.folder_path}
             tasks={props.projectTasks}
@@ -1458,7 +1459,7 @@ export function Shell(props: ShellProps) {
             createRequestHandled={() => setTaskCreateRequested(false)}
             overlayVisibilityChanged={setTaskRailOverlayOpen}
             overlayContainer={props.overlayContainer}
-          /> : workspaceView === "agents" ? <>
+          /></WorkspaceRailCache><WorkspaceRailCache visible={workspaceView === "agents"}>
           <ActiveAgentRail
             sessions={props.projectSessions}
             searchOpen={agentSearchOpen}
@@ -1506,7 +1507,7 @@ export function Shell(props: ShellProps) {
               : undefined}
             openExternal={props.openExternal}
           />
-          </> : workspaceView === "history" ? <HistoryRail
+          </WorkspaceRailCache>{workspaceView === "overview" || workspaceView === "agents" ? null : workspaceView === "history" ? <HistoryRail
             projectId={props.selectedProject?.id}
             projectPath={props.selectedProject?.folder_path}
             projectBranch={props.projectWorktreeSummary?.checked_out_branch}
@@ -1568,10 +1569,10 @@ export function Shell(props: ShellProps) {
             dismissImproverSession={dismissSession}
             openTask={openTaskDetail}
             openDetails={openAssistant}
-          /> : <p className="assistant-empty">Select a Project to configure assistants.</p>}
+          /> : <p className="assistant-empty">Select a Project to configure assistants.</p>}</>}
           </div>
           {/* Archived Agent history lives in History; this footer is Task-only. */}
-          {archivedRailVisible(railMode === "workspace", workspaceView) ? <ArchivedRail
+          {railMode === "workspace" ? <WorkspaceRailCache visible={archivedRailVisible(true, workspaceView)}><ArchivedRail
             tasks={archived.tasks}
             loading={archived.loading}
             disabled={disabled}
@@ -1584,7 +1585,7 @@ export function Shell(props: ShellProps) {
             })}
             overlayVisibilityChanged={setArchivedRailOverlayOpen}
             overlayContainer={props.overlayContainer}
-          /> : null}
+          /></WorkspaceRailCache> : null}
           <footer className="sidebar-footer">
             {assistantProjectId ? <StewardPetHost
               projectId={assistantProjectId}
