@@ -14,7 +14,6 @@ import {
   type MobileDiagnosticValue,
 } from "../../platform/mobile-diagnostics";
 import { MobileControlClient } from "./mobile-control-client";
-import { createRelayDataSocket } from "./relay-data-socket";
 import {
   KIND_ACK,
   KIND_ATTACH,
@@ -118,11 +117,7 @@ export class MobileConnectionCoordinator {
   matches(connection: SavedConnection): boolean {
     return connection.controlUrl === this.connection.controlUrl
       && connection.controlToken === this.connection.controlToken
-      && connection.terminalToken === this.connection.terminalToken
-      && connection.relay?.url === this.connection.relay?.url
-      && connection.relay?.roomId === this.connection.relay?.roomId
-      && connection.relay?.token === this.connection.relay?.token
-      && connection.relay?.encryptionKey === this.connection.relay?.encryptionKey;
+      && connection.terminalToken === this.connection.terminalToken;
   }
 
   subscribeInvalidations(listener: (event: ProjectionInvalidation) => void): () => void {
@@ -174,7 +169,7 @@ export class MobileConnectionCoordinator {
     };
     this.subscriptions.set(key, subscription);
     this.reportTerminal(subscription, "attachment_started", {
-      endpoint: websocketEndpointLabel(transportEndpoint(this.connection)),
+      endpoint: websocketEndpointLabel(mobileEndpoint(this.connection.controlUrl)),
       activeSubscriptions: this.subscriptions.size,
     });
     onEvent({ type: "state", state: "connecting" });
@@ -291,19 +286,12 @@ export class MobileConnectionCoordinator {
     this.diagnostics.report("connection", "connection_started", {
       connectionId: this.connection.id,
       generation,
-      endpoint: websocketEndpointLabel(transportEndpoint(this.connection)),
+      endpoint: websocketEndpointLabel(mobileEndpoint(this.connection.controlUrl)),
       activeTerminalSubscriptions: this.subscriptions.size,
     });
     let socket: DataSocket;
     try {
-      socket = this.connection.relay === undefined
-        ? this.socketFactory(mobileEndpoint(this.connection.controlUrl))
-        : createRelayDataSocket(
-          this.connection.id,
-          this.connection.relay,
-          this.socketFactory,
-          this.diagnostics,
-        );
+      socket = this.socketFactory(mobileEndpoint(this.connection.controlUrl));
     } catch (cause: unknown) {
       return Promise.reject(cause);
     }
@@ -697,10 +685,6 @@ function mobileEndpoint(controlUrl: string): string {
   endpoint.search = "";
   endpoint.hash = "";
   return endpoint.toString();
-}
-
-function transportEndpoint(connection: SavedConnection): string {
-  return connection.relay?.url ?? mobileEndpoint(connection.controlUrl);
 }
 
 function terminalKey(sessionId: string, runtimeEpoch: number): string {

@@ -15,12 +15,6 @@ export interface SavedConnection {
   readonly controlToken: string;
   readonly terminalUrl: string;
   readonly terminalToken: string;
-  readonly relay?: {
-    readonly url: string;
-    readonly roomId: string;
-    readonly token: string;
-    readonly encryptionKey: string;
-  };
   readonly lastConnectedAtEpochMs: number | null;
   readonly productVersion: string | null;
   readonly contractIdentity: string | null;
@@ -101,24 +95,6 @@ function validateConnection(connection: SavedConnection): void {
   if (connection.controlToken.length < 16 || connection.terminalToken.length < 16) {
     throw new Error("Connection credential is invalid.");
   }
-  if (connection.relay !== undefined) validateRelay(connection.relay);
-}
-
-function validateRelay(relay: NonNullable<SavedConnection["relay"]>): void {
-  const url = new URL(relay.url);
-  const loopback = url.protocol === "ws:"
-    && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
-  if (!(url.protocol === "wss:" || loopback)
-    || url.username.length > 0 || url.password.length > 0
-    || url.search.length > 0 || url.hash.length > 0
-    || url.pathname.replace(/\/$/, "") !== "/v1/relay") {
-    throw new Error("Relay endpoint must be a credential-free secure /v1/relay WebSocket URL.");
-  }
-  if (!/^[a-f0-9]{32}$/.test(relay.roomId)
-    || !/^[A-Za-z0-9_-]{32,128}$/.test(relay.token)
-    || !/^[A-Za-z0-9_-]{43}$/.test(relay.encryptionKey)) {
-    throw new Error("Relay credential is invalid.");
-  }
 }
 
 function validateEndpoint(value: string, requiredPath: string): void {
@@ -142,18 +118,20 @@ function isSavedConnection(value: unknown): value is SavedConnection {
     && typeof record.controlToken === "string"
     && typeof record.terminalUrl === "string"
     && typeof record.terminalToken === "string"
-    && (record.relay === undefined || isRelay(record.relay))
     && (record.lastConnectedAtEpochMs === null || typeof record.lastConnectedAtEpochMs === "number")
     && (record.productVersion === null || typeof record.productVersion === "string")
-    && (record.contractIdentity === null || typeof record.contractIdentity === "string");
-}
-
-function isRelay(value: unknown): value is NonNullable<SavedConnection["relay"]> {
-  return typeof value === "object" && value !== null
-    && typeof (value as Record<string, unknown>).url === "string"
-    && typeof (value as Record<string, unknown>).roomId === "string"
-    && typeof (value as Record<string, unknown>).token === "string"
-    && typeof (value as Record<string, unknown>).encryptionKey === "string";
+    && (record.contractIdentity === null || typeof record.contractIdentity === "string")
+    && Object.keys(record).every((key) => [
+      "id",
+      "name",
+      "controlUrl",
+      "controlToken",
+      "terminalUrl",
+      "terminalToken",
+      "lastConnectedAtEpochMs",
+      "productVersion",
+      "contractIdentity",
+    ].includes(key));
 }
 
 function profileKey(id: string): string {

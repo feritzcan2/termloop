@@ -41,10 +41,6 @@ await chmod(stateDirectory, 0o700);
 
 const configFile = path.join(stateDirectory, "gateway.json");
 const existing = await readExistingConfig(configFile);
-const relayUrl = option("--relay-url")
-  ?? process.env.TERMLOOP_MOBILE_RELAY_URL
-  ?? existing?.relay?.url;
-if (relayUrl !== undefined) validateRelayUrl(relayUrl);
 const gatewayPort = Number(option("--gateway-port") ?? existing?.port ?? 46321);
 if (!Number.isInteger(gatewayPort) || gatewayPort < 1024 || gatewayPort > 65535) {
   throw new Error("Mobile access gateway port is invalid.");
@@ -62,14 +58,6 @@ const config = {
   port: gatewayPort,
   controlToken: existing?.controlToken ?? randomBytes(32).toString("hex"),
   terminalToken: existing?.terminalToken ?? randomBytes(32).toString("hex"),
-  ...(relayUrl === undefined ? {} : {
-    relay: {
-      url: relayUrl,
-      roomId: existing?.relay?.roomId ?? randomBytes(16).toString("hex"),
-      token: existing?.relay?.token ?? randomBytes(32).toString("base64url"),
-      encryptionKey: existing?.relay?.encryptionKey ?? randomBytes(32).toString("base64url"),
-    },
-  }),
   watchToken: existing?.watchToken ?? randomBytes(32).toString("hex"),
   pushDevicesFile: path.join(stateDirectory, "push-devices.json"),
   apnsConfigFile: option("--apns-config") ?? defaultApnsConfigFile(hostPlatform),
@@ -118,16 +106,10 @@ if (hostPlatform === "darwin") {
 }
 if (!has("--skip-gateway-wait")) await waitForGateway(gatewayPort);
 
-if (config.relay === undefined || has("--keep-tailscale-serve")) {
-  await execFile(tailscaleBin, ["serve", "--bg", "--yes", `127.0.0.1:${gatewayPort}`]);
-} else {
-  // Remove only TermLoop's root gateway mapping. `serve reset` would also erase
-  // unrelated ports and the separately owned /mobile-install handler.
-  await execFile(tailscaleBin, ["serve", "--https=443", "--set-path=/", "--yes", "off"]);
-}
+await execFile(tailscaleBin, ["serve", "--bg", "--yes", `127.0.0.1:${gatewayPort}`]);
 
 const payload = {
-  version: config.relay === undefined ? 1 : 2,
+  version: 1,
   connectionId,
   name: hostName,
   protocolVersion: requiredString(discovery.protocolVersion, "protocolVersion"),
@@ -135,7 +117,6 @@ const payload = {
   controlToken: config.controlToken,
   terminalUrl: `wss://${dnsName}/terminal`,
   terminalToken: config.terminalToken,
-  ...(config.relay === undefined ? {} : { relay: config.relay }),
 };
 const code = `TLMP1:${JSON.stringify(payload)}`;
 
@@ -150,15 +131,11 @@ else {
   console.log("This is a one-time pairing code; daemon restarts no longer require re-pairing.");
   console.log("On iPhone: TermLoop → Pair a computer → Scan QR.");
 }
-console.log(config.relay === undefined
-  ? `Tailnet endpoint: https://${dnsName}`
-  : `Relay endpoint: ${config.relay.url} (end-to-end encrypted)`);
+console.log(`Tailnet endpoint: https://${dnsName}`);
 console.log(logFile === undefined
   ? `Gateway log: journalctl --user -u ${label}.service`
   : `Gateway log: ${logFile} (previous run: ${logFile}.previous)`);
-console.log(config.relay === undefined
-  ? "Keep Tailscale connected on both devices. TermLoop Mobile will reconnect automatically."
-  : "The Mac keeps one outbound relay connection; TermLoop Mobile will reconnect automatically.");
+console.log("Keep Tailscale connected on both devices. TermLoop Mobile will reconnect automatically.");
 
 // The previous run's output is the only evidence of a gateway that failed while
 // the phone could not reach it, so keep exactly one generation and start each
@@ -282,17 +259,6 @@ async function readExistingConfig(file) {
       && typeof value.terminalToken === "string" && value.terminalToken.length === 64) return value;
   } catch { /* First install or corrupt state: issue a fresh device credential. */ }
   return undefined;
-}
-
-function validateRelayUrl(value) {
-  const url = new URL(value);
-  const local = url.protocol === "ws:"
-    && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
-  if (!(url.protocol === "wss:" || local)
-    || url.username || url.password || url.search || url.hash
-    || url.pathname.replace(/\/$/, "") !== "/v1/relay") {
-    throw new Error("Mobile relay must be a credential-free wss://.../v1/relay endpoint.");
-  }
 }
 
 async function waitForGateway(port) {

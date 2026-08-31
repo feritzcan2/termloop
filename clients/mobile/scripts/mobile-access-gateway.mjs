@@ -8,7 +8,6 @@ import {
   createGatewayDiagnosticReporter,
   mobileDiagnosticContext,
 } from "./mobile-access-diagnostics.mjs";
-import { createOutboundMobileRelay } from "./mobile-access-relay.mjs";
 import {
   sweepWebSocketHeartbeats,
   trackWebSocketHeartbeat,
@@ -117,22 +116,12 @@ const config = validateConfig(JSON.parse(await readFile(configFile, "utf8")));
 await boundLog();
 const diagnostics = createGatewayDiagnosticReporter((line) => process.stdout.write(`${line}\n`));
 const sockets = new Set();
-const outboundRelay = createOutboundMobileRelay({
-  relay: config.relay,
-  diagnostics,
-  acceptPeer(peer) {
-    const connectionId = ++downstreamConnectionSequence;
-    void acceptMobile(peer, connectionId);
-    return connectionId;
-  },
-});
-const relayHealth = outboundRelay.health;
 const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 4 * 1024 * 1024 });
 
 const server = http.createServer(async (request, response) => {
   if (request.url === "/health") {
     response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-    response.end(JSON.stringify({ ready: true, relay: relayHealth }));
+    response.end(JSON.stringify({ ready: true }));
     return;
   }
   if (request.method === "POST" && request.url === "/push/register") {
@@ -275,7 +264,6 @@ server.listen(config.port, "127.0.0.1", () => {
   // A restart loop is otherwise indistinguishable from a silent gateway, so
   // record the one fact every diagnosis starts from. Never log credentials.
   diagnostics.report("gateway", "listening", { port: config.port });
-  outboundRelay.start();
 });
 server.on("error", (error) => {
   diagnostics.report("gateway", "server_error", { errorType: error?.name });
@@ -1429,7 +1417,7 @@ async function acceptMobile(client, connectionId) {
   });
   upstream.on("message", (data, isBinary) => {
     if (!terminalReady) {
-      if (isBinary || data.toString("utf8") !== "TLOK") {
+      if (data.toString("utf8") !== "TLOK") {
         clearTimeout(timeout);
         diagnostics.report("mobile", "upstream_authentication_refused", { connectionId });
         upstream.terminate();
@@ -2106,30 +2094,9 @@ function validateConfig(value) {
     };
   }
   if (value.watchToken !== undefined) result.watchToken = boundedToken(value.watchToken);
-  if (value.relay !== undefined) result.relay = validateRelayConfig(value.relay);
   // Absent on Linux, where the service manager owns retention.
   if (typeof value.logFile === "string" && value.logFile.length > 0) result.logFile = value.logFile;
   return result;
-}
-
-function validateRelayConfig(value) {
-  const url = new URL(requiredString(value?.url));
-  const local = url.protocol === "ws:"
-    && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
-  if (!(url.protocol === "wss:" || local)
-    || url.username || url.password || url.search || url.hash
-    || url.pathname.replace(/\/$/, "") !== "/v1/relay"
-    || !/^[a-f0-9]{32}$/.test(value.roomId)
-    || !/^[A-Za-z0-9_-]{32,128}$/.test(value.token)
-    || !/^[A-Za-z0-9_-]{43}$/.test(value.encryptionKey)) {
-    throw new Error("mobile relay config is invalid");
-  }
-  return {
-    url: url.toString(),
-    roomId: value.roomId,
-    token: value.token,
-    encryptionKey: value.encryptionKey,
-  };
 }
 
 function readBody(request, maxBytes) {
@@ -2232,7 +2199,6 @@ function shutdown() {
   clearInterval(heartbeatTimer);
   diagnostics.report("gateway", "shutdown_started", { openSockets: sockets.size });
   for (const socket of sockets) socket.close(1001, "gateway restarting");
-  outboundRelay.stop();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1_000).unref();
 }

@@ -4,7 +4,7 @@ const PREFIX = "TLMP1:";
 const MAX_CODE_CHARS = 8 * 1024;
 
 interface PairingPayload {
-  readonly version: 1 | 2;
+  readonly version: 1;
   readonly connectionId: string;
   readonly name: string;
   readonly protocolVersion: string;
@@ -12,7 +12,6 @@ interface PairingPayload {
   readonly controlToken: string;
   readonly terminalUrl: string;
   readonly terminalToken: string;
-  readonly relay?: NonNullable<SavedConnection["relay"]>;
 }
 
 /// Parse the explicit owner-generated bootstrap code. The code is intentionally
@@ -38,7 +37,6 @@ export function parsePairingCode(input: string): SavedConnection {
     controlToken: value.controlToken,
     terminalUrl: value.terminalUrl,
     terminalToken: value.terminalToken,
-    ...(value.relay === undefined ? {} : { relay: value.relay }),
     lastConnectedAtEpochMs: null,
     productVersion: null,
     contractIdentity: value.protocolVersion,
@@ -48,8 +46,7 @@ export function parsePairingCode(input: string): SavedConnection {
 function isPairingPayload(value: unknown): value is PairingPayload {
   if (typeof value !== "object" || value === null) return false;
   const record = value as Record<string, unknown>;
-  const relay = record.relay;
-  return (record.version === 1 || record.version === 2)
+  return record.version === 1
     && typeof record.connectionId === "string"
     && typeof record.name === "string"
     && typeof record.protocolVersion === "string"
@@ -57,7 +54,6 @@ function isPairingPayload(value: unknown): value is PairingPayload {
     && typeof record.controlToken === "string"
     && typeof record.terminalUrl === "string"
     && typeof record.terminalToken === "string"
-    && (record.version === 1 ? relay === undefined : isRelayPayload(relay))
     && Object.keys(record).every((key) => [
       "version",
       "connectionId",
@@ -67,16 +63,5 @@ function isPairingPayload(value: unknown): value is PairingPayload {
       "controlToken",
       "terminalUrl",
       "terminalToken",
-      "relay",
     ].includes(key));
-}
-
-function isRelayPayload(value: unknown): value is NonNullable<SavedConnection["relay"]> {
-  if (typeof value !== "object" || value === null) return false;
-  const record = value as Record<string, unknown>;
-  return typeof record.url === "string"
-    && typeof record.roomId === "string"
-    && typeof record.token === "string"
-    && typeof record.encryptionKey === "string"
-    && Object.keys(record).every((key) => ["url", "roomId", "token", "encryptionKey"].includes(key));
 }

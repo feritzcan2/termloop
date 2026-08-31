@@ -75,17 +75,15 @@ describe("secure connection repository", () => {
     })).rejects.toThrow("credential-free");
   });
 
-  it("refuses a cleartext relay outside loopback", async () => {
-    const repository = createSecureConnectionRepository(memorySecretStore());
-    await expect(repository.save({
-      ...saved,
-      relay: {
-        url: "ws://relay.example.com/v1/relay",
-        roomId: "a".repeat(32),
-        token: "b".repeat(43),
-        encryptionKey: "c".repeat(43),
-      },
-    })).rejects.toThrow("secure");
+  it("ignores stored connection records with unsupported fields", async () => {
+    const store = memorySecretStore();
+    const repository = createSecureConnectionRepository(store);
+    await repository.save(saved);
+    const profileKey = [...store.values.keys()].find((key) => key.endsWith(saved.id));
+    expect(profileKey).toBeDefined();
+    store.values.set(profileKey!, JSON.stringify({ ...saved, unsupportedTransport: {} }));
+
+    expect(await repository.get(saved.id)).toBeUndefined();
   });
 
   it("keeps a Watch destination per Mac without changing its connection record", async () => {

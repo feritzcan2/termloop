@@ -17,7 +17,6 @@
     "export:ios": "pnpm --filter @termloop/contract build && expo export --platform ios"
   },
   "dependencies": {
-    "@noble/ciphers": "2.4.0",
     "@termloop/contract": "workspace:*",
     "expo": "~57.0.12",
     "expo-application": "~57.0.2",

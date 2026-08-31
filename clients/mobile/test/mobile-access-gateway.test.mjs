@@ -11,112 +11,8 @@ import {
   decodeFrame,
   encodeFrame,
 } from "../src/adapters/production/terminal-frame";
-import { createRelayEnvelopeCodec } from "../src/domain/relay-envelope";
 
 describe("persistent mobile access gateway", () => {
-  it("holds an outbound encrypted relay connection without Tailscale Serve in the data path", async () => {
-    const directory = mkdtempSync(path.join(os.tmpdir(), "termloop-mobile-outbound-relay-"));
-    const runtimeFile = path.join(directory, "runtime.json");
-    const gatewayConfig = path.join(directory, "gateway.json");
-    const upstreamServer = http.createServer();
-    const upstreamSockets = new WebSocketServer({ server: upstreamServer });
-    upstreamSockets.on("connection", (socket, request) => {
-      socket.on("message", (data, isBinary) => {
-        if (request.url === "/terminal") {
-          if (isBinary && data.toString().startsWith("TL01t")) socket.send("TLOK");
-          return;
-        }
-        const control = JSON.parse(data.toString());
-        socket.send(JSON.stringify({
-          id: control.id,
-          ok: true,
-          result: control.method === "control.subscribe"
-            ? { stateRevision: 1, observationSequence: 1 }
-            : { product: "TermLoop", version: "0.1.0", protocolVersion: control.protocolVersion },
-        }));
-      });
-    });
-    const upstreamPort = await listen(upstreamServer);
-    const relayServer = http.createServer();
-    const relaySockets = new WebSocketServer({ server: relayServer });
-    const relayPort = await listen(relayServer);
-    const roomId = "a".repeat(32);
-    const relayToken = "relay_token_abcdefghijklmnopqrstuvwxyz0123456789";
-    const encryptionKey = Buffer.alloc(32, 9).toString("base64url");
-    let relaySocket;
-    relaySockets.on("connection", (socket, request) => {
-      expect(request.url).toBe(`/v1/relay/${roomId}`);
-      socket.once("message", (data, isBinary) => {
-        expect(isBinary).toBe(false);
-        expect(JSON.parse(data.toString())).toMatchObject({ side: "mac", roomId, token: relayToken });
-        relaySocket = socket;
-        socket.send(JSON.stringify({ type: "relay.ready", relayProtocolVersion: 1 }));
-      });
-    });
-    writeFileSync(runtimeFile, runtime(upstreamPort, "r", "t"));
-    const gatewayPort = await freePort();
-    writeFileSync(gatewayConfig, JSON.stringify({
-      version: 2,
-      connectionId: "mac-relay",
-      macName: "Relay Mac",
-      runtimeFile,
-      port: gatewayPort,
-      controlToken: "c".repeat(64),
-      terminalToken: "m".repeat(64),
-      pushDevicesFile: path.join(directory, "devices.json"),
-      apnsConfigFile: path.join(directory, "apns.json"),
-      relay: {
-        url: `ws://127.0.0.1:${relayPort}/v1/relay`,
-        roomId,
-        token: relayToken,
-        encryptionKey,
-      },
-    }));
-    const gateway = spawn(process.execPath, [path.resolve("scripts/mobile-access-gateway.mjs"), gatewayConfig], {
-      cwd: path.resolve("."), stdio: "ignore",
-    });
-    try {
-      await waitForHealth(gatewayPort);
-      await waitFor(() => relaySocket !== undefined);
-      await waitForAsync(async () => {
-        const response = await fetch(`http://127.0.0.1:${gatewayPort}/health`);
-        const health = await response.json();
-        return health.relay?.configured === true && health.relay?.connected === true;
-      });
-      const codec = createRelayEnvelopeCodec(encryptionKey, "mobile");
-      const mobileReady = nextRelayMessage(relaySocket, codec);
-      relaySocket.send(codec.seal(JSON.stringify({
-        type: "mobile.authenticate",
-        mobileTransportVersion: 2,
-        controlToken: "c".repeat(64),
-        terminalToken: "m".repeat(64),
-      }), false));
-      await expect(mobileReady).resolves.toMatchObject({
-        binary: false,
-        data: expect.stringContaining("mobile.ready"),
-      });
-
-      const response = nextRelayMessage(relaySocket, codec);
-      relaySocket.send(codec.seal(JSON.stringify({
-        id: "relay-control",
-        mobileApiVersion: 1,
-        token: "c".repeat(64),
-        method: "system.version",
-        params: {},
-      }), false));
-      await expect(response).resolves.toMatchObject({
-        binary: false,
-        data: expect.stringContaining('"id":"relay-control"'),
-      });
-    } finally {
-      gateway.kill("SIGTERM");
-      relaySockets.close();
-      relayServer.close();
-      upstreamSockets.close();
-      upstreamServer.close();
-    }
-  });
-
   it("multiplexes control, invalidations, and terminal frames over one downstream socket", async () => {
     const directory = mkdtempSync(path.join(os.tmpdir(), "termloop-mobile-multiplex-"));
     const runtimeFile = path.join(directory, "runtime.json");
@@ -130,7 +26,7 @@ describe("persistent mobile access gateway", () => {
       socket.on("message", (data, isBinary) => {
         if (request.url === "/terminal") {
           if (!isBinary || data.toString().startsWith("TL01t")) {
-            socket.send("TLOK");
+            socket.send(Buffer.from("TLOK"));
             return;
           }
           const frame = decodeFrame(new Uint8Array(data));
@@ -624,14 +520,6 @@ async function waitFor(predicate) {
   throw new Error("condition was not reached");
 }
 
-async function waitForAsync(predicate) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (await predicate()) return;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error("condition was not reached");
-}
-
 function listen(server) {
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server.address().port)));
 }
@@ -661,16 +549,6 @@ function opened(socket) {
 function message(socket) {
   return new Promise((resolve, reject) => {
     socket.once("message", (data) => resolve(Buffer.from(data)));
-    socket.once("error", reject);
-  });
-}
-
-function nextRelayMessage(socket, codec) {
-  return new Promise((resolve, reject) => {
-    socket.once("message", (data, isBinary) => {
-      if (!isBinary) return reject(new Error("relay payload was not encrypted binary"));
-      try { resolve(codec.open(new Uint8Array(data))); } catch (cause) { reject(cause); }
-    });
     socket.once("error", reject);
   });
 }
