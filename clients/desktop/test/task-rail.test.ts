@@ -265,6 +265,35 @@ async function renderRailTab(options: RailOptions, tab: "active" | "closed"): Pr
 }
 
 describe("Task rail native overlay", () => {
+  it("keeps a tall Task menu inside the viewport", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const originalBoundingRect = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
+      if (this.classList.contains("task-context-menu")) {
+        return { x: 0, y: 0, left: 0, top: 0, right: 222, bottom: 360, width: 222, height: 360, toJSON: () => ({}) };
+      }
+      if (this.getAttribute("aria-label") === "More actions for Compact launchers") {
+        return { x: 980, y: 708, left: 980, top: 708, right: 1010, bottom: 740, width: 30, height: 32, toJSON: () => ({}) };
+      }
+      return originalBoundingRect.call(this);
+    };
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+    await act(async () => root.render(createElement(TaskRail, railProps())));
+    await act(async () => container.querySelector<HTMLButtonElement>("[aria-label='More actions for Compact launchers']")?.click());
+
+    const menu = container.querySelector<HTMLElement>(".task-context-menu")!;
+    expect(menu.style.left).toBe("794px");
+    expect(menu.style.top).toBe("400px");
+
+    HTMLElement.prototype.getBoundingClientRect = originalBoundingRect;
+    await act(async () => root.unmount());
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+
   it("keeps the Task menu and Archive dialog above Ghostty in the overlay window", async () => {
     const container = document.createElement("div");
     const overlayContainer = document.createElement("div");

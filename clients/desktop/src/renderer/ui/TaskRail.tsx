@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useDraggable, useDroppable, type DraggableAttributes, type DraggableSyntheticListeners } from "@dnd-kit/core";
 import type { AgentGroupLayout } from "../../layout/model.js";
 import { agentName, basename, canDismissTaskWorktreeProvisioning, isLiveSession, taskJiraIssueKey, type AgentStatus, type BranchCommitSummary, type GitHostProjection, type RunConfiguration, type RunRuntime, type Session, type Task, type TaskDeleteWorktreeResult, type TaskDeleteWorktreeReview } from "../model.js";
@@ -296,6 +296,7 @@ export function TaskRail(props: TaskRailProps) {
   const taskListId = useId();
   const [editor, setEditor] = useState<EditorState>();
   const [menu, setMenu] = useState<MenuState>();
+  const [taskMenuPosition, setTaskMenuPosition] = useState({ left: 8, top: 8 });
   const [clockNowEpochMs, setClockNowEpochMs] = useState(Date.now);
   useEffect(() => {
     if (props.nowEpochMs !== undefined) return;
@@ -492,6 +493,15 @@ export function TaskRail(props: TaskRailProps) {
     props.createRequestHandled?.();
   }, [props.createRequestHandled, props.createRequested]);
   useEffect(() => { if (menu && !menuTask) setMenu(undefined); }, [menu, menuTask]);
+  useLayoutEffect(() => {
+    if (!menu || !menuTask) return;
+    const rect = taskMenuRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setTaskMenuPosition({
+      left: Math.max(8, Math.min(menu.x, window.innerWidth - rect.width - 8)),
+      top: Math.max(8, Math.min(menu.y, window.innerHeight - rect.height - 8)),
+    });
+  }, [menu, menuTask]);
   useEffect(() => {
     props.overlayVisibilityChanged(overlayVisible);
     return () => props.overlayVisibilityChanged(false);
@@ -631,7 +641,7 @@ export function TaskRail(props: TaskRailProps) {
       {menu && menuTask && !props.deletingTaskIds.has(menuTask.id) ? (
         <div className="context-menu-layer" onKeyDown={(event) => { if (event.key === "Escape") closeMenu(); }}>
           <button className="context-menu-backdrop" aria-label="Close Task menu" onClick={closeMenu} />
-          <div ref={taskMenuRef} className="context-menu task-context-menu" role="menu" aria-label={`${menuTask.title} actions`} style={{ left: Math.min(menu.x, window.innerWidth - 238), top: Math.min(menu.y, window.innerHeight - 190) }}>
+          <div ref={taskMenuRef} className="context-menu task-context-menu" role="menu" aria-label={`${menuTask.title} actions`} style={taskMenuPosition}>
             <header><strong>{menuTask.title}</strong><span>{menuTask.worktree ? menuTask.worktree.path : "No worktree yet"}</span></header>
             <MenuButton icon="focus" label="Open details" detail="Pipeline, changes, and Sessions" action={() => perform(() => props.openTaskDetail(menuTask.id))} />
             <MenuButton icon="edit" label="Edit Task" detail="Title and brief" action={() => perform(() => setEditTask(menuTask))} />
