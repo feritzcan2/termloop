@@ -348,7 +348,15 @@ kbd { padding: 2px 5px; border: 1px solid rgba(255,255,255,.07); border-radius: 
 .task-group[data-disclosed] { margin-right: 4px; margin-left: 4px; padding: 2px 3px 4px; border: 1px solid var(--rule); border-radius: 9px; background: rgba(255,255,255,.016); }
 .task-group[data-disclosed] + .task-group, .task-group + .task-group[data-disclosed] { margin-top: 5px; }
 .task-board { padding: 6px 0 4px; }
-.task-group.focused { margin: 0 8px 6px; padding: 7px 7px 8px; border: 1px solid rgba(255,255,255,.06); border-radius: 9px; background: rgba(255,255,255,.018); }
+.task-group.focused { position: relative; margin: 0 8px 6px; padding: 7px 7px 8px; border: 1px solid rgba(255,255,255,.06); border-radius: 9px; background: rgba(255,255,255,.018); cursor: pointer; }
+.task-group.focused:hover { border-color: rgba(255,255,255,.13); background: rgba(255,255,255,.032); }
+/* What one click does, said before it happens. */
+.task-open-hint { position: absolute; right: 8px; bottom: 7px; z-index: 1; padding: 2px 7px; border: 1px solid rgba(255,255,255,.08); border-radius: 5px; background: color-mix(in srgb, var(--bg-sidebar) 88%, transparent); color: var(--sidebar-dim); font: 600 9px/1.4 var(--font-ui); opacity: 0; pointer-events: none; transition: opacity 100ms ease; }
+.task-group.focused:hover .task-open-hint { opacity: 1; }
+/* The hint speaks for the card's own click, so it stays up over the title row
+   too and yields only above controls that do something else. */
+.task-group.focused:hover:has(:is(.task-toggle, .row-actions, .task-launch, .task-children, .task-agents, .task-next-step, .task-meta button, input):hover) .task-open-hint { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .task-open-hint { transition: none; } }
 .task-group.focused[data-disclosed] { margin: 0 8px 6px; padding: 7px 7px 8px; }
 .task-group.focused:has(.task-item.showing-detail) { border-color: rgba(124,92,255,.28); background: rgba(124,92,255,.05); }
 .task-group.focused .task-toggle { height: 24px; }

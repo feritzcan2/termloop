@@ -634,6 +634,7 @@ export function TaskRail(props: TaskRailProps) {
           <button className="context-menu-backdrop" aria-label="Close Task menu" onClick={closeMenu} />
           <div ref={taskMenuRef} className="context-menu task-context-menu" role="menu" aria-label={`${menuTask.title} actions`} style={{ left: Math.min(menu.x, window.innerWidth - 238), top: Math.min(menu.y, window.innerHeight - 190) }}>
             <header><strong>{menuTask.title}</strong><span>{menuTask.worktree ? menuTask.worktree.path : "No worktree yet"}</span></header>
+            <MenuButton icon="focus" label="Open details" detail="Pipeline, changes, and Sessions" action={() => perform(() => props.openTaskDetail(menuTask.id))} />
             <MenuButton icon="edit" label="Edit Task" detail="Title and brief" action={() => perform(() => setEditTask(menuTask))} />
             {!menuTask.branch ? <MenuButton icon="branch" label="Use existing branch" detail="Link a local branch to this Task" action={() => perform(() => setBindTarget(menuTask))} /> : null}
             {!menuTask.worktree ? <MenuButton icon="terminal" label="Create worktree" detail={menuTask.worktree_provisioning?.status === "failed" ? "Retry with reviewed values" : "A separate checkout for this Task"} action={() => perform(() => setProvisionTarget(menuTask))} /> : null}
@@ -847,6 +848,12 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
       priority: agentActivityPriority(session, props.statusesById.get(session.id), props.reviewReadySessionIds.has(session.id)),
     }))
     .sort((left, right) => left.priority - right.priority);
+  /// The card's one click target: the loudest live agent, else any live
+  /// Session, else nothing — and then the click falls through to the detail.
+  const primarySession = liveAgents[0]?.session ?? sessions.find((session) => isLiveSession(session));
+  const primaryLabel = primarySession
+    ? primarySession.kind === "Agent" ? agentName(primarySession) : "Terminal"
+    : undefined;
   /// Closed Tasks stay quiet by design, so only an open Task self-discloses.
   const hasLiveAgent = task.status === "open" && liveAgents.length > 0;
   useEffect(() => {
@@ -859,13 +866,13 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
     setStoredCollapsed(next);
     writeTaskCollapsed(props.projectId, task.id, next);
   };
-  /// A row click means "show me this Task": it discloses the row in place and
-  /// puts the detail on the stage. Once the detail is already showing, the
-  /// click has nothing left to reveal, so a repeat press folds the row back —
-  /// and the next one grows it again. Both directions persist like the chevron.
+  /// A card click is "take me to this Task's work": with a live Session it
+  /// focuses the loudest one, and only a Task with nothing running opens its
+  /// detail page. Growing and folding stays on the chevron alone, so the click
+  /// never changes meaning based on hidden state.
   const rowClick = () => {
-    if (props.detailOpen) {
-      toggleCollapsed();
+    if (primarySession) {
+      props.selectSession(primarySession.id);
       return;
     }
     if (collapsed) toggleCollapsed();
@@ -935,7 +942,18 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
       data-task-stage={stage.id}
       data-disclosed={!collapsed && !props.deleting ? "true" : undefined}
       data-session-drop-target={task.status === "open" && task.archived_at_epoch_ms === null && !props.deleting ? task.id : undefined}
+      /* The whole card is the click target — pointing at the title is never
+         required. Clicks that land on a real control (or inside the Session
+         list, whose rows have their own targets) keep their own meaning. */
+      onClick={props.deleting ? undefined : (event) => {
+        const target = event.target as HTMLElement;
+        if (event.defaultPrevented || target.closest("button, input, a, summary, .task-children")) return;
+        rowClick();
+      }}
     >
+      {props.focused && !props.deleting ? (
+        <span className="task-open-hint" aria-hidden="true">{primaryLabel ? `Open ${primaryLabel}` : "Open details"}</span>
+      ) : null}
       <div className={`task-row${props.deleting ? " deleting" : ""}`}>
         <button
           type="button"
@@ -980,7 +998,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
           disabled={props.deleting}
           data-task-id={task.id}
           aria-current={props.detailOpen ? "true" : undefined}
-          aria-label={`Open ${taskRowAccessibleName({ task, stage, attention, divergence, changeCount, integration, commitCount })}`}
+          aria-label={`Open ${primaryLabel ? `${primaryLabel} in ` : ""}${taskRowAccessibleName({ task, stage, attention, divergence, changeCount, integration, commitCount })}`}
           title={task.brief ? `${task.title} — ${task.brief}` : task.title}
           onClick={rowClick}
           onDoubleClick={props.beginRename ? (event) => { event.preventDefault(); props.beginRename!(task); } : undefined}
@@ -1046,6 +1064,14 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
             disabled={props.disabled}
             onClick={() => props.beginClose!(task.id)}
           ><Icon name="close" /></button> : null}
+          <button
+            type="button"
+            className="row-action task-detail-open"
+            aria-label={`Open details for ${task.title}`}
+            title="Open Task details"
+            disabled={props.deleting}
+            onClick={() => props.openDetail(task.id)}
+          ><Icon name="focus" /></button>
           <button
             type="button"
             className="row-action"
