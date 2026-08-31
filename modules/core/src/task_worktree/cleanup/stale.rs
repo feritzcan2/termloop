@@ -877,7 +877,7 @@ pub(super) fn observe_stale_resolution_facts(
     proof: Option<&ManagedWorktreeProof>,
 ) -> Result<TaskWorktreeCleanupFacts, CoreError> {
     if let Some(proof) = proof {
-        return observe_cleanup_facts(runner, proof);
+        return observe_cleanup_facts(runner, proof, None);
     }
     let branch = task
         .branch

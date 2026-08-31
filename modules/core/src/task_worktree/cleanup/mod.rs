@@ -377,6 +377,7 @@ impl CoreRuntime {
 pub(super) fn observe_cleanup_facts(
     runner: &GitRunner,
     proof: &ManagedWorktreeProof,
+    baseline_branch_ref: Option<&str>,
 ) -> Result<TaskWorktreeCleanupFacts, CoreError> {
     let repository_root = Path::new(&proof.normalized_spec.repository_root);
     let destination = Path::new(&proof.registered_worktree_path);
@@ -412,7 +413,8 @@ pub(super) fn observe_cleanup_facts(
     } else {
         CleanupRegistrationState::Absent
     };
-    let reference = GitRefName::from_bytes(proof.branch_ref.as_bytes().to_vec())
+    let observed_branch_ref = baseline_branch_ref.unwrap_or(&proof.branch_ref);
+    let reference = GitRefName::from_bytes(observed_branch_ref.as_bytes().to_vec())
         .map_err(map_git_observation_error)?;
     let branch_oid = runner
         .resolve_ref(repository_root, &reference)
@@ -424,7 +426,7 @@ pub(super) fn observe_cleanup_facts(
         matches!(
             &registration.checkout,
             WorktreeCheckout::Branch { reference, .. }
-                if reference.as_bytes() == proof.branch_ref.as_bytes()
+                if reference.as_bytes() == observed_branch_ref.as_bytes()
         )
     });
     let mut head_matches = registration
@@ -445,7 +447,7 @@ pub(super) fn observe_cleanup_facts(
         branch_matches = Some(matches!(
             &health.repository.head,
             HeadState::Attached { branch, .. }
-                if branch.as_bytes() == proof.branch_ref.as_bytes()
+                if branch.as_bytes() == observed_branch_ref.as_bytes()
         ));
         head_matches = Some(match &health.repository.head {
             HeadState::Attached { oid, .. } => Some(oid) == branch_oid.as_ref(),

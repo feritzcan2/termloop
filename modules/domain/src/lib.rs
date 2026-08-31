@@ -588,6 +588,8 @@ pub struct WorktreeCleanupBaseline {
     pub worktree_path: String,
     pub registered_worktree_path: String,
     pub branch_ref: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkout_branch_ref: Option<String>,
     pub head_oid: String,
 }
 

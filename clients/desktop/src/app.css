@@ -349,7 +349,10 @@ kbd { padding: 2px 5px; border: 1px solid rgba(255,255,255,.07); border-radius: 
 .task-group[data-disclosed] + .task-group, .task-group + .task-group[data-disclosed] { margin-top: 5px; }
 .task-board { padding: 6px 0 4px; }
 .task-group.focused { position: relative; margin: 0 8px 6px; padding: 7px 7px 8px; border: 1px solid rgba(255,255,255,.06); border-radius: 9px; background: rgba(255,255,255,.018); cursor: pointer; }
-.task-group.focused:hover { border-color: rgba(255,255,255,.13); background: rgba(255,255,255,.032); }
+.task-group.focused:hover { border-color: rgba(255,255,255,.15); background: rgba(255,255,255,.04); }
+/* One target, one highlight: inside a board card the title button draws no
+   hover surface of its own — the card lighting up is the whole feedback. */
+.task-group.focused .task-item:hover { background: transparent; }
 /* What one click does, said before it happens. */
 .task-open-hint { position: absolute; right: 8px; bottom: 7px; z-index: 1; padding: 2px 7px; border: 1px solid rgba(255,255,255,.08); border-radius: 5px; background: color-mix(in srgb, var(--bg-sidebar) 88%, transparent); color: var(--sidebar-dim); font: 600 9px/1.4 var(--font-ui); opacity: 0; pointer-events: none; transition: opacity 100ms ease; }
 .task-group.focused:hover .task-open-hint { opacity: 1; }
