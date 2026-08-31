@@ -271,6 +271,44 @@ fn running_persistent_assistant_restart_preserves_closed_mcp_role() {
     );
     runtime
         .store
+        .insert_session(
+            &runtime.write_authority,
+            SessionRecord {
+                launch_selection: Default::default(),
+                id: "ordinary-resume-failed".into(),
+                project_id: project_id.clone(),
+                name: None,
+                kind: SessionKind::Agent,
+                process: ProcessDescriptor {
+                    program: "claude".into(),
+                    args: vec![],
+                    cwd: cwd.clone(),
+                    agent_id: Some("claude".into()),
+                    template_ref: Some("builtin.agent.interactive".into()),
+                    template_version: Some(1),
+                },
+                lifecycle_state: "resumeFailed".into(),
+                runtime_epoch: 7,
+                archived_at_epoch_ms: None,
+                ask_to_source_session_id: None,
+                run_configuration_id: None,
+                improver_target: None,
+                ask_to_continuation: None,
+                resume_ref: ResumeRef::for_provider(
+                    ResumeProvider::Claude,
+                    Uuid::new_v4().to_string(),
+                ),
+                resume_launch_guard: None,
+                resume_failure: Some(ResumeFailureReason::StartupTimedOut),
+            },
+        )
+        .unwrap();
+    let failed_startup = runtime.startup_resume_session_ids().unwrap();
+    assert_eq!(failed_startup.len(), 1);
+    assert_eq!(failed_startup[0].session_id(), "steward-resume");
+    assert_eq!(failed_startup[0].lane(), AgentResumeLane::Steward);
+    runtime
+        .store
         .mark_session_resuming(&runtime.write_authority, "steward-resume")
         .unwrap();
 
