@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { ConnectionBlocked } from "@/components/connection-blocked";
 import { AgentAvatar } from "@/components/agent-avatar";
@@ -9,6 +9,7 @@ import { ProjectSelector } from "@/components/project-selector";
 import { Row } from "@/components/row";
 import { MockBadge, Screen, ScreenHeader } from "@/components/screen";
 import { WorkspaceTabs, type WorkspaceTabId } from "@/components/workspace-tabs";
+import { SessionActionsSheet } from "@/features/session-actions/session-actions-sheet";
 import { useConnections } from "@/features/connection/connection-store";
 import { connectionRouteParams } from "@/features/connection/connection-route";
 import { useOverview } from "@/features/overview/overview-store";
@@ -37,6 +38,7 @@ export default function ProjectRoute() {
   const store = useOverview();
   const [selectedTab, setSelectedTab] = useState<WorkspaceTabId>("agents");
   const [terminalsOpen, setTerminalsOpen] = useState(false);
+  const [actionSessionId, setActionSessionId] = useState<string>();
 
   useEffect(() => {
     if (connectionId !== undefined && connections.selectedId !== connectionId) {
@@ -58,6 +60,7 @@ export default function ProjectRoute() {
   );
   const current = summaries.find((summary) => summary.project.id === projectId);
   const nowMs = store.readAtEpochMs ?? 0;
+  const actionSession = store.overview?.sessions.find((session) => session.id === actionSessionId);
 
   // A unified Home can switch connection and route in the same frame. Do not
   // briefly render the previous Mac's Project projection while selection catches up.
@@ -171,7 +174,7 @@ export default function ProjectRoute() {
                       {agentRows.map((row, index) => (
                         <View key={row.sessionId}>
                           {index === 0 ? null : <CardDivider />}
-                          <AgentRowView row={row} nowMs={nowMs} />
+                          <AgentRowView row={row} nowMs={nowMs} openActions={setActionSessionId} />
                         </View>
                       ))}
                     </Card>
@@ -211,6 +214,7 @@ export default function ProjectRoute() {
                                 pathname: "/session/[sessionId]",
                                 params: connectionRouteParams(connections.selectedId, { sessionId: row.sessionId }),
                               })}
+                              onLongPress={() => setActionSessionId(row.sessionId)}
                             />
                           </View>
                         ))}
@@ -269,27 +273,35 @@ export default function ProjectRoute() {
           )}
         </>
       )}
+      <SessionActionsSheet
+        session={actionSession}
+        visible={actionSession !== undefined}
+        onClose={() => setActionSessionId(undefined)}
+        onOpenSession={(sessionId) => router.push({
+          pathname: "/session/[sessionId]",
+          params: connectionRouteParams(connections.selectedId, { sessionId }),
+        })}
+        onOpenTask={(taskId) => router.push({
+          pathname: "/task/[taskId]",
+          params: connectionRouteParams(connections.selectedId, { taskId }),
+        })}
+        onOpenChanges={(taskId) => router.push({
+          pathname: "/task/[taskId]/changes",
+          params: connectionRouteParams(connections.selectedId, { taskId }),
+        })}
+      />
     </Screen>
   );
 }
 
-function AgentRowView({ row, nowMs }: { row: AgentRow; nowMs: number }) {
+function AgentRowView({ row, nowMs, openActions }: { row: AgentRow; nowMs: number; openActions(sessionId: string): void }) {
   const router = useRouter();
   const connections = useConnections();
   const store = useOverview();
-  const taskId = row.taskId;
   /// The headline is what the agent is for. The avatar already names the agent, so a
   /// Task-attached row spends its title on the Task and its state line on who runs it.
   const title = row.taskTitle ?? row.title;
   const detail = row.taskTitle === undefined ? row.folder : row.runner ?? row.title;
-  const openTask = taskId === undefined ? undefined : () => router.push({
-    pathname: "/task/[taskId]",
-    params: connectionRouteParams(connections.selectedId, { taskId }),
-  });
-  const openChanges = taskId === undefined ? undefined : () => router.push({
-    pathname: "/task/[taskId]/changes",
-    params: connectionRouteParams(connections.selectedId, { taskId }),
-  });
   return (
     <Row
       tone={row.tone}
@@ -307,13 +319,7 @@ function AgentRowView({ row, nowMs }: { row: AgentRow; nowMs: number }) {
           params: connectionRouteParams(connections.selectedId, { sessionId: row.sessionId }),
         });
       }}
-      onLongPress={openTask === undefined || openChanges === undefined ? undefined : () => {
-        Alert.alert(row.taskTitle ?? row.title, undefined, [
-          { text: "Open Task", onPress: openTask },
-          { text: "Changes", onPress: openChanges },
-          { text: "Cancel", style: "cancel" },
-        ]);
-      }}
+      onLongPress={() => openActions(row.sessionId)}
     />
   );
 }

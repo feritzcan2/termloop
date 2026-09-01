@@ -13,7 +13,18 @@ import type {
   RoutineConfigurationListResult,
   RoutineRunNowResult,
   SessionLaunchAgentResult,
+  SessionCloseResult,
+  SessionForkAgentResult,
+  SessionRelocateAgentToProjectResult,
+  SessionRelocateAgentToTaskResult,
+  SessionRepairProviderHistoryResult,
   SessionRenameResult,
+  SessionRequestAskToResult,
+  SessionRequestHandoverToResult,
+  SessionRestartAgentResult,
+  SessionPreviewRelocateAgentToProjectResult,
+  SessionPreviewRelocateAgentToTaskResult,
+  SessionTerminateResult,
   SessionDto,
   SocketFactory,
   TaskDto,
@@ -54,7 +65,18 @@ type MobileControlMethod =
   | "task.launchAgent"
   | "session.previewAgent"
   | "session.launchAgent"
+  | "session.forkAgent"
+  | "session.repairProviderHistory"
+  | "session.requestAskTo"
+  | "session.requestHandoverTo"
+  | "session.restartAgent"
+  | "session.previewRelocateAgentToTask"
+  | "session.relocateAgentToTask"
+  | "session.previewRelocateAgentToProject"
+  | "session.relocateAgentToProject"
   | "session.rename"
+  | "session.terminate"
+  | "session.close"
   | "companion.transcriptList"
   | "companion.transcriptAppend"
   | "companion.suggestionAccept"
@@ -80,7 +102,18 @@ interface MobileControlResults {
   "task.launchAgent": TaskLaunchAgentResult;
   "session.previewAgent": AgentLaunchPreviewResult;
   "session.launchAgent": SessionLaunchAgentResult;
+  "session.forkAgent": SessionForkAgentResult;
+  "session.repairProviderHistory": SessionRepairProviderHistoryResult;
+  "session.requestAskTo": SessionRequestAskToResult;
+  "session.requestHandoverTo": SessionRequestHandoverToResult;
+  "session.restartAgent": SessionRestartAgentResult;
+  "session.previewRelocateAgentToTask": SessionPreviewRelocateAgentToTaskResult;
+  "session.relocateAgentToTask": SessionRelocateAgentToTaskResult;
+  "session.previewRelocateAgentToProject": SessionPreviewRelocateAgentToProjectResult;
+  "session.relocateAgentToProject": SessionRelocateAgentToProjectResult;
   "session.rename": SessionRenameResult;
+  "session.terminate": SessionTerminateResult;
+  "session.close": SessionCloseResult;
   "companion.transcriptList": CompanionTranscriptListResult;
   "companion.transcriptAppend": CompanionTranscriptAppendResult;
   "companion.suggestionAccept": CompanionSuggestionAcceptResult;
@@ -100,6 +133,17 @@ const SLOW_METHOD_TIMEOUT_MS: Partial<Record<MobileControlMethod, number>> = {
   "task.launchAgent": 120_000,
   "session.previewAgent": 30_000,
   "session.launchAgent": 120_000,
+  "session.forkAgent": 120_000,
+  "session.repairProviderHistory": 20_000,
+  "session.requestAskTo": 20_000,
+  "session.requestHandoverTo": 20_000,
+  "session.restartAgent": 120_000,
+  "session.previewRelocateAgentToTask": 30_000,
+  "session.relocateAgentToTask": 120_000,
+  "session.previewRelocateAgentToProject": 30_000,
+  "session.relocateAgentToProject": 120_000,
+  "session.terminate": 20_000,
+  "session.close": 20_000,
   "routine.runNow": 120_000,
   "companion.transcriptAppend": 20_000,
   "companion.suggestionAccept": 20_000,
@@ -646,12 +690,25 @@ function decodeResult<M extends MobileControlMethod>(
     }
     case "task.launchAgent":
     case "session.launchAgent":
+    case "session.forkAgent":
+    case "session.restartAgent":
+    case "session.relocateAgentToTask":
+    case "session.relocateAgentToProject":
     case "session.rename": {
       if (!isRecord(value) || typeof value.id !== "string" || typeof value.project_id !== "string") {
         throw incompatible(method);
       }
       return value as MobileControlResults[M];
     }
+    case "session.repairProviderHistory":
+    case "session.requestAskTo":
+    case "session.requestHandoverTo":
+    case "session.previewRelocateAgentToTask":
+    case "session.previewRelocateAgentToProject":
+    case "session.terminate":
+    case "session.close":
+      if (!validateMethodResult(method, value)) throw incompatible(method);
+      return value as MobileControlResults[M];
     case "companion.transcriptList": {
       if (!isRecord(value) || typeof value.stateRevision !== "number") throw incompatible(method);
       readRows(value.messages, method, validCompanionMessage);

@@ -6,6 +6,7 @@ import type {
   PlaybookRuntimeResult,
   ProjectDto,
   SessionDto,
+  SessionRelocationPreviewDto,
   TaskDto,
   TaskWorktreeChangeListResult,
   TaskWorktreeDiffResult,
@@ -185,6 +186,49 @@ export interface AgentLaunchPort {
   ): Promise<AgentLaunchResult>;
 }
 
+/// Session lifecycle and Agent-coordination commands exposed by the paired Mac.
+/// Presentation chooses only from current generated projections; the adapter sends
+/// named control methods and never reconstructs provider or process authority.
+export interface SessionActionsPort {
+  fork(connectionId: string, sessionId: string): Promise<SessionDto>;
+  repairProviderHistory(connectionId: string, sessionId: string): Promise<void>;
+  restart(connectionId: string, sessionId: string): Promise<SessionDto>;
+  askTo(
+    connectionId: string,
+    sessionId: string,
+    targetAgentId: "claude" | "codex",
+  ): Promise<void>;
+  handoverTo(connectionId: string, sessionId: string, targetSessionId: string): Promise<void>;
+  rename(connectionId: string, sessionId: string, name: string | null): Promise<SessionDto>;
+  previewRelocateToTask(
+    connectionId: string,
+    sessionId: string,
+    taskId: string,
+    mode: "resume" | "fresh",
+  ): Promise<SessionRelocationPreviewDto>;
+  relocateToTask(
+    connectionId: string,
+    sessionId: string,
+    taskId: string,
+    operationId: string,
+    relocationTicket: string,
+  ): Promise<SessionDto>;
+  previewRelocateToProject(
+    connectionId: string,
+    sessionId: string,
+    projectId: string,
+  ): Promise<SessionRelocationPreviewDto>;
+  relocateToProject(
+    connectionId: string,
+    sessionId: string,
+    projectId: string,
+    operationId: string,
+    relocationTicket: string,
+  ): Promise<SessionDto>;
+  terminate(connectionId: string, sessionId: string): Promise<void>;
+  close(connectionId: string, sessionId: string): Promise<void>;
+}
+
 export type StewardMessage = CompanionMessageDto;
 
 export interface StewardVoiceClip {
@@ -296,6 +340,7 @@ export interface MobileRuntime {
   worktreeChanges: WorktreeChangesPort;
   playbook: PlaybookPort;
   agentLaunch: AgentLaunchPort;
+  sessionActions: SessionActionsPort;
   steward: StewardPort;
   voiceReceipts: StewardVoiceReceiptStore;
   terminal: TerminalPort;
