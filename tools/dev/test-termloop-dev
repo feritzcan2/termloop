@@ -162,6 +162,11 @@ backup_dir="$(mktemp -d)"
 bundle_fixture_root="$(mktemp -d)"
 fixture_pid=""
 identity_fixture_supervisor_pid=""
+development_signing_identity=""
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  development_signing_identity="$(security find-identity -v -p codesigning 2>/dev/null | \
+    awk '/"Apple Development: / { print $2; exit }')"
+fi
 launch_fixture_launches=""
 launch_fixture_bundle_baseline=""
 launch_fixture_bundle_record=""
@@ -385,6 +390,10 @@ if [[ "$run_launch_cycle" == true ]]; then
     launch_bundle_desktop="$(plutil -extract EnvironmentVariables.TERMLOOP_DEV_DESKTOP_CWD raw -o - "$launch_fixture_plist")"
     [[ "$launch_bundle_server" == "$launch_fixture_profile_root/launches/current/target/debug/termloop-server" ]]
     [[ "$launch_bundle_desktop" == "$launch_fixture_profile_root/launches/current/clients/desktop" ]]
+    launch_bundle_server_requirement="$(codesign -d -r- "$launch_bundle_server" 2>&1 | sed -n 's/^# //; /^designated =>/p')"
+    if [[ -n "$development_signing_identity" ]]; then
+      grep -Fq 'identifier "dev.termloop.server" and anchor apple generic' <<<"$launch_bundle_server_requirement"
+    fi
     [[ ! -e "$launch_fixture_profile_root/cargo-target" ]]
     [[ -x "$root/target/dev-profiles/debug/termloop-server" ]]
     [[ "$(stat -f '%i' "$root/target/dev-profiles/debug/termloop-server")" != "$(stat -f '%i' "$launch_bundle_server")" ]]
@@ -452,6 +461,10 @@ PY
     [[ "$restarted_daemon_pid" =~ ^[0-9]+$ && "$restarted_daemon_pid" != "$launch_daemon_pid" ]]
     [[ "$restarted_desktop_pid" =~ ^[0-9]+$ && "$restarted_desktop_pid" != "$launch_desktop_pid" ]]
     [[ "$restarted_bundle_server" != "$launch_bundle_server" ]]
+    if [[ -n "$development_signing_identity" ]]; then
+      restarted_bundle_server_requirement="$(codesign -d -r- "$restarted_bundle_server" 2>&1 | sed -n 's/^# //; /^designated =>/p')"
+      [[ "$restarted_bundle_server_requirement" == "$launch_bundle_server_requirement" ]]
+    fi
     [[ "$(ps -p "$restarted_daemon_pid" -o command=)" == "$restarted_bundle_server" ]]
     restarted_desktop_images="$(lsof -p "$restarted_desktop_pid" 2>/dev/null)"
     grep -Fq "$restarted_bundle_desktop/native/ghostty-host/build/Release/libghostty.dylib" <<<"$restarted_desktop_images"
