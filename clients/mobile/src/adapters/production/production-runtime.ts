@@ -30,6 +30,7 @@ import {
 } from "../../platform/mobile-diagnostics";
 import { parsePairingCode } from "../../platform/pairing-code";
 import { MobileControlClient, MobileControlError } from "./mobile-control-client";
+import { probeGatewayCompatibility } from "./gateway-compatibility";
 import {
   dataSocketMessageBytes,
   type DataSocket,
@@ -280,12 +281,19 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
         transientFailure: false,
         value: profile(connection, "online", version.version, version.protocolVersion),
       }),
-      (cause: unknown) => {
+      async (cause: unknown) => {
         if (cause instanceof MobileControlError && cause.code === "unsupportedMobileApi") {
           return { transientFailure: false, value: profile(connection, "updateRequired") };
         }
         if (cause instanceof MobileControlError && cause.code === "unauthenticated") {
           return { transientFailure: false, value: profile(connection, "revoked") };
+        }
+        const gatewayCompatibility = await probeGatewayCompatibility(connection, request);
+        if (gatewayCompatibility === "gatewayUpdateRequired") {
+          return { transientFailure: false, value: profile(connection, "gatewayUpdateRequired") };
+        }
+        if (gatewayCompatibility === "mobileUpdateRequired") {
+          return { transientFailure: false, value: profile(connection, "updateRequired") };
         }
         return { transientFailure: true, value: profile(connection, "offline") };
       },
@@ -862,6 +870,7 @@ function gatewayHttpEndpoint(connection: SavedConnection, pathname: string): URL
   endpoint.hash = "";
   return endpoint;
 }
+
 
 function stewardVoiceFailure(status: number): string {
   if (status === 401) return "This Mac no longer accepts the saved mobile credential.";

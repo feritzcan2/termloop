@@ -1160,6 +1160,64 @@ describe("production control adapter", () => {
     ]);
   });
 
+  it("classifies a reachable gateway without build identity as a Mac gateway update", async () => {
+    const requested: string[] = [];
+    const runtime = createProductionRuntime({
+      repository: fixedRepository(saved),
+      multiplexSocketFactory: unavailableDataSocketFactory(),
+      terminalSocketFactory: () => { throw new Error("terminal not used"); },
+      async fetch(input) {
+        const url = String(input);
+        requested.push(url);
+        if (url.endsWith("/.well-known/termloop-mobile-access")) return new Response(null, { status: 404 });
+        if (url.endsWith("/health")) return Response.json({ ready: true });
+        return new Response(null, { status: 404 });
+      },
+    });
+
+    await expect(runtime.connections.list()).resolves.toEqual([
+      expect.objectContaining({ availability: "gatewayUpdateRequired" }),
+    ]);
+    expect(requested).toEqual([
+      "http://127.0.0.1:48100/.well-known/termloop-mobile-access",
+      "http://127.0.0.1:48100/health",
+    ]);
+  });
+
+  it("keeps an unreachable gateway offline and does not confuse it with skew", async () => {
+    const runtime = createProductionRuntime({
+      repository: fixedRepository(saved),
+      controlSocketFactory: unavailableControlSocketFactory(),
+      terminalSocketFactory: () => { throw new Error("terminal not used"); },
+      async fetch() { throw new Error("tailnet unreachable"); },
+    });
+
+    await expect(runtime.connections.list()).resolves.toEqual([
+      expect.objectContaining({ availability: "offline" }),
+    ]);
+  });
+
+  it("directs a phone that is older than the reachable gateway to update the app", async () => {
+    const runtime = createProductionRuntime({
+      repository: fixedRepository(saved),
+      controlSocketFactory: unavailableControlSocketFactory(),
+      terminalSocketFactory: () => { throw new Error("terminal not used"); },
+      async fetch() {
+        return Response.json({
+          buildId: "gateway-newer-than-phone",
+          compatibility: {
+            mobileTransport: { min: 3, max: 3 },
+            mobileApi: { min: 1, max: 1 },
+          },
+        });
+      },
+    });
+
+    await expect(runtime.connections.list()).resolves.toEqual([
+      expect.objectContaining({ availability: "updateRequired" }),
+    ]);
+  });
+
   it("does not mistake an authentication failure for a contract mismatch", async () => {
     const runtime = createProductionRuntime({
       repository: fixedRepository(saved),
@@ -2197,6 +2255,42 @@ function controlErrorSocketFactory(code: string): () => SocketLike {
       },
       close() {},
     };
+  };
+}
+
+function unavailableControlSocketFactory(): () => SocketLike {
+  return () => {
+    const listeners = new Map<string, Array<(event: { type?: string }) => void>>();
+    const emit = (type: string) => {
+      for (const listener of listeners.get(type) ?? []) listener({ type });
+    };
+    queueMicrotask(() => emit("error"));
+    return {
+      addEventListener(type, listener) {
+        const current = listeners.get(type) ?? [];
+        current.push(listener as (event: { type?: string }) => void);
+        listeners.set(type, current);
+      },
+      send() {},
+      close() {},
+    };
+  };
+}
+
+function unavailableDataSocketFactory(): () => DataSocket {
+  return () => {
+    const socket: DataSocket = {
+      binaryType: "blob",
+      readyState: 0,
+      onopen: null,
+      onmessage: null,
+      onerror: null,
+      onclose: null,
+      send() {},
+      close() {},
+    };
+    queueMicrotask(() => socket.onerror?.({}));
+    return socket;
   };
 }
 
