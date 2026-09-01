@@ -125,7 +125,7 @@ const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.steward.executor",
-    version: 32,
+    version: 33,
     authored_body: include_str!("../../../resources/prompts/builtin.steward.executor.md"),
 };
 
@@ -5891,7 +5891,7 @@ mod tests {
     #[test]
     fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
         let prompt = executor_prompt(ExecutorRole::Steward).unwrap();
-        assert_eq!(prompt.provenance().template_version, 32);
+        assert_eq!(prompt.provenance().template_version, 33);
         assert!(prompt.authored_preview().contains("routine_finding_read"));
         assert!(prompt.authored_preview().contains("playbook_read"));
         assert!(prompt.authored_preview().contains("task_set_steward_brief"));
@@ -6043,6 +6043,31 @@ mod tests {
                 .authored_preview()
                 .contains("does not compress Task briefs, Agent messages")
         );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("own it through verified completion")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("Act without additional approval when the action is Project-internal")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("either reversible or a normal non-destructive execution")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("communication outside the Project, a destructive or materially")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("Never turn a safe Project-management decision into a question")
+        );
 
         let retired =
             include_str!("../../../resources/prompts/retired/builtin.steward.executor.v2.md")
@@ -6055,7 +6080,7 @@ mod tests {
             default_steward_system_prompt()
         );
         let latest_retired =
-            include_str!("../../../resources/prompts/retired/builtin.steward.executor.v31.md")
+            include_str!("../../../resources/prompts/retired/builtin.steward.executor.v32.md")
                 .splitn(3, "\n\n")
                 .nth(2)
                 .unwrap()
