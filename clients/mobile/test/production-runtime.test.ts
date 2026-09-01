@@ -8,6 +8,7 @@ import {
   KIND_ACK,
   KIND_ATTACH,
   KIND_DETACH,
+  KIND_ERROR,
   KIND_GAP,
   KIND_INPUT,
   KIND_INPUT_ACK,
@@ -241,6 +242,78 @@ describe("production control adapter", () => {
     expect(heartbeatPongs).toBe(1);
   });
 
+  it("lets a newer route replace an attachment that is still awaiting its ACK", async () => {
+    const terminalFrames: Array<ReturnType<typeof decodeFrame>> = [];
+    let mobileSocket: DataSocket | undefined;
+    const runtime = createProductionRuntime({
+      repository: fixedRepository(saved),
+      multiplexSocketFactory() {
+        const socket: DataSocket = {
+          binaryType: "blob",
+          readyState: 1,
+          onopen: null,
+          onmessage: null,
+          onerror: null,
+          onclose: null,
+          send(data) {
+            if (typeof data === "string") {
+              const message = JSON.parse(data) as { type?: string };
+              if (message.type === "mobile.authenticate") {
+                queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({
+                  event: "mobile.ready",
+                  mobileTransportVersion: 2,
+                }) }));
+              }
+              return;
+            }
+            terminalFrames.push(decodeFrame(
+              data instanceof Uint8Array ? data : new Uint8Array(data),
+            ));
+          },
+          close() {},
+        };
+        mobileSocket = socket;
+        queueMicrotask(() => socket.onopen?.());
+        return socket;
+      },
+      controlSocketFactory: () => { throw new Error("legacy control transport used"); },
+      terminalSocketFactory: () => { throw new Error("legacy terminal transport used"); },
+    });
+
+    const first = runtime.terminal.attach(
+      saved.id,
+      { id: sessionId, runtime_epoch: 7 },
+      () => {},
+    );
+    const firstRejection = expect(first).rejects.toThrow(
+      "Terminal attachment was replaced by a newer view.",
+    );
+    await waitFor(() => terminalFrames.length === 1);
+    const second = runtime.terminal.attach(
+      saved.id,
+      { id: sessionId, runtime_epoch: 7 },
+      () => {},
+    );
+    await waitFor(() => terminalFrames.length === 3);
+    await firstRejection;
+
+    expect(terminalFrames.map(({ kind }) => kind)).toEqual([
+      KIND_ATTACH,
+      KIND_DETACH,
+      KIND_ATTACH,
+    ]);
+    const currentAttach = terminalFrames[2]!;
+    mobileSocket?.onmessage?.({ data: encodeFrame(
+      currentAttach.sessionId,
+      currentAttach.epoch,
+      currentAttach.sequence,
+      KIND_ACK,
+    ) });
+    const attachment = await second;
+    await attachment.detach();
+    runtime.connections.resetTransports();
+  });
+
   it("reconnects instead of reporting success when an input receipt never arrives", async () => {
     vi.useFakeTimers();
     try {
@@ -294,7 +367,7 @@ describe("production control adapter", () => {
 
       const input = attachment.input(new TextEncoder().encode("unacknowledged"));
       const rejection = expect(input).rejects.toThrow("Terminal input delivery timed out.");
-      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(7_000);
       await rejection;
 
       expect(socketClosed).toBe(true);
@@ -303,6 +376,71 @@ describe("production control adapter", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("rejects a daemon-refused input without waiting for the receipt timeout", async () => {
+    let inputFrame: ReturnType<typeof decodeFrame> | undefined;
+    let mobileSocket: DataSocket | undefined;
+    const runtime = createProductionRuntime({
+      repository: fixedRepository(saved),
+      multiplexSocketFactory() {
+        const socket: DataSocket = {
+          binaryType: "blob",
+          readyState: 1,
+          onopen: null,
+          onmessage: null,
+          onerror: null,
+          onclose: null,
+          send(data) {
+            if (typeof data === "string") {
+              const message = JSON.parse(data) as { type?: string };
+              if (message.type === "mobile.authenticate") {
+                queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({
+                  event: "mobile.ready",
+                  mobileTransportVersion: 2,
+                  terminalInputAckVersion: 1,
+                }) }));
+              }
+              return;
+            }
+            const frame = decodeFrame(data instanceof Uint8Array ? data : new Uint8Array(data));
+            if (frame.kind === KIND_ATTACH) {
+              queueMicrotask(() => socket.onmessage?.({ data: encodeFrame(
+                frame.sessionId,
+                frame.epoch,
+                frame.sequence,
+                KIND_ACK,
+              ) }));
+            } else if (frame.kind === KIND_INPUT) {
+              inputFrame = frame;
+            }
+          },
+          close() {},
+        };
+        mobileSocket = socket;
+        queueMicrotask(() => socket.onopen?.());
+        return socket;
+      },
+      controlSocketFactory: () => { throw new Error("legacy control transport used"); },
+      terminalSocketFactory: () => { throw new Error("legacy terminal transport used"); },
+    });
+    const attachment = await runtime.terminal.attach(
+      saved.id,
+      { id: sessionId, runtime_epoch: 7 },
+      () => {},
+    );
+
+    const input = attachment.input(new TextEncoder().encode("refused"));
+    await waitFor(() => inputFrame !== undefined);
+    mobileSocket?.onmessage?.({ data: encodeFrame(
+      inputFrame!.sessionId,
+      inputFrame!.epoch,
+      inputFrame!.sequence,
+      KIND_ERROR,
+    ) });
+
+    await expect(input).rejects.toThrow("The Mac refused this terminal input.");
+    runtime.connections.resetTransports();
   });
 
   it("keeps a live terminal transport when one logical control request times out", async () => {
