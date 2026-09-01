@@ -582,10 +582,20 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
               const result = await control.call("steward.configurationGet", { projectId: project.id });
               return result.configuration?.enabled === true ? result.configuration : undefined;
             } catch (cause: unknown) {
-              // Older mobile gateways do not expose this read. Keep the rest of
-              // the overview usable, but default voice to unavailable until the
-              // Mac gateway is updated instead of guessing from Session presence.
-              if (cause instanceof MobileControlError && cause.code === "methodNotFound") return undefined;
+              // Steward voice is an optional projection. A server-side read
+              // error must not erase otherwise-successful Projects, Tasks,
+              // Sessions, and Agent statuses from Home. Transport and
+              // authentication failures remain fatal so the connection is
+              // never presented as healthy without delivery evidence.
+              if (cause instanceof MobileControlError
+                && cause.code !== "unauthenticated"
+                && cause.code !== "unsupportedMobileApi") {
+                diagnostics.report("control", "optional_steward_read_failed", {
+                  connectionId,
+                  errorCode: cause.code,
+                });
+                return undefined;
+              }
               throw cause;
             }
           })),

@@ -180,7 +180,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:b20543036fdddf1430b80fbba5c4698af593e9fe93cf19b11393319e81ba5731";
+    "sha256:77feb865a3264ed8129a4cf81e39a23d8a828b2050f72b2fd998ed4cfddea929";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -19597,7 +19597,7 @@ fn validate_steward_configuration_get_result(value: &Value) -> bool {
             && object.get("defaultSystemPrompt").is_some_and(|field| {
                 field
                     .as_str()
-                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 16384)
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 32768)
             })
             && object
                 .get("promptContext")

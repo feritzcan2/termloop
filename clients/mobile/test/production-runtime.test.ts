@@ -593,6 +593,29 @@ describe("production control adapter", () => {
     expect(socketCount).toBe(2);
   });
 
+  it("keeps the overview usable when the optional Steward projection fails", async () => {
+    const diagnosticLines: string[] = [];
+    const runtime = createProductionRuntime({
+      repository: fixedRepository(saved),
+      diagnostics: createMobileDiagnosticReporter((line) => diagnosticLines.push(line)),
+      controlSocketFactory: controlSocketFactory([], [], new Set(["steward.configurationGet"])),
+      terminalSocketFactory: () => { throw new Error("terminal not used"); },
+    });
+
+    await expect(runtime.control.loadOverview(saved.id)).resolves.toMatchObject({
+      projects: fixtureProjects,
+      tasks: fixtureTasks,
+      sessions: fixtureSessions,
+      agentStatuses: fixtureAgentStatuses,
+      stewardEnabledProjectIds: [],
+      stewardExecutorSessionIds: {},
+    });
+    const records = diagnosticLines.map((line) => JSON.parse(line.replace("[termloop-mobile] ", "")));
+    expect(records.filter(({ event }) => event === "optional_steward_read_failed")).toHaveLength(
+      fixtureProjects.length,
+    );
+  });
+
   it("requires an app update only when the stable mobile API version is unsupported", async () => {
     const runtime = createProductionRuntime({
       repository: fixedRepository(saved),
@@ -1561,6 +1584,7 @@ function controlSocketFactory(
     mobileApiVersion: number | undefined;
     protocolVersion: string | undefined;
   }> = [],
+  failedMethods: ReadonlySet<string> = new Set(),
 ) {
   return (): SocketLike => {
     const listeners = new Map<string, Array<(event: { data?: string }) => void>>();
@@ -1594,6 +1618,14 @@ function controlSocketFactory(
           mobileApiVersion: request.mobileApiVersion,
           protocolVersion: request.protocolVersion,
         });
+        if (failedMethods.has(request.method)) {
+          queueMicrotask(() => emit("message", { data: JSON.stringify({
+            id: request.id,
+            ok: false,
+            error: { code: "internal", message: "Optional projection failed." },
+          }) }));
+          return;
+        }
         const result = controlResult(
           request.method,
           request.params.projectId,
