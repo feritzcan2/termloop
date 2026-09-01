@@ -412,10 +412,8 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
         for (const connection of controlClients.values()) connection.client.close();
         controlClients.clear();
         for (const connection of coordinators.values()) {
-          connection.unsubscribeStatus();
-          connection.coordinator.close();
+          connection.coordinator.resetTransport();
         }
-        coordinators.clear();
       },
       async pair(code) {
         const connection = parsePairingCode(code);

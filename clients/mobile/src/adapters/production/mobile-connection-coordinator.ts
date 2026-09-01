@@ -101,6 +101,7 @@ export class MobileConnectionCoordinator {
 
   private physical: DataSocket | undefined;
   private connecting: Promise<DataSocket> | undefined;
+  private cancelConnecting: ((cause: Error) => void) | undefined;
   private generation = 0;
   private stopped = false;
   private ready = false;
@@ -171,6 +172,11 @@ export class MobileConnectionCoordinator {
       firstResolve = resolve;
       firstReject = reject;
     });
+    // A lifecycle reset can reject the subscription while attachTerminal is
+    // still awaiting authentication and has not reached `withTimeout(first)`.
+    // Keep that early rejection observed; the original promise still rejects
+    // normally once the caller reaches the ACK wait.
+    void first.catch(() => {});
     const subscription: TerminalSubscription = {
       key,
       sessionId: session.id,
@@ -260,6 +266,24 @@ export class MobileConnectionCoordinator {
     };
   }
 
+  /// Retires only the native WebSocket. Logical terminal subscriptions survive
+  /// foreground recovery and are attached again when the next authenticated
+  /// transport becomes ready. Closing the whole coordinator here strands an
+  /// already-resolved TerminalAttachment on a permanently stopped owner.
+  resetTransport(): void {
+    if (this.stopped) return;
+    if (this.reconnectTimer !== undefined) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
+    }
+    this.reconnectDelay = MIN_RECONNECT_MS;
+    const generation = this.generation;
+    const socket = this.physical;
+    if (socket === undefined && this.connecting === undefined && !this.ready) return;
+    this.handleDisconnected(generation, "clientReset", false);
+    socket?.close();
+  }
+
   close(): void {
     if (this.stopped) return;
     this.stopped = true;
@@ -267,6 +291,8 @@ export class MobileConnectionCoordinator {
     if (this.stabilityTimer !== undefined) clearTimeout(this.stabilityTimer);
     if (this.livenessTimer !== undefined) clearTimeout(this.livenessTimer);
     this.control.close();
+    this.cancelConnecting?.(new Error("Connection closed."));
+    this.cancelConnecting = undefined;
     const socket = this.physical;
     this.physical = undefined;
     this.connecting = undefined;
@@ -346,12 +372,19 @@ export class MobileConnectionCoordinator {
     const connecting = new Promise<DataSocket>((resolve, reject) => {
       let opened = false;
       let settled = false;
+      const fail = (cause: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (this.cancelConnecting === fail) this.cancelConnecting = undefined;
+        reject(cause);
+      };
       const timer = setTimeout(() => {
         if (settled || generation !== this.generation) return;
-        settled = true;
-        reject(new Error("Mobile connection timed out."));
+        fail(new Error("Mobile connection timed out."));
         this.invalidateTransport("authenticationTimeout");
       }, CONNECT_TIMEOUT_MS);
+      this.cancelConnecting = fail;
       socket.onopen = () => {
         if (generation !== this.generation || this.stopped) return socket.close();
         opened = true;
@@ -367,11 +400,7 @@ export class MobileConnectionCoordinator {
             terminalToken: this.connection.terminalToken,
           }));
         } catch (cause: unknown) {
-          if (!settled) {
-            settled = true;
-            clearTimeout(timer);
-            reject(cause);
-          }
+          fail(cause instanceof Error ? cause : new Error("Mobile authentication could not be sent."));
           this.invalidateTransport("authenticationSendFailed");
         }
       };
@@ -386,6 +415,7 @@ export class MobileConnectionCoordinator {
             this.inputReceiptSource = ready.inputReceiptSource;
             this.connecting = undefined;
             clearTimeout(timer);
+            if (this.cancelConnecting === fail) this.cancelConnecting = undefined;
             if (!settled) {
               settled = true;
               resolve(socket);
@@ -417,11 +447,10 @@ export class MobileConnectionCoordinator {
             generation,
             causeType: cause instanceof Error ? cause.name : typeof cause,
           });
-          if (!settled) {
-            settled = true;
-            clearTimeout(timer);
-            reject(cause instanceof Error ? cause : new Error("Mobile connection failed."));
-          }
+          // A retired socket may finish decoding after its replacement is
+          // already live. It must not invalidate that newer generation.
+          if (generation !== this.generation || this.stopped) return;
+          fail(cause instanceof Error ? cause : new Error("Mobile connection failed."));
           this.invalidateTransport("messageFailed");
         });
       };
@@ -432,11 +461,7 @@ export class MobileConnectionCoordinator {
           opened,
           eventType: event?.type,
         });
-        if (!settled) {
-          settled = true;
-          clearTimeout(timer);
-          reject(new Error("Mobile connection failed."));
-        }
+        fail(new Error("Mobile connection failed."));
         this.handleDisconnected(generation, "socketError");
       };
       socket.onclose = (event) => {
@@ -449,11 +474,7 @@ export class MobileConnectionCoordinator {
           wasClean: event?.wasClean,
           lifetimeMs: Date.now() - startedAtEpochMs,
         });
-        if (!settled) {
-          settled = true;
-          clearTimeout(timer);
-          reject(new Error("Mobile connection closed."));
-        }
+        fail(new Error("Mobile connection closed."));
         this.handleDisconnected(generation, "socketClose");
       };
     });
@@ -653,13 +674,19 @@ export class MobileConnectionCoordinator {
     socket?.close();
   }
 
-  private handleDisconnected(generation: number, reason: string): void {
+  private handleDisconnected(generation: number, reason: string, reconnect = true): void {
     if (generation !== this.generation) return;
+    this.cancelConnecting?.(new Error("Mobile transport disconnected."));
+    this.cancelConnecting = undefined;
     this.generation += 1;
     this.ready = false;
     this.inputReceiptSource = undefined;
     this.physical = undefined;
     this.connecting = undefined;
+    // A suspended iOS Blob read can leave the old serial inbound chain pending.
+    // New-generation authentication must not queue behind work owned by a socket
+    // we have already fenced out.
+    this.inbound = Promise.resolve();
     if (this.stabilityTimer !== undefined) clearTimeout(this.stabilityTimer);
     if (this.livenessTimer !== undefined) clearTimeout(this.livenessTimer);
     this.livenessTimer = undefined;
@@ -683,7 +710,7 @@ export class MobileConnectionCoordinator {
       invalidationSubscribers: this.invalidationListeners.size,
     });
     this.publishStatus("offline");
-    this.scheduleReconnect(reason);
+    if (reconnect) this.scheduleReconnect(reason);
   }
 
   private scheduleReconnect(reason: string): void {

@@ -155,7 +155,7 @@ describe("project overview sectioning", () => {
     ]);
   });
 
-  it("separates terminals from agents and excludes stopped agents", () => {
+  it("separates terminals from agents and keeps stopped Agents reachable for recovery", () => {
     const overview: MobileOverview = {
       ...baseOverview,
       sessions: [
@@ -166,7 +166,33 @@ describe("project overview sectioning", () => {
     };
     const model = buildProjectOverview(overview, "project-termloop-next");
     expect(model.terminals.map((row) => row.sessionId)).toEqual(["ses_term"]);
-    expect(model.agents.map((row) => row.sessionId)).not.toContain("ses_gone");
+    expect(model.agents.map((row) => row.sessionId)).toEqual(["ses_gone"]);
+    expect(model.agents[0]).toMatchObject({
+      attachable: false,
+      state: { id: "processExited", label: "Exited" },
+    });
+  });
+
+  it("surfaces a failed provider-history resume as blocked recovery work", () => {
+    const overview: MobileOverview = {
+      ...baseOverview,
+      sessions: [session({
+        id: "ses_fix",
+        lifecycle_state: "resumeFailed",
+        resume_failure_reason: "providerHistoryDamaged",
+        retryable: true,
+      })],
+      agentStatuses: [],
+    };
+
+    const model = buildProjectOverview(overview, "project-termloop-next");
+    expect(model.agents[0]).toMatchObject({
+      sessionId: "ses_fix",
+      attachable: false,
+      stateLabel: "Retry available",
+      tone: "blocked",
+    });
+    expect(model.needsYou.map((row) => row.sessionId)).toEqual(["ses_fix"]);
   });
 
   it("excludes persistent assistants from Active Agents regardless of lifecycle", () => {
