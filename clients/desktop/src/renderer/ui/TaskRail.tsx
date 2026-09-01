@@ -857,6 +857,8 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
       priority: agentActivityPriority(session, props.statusesById.get(session.id), props.reviewReadySessionIds.has(session.id)),
     }))
     .sort((left, right) => left.priority - right.priority);
+  /// A closed Task outside a focused card is an archive row: one line, no meta.
+  const archiveRow = task.status === "closed" && !props.focused;
   /// The card's one click target: the loudest live agent, else any live
   /// Session, else nothing — and then the click falls through to the detail.
   const primarySession = liveAgents[0]?.session ?? sessions.find((session) => isLiveSession(session));
@@ -1035,6 +1037,16 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
               <strong className="task-title">{task.title}</strong>
               {task.brief ? <small className="task-focus-brief">{task.brief}</small> : null}
             </span> : <strong className="task-title">{task.title}</strong>}
+            {/* The lingering checkout still blocks Project deletion, so the
+                archive row keeps that one fact as a compact badge. */}
+            {archiveRow && task.worktree ? (
+              <span
+                className="task-archive-worktree"
+                role="img"
+                aria-label={`Worktree still attached at ${task.worktree.path}`}
+                title={`Worktree still attached: ${task.worktree.path}`}
+              ><Icon name="folder" /></span>
+            ) : null}
           </span>
         </button>}
         {/* One dot per live agent, loudest first, capped so the title keeps its
@@ -1104,7 +1116,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
           ><Icon name="more" /></button>
         </div>
       </div>
-      <TaskMetaLine
+      {archiveRow ? null : <TaskMetaLine
         task={task}
         stage={stage}
         divergence={divergence}
@@ -1114,7 +1126,7 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         openChanges={() => props.openChanges(task.id, { kind: "local" })}
         openIntegration={openIntegration}
         openIssue={() => { if (task.jira_url) void props.openExternal(task.jira_url); }}
-      />
+      />}
       {action ? (
         action.kind === "nextStep" ? (
           <button

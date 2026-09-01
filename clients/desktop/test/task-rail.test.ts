@@ -675,12 +675,11 @@ describe("Task rail row anatomy", () => {
     expect(collapsed).not.toContain("task-note");
     expect(collapsed).not.toContain("task-identity");
     expect(collapsed).not.toContain("row-rail");
-    // The dot and meta line are the fixed anatomy, so they survive collapsing;
-    // only the children fold away. A closed Task keeps its identity but stops
-    // asking for anything — no signals on parked work.
+    // An archive row is one line: the dot and title stay, the meta line and
+    // its signals do not exist on parked work at all.
     expect(collapsed).toContain('class="task-dot quiet"');
-    expect(collapsed).toContain('class="task-meta"');
-    expect(collapsed).toContain('class="task-meta-branch"');
+    expect(collapsed).not.toContain('class="task-meta"');
+    expect(collapsed).not.toContain("task-meta-branch");
     expect(collapsed).not.toContain("3 changes");
     expect(collapsed).not.toContain("5 unmerged");
     expect(collapsed).not.toContain("task-children");
@@ -709,14 +708,13 @@ describe("Task rail row anatomy", () => {
   it("marks only closed Tasks that still retain a worktree", async () => {
     const retained = { ...launchableTask(), status: "closed" as const };
     const retainedMarkup = await renderRailTab({ task: retained }, "closed");
-    expect(retainedMarkup).toContain('class="task-meta-worktree"');
-    expect(retainedMarkup).toContain("Worktree attached");
+    expect(retainedMarkup).toContain('class="task-archive-worktree"');
     expect(retainedMarkup).toContain(`Worktree still attached: ${retained.worktree!.path}`);
 
     const detached = { ...worktreeLessTask(), status: "closed" as const };
     const detachedMarkup = await renderRailTab({ task: detached }, "closed");
-    expect(detachedMarkup).not.toContain("task-meta-worktree");
-    expect(detachedMarkup).not.toContain("Worktree attached");
+    expect(detachedMarkup).not.toContain("task-archive-worktree");
+    expect(detachedMarkup).not.toContain("Worktree still attached");
   });
 
   it("explains a failed worktree in words and offers the retry as a recovery step", () => {

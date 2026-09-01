@@ -2830,16 +2830,16 @@ button.history-row-main { cursor: pointer; }
    strike-through, and a quieter meta line. Reading a list of a hundred struck
    titles is worse than reading a hundred grey ones. */
 .task-archive-list .task-group { padding: 0 5px; }
-.task-archive-list .task-item { min-height: 24px; padding: 3px 8px; }
+.task-archive-list .task-item { min-height: 26px; padding: 4px 8px; }
 .task-archive-list .task-item.closed { opacity: 1; }
 .task-archive-list .task-item.closed .task-title { color: var(--sidebar-dim); font-size: 11.5px; font-weight: 500; text-decoration: none; }
 .task-archive-list .task-item.closed:hover .task-title { color: var(--sidebar-text); }
 .task-archive-list .task-dot.quiet { background: rgba(255,255,255,.18); }
-.task-archive-list .task-toggle { height: 24px; }
-.task-archive-list .task-meta { padding-bottom: 3px; }
-.task-archive-list .task-meta-branch { font-size: 9.5px; }
-.task-archive-list .task-meta-worktree { min-height: 15px; padding: 0 5px 0 4px; font-size: 8px; }
-.task-archive-list .task-meta-worktree svg { width: 9px; height: 9px; }
+.task-archive-list .task-toggle { height: 26px; }
+/* One line per archived Task: the title truncates, and the only fact worth a
+   glyph — a checkout still on disk — rides beside it as an icon. */
+.task-archive-worktree { display: inline-flex; flex: none; align-items: center; color: var(--warning); opacity: .8; }
+.task-archive-worktree svg { width: 11px; height: 11px; }
 /* Cleared and upcoming rungs are one line each: title, then who answers or
    when it cleared, tucked onto the same baseline. */
 .td-step:not(.waiting):not(.terminus) .td-step-body { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 12px; }

@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { ConnectionBlocked } from "@/components/connection-blocked";
 import { AgentAvatar } from "@/components/agent-avatar";
@@ -24,7 +24,11 @@ import { fontFamily } from "@/theme/typography";
 
 /// Project workspace navigation follows desktop: Agents and Tasks are peer tabs.
 /// Attention is carried by their tab markers and row order, so a waiting Agent is
-/// never duplicated in a separate list just to make urgency visible.
+/// never duplicated in a banner or a separate list just to make urgency visible.
+///
+/// One screen, one primary action: an agent row opens its terminal, the floating
+/// button starts a new Agent, and everything secondary (the row's Task, its
+/// changes) lives behind a long-press so the list stays a list.
 
 export default function ProjectRoute() {
   const { projectId, connectionId } = useLocalSearchParams<{ projectId: string; connectionId?: string }>();
@@ -32,6 +36,7 @@ export default function ProjectRoute() {
   const connections = useConnections();
   const store = useOverview();
   const [selectedTab, setSelectedTab] = useState<WorkspaceTabId>("agents");
+  const [terminalsOpen, setTerminalsOpen] = useState(false);
 
   useEffect(() => {
     if (connectionId !== undefined && connections.selectedId !== connectionId) {
@@ -81,9 +86,9 @@ export default function ProjectRoute() {
     );
   }
 
-  const needsYou = model?.needsYou ?? [];
   const agentRows = model?.agents ?? [];
   const taskAttentionCount = model?.tasks.filter((row) => asksForUser(row.tone)).length ?? 0;
+  const stewardReachable = model?.project !== undefined && connections.selectedId !== undefined;
 
   return (
     <Screen>
@@ -93,11 +98,25 @@ export default function ProjectRoute() {
         right={
           <View style={styles.headerRight}>
             <Pressable
+              onPress={() => router.push({
+                pathname: "/steward/[projectId]",
+                params: { projectId, connectionId: connections.selectedId },
+              })}
+              disabled={!stewardReachable}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: !stewardReachable }}
+              accessibilityLabel="Open Steward"
+              hitSlop={12}
+              style={[styles.headerAction, stewardReachable ? null : styles.headerActionDisabled]}
+            >
+              <Text style={styles.stewardGlyph}>✦</Text>
+            </Pressable>
+            <Pressable
               onPress={store.refresh}
               accessibilityRole="button"
               accessibilityLabel="Refresh this project"
               hitSlop={12}
-              style={styles.refresh}
+              style={styles.headerAction}
             >
               <Text style={styles.refreshGlyph}>⟳</Text>
             </Pressable>
@@ -121,29 +140,6 @@ export default function ProjectRoute() {
               tasks={{ count: model.counts.tasks, attentionCount: taskAttentionCount }}
               select={setSelectedTab}
             />
-            <View style={styles.workspaceActions}>
-              <WorkspaceAction
-                glyph="+"
-                label="New Agent"
-                primary
-                disabled={model.project === undefined}
-                onPress={() => router.push({
-                  pathname: "/launch/[taskId]",
-                  params: connectionRouteParams(connections.selectedId, {
-                    taskId: `project:${model.project?.id ?? projectId}`,
-                  }),
-                })}
-              />
-              <WorkspaceAction
-                glyph="✦"
-                label="Steward"
-                disabled={model.project === undefined || connections.selectedId === undefined}
-                onPress={() => router.push({
-                  pathname: "/steward/[projectId]",
-                  params: { projectId, connectionId: connections.selectedId },
-                })}
-              />
-            </View>
           </View>
 
           <ScrollView
@@ -164,14 +160,7 @@ export default function ProjectRoute() {
 
             {selectedTab === "agents" ? (
               <>
-                {needsYou.length > 0 ? (
-                  <Banner
-                    kind="warning"
-                    message={`${needsYou.length} ${needsYou.length === 1 ? "agent needs" : "agents need"} your attention. They are pinned to the top.`}
-                  />
-                ) : null}
                 <View style={styles.section}>
-                  <SectionHeader label="Active agents" trailing={<Text style={styles.count}>{agentRows.length}</Text>} />
                   {agentRows.length === 0 ? (
                     <EmptyState
                       title="No active agents"
@@ -191,25 +180,42 @@ export default function ProjectRoute() {
 
                 {model.terminals.length > 0 ? (
                   <View style={styles.section}>
-                    <SectionHeader label="Terminals" trailing={<Text style={styles.count}>{model.counts.terminals}</Text>} />
-                    <Card>
-                      {model.terminals.map((row, index) => (
-                        <View key={row.sessionId}>
-                          {index === 0 ? null : <CardDivider />}
-                          <Row
-                            tone="quiet"
-                            title={row.title}
-                            detail={row.detail}
-                            accessibleName={row.accessibleName}
-                            disabled={!row.attachable}
-                            onPress={() => router.push({
-                              pathname: "/session/[sessionId]",
-                              params: connectionRouteParams(connections.selectedId, { sessionId: row.sessionId }),
-                            })}
-                          />
-                        </View>
-                      ))}
-                    </Card>
+                    {/*
+                      Terminals fold. They are ambient context next to the agents the
+                      screen exists for, and an always-open second list makes the first
+                      one end sooner than it has to.
+                    */}
+                    <Pressable
+                      onPress={() => setTerminalsOpen((open) => !open)}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: terminalsOpen }}
+                      accessibilityLabel={`Terminals, ${model.counts.terminals}`}
+                      style={({ pressed }) => [styles.terminalsToggle, pressed ? styles.terminalsTogglePressed : null]}
+                    >
+                      <Text style={styles.terminalsChevron}>{terminalsOpen ? "▾" : "▸"}</Text>
+                      <Text style={styles.terminalsLabel}>Terminals</Text>
+                      <Text style={styles.count}>{model.counts.terminals}</Text>
+                    </Pressable>
+                    {terminalsOpen ? (
+                      <Card>
+                        {model.terminals.map((row, index) => (
+                          <View key={row.sessionId}>
+                            {index === 0 ? null : <CardDivider />}
+                            <Row
+                              tone="quiet"
+                              title={row.title}
+                              detail={row.detail}
+                              accessibleName={row.accessibleName}
+                              disabled={!row.attachable}
+                              onPress={() => router.push({
+                                pathname: "/session/[sessionId]",
+                                params: connectionRouteParams(connections.selectedId, { sessionId: row.sessionId }),
+                              })}
+                            />
+                          </View>
+                        ))}
+                      </Card>
+                    ) : null}
                   </View>
                 ) : null}
               </>
@@ -245,6 +251,22 @@ export default function ProjectRoute() {
               </View>
             )}
           </ScrollView>
+
+          {model.project === undefined ? null : (
+            <Pressable
+              onPress={() => router.push({
+                pathname: "/launch/[taskId]",
+                params: connectionRouteParams(connections.selectedId, {
+                  taskId: `project:${projectId}`,
+                }),
+              })}
+              accessibilityRole="button"
+              accessibilityLabel="New Agent"
+              style={({ pressed }) => [styles.fab, pressed ? styles.fabPressed : null]}
+            >
+              <Text style={styles.fabGlyph}>+</Text>
+            </Pressable>
+          )}
         </>
       )}
     </Screen>
@@ -256,94 +278,43 @@ function AgentRowView({ row, nowMs }: { row: AgentRow; nowMs: number }) {
   const connections = useConnections();
   const store = useOverview();
   const taskId = row.taskId;
-  const detail = [row.taskTitle, row.relationship, row.runner ?? row.folder]
-    .filter((part): part is string => part !== undefined && part.length > 0)
-    .join(" · ");
+  /// The headline is what the agent is for. The avatar already names the agent, so a
+  /// Task-attached row spends its title on the Task and its state line on who runs it.
+  const title = row.taskTitle ?? row.title;
+  const detail = row.taskTitle === undefined ? row.folder : row.runner ?? row.title;
+  const openTask = taskId === undefined ? undefined : () => router.push({
+    pathname: "/task/[taskId]",
+    params: connectionRouteParams(connections.selectedId, { taskId }),
+  });
+  const openChanges = taskId === undefined ? undefined : () => router.push({
+    pathname: "/task/[taskId]/changes",
+    params: connectionRouteParams(connections.selectedId, { taskId }),
+  });
   return (
-    <View>
-      <Row
-        tone={row.tone}
-        title={row.title}
-        state={row.stateLabel}
-        detail={detail.length > 0 ? detail : row.state.summary}
-        meta={row.observedAtEpochMs === undefined ? undefined : relativeAge(row.observedAtEpochMs, nowMs)}
-        accessibleName={row.accessibleName}
-        trailing={<AgentAvatar agentId={row.agentId} active={row.attachable} />}
-        disabled={!row.attachable}
-        onPress={() => {
-          store.dismissReview(row.sessionId);
-          router.push({
-            pathname: "/session/[sessionId]",
-            params: connectionRouteParams(connections.selectedId, { sessionId: row.sessionId }),
-          });
-        }}
-      />
-      {taskId === undefined ? null : (
-        <View style={styles.agentTaskActions}>
-          <AgentTaskAction
-            label="Task"
-            accessibilityLabel={`Open Task ${row.taskTitle ?? taskId}`}
-            onPress={() => router.push({
-              pathname: "/task/[taskId]",
-              params: connectionRouteParams(connections.selectedId, { taskId }),
-            })}
-          />
-          <AgentTaskAction
-            label="Changes"
-            accessibilityLabel={`Open changes for Task ${row.taskTitle ?? taskId}`}
-            onPress={() => router.push({
-              pathname: "/task/[taskId]/changes",
-              params: connectionRouteParams(connections.selectedId, { taskId }),
-            })}
-          />
-        </View>
-      )}
-    </View>
-  );
-}
-
-function AgentTaskAction({ label, accessibilityLabel, onPress }: {
-  label: string;
-  accessibilityLabel: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      style={({ pressed }) => [styles.agentTaskAction, pressed ? styles.agentTaskActionPressed : null]}
-    >
-      <Text style={styles.agentTaskActionLabel}>{label}</Text>
-      <Text style={styles.agentTaskActionChevron}>›</Text>
-    </Pressable>
-  );
-}
-
-function WorkspaceAction({ glyph, label, primary = false, disabled = false, onPress }: {
-  glyph: string;
-  label: string;
-  primary?: boolean;
-  disabled?: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      accessibilityLabel={label}
-      style={({ pressed }) => [
-        styles.workspaceAction,
-        primary ? styles.workspaceActionPrimary : null,
-        pressed && !disabled ? styles.workspaceActionPressed : null,
-        disabled ? styles.workspaceActionDisabled : null,
-      ]}
-    >
-      <Text style={[styles.workspaceActionGlyph, primary ? styles.workspaceActionPrimaryText : null]}>{glyph}</Text>
-      <Text style={[styles.workspaceActionLabel, primary ? styles.workspaceActionPrimaryText : null]}>{label}</Text>
-    </Pressable>
+    <Row
+      tone={row.tone}
+      title={title}
+      state={row.stateLabel}
+      detail={detail}
+      meta={row.observedAtEpochMs === undefined ? undefined : relativeAge(row.observedAtEpochMs, nowMs)}
+      accessibleName={row.accessibleName}
+      trailing={<AgentAvatar agentId={row.agentId} active={row.attachable} />}
+      disabled={!row.attachable}
+      onPress={() => {
+        store.dismissReview(row.sessionId);
+        router.push({
+          pathname: "/session/[sessionId]",
+          params: connectionRouteParams(connections.selectedId, { sessionId: row.sessionId }),
+        });
+      }}
+      onLongPress={openTask === undefined || openChanges === undefined ? undefined : () => {
+        Alert.alert(row.taskTitle ?? row.title, undefined, [
+          { text: "Open Task", onPress: openTask },
+          { text: "Changes", onPress: openChanges },
+          { text: "Cancel", style: "cancel" },
+        ]);
+      }}
+    />
   );
 }
 
@@ -353,45 +324,25 @@ function asksForUser(tone: AgentRow["tone"]): boolean {
 
 const styles = StyleSheet.create({
   headerRight: { flexDirection: "row", alignItems: "center", gap: 2 },
-  refresh: { width: 34, height: geometry.touchTarget, alignItems: "center", justifyContent: "center" },
+  headerAction: { width: 34, height: geometry.touchTarget, alignItems: "center", justifyContent: "center" },
+  headerActionDisabled: { opacity: 0.4 },
+  stewardGlyph: { color: color.accentStrong, fontSize: 15 },
   refreshGlyph: { color: color.textSecondary, fontSize: 18 },
   loading: { flex: 1, justifyContent: "center", padding: space.screen },
   workspaceChrome: {
-    gap: space.sm,
     paddingHorizontal: space.screen,
     paddingTop: space.sm,
     paddingBottom: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: color.rule,
   },
-  workspaceActions: { flexDirection: "row", gap: space.sm },
-  workspaceAction: {
-    flex: 1,
-    minHeight: 40,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 7,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: color.borderStrong,
-    borderRadius: 8,
-    backgroundColor: color.bgRaised,
-  },
-  workspaceActionPrimary: {
-    borderColor: `${color.accent}99`,
-    backgroundColor: color.accentWash,
-  },
-  workspaceActionPressed: { backgroundColor: color.bgHover },
-  workspaceActionDisabled: { opacity: 0.45 },
-  workspaceActionGlyph: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 14, fontWeight: "800" },
-  workspaceActionLabel: { color: color.textSecondary, fontFamily: fontFamily.mono, fontSize: 11.5, fontWeight: "700" },
-  workspaceActionPrimaryText: { color: color.accentStrong },
   list: { flex: 1 },
   content: {
     gap: space.lg,
     paddingHorizontal: space.screen,
     paddingTop: space.md,
-    paddingBottom: space.xl,
+    /// Room for the floating button, so the last row is never trapped underneath it.
+    paddingBottom: space.xl + 64,
   },
   section: { gap: space.sm },
   count: {
@@ -401,29 +352,42 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontVariant: ["tabular-nums"],
   },
-  agentTaskActions: {
-    flexDirection: "row",
-    gap: space.sm,
-    paddingLeft: 10,
-    paddingRight: 10,
-    paddingBottom: space.sm,
-  },
-  agentTaskAction: {
-    flex: 1,
-    minHeight: geometry.touchTarget,
+  terminalsToggle: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: space.xs,
-    borderRadius: 8,
-    backgroundColor: color.bgHover,
+    gap: space.sm,
+    minHeight: geometry.touchTarget,
+    paddingHorizontal: 2,
   },
-  agentTaskActionPressed: { backgroundColor: color.borderStrong },
-  agentTaskActionLabel: {
-    color: color.accentStrong,
+  terminalsTogglePressed: { opacity: 0.7 },
+  terminalsChevron: { color: color.textMuted, fontSize: 11, width: 12 },
+  terminalsLabel: {
+    flex: 1,
+    color: color.textMuted,
     fontFamily: fontFamily.mono,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
   },
-  agentTaskActionChevron: { color: color.textSecondary, fontSize: 16, lineHeight: 18 },
+  fab: {
+    position: "absolute",
+    right: space.screen,
+    bottom: space.screen,
+    width: 52,
+    height: 52,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: `${color.accent}99`,
+    backgroundColor: color.accent,
+    shadowColor: "#000",
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
+  fabPressed: { opacity: 0.85 },
+  fabGlyph: { color: "#fff", fontSize: 26, lineHeight: 30, fontWeight: "600" },
 });
