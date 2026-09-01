@@ -33,7 +33,7 @@ import {
 const MOBILE_TRANSPORT_VERSION = 2;
 const CONNECT_TIMEOUT_MS = 5_000;
 const ATTACH_TIMEOUT_MS = 5_000;
-const INPUT_RECEIPT_TIMEOUT_MS = 5_000;
+const INPUT_RECEIPT_TIMEOUT_MS = 7_000;
 const INBOUND_LIVENESS_TIMEOUT_MS = 75_000;
 const FORCE_RECONNECT_TIMEOUT_MS = 12_000;
 const MIN_RECONNECT_MS = 500;
@@ -156,8 +156,13 @@ export class MobileConnectionCoordinator {
     onEvent: (event: TerminalEvent) => void,
   ): Promise<TerminalAttachment> {
     const key = terminalKey(session.id, session.runtime_epoch);
-    if (this.subscriptions.has(key)) {
-      throw new Error("This terminal is already attached on this phone.");
+    const previous = this.subscriptions.get(key);
+    if (previous !== undefined) {
+      this.detachSubscription(
+        previous,
+        "attachment_detached",
+        new Error("Terminal attachment was replaced by a newer view."),
+      );
     }
     const attachmentId = `terminal-${++attachmentSequence}`;
     let firstResolve: (() => void) | undefined;
@@ -518,6 +523,23 @@ export class MobileConnectionCoordinator {
       return;
     }
     if (frame.kind === KIND_ERROR) {
+      const receiptKey = inputReceiptKey(
+        frame.sessionId,
+        frame.epoch,
+        frame.sequence.toString(),
+      );
+      const pendingInput = this.inputReceipts.get(receiptKey);
+      if (pendingInput !== undefined) {
+        this.inputReceipts.delete(receiptKey);
+        clearTimeout(pendingInput.timeout);
+        const error = new Error("The Mac refused this terminal input.");
+        pendingInput.reject(error);
+        this.reportTerminal(subscription, "input_refused", {
+          frameSequence: frame.sequence.toString(),
+          inputBytes: pendingInput.inputBytes,
+        });
+        return;
+      }
       const error = new Error("The Mac refused this terminal attachment.");
       this.reportTerminal(subscription, "server_frame_error", { errorBytes: frame.payload.byteLength });
       subscription.firstReject?.(error);
@@ -601,6 +623,7 @@ export class MobileConnectionCoordinator {
     this.rejectInputReceipts(subscription, waiterError);
     this.subscriptions.delete(subscription.key);
     this.clearReplay(subscription);
+    subscription.firstReject?.(waiterError);
     subscription.firstResolve = undefined;
     subscription.firstReject = undefined;
     this.settleWaiters(subscription, waiterError);
