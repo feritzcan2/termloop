@@ -11,6 +11,12 @@ export function controlErrorMessage(error: unknown): string {
   return unwrapped === message ? message : unwrapped.replace(ERROR_CLASS, "");
 }
 
+/** Renderer/client backpressure is retryable and does not mean the source disconnected. */
+export function controlErrorIsServiceBusy(error: unknown): boolean {
+  return /(?:too many (?:control )?requests are already in flight|control service is busy)/iu
+    .test(controlErrorMessage(error));
+}
+
 export function voiceCredentialErrorMessage(error: unknown): string {
   const message = controlErrorMessage(error);
   if (/connectionProfileRequired|unknownConnectionProfile/u.test(message)) {

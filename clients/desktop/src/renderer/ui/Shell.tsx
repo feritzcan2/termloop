@@ -98,6 +98,7 @@ type AssistantActions = Pick<StewardPanelProps,
 > & Pick<ComponentProps<typeof TaskDetailPanel>, "setPlaybookTaskPosition">
   & Pick<ComponentProps<typeof AssistantRail>, "updatePlaybook"> & {
   deleteConfiguration(expectedRevision: number): Promise<import("@termloop/contract/current").StewardConfigurationDeleteResult>;
+  getPresence(): ReturnType<StewardPanelProps["getConfiguration"]>;
   restartSteward(): Promise<string | null>;
   restartWorker(workerId: string): Promise<string | null>;
 };
@@ -1609,6 +1610,7 @@ export function Shell(props: ShellProps) {
               }}
               userBusy={false}
               getSteward={props.assistantActions.getConfiguration}
+              getPresence={props.assistantActions.getPresence}
               getPlaybook={props.assistantActions.getPlaybook}
               openPlaybookSetup={openPlaybookBuilder}
               listTranscript={props.assistantActions.listTranscript}

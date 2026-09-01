@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentForkErrorMessage, agentForkRequiresProviderHistoryRepair, controlErrorMessage, projectDeleteErrorMessage, providerHistoryRepairErrorMessage, sessionDismissErrorMessage, sessionRequiresProviderHistoryRepair, voiceCredentialErrorMessage } from "../src/renderer/control-error.js";
+import { agentForkErrorMessage, agentForkRequiresProviderHistoryRepair, controlErrorIsServiceBusy, controlErrorMessage, projectDeleteErrorMessage, providerHistoryRepairErrorMessage, sessionDismissErrorMessage, sessionRequiresProviderHistoryRepair, voiceCredentialErrorMessage } from "../src/renderer/control-error.js";
 
 describe("control error presentation", () => {
   it("renders a serialized control error message instead of the object itself", () => {
@@ -9,6 +9,16 @@ describe("control error presentation", () => {
   it("strips the Electron IPC wrapper so the rail shows the daemon's own message", () => {
     expect(controlErrorMessage(new Error("Error invoking remote method 'termloop:session-terminate': TermLoopControlError: record not found")))
       .toBe("record not found");
+  });
+
+  it("distinguishes request backpressure from a disconnected source", () => {
+    expect(controlErrorIsServiceBusy(new Error(
+      "Error invoking remote method 'termloop:steward-configuration-get': TermLoopControlError: too many control requests are already in flight",
+    ))).toBe(true);
+    expect(controlErrorIsServiceBusy(new Error("too many requests are already in flight on this connection")))
+      .toBe(true);
+    expect(controlErrorIsServiceBusy(new Error("control service is busy"))).toBe(true);
+    expect(controlErrorIsServiceBusy(new Error("connection refused"))).toBe(false);
   });
 
   it("turns voice credential failures into actionable messages without reflecting secrets", () => {

@@ -14,7 +14,7 @@ import {
   layoutPreservationProfileIds,
   projectionStore,
 } from "../state/projection-store.js";
-import { createProjectionRefreshQueue } from "../state/projection-refresh.js";
+import { createProjectionRefreshQueue, KeyedProjectionRefreshQueue } from "../state/projection-refresh.js";
 import { newlyAwaitingSessions } from "../state/agent-attention-policy.js";
 import { newlyReviewReadySessions } from "../state/agent-review-policy.js";
 import { presentationStore } from "../state/presentation-store.js";
@@ -30,7 +30,7 @@ import { Shell } from "../ui/Shell.js";
 import { AgentLaunchInspector } from "../ui/AgentLaunchInspector.js";
 import { createPromptSettingsActions } from "./prompt-settings-actions.js";
 import { taskRowRenders } from "../ui/TaskRail.js";
-import { agentForkErrorMessage, agentForkRequiresProviderHistoryRepair, controlErrorMessage, projectDeleteErrorMessage, sessionDismissErrorMessage, sessionRequiresProviderHistoryRepair } from "../control-error.js";
+import { agentForkErrorMessage, agentForkRequiresProviderHistoryRepair, controlErrorIsServiceBusy, controlErrorMessage, projectDeleteErrorMessage, sessionDismissErrorMessage, sessionRequiresProviderHistoryRepair } from "../control-error.js";
 import { automaticGitHostTaskIds, isLiveSession, sessionDismissCommand, sessionLabel, type Session, type Task, type TaskDeleteWorktreeResult, type TaskDeleteWorktreeReview } from "../model.js";
 import { orchestrateTaskDelete } from "./task-delete-orchestration.js";
 import { dismissSessionDescriptor } from "./session-dismiss.js";
@@ -55,8 +55,14 @@ import { BranchCommitRefreshQueue } from "./branch-commit-refresh.js";
 import { connectionSnapshotRefresh } from "./connection-refresh.js";
 import { portableSkillDirectoryName, remoteSkillComputers } from "./remote-skills.js";
 import { executeProviderHistoryRepair, fixProviderHistoryAndRetry } from "./provider-history-repair.js";
-import { restartStewardSession, restartWorkerSession } from "./worker-restart.js";
 import { AssistantRefreshThrottle, timeoutRefreshScheduler } from "./assistant-refresh-throttle.js";
+import {
+  AssistantReadCoordinator,
+  assistantInvalidationIncludesProjection,
+  assistantInvalidationMatchesSelection,
+  type AssistantReadIdentity,
+} from "./assistant-read-coordinator.js";
+import { createAssistantActions } from "./assistant-actions.js";
 import { presentedAgentStatus } from "../session-presentation.js";
 import { nativeOverlayPassiveVisible, nativeTerminalSurfaceVisible, useNativeOverlayWindow } from "./native-overlay-window.js";
 import { OverlayPortal } from "../ui/OverlayPortal.js";
@@ -72,6 +78,7 @@ import {
   connectionEntityIdentity,
   connectionProfileIdOf,
 } from "../../connection-scope.js";
+import type { ConnectionProfileSummary } from "../../connection-profile-types.js";
 
 type OrdinaryAgentLaunchPreset = {
   model: string;
@@ -250,43 +257,67 @@ function ensureLayoutsLoaded(): Promise<void> {
   return layoutLoadPromise;
 }
 
-async function refreshProjectionOnce(): Promise<void> {
-  projectionRefreshCount += 1;
+const sourceRefreshProfiles = new Map<string, ConnectionProfileSummary>();
+
+async function refreshSourceSnapshot(profile: ConnectionProfileSummary): Promise<void> {
+  const snapshotRefresh = connectionSnapshotRefresh(profile);
+  if (snapshotRefresh.kind === "retain") {
+    projectionStore.setSourceConnection(
+      profile.id,
+      profile.name,
+      snapshotRefresh.state,
+      snapshotRefresh.message,
+    );
+    return;
+  }
+  const api = desktopApi.source(profile.id);
+  try {
+    const [projects, sessions, agentStatuses] = await Promise.all([
+      api.projectList(),
+      api.sessionList(),
+      api.agentStatusList(),
+    ]);
+    projectionStore.applySourceSnapshot(profile.id, profile.name, projects, sessions, agentStatuses);
+  } catch (error) {
+    if (controlErrorIsServiceBusy(error)) throw error;
+    projectionStore.setSourceConnection(
+      profile.id,
+      profile.name,
+      "offline",
+      controlErrorMessage(error),
+    );
+  }
+}
+
+const sourceSnapshotRefreshQueue = new KeyedProjectionRefreshQueue<string>(async (profileId) => {
+  const profile = sourceRefreshProfiles.get(profileId);
+  if (profile) await refreshSourceSnapshot(profile);
+});
+
+function queueSourceSnapshotRefresh(profile: ConnectionProfileSummary): Promise<void> {
+  sourceRefreshProfiles.set(profile.id, profile);
+  return sourceSnapshotRefreshQueue.request(profile.id);
+}
+
+async function enabledConnectionProfiles(): Promise<{
+  availableProfiles: ConnectionProfileSummary[];
+  profiles: ConnectionProfileSummary[];
+}> {
   const availableProfiles = await desktopApi.connectionProfileList();
   const profiles = availableProfiles.filter((profile) => profile.enabled);
-  projectionStore.retainSources(new Set(profiles.map((profile) => profile.id)));
-  await Promise.all(profiles.map(async (profile) => {
-    const snapshotRefresh = connectionSnapshotRefresh(profile);
-    if (snapshotRefresh.kind === "retain") {
-      projectionStore.setSourceConnection(
-        profile.id,
-        profile.name,
-        snapshotRefresh.state,
-        snapshotRefresh.message,
-      );
-      return;
-    }
-    const api = desktopApi.source(profile.id);
-    try {
-      const [projects, sessions, agentStatuses] = await Promise.all([
-        api.projectList(),
-        api.sessionList(),
-        api.agentStatusList(),
-      ]);
-      projectionStore.applySourceSnapshot(profile.id, profile.name, projects, sessions, agentStatuses);
-    } catch (error) {
-      projectionStore.setSourceConnection(
-        profile.id,
-        profile.name,
-        "offline",
-        controlErrorMessage(error),
-      );
-    }
-  }));
-  const base = projectionStore.getSnapshot();
-  const projects = base.projects;
-  const sessions = base.sessions;
-  const agentStatuses = base.agentStatuses;
+  const retainedProfileIds = new Set(profiles.map((profile) => profile.id));
+  projectionStore.retainSources(retainedProfileIds);
+  sourceSnapshotRefreshQueue.retain(retainedProfileIds);
+  profileProjectionRefresh.retain(retainedProfileIds);
+  for (const profileId of sourceRefreshProfiles.keys()) {
+    if (!retainedProfileIds.has(profileId)) sourceRefreshProfiles.delete(profileId);
+  }
+  for (const profile of profiles) sourceRefreshProfiles.set(profile.id, profile);
+  return { availableProfiles, profiles };
+}
+
+async function refreshSelectedProjectOnce(): Promise<void> {
+  const projects = projectionStore.getSnapshot().projects;
   const requestedProjectId = presentationStore.getState().selectedProjectId;
   const taskProject = projects.find((project) => project.id === requestedProjectId) ?? projects[0];
   const taskProjectId = taskProject?.id;
@@ -311,6 +342,7 @@ async function refreshProjectionOnce(): Promise<void> {
       ]);
       taskSnapshotReady = true;
     } catch (error) {
+      if (controlErrorIsServiceBusy(error)) throw error;
       projectionStore.setSourceConnection(
         connectionProfileIdOf(taskProject),
         taskProject.connectionProfileName ?? "Computer",
@@ -321,19 +353,6 @@ async function refreshProjectionOnce(): Promise<void> {
       // offline. A later successful refresh replaces it in one update.
     }
   }
-  if (statusBaselineReady) {
-    for (const sessionId of newlyAwaitingSessions(previousAgentStatuses, agentStatuses)) {
-      const session = sessions.find((candidate) => candidate.id === sessionId);
-      void desktopApi.source(connectionProfileIdOf(session)).notifyAgentAttention(sessionId);
-    }
-    presentationStore.getState().updateReviewReadySessions(
-      agentStatuses.filter((status) => status.status === "idle").map((status) => status.sessionId),
-      newlyReviewReadySessions(previousAgentStatuses, agentStatuses),
-    );
-  }
-  presentationStore.getState().updateInterruptedSessions(agentStatuses);
-  previousAgentStatuses = new Map(agentStatuses.map((status) => [status.sessionId, status.status]));
-  statusBaselineReady = true;
   const taskIds = new Set(tasks.map((task) => task.id));
   const retainedGitHost = (taskProjectId
     ? projectionStore.gitHostProjectionsForProject(taskProjectId)
@@ -367,6 +386,23 @@ async function refreshProjectionOnce(): Promise<void> {
   if (taskProjectId && requestedBranchTaskIds.length > 0) {
     void branchCommitRefreshQueue.request(taskProjectId, requestedBranchTaskIds);
   }
+}
+
+function reconcileSourceProjection(availableProfiles: readonly ConnectionProfileSummary[]): void {
+  const { projects, sessions, agentStatuses } = projectionStore.getSnapshot();
+  if (statusBaselineReady) {
+    for (const sessionId of newlyAwaitingSessions(previousAgentStatuses, agentStatuses)) {
+      const session = sessions.find((candidate) => candidate.id === sessionId);
+      void desktopApi.source(connectionProfileIdOf(session)).notifyAgentAttention(sessionId);
+    }
+    presentationStore.getState().updateReviewReadySessions(
+      agentStatuses.filter((status) => status.status === "idle").map((status) => status.sessionId),
+      newlyReviewReadySessions(previousAgentStatuses, agentStatuses),
+    );
+  }
+  presentationStore.getState().updateInterruptedSessions(agentStatuses);
+  previousAgentStatuses = new Map(agentStatuses.map((status) => [status.sessionId, status.status]));
+  statusBaselineReady = true;
   terminalPool.reconcile(sessions);
   const sessionsByProject = new Map<string, string[]>();
   for (const project of projects) sessionsByProject.set(project.id, []);
@@ -382,6 +418,55 @@ async function refreshProjectionOnce(): Promise<void> {
     ),
   );
 }
+
+function selectedProjectProfileId(): string | undefined {
+  const projects = projectionStore.getSnapshot().projects;
+  const requestedProjectId = presentationStore.getState().selectedProjectId;
+  const project = projects.find((candidate) => candidate.id === requestedProjectId) ?? projects[0];
+  return project ? connectionProfileIdOf(project) : undefined;
+}
+
+function selectedProjectCanRefresh(profiles: readonly ConnectionProfileSummary[]): boolean {
+  const profileId = selectedProjectProfileId();
+  const profile = profiles.find((candidate) => candidate.id === profileId);
+  return Boolean(
+    profile
+    && connectionSnapshotRefresh(profile).kind === "refresh"
+    && projectionStore.sourceState(profile.id) === "connected",
+  );
+}
+
+const selectedProjectRefresh = createProjectionRefreshQueue(
+  refreshSelectedProjectOnce,
+  () => Promise.resolve(),
+);
+
+async function refreshProjectionOnce(): Promise<void> {
+  projectionRefreshCount += 1;
+  const { availableProfiles, profiles } = await enabledConnectionProfiles();
+  await Promise.all(profiles.map(queueSourceSnapshotRefresh));
+  if (selectedProjectCanRefresh(profiles)) await selectedProjectRefresh();
+  reconcileSourceProjection(availableProfiles);
+}
+
+async function refreshProfileProjectionOnce(profileId: string): Promise<void> {
+  projectionRefreshCount += 1;
+  const { availableProfiles, profiles } = await enabledConnectionProfiles();
+  const profile = profiles.find((candidate) => candidate.id === profileId);
+  if (profile) {
+    await queueSourceSnapshotRefresh(profile);
+    if (
+      selectedProjectProfileId() === profileId
+      && connectionSnapshotRefresh(profile).kind === "refresh"
+      && projectionStore.sourceState(profile.id) === "connected"
+    ) {
+      await selectedProjectRefresh();
+    }
+  }
+  reconcileSourceProjection(availableProfiles);
+}
+
+const profileProjectionRefresh = new KeyedProjectionRefreshQueue(refreshProfileProjectionOnce);
 
 function sourceApiForProject(projectId: string): SourceDesktopApi {
   const project = projectionStore.getSnapshot().projects.find((candidate) => candidate.id === projectId);
@@ -505,6 +590,7 @@ export function DesktopApp() {
   const [shellTerminalOccluded, setShellTerminalOccluded] = useState(false);
   const [shellNativeOverlayOpen, setShellNativeOverlayOpen] = useState(false);
   const [shellNativeOverlaySuppressed, setShellNativeOverlaySuppressed] = useState(false);
+  const assistantReads = useMemo(() => new AssistantReadCoordinator(), []);
   const [launchInspection, setLaunchInspection] = useState<{
     title: string;
     preview: () => ReturnType<SourceDesktopApi["agentPreview"]>;
@@ -557,6 +643,10 @@ export function DesktopApp() {
   const selectedSourceApi = desktopApi.source(selectedConnectionProfileId);
   const localSourceApi = desktopApi.source("local");
   const assistantProjectId = selectedProject?.id ?? "";
+  const assistantReadIdentity = useMemo<AssistantReadIdentity>(() => ({
+    profileId: selectedConnectionProfileId,
+    projectId: assistantProjectId,
+  }), [assistantProjectId, selectedConnectionProfileId]);
   const projectSessions = useMemo(
     () => {
       const sessions = projection.sessions.filter((session) => session.project_id === selectedProject?.id);
@@ -645,11 +735,11 @@ export function DesktopApp() {
   useEffect(() => {
     let disposed = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
-    const scheduleRetry = (delay: number) => {
+    const scheduleRetry = (delay: number, refresh?: () => Promise<void>) => {
       if (retry || disposed) return;
       retry = setTimeout(() => {
         retry = undefined;
-        void connect();
+        void (refresh ?? connect)();
       }, delay);
     };
     const connect = async () => {
@@ -657,7 +747,12 @@ export function DesktopApp() {
       try {
         await refreshProjection();
       } catch (error) {
-        projectionStore.setConnection("connectionLost", error instanceof Error ? error.message : String(error));
+        if (controlErrorIsServiceBusy(error)) {
+          projectionStore.setMessage("Control requests are catching up — retrying.");
+          scheduleRetry(750);
+          return;
+        }
+        projectionStore.setConnection("connectionLost", controlErrorMessage(error));
         scheduleRetry(1_000);
         return;
       }
@@ -666,6 +761,30 @@ export function DesktopApp() {
         presentationStore.getState().openProjectDialog();
       }
     };
+    const handleProfileRefreshFailure = (profileId: string, error: unknown) => {
+      if (controlErrorIsServiceBusy(error)) {
+        projectionStore.setMessage("This computer is catching up with control requests — retrying.");
+        scheduleRetry(750, () => refreshProfileWithRetry(profileId));
+        return;
+      }
+      projectionStore.setSourceConnection(
+        profileId,
+        projectionStore.sourceName(profileId) ?? "Computer",
+        "offline",
+        controlErrorMessage(error),
+      );
+    };
+    const refreshProfileWithRetry = async (profileId: string): Promise<void> => {
+      try {
+        await profileProjectionRefresh.request(profileId);
+      } catch (error) {
+        handleProfileRefreshFailure(profileId, error);
+      }
+    };
+    const assistantRefresh = new AssistantRefreshThrottle(
+      () => setAssistantRefreshToken((current) => current + 1),
+      timeoutRefreshScheduler,
+    );
     void connect();
     const unsubscribe = onGatewayState((profileId, state) => {
       const sourceName = projectionStore.sourceName(profileId) ?? "Computer";
@@ -676,33 +795,40 @@ export function DesktopApp() {
         terminalPool.reconnectAttachments(profileId);
       } else if (state === "connected") {
         terminalPool.reconnectAttachments(profileId);
-        void refreshProjection().catch((error) => {
-          projectionStore.setSourceConnection(profileId, sourceName, "offline", controlErrorMessage(error));
-        });
+        assistantReads.invalidateProfile(profileId);
+        if (selectedProjectProfileId() === profileId) assistantRefresh.request();
+        void refreshProfileWithRetry(profileId);
       }
     });
     const unsubscribeConnection = onConnectionStatus((summary) => {
       projectionStore.setSourceConnection(summary.id, summary.name, summary.state, summary.message);
-      if (summary.state === "connected") void refreshProjection();
+      if (summary.state === "connected") {
+        assistantReads.invalidateProfile(summary.id);
+        if (selectedProjectProfileId() === summary.id) assistantRefresh.request();
+        void refreshProfileWithRetry(summary.id);
+      }
     });
-    const assistantRefresh = new AssistantRefreshThrottle(
-      () => setAssistantRefreshToken((current) => current + 1),
-      timeoutRefreshScheduler,
-    );
     const unsubscribeProjection = onProjectionInvalidated(({ profileId, payload }) => {
-      if (payload.topics.some((topic) => ["companion", "steward", "worker", "routine", "playbook", "session", "agentStatus"].includes(topic))) {
+      const projectId = presentationStore.getState().selectedProjectId;
+      const selectedProject = projectionStore.getSnapshot().projects.find((project) => project.id === projectId);
+      const selectedProfileId = connectionProfileIdOf(selectedProject);
+      const selectedSourceMatches = selectedProfileId === profileId;
+      if (assistantInvalidationIncludesProjection(payload.topics)) {
+        assistantReads.invalidateProfile(profileId);
+      }
+      if (assistantInvalidationMatchesSelection(profileId, selectedProfileId, payload.topics)) {
         assistantRefresh.request();
       }
       // The daemon takes and releases the hold on its own as agents come and
       // go, so the footer control follows its projection rather than assuming
       // its own last write is still current.
-      if (payload.topics.includes("keepAwake")) {
+      if (selectedSourceMatches && payload.topics.includes("keepAwake")) {
         setKeepAwakeRefreshToken((current) => current + 1);
       }
       // Task Source observations and the Project-owned defaults used by import
       // confirmation are both read by the Task Sources page. Refetch either
       // projection without riding the whole-Project snapshot.
-      if (payload.topics.includes("taskSource") || payload.topics.includes("project")) {
+      if (selectedSourceMatches && (payload.topics.includes("taskSource") || payload.topics.includes("project"))) {
         setTaskSourceRefreshToken((current) => current + 1);
       }
       const gitHostIds = payload.topics.length === 1 && payload.topics[0] === "gitHost"
@@ -714,17 +840,11 @@ export function DesktopApp() {
       const branchCommitIds = payload.topics.length === 1 && payload.topics[0] === "branchCommit"
         ? payload.entityScopes?.find((scope) => scope.topic === "branchCommit")?.ids
         : undefined;
-      const projectId = presentationStore.getState().selectedProjectId;
-      const selectedProject = projectionStore.getSnapshot().projects.find((project) => project.id === projectId);
-      const selectedSourceMatches = connectionProfileIdOf(selectedProject) === profileId;
       const refresh = selectedSourceMatches && gitHostIds && projectId
         ? refreshGitHostProjection(projectId, gitHostIds)
         : selectedSourceMatches && branchCommitIds && projectId ? refreshBranchCommitProjection(projectId, branchCommitIds)
-        : selectedSourceMatches && taskIds ? refreshTaskProjection(taskIds) : refreshProjection();
-      void refresh.catch((error) => {
-        projectionStore.setConnection("connectionLost", controlErrorMessage(error));
-        scheduleRetry(750);
-      });
+        : selectedSourceMatches && taskIds ? refreshTaskProjection(taskIds) : profileProjectionRefresh.request(profileId);
+      void refresh.catch((error) => handleProfileRefreshFailure(profileId, error));
     });
     const unsubscribeAttention = onAgentAttentionActivated((sessionId) => {
       activateAgentAttention(sessionId);
@@ -1926,65 +2046,14 @@ export function DesktopApp() {
     ignoreCandidate: selectedSourceApi.taskSourceCandidateIgnore,
     unignoreCandidate: selectedSourceApi.taskSourceCandidateUnignore,
   }), [selectedSourceApi]);
-  const assistantActions = {
-    getConfiguration: () => selectedSourceApi.stewardConfigurationGet(assistantProjectId),
-    setConfiguration: (agentId: "claude" | "codex", model: string, permission: "default" | "acceptEdits" | "plan" | "bypassPermissions", reasoning: "default" | "low" | "medium" | "high" | "xhigh" | "max", enabled: boolean, systemPrompt: string, expectedRevision: number) =>
-      selectedSourceApi.stewardConfigurationSet({ projectId: assistantProjectId, agentId, model, permission, reasoning, enabled, systemPrompt, expectedRevision }),
-    deleteConfiguration: (expectedRevision: number) => selectedSourceApi.stewardConfigurationDelete({
-      projectId: assistantProjectId,
-      expectedRevision,
-    }),
-    listTranscript: (beforeSequence?: number) => selectedSourceApi.companionTranscriptList({
-      projectId: assistantProjectId,
-      limit: 100,
-      ...(beforeSequence === undefined ? {} : { beforeSequence }),
-    }),
-    appendMessage: (content: string) => selectedSourceApi.companionTranscriptAppend({ projectId: assistantProjectId, content }),
-    respondToProposal: (proposalMessageId: string, decision: "approve" | "decline") => selectedSourceApi.companionProposalRespond({
-      projectId: assistantProjectId,
-      proposalMessageId,
-      decision,
-    }),
-    acceptSuggestion: (suggestionMessageId: string) => selectedSourceApi.companionSuggestionAccept({
-      projectId: assistantProjectId,
-      suggestionMessageId,
-    }),
-    clearTranscript: (expectedRevision: number) => selectedSourceApi.companionTranscriptClear({ projectId: assistantProjectId, expectedRevision }),
-    listWorkers: () => selectedSourceApi.workerConfigurationList({ projectId: assistantProjectId }),
-    createWorker: selectedSourceApi.workerConfigurationCreate,
-    updateWorker: selectedSourceApi.workerConfigurationUpdate,
-    deleteWorker: (workerId: string, expectedRevision: number) => selectedSourceApi.workerConfigurationDelete({ workerId, expectedRevision }),
-    listRoutines: () => selectedSourceApi.routineConfigurationList({ projectId: assistantProjectId }),
-    createRoutine: selectedSourceApi.routineConfigurationCreate,
-    updateRoutine: selectedSourceApi.routineConfigurationUpdate,
-    updateRoutineContext: (routineId: string, contextMarkdown: string, expectedContextRevision: number, expectedRevision: number) => selectedSourceApi.routineContextUpdate({ routineId, contextMarkdown, expectedContextRevision, expectedRevision }),
-    deleteRoutine: (routineId: string, expectedRevision: number) => selectedSourceApi.routineConfigurationDelete({ routineId, expectedRevision }),
-    listRoutineRuntime: () => selectedSourceApi.routineRuntimeList({ projectId: assistantProjectId }),
-    runRoutineNow: (routineId: string, taskId?: string) => selectedSourceApi.routineRunNow({
-      routineId,
-      ...(taskId ? { taskId } : {}),
-    }),
-    getPlaybook: () => selectedSourceApi.playbookGet(assistantProjectId),
-    getPlaybookRuntime: () => selectedSourceApi.playbookRuntime(assistantProjectId),
-    setPlaybookTaskPosition: selectedSourceApi.playbookTaskPositionSet,
-    updatePlaybook: selectedSourceApi.playbookUpdate,
+  const assistantActions = createAssistantActions({
+    api: selectedSourceApi,
+    coordinator: assistantReads,
+    identity: assistantReadIdentity,
+    projectId: assistantProjectId,
     promptImprovement,
-    restartSteward: async (): Promise<string | null> => {
-      return restartStewardSession(
-        selectedSourceApi,
-        assistantProjectId,
-        projectionStore.getSnapshot().sessions,
-      );
-    },
-    restartWorker: async (workerId: string): Promise<string | null> => {
-      return restartWorkerSession(
-        selectedSourceApi,
-        assistantProjectId,
-        workerId,
-        projectionStore.getSnapshot().sessions,
-      );
-    },
-  };
+    sessions: () => projectionStore.getSnapshot().sessions,
+  });
 
   const promptSettings = useMemo(
     () => createPromptSettingsActions(assistantProjectId, selectedSourceApi),
