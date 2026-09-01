@@ -1,12 +1,13 @@
 const UPDATE_GROUP_PATTERN = /^[A-Za-z0-9-]{1,128}$/;
+const APP_URL_SCHEME = "ai.termloop.mobile";
 
 export function mobileUpdatePage(requestUrl) {
   const request = new URL(requestUrl ?? "/mobile-update", "https://termloop.invalid");
   const candidate = request.searchParams.get("group") ?? "";
   const group = UPDATE_GROUP_PATTERN.test(candidate) ? candidate : undefined;
   const appUrl = group === undefined
-    ? "termloop://force-update"
-    : `termloop://force-update?group=${encodeURIComponent(group)}`;
+    ? `${APP_URL_SCHEME}://force-update`
+    : `${APP_URL_SCHEME}://force-update?group=${encodeURIComponent(group)}`;
   const release = group === undefined
     ? "Latest production release"
     : `Release ${group}`;

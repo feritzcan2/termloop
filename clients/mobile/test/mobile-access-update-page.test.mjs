@@ -10,7 +10,7 @@ describe("tailnet mobile update page", () => {
     expect(page.headers["content-type"]).toBe("text/html; charset=utf-8");
     expect(page.headers["cache-control"]).toBe("no-store");
     expect(page.headers["content-security-policy"]).toContain("default-src 'none'");
-    expect(page.body).toContain(`href="termloop://force-update?group=${group}"`);
+    expect(page.body).toContain(`href="ai.termloop.mobile://force-update?group=${group}"`);
     expect(page.body).toContain(">Force Update</a>");
   });
 
@@ -18,7 +18,7 @@ describe("tailnet mobile update page", () => {
     const page = mobileUpdatePage("/mobile-update?group=%22%3E%3Cscript%3Ebad%3C%2Fscript%3E");
 
     expect(page.body).not.toContain("<script>");
-    expect(page.body).toContain('href="termloop://force-update"');
+    expect(page.body).toContain('href="ai.termloop.mobile://force-update"');
     expect(page.body).not.toContain("?group=");
   });
 });
