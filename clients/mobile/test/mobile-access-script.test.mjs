@@ -1,9 +1,11 @@
 import { execFile as execFileCallback } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { reconcileGatewayInstall } from "../scripts/mobile-access-installer.mjs";
 
 const execFile = promisify(execFileCallback);
 
@@ -93,6 +95,24 @@ fi
     expect(readFileSync(launchCalls, "utf8")).toContain("bootstrap");
     const installedGateway = path.join(state, "mobile-access-gateway.mjs");
     expect(readFileSync(installedGateway, "utf8")).toContain("TermLoop is starting");
+    const installManifest = JSON.parse(readFileSync(path.join(state, "gateway-install.json"), "utf8"));
+    expect(installManifest).toMatchObject({
+      manifestVersion: 1,
+      channel: "development",
+      sequence: 2,
+      compatibility: {
+        mobileTransport: { min: 2, max: 2 },
+        mobileApi: { min: 1, max: 1 },
+        configSchema: { min: 1, max: 2 },
+      },
+    });
+    expect(installManifest.buildId).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(installManifest.artifactSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(readFileSync(installedGateway, "utf8")).toContain(installManifest.buildId);
+    expect(createHash("sha256").update(readFileSync(installedGateway)).digest("hex"))
+      .toBe(installManifest.artifactSha256);
+    expect(JSON.stringify(installManifest)).not.toContain(payload.controlToken);
+    expect(JSON.stringify(installManifest)).not.toContain(payload.terminalToken);
     const plist = readFileSync(path.join(
       launchAgentDirectory,
       "ai.termloop.mobile-access.6343ac534b7a01f6.plist",
@@ -131,14 +151,30 @@ fi
     expect(repeatedPayload.terminalToken).toBe(payload.terminalToken);
     const recordedLaunchCalls = readFileSync(launchCalls, "utf8").split("\n");
     expect(recordedLaunchCalls.filter((call) => call.startsWith("bootstrap "))).toHaveLength(1);
-    expect(recordedLaunchCalls.filter((call) => call.startsWith("kickstart "))).toHaveLength(2);
+    expect(recordedLaunchCalls.filter((call) => call.startsWith("kickstart "))).toHaveLength(0);
+    expect(recordedLaunchCalls.filter((call) => call.startsWith("kill SIGTERM "))).toHaveLength(0);
     expect(recordedLaunchCalls.some((call) => call.startsWith("bootout "))).toBe(false);
-    // Reinstalling keeps exactly one earlier generation instead of discarding
-    // the evidence or growing a single file forever.
-    expect(readFileSync(`${gatewayLog}.previous`, "utf8")).toBe("first run crashed here\n");
-    expect(statSync(`${gatewayLog}.previous`).mode & 0o777).toBe(0o600);
-    expect(readFileSync(gatewayLog, "utf8")).toBe("");
+    // The runtime file path and artifact are unchanged; rotating daemon tokens
+    // are read from that file at request time, so no restart or log rotation occurs.
+    expect(existsSync(`${gatewayLog}.previous`)).toBe(false);
+    expect(readFileSync(gatewayLog, "utf8")).toBe("first run crashed here\n");
     expect(statSync(gatewayLog).mode & 0o777).toBe(0o600);
+
+    // Reconciliation uses only enrolled state and the source artifact. A missing
+    // daemon discovery file and an unavailable Tailscale command do not matter.
+    const beforeReconcileCalls = serviceMutationCalls(readFileSync(launchCalls, "utf8"));
+    const reconcile = await execFile(process.execPath, [
+      path.resolve("scripts/mobile-access.mjs"),
+      "--reconcile",
+      "--state-dir", state,
+      "--launch-agent-dir", launchAgentDirectory,
+      "--launchctl-bin", launchctl,
+      "--platform", "darwin",
+      "--test-platform",
+      "--skip-gateway-wait",
+    ], { cwd: path.resolve("."), env: environment, encoding: "utf8" });
+    expect(JSON.parse(reconcile.stdout)).toMatchObject({ status: "current", buildId: installManifest.buildId });
+    expect(serviceMutationCalls(readFileSync(launchCalls, "utf8"))).toEqual(beforeReconcileCalls);
 
     // launchd runs its own copy of a loaded job, so an install that changes the
     // plist has to unregister the earlier generation instead of only restarting
@@ -152,10 +188,59 @@ fi
     const reloadCalls = readFileSync(launchCalls, "utf8").split("\n");
     expect(reloadCalls.filter((call) => call.startsWith("bootout "))).toHaveLength(1);
     expect(reloadCalls.filter((call) => call.startsWith("bootstrap "))).toHaveLength(2);
-    expect(reloadCalls.filter((call) => call.startsWith("kickstart "))).toHaveLength(3);
+    expect(reloadCalls.filter((call) => call.startsWith("kickstart "))).toHaveLength(0);
     const domain = `gui/${process.getuid()}`;
     expect(reloadCalls.indexOf(`bootout ${domain}/ai.termloop.mobile-access.6343ac534b7a01f6`))
       .toBeLessThan(reloadCalls.lastIndexOf(`bootstrap ${domain} ${plistFile}`));
+
+    // Pairing is an explicit human action, so a packaged build may take over a
+    // development-owned install without regenerating the stable device tokens.
+    const productionEnrollment = await execFile(process.execPath, [
+      ...command,
+      "--channel", "production",
+      "--owner", "ai.termloop.desktop",
+    ], { cwd: path.resolve("."), env: environment, encoding: "utf8" });
+    const productionPayload = JSON.parse(
+      productionEnrollment.stdout.split("\n")[0].slice("TLMP1:".length),
+    );
+    expect(productionPayload.controlToken).toBe(payload.controlToken);
+    expect(productionPayload.terminalToken).toBe(payload.terminalToken);
+    const productionManifest = JSON.parse(
+      readFileSync(path.join(state, "gateway-install.json"), "utf8"),
+    );
+    expect(productionManifest).toMatchObject({
+      channel: "production",
+      owner: "ai.termloop.desktop",
+      installOverrides: [expect.objectContaining({
+        policy: "enrollment",
+        reason: "explicit enrollment",
+        previousChannel: "development",
+        previousOwner: installManifest.owner,
+      })],
+    });
+
+    await execFile(process.execPath, [
+      path.resolve("scripts/mobile-access.mjs"),
+      "--reconcile",
+      "--force",
+      "--force-reason", "explicit fixture repair",
+      "--state-dir", state,
+      "--launch-agent-dir", launchAgentDirectory,
+      "--launchctl-bin", launchctl,
+      "--platform", "darwin",
+      "--test-platform",
+      "--skip-gateway-wait",
+    ], { cwd: path.resolve("."), env: environment, encoding: "utf8" });
+    expect(JSON.parse(readFileSync(path.join(state, "gateway-install.json"), "utf8")))
+      .toMatchObject({
+        channel: "development",
+        installOverrides: expect.arrayContaining([expect.objectContaining({
+          policy: "force",
+          reason: "explicit fixture repair",
+          previousChannel: "production",
+          previousOwner: "ai.termloop.desktop",
+        })]),
+      });
   }, 20_000);
 
   it.skipIf(process.platform === "win32")("installs and restarts a persistent systemd user service on Linux", async () => {
@@ -249,4 +334,279 @@ printf '%s\n' "$*" >> "$SYSTEMCTL_LOG"
     expect(unit).not.toContain("StandardOutput=");
     expect(statSync(unitFile).mode & 0o777).toBe(0o644);
   }, 15_000);
+
+  it.skipIf(process.platform === "win32")("serializes reconciliation, preserves tokens, and refuses downgrades", async () => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), "termloop-mobile-reconcile-"));
+    const state = path.join(directory, "state");
+    const launchAgentDirectory = path.join(directory, "LaunchAgents");
+    const launchctl = path.join(directory, "launchctl");
+    const launchState = path.join(directory, "launch-state");
+    const launchCalls = path.join(directory, "launch-calls.txt");
+    const tokens = { controlToken: "c".repeat(64), terminalToken: "t".repeat(64) };
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(state, { recursive: true }));
+    writeFileSync(path.join(state, "gateway.json"), JSON.stringify({
+      version: 2,
+      connectionId: "mac-0123456789abcdef",
+      hostPlatform: "darwin",
+      port: 49223,
+      runtimeFile: path.join(directory, "missing-runtime.json"),
+      logFile: path.join(state, "gateway.log"),
+      ...tokens,
+    }));
+    writeFileSync(path.join(state, "gateway.log"), "");
+    writeFileSync(launchctl, `#!/bin/sh
+printf '%s\n' "$*" >> "$LAUNCH_LOG"
+if [ "$1" = "print" ]; then
+  [ -f "$LAUNCH_STATE" ]
+elif [ "$1" = "bootstrap" ]; then
+  : > "$LAUNCH_STATE"
+elif [ "$1" = "bootout" ]; then
+  rm -f "$LAUNCH_STATE"
+fi
+`);
+    chmodSync(launchctl, 0o700);
+    const previousLaunchLog = process.env.LAUNCH_LOG;
+    const previousLaunchState = process.env.LAUNCH_STATE;
+    process.env.LAUNCH_LOG = launchCalls;
+    process.env.LAUNCH_STATE = launchState;
+    try {
+      const v2 = fixtureArtifact(2, "gateway-v2");
+      await reconcileGatewayInstall({
+        stateDirectory: state,
+        desired: v2,
+        hostPlatform: "darwin",
+        launchctlBin: launchctl,
+        launchAgentDirectory,
+        skipGatewayWait: true,
+        testPlatform: true,
+      });
+      const afterInstallCalls = serviceMutationCalls(readFileSync(launchCalls, "utf8"));
+      const concurrent = await Promise.all([1, 2].map(() => reconcileGatewayInstall({
+        stateDirectory: state,
+        desired: v2,
+        hostPlatform: "darwin",
+        launchctlBin: launchctl,
+        launchAgentDirectory,
+        skipGatewayWait: true,
+        testPlatform: true,
+      })));
+      expect(concurrent.map(({ status }) => status)).toEqual(["current", "current"]);
+      expect(serviceMutationCalls(readFileSync(launchCalls, "utf8"))).toEqual(afterInstallCalls);
+
+      const nextRuntimeFile = path.join(directory, "next-runtime.json");
+      const configUpdate = await reconcileGatewayInstall({
+        stateDirectory: state,
+        desired: v2,
+        hostPlatform: "darwin",
+        launchctlBin: launchctl,
+        launchAgentDirectory,
+        skipGatewayWait: true,
+        testPlatform: true,
+        nextConfig: {
+          ...JSON.parse(readFileSync(path.join(state, "gateway.json"), "utf8")),
+          runtimeFile: nextRuntimeFile,
+        },
+      });
+      expect(configUpdate.status).toBe("configUpdated");
+      expect(readFileSync(launchCalls, "utf8")).toContain("kill SIGTERM");
+      expect(JSON.parse(readFileSync(path.join(state, "gateway.json"), "utf8")).runtimeFile)
+        .toBe(nextRuntimeFile);
+
+      const v3 = fixtureArtifact(3, "gateway-v3");
+      await reconcileGatewayInstall({
+        stateDirectory: state,
+        desired: v3,
+        hostPlatform: "darwin",
+        launchctlBin: launchctl,
+        launchAgentDirectory,
+        skipGatewayWait: true,
+        testPlatform: true,
+      });
+      expect(readFileSync(launchCalls, "utf8")).toContain("kill SIGTERM");
+      expect(JSON.parse(readFileSync(path.join(state, "gateway.json"), "utf8"))).toMatchObject(tokens);
+      expect(readFileSync(path.join(state, "mobile-access-gateway.previous.mjs"), "utf8")).toBe("gateway-v2");
+
+      // A service restart failure restores the last-known-good complete bundle
+      // and manifest; credentials remain in the untouched gateway.json.
+      writeFileSync(launchctl, `#!/bin/sh
+printf '%s\n' "$*" >> "$LAUNCH_LOG"
+if [ "$1" = "print" ]; then [ -f "$LAUNCH_STATE" ]; fi
+if [ "$1" = "kill" ]; then exit 7; fi
+`);
+      chmodSync(launchctl, 0o700);
+      await expect(reconcileGatewayInstall({
+        stateDirectory: state,
+        desired: fixtureArtifact(4, "gateway-v4"),
+        hostPlatform: "darwin",
+        launchctlBin: launchctl,
+        launchAgentDirectory,
+        skipGatewayWait: true,
+        testPlatform: true,
+        nextConfig: {
+          ...JSON.parse(readFileSync(path.join(state, "gateway.json"), "utf8")),
+          runtimeFile: path.join(directory, "new-runtime.json"),
+        },
+      })).rejects.toThrow();
+      expect(readFileSync(path.join(state, "mobile-access-gateway.mjs"), "utf8")).toBe("gateway-v3");
+      expect(JSON.parse(readFileSync(path.join(state, "gateway-install.json"), "utf8")))
+        .toMatchObject({ sequence: 3, buildId: v3.artifact.buildId });
+      expect(readFileSync(path.join(state, "transcriber", "Transcriber.swift"), "utf8"))
+        .toBe("fixture transcriber gateway-v3");
+      expect(JSON.parse(readFileSync(path.join(state, "gateway.json"), "utf8"))).toMatchObject(tokens);
+      expect(JSON.parse(readFileSync(path.join(state, "gateway.json"), "utf8")).runtimeFile)
+        .toBe(nextRuntimeFile);
+
+      await expect(reconcileGatewayInstall({
+        stateDirectory: state,
+        desired: v2,
+        hostPlatform: "darwin",
+        launchctlBin: launchctl,
+        launchAgentDirectory,
+        skipGatewayWait: true,
+        testPlatform: true,
+      })).rejects.toThrow("Refusing gateway downgrade");
+
+      writeFileSync(path.join(state, "gateway-install.json"), "{corrupt");
+      await expect(reconcileGatewayInstall({
+        stateDirectory: state,
+        desired: v3,
+        hostPlatform: "darwin",
+        launchctlBin: launchctl,
+        launchAgentDirectory,
+        skipGatewayWait: true,
+        testPlatform: true,
+      })).rejects.toThrow("manifest is corrupt; refusing automatic replacement");
+    } finally {
+      if (previousLaunchLog === undefined) delete process.env.LAUNCH_LOG;
+      else process.env.LAUNCH_LOG = previousLaunchLog;
+      if (previousLaunchState === undefined) delete process.env.LAUNCH_STATE;
+      else process.env.LAUNCH_STATE = previousLaunchState;
+    }
+  });
+
+  it.skipIf(process.platform === "win32")("keeps unattended ownership strict and audits explicit overrides", async () => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), "termloop-mobile-policy-"));
+    const state = path.join(directory, "state");
+    const serviceDirectory = path.join(directory, "systemd");
+    const systemctl = path.join(directory, "systemctl");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(state, { recursive: true }));
+    const tokens = { controlToken: "c".repeat(64), terminalToken: "t".repeat(64) };
+    writeFileSync(path.join(state, "gateway.json"), JSON.stringify({
+      version: 2,
+      connectionId: "mac-fedcba9876543210",
+      hostPlatform: "linux",
+      port: 49224,
+      runtimeFile: path.join(directory, "runtime.json"),
+      ...tokens,
+    }));
+    writeFileSync(systemctl, "#!/bin/sh\nexit 0\n");
+    chmodSync(systemctl, 0o700);
+    const install = (desired, options = {}) => reconcileGatewayInstall({
+      stateDirectory: state,
+      desired,
+      hostPlatform: "linux",
+      systemctlBin: systemctl,
+      serviceDirectory,
+      skipGatewayWait: true,
+      ...options,
+    });
+    const development = fixtureArtifact(3, "dev-checkout-a", {
+      channel: "development",
+      owner: "termloop.dev.checkout-a",
+    });
+    const production = fixtureArtifact(3, "production", {
+      channel: "production",
+      owner: "ai.termloop.desktop",
+    });
+    await install(development);
+
+    await expect(install(production)).rejects.toThrow(
+      "Refusing to replace development gateway with production",
+    );
+    await expect(install(fixtureArtifact(2, "older-production", {
+      channel: "production",
+      owner: "ai.termloop.desktop",
+    }), { installPolicy: "enrollment" })).rejects.toThrow("Refusing gateway downgrade");
+
+    await install(production, { installPolicy: "enrollment" });
+    let manifest = JSON.parse(readFileSync(path.join(state, "gateway-install.json"), "utf8"));
+    expect(manifest).toMatchObject({
+      channel: "production",
+      owner: "ai.termloop.desktop",
+      installOverrides: [expect.objectContaining({
+        policy: "enrollment",
+        previousChannel: "development",
+        previousOwner: "termloop.dev.checkout-a",
+      })],
+    });
+    expect(JSON.parse(readFileSync(path.join(state, "gateway.json"), "utf8"))).toMatchObject(tokens);
+
+    const forcedDevelopment = fixtureArtifact(2, "forced-dev", {
+      channel: "development",
+      owner: "termloop.dev.checkout-b",
+    });
+    await install(forcedDevelopment, { forceReason: "operator repair from test" });
+    manifest = JSON.parse(readFileSync(path.join(state, "gateway-install.json"), "utf8"));
+    expect(manifest).toMatchObject({
+      channel: "development",
+      owner: "termloop.dev.checkout-b",
+      sequence: 2,
+    });
+    expect(manifest.installOverrides).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        policy: "force",
+        reason: "operator repair from test",
+        previousChannel: "production",
+        previousOwner: "ai.termloop.desktop",
+        previousSequence: 3,
+      }),
+    ]));
+
+    const nextCheckout = fixtureArtifact(2, "dev-checkout-c", {
+      channel: "development",
+      owner: "termloop.dev.checkout-c",
+    });
+    await install(nextCheckout, { installPolicy: "developmentTakeover" });
+    manifest = JSON.parse(readFileSync(path.join(state, "gateway-install.json"), "utf8"));
+    expect(manifest).toMatchObject({
+      owner: "termloop.dev.checkout-c",
+      installOverrides: expect.arrayContaining([expect.objectContaining({
+        policy: "developmentTakeover",
+        previousOwner: "termloop.dev.checkout-b",
+      })]),
+    });
+  });
 });
+
+function fixtureArtifact(sequence, content, metadata = {}) {
+  const bundle = Buffer.from(content);
+  const transcriber = Buffer.from(`fixture transcriber ${content}`);
+  const digest = (value) => createHash("sha256").update(value).digest("hex");
+  return {
+    bundle,
+    transcriber,
+    artifact: {
+      manifestVersion: 1,
+      buildId: `sha256:${digest(bundle)}`,
+      releaseVersion: "2.0.0",
+      channel: "development",
+      sequence,
+      owner: "termloop.fixture",
+      ...metadata,
+      compatibility: {
+        mobileTransport: { min: 2, max: 2 },
+        mobileApi: { min: 1, max: 1 },
+        configSchema: { min: 1, max: 2 },
+      },
+      sourceGraphSha256: digest(bundle),
+      artifactSha256: digest(bundle),
+      transcriberSha256: digest(transcriber),
+      bundleFile: "mobile-access-gateway.mjs",
+      transcriberFile: "transcriber/Transcriber.swift",
+    },
+  };
+}
+
+function serviceMutationCalls(log) {
+  return log.split("\n").filter((line) => /^(bootstrap|bootout|kill|kickstart) /.test(line));
+}

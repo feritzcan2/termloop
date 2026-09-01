@@ -18,6 +18,7 @@ export type ConnectionAvailability =
   | "reconnecting"
   | "offline"
   | "revoked"
+  | "gatewayUpdateRequired"
   | "updateRequired";
 
 export interface ConnectionProfile {

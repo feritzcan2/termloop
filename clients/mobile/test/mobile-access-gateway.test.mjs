@@ -74,6 +74,52 @@ describe("persistent mobile access gateway", () => {
     });
     try {
       await waitForHealth(gatewayPort);
+      const identityResponse = await fetch(`http://127.0.0.1:${gatewayPort}/.well-known/termloop-mobile-access`);
+      expect(identityResponse.status).toBe(200);
+      expect(await identityResponse.json()).toMatchObject({
+        buildId: "source-development",
+        compatibility: {
+          mobileTransport: { min: 2, max: 2 },
+          mobileApi: { min: 1, max: 1 },
+        },
+      });
+      const health = await fetch(`http://127.0.0.1:${gatewayPort}/health`);
+      expect(await health.json()).toMatchObject({ ready: true, buildId: "source-development" });
+      const unsupported = await refusedUpgrade(gatewayPort, "/future-transport");
+      expect(unsupported.status).toBe(426);
+      expect(unsupported.headers["x-termloop-gateway-build"]).toBe("source-development");
+      expect(unsupported.body).toContain("unsupportedWebSocketPath");
+      expect(unsupported.body).not.toContain("c".repeat(64));
+      expect(unsupported.body).not.toContain("m".repeat(64));
+
+      const tooOld = new WebSocket(`ws://127.0.0.1:${gatewayPort}/mobile`);
+      await opened(tooOld);
+      tooOld.send(JSON.stringify({
+        type: "mobile.authenticate",
+        mobileTransportVersion: 1,
+        controlToken: "c".repeat(64),
+        terminalToken: "m".repeat(64),
+      }));
+      await expect(closed(tooOld)).resolves.toEqual({ code: 4406, reason: "mobile transport too old" });
+      const tooNew = new WebSocket(`ws://127.0.0.1:${gatewayPort}/mobile`);
+      await opened(tooNew);
+      tooNew.send(JSON.stringify({
+        type: "mobile.authenticate",
+        mobileTransportVersion: 3,
+        controlToken: "c".repeat(64),
+        terminalToken: "m".repeat(64),
+      }));
+      await expect(closed(tooNew)).resolves.toEqual({ code: 4406, reason: "mobile transport too new" });
+      const revoked = new WebSocket(`ws://127.0.0.1:${gatewayPort}/mobile`);
+      await opened(revoked);
+      revoked.send(JSON.stringify({
+        type: "mobile.authenticate",
+        mobileTransportVersion: 2,
+        controlToken: "x".repeat(64),
+        terminalToken: "m".repeat(64),
+      }));
+      await expect(closed(revoked)).resolves.toEqual({ code: 1008, reason: "invalid credential" });
+
       const mobile = new WebSocket(`ws://127.0.0.1:${gatewayPort}/mobile`);
       await opened(mobile);
       mobile.send(JSON.stringify({
@@ -124,7 +170,9 @@ describe("persistent mobile access gateway", () => {
         payload: { stateRevision: 4, observationSequence: 8 },
       });
       expect(upstreamPaths.filter((value) => value === "/terminal")).toHaveLength(1);
-      mobile.close();
+      const restarting = closed(mobile);
+      gateway.kill("SIGTERM");
+      await expect(restarting).resolves.toEqual({ code: 1001, reason: "gateway restarting" });
     } finally {
       gateway.kill("SIGTERM");
       upstreamSockets.close();
@@ -572,6 +620,29 @@ function opened(socket) {
 function message(socket) {
   return new Promise((resolve, reject) => {
     socket.once("message", (data) => resolve(Buffer.from(data)));
+    socket.once("error", reject);
+  });
+}
+
+function closed(socket) {
+  return new Promise((resolve) => socket.once("close", (code, reason) => resolve({
+    code,
+    reason: reason.toString("utf8"),
+  })));
+}
+
+function refusedUpgrade(port, pathname) {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(`ws://127.0.0.1:${port}${pathname}`);
+    socket.once("unexpected-response", (_request, response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.once("end", () => resolve({
+        status: response.statusCode,
+        headers: response.headers,
+        body: Buffer.concat(chunks).toString("utf8"),
+      }));
+    });
     socket.once("error", reject);
   });
 }

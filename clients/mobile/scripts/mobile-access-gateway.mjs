@@ -59,6 +59,28 @@ import {
 
 const MOBILE_API_VERSION = 1;
 const MOBILE_TRANSPORT_VERSION = 2;
+const GATEWAY_IDENTITY = typeof __TERMLOOP_GATEWAY_IDENTITY__ === "undefined"
+  ? Object.freeze({
+    manifestVersion: 1,
+    buildId: "source-development",
+    releaseVersion: "2.0.0",
+    channel: "development",
+    sequence: 2,
+    owner: "termloop.source",
+    compatibility: {
+      mobileTransport: { min: MOBILE_TRANSPORT_VERSION, max: MOBILE_TRANSPORT_VERSION },
+      mobileApi: { min: MOBILE_API_VERSION, max: MOBILE_API_VERSION },
+      configSchema: { min: 1, max: 2 },
+    },
+  })
+  : __TERMLOOP_GATEWAY_IDENTITY__;
+const GATEWAY_VERSION_HEADERS = Object.freeze({
+  "content-type": "application/json",
+  "cache-control": "no-store",
+  "x-termloop-gateway-build": GATEWAY_IDENTITY.buildId,
+  "x-termloop-mobile-transport-min": String(GATEWAY_IDENTITY.compatibility.mobileTransport.min),
+  "x-termloop-mobile-transport-max": String(GATEWAY_IDENTITY.compatibility.mobileTransport.max),
+});
 const LOG_LIMIT_BYTES = 4 * 1024 * 1024;
 const DOWNSTREAM_HEARTBEAT_MS = 30_000;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -138,9 +160,14 @@ const sockets = new Set();
 const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 4 * 1024 * 1024 });
 
 const server = http.createServer(async (request, response) => {
+  if (request.url === "/.well-known/termloop-mobile-access") {
+    response.writeHead(200, GATEWAY_VERSION_HEADERS);
+    response.end(JSON.stringify(GATEWAY_IDENTITY));
+    return;
+  }
   if (request.url === "/health") {
-    response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-    response.end(JSON.stringify({ ready: true }));
+    response.writeHead(200, GATEWAY_VERSION_HEADERS);
+    response.end(JSON.stringify({ ready: true, ...GATEWAY_IDENTITY }));
     return;
   }
   if (request.method === "POST" && request.url === "/push/register") {
@@ -238,7 +265,7 @@ server.on("upgrade", (request, socket, head) => {
   const pathname = safePathname(request.url);
   if (pathname !== "/control" && pathname !== "/terminal" && pathname !== "/mobile") {
     diagnostics.report("downstream", "upgrade_refused", { reason: "unsupportedPath" });
-    socket.destroy();
+    unsupportedUpgrade(socket);
     return;
   }
   websocketServer.handleUpgrade(request, socket, head, (client) => {
@@ -1404,13 +1431,23 @@ async function acceptMobile(client, connectionId) {
     return refuse(client, "invalid mobile authentication");
   }
   if (authentication?.type !== "mobile.authenticate"
-    || authentication.mobileTransportVersion !== MOBILE_TRANSPORT_VERSION
-    || !constantTimeEqual(authentication.controlToken, config.controlToken)
+    || authentication.mobileTransportVersion !== MOBILE_TRANSPORT_VERSION) {
+    diagnostics.report("mobile", "authentication_refused", {
+      connectionId,
+      reason: "unsupportedTransport",
+      ...mobileDiagnosticContext(authentication),
+    });
+    const version = Number(authentication?.mobileTransportVersion);
+    const reason = Number.isFinite(version) && version < MOBILE_TRANSPORT_VERSION
+      ? "mobile transport too old"
+      : "mobile transport too new";
+    return incompatible(client, reason);
+  }
+  if (!constantTimeEqual(authentication.controlToken, config.controlToken)
     || !constantTimeEqual(authentication.terminalToken, config.terminalToken)) {
     diagnostics.report("mobile", "authentication_refused", {
       connectionId,
-      reason: authentication?.mobileTransportVersion === MOBILE_TRANSPORT_VERSION
-        ? "invalidCredential" : "unsupportedTransport",
+      reason: "invalidCredential",
       ...mobileDiagnosticContext(authentication),
     });
     return refuse(client, "invalid credential");
@@ -2297,6 +2334,35 @@ function refuse(socket, reason) {
     reason,
   });
   if (socket.readyState === WebSocket.OPEN) socket.close(1008, reason);
+}
+
+function incompatible(socket, reason) {
+  diagnostics.report("gateway", "socket_incompatible", {
+    closeCode: 4406,
+    reason,
+  });
+  if (socket.readyState === WebSocket.OPEN) socket.close(4406, reason);
+}
+
+function unsupportedUpgrade(socket) {
+  const body = Buffer.from(JSON.stringify({
+    error: "unsupportedWebSocketPath",
+    buildId: GATEWAY_IDENTITY.buildId,
+    compatibility: GATEWAY_IDENTITY.compatibility,
+  }));
+  const headers = [
+    "HTTP/1.1 426 Upgrade Required",
+    "Connection: close",
+    "Cache-Control: no-store",
+    "Content-Type: application/json",
+    `Content-Length: ${body.byteLength}`,
+    `X-TermLoop-Gateway-Build: ${GATEWAY_IDENTITY.buildId}`,
+    `X-TermLoop-Mobile-Transport-Min: ${GATEWAY_IDENTITY.compatibility.mobileTransport.min}`,
+    `X-TermLoop-Mobile-Transport-Max: ${GATEWAY_IDENTITY.compatibility.mobileTransport.max}`,
+    "",
+    "",
+  ].join("\r\n");
+  socket.end(Buffer.concat([Buffer.from(headers), body]));
 }
 
 function unavailable(socket) {
