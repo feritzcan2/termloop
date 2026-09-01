@@ -71,29 +71,20 @@ fi
 
 checkout="$(cd "$checkout" && git rev-parse --show-toplevel)"
 
-# The persistent mobile-access gateway is a frozen esbuild bundle under
-# Application Support and nothing else reinstalls it on app updates. When the
-# launched checkout's gateway sources differ from what produced the installed
-# bundle, rerun the bootstrap (it keeps the connection id and device tokens, so
-# the phone's pairing survives). Best effort: a failure warns and never blocks
-# the launch.
+# Development never auto-reconciles the shared production gateway from daemon
+# startup. This explicit launcher action asks the mobile-owned installer to
+# compare its embedded build stamp and atomically refresh an existing dev-owned
+# install. The launcher explicitly permits another development checkout to take
+# ownership, but never takes over a production-channel install. It never reads
+# runtime.json, contacts Tailscale, reruns Serve, or regenerates stable tokens.
 refresh_mobile_gateway() {
   local access_root="$HOME/Library/Application Support/TermLoop Mobile Access"
-  local sources hash stamp
-  sources=("$checkout"/clients/mobile/scripts/mobile-access*.mjs)
-  [ -e "${sources[0]}" ] || return 0
+  [ -e "$checkout/clients/mobile/scripts/mobile-access.mjs" ] || return 0
   ls "$access_root"/mac-*/mobile-access-gateway.mjs >/dev/null 2>&1 || return 0
-  hash="$(cat "${sources[@]}" | shasum -a 256 | cut -d' ' -f1)" || return 0
-  stamp="$access_root/gateway.source-hash"
-  [ "$(cat "$stamp" 2>/dev/null)" = "$hash" ] && return 0
-  # --print keeps the run non-interactive; its output carries pairing secrets,
-  # so nothing from the bootstrap may reach stdout.
-  if (cd "$checkout/clients/mobile" && node scripts/mobile-access.mjs --print --skip-gateway-wait >/dev/null 2>&1); then
-    printf '%s\n' "$hash" > "$stamp"
-    chmod 600 "$stamp" 2>/dev/null || true
-    echo "Mobile access gateway refreshed."
+  if (cd "$checkout/clients/mobile" && node scripts/mobile-access.mjs --reconcile --take-development-ownership --skip-gateway-wait >/dev/null 2>&1); then
+    echo "Mobile access gateway checked."
   else
-    echo "Mobile access gateway refresh failed; launching anyway (run 'pnpm mobile-access' in clients/mobile to retry)."
+    echo "Mobile access gateway reconcile failed; launching anyway (run 'pnpm mobile-access -- --reconcile' in clients/mobile to retry)."
   fi
   return 0
 }

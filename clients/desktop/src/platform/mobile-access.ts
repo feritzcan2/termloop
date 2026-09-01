@@ -16,6 +16,37 @@ export function mobileAccessNodeExecutable(configured?: string): string {
   return configured?.trim() || "node";
 }
 
+export function packagedMobileAccessScriptPath(bundleDirectory: string): string {
+  return path.join(bundleDirectory, "mobile-access", "mobile-access.mjs");
+}
+
+export function shouldReconcilePackagedMobileAccess(
+  isPackaged: boolean,
+  platform = process.platform,
+): boolean {
+  return isPackaged && (platform === "darwin" || platform === "linux");
+}
+
+export async function reconcilePackagedMobileAccess(
+  bundleDirectory: string,
+  nodeExecutable = process.execPath,
+): Promise<string> {
+  const script = packagedMobileAccessScriptPath(bundleDirectory);
+  const artifactDirectory = path.dirname(script);
+  const { stdout } = await run(nodeExecutable, [
+    script,
+    "--reconcile",
+    "--artifact-dir", artifactDirectory,
+    "--node-executable", nodeExecutable,
+    "--electron-run-as-node",
+  ], {
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+    maxBuffer: MAX_BOOTSTRAP_OUTPUT_BYTES,
+    timeout: 30_000,
+  });
+  return stdout.trim();
+}
+
 /// Starts the existing owner-mobile gateway without exposing its raw credentials to
 /// the renderer. Only the rendered QR geometry crosses IPC.
 export async function prepareMobileAccessQr(
