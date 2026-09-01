@@ -19,12 +19,18 @@ export type SessionCoordinationActions = {
   handoverTargets: readonly SessionDto[];
 };
 
+export type SessionRecoveryAction = {
+  kind: "repairAndRetry" | "retry";
+  label: "Fix" | "Retry";
+  detail: string;
+};
+
 export type SessionActionPresentation = {
   attachedTask: TaskDto | undefined;
   coordination: SessionCoordinationActions | undefined;
+  recovery: SessionRecoveryAction | undefined;
   canRefresh: boolean;
   canFork: boolean;
-  canRepairProviderHistory: boolean;
   taskRelocationTargets: readonly TaskDto[];
   canRelocateToProject: boolean;
   canCopyId: boolean;
@@ -55,10 +61,9 @@ export function sessionActionPresentation(
   return {
     attachedTask,
     coordination,
+    recovery: sessionRecoveryAction(session),
     canRefresh: coordination !== undefined,
     canFork: session.kind === "Agent",
-    canRepairProviderHistory: session.kind === "Agent"
-      && session.resume_failure_reason === "providerHistoryDamaged",
     taskRelocationTargets: ordinaryRelocatable && attachedTask === undefined
       ? tasks.filter((task) => task.status === "open" && task.archived_at_epoch_ms === null)
       : [],
@@ -66,6 +71,22 @@ export function sessionActionPresentation(
     canCopyId: session.kind === "Agent",
     dismissal: sessionDismissAction(session),
   };
+}
+
+function sessionRecoveryAction(session: SessionDto): SessionRecoveryAction | undefined {
+  if (session.kind !== "Agent") return undefined;
+  if (session.resume_failure_reason === "providerHistoryDamaged") {
+    return {
+      kind: "repairAndRetry",
+      label: "Fix",
+      detail: "Repair provider history and retry this Agent",
+    };
+  }
+  return session.retryable ? {
+    kind: "retry",
+    label: "Retry",
+    detail: "Restart this Agent in the same Session",
+  } : undefined;
 }
 
 export function sessionDismissAction(session: SessionDto): SessionDismissAction | undefined {
