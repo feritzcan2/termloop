@@ -1562,7 +1562,8 @@
         },
         "branchName": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "The checked-out worktree branch observed for this launch, or the durable Task branch when live HEAD is unavailable."
         },
         "worktreePath": {
           "type": "string",
