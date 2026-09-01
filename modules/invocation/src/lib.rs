@@ -119,7 +119,7 @@ const ROUTINE_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.playbook",
-    version: 15,
+    version: 16,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.playbook.md"),
 };
 
@@ -4079,10 +4079,15 @@ mod tests {
         let launch = prompt_improver_launch(target);
         let delivered = launch.delivered_prompt().unwrap();
 
-        assert_eq!(template.version, 15);
-        assert_eq!(launch.provenance().template_version, 15);
+        assert_eq!(template.version, 16);
+        assert_eq!(launch.provenance().template_version, 16);
         for expected in [
             "two compact review",
+            "For a scoped edit to one or a few existing steps",
+            "After this change",
+            "not a configuration delta",
+            "Never collapse those roles",
+            "JSON-escaped snapshot fragment",
             "show the complete normal path as one readable arrow sequence",
             "present the complete detailed draft",
             "configuration_version_write.content",
