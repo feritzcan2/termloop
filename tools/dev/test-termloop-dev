@@ -161,12 +161,17 @@ mkdir -p "$(dirname "$record")"
 backup_dir="$(mktemp -d)"
 bundle_fixture_root="$(mktemp -d)"
 fixture_pid=""
+identity_fixture_supervisor_pid=""
 launch_fixture_launches=""
 launch_fixture_bundle_baseline=""
 launch_fixture_bundle_record=""
 launch_fixture_bundle_record_baseline=""
 launch_fixture_bundle_record_existed=false
 cleanup() {
+  if [[ -n "$identity_fixture_supervisor_pid" ]]; then
+    kill -TERM "$identity_fixture_supervisor_pid" 2>/dev/null || true
+    wait "$identity_fixture_supervisor_pid" 2>/dev/null || true
+  fi
   if [[ -n "${launch_fixture_profile:-}" ]]; then
     "$launcher" stop-profile --profile "$launch_fixture_profile" >/dev/null 2>&1 || true
   fi
@@ -207,6 +212,78 @@ trap cleanup EXIT
 
 sleep 30 &
 fixture_pid=$!
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  identity_fixture_root="$bundle_fixture_root/process-identity"
+  identity_fixture_bin="$identity_fixture_root/bin"
+  identity_fixture_runtime="$identity_fixture_root/runtime"
+  identity_fixture_desktop="$identity_fixture_root/desktop"
+  identity_fixture_logs="$identity_fixture_root/logs"
+  identity_fixture_expected='unix:Tue Sep  1 11:08:31 2026'
+  mkdir -p \
+    "$identity_fixture_bin" \
+    "$identity_fixture_runtime/daemon-owner" \
+    "$identity_fixture_runtime/desktop-owner" \
+    "$identity_fixture_desktop" \
+    "$identity_fixture_logs"
+  printf '%s\n' \
+    '#!/bin/bash' \
+    "echo 'S    Tue Sep  1 11:08:31 2026    '" \
+    > "$identity_fixture_bin/ps"
+  printf '%s\n' \
+    '#!/bin/bash' \
+    'set -eu' \
+    "printf 'v1\\n%s\\n$identity_fixture_expected\\n' \"\$\$\" > \"\$TERMLOOP_DEV_DAEMON_RECORD\"" \
+    "printf '{\"pid\":%s}\\n' \"\$\$\" > \"\$TERMLOOP_RUNTIME_FILE\"" \
+    "trap 'exit 0' TERM INT" \
+    'while true; do sleep 1; done' \
+    > "$identity_fixture_root/server"
+  printf '%s\n' \
+    '#!/bin/bash' \
+    "trap 'exit 0' TERM INT" \
+    'while true; do sleep 1; done' \
+    > "$identity_fixture_root/electron"
+  chmod +x "$identity_fixture_bin/ps" "$identity_fixture_root/server" "$identity_fixture_root/electron"
+
+  printf 'v1\n%s\n%s\n' "$fixture_pid" "$identity_fixture_expected" > "$record"
+  identity_launcher_status="$(env PATH="$identity_fixture_bin:$PATH" "$launcher" status --checkout "$linked_checkout")"
+  grep -q "^Desktop: $fixture_pid$" <<<"$identity_launcher_status"
+  rm -f "$record"
+
+  identity_fixture_path="$identity_fixture_bin:/usr/bin:/bin"
+  identity_fixture_python="$(command -v python3)"
+  env -i \
+    PATH="$identity_fixture_path" \
+    LANG="en_US.UTF-8" \
+    LC_ALL="en_US.UTF-8" \
+    TERMLOOP_DEV_CHECKOUT="$identity_fixture_root" \
+    TERMLOOP_DEV_SERVER_BINARY="$identity_fixture_root/server" \
+    TERMLOOP_DEV_ELECTRON_BINARY="$identity_fixture_root/electron" \
+    TERMLOOP_DEV_DESKTOP_CWD="$identity_fixture_desktop" \
+    TERMLOOP_DEV_DAEMON_RECORD="$identity_fixture_runtime/daemon-owner/current.process" \
+    TERMLOOP_DEV_DESKTOP_RECORD="$identity_fixture_runtime/desktop-owner/current.process" \
+    TERMLOOP_DEV_READY_FILE="$identity_fixture_runtime/desktop.ready.json" \
+    TERMLOOP_RUNTIME_FILE="$identity_fixture_runtime/runtime.json" \
+    TERMLOOP_DEV_SERVER_LOG="$identity_fixture_logs/server.log" \
+    TERMLOOP_DEV_DESKTOP_LOG="$identity_fixture_logs/desktop.log" \
+    TERMLOOP_DEV_PYTHON_BINARY="$identity_fixture_python" \
+    TERMLOOP_DEV_EXPECTED_PATH="$identity_fixture_path" \
+    TERMLOOP_DEV_EXPECTED_LOCALE="en_US.UTF-8" \
+    "$supervisor" >"$identity_fixture_logs/supervisor.log" 2>&1 &
+  identity_fixture_supervisor_pid=$!
+  for _attempt in {1..100}; do
+    [[ -f "$identity_fixture_runtime/desktop-owner/current.process" ]] && break
+    kill -0 "$identity_fixture_supervisor_pid" 2>/dev/null || break
+    sleep 0.05
+  done
+  [[ -f "$identity_fixture_runtime/desktop-owner/current.process" ]]
+  grep -Fqx "$identity_fixture_expected" "$identity_fixture_runtime/desktop-owner/current.process"
+  kill -0 "$identity_fixture_supervisor_pid"
+  kill -TERM "$identity_fixture_supervisor_pid"
+  wait "$identity_fixture_supervisor_pid"
+  identity_fixture_supervisor_pid=""
+fi
+
 printf 'v1\n%s\nunix:not-the-fixture-process\n' "$fixture_pid" > "$record"
 
 $launcher stop --checkout "$linked_checkout" >/dev/null
