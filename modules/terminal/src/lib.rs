@@ -62,6 +62,8 @@ pub enum FrameKind {
     Focus = 13,
     ResizeOwnership = 14,
     Detach = 15,
+    InputAck = 16,
+    EnableInputAck = 17,
 }
 
 #[derive(Clone)]
@@ -874,13 +876,41 @@ impl TerminalService {
         runtime_epoch: u64,
         bytes: &[u8],
     ) -> Result<(), TerminalError> {
+        self.enqueue_user_input(session_id, runtime_epoch, bytes, false)
+            .map(drop)
+    }
+
+    /// Enqueues direct client input and returns a byte-free receipt that only
+    /// completes after the dedicated writer flushed the bytes to the PTY.
+    pub fn input_user_receipted(
+        &self,
+        session_id: &str,
+        runtime_epoch: u64,
+        bytes: &[u8],
+    ) -> Result<PendingInputWrite, TerminalError> {
+        if bytes.is_empty() {
+            return Err(TerminalError::Pty(
+                "invalid receipted user input".to_owned(),
+            ));
+        }
+        self.enqueue_user_input(session_id, runtime_epoch, bytes, true)?
+            .ok_or_else(|| TerminalError::Pty("terminal input receipt was unavailable".to_owned()))
+    }
+
+    fn enqueue_user_input(
+        &self,
+        session_id: &str,
+        runtime_epoch: u64,
+        bytes: &[u8],
+        receipted: bool,
+    ) -> Result<Option<PendingInputWrite>, TerminalError> {
         if bytes.len() > MAX_IO_CHUNK_BYTES {
             return Err(TerminalError::Pty(
                 "user input chunk exceeds 16 KiB".to_owned(),
             ));
         }
         if bytes.is_empty() {
-            return Ok(());
+            return Ok(None);
         }
         let runtime = self.runtime(session_id)?;
         let mut runtime = runtime
@@ -889,7 +919,13 @@ impl TerminalService {
         if runtime.epoch != runtime_epoch {
             return Err(TerminalError::SessionNotFound);
         }
-        enqueue_request(&runtime.writer, InputRequest::bytes(bytes.to_vec()))?;
+        let (request, pending) = if receipted {
+            let (request, pending) = InputRequest::receipted_bytes(bytes.to_vec(), runtime_epoch);
+            (request, Some(pending))
+        } else {
+            (InputRequest::bytes(bytes.to_vec()), None)
+        };
+        enqueue_request(&runtime.writer, request)?;
         match runtime.client_input_activity.classify(bytes) {
             ClientInputActivityKind::None => {}
             ClientInputActivityKind::SubmitOnly => {
@@ -901,7 +937,7 @@ impl TerminalService {
                     runtime.user_input_mutation_sequence.saturating_add(1);
             }
         }
-        Ok(())
+        Ok(pending)
     }
 
     pub fn user_input_sequence(
@@ -2002,7 +2038,9 @@ mod tests {
         let mut events = service.subscribe("roundtrip", 77).unwrap();
         assert_eq!(service.user_input_sequence("roundtrip", 77).unwrap(), 0);
         service
-            .input_user("roundtrip", 77, b"echo TERMLOOP_USER_INPUT_TEST\r")
+            .input_user_receipted("roundtrip", 77, b"echo TERMLOOP_USER_INPUT_TEST\r")
+            .unwrap()
+            .wait(Duration::from_secs(1))
             .unwrap();
         assert_eq!(service.user_input_sequence("roundtrip", 77).unwrap(), 1);
         assert_eq!(

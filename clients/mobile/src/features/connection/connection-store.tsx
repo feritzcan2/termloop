@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ConnectionProfile } from "@/application/ports";
 import { useMobileRuntime } from "@/composition/runtime-context";
 import { useAppLifecycle } from "@/platform/app-lifecycle";
-import { preferredConnectionId } from "./connection-resilience";
+import { preferredConnectionId, shouldResetConnectionTransports } from "./connection-resilience";
 
 export { preferredConnectionId } from "./connection-resilience";
 
@@ -54,21 +54,34 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
   const activeProbe = useRef<number | undefined>(undefined);
   const unreachableSince = useRef(new Map<string, number>());
   const pendingTransportChange = useRef(false);
+  const transportLifecycle = useRef(lifecycle);
 
   useEffect(() => {
     /// iOS can retain a WebSocket object across suspension after its network path
-    /// has disappeared. Close cached transports before JavaScript suspends; the
-    /// first catalog/overview reads after foregrounding then share one fresh path.
-    if (!lifecycle.active) runtime.connections.resetTransports();
-  }, [runtime, lifecycle.active]);
+    /// has disappeared. Close cached transports before suspension when that state
+    /// commits, and again after every real foreground so batched lifecycle events
+    /// cannot leave catalog, overview, and terminal reads on a zombie path.
+    const previous = transportLifecycle.current;
+    transportLifecycle.current = lifecycle;
+    if (shouldResetConnectionTransports(previous, lifecycle)) {
+      runtime.connections.resetTransports();
+    }
+  }, [runtime, lifecycle.active, lifecycle.foregroundRevision]);
 
   useEffect(() => {
     if (!lifecycle.active) return;
     let active = true;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     const probe = ++probeSequence.current;
     activeProbe.current = probe;
     setLoad((current) => (current === "ready" ? current : "loading"));
     setError(undefined);
+    const scheduleRetry = () => {
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => {
+        if (active && activeProbe.current === undefined) setReloads((count) => count + 1);
+      }, RECONNECT_PROBE_MS);
+    };
     runtime.connections.list().then(
       (profiles) => {
         if (activeProbe.current === probe) activeProbe.current = undefined;
@@ -108,11 +121,7 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
             ? current
             : preferredConnectionId(profiles)
         ));
-        if (reconnecting) {
-          setTimeout(() => {
-            if (active && activeProbe.current === undefined) setReloads((count) => count + 1);
-          }, RECONNECT_PROBE_MS);
-        }
+        if (reconnecting) scheduleRetry();
         if (pendingTransportChange.current) {
           pendingTransportChange.current = false;
           queueMicrotask(() => {
@@ -125,9 +134,13 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
         if (!active) return;
         setError(describe(cause));
         setLoad("failed");
+        scheduleRetry();
       },
     );
-    return () => { active = false; };
+    return () => {
+      active = false;
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
+    };
   }, [runtime, reloads, lifecycle.active, lifecycle.foregroundRevision]);
 
   useEffect(() => {

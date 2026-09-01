@@ -13,6 +13,7 @@ struct DiscoveryRecord<'a> {
     token: &'a str,
     terminal_token: &'a str,
     read_only_token: &'a str,
+    terminal_input_ack_version: u8,
     pid: u32,
 }
 
@@ -31,6 +32,7 @@ pub(super) fn write(
         token,
         terminal_token,
         read_only_token,
+        terminal_input_ack_version: 1,
         pid: std::process::id(),
     };
     termloop_platform::write_private_file(&discovery_path, &serde_json::to_vec_pretty(&record)?)?;
@@ -61,6 +63,7 @@ mod tests {
             serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         assert!(value.get("companionToken").is_none());
         assert_eq!(value["token"], "a".repeat(64));
+        assert_eq!(value["terminalInputAckVersion"], 1);
         let _ = std::fs::remove_dir_all(root);
     }
 }

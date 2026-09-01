@@ -8,6 +8,7 @@ export const KIND_ATTACH = 10;
 export const KIND_ACK = 11;
 export const KIND_ERROR = 12;
 export const KIND_DETACH = 15;
+export const KIND_INPUT_ACK = 16;
 
 const HEADER_BYTES = 41;
 const encoder = new TextEncoder();

@@ -3,6 +3,7 @@ use std::sync::{
     Arc, Mutex as StdMutex,
     atomic::{AtomicU64, Ordering},
 };
+use std::time::Duration;
 
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -18,6 +19,7 @@ use super::control::constant_time_equal;
 const TERMINAL_HEADER_LEN: usize = 41;
 const MAX_TERMINAL_PAYLOAD: usize = termloop_terminal::MAX_IO_CHUNK_BYTES;
 const MAX_ATTACHMENT_FRAMES: usize = 256;
+const TERMINAL_INPUT_RECEIPT_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
 pub(super) struct TerminalResizeRegistry {
@@ -162,6 +164,7 @@ struct TerminalFrame {
 struct AttachmentQueue {
     frames: VecDeque<TerminalFrame>,
     dropped: u64,
+    input_ack: Option<TerminalFrame>,
 }
 
 #[derive(Default)]
@@ -182,6 +185,14 @@ impl OutboundBuffer {
             .attachments
             .get_mut(&frame.session_id)
             .expect("inserted");
+        if frame.kind == FrameKind::InputAck as u8 {
+            if queue.input_ack.as_ref().is_none_or(|pending| {
+                pending.epoch == frame.epoch && pending.sequence < frame.sequence
+            }) {
+                queue.input_ack = Some(frame);
+            }
+            return;
+        }
         if queue.frames.len() == MAX_ATTACHMENT_FRAMES {
             queue.frames.pop_front();
             queue.dropped = queue.dropped.saturating_add(1);
@@ -204,6 +215,9 @@ impl OutboundBuffer {
                     kind: FrameKind::Gap as u8,
                     payload: dropped.to_be_bytes().to_vec(),
                 });
+            }
+            if let Some(frame) = queue.input_ack.take() {
+                return Some(frame);
             }
             if let Some(frame) = queue.frames.pop_front() {
                 return Some(frame);
@@ -309,6 +323,7 @@ async fn terminal_socket(
 
     let mut attachment_tasks: HashMap<Uuid, tokio::task::JoinHandle<()>> = HashMap::new();
     let mut attached_epochs: HashMap<Uuid, u64> = HashMap::new();
+    let mut input_ack_enabled = false;
     loop {
         let incoming = tokio::select! {
             _ = wait_for_remote_revocation(&mut revocation) => break,
@@ -341,6 +356,16 @@ async fn terminal_socket(
         };
         let session = frame.session_id.to_string();
         match frame.kind {
+            value
+                if value == FrameKind::EnableInputAck as u8
+                    && allow_input
+                    && frame.session_id.is_nil()
+                    && frame.epoch == 0
+                    && frame.sequence == 0
+                    && frame.payload.is_empty() =>
+            {
+                input_ack_enabled = true;
+            }
             value if value == FrameKind::Attach as u8 => {
                 match state.terminal.subscribe(&session, frame.epoch) {
                     Ok(mut receiver) => {
@@ -448,6 +473,61 @@ async fn terminal_socket(
                             ..frame
                         },
                     );
+                    continue;
+                }
+                if input_ack_enabled {
+                    let pending = match state.terminal.input_user_receipted(
+                        &session,
+                        frame.epoch,
+                        &frame.payload,
+                    ) {
+                        Ok(pending) => pending,
+                        Err(error) => {
+                            enqueue_outbound(
+                                &outbound,
+                                &outbound_notify,
+                                TerminalFrame {
+                                    kind: FrameKind::Error as u8,
+                                    payload: error.to_string().into_bytes(),
+                                    ..frame
+                                },
+                            );
+                            continue;
+                        }
+                    };
+                    let receipt = tokio::task::spawn_blocking(move || {
+                        pending.wait(TERMINAL_INPUT_RECEIPT_TIMEOUT)
+                    })
+                    .await;
+                    match receipt {
+                        Ok(Ok(_)) => enqueue_outbound(
+                            &outbound,
+                            &outbound_notify,
+                            TerminalFrame {
+                                kind: FrameKind::InputAck as u8,
+                                payload: Vec::new(),
+                                ..frame
+                            },
+                        ),
+                        Ok(Err(error)) => enqueue_outbound(
+                            &outbound,
+                            &outbound_notify,
+                            TerminalFrame {
+                                kind: FrameKind::Error as u8,
+                                payload: error.to_string().into_bytes(),
+                                ..frame
+                            },
+                        ),
+                        Err(_) => enqueue_outbound(
+                            &outbound,
+                            &outbound_notify,
+                            TerminalFrame {
+                                kind: FrameKind::Error as u8,
+                                payload: b"terminal input receipt task failed".to_vec(),
+                                ..frame
+                            },
+                        ),
+                    }
                     continue;
                 }
                 if let Err(error) = state
@@ -632,6 +712,35 @@ mod tests {
         buffer.detach(flooded);
         assert!(!buffer.attachments.contains_key(&flooded));
         assert!(!buffer.round_robin.contains(&flooded));
+    }
+
+    #[test]
+    fn input_ack_is_cumulative_and_does_not_evict_terminal_output() {
+        let session_id = Uuid::new_v4();
+        let mut buffer = OutboundBuffer::default();
+        buffer.enqueue(TerminalFrame {
+            session_id,
+            epoch: 1,
+            sequence: 1,
+            kind: FrameKind::Output as u8,
+            payload: b"output".to_vec(),
+        });
+        for sequence in 2..=4 {
+            buffer.enqueue(TerminalFrame {
+                session_id,
+                epoch: 1,
+                sequence,
+                kind: FrameKind::InputAck as u8,
+                payload: Vec::new(),
+            });
+        }
+
+        let ack = buffer.pop_fair().unwrap();
+        assert_eq!(ack.kind, FrameKind::InputAck as u8);
+        assert_eq!(ack.sequence, 4);
+        let output = buffer.pop_fair().unwrap();
+        assert_eq!(output.kind, FrameKind::Output as u8);
+        assert_eq!(output.payload, b"output");
     }
 
     #[test]

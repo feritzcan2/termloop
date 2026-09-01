@@ -14,6 +14,10 @@ import {
   trackWebSocketHeartbeat,
 } from "./mobile-access-heartbeat.mjs";
 import {
+  enableTerminalInputAckFrame,
+  terminalInputReceipt,
+} from "./mobile-access-input-receipt.mjs";
+import {
   apnsPayload,
   attentionTransitions,
   isStewardOrWorkerSession,
@@ -1412,6 +1416,10 @@ async function acceptMobile(client, connectionId) {
     diagnostics.report("mobile", "runtime_unavailable", { connectionId });
     return unavailable(client);
   }
+  const daemonInputAck = authentication.terminalInputAckVersion === 1
+    && runtime.terminalInputAckVersion === 1;
+  const gatewayInputReceipt = !daemonInputAck
+    && authentication.mobileInputReceiptVersion === 1;
   const startedAtEpochMs = Date.now();
   const upstream = new WebSocket(runtime.terminalUrl, { maxPayload: 4 * 1024 * 1024 });
   let terminalReady = false;
@@ -1445,14 +1453,77 @@ async function acceptMobile(client, connectionId) {
         durationMs: Date.now() - startedAtEpochMs,
         ...mobileDiagnosticContext(authentication),
       });
+      if (daemonInputAck) upstream.send(enableTerminalInputAckFrame(), { binary: true });
       client.send(JSON.stringify({
         event: "mobile.ready",
         mobileTransportVersion: MOBILE_TRANSPORT_VERSION,
+        ...(daemonInputAck ? { terminalInputAckVersion: 1 } : {}),
+        ...(gatewayInputReceipt
+          ? { mobileInputReceiptVersion: 1 } : {}),
       }));
       subscription = subscribeMobileInvalidations(runtime, client, connectionId);
       client.on("message", (nextData, nextIsBinary) => {
         if (nextIsBinary) {
-          if (upstream.readyState === WebSocket.OPEN) upstream.send(nextData, { binary: true });
+          if (upstream.readyState !== WebSocket.OPEN) {
+            diagnostics.report("mobile", "terminal_input_refused", {
+              connectionId,
+              reason: "upstreamUnavailable",
+            });
+            unavailable(client);
+            return;
+          }
+          const receipt = daemonInputAck || gatewayInputReceipt
+            ? terminalInputReceipt(rawBuffer(nextData)) : undefined;
+          if (receipt === undefined) {
+            upstream.send(nextData, { binary: true });
+            return;
+          }
+          try {
+            upstream.send(nextData, { binary: true }, (error) => {
+              if (error != null) {
+                diagnostics.report("mobile", "terminal_input_refused", {
+                  connectionId,
+                  reason: "upstreamSendFailed",
+                  sessionId: receipt.sessionId,
+                  runtimeEpoch: receipt.runtimeEpoch,
+                  frameSequence: receipt.frameSequence,
+                  inputBytes: receipt.inputBytes,
+                });
+                upstream.terminate();
+                unavailable(client);
+                return;
+              }
+              if (client.readyState !== WebSocket.OPEN) return;
+              if (gatewayInputReceipt) {
+                client.send(JSON.stringify({
+                  event: "mobile.inputAccepted",
+                  mobileInputReceiptVersion: 1,
+                  sessionId: receipt.sessionId,
+                  runtimeEpoch: receipt.runtimeEpoch,
+                  frameSequence: receipt.frameSequence,
+                }));
+              }
+              diagnostics.report("mobile", daemonInputAck
+                ? "terminal_input_forwarded" : "terminal_input_accepted", {
+                connectionId,
+                sessionId: receipt.sessionId,
+                runtimeEpoch: receipt.runtimeEpoch,
+                frameSequence: receipt.frameSequence,
+                inputBytes: receipt.inputBytes,
+              });
+            });
+          } catch {
+            diagnostics.report("mobile", "terminal_input_refused", {
+              connectionId,
+              reason: "upstreamSendThrew",
+              sessionId: receipt.sessionId,
+              runtimeEpoch: receipt.runtimeEpoch,
+              frameSequence: receipt.frameSequence,
+              inputBytes: receipt.inputBytes,
+            });
+            upstream.terminate();
+            unavailable(client);
+          }
           return;
         }
         let request;
@@ -2044,6 +2115,7 @@ async function currentRuntime() {
     protocolVersion: requiredString(value.protocolVersion),
     readOnlyToken: requiredString(value.readOnlyToken),
     terminalToken: requiredString(value.terminalToken),
+    terminalInputAckVersion: value.terminalInputAckVersion === 1 ? 1 : undefined,
     // Present in real discovery files; optional so credential-free fixtures
     // and older daemons keep the proxy paths working. Watch worktree reads
     // need it and answer 503 without it.

@@ -182,6 +182,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
     readonly connection: SavedConnection;
     readonly promise: Promise<void>;
   }>();
+  const authenticatedActivityAtEpochMs = new Map<string, number>();
   let profileGeneration = 0;
   const coordinators = new Map<string, {
     readonly coordinator: MobileConnectionCoordinator;
@@ -227,12 +228,36 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
       options.multiplexSocketFactory,
       diagnostics,
     );
-    const unsubscribeStatus = coordinator.subscribeStatus(() => {
-      /// Transport loss invalidates the reachability cache immediately. The
-      /// next catalog read starts a fresh version proof instead of reusing the
-      /// preceding socket's 30-second success window.
-      profileCache.delete(connection.id);
-      for (const listener of connectionChangeListeners) listener();
+    const unsubscribeStatus = coordinator.subscribeStatus((status) => {
+      const cached = profileCache.get(connection.id);
+      if (status === "online") {
+        const now = Date.now();
+        authenticatedActivityAtEpochMs.set(connection.id, now);
+        const cachedMatches = cached !== undefined
+          && sameConnectionIdentity(cached.connection, connection);
+        const recovered = !cachedMatches || cached.value.availability !== "online";
+        profileCache.set(connection.id, {
+          connection,
+          checkedAtEpochMs: now,
+          value: profile(
+            connection,
+            "online",
+            cachedMatches ? cached.value.productVersion : connection.productVersion,
+            cachedMatches ? cached.value.contractIdentity : connection.contractIdentity,
+          ),
+        });
+        if (recovered) {
+          for (const listener of connectionChangeListeners) listener();
+        }
+        return;
+      }
+      if (status === "offline") {
+        /// Transport loss expires the reachability lease immediately. The next
+        /// catalog read starts a fresh version proof instead of reusing success.
+        authenticatedActivityAtEpochMs.delete(connection.id);
+        profileCache.delete(connection.id);
+        for (const listener of connectionChangeListeners) listener();
+      }
     });
     coordinators.set(connection.id, { coordinator, unsubscribeStatus });
     return coordinator;
@@ -243,27 +268,35 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
     const freshnessMs = cached?.value.availability === "online"
       ? ONLINE_PROFILE_FRESH_MS
       : UNAVAILABLE_PROFILE_FRESH_MS;
-    if (cached !== undefined && sameSavedConnection(cached.connection, connection)
+    if (cached !== undefined && sameConnectionIdentity(cached.connection, connection)
       && Date.now() - cached.checkedAtEpochMs < freshnessMs) return undefined;
     const current = profileProbes.get(connection.id);
-    if (current !== undefined && sameSavedConnection(current.connection, connection)) return current.promise;
+    if (current !== undefined && sameConnectionIdentity(current.connection, connection)) return current.promise;
 
     const generation = profileGeneration;
+    const startedAtEpochMs = Date.now();
     const promise = controlClient(connection).version(true).then(
-      (version) => profile(connection, "online", version.version, version.protocolVersion),
+      (version) => ({
+        transientFailure: false,
+        value: profile(connection, "online", version.version, version.protocolVersion),
+      }),
       (cause: unknown) => {
         if (cause instanceof MobileControlError && cause.code === "unsupportedMobileApi") {
-          return profile(connection, "updateRequired");
+          return { transientFailure: false, value: profile(connection, "updateRequired") };
         }
         if (cause instanceof MobileControlError && cause.code === "unauthenticated") {
-          return profile(connection, "revoked");
+          return { transientFailure: false, value: profile(connection, "revoked") };
         }
-        return profile(connection, "offline");
+        return { transientFailure: true, value: profile(connection, "offline") };
       },
-    ).then((value) => {
+    ).then(({ transientFailure, value }) => {
       if (generation !== profileGeneration) return;
       const active = profileProbes.get(connection.id);
-      if (active === undefined || !sameSavedConnection(active.connection, connection)) return;
+      if (active === undefined || !sameConnectionIdentity(active.connection, connection)) return;
+      if (transientFailure
+        && (authenticatedActivityAtEpochMs.get(connection.id) ?? -1) >= startedAtEpochMs) {
+        return;
+      }
       const previous = profileCache.get(connection.id);
       profileCache.set(connection.id, {
         connection,
@@ -361,8 +394,13 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
         }
         return saved.map((connection) => {
           const cached = profileCache.get(connection.id);
-          return cached !== undefined && sameSavedConnection(cached.connection, connection)
-            ? cached.value
+          return cached !== undefined && sameConnectionIdentity(cached.connection, connection)
+            ? profile(
+              connection,
+              cached.value.availability,
+              cached.value.productVersion,
+              cached.value.contractIdentity,
+            )
             : profile(connection, "reconnecting");
         });
       },
@@ -370,6 +408,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
         profileGeneration += 1;
         profileCache.clear();
         profileProbes.clear();
+        authenticatedActivityAtEpochMs.clear();
         for (const connection of controlClients.values()) connection.client.close();
         controlClients.clear();
         for (const connection of coordinators.values()) {
@@ -381,6 +420,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
       async pair(code) {
         const connection = parsePairingCode(code);
         await options.repository.save(connection);
+        authenticatedActivityAtEpochMs.delete(connection.id);
         profileCache.delete(connection.id);
         return connection.id;
       },
@@ -824,16 +864,12 @@ function profile(
   };
 }
 
-function sameSavedConnection(left: SavedConnection, right: SavedConnection): boolean {
+function sameConnectionIdentity(left: SavedConnection, right: SavedConnection): boolean {
   return left.id === right.id
-    && left.name === right.name
     && left.controlUrl === right.controlUrl
     && left.controlToken === right.controlToken
     && left.terminalUrl === right.terminalUrl
-    && left.terminalToken === right.terminalToken
-    && left.lastConnectedAtEpochMs === right.lastConnectedAtEpochMs
-    && left.productVersion === right.productVersion
-    && left.contractIdentity === right.contractIdentity;
+    && left.terminalToken === right.terminalToken;
 }
 
 function sameProfile(left: ConnectionProfile, right: ConnectionProfile): boolean {

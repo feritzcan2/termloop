@@ -824,13 +824,24 @@ fn task_read_projection(
     pull_requests: Value,
     agent_statuses: Value,
 ) -> Value {
+    let effective_branch = task
+        .get("worktree_health")
+        .and_then(|health| health.get("checked_out_branch"))
+        .and_then(Value::as_str)
+        .or_else(|| {
+            task.get("branch")
+                .and_then(|branch| branch.get("name"))
+                .and_then(Value::as_str)
+        });
     json!({
         "task": task,
+        "effectiveBranch": effective_branch,
         "branchCommitSummary": branch_commits.as_array().and_then(|items| items.first()).cloned(),
         "pullRequest": pull_requests.as_array().and_then(|items| items.first()).cloned(),
         "agentStatuses": agent_statuses,
         "evidenceSemantics": {
             "task": "durableTermLoopRecordNotDeliveryCompletionEvidence",
+            "effectiveBranch": "checkedOutWorktreeBranchOtherwiseDurableTaskBranch",
             "branchCommitSummary": "boundedGitObservation",
             "pullRequest": "providerProjectionUseEachSignalSourceAndFreshness",
             "agentStatus": "runtimeObservation",
@@ -2136,13 +2147,18 @@ mod tests {
     #[test]
     fn scoped_task_read_combines_task_owned_delivery_evidence() {
         let projection = task_read_projection(
-            json!({ "id": "task-1", "branch": { "name": "termloop/exact" } }),
+            json!({
+                "id": "task-1",
+                "branch": { "name": "termloop/exact" },
+                "worktree_health": { "checked_out_branch": "termloop/current" }
+            }),
             json!([{ "task_id": "task-1", "count": 2, "freshness": "fresh" }]),
             json!([{ "taskId": "task-1", "matches": [{ "number": 42 }] }]),
             json!([{ "sessionId": "agent-1", "status": "idle" }]),
         );
         assert_eq!(projection["task"]["id"], "task-1");
         assert_eq!(projection["task"]["branch"]["name"], "termloop/exact");
+        assert_eq!(projection["effectiveBranch"], "termloop/current");
         assert_eq!(projection["branchCommitSummary"]["count"], 2);
         assert_eq!(projection["pullRequest"]["matches"][0]["number"], 42);
         assert_eq!(projection["agentStatuses"][0]["sessionId"], "agent-1");
@@ -2155,8 +2171,16 @@ mod tests {
             "providerProjectionUseEachSignalSourceAndFreshness"
         );
 
+        let fallback = task_read_projection(
+            json!({ "id": "task-2", "branch": { "name": "termloop/fallback" } }),
+            json!([]),
+            json!([]),
+            json!([]),
+        );
+        assert_eq!(fallback["effectiveBranch"], "termloop/fallback");
         let unavailable =
-            task_read_projection(json!({ "id": "task-2" }), json!([]), json!([]), json!([]));
+            task_read_projection(json!({ "id": "task-3" }), json!([]), json!([]), json!([]));
+        assert!(unavailable["effectiveBranch"].is_null());
         assert!(unavailable["branchCommitSummary"].is_null());
         assert!(unavailable["pullRequest"].is_null());
     }

@@ -104,6 +104,12 @@ export function taskCheckedOutBranch(task: Task): string | undefined {
   return checkedOutBranch && checkedOutBranch !== task.branch?.name ? checkedOutBranch : undefined;
 }
 
+/** The branch commands in an attached checkout operate on right now, with the
+    durable Task binding as the stable fallback when live HEAD is unavailable. */
+export function taskEffectiveBranch(task: Task): string | undefined {
+  return task.worktree_health?.checked_out_branch ?? task.branch?.name ?? undefined;
+}
+
 /// V1 reuses the bounded health scheduler's tri-state instead of adding a
 /// recurring per-Task status/count query solely for presentation.
 export function taskHasWorktreeChanges(task: Task): boolean {
