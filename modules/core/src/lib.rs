@@ -1542,6 +1542,10 @@ impl CoreRuntime {
             runtime_epoch,
             provider_sequence,
         );
+        let changed = self
+            .generated_input_deliveries
+            .confirm_provider_queue_progress(session_id, runtime_epoch, provider_sequence)
+            || changed;
         self.complete_confirmed_generated_input(session_id, runtime_epoch, changed)
     }
 

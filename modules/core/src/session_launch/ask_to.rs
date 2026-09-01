@@ -1356,15 +1356,20 @@ mod tests {
                 .and_then(|continuation| continuation.current_request_id.as_deref()),
             Some(request_id.as_str())
         );
-        assert!(
-            !runtime
-                .confirm_generated_input_submission("asker", 7, 4)
-                .unwrap()
-        );
         let event = generated_input_events
             .recv_timeout(Duration::from_secs(15))
             .unwrap();
         assert!(runtime.record_generated_input_runtime_event(event).unwrap());
+        assert_eq!(
+            runtime.generated_input_delivery_state("asker", 7),
+            Some(GeneratedInputDeliveryState::AwaitingProviderAck)
+        );
+        assert!(!runtime.ask_to_requests[&request_id].reply_delivered);
+        assert!(
+            runtime
+                .confirm_generated_input_progress("asker", 7, 4)
+                .unwrap()
+        );
 
         assert!(runtime.ask_to_requests[&request_id].reply_delivered);
         assert_eq!(

@@ -96,6 +96,7 @@ struct GeneratedInputDelivery {
     id: u64,
     runtime_epoch: u64,
     provider_sequence_baseline: u64,
+    settlement: GeneratedInputSettlement,
     submission: GeneratedTerminalSubmission,
     state: GeneratedInputDeliveryState,
     failure: Option<GeneratedInputDeliveryFailure>,
@@ -300,6 +301,7 @@ impl GeneratedInputDeliveryRuntime {
                 id: delivery_id,
                 runtime_epoch,
                 provider_sequence_baseline,
+                settlement,
                 submission: submission.clone(),
                 state: GeneratedInputDeliveryState::WritingPaste,
                 failure: None,
@@ -561,6 +563,7 @@ impl GeneratedInputDeliveryRuntime {
                 id: delivery_id,
                 runtime_epoch,
                 provider_sequence_baseline,
+                settlement: GeneratedInputSettlement::OutputActivity,
                 submission,
                 state: GeneratedInputDeliveryState::Blocked,
                 failure: Some(GeneratedInputDeliveryFailure::ComposerUnavailable),
@@ -787,6 +790,36 @@ impl GeneratedInputDeliveryRuntime {
         if provider_sequence <= confirmation_sequence {
             return false;
         }
+        delivery.state = GeneratedInputDeliveryState::Confirmed;
+        delivery.failure = None;
+        signal_provider_ack(delivery);
+        true
+    }
+
+    /// A provider-queue submission steers an already-running turn, so the
+    /// provider does not emit a second prompt-submitted acknowledgement.
+    /// Confirm it from the first newer same-epoch progress signal observed only
+    /// after Core has applied the submit receipt. Progress that races while the
+    /// paste is still being written remains insufficient and is never replayed
+    /// into this path.
+    pub fn confirm_provider_queue_progress(
+        &mut self,
+        session_id: &str,
+        runtime_epoch: u64,
+        provider_sequence: u64,
+    ) -> bool {
+        let Some(delivery) = self.deliveries.get_mut(session_id) else {
+            return false;
+        };
+        if delivery.runtime_epoch != runtime_epoch
+            || delivery.settlement != GeneratedInputSettlement::ProviderQueue
+            || delivery.state != GeneratedInputDeliveryState::AwaitingProviderAck
+            || !delivery.submit_receipted
+            || provider_sequence <= delivery.provider_sequence_baseline
+        {
+            return false;
+        }
+        delivery.provider_confirmation = Some((provider_sequence, None));
         delivery.state = GeneratedInputDeliveryState::Confirmed;
         delivery.failure = None;
         signal_provider_ack(delivery);
@@ -1448,6 +1481,7 @@ mod tests {
                 id: 1,
                 runtime_epoch: 7,
                 provider_sequence_baseline: 10,
+                settlement: GeneratedInputSettlement::ComposerRender,
                 submission: test_submission(),
                 state: GeneratedInputDeliveryState::AwaitingProviderAck,
                 failure: None,
@@ -1485,6 +1519,77 @@ mod tests {
     }
 
     #[test]
+    fn provider_queue_confirms_only_from_progress_after_submit_receipt() {
+        let mut runtime = GeneratedInputDeliveryRuntime::default();
+        runtime.deliveries.insert(
+            "session".into(),
+            GeneratedInputDelivery {
+                id: 1,
+                runtime_epoch: 7,
+                provider_sequence_baseline: 10,
+                settlement: GeneratedInputSettlement::ProviderQueue,
+                submission: test_submission(),
+                state: GeneratedInputDeliveryState::WritingPaste,
+                failure: None,
+                original_failure: None,
+                cancel_cause: None,
+                cancel_notification_type: None,
+                paste_started: Arc::new(AtomicBool::new(true)),
+                paste_receipted: false,
+                settlement_evidence: None,
+                submit_receipted: false,
+                submit_attempts: 0,
+                protocol_reply_waits: 0,
+                user_input_mutated: None,
+                output_activity: OutputActivityDiagnostics::default(),
+                user_input_sequence_baseline: 4,
+                user_input_mutation_sequence_baseline: 3,
+                provider_confirmation: None,
+                cancel_submit: Arc::new(AtomicBool::new(false)),
+                provider_ack_signal: None,
+            },
+        );
+
+        assert!(
+            !runtime.confirm_provider_queue_progress("session", 7, 11),
+            "progress racing before the submit receipt is not delivery evidence"
+        );
+        assert!(runtime.apply_transport_event(GeneratedInputRuntimeEvent {
+            session_id: "session".into(),
+            runtime_epoch: 7,
+            delivery_id: 1,
+            outcome: GeneratedInputTransportOutcome::Submitted,
+            diagnostics: GeneratedInputTransportDiagnostics {
+                paste_receipted: true,
+                submit_receipted: true,
+                submit_attempts: 1,
+                ..GeneratedInputTransportDiagnostics::default()
+            },
+        }));
+        assert_eq!(
+            runtime.state("session", 7),
+            Some(GeneratedInputDeliveryState::AwaitingProviderAck)
+        );
+        assert!(!runtime.confirm_provider_queue_progress("session", 8, 11));
+        assert!(!runtime.confirm_provider_queue_progress("session", 7, 10));
+
+        runtime.deliveries.get_mut("session").unwrap().settlement =
+            GeneratedInputSettlement::ComposerRender;
+        assert!(
+            !runtime.confirm_provider_queue_progress("session", 7, 11),
+            "ordinary composer delivery keeps its exact PromptSubmitted acknowledgement"
+        );
+        runtime.deliveries.get_mut("session").unwrap().settlement =
+            GeneratedInputSettlement::ProviderQueue;
+
+        assert!(runtime.confirm_provider_queue_progress("session", 7, 11));
+        assert_eq!(
+            runtime.state("session", 7),
+            Some(GeneratedInputDeliveryState::Confirmed)
+        );
+    }
+
+    #[test]
     fn provider_ack_that_races_transport_receipt_is_not_lost() {
         let mut runtime = GeneratedInputDeliveryRuntime::default();
         runtime.deliveries.insert(
@@ -1493,6 +1598,7 @@ mod tests {
                 id: 3,
                 runtime_epoch: 7,
                 provider_sequence_baseline: 10,
+                settlement: GeneratedInputSettlement::ComposerRender,
                 submission: test_submission(),
                 state: GeneratedInputDeliveryState::WritingPaste,
                 failure: None,
@@ -1550,6 +1656,7 @@ mod tests {
                 id: 3,
                 runtime_epoch: 7,
                 provider_sequence_baseline: 10,
+                settlement: GeneratedInputSettlement::ComposerRender,
                 submission: test_submission(),
                 state: GeneratedInputDeliveryState::WritingPaste,
                 failure: None,
@@ -1611,6 +1718,7 @@ mod tests {
                 id: 1,
                 runtime_epoch: 7,
                 provider_sequence_baseline: 10,
+                settlement: GeneratedInputSettlement::ComposerRender,
                 submission: test_submission(),
                 state: GeneratedInputDeliveryState::AwaitingProviderAck,
                 failure: None,
@@ -1657,6 +1765,7 @@ mod tests {
                 id: 1,
                 runtime_epoch: 7,
                 provider_sequence_baseline: 10,
+                settlement: GeneratedInputSettlement::ComposerRender,
                 submission: test_submission(),
                 state: GeneratedInputDeliveryState::AwaitingProviderAck,
                 failure: None,
@@ -1736,6 +1845,7 @@ mod tests {
                 id: 1,
                 runtime_epoch: 7,
                 provider_sequence_baseline: 10,
+                settlement: GeneratedInputSettlement::ComposerRender,
                 submission: test_submission(),
                 state: GeneratedInputDeliveryState::WritingPaste,
                 failure: None,
@@ -1863,6 +1973,7 @@ mod tests {
                     id: 1,
                     runtime_epoch: 7,
                     provider_sequence_baseline: 10,
+                    settlement: GeneratedInputSettlement::ComposerRender,
                     submission: test_submission(),
                     state,
                     failure: Some(failure),
@@ -1915,6 +2026,7 @@ mod tests {
                 id: 1,
                 runtime_epoch: 7,
                 provider_sequence_baseline: 10,
+                settlement: GeneratedInputSettlement::ComposerRender,
                 submission: test_submission(),
                 state: GeneratedInputDeliveryState::Blocked,
                 failure: Some(GeneratedInputDeliveryFailure::OutputDidNotSettle),
@@ -1979,6 +2091,7 @@ mod tests {
                 id: 1,
                 runtime_epoch: 7,
                 provider_sequence_baseline: 10,
+                settlement: GeneratedInputSettlement::ComposerRender,
                 submission: test_submission(),
                 state: GeneratedInputDeliveryState::AwaitingProviderAck,
                 failure: None,
