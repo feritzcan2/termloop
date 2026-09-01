@@ -156,6 +156,13 @@ fi
     const domain = `gui/${process.getuid()}`;
     expect(reloadCalls.indexOf(`bootout ${domain}/ai.termloop.mobile-access.6343ac534b7a01f6`))
       .toBeLessThan(reloadCalls.lastIndexOf(`bootstrap ${domain} ${plistFile}`));
+
+    const quietCommand = command.map((argument) => argument === "--print" ? "--quiet" : argument);
+    const { stdout: quietOutput } = await execFile(process.execPath, quietCommand, {
+      cwd: path.resolve("."), env: environment, encoding: "utf8",
+    });
+    expect(quietOutput).not.toContain("TLMP1:");
+    expect(quietOutput).toContain("Tailnet endpoint: https://mac.example.ts.net");
   }, 20_000);
 
   it.skipIf(process.platform === "win32")("installs and restarts a persistent systemd user service on Linux", async () => {

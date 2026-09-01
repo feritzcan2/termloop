@@ -74,6 +74,12 @@ describe("persistent mobile access gateway", () => {
     });
     try {
       await waitForHealth(gatewayPort);
+      const updateGroup = "b9fe7485-92ef-4b40-9e9d-3b3b6ca3356e";
+      const updatePage = await fetch(`http://127.0.0.1:${gatewayPort}/mobile-update?group=${updateGroup}`);
+      expect(updatePage.status).toBe(200);
+      expect(updatePage.headers.get("content-type")).toBe("text/html; charset=utf-8");
+      expect(await updatePage.text()).toContain(`href="termloop://force-update?group=${updateGroup}"`);
+
       const mobile = new WebSocket(`ws://127.0.0.1:${gatewayPort}/mobile`);
       await opened(mobile);
       mobile.send(JSON.stringify({

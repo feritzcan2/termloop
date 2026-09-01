@@ -120,7 +120,9 @@ const payload = {
 };
 const code = `TLMP1:${JSON.stringify(payload)}`;
 
-if (has("--print")) console.log(code);
+if (has("--quiet")) {
+  // Reinstalling an existing gateway must not print its durable credentials.
+} else if (has("--print")) console.log(code);
 else {
   const copied = await copyToClipboard(code, hostPlatform);
   console.log("Scan this QR in TermLoop Mobile:");
