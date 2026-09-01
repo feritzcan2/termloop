@@ -78,7 +78,9 @@ describe("persistent mobile access gateway", () => {
       const updatePage = await fetch(`http://127.0.0.1:${gatewayPort}/mobile-update?group=${updateGroup}`);
       expect(updatePage.status).toBe(200);
       expect(updatePage.headers.get("content-type")).toBe("text/html; charset=utf-8");
-      expect(await updatePage.text()).toContain(`href="termloop://force-update?group=${updateGroup}"`);
+      expect(await updatePage.text()).toContain(
+        `href="ai.termloop.mobile://force-update?group=${updateGroup}"`,
+      );
       const identityResponse = await fetch(`http://127.0.0.1:${gatewayPort}/.well-known/termloop-mobile-access`);
       expect(identityResponse.status).toBe(200);
       expect(await identityResponse.json()).toMatchObject({
