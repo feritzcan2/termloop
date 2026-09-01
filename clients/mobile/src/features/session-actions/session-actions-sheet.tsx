@@ -4,7 +4,6 @@ import type {
   SessionRelocationPreviewDto,
   TaskDto,
 } from "@termloop/contract/current";
-import * as Clipboard from "expo-clipboard";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -22,6 +21,7 @@ import {
 import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
 import { useOverview } from "@/features/overview/overview-store";
+import { clipboardBridge } from "@/platform/clipboard";
 import { keyboardAvoidingBehavior } from "@/platform/presentation";
 import { basename, sessionLabel } from "@/presentation/dto-readers";
 import {
@@ -385,7 +385,7 @@ export function SessionActionsSheet(props: SessionActionsSheetProps) {
                     detail={session.id}
                     disabled={busy !== undefined}
                     onPress={() => void run("Copying Session ID", async () => {
-                      await Clipboard.setStringAsync(session.id);
+                      await clipboardBridge.copyText(session.id);
                     })}
                   /> : null}
                   <Divider />
