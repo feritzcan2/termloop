@@ -166,8 +166,8 @@ export default function ProjectRoute() {
                 <View style={styles.section}>
                   {agentRows.length === 0 ? (
                     <EmptyState
-                      title="No active agents"
-                      body="Start an Agent for this Project and its live Session will appear here."
+                      title="No agents"
+                      body="Start an Agent for this Project and its Session will appear here."
                     />
                   ) : (
                     <Card>
@@ -311,8 +311,11 @@ function AgentRowView({ row, nowMs, openActions }: { row: AgentRow; nowMs: numbe
       meta={row.observedAtEpochMs === undefined ? undefined : relativeAge(row.observedAtEpochMs, nowMs)}
       accessibleName={row.accessibleName}
       trailing={<AgentAvatar agentId={row.agentId} active={row.attachable} />}
-      disabled={!row.attachable}
       onPress={() => {
+        if (!row.attachable) {
+          openActions(row.sessionId);
+          return;
+        }
         store.dismissReview(row.sessionId);
         router.push({
           pathname: "/session/[sessionId]",

@@ -78,6 +78,28 @@ describe("mobile Session actions", () => {
     expect(presentation.canRelocateToProject).toBe(true);
   });
 
+  it("offers Fix-and-retry for provider history damage and Retry for other recoverable failures", () => {
+    expect(sessionActionPresentation({
+      ...source,
+      lifecycle_state: "resumeFailed",
+      resume_failure_reason: "providerHistoryDamaged",
+      retryable: true,
+    }, [source], fixtureTasks, fixtureAgentCapabilities).recovery).toEqual({
+      kind: "repairAndRetry",
+      label: "Fix",
+      detail: "Repair provider history and retry this Agent",
+    });
+    expect(sessionActionPresentation({
+      ...source,
+      lifecycle_state: "resumeFailed",
+      resume_failure_reason: "resumeRejected",
+      retryable: true,
+    }, [source], fixtureTasks, fixtureAgentCapabilities).recovery).toMatchObject({
+      kind: "retry",
+      label: "Retry",
+    });
+  });
+
   it("maps one close intent to terminate-then-close or direct descriptor removal", () => {
     expect(sessionDismissAction(source)).toMatchObject({
       command: "terminate",

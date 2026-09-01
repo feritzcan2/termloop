@@ -314,6 +314,132 @@ describe("production control adapter", () => {
     runtime.connections.resetTransports();
   });
 
+  it("settles a silent in-flight attach when lifecycle recovery retires its socket", async () => {
+    let socketCount = 0;
+    const runtime = createProductionRuntime({
+      repository: fixedRepository(saved),
+      multiplexSocketFactory() {
+        socketCount += 1;
+        return {
+          binaryType: "blob",
+          readyState: 0,
+          onopen: null,
+          onmessage: null,
+          onerror: null,
+          onclose: null,
+          send() { throw new Error("silent socket is not open"); },
+          // Deliberately emits no close callback, matching the suspended iOS
+          // WebSocket that previously left the attach promise pending forever.
+          close() {},
+        } satisfies DataSocket;
+      },
+      controlSocketFactory: () => { throw new Error("legacy control transport used"); },
+      terminalSocketFactory: () => { throw new Error("legacy terminal transport used"); },
+    });
+
+    const attaching = runtime.terminal.attach(
+      saved.id,
+      { id: sessionId, runtime_epoch: 7 },
+      () => {},
+    );
+    await waitFor(() => socketCount === 1);
+
+    runtime.connections.resetTransports();
+
+    await expect(attaching).rejects.toThrow("Mobile transport disconnected.");
+  });
+
+  it("preserves a terminal subscription while foreground recovery replaces its socket", async () => {
+    const sockets: Array<DataSocket & { closed: boolean }> = [];
+    const attachGenerations: number[] = [];
+    const runtime = createProductionRuntime({
+      repository: fixedRepository(saved),
+      multiplexSocketFactory() {
+        const generation = sockets.length + 1;
+        const socket: DataSocket & { closed: boolean } = {
+          binaryType: "blob",
+          readyState: 1,
+          onopen: null,
+          onmessage: null,
+          onerror: null,
+          onclose: null,
+          closed: false,
+          send(data) {
+            if (typeof data === "string") {
+              const message = JSON.parse(data) as { type?: string; id?: string; method?: string };
+              if (message.type === "mobile.authenticate") {
+                queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({
+                  event: "mobile.ready",
+                  mobileTransportVersion: 2,
+                }) }));
+                return;
+              }
+              queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({
+                id: message.id,
+                ok: true,
+                result: controlResult(message.method ?? ""),
+              }) }));
+              return;
+            }
+            const frame = decodeFrame(data instanceof Uint8Array ? data : new Uint8Array(data));
+            if (frame.kind === KIND_ATTACH) {
+              attachGenerations.push(generation);
+              queueMicrotask(() => socket.onmessage?.({ data: encodeFrame(
+                frame.sessionId,
+                frame.epoch,
+                frame.sequence,
+                KIND_ACK,
+              ) }));
+            }
+          },
+          // A native close callback is not required for recovery to finish.
+          close() { socket.closed = true; },
+        };
+        sockets.push(socket);
+        queueMicrotask(() => socket.onopen?.());
+        return socket;
+      },
+      controlSocketFactory: () => { throw new Error("legacy control transport used"); },
+      terminalSocketFactory: () => { throw new Error("legacy terminal transport used"); },
+    });
+    const events: TerminalEvent[] = [];
+    const attachment = await runtime.terminal.attach(
+      saved.id,
+      { id: sessionId, runtime_epoch: 7 },
+      (event) => events.push(event),
+    );
+
+    let stalledReadStarted = false;
+    const stalledMessage = new Blob([]);
+    Object.defineProperty(stalledMessage, "arrayBuffer", {
+      value: () => {
+        stalledReadStarted = true;
+        return new Promise<ArrayBuffer>(() => {});
+      },
+    });
+    sockets[0]?.onmessage?.({ data: stalledMessage });
+    await waitFor(() => stalledReadStarted);
+
+    runtime.connections.resetTransports();
+    expect(sockets[0]?.closed).toBe(true);
+    expect(events.at(-1)).toEqual({ type: "state", state: "connectionLost" });
+
+    await expect(runtime.connections.list()).resolves.toEqual([
+      expect.objectContaining({ availability: "online" }),
+    ]);
+    await waitFor(() => events.filter((event) => (
+      event.type === "state" && event.state === "connected"
+    )).length === 2);
+
+    expect(sockets).toHaveLength(2);
+    expect(attachGenerations).toEqual([1, 2]);
+    await expect(attachment.input(new TextEncoder().encode("foreground recovered")))
+      .resolves.toBeUndefined();
+
+    await attachment.detach();
+    runtime.connections.resetTransports();
+  });
+
   it("reconnects instead of reporting success when an input receipt never arrives", async () => {
     vi.useFakeTimers();
     try {

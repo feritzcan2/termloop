@@ -49,9 +49,10 @@ export interface ConnectionCatalogPort {
   /// Signals a proven transport transition for any saved Mac. The catalog then
   /// performs its normal authoritative probe; the event itself is not status.
   subscribeChanges(listener: () => void): () => void;
-  /// Drops cached WebSocket transports without removing any saved Mac. The
-  /// lifecycle owner calls this around background transitions so a suspended
-  /// native socket is never reused as foreground connectivity evidence.
+  /// Drops cached physical WebSocket paths without removing any saved Mac or
+  /// logical terminal subscription. The lifecycle owner calls this around
+  /// background transitions so a suspended native socket is never reused as
+  /// foreground connectivity evidence.
   resetTransports(): void;
   pair(code: string): Promise<string>;
 }

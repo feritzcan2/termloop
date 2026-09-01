@@ -103,6 +103,9 @@ export interface ProjectOverview {
   /// when non-empty — an empty "Needs you" box is a promise the screen keeps making
   /// and never keeping.
   readonly needsYou: readonly AgentRow[];
+  /// Every ordinary Agent descriptor, including stopped recovery states. A failed
+  /// resume must remain reachable so the phone can offer the same Fix/Retry action
+  /// as desktop instead of silently removing the only way to recover it.
   readonly agents: readonly AgentRow[];
   readonly tasks: readonly TaskRow[];
   readonly terminals: readonly TerminalRow[];
@@ -198,7 +201,6 @@ export function buildProjectOverview(
 
   const agentRows = sessions
     .filter((session) => session.kind === "Agent"
-      && isLiveSession(session)
       && !isAssistantSession(session))
     .map((session) => {
       const taskId = taskBySession.get(session.id);
@@ -340,7 +342,7 @@ export function connectionSummaryLine(
   const summaries = buildProjectSummaries(overview, reviewReadySessionIds);
   const projects = summaries.length;
   const agents = overview.sessions.filter(
-    (session) => session.kind === "Agent" && isLiveSession(session),
+    (session) => session.kind === "Agent" && !isAssistantSession(session),
   ).length;
   const needsYou = summaries.reduce((total, summary) => total + summary.needsYouCount, 0);
   const parts = [

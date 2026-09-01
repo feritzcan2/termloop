@@ -21,6 +21,7 @@ import {
 import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
 import { useOverview } from "@/features/overview/overview-store";
+import { executeSessionRecovery } from "@/features/session-actions/session-recovery";
 import { clipboardBridge } from "@/platform/clipboard";
 import { keyboardAvoidingBehavior } from "@/platform/presentation";
 import { basename, sessionLabel } from "@/presentation/dto-readers";
@@ -214,17 +215,26 @@ export function SessionActionsSheet(props: SessionActionsSheetProps) {
       },
     ]);
   };
-  const confirmHistoryRepair = () => {
+  const recoverAgent = () => {
+    const recovery = presentation.recovery;
+    if (!recovery) return;
+    const execute = () => void run(
+      `${recovery.label}ing Agent`,
+      () => executeSessionRecovery(runtime.sessionActions, connectionId, session.id, recovery),
+      () => props.onOpenSession?.(session.id),
+    );
+    if (recovery.kind === "retry") {
+      execute();
+      return;
+    }
     Alert.alert(
-      "Repair provider history?",
-      "TermLoop will back up and repair recognized restart damage before this conversation continues.",
+      "Fix provider history and retry?",
+      "TermLoop will retain an exact backup, repair recognized restart damage, and retry this conversation.",
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Repair",
-          onPress: () => void run("Repairing history", async () => {
-            await runtime.sessionActions.repairProviderHistory(connectionId, session.id);
-          }),
+          text: "Fix",
+          onPress: execute,
         },
       ],
     );
@@ -316,6 +326,13 @@ export function SessionActionsSheet(props: SessionActionsSheetProps) {
                     onPress={() => { onClose(); props.onOpenChanges?.(presentation.attachedTask!.id); }}
                   /> : null}
                   {props.onOpenSession || presentation.attachedTask ? <Divider /> : null}
+                  {presentation.recovery ? <ActionRow
+                    glyph="↻"
+                    label={presentation.recovery.label}
+                    detail={presentation.recovery.detail}
+                    disabled={busy !== undefined}
+                    onPress={recoverAgent}
+                  /> : null}
                   {presentation.canRefresh ? <ActionRow
                     glyph="↻"
                     label="Refresh agent display"
@@ -350,13 +367,6 @@ export function SessionActionsSheet(props: SessionActionsSheetProps) {
                   {capabilityError === undefined ? null : (
                     <Text style={styles.inlineNote}>Agent coordination unavailable: {capabilityError}</Text>
                   )}
-                  {presentation.canRepairProviderHistory ? <ActionRow
-                    glyph="⌁"
-                    label="Repair provider history…"
-                    detail="Back up and repair known restart damage"
-                    disabled={busy !== undefined}
-                    onPress={confirmHistoryRepair}
-                  /> : null}
                   {presentation.taskRelocationTargets.length > 0 ? <ActionRow
                     glyph="□"
                     label="Continue in Task worktree…"

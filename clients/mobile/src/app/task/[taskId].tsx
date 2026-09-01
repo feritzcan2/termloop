@@ -199,11 +199,16 @@ export default function TaskRoute() {
                     meta={row.observedAtEpochMs === undefined ? undefined : relativeAge(row.observedAtEpochMs, nowMs)}
                     accessibleName={row.accessibleName}
                     trailing={<AgentAvatar agentId={row.agentId} active={row.attachable} />}
-                    disabled={!row.attachable}
-                    onPress={() => router.push({
-                      pathname: "/session/[sessionId]",
-                      params: connectionRouteParams(selected?.id, { sessionId: row.sessionId }),
-                    })}
+                    onPress={() => {
+                      if (!row.attachable) {
+                        setActionSessionId(row.sessionId);
+                        return;
+                      }
+                      router.push({
+                        pathname: "/session/[sessionId]",
+                        params: connectionRouteParams(selected?.id, { sessionId: row.sessionId }),
+                      });
+                    }}
                     onLongPress={() => setActionSessionId(row.sessionId)}
                   />
                 </View>
