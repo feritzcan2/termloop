@@ -105,6 +105,32 @@ copy_file() {
   fi
 }
 
+sign_dev_executable() {
+  local executable="$1"
+  local identifier="$2"
+  local signing_identity="${TERMLOOP_DEV_CODE_SIGN_IDENTITY:-}"
+
+  # Rust's linker-applied ad-hoc signature designates the binary by cdhash, so
+  # every rebuild looks like a new application to Keychain. A certificate-backed
+  # signature gives the staged daemon a stable designated requirement instead.
+  # Text fixtures and other non-Mach-O inputs have no code signature to replace.
+  if ! codesign -d "$executable" >/dev/null 2>&1; then
+    return
+  fi
+  if [[ -z "$signing_identity" ]]; then
+    signing_identity="$(security find-identity -v -p codesigning 2>/dev/null | \
+      awk '/"Apple Development: / { print $2; exit }')"
+  fi
+  if [[ -z "$signing_identity" ]]; then
+    echo "Warning: no Apple Development signing identity is available; macOS may ask for Keychain access again after a rebuild." >&2
+    return
+  fi
+
+  codesign --force --sign "$signing_identity" --identifier "$identifier" \
+    --timestamp=none "$executable"
+  codesign --verify --strict "$executable"
+}
+
 copy_tree() {
   local source="$1"
   local destination="$2"
@@ -117,6 +143,7 @@ copy_tree() {
 }
 
 copy_file "$server_source" "$bundle/target/debug/termloop-server"
+sign_dev_executable "$bundle/target/debug/termloop-server" "dev.termloop.server"
 copy_file "$companion_source" "$bundle/target/debug/termloop-companion"
 copy_file "$skills_manager_source" "$bundle/target/debug/skills-manager-cli"
 copy_file "$desktop_source/package.json" "$bundle/clients/desktop/package.json"

@@ -18,7 +18,7 @@ if [[ "$action" == "start" || "$action" == "restart" ]]; then
   required_commands+=(cargo pnpm node)
 fi
 if [[ "$(uname -s)" == "Darwin" ]]; then
-  required_commands+=(launchctl osascript)
+  required_commands+=(codesign launchctl osascript security)
 elif [[ "$(uname -s)" == "Linux" && ("$action" == "start" || "$action" == "restart") ]]; then
   required_commands+=(systemctl)
 fi
