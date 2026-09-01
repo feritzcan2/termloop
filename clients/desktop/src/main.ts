@@ -87,6 +87,8 @@ import {
   mobileAccessNodeExecutable,
   mobileAccessScriptPath,
   prepareMobileAccessQr,
+  reconcilePackagedMobileAccess,
+  shouldReconcilePackagedMobileAccess,
 } from "./platform/mobile-access.js";
 import { UpdateManager } from "./main/update-manager.js";
 import { autoUpdateSupported } from "./platform/auto-update-policy.js";
@@ -1309,6 +1311,14 @@ handleIpc("termloop:remote-host-disable", async (event) => {
 if (ownsSingleInstance) app.whenReady().then(async () => {
   if (shouldRemoveApplicationMenu()) Menu.setApplicationMenu(null);
   else Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate()));
+  if (shouldReconcilePackagedMobileAccess(app.isPackaged)) {
+    void reconcilePackagedMobileAccess(directory).then(
+      (outcome) => console.info(`[mobile-access] ${outcome || "reconciled"}`),
+      (cause: unknown) => console.error(
+        `[mobile-access] reconcile failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+      ),
+    );
+  }
   // Bundled desktop flavor: a packaged application that ships the daemon
   // binaries supervises its own daemon. Development, smoke, and client-only
   // flows (env override or unpackaged) never reach the spawn path, and a live

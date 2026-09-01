@@ -397,7 +397,14 @@ describe("connection presentation", () => {
     });
     expect(connectionPresentation("offline").block).toBe("offline");
     expect(connectionPresentation("revoked").block).toBe("revoked");
+    expect(connectionPresentation("gatewayUpdateRequired").block).toBe("gatewayUpdateRequired");
     expect(connectionPresentation("updateRequired").block).toBe("updateRequired");
+  });
+
+  it("directs a stale persistent gateway back to the Mac", () => {
+    const copy = connectionBlockCopy("gatewayUpdateRequired");
+    expect(`${copy.body} ${copy.resolution}`).toContain("gateway");
+    expect(copy.resolution).toContain("open TermLoop on your Mac");
   });
 
   it("never offers a way past a contract mismatch", () => {
