@@ -228,8 +228,13 @@ const persistLayout = createLayoutPersistence(
   },
 );
 let observedLayoutRevision = 0;
+let observedProjectSnapshotId: string | undefined;
 presentationStore.subscribe((state) => {
   gitHostRefreshCoordinator.activateProject(state.selectedProjectId);
+  if (state.selectedProjectId !== observedProjectSnapshotId) {
+    observedProjectSnapshotId = state.selectedProjectId;
+    projectionStore.activateProjectSnapshot(state.selectedProjectId);
+  }
   if (!state.layoutLoaded || state.layoutRevision === observedLayoutRevision) return;
   observedLayoutRevision = state.layoutRevision;
   persistLayout(state);
@@ -293,6 +298,7 @@ async function refreshProjectionOnce(): Promise<void> {
   let runRuntimeResult: Awaited<ReturnType<SourceDesktopApi["runRuntimeList"]>> = { runs: [], stateRevision: 0 };
   let playbookResult: Awaited<ReturnType<SourceDesktopApi["playbookGet"]>> = { playbook: null, stateRevision: 0 };
   let playbookRuntime: Awaited<ReturnType<SourceDesktopApi["playbookRuntime"]>> | undefined;
+  let taskSnapshotReady = false;
   if (taskProjectId) {
     try {
       [tasks, projectWorktreeSummary, runConfigurationResult, runRuntimeResult, playbookResult, playbookRuntime] = await Promise.all([
@@ -303,6 +309,7 @@ async function refreshProjectionOnce(): Promise<void> {
         sourceApi.playbookGet(taskProjectId),
         sourceApi.playbookRuntime(taskProjectId),
       ]);
+      taskSnapshotReady = true;
     } catch (error) {
       projectionStore.setSourceConnection(
         connectionProfileIdOf(taskProject),
@@ -310,7 +317,8 @@ async function refreshProjectionOnce(): Promise<void> {
         "offline",
         controlErrorMessage(error),
       );
-      projectionStore.clearSelectedProjectSnapshot();
+      // Keep the last successful Project snapshot visible while the source is
+      // offline. A later successful refresh replaces it in one update.
     }
   }
   if (statusBaselineReady) {
@@ -327,26 +335,29 @@ async function refreshProjectionOnce(): Promise<void> {
   previousAgentStatuses = new Map(agentStatuses.map((status) => [status.sessionId, status.status]));
   statusBaselineReady = true;
   const taskIds = new Set(tasks.map((task) => task.id));
-  const retainedGitHost = projectionStore
-    .getSnapshot()
-    .gitHostProjections
+  const retainedGitHost = (taskProjectId
+    ? projectionStore.gitHostProjectionsForProject(taskProjectId)
+    : [])
     .filter((projection) => taskIds.has(projection.task_id));
-  const retainedBranchCommits = projectionStore
-    .getSnapshot()
-    .branchCommitSummaries
+  const retainedBranchCommits = (taskProjectId
+    ? projectionStore.branchCommitSummariesForProject(taskProjectId)
+    : [])
     .filter((summary) => taskIds.has(summary.task_id));
-  projectionStore.applySelectedProjectSnapshot(
-    tasks,
-    [...retainedGitHost],
-    [...retainedBranchCommits],
-    projectWorktreeSummary,
-    runConfigurationResult.configurations,
-    runRuntimeResult.runs,
-    Math.max(runConfigurationResult.stateRevision, runRuntimeResult.stateRevision),
-    playbookRuntime?.processingTaskId ?? null,
-    playbookResult.playbook,
-    playbookRuntime ?? null,
-  );
+  if (taskProjectId && taskSnapshotReady) {
+    projectionStore.applySelectedProjectSnapshot(
+      taskProjectId,
+      tasks,
+      [...retainedGitHost],
+      [...retainedBranchCommits],
+      projectWorktreeSummary,
+      runConfigurationResult.configurations,
+      runRuntimeResult.runs,
+      Math.max(runConfigurationResult.stateRevision, runRuntimeResult.stateRevision),
+      playbookRuntime?.processingTaskId ?? null,
+      playbookResult.playbook,
+      playbookRuntime ?? null,
+    );
+  }
   const requestedTaskIds = automaticGitHostTaskIds(tasks);
   if (taskProjectId && requestedTaskIds.length > 0) {
     void refreshGitHostProjection(taskProjectId, requestedTaskIds)

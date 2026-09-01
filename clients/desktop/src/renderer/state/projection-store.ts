@@ -33,6 +33,18 @@ export type ProjectionState = {
 
 type Listener = () => void;
 const ERROR_LOG_LIMIT = 50;
+type SelectedProjectSnapshot = Pick<ProjectionState,
+  | "projectWorktreeSummary"
+  | "tasks"
+  | "runConfigurations"
+  | "runRuntimes"
+  | "runStateRevision"
+  | "processingTaskId"
+  | "playbook"
+  | "playbookRuntime"
+  | "gitHostProjections"
+  | "branchCommitSummaries"
+>;
 type SourceBaseSnapshot = {
   name: string;
   state: ConnectionSourceState;
@@ -56,6 +68,8 @@ export class ProjectionStore {
   #listeners = new Set<Listener>();
   #nextErrorId = 1;
   #sources = new Map<string, SourceBaseSnapshot>();
+  #selectedProjectId: string | undefined;
+  #projectSnapshots = new Map<string, SelectedProjectSnapshot>();
 
   getSnapshot = (): ProjectionState => this.#state;
 
@@ -132,27 +146,25 @@ export class ProjectionStore {
     return this.#sources.get(profileId)?.name;
   }
 
-  clearSelectedProjectSnapshot(): void {
-    const { projectWorktreeSummary: _summary, ...previous } = this.#state;
-    this.#state = {
-      ...previous,
-      tasks: [],
-      gitHostProjections: [],
-      branchCommitSummaries: [],
-      runConfigurations: [],
-      runRuntimes: [],
-      runStateRevision: 0,
-      processingTaskId: null,
-      playbook: null,
-      playbookRuntime: null,
-    };
-    this.#emit();
+  gitHostProjectionsForProject(projectId: string): readonly GitHostProjection[] {
+    return this.#snapshotForProject(projectId)?.gitHostProjections ?? [];
   }
 
-  applySelectedProjectSnapshot(tasks: Task[], gitHostProjections: GitHostProjection[] = [], branchCommitSummaries: BranchCommitSummary[] = [], projectWorktreeSummary?: ProjectWorktreeSummary, runConfigurations: RunConfiguration[] = [], runRuntimes: RunRuntime[] = [], runStateRevision = 0, processingTaskId: string | null = null, playbook: PlaybookDto | null = null, playbookRuntime: PlaybookRuntimeResult | null = null): void {
-    const { projectWorktreeSummary: _previousSummary, ...previous } = this.#state;
-    this.#state = {
-      ...previous,
+  branchCommitSummariesForProject(projectId: string): readonly BranchCommitSummary[] {
+    return this.#snapshotForProject(projectId)?.branchCommitSummaries ?? [];
+  }
+
+  activateProjectSnapshot(projectId: string | undefined): void {
+    if (this.#selectedProjectId === projectId) return;
+    if (this.#selectedProjectId) {
+      this.#projectSnapshots.set(this.#selectedProjectId, selectedProjectSnapshot(this.#state));
+    }
+    this.#selectedProjectId = projectId;
+    this.#applyProjectSnapshot(projectId ? this.#projectSnapshots.get(projectId) : undefined);
+  }
+
+  applySelectedProjectSnapshot(projectId: string, tasks: Task[], gitHostProjections: GitHostProjection[] = [], branchCommitSummaries: BranchCommitSummary[] = [], projectWorktreeSummary?: ProjectWorktreeSummary, runConfigurations: RunConfiguration[] = [], runRuntimes: RunRuntime[] = [], runStateRevision = 0, processingTaskId: string | null = null, playbook: PlaybookDto | null = null, playbookRuntime: PlaybookRuntimeResult | null = null): void {
+    const snapshot: SelectedProjectSnapshot = {
       tasks: [...tasks],
       gitHostProjections: [...gitHostProjections],
       branchCommitSummaries: [...branchCommitSummaries],
@@ -164,7 +176,9 @@ export class ProjectionStore {
       playbook,
       playbookRuntime,
     };
-    this.#emit();
+    this.#projectSnapshots.set(projectId, snapshot);
+    if (this.#selectedProjectId === undefined) this.#selectedProjectId = projectId;
+    if (this.#selectedProjectId === projectId) this.#applyProjectSnapshot(snapshot);
   }
 
   applySnapshot(projects: Project[], tasks: Task[], sessions: Session[], agentStatuses: AgentStatus[], gitHostProjections: GitHostProjection[] = [], branchCommitSummaries: BranchCommitSummary[] = [], projectWorktreeSummary?: ProjectWorktreeSummary, runConfigurations: RunConfiguration[] = [], runRuntimes: RunRuntime[] = [], runStateRevision = 0, processingTaskId: string | null = null, playbook: PlaybookDto | null = null, playbookRuntime: PlaybookRuntimeResult | null = null): void {
@@ -296,6 +310,21 @@ export class ProjectionStore {
     return errorLog.slice(-ERROR_LOG_LIMIT);
   }
 
+  #applyProjectSnapshot(snapshot: SelectedProjectSnapshot | undefined): void {
+    const { projectWorktreeSummary: _previousSummary, ...previous } = this.#state;
+    this.#state = {
+      ...previous,
+      ...(snapshot ?? emptySelectedProjectSnapshot()),
+    };
+    this.#emit();
+  }
+
+  #snapshotForProject(projectId: string): SelectedProjectSnapshot | undefined {
+    return this.#selectedProjectId === projectId
+      ? selectedProjectSnapshot(this.#state)
+      : this.#projectSnapshots.get(projectId);
+  }
+
   #rebuildSourceProjection(): void {
     const sources = [...this.#sources.entries()].sort(([left], [right]) => (
       left === "local" ? -1 : right === "local" ? 1 : left.localeCompare(right)
@@ -315,6 +344,35 @@ export class ProjectionStore {
   #emit(): void {
     for (const listener of this.#listeners) listener();
   }
+}
+
+function selectedProjectSnapshot(state: ProjectionState): SelectedProjectSnapshot {
+  return {
+    ...(state.projectWorktreeSummary ? { projectWorktreeSummary: state.projectWorktreeSummary } : {}),
+    tasks: state.tasks,
+    runConfigurations: state.runConfigurations,
+    runRuntimes: state.runRuntimes,
+    runStateRevision: state.runStateRevision,
+    processingTaskId: state.processingTaskId,
+    playbook: state.playbook,
+    playbookRuntime: state.playbookRuntime,
+    gitHostProjections: state.gitHostProjections,
+    branchCommitSummaries: state.branchCommitSummaries,
+  };
+}
+
+function emptySelectedProjectSnapshot(): SelectedProjectSnapshot {
+  return {
+    tasks: [],
+    runConfigurations: [],
+    runRuntimes: [],
+    runStateRevision: 0,
+    processingTaskId: null,
+    playbook: null,
+    playbookRuntime: null,
+    gitHostProjections: [],
+    branchCommitSummaries: [],
+  };
 }
 
 function branchCommitSummaryEqual(left: BranchCommitSummary, right: BranchCommitSummary): boolean {

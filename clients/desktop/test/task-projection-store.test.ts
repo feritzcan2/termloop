@@ -88,6 +88,28 @@ function pullRequest(number: number): GitHostProjection["matches"][number] {
 }
 
 describe("scoped Task projection merge", () => {
+  it("restores each Project snapshot immediately and ignores inactive refreshes", () => {
+    const store = new ProjectionStore();
+    const projectA = { ...task("one", 1), project_id: "project-a" };
+    const projectB = { ...task("two", 1), project_id: "project-b" };
+
+    store.activateProjectSnapshot("project-a");
+    store.applySelectedProjectSnapshot("project-a", [projectA]);
+    store.activateProjectSnapshot("project-b");
+    expect(store.getSnapshot().tasks).toEqual([]);
+
+    store.applySelectedProjectSnapshot("project-b", [projectB]);
+    store.activateProjectSnapshot("project-a");
+    expect(store.getSnapshot().tasks).toEqual([projectA]);
+
+    const refreshedProjectB = { ...projectB, title: "fresh project B" };
+    store.applySelectedProjectSnapshot("project-b", [refreshedProjectB]);
+    expect(store.getSnapshot().tasks).toEqual([projectA]);
+
+    store.activateProjectSnapshot("project-b");
+    expect(store.getSnapshot().tasks).toEqual([refreshedProjectB]);
+  });
+
   it("keeps the exact Playbook processing Task from the latest full snapshot", () => {
     const store = new ProjectionStore();
     const playbookRuntime = {
