@@ -1,4 +1,4 @@
-import { CONTRACT_IDENTITY } from "@termloop/contract/current";
+import { CONTRACT_IDENTITY, type SessionRelocationPreviewDto } from "@termloop/contract/current";
 
 import type {
   ConnectionProfile,
@@ -69,6 +69,7 @@ export interface MockTerminalInspection {
   readonly routinesRun: string[];
   readonly launches: { taskId: string; agentId: string; launchTicket: string }[];
   readonly projectLaunches: { projectId: string; agentId: string; launchTicket: string }[];
+  readonly sessionActions: { action: string; sessionId: string; target?: string }[];
 }
 
 export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalInspection } {
@@ -78,6 +79,7 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
   const routinesRun: string[] = [];
   const launches: { taskId: string; agentId: string; launchTicket: string }[] = [];
   const projectLaunches: { projectId: string; agentId: string; launchTicket: string }[] = [];
+  const sessionActions: { action: string; sessionId: string; target?: string }[] = [];
   const watchTargets = new Map<string, string>();
   const voiceReceipts = new Map<string, {
     initialized: boolean;
@@ -252,6 +254,69 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
         };
       },
     },
+    sessionActions: {
+      async fork(connectionId, sessionId) {
+        assertMockSession(connectionId, sessionId);
+        sessionActions.push({ action: "fork", sessionId });
+        return { ...fixtureSessions[0]!, id: `${sessionId}-fork`, fork_source_session_id: sessionId };
+      },
+      async repairProviderHistory(connectionId, sessionId) {
+        assertMockSession(connectionId, sessionId);
+        sessionActions.push({ action: "repairProviderHistory", sessionId });
+      },
+      async restart(connectionId, sessionId) {
+        const session = assertMockSession(connectionId, sessionId);
+        sessionActions.push({ action: "restart", sessionId });
+        return { ...session, runtime_epoch: session.runtime_epoch + 1 };
+      },
+      async askTo(connectionId, sessionId, targetAgentId) {
+        assertMockSession(connectionId, sessionId);
+        sessionActions.push({ action: "askTo", sessionId, target: targetAgentId });
+      },
+      async handoverTo(connectionId, sessionId, targetSessionId) {
+        assertMockSession(connectionId, sessionId);
+        sessionActions.push({ action: "handoverTo", sessionId, target: targetSessionId });
+      },
+      async rename(connectionId, sessionId, name) {
+        const session = assertMockSession(connectionId, sessionId);
+        sessionActions.push({ action: "rename", sessionId, ...(name === null ? {} : { target: name }) });
+        return { ...session, name };
+      },
+      async previewRelocateToTask(connectionId, sessionId, taskId, mode) {
+        const session = assertMockSession(connectionId, sessionId);
+        const task = fixtureTasks.find((candidate) => candidate.id === taskId);
+        if (!task) throw new Error("mock Task not found");
+        sessionActions.push({ action: "previewRelocateToTask", sessionId, target: taskId });
+        return mockRelocationPreview(session, task, mode);
+      },
+      async relocateToTask(connectionId, sessionId, taskId) {
+        const session = assertMockSession(connectionId, sessionId);
+        sessionActions.push({ action: "relocateToTask", sessionId, target: taskId });
+        return { ...session, process: { ...session.process, cwd: fixtureTasks[0]!.worktree!.path } };
+      },
+      async previewRelocateToProject(connectionId, sessionId, projectId) {
+        const session = assertMockSession(connectionId, sessionId);
+        const project = fixtureProjects.find((candidate) => candidate.id === projectId);
+        if (!project) throw new Error("mock Project not found");
+        sessionActions.push({ action: "previewRelocateToProject", sessionId, target: projectId });
+        return mockRelocationPreview(session, null, "resume");
+      },
+      async relocateToProject(connectionId, sessionId, projectId) {
+        const session = assertMockSession(connectionId, sessionId);
+        const project = fixtureProjects.find((candidate) => candidate.id === projectId);
+        if (!project) throw new Error("mock Project not found");
+        sessionActions.push({ action: "relocateToProject", sessionId, target: projectId });
+        return { ...session, process: { ...session.process, cwd: project.folder_path } };
+      },
+      async terminate(connectionId, sessionId) {
+        assertMockSession(connectionId, sessionId);
+        sessionActions.push({ action: "terminate", sessionId });
+      },
+      async close(connectionId, sessionId) {
+        assertMockSession(connectionId, sessionId);
+        sessionActions.push({ action: "close", sessionId });
+      },
+    },
     steward: {
       async transcript(connectionId) {
         if (connectionId !== profiles[0]?.id) throw new Error("mock connection not found");
@@ -354,6 +419,69 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
         return { synced: false };
       },
     },
-    inspection: { inputs, detachedSessions, positionsSet, routinesRun, launches, projectLaunches },
+    inspection: { inputs, detachedSessions, positionsSet, routinesRun, launches, projectLaunches, sessionActions },
+  };
+
+  function assertMockSession(connectionId: string, sessionId: string) {
+    if (connectionId !== profiles[0]?.id) throw new Error("mock connection not found");
+    const session = fixtureSessions.find((candidate) => candidate.id === sessionId);
+    if (!session) throw new Error("mock Session not found");
+    return session;
+  }
+}
+
+function mockRelocationPreview(
+  session: (typeof fixtureSessions)[number],
+  task: (typeof fixtureTasks)[number] | null,
+  mode: "resume" | "fresh",
+): SessionRelocationPreviewDto {
+  const targetCwd = task?.worktree?.path ?? fixtureProjects[0]!.folder_path;
+  const digest = `sha256:${"a".repeat(64)}`;
+  return {
+    session,
+    task,
+    source_cwd: session.process.cwd,
+    target_cwd: targetCwd,
+    agent_id: session.process.agent_id,
+    model: "default",
+    permission: "default",
+    reasoning: "default",
+    mode,
+    target_agent_count: 0,
+    target_terminal_count: 0,
+    warnings: [],
+    blockers: [],
+    can_relocate: true,
+    relocation_ticket: "b".repeat(64),
+    expires_in_ms: 30_000,
+    manifest: {
+      digest,
+      target: {
+        agent_id: session.process.agent_id ?? "claude",
+        executable: session.process.program,
+        model: "default",
+        permission: "default",
+        reasoning: "default",
+        cwd: targetCwd,
+        conversation: mode === "fresh" ? "fresh" : "resume",
+      },
+      provenance: {
+        template_ref: session.process.template_ref ?? "builtin.agent.interactive",
+        template_version: session.process.template_version ?? 1,
+        authored_digest: digest,
+        delivered_digest: digest,
+      },
+      content_parts: [],
+      transport: {
+        kind: "mock",
+        delivered_content: "",
+        byte_length: 0,
+        digest,
+      },
+      arguments: [],
+      environment: [],
+      generated_files: [],
+      limitations: [],
+    },
   };
 }

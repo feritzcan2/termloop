@@ -16,6 +16,7 @@ import {
 import { TaskPipeline } from "@/components/task-pipeline";
 import { useConnections } from "@/features/connection/connection-store";
 import { connectionRouteParams } from "@/features/connection/connection-route";
+import { SessionActionsSheet } from "@/features/session-actions/session-actions-sheet";
 import { launchBlockedReason } from "@/presentation/agent-launch-presentation";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { ProjectSelector } from "@/components/project-selector";
@@ -39,12 +40,8 @@ import type { RowTone } from "@/presentation/tone";
 import { color, space } from "@/theme/tokens";
 import { fontFamily, text } from "@/theme/typography";
 
-/// Task detail, read-only by design.
-///
-/// Every recovery a Task needs — creating a worktree, retrying, repairing, cleanup —
-/// is a `core` command with fail-closed safety gates, and none of it belongs behind a
-/// phone tap. So each degraded section states the fact and names the Mac as the place
-/// to act, rather than offering a control the client would then have to refuse.
+/// Task detail keeps Task/worktree recovery read-only while attached Session rows
+/// expose the same bounded lifecycle and Agent-coordination menu as Project rows.
 export default function TaskRoute() {
   const { taskId, connectionId } = useLocalSearchParams<{ taskId: string; connectionId?: string }>();
   const router = useRouter();
@@ -55,6 +52,7 @@ export default function TaskRoute() {
   const [briefExpanded, setBriefExpanded] = useState(false);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [tab, setTab] = useState<"overview" | "playbook">("overview");
+  const [actionSessionId, setActionSessionId] = useState<string>();
 
   useEffect(() => {
     if (connectionId !== undefined && connections.selectedId !== connectionId) {
@@ -73,6 +71,7 @@ export default function TaskRoute() {
     [store.overview, store.reviewReadySessionIds, task],
   );
   const nowMs = store.readAtEpochMs ?? 0;
+  const actionSession = store.overview?.sessions.find((session) => session.id === actionSessionId);
 
   if (selectingConnection || store.load === "loading" || store.load === "idle") {
     return (
@@ -205,6 +204,7 @@ export default function TaskRoute() {
                       pathname: "/session/[sessionId]",
                       params: connectionRouteParams(selected?.id, { sessionId: row.sessionId }),
                     })}
+                    onLongPress={() => setActionSessionId(row.sessionId)}
                   />
                 </View>
               ))}
@@ -293,6 +293,29 @@ export default function TaskRoute() {
           </>
         )}
       </ScrollView>
+      <SessionActionsSheet
+        session={actionSession}
+        visible={actionSession !== undefined}
+        onClose={() => setActionSessionId(undefined)}
+        onOpenSession={(sessionId) => router.push({
+          pathname: "/session/[sessionId]",
+          params: connectionRouteParams(selected?.id, { sessionId }),
+        })}
+        onOpenTask={(targetTaskId) => {
+          if (targetTaskId === task.id) {
+            setActionSessionId(undefined);
+            return;
+          }
+          router.push({
+            pathname: "/task/[taskId]",
+            params: connectionRouteParams(selected?.id, { taskId: targetTaskId }),
+          });
+        }}
+        onOpenChanges={(targetTaskId) => router.push({
+          pathname: "/task/[taskId]/changes",
+          params: connectionRouteParams(selected?.id, { taskId: targetTaskId }),
+        })}
+      />
     </Screen>
   );
 }

@@ -518,6 +518,71 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
       },
     },
 
+    sessionActions: {
+      async fork(connectionId, sessionId) {
+        return await controlClient(await resolve(connectionId)).call("session.forkAgent", { sessionId });
+      },
+      async repairProviderHistory(connectionId, sessionId) {
+        await controlClient(await resolve(connectionId)).call("session.repairProviderHistory", {
+          sessionId,
+          acknowledgeHistoryRewrite: true,
+        });
+      },
+      async restart(connectionId, sessionId) {
+        return await controlClient(await resolve(connectionId)).call("session.restartAgent", { sessionId });
+      },
+      async askTo(connectionId, sessionId, targetAgentId) {
+        await controlClient(await resolve(connectionId)).call("session.requestAskTo", {
+          sessionId,
+          targetAgentId,
+        });
+      },
+      async handoverTo(connectionId, sessionId, targetSessionId) {
+        await controlClient(await resolve(connectionId)).call("session.requestHandoverTo", {
+          sessionId,
+          targetSessionId,
+        });
+      },
+      async rename(connectionId, sessionId, name) {
+        return await controlClient(await resolve(connectionId)).call("session.rename", { sessionId, name });
+      },
+      async previewRelocateToTask(connectionId, sessionId, taskId, mode) {
+        return await controlClient(await resolve(connectionId)).call("session.previewRelocateAgentToTask", {
+          sessionId,
+          taskId,
+          mode,
+        });
+      },
+      async relocateToTask(connectionId, sessionId, taskId, operationId, relocationTicket) {
+        return await controlClient(await resolve(connectionId)).call("session.relocateAgentToTask", {
+          sessionId,
+          taskId,
+          operationId,
+          relocationTicket,
+        });
+      },
+      async previewRelocateToProject(connectionId, sessionId, projectId) {
+        return await controlClient(await resolve(connectionId)).call("session.previewRelocateAgentToProject", {
+          sessionId,
+          projectId,
+        });
+      },
+      async relocateToProject(connectionId, sessionId, projectId, operationId, relocationTicket) {
+        return await controlClient(await resolve(connectionId)).call("session.relocateAgentToProject", {
+          sessionId,
+          projectId,
+          operationId,
+          relocationTicket,
+        });
+      },
+      async terminate(connectionId, sessionId) {
+        await controlClient(await resolve(connectionId)).call("session.terminate", { sessionId });
+      },
+      async close(connectionId, sessionId) {
+        await controlClient(await resolve(connectionId)).call("session.close", { sessionId });
+      },
+    },
+
     steward: {
       async transcript(connectionId, projectId) {
         const control = controlClient(await resolve(connectionId));

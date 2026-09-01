@@ -85,7 +85,9 @@ const MOBILE_CONTROL_METHODS = new Set([
 /// "this exact list": a Task's bounded worktree snapshot and patches, the delivery
 /// pipeline it sits on, its position on it, one inspected Agent launch, and the
 /// Steward conversation. Nothing else in the contract becomes reachable, and every
-/// entry is still gated by core's own commands and safety gates on arrival.
+/// entry is still gated by core's own commands and safety gates on arrival. Session
+/// lifecycle and coordination entries back the mobile long-press menu; they remain
+/// exact methods rather than turning the owner credential into arbitrary forwarding.
 const MOBILE_FULL_CONTROL_METHODS = new Set([
   // Worktree content reads are full-control in the daemon contract. Keeping
   // them named here gives the phone a bounded review surface without exposing
@@ -102,7 +104,18 @@ const MOBILE_FULL_CONTROL_METHODS = new Set([
   "task.launchAgent",
   "session.previewAgent",
   "session.launchAgent",
+  "session.forkAgent",
+  "session.repairProviderHistory",
+  "session.requestAskTo",
+  "session.requestHandoverTo",
+  "session.restartAgent",
+  "session.previewRelocateAgentToTask",
+  "session.relocateAgentToTask",
+  "session.previewRelocateAgentToProject",
+  "session.relocateAgentToProject",
   "session.rename",
+  "session.terminate",
+  "session.close",
   "quickAction.preview",
   "quickAction.launch",
   "companion.transcriptList",
