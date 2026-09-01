@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 
 import type { ConnectionProfile, MobileOverview } from "../../src/application/ports";
 import { connectionRouteParams } from "../../src/features/connection/connection-route";
-import { preferredConnectionId } from "../../src/features/connection/connection-resilience";
+import {
+  preferredConnectionId,
+  shouldResetConnectionTransports,
+} from "../../src/features/connection/connection-resilience";
 import { snapshotWhileUnavailable } from "../../src/features/overview/overview-resilience";
 import {
   buildLocatedProjectSummaries,
@@ -346,6 +349,20 @@ describe("task presentation", () => {
 });
 
 describe("connection presentation", () => {
+  it("forces fresh transports after foregrounding even when background never rendered", () => {
+    const active = { active: true, foregroundRevision: 3 };
+
+    expect(shouldResetConnectionTransports(active, active)).toBe(false);
+    expect(shouldResetConnectionTransports(active, {
+      active: false,
+      foregroundRevision: 3,
+    })).toBe(true);
+    expect(shouldResetConnectionTransports(active, {
+      active: true,
+      foregroundRevision: 4,
+    })).toBe(true);
+  });
+
   it("blocks every availability that cannot be read, and only those", () => {
     expect(connectionPresentation("online").block).toBeUndefined();
     expect(connectionPresentation("reconnecting")).toMatchObject({

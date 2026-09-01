@@ -22,6 +22,7 @@ import {
   KIND_ERROR,
   KIND_GAP,
   KIND_INPUT,
+  KIND_INPUT_ACK,
   KIND_OUTPUT,
   KIND_REPLAY_OUTPUT,
   decodeFrame,
@@ -32,11 +33,15 @@ import {
 const MOBILE_TRANSPORT_VERSION = 2;
 const CONNECT_TIMEOUT_MS = 5_000;
 const ATTACH_TIMEOUT_MS = 5_000;
+const INPUT_RECEIPT_TIMEOUT_MS = 5_000;
+const INBOUND_LIVENESS_TIMEOUT_MS = 75_000;
 const FORCE_RECONNECT_TIMEOUT_MS = 12_000;
 const MIN_RECONNECT_MS = 500;
 const MAX_RECONNECT_MS = 30_000;
 const STABLE_CONNECTION_MS = 30_000;
+const ONLINE_ACTIVITY_PUBLISH_MS = 5_000;
 const MAX_INPUT_FRAME_BYTES = 16 * 1024;
+const MAX_PENDING_INPUT_RECEIPTS = 128;
 const REPLAY_BATCH_SETTLE_MS = 16;
 const MAX_REPLAY_BATCH_BYTES = 1024 * 1024;
 
@@ -74,6 +79,15 @@ interface TerminalSubscription {
   }>;
 }
 
+interface PendingInputReceipt {
+  readonly subscription: TerminalSubscription;
+  readonly frameSequence: bigint;
+  readonly inputBytes: number;
+  readonly resolve: () => void;
+  readonly reject: (cause: Error) => void;
+  readonly timeout: ReturnType<typeof setTimeout>;
+}
+
 let attachmentSequence = 0;
 
 /// One route-independent transport owner per paired Mac.
@@ -90,15 +104,18 @@ export class MobileConnectionCoordinator {
   private generation = 0;
   private stopped = false;
   private ready = false;
+  private inputReceiptSource: "daemon" | "gateway" | undefined;
   private reconnectDelay = MIN_RECONNECT_MS;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private stabilityTimer: ReturnType<typeof setTimeout> | undefined;
+  private livenessTimer: ReturnType<typeof setTimeout> | undefined;
   private controlChannel: ControlChannel | undefined;
   private inbound = Promise.resolve();
   private readonly subscriptions = new Map<string, TerminalSubscription>();
+  private readonly inputReceipts = new Map<string, PendingInputReceipt>();
   private readonly invalidationListeners = new Set<(event: ProjectionInvalidation) => void>();
-  private readonly statusListeners = new Set<() => void>();
-  private lastStatus: "online" | "offline" | undefined;
+  private readonly statusListeners = new Set<(status: "online" | "offline") => void>();
+  private lastOnlineActivityAtEpochMs = 0;
 
   constructor(
     private readonly connection: SavedConnection,
@@ -128,7 +145,7 @@ export class MobileConnectionCoordinator {
     };
   }
 
-  subscribeStatus(listener: () => void): () => void {
+  subscribeStatus(listener: (status: "online" | "offline") => void): () => void {
     this.statusListeners.add(listener);
     void this.ensureConnected().catch(() => this.scheduleReconnect("statusConnectFailed"));
     return () => this.statusListeners.delete(listener);
@@ -190,22 +207,44 @@ export class MobileConnectionCoordinator {
         }
         const socket = this.openSocket();
         if (socket === undefined) throw new Error("Terminal is not connected.");
+        const inputReceiptSource = this.inputReceiptSource;
+        const requireReceipts = inputReceiptSource !== undefined;
+        const inputFrames = Math.ceil(bytes.byteLength / MAX_INPUT_FRAME_BYTES);
+        if (requireReceipts
+          && this.inputReceipts.size + inputFrames > MAX_PENDING_INPUT_RECEIPTS) {
+          throw new Error("Too much terminal input is awaiting delivery.");
+        }
+        const receipts: Promise<void>[] = [];
         try {
           for (let offset = 0; offset < bytes.byteLength; offset += MAX_INPUT_FRAME_BYTES) {
+            const payload = bytes.slice(offset, offset + MAX_INPUT_FRAME_BYTES);
+            const sequence = subscription.sequence++;
+            if (requireReceipts) {
+              receipts.push(this.expectInputReceipt(subscription, sequence, payload.byteLength));
+            }
             socket.send(encodeFrame(
               subscription.sessionId,
               subscription.runtimeEpoch,
-              subscription.sequence++,
+              sequence,
               KIND_INPUT,
-              bytes.slice(offset, offset + MAX_INPUT_FRAME_BYTES),
+              payload,
             ));
           }
+          await Promise.all(receipts);
+          this.reportTerminal(subscription, "input_delivered", {
+            inputBytes: bytes.byteLength,
+            inputFrames,
+            receipted: requireReceipts,
+            receiptSource: inputReceiptSource,
+          });
         } catch (cause: unknown) {
+          this.rejectInputReceipts(subscription, new Error("Terminal input delivery failed."));
+          await Promise.allSettled(receipts);
           this.reportTerminal(subscription, "input_send_failed", {
             inputBytes: bytes.byteLength,
             causeType: cause instanceof Error ? cause.name : typeof cause,
           });
-          this.invalidateTransport("inputSendFailed");
+          if (this.openSocket() !== undefined) this.invalidateTransport("inputSendFailed");
           throw cause;
         }
       },
@@ -221,11 +260,14 @@ export class MobileConnectionCoordinator {
     this.stopped = true;
     if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer);
     if (this.stabilityTimer !== undefined) clearTimeout(this.stabilityTimer);
+    if (this.livenessTimer !== undefined) clearTimeout(this.livenessTimer);
     this.control.close();
     const socket = this.physical;
     this.physical = undefined;
     this.connecting = undefined;
     this.ready = false;
+    this.inputReceiptSource = undefined;
+    this.rejectAllInputReceipts(new Error("Connection closed."));
     socket?.close();
     for (const subscription of this.subscriptions.values()) {
       subscription.detached = true;
@@ -268,7 +310,6 @@ export class MobileConnectionCoordinator {
         if (channel.closed) return;
         channel.closed = true;
         if (this.controlChannel === channel) this.controlChannel = undefined;
-        this.invalidateTransport("controlChannelClosed");
       },
     };
   };
@@ -314,6 +355,8 @@ export class MobileConnectionCoordinator {
             type: "mobile.authenticate",
             mobileTransportVersion: MOBILE_TRANSPORT_VERSION,
             mobileHeartbeatVersion: 1,
+            mobileInputReceiptVersion: 1,
+            terminalInputAckVersion: 1,
             ...this.diagnostics.correlation(),
             controlToken: this.connection.controlToken,
             terminalToken: this.connection.terminalToken,
@@ -330,10 +373,12 @@ export class MobileConnectionCoordinator {
       socket.onmessage = (event) => {
         this.inbound = this.inbound.then(async () => {
           if (generation !== this.generation || this.stopped) return;
+          this.refreshInboundLiveness(generation);
           if (!this.ready) {
             const ready = parseReady(event.data);
-            if (!ready) throw new Error("Mobile gateway authentication was refused.");
+            if (ready === undefined) throw new Error("Mobile gateway authentication was refused.");
             this.ready = true;
+            this.inputReceiptSource = ready.inputReceiptSource;
             this.connecting = undefined;
             clearTimeout(timer);
             if (!settled) {
@@ -412,6 +457,7 @@ export class MobileConnectionCoordinator {
   }
 
   private async receive(data: unknown): Promise<void> {
+    this.publishStatus("online");
     if (typeof data === "string") {
       let message: unknown;
       try { message = JSON.parse(data); } catch { throw new Error("Invalid mobile gateway JSON."); }
@@ -419,6 +465,17 @@ export class MobileConnectionCoordinator {
         const socket = this.openSocket();
         if (socket === undefined) throw new Error("Mobile heartbeat arrived without an open transport.");
         socket.send(JSON.stringify({ type: "mobile.pong" }));
+        return;
+      }
+      if (isMobileInputAccepted(message)) {
+        if (this.inputReceiptSource === "gateway") {
+          this.acceptInputReceipt(
+            message.sessionId,
+            message.runtimeEpoch,
+            BigInt(message.frameSequence),
+            false,
+          );
+        }
         return;
       }
       if (isInvalidation(message)) {
@@ -438,6 +495,12 @@ export class MobileConnectionCoordinator {
         runtimeEpoch: frame.epoch,
         frameKind: frame.kind,
       });
+      return;
+    }
+    if (frame.kind === KIND_INPUT_ACK) {
+      if (this.inputReceiptSource === "daemon") {
+        this.acceptInputReceipt(frame.sessionId, frame.epoch, frame.sequence, true);
+      }
       return;
     }
     if (frame.kind === KIND_ACK) {
@@ -535,6 +598,7 @@ export class MobileConnectionCoordinator {
   ): void {
     if (subscription.detached) return;
     subscription.detached = true;
+    this.rejectInputReceipts(subscription, waiterError);
     this.subscriptions.delete(subscription.key);
     this.clearReplay(subscription);
     subscription.firstResolve = undefined;
@@ -570,9 +634,12 @@ export class MobileConnectionCoordinator {
     if (generation !== this.generation) return;
     this.generation += 1;
     this.ready = false;
+    this.inputReceiptSource = undefined;
     this.physical = undefined;
     this.connecting = undefined;
     if (this.stabilityTimer !== undefined) clearTimeout(this.stabilityTimer);
+    if (this.livenessTimer !== undefined) clearTimeout(this.livenessTimer);
+    this.livenessTimer = undefined;
     const channel = this.controlChannel;
     if (channel !== undefined && !channel.closed) {
       channel.closed = true;
@@ -584,6 +651,7 @@ export class MobileConnectionCoordinator {
       this.clearReplay(subscription);
       subscription.onEvent({ type: "state", state: "connectionLost" });
     }
+    this.rejectAllInputReceipts(new Error("Terminal transport disconnected."));
     this.diagnostics.report("connection", "transport_disconnected", {
       connectionId: this.connection.id,
       generation,
@@ -613,6 +681,19 @@ export class MobileConnectionCoordinator {
 
   private openSocket(): DataSocket | undefined {
     return this.ready && this.physical?.readyState === 1 ? this.physical : undefined;
+  }
+
+  private refreshInboundLiveness(generation: number): void {
+    if (this.livenessTimer !== undefined) clearTimeout(this.livenessTimer);
+    this.livenessTimer = setTimeout(() => {
+      if (generation !== this.generation || !this.ready) return;
+      this.diagnostics.report("connection", "inbound_liveness_timeout", {
+        connectionId: this.connection.id,
+        generation,
+        timeoutMs: INBOUND_LIVENESS_TIMEOUT_MS,
+      });
+      this.invalidateTransport("inboundLivenessTimeout");
+    }, INBOUND_LIVENESS_TIMEOUT_MS);
   }
 
   private emitControl(channel: ControlChannel, type: string, event: { data?: unknown; type?: string; code?: number; reason?: string; wasClean?: boolean }): void {
@@ -678,11 +759,101 @@ export class MobileConnectionCoordinator {
     });
   }
 
+  private expectInputReceipt(
+    subscription: TerminalSubscription,
+    sequence: bigint,
+    inputBytes: number,
+  ): Promise<void> {
+    const frameSequence = sequence.toString();
+    const key = inputReceiptKey(subscription.sessionId, subscription.runtimeEpoch, frameSequence);
+    return new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        const pending = this.inputReceipts.get(key);
+        if (pending === undefined) return;
+        this.inputReceipts.delete(key);
+        const error = new Error("Terminal input delivery timed out.");
+        pending.reject(error);
+        this.reportTerminal(subscription, "input_receipt_timeout", {
+          frameSequence,
+          inputBytes,
+        });
+        this.invalidateTransport("inputReceiptTimeout");
+      }, INPUT_RECEIPT_TIMEOUT_MS);
+      this.inputReceipts.set(key, {
+        subscription,
+        frameSequence: sequence,
+        inputBytes,
+        resolve,
+        reject,
+        timeout,
+      });
+    });
+  }
+
+  private acceptInputReceipt(
+    sessionId: string,
+    runtimeEpoch: number,
+    frameSequence: bigint,
+    cumulative: boolean,
+  ): void {
+    const accepted: PendingInputReceipt[] = [];
+    for (const [key, pending] of this.inputReceipts) {
+      if (pending.subscription.sessionId !== sessionId
+        || pending.subscription.runtimeEpoch !== runtimeEpoch
+        || (cumulative ? pending.frameSequence > frameSequence : pending.frameSequence !== frameSequence)) {
+        continue;
+      }
+      this.inputReceipts.delete(key);
+      clearTimeout(pending.timeout);
+      accepted.push(pending);
+    }
+    if (accepted.length === 0) {
+      this.diagnostics.report("terminal", "orphan_input_receipt_ignored", {
+        connectionId: this.connection.id,
+        sessionId,
+        runtimeEpoch,
+        frameSequence: frameSequence.toString(),
+      });
+      return;
+    }
+    for (const pending of accepted) {
+      pending.resolve();
+      this.reportTerminal(pending.subscription, "input_receipt_received", {
+        frameSequence: pending.frameSequence.toString(),
+        acknowledgedThroughSequence: frameSequence.toString(),
+        inputBytes: pending.inputBytes,
+        receiptSource: this.inputReceiptSource,
+      });
+    }
+  }
+
+  private rejectInputReceipts(subscription: TerminalSubscription, error: Error): void {
+    for (const [key, pending] of this.inputReceipts) {
+      if (pending.subscription !== subscription) continue;
+      this.inputReceipts.delete(key);
+      clearTimeout(pending.timeout);
+      pending.reject(error);
+    }
+  }
+
+  private rejectAllInputReceipts(error: Error): void {
+    const pending = [...this.inputReceipts.values()];
+    this.inputReceipts.clear();
+    for (const receipt of pending) {
+      clearTimeout(receipt.timeout);
+      receipt.reject(error);
+    }
+  }
+
   private publishStatus(status: "online" | "offline"): void {
-    const previous = this.lastStatus;
-    this.lastStatus = status;
-    if (previous === undefined || previous === status) return;
-    for (const listener of this.statusListeners) listener();
+    if (status === "online") {
+      const now = Date.now();
+      if (now - this.lastOnlineActivityAtEpochMs < ONLINE_ACTIVITY_PUBLISH_MS) return;
+      this.lastOnlineActivityAtEpochMs = now;
+    } else {
+      this.lastOnlineActivityAtEpochMs = 0;
+    }
+    for (const listener of this.statusListeners) listener(status);
   }
 }
 
@@ -698,15 +869,22 @@ function terminalKey(sessionId: string, runtimeEpoch: number): string {
   return `${sessionId}:${runtimeEpoch}`;
 }
 
-function parseReady(data: unknown): boolean {
-  if (typeof data !== "string") return false;
+function parseReady(
+  data: unknown,
+): { readonly inputReceiptSource: "daemon" | "gateway" | undefined } | undefined {
+  if (typeof data !== "string") return undefined;
   try {
     const value: unknown = JSON.parse(data);
-    return isRecord(value)
+    if (!(isRecord(value)
       && value.event === "mobile.ready"
-      && value.mobileTransportVersion === MOBILE_TRANSPORT_VERSION;
+      && value.mobileTransportVersion === MOBILE_TRANSPORT_VERSION)) return undefined;
+    return {
+      inputReceiptSource: value.terminalInputAckVersion === 1
+        ? "daemon"
+        : value.mobileInputReceiptVersion === 1 ? "gateway" : undefined,
+    };
   } catch {
-    return false;
+    return undefined;
   }
 }
 
@@ -720,6 +898,29 @@ function isInvalidation(value: unknown): value is { event: "projection.invalidat
 
 function isMobilePing(value: unknown): value is { event: "mobile.ping" } {
   return isRecord(value) && value.event === "mobile.ping";
+}
+
+interface MobileInputAccepted {
+  readonly event: "mobile.inputAccepted";
+  readonly mobileInputReceiptVersion: 1;
+  readonly sessionId: string;
+  readonly runtimeEpoch: number;
+  readonly frameSequence: string;
+}
+
+function isMobileInputAccepted(value: unknown): value is MobileInputAccepted {
+  return isRecord(value)
+    && value.event === "mobile.inputAccepted"
+    && value.mobileInputReceiptVersion === 1
+    && typeof value.sessionId === "string"
+    && typeof value.runtimeEpoch === "number"
+    && Number.isSafeInteger(value.runtimeEpoch)
+    && typeof value.frameSequence === "string"
+    && /^(?:0|[1-9][0-9]*)$/u.test(value.frameSequence);
+}
+
+function inputReceiptKey(sessionId: string, runtimeEpoch: number, frameSequence: string): string {
+  return `${sessionId}:${runtimeEpoch}:${frameSequence}`;
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {

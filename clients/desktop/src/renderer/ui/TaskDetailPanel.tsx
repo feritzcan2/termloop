@@ -6,7 +6,7 @@ import type {
 } from "@termloop/contract/current";
 import type { AgentCapabilityDto } from "@termloop/contract/current";
 import type { AgentStatus, BranchCommitSummary, GitHostProjection, Session, Task } from "../model.js";
-import { sessionLabel, taskJiraIssueKey } from "../model.js";
+import { sessionLabel, taskEffectiveBranch, taskJiraIssueKey } from "../model.js";
 import { agentAttention, sessionState } from "../session-presentation.js";
 import {
   integrationTone, taskChangeCount, taskChangedFileLabel, taskDivergence, taskIntegration, taskStage,
@@ -314,6 +314,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
 
   const stage = taskStage(task, false);
   const divergence = taskDivergence(task);
+  const effectiveBranch = taskEffectiveBranch(task);
   const changeCount = taskChangeCount(task);
   const integration = taskIntegration(props.gitHostProjection, props.branchCommitSummary);
   const commitCount = props.branchCommitSummary?.freshness === "fresh"
@@ -456,6 +457,15 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
         <section className="td-block" aria-label="Changes">
           <h2>Changes</h2>
           <div className="td-facts">
+            <span
+              className={`td-fact td-effective-branch${divergence ? " attention" : ""}`}
+              title={divergence?.title ?? (effectiveBranch
+                ? `Current effective branch: ${effectiveBranch}`
+                : "No branch is currently available for this Task")}
+            >
+              <Icon name="branch" />
+              <span>{effectiveBranch ?? "No branch"}</span>
+            </span>
             <button
               type="button"
               className="td-fact-action"

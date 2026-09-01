@@ -45,6 +45,7 @@ pub struct StewardTaskAgentStartPlan {
     branch_name: String,
     worktree_leaf: String,
     existing_branch_name: Option<String>,
+    checked_out_branch_name: Option<String>,
     existing_worktree_path: Option<String>,
     agent_id: String,
     launch_selection: AgentLaunchSelection,
@@ -75,9 +76,11 @@ impl StewardTaskAgentStartPlan {
     }
 
     pub fn branch_name(&self) -> &str {
-        self.existing_branch_name
-            .as_deref()
-            .unwrap_or(&self.branch_name)
+        effective_branch_name(
+            self.checked_out_branch_name.as_deref(),
+            self.existing_branch_name.as_deref(),
+            &self.branch_name,
+        )
     }
 
     pub fn planned_branch_name(&self) -> &str {
@@ -527,6 +530,9 @@ impl CoreRuntime {
             branch_name: checkout_names.branch_name,
             worktree_leaf: checkout_names.worktree_leaf,
             existing_branch_name: task.branch.as_ref().map(|branch| branch.name.clone()),
+            checked_out_branch_name: self
+                .cached_task_worktree_health(&task.id)
+                .and_then(|health| health.checked_out_branch.clone()),
             existing_worktree_path: task.worktree.as_ref().map(|worktree| worktree.path.clone()),
             agent_id,
             launch_selection,
@@ -883,6 +889,14 @@ impl CoreRuntime {
     }
 }
 
+fn effective_branch_name<'a>(
+    checked_out: Option<&'a str>,
+    durable: Option<&'a str>,
+    planned: &'a str,
+) -> &'a str {
+    checked_out.or(durable).unwrap_or(planned)
+}
+
 fn initial_assignment_state(
     template_ref: Option<&str>,
     capability: Option<&crate::AgentObservationCapability>,
@@ -922,6 +936,26 @@ mod tests {
     use termloop_domain::{ProcessDescriptor, SessionKind, SessionRecord};
     use termloop_store::{Store, issue_core_write_authority_for_composition};
     use termloop_terminal::TerminalService;
+
+    #[test]
+    fn checked_out_branch_precedes_the_durable_and_planned_fallbacks() {
+        assert_eq!(
+            effective_branch_name(
+                Some("feature/current"),
+                Some("feature/durable"),
+                "feature/planned",
+            ),
+            "feature/current"
+        );
+        assert_eq!(
+            effective_branch_name(None, Some("feature/durable"), "feature/planned"),
+            "feature/durable"
+        );
+        assert_eq!(
+            effective_branch_name(None, None, "feature/planned"),
+            "feature/planned"
+        );
+    }
 
     #[test]
     fn enabling_requires_an_available_cli_and_provider_change_advances_generation() {

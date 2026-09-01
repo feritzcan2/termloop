@@ -8,6 +8,8 @@ import { describe, expect, it } from "vitest";
 import {
   KIND_ACK,
   KIND_ATTACH,
+  KIND_INPUT,
+  KIND_INPUT_ACK,
   decodeFrame,
   encodeFrame,
 } from "../src/adapters/production/terminal-frame";
@@ -21,6 +23,7 @@ describe("persistent mobile access gateway", () => {
     const upstreamSockets = new WebSocketServer({ server: upstreamServer });
     const upstreamPaths = [];
     let subscriptionSocket;
+    let inputAckEnabled = false;
     upstreamSockets.on("connection", (socket, request) => {
       upstreamPaths.push(request.url);
       socket.on("message", (data, isBinary) => {
@@ -30,7 +33,13 @@ describe("persistent mobile access gateway", () => {
             return;
           }
           const frame = decodeFrame(new Uint8Array(data));
-          socket.send(encodeFrame(frame.sessionId, frame.epoch, frame.sequence, KIND_ACK));
+          if (frame.kind === 17) {
+            inputAckEnabled = true;
+          } else if (frame.kind === KIND_ATTACH) {
+            socket.send(encodeFrame(frame.sessionId, frame.epoch, frame.sequence, KIND_ACK));
+          } else if (frame.kind === KIND_INPUT && inputAckEnabled) {
+            socket.send(encodeFrame(frame.sessionId, frame.epoch, frame.sequence, KIND_INPUT_ACK));
+          }
           return;
         }
         const requestMessage = JSON.parse(data.toString());
@@ -51,7 +60,7 @@ describe("persistent mobile access gateway", () => {
       });
     });
     const upstreamPort = await listen(upstreamServer);
-    writeFileSync(runtimeFile, runtime(upstreamPort, "r", "t"));
+    writeFileSync(runtimeFile, runtime(upstreamPort, "r", "t", "a", 1));
     const gatewayPort = await freePort();
     writeFileSync(gatewayConfig, JSON.stringify({
       version: 1,
@@ -70,12 +79,15 @@ describe("persistent mobile access gateway", () => {
       mobile.send(JSON.stringify({
         type: "mobile.authenticate",
         mobileTransportVersion: 2,
+        mobileInputReceiptVersion: 1,
+        terminalInputAckVersion: 1,
         controlToken: "c".repeat(64),
         terminalToken: "m".repeat(64),
       }));
       expect(JSON.parse((await message(mobile)).toString())).toEqual({
         event: "mobile.ready",
         mobileTransportVersion: 2,
+        terminalInputAckVersion: 1,
       });
       mobile.send(JSON.stringify({
         id: "control-1",
@@ -90,6 +102,16 @@ describe("persistent mobile access gateway", () => {
       mobile.send(encodeFrame(session, 7, 1n, KIND_ATTACH));
       const ack = decodeFrame(new Uint8Array(await message(mobile)));
       expect(ack).toMatchObject({ sessionId: session, epoch: 7, kind: KIND_ACK });
+
+      const inputReceipt = message(mobile);
+      mobile.send(encodeFrame(session, 7, 2n, KIND_INPUT, new TextEncoder().encode("hello")));
+      expect(decodeFrame(new Uint8Array(await inputReceipt))).toMatchObject({
+        sessionId: session,
+        epoch: 7,
+        sequence: 2n,
+        kind: KIND_INPUT_ACK,
+      });
+      expect(inputAckEnabled).toBe(true);
 
       await waitFor(() => subscriptionSocket !== undefined);
       subscriptionSocket.send(JSON.stringify({
@@ -471,13 +493,14 @@ describe("persistent mobile access gateway", () => {
   });
 });
 
-function runtime(port, read, terminal, protocol = "a") {
+function runtime(port, read, terminal, protocol = "a", terminalInputAckVersion) {
   return JSON.stringify({
     protocolVersion: `sha256:${protocol.repeat(64)}`,
     controlUrl: `ws://127.0.0.1:${port}/control`,
     terminalUrl: `ws://127.0.0.1:${port}/terminal`,
     readOnlyToken: read.repeat(64),
     terminalToken: terminal.repeat(64),
+    ...(terminalInputAckVersion === 1 ? { terminalInputAckVersion } : {}),
   });
 }
 

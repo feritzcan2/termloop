@@ -2543,6 +2543,7 @@ button.history-row-main { cursor: pointer; }
    pointer can land on. */
 .td-facts { display: grid; justify-items: start; gap: 1px; }
 .td-fact { display: inline-flex; align-items: center; gap: 8px; padding: 5px 0; color: var(--td-body); font: 12.5px/1.5 var(--font-mono); }
+.td-fact > svg { flex: none; width: 13px; height: 13px; color: var(--td-dim); }
 .td-fact-dot { flex: none; box-sizing: content-box; width: 6px; height: 6px; margin: 0 3px 0 4px; border-radius: 50%; background: currentColor; }
 .td-fact.warn, .td-fact.attention { color: var(--warning); }
 .td-fact.review { color: var(--agent-status-review); }
