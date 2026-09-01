@@ -241,7 +241,8 @@ struct OutputActivityState {
     synchronized_frame_open: bool,
     synchronized_frame_had_show_cursor: bool,
     synchronized_frame_cursor_position: Option<CursorPosition>,
-    synchronized_frame_cursor_after_show: Option<CursorPosition>,
+    synchronized_frame_cursor_position_observed: bool,
+    synchronized_frame_visible_cursor_position: Option<CursorPosition>,
     synchronized_frame_erased_rows: ErasedTerminalRows,
     composer_render_sequence: u64,
     composer_render_count: u64,
@@ -286,8 +287,9 @@ impl OutputActivityTracker {
                         if state.synchronized_frame_open =>
                     {
                         state.synchronized_frame_cursor_position = Some(position);
+                        state.synchronized_frame_cursor_position_observed = true;
                         if state.synchronized_frame_had_show_cursor {
-                            state.synchronized_frame_cursor_after_show = Some(position);
+                            state.synchronized_frame_visible_cursor_position = Some(position);
                         }
                     }
                     Some(TerminalStructure::CursorPosition(position))
@@ -319,7 +321,8 @@ impl OutputActivityTracker {
                     state.synchronized_frame_had_show_cursor = false;
                     state.synchronized_frame_cursor_position =
                         state.completed_composer_frame_cursor_position;
-                    state.synchronized_frame_cursor_after_show = None;
+                    state.synchronized_frame_cursor_position_observed = false;
+                    state.synchronized_frame_visible_cursor_position = None;
                     state.synchronized_frame_erased_rows.clear();
                 }
                 if record_marker(byte, HIDE_CURSOR, &mut state.hide_cursor_match)
@@ -335,7 +338,16 @@ impl OutputActivityTracker {
                     state.composer_render_count = state.composer_render_count.saturating_add(1);
                     if state.synchronized_frame_open {
                         state.synchronized_frame_had_show_cursor = true;
-                        state.synchronized_frame_cursor_after_show = None;
+                        // A visible synchronized-frame cursor is structural
+                        // evidence whether the frame positioned it immediately
+                        // before or after showing it. Never reuse a position
+                        // inherited from the previous completed frame.
+                        state.synchronized_frame_visible_cursor_position =
+                            if state.synchronized_frame_cursor_position_observed {
+                                state.synchronized_frame_cursor_position
+                            } else {
+                                None
+                            };
                     }
                     if self.accepts_normalized_screen_diff && state.normalized_repaint_open {
                         let position = state.terminal_structure_parser.cursor_position();
@@ -364,7 +376,7 @@ impl OutputActivityTracker {
                         state.synchronized_frame_count.saturating_add(1);
                     if state.synchronized_frame_open
                         && state.synchronized_frame_had_show_cursor
-                        && let Some(position) = state.synchronized_frame_cursor_after_show
+                        && let Some(position) = state.synchronized_frame_visible_cursor_position
                     {
                         state.completed_composer_frame_sequence = state.sequence;
                         state.completed_composer_frame_count =
@@ -380,7 +392,8 @@ impl OutputActivityTracker {
                     state.synchronized_frame_open = false;
                     state.synchronized_frame_had_show_cursor = false;
                     state.synchronized_frame_cursor_position = None;
-                    state.synchronized_frame_cursor_after_show = None;
+                    state.synchronized_frame_cursor_position_observed = false;
+                    state.synchronized_frame_visible_cursor_position = None;
                     state.synchronized_frame_erased_rows.clear();
                 }
             }
@@ -885,6 +898,27 @@ mod tests {
         let snapshot = tracker.snapshot("session".into(), 7).unwrap();
 
         tracker.record(b"\x1b[?2026h\x1b[37;1H\x1b[Kcomposer\x1b[?25h\x1b[37;4H\x1b[?2026l");
+
+        assert_eq!(
+            snapshot.diagnostics_since().unwrap(),
+            OutputActivityDiagnostics {
+                output_chunks: 1,
+                synchronized_frames: 1,
+                composer_renders: 1,
+                completed_composer_frames: 1,
+                composer_surface_frames: 1,
+                composer_cursor_moved: true,
+            }
+        );
+    }
+
+    #[test]
+    fn structural_diagnostics_accept_cursor_position_before_show_cursor() {
+        let tracker = OutputActivityTracker::default();
+        tracker.record(b"\x1b[?2026hidle\x1b[36;3H\x1b[?25h\x1b[?2026l");
+        let snapshot = tracker.snapshot("session".into(), 7).unwrap();
+
+        tracker.record(b"\x1b[?2026h\x1b[37;1H\x1b[Kcomposer\x1b[37;4H\x1b[?25h\x1b[?2026l");
 
         assert_eq!(
             snapshot.diagnostics_since().unwrap(),
