@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   enableTerminalInputAckFrame,
+  terminalFrameMetadata,
   terminalInputReceipt,
 } from "../scripts/mobile-access-input-receipt.mjs";
 import {
@@ -25,6 +26,16 @@ describe("mobile terminal input receipts", () => {
       encodeFrame(sessionId, 7, 43n, KIND_ATTACH),
     ))).toBeUndefined();
     expect(terminalInputReceipt(Buffer.from([1, 2, 3]))).toBeUndefined();
+    expect(terminalFrameMetadata(Buffer.from(
+      encodeFrame(sessionId, 7, 43n, KIND_ATTACH),
+    ))).toEqual({
+      sessionId,
+      runtimeEpoch: 7,
+      frameSequence: "43",
+      frameKind: KIND_ATTACH,
+      frameKindName: "attach",
+      payloadBytes: 0,
+    });
   });
 
   it("builds the byte-free daemon acknowledgement capability frame", () => {

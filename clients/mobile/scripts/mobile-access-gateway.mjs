@@ -15,6 +15,7 @@ import {
 } from "./mobile-access-heartbeat.mjs";
 import {
   enableTerminalInputAckFrame,
+  terminalFrameMetadata,
   terminalInputReceipt,
 } from "./mobile-access-input-receipt.mjs";
 import {
@@ -1477,30 +1478,26 @@ async function acceptMobile(client, connectionId) {
       subscription = subscribeMobileInvalidations(runtime, client, connectionId);
       client.on("message", (nextData, nextIsBinary) => {
         if (nextIsBinary) {
+          const frameBytes = rawBuffer(nextData);
+          const metadata = terminalFrameMetadata(frameBytes);
           if (upstream.readyState !== WebSocket.OPEN) {
-            diagnostics.report("mobile", "terminal_input_refused", {
+            diagnostics.report("mobile", "terminal_frame_refused", {
               connectionId,
               reason: "upstreamUnavailable",
+              ...terminalDiagnosticContext(metadata),
             });
             unavailable(client);
             return;
           }
           const receipt = daemonInputAck || gatewayInputReceipt
-            ? terminalInputReceipt(rawBuffer(nextData)) : undefined;
-          if (receipt === undefined) {
-            upstream.send(nextData, { binary: true });
-            return;
-          }
+            ? terminalInputReceipt(frameBytes) : undefined;
           try {
             upstream.send(nextData, { binary: true }, (error) => {
               if (error != null) {
-                diagnostics.report("mobile", "terminal_input_refused", {
+                diagnostics.report("mobile", "terminal_frame_refused", {
                   connectionId,
                   reason: "upstreamSendFailed",
-                  sessionId: receipt.sessionId,
-                  runtimeEpoch: receipt.runtimeEpoch,
-                  frameSequence: receipt.frameSequence,
-                  inputBytes: receipt.inputBytes,
+                  ...terminalDiagnosticContext(metadata),
                 });
                 upstream.terminate();
                 unavailable(client);
@@ -1516,23 +1513,18 @@ async function acceptMobile(client, connectionId) {
                   frameSequence: receipt.frameSequence,
                 }));
               }
-              diagnostics.report("mobile", daemonInputAck
-                ? "terminal_input_forwarded" : "terminal_input_accepted", {
+              if (metadata !== undefined) diagnostics.report("mobile", receipt !== undefined
+                ? daemonInputAck ? "terminal_input_forwarded" : "terminal_input_accepted"
+                : "terminal_frame_forwarded", {
                 connectionId,
-                sessionId: receipt.sessionId,
-                runtimeEpoch: receipt.runtimeEpoch,
-                frameSequence: receipt.frameSequence,
-                inputBytes: receipt.inputBytes,
+                ...terminalDiagnosticContext(metadata),
               });
             });
           } catch {
-            diagnostics.report("mobile", "terminal_input_refused", {
+            diagnostics.report("mobile", "terminal_frame_refused", {
               connectionId,
               reason: "upstreamSendThrew",
-              sessionId: receipt.sessionId,
-              runtimeEpoch: receipt.runtimeEpoch,
-              frameSequence: receipt.frameSequence,
-              inputBytes: receipt.inputBytes,
+              ...terminalDiagnosticContext(metadata),
             });
             upstream.terminate();
             unavailable(client);
@@ -1565,6 +1557,15 @@ async function acceptMobile(client, connectionId) {
         void acceptMobileControl(client, request, connectionId);
       });
       return;
+    }
+    if (isBinary) {
+      const metadata = terminalFrameMetadata(rawBuffer(data));
+      if (metadata !== undefined && [4, 5, 11, 12, 14, 16].includes(metadata.frameKind)) {
+        diagnostics.report("mobile", "terminal_frame_received", {
+          connectionId,
+          ...terminalDiagnosticContext(metadata),
+        });
+      }
     }
     if (client.readyState === WebSocket.OPEN) client.send(data, { binary: isBinary });
   });
@@ -2273,6 +2274,17 @@ function rawBuffer(value) {
   if (Buffer.isBuffer(value)) return value;
   if (Array.isArray(value)) return Buffer.concat(value);
   return Buffer.from(value);
+}
+
+function terminalDiagnosticContext(metadata) {
+  return metadata === undefined ? {} : {
+    sessionId: metadata.sessionId,
+    runtimeEpoch: metadata.runtimeEpoch,
+    frameSequence: metadata.frameSequence,
+    frameKind: metadata.frameKind,
+    frameKindName: metadata.frameKindName,
+    payloadBytes: metadata.payloadBytes,
+  };
 }
 
 function safePathname(value) {

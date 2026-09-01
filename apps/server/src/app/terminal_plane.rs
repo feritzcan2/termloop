@@ -19,7 +19,7 @@ use super::control::constant_time_equal;
 const TERMINAL_HEADER_LEN: usize = 41;
 const MAX_TERMINAL_PAYLOAD: usize = termloop_terminal::MAX_IO_CHUNK_BYTES;
 const MAX_ATTACHMENT_FRAMES: usize = 256;
-const TERMINAL_INPUT_RECEIPT_TIMEOUT: Duration = Duration::from_secs(5);
+const TERMINAL_INPUT_RECEIPT_TIMEOUT: Duration = Duration::from_secs(4);
 
 #[derive(Clone)]
 pub(super) struct TerminalResizeRegistry {
@@ -164,6 +164,7 @@ struct TerminalFrame {
 struct AttachmentQueue {
     frames: VecDeque<TerminalFrame>,
     dropped: u64,
+    attach_ack: Option<TerminalFrame>,
     input_ack: Option<TerminalFrame>,
 }
 
@@ -185,9 +186,13 @@ impl OutboundBuffer {
             .attachments
             .get_mut(&frame.session_id)
             .expect("inserted");
+        if frame.kind == FrameKind::Ack as u8 {
+            queue.attach_ack = Some(frame);
+            return;
+        }
         if frame.kind == FrameKind::InputAck as u8 {
             if queue.input_ack.as_ref().is_none_or(|pending| {
-                pending.epoch == frame.epoch && pending.sequence < frame.sequence
+                pending.epoch != frame.epoch || pending.sequence < frame.sequence
             }) {
                 queue.input_ack = Some(frame);
             }
@@ -205,6 +210,9 @@ impl OutboundBuffer {
             let id = self.round_robin.pop_front()?;
             self.round_robin.push_back(id);
             let queue = self.attachments.get_mut(&id)?;
+            if let Some(frame) = queue.attach_ack.take() {
+                return Some(frame);
+            }
             if queue.dropped > 0 {
                 let dropped = std::mem::take(&mut queue.dropped);
                 let next = queue.frames.front()?;
@@ -741,6 +749,53 @@ mod tests {
         let output = buffer.pop_fair().unwrap();
         assert_eq!(output.kind, FrameKind::Output as u8);
         assert_eq!(output.payload, b"output");
+
+        buffer.enqueue(TerminalFrame {
+            session_id,
+            epoch: 1,
+            sequence: u64::MAX,
+            kind: FrameKind::InputAck as u8,
+            payload: Vec::new(),
+        });
+        buffer.enqueue(TerminalFrame {
+            session_id,
+            epoch: 2,
+            sequence: 1,
+            kind: FrameKind::InputAck as u8,
+            payload: Vec::new(),
+        });
+        let current_epoch_ack = buffer.pop_fair().unwrap();
+        assert_eq!(current_epoch_ack.epoch, 2);
+        assert_eq!(current_epoch_ack.sequence, 1);
+    }
+
+    #[test]
+    fn attach_ack_precedes_and_survives_a_full_replay_queue() {
+        let session_id = Uuid::new_v4();
+        let mut buffer = OutboundBuffer::default();
+        for sequence in 1..=MAX_ATTACHMENT_FRAMES as u64 {
+            buffer.enqueue(TerminalFrame {
+                session_id,
+                epoch: 1,
+                sequence,
+                kind: FrameKind::ReplayOutput as u8,
+                payload: vec![0],
+            });
+        }
+        buffer.enqueue(TerminalFrame {
+            session_id,
+            epoch: 1,
+            sequence: 99,
+            kind: FrameKind::Ack as u8,
+            payload: Vec::new(),
+        });
+
+        let ack = buffer.pop_fair().unwrap();
+        assert_eq!(ack.kind, FrameKind::Ack as u8);
+        assert_eq!(
+            buffer.attachments[&session_id].frames.len(),
+            MAX_ATTACHMENT_FRAMES
+        );
     }
 
     #[test]
