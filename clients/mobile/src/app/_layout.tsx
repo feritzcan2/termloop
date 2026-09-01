@@ -33,6 +33,7 @@ export default function RootLayout() {
                 }}
               >
                 <Stack.Screen name="index" />
+                <Stack.Screen name="force-update" />
                 <Stack.Screen name="settings" />
                 <Stack.Screen name="pair" options={{ presentation: "modal" }} />
                 <Stack.Screen name="project/[projectId]" />

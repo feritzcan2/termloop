@@ -18,6 +18,7 @@ import {
   terminalFrameMetadata,
   terminalInputReceipt,
 } from "./mobile-access-input-receipt.mjs";
+import { mobileUpdatePage } from "./mobile-access-update-page.mjs";
 import {
   apnsPayload,
   attentionTransitions,
@@ -138,6 +139,12 @@ const sockets = new Set();
 const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 4 * 1024 * 1024 });
 
 const server = http.createServer(async (request, response) => {
+  if (request.method === "GET" && safePathname(request.url) === "/mobile-update") {
+    const page = mobileUpdatePage(request.url);
+    response.writeHead(200, page.headers);
+    response.end(page.body);
+    return;
+  }
   if (request.url === "/health") {
     response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
     response.end(JSON.stringify({ ready: true }));
