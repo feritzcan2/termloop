@@ -170,8 +170,8 @@ export class MobileControlClient {
     private readonly connectionId: string = "unspecified",
   ) {}
 
-  version() {
-    if (this.cachedVersion !== undefined
+  version(fresh = false) {
+    if (!fresh && this.cachedVersion !== undefined
       && Date.now() - this.lastSuccessfulResponseAtEpochMs <= REACHABILITY_EVIDENCE_MS) {
       return Promise.resolve(this.cachedVersion);
     }

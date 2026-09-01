@@ -9,6 +9,7 @@ import {
   mobileDiagnosticContext,
 } from "./mobile-access-diagnostics.mjs";
 import {
+  configureWebSocketHeartbeat,
   sweepWebSocketHeartbeats,
   trackWebSocketHeartbeat,
 } from "./mobile-access-heartbeat.mjs";
@@ -228,7 +229,12 @@ server.on("upgrade", (request, socket, head) => {
       : pathname === "/terminal" ? "terminal" : "mobile";
     const startedAtEpochMs = Date.now();
     sockets.add(client);
-    trackWebSocketHeartbeat(client, { connectionId, channel });
+    trackWebSocketHeartbeat(client, { connectionId, channel }, {
+      /// Existing unified clients did not advertise an application heartbeat.
+      /// Keep probing them, but never treat a missing native Pong as proof that
+      /// their React Native socket is dead.
+      enforceTimeout: channel !== "mobile",
+    });
     diagnostics.report("downstream", "accepted", { connectionId, channel });
     client.once("error", (error) => {
       diagnostics.report("downstream", "socket_error", {
@@ -1391,6 +1397,15 @@ async function acceptMobile(client, connectionId) {
     });
     return refuse(client, "invalid credential");
   }
+  if (authentication.mobileHeartbeatVersion === 1) {
+    configureWebSocketHeartbeat(client, {
+      enforceTimeout: true,
+      probe: () => {
+        if (client.readyState !== WebSocket.OPEN) throw new Error("mobile socket is not open");
+        client.send(JSON.stringify({ event: "mobile.ping" }));
+      },
+    });
+  }
 
   let runtime;
   try { runtime = await currentRuntime(); } catch {
@@ -1448,6 +1463,7 @@ async function acceptMobile(client, connectionId) {
             message: "Mobile control request is invalid.",
           });
         }
+        if (request?.type === "mobile.pong") return;
         if (!constantTimeEqual(request?.token, config.controlToken)) {
           diagnostics.report("mobile", "request_refused", {
             connectionId,

@@ -80,13 +80,15 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
           if (!knownIds.has(connectionId)) unreachableSince.current.delete(connectionId);
         }
         const nextConnections: ConnectionProfile[] = profiles.map((profile) => {
-          if (profile.availability !== "offline") {
+          if (profile.availability !== "offline" && profile.availability !== "reconnecting") {
             unreachableSince.current.delete(profile.id);
             return profile;
           }
           const startedAt = unreachableSince.current.get(profile.id) ?? now;
           unreachableSince.current.set(profile.id, startedAt);
-          if (now - startedAt >= CONNECTION_RECONNECT_GRACE_MS) return profile;
+          if (profile.availability === "offline" && now - startedAt >= CONNECTION_RECONNECT_GRACE_MS) {
+            return profile;
+          }
           reconnecting = true;
           const previous = connectionsRef.current.find((candidate) => candidate.id === profile.id);
           return {

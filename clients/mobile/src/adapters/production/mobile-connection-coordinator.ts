@@ -313,6 +313,7 @@ export class MobileConnectionCoordinator {
           socket.send(JSON.stringify({
             type: "mobile.authenticate",
             mobileTransportVersion: MOBILE_TRANSPORT_VERSION,
+            mobileHeartbeatVersion: 1,
             ...this.diagnostics.correlation(),
             controlToken: this.connection.controlToken,
             terminalToken: this.connection.terminalToken,
@@ -414,6 +415,12 @@ export class MobileConnectionCoordinator {
     if (typeof data === "string") {
       let message: unknown;
       try { message = JSON.parse(data); } catch { throw new Error("Invalid mobile gateway JSON."); }
+      if (isMobilePing(message)) {
+        const socket = this.openSocket();
+        if (socket === undefined) throw new Error("Mobile heartbeat arrived without an open transport.");
+        socket.send(JSON.stringify({ type: "mobile.pong" }));
+        return;
+      }
       if (isInvalidation(message)) {
         for (const listener of this.invalidationListeners) listener(message.payload);
         return;
@@ -709,6 +716,10 @@ function isInvalidation(value: unknown): value is { event: "projection.invalidat
     && typeof value.payload.observationSequence === "number"
     && Array.isArray(value.payload.topics)
     && value.payload.topics.every((topic) => typeof topic === "string");
+}
+
+function isMobilePing(value: unknown): value is { event: "mobile.ping" } {
+  return isRecord(value) && value.event === "mobile.ping";
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {

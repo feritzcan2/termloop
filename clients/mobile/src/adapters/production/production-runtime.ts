@@ -69,6 +69,13 @@ const STEWARD_MESSAGE_LIMIT = 8_192;
 const STEWARD_VOICE_LIMIT_BYTES = 2 * 1024 * 1024;
 const STEWARD_SPEECH_LIMIT_BYTES = 10 * 1024 * 1024;
 const INITIAL_PROMPT_LIMIT = 4_096;
+/// A closed Mac must never hold the saved-computer catalog behind two 5s
+/// request attempts. Healthy local/Tailscale paths usually settle inside this
+/// window; slower profiles remain visible as reconnecting and finish in the
+/// background.
+const PROFILE_DISCOVERY_SETTLE_MS = 250;
+const ONLINE_PROFILE_FRESH_MS = 30_000;
+const UNAVAILABLE_PROFILE_FRESH_MS = 2_000;
 const BRACKETED_PASTE_START = "\u001b[200~";
 const BRACKETED_PASTE_END = "\u001b[201~";
 let terminalDiagnosticSequence = 0;
@@ -166,6 +173,16 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
   const watchTargetSettings = options.watchTargetSettings ?? noWatchTargetSettings;
   const voiceReceipts = options.voiceReceipts ?? noVoiceReceipts;
   const connectionChangeListeners = new Set<() => void>();
+  const profileCache = new Map<string, {
+    readonly connection: SavedConnection;
+    readonly checkedAtEpochMs: number;
+    readonly value: ConnectionProfile;
+  }>();
+  const profileProbes = new Map<string, {
+    readonly connection: SavedConnection;
+    readonly promise: Promise<void>;
+  }>();
+  let profileGeneration = 0;
   const coordinators = new Map<string, {
     readonly coordinator: MobileConnectionCoordinator;
     readonly unsubscribeStatus: () => void;
@@ -211,10 +228,57 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
       diagnostics,
     );
     const unsubscribeStatus = coordinator.subscribeStatus(() => {
+      /// Transport loss invalidates the reachability cache immediately. The
+      /// next catalog read starts a fresh version proof instead of reusing the
+      /// preceding socket's 30-second success window.
+      profileCache.delete(connection.id);
       for (const listener of connectionChangeListeners) listener();
     });
     coordinators.set(connection.id, { coordinator, unsubscribeStatus });
     return coordinator;
+  };
+
+  const probeProfile = (connection: SavedConnection): Promise<void> | undefined => {
+    const cached = profileCache.get(connection.id);
+    const freshnessMs = cached?.value.availability === "online"
+      ? ONLINE_PROFILE_FRESH_MS
+      : UNAVAILABLE_PROFILE_FRESH_MS;
+    if (cached !== undefined && sameSavedConnection(cached.connection, connection)
+      && Date.now() - cached.checkedAtEpochMs < freshnessMs) return undefined;
+    const current = profileProbes.get(connection.id);
+    if (current !== undefined && sameSavedConnection(current.connection, connection)) return current.promise;
+
+    const generation = profileGeneration;
+    const promise = controlClient(connection).version(true).then(
+      (version) => profile(connection, "online", version.version, version.protocolVersion),
+      (cause: unknown) => {
+        if (cause instanceof MobileControlError && cause.code === "unsupportedMobileApi") {
+          return profile(connection, "updateRequired");
+        }
+        if (cause instanceof MobileControlError && cause.code === "unauthenticated") {
+          return profile(connection, "revoked");
+        }
+        return profile(connection, "offline");
+      },
+    ).then((value) => {
+      if (generation !== profileGeneration) return;
+      const active = profileProbes.get(connection.id);
+      if (active === undefined || !sameSavedConnection(active.connection, connection)) return;
+      const previous = profileCache.get(connection.id);
+      profileCache.set(connection.id, {
+        connection,
+        checkedAtEpochMs: Date.now(),
+        value,
+      });
+      if (previous === undefined || !sameProfile(previous.value, value)) {
+        for (const listener of connectionChangeListeners) listener();
+      }
+    }).finally(() => {
+      const active = profileProbes.get(connection.id);
+      if (active?.promise === promise) profileProbes.delete(connection.id);
+    });
+    profileProbes.set(connection.id, { connection, promise });
+    return promise;
   };
 
   const resolve = async (connectionId: string): Promise<SavedConnection> => {
@@ -284,22 +348,28 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
       },
       async list() {
         const saved = await options.repository.list();
-        return Promise.all(saved.map(async (connection): Promise<ConnectionProfile> => {
-          try {
-            const version = await controlClient(connection).version();
-            return profile(connection, "online", version.version, version.protocolVersion);
-          } catch (cause: unknown) {
-            if (cause instanceof MobileControlError && cause.code === "unsupportedMobileApi") {
-              return profile(connection, "updateRequired");
-            }
-            if (cause instanceof MobileControlError && cause.code === "unauthenticated") {
-              return profile(connection, "revoked");
-            }
-            return profile(connection, "offline");
-          }
-        }));
+        const knownIds = new Set(saved.map(({ id }) => id));
+        for (const connectionId of profileCache.keys()) {
+          if (!knownIds.has(connectionId)) profileCache.delete(connectionId);
+        }
+        const probes = saved.flatMap((connection) => {
+          const pending = probeProfile(connection);
+          return pending === undefined ? [] : [pending];
+        });
+        if (saved.some((connection) => profileCache.get(connection.id) === undefined)) {
+          await settleWithin(probes, PROFILE_DISCOVERY_SETTLE_MS);
+        }
+        return saved.map((connection) => {
+          const cached = profileCache.get(connection.id);
+          return cached !== undefined && sameSavedConnection(cached.connection, connection)
+            ? cached.value
+            : profile(connection, "reconnecting");
+        });
       },
       resetTransports() {
+        profileGeneration += 1;
+        profileCache.clear();
+        profileProbes.clear();
         for (const connection of controlClients.values()) connection.client.close();
         controlClients.clear();
         for (const connection of coordinators.values()) {
@@ -311,6 +381,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
       async pair(code) {
         const connection = parsePairingCode(code);
         await options.repository.save(connection);
+        profileCache.delete(connection.id);
         return connection.id;
       },
     },
@@ -741,6 +812,38 @@ function profile(
     productVersion,
     contractIdentity,
   };
+}
+
+function sameSavedConnection(left: SavedConnection, right: SavedConnection): boolean {
+  return left.id === right.id
+    && left.name === right.name
+    && left.controlUrl === right.controlUrl
+    && left.controlToken === right.controlToken
+    && left.terminalUrl === right.terminalUrl
+    && left.terminalToken === right.terminalToken
+    && left.lastConnectedAtEpochMs === right.lastConnectedAtEpochMs
+    && left.productVersion === right.productVersion
+    && left.contractIdentity === right.contractIdentity;
+}
+
+function sameProfile(left: ConnectionProfile, right: ConnectionProfile): boolean {
+  return left.id === right.id
+    && left.name === right.name
+    && left.endpointLabel === right.endpointLabel
+    && left.availability === right.availability
+    && left.lastConnectedAtEpochMs === right.lastConnectedAtEpochMs
+    && left.productVersion === right.productVersion
+    && left.contractIdentity === right.contractIdentity;
+}
+
+async function settleWithin(promises: readonly Promise<void>[], timeoutMs: number): Promise<void> {
+  if (promises.length === 0) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    Promise.allSettled(promises),
+    new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs); }),
+  ]);
+  if (timer !== undefined) clearTimeout(timer);
 }
 
 async function attachTerminal(

@@ -128,6 +128,8 @@ describe("production control adapter", () => {
     const controlMethods: string[] = [];
     let socketCount = 0;
     let socketCloseCount = 0;
+    let heartbeatPongs = 0;
+    let mobileSocket: DataSocket | undefined;
     let endpoint = "";
     const runtime = createProductionRuntime({
       repository: fixedRepository(saved),
@@ -149,14 +151,20 @@ describe("production control adapter", () => {
                 method?: string;
                 controlToken?: string;
                 terminalToken?: string;
+                mobileHeartbeatVersion?: number;
               };
               if (message.type === "mobile.authenticate") {
                 expect(message.controlToken).toBe(saved.controlToken);
                 expect(message.terminalToken).toBe(saved.terminalToken);
+                expect(message.mobileHeartbeatVersion).toBe(1);
                 queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({
                   event: "mobile.ready",
                   mobileTransportVersion: 2,
                 }) }));
+                return;
+              }
+              if (message.type === "mobile.pong") {
+                heartbeatPongs += 1;
                 return;
               }
               controlMethods.push(message.method ?? "");
@@ -180,6 +188,7 @@ describe("production control adapter", () => {
           },
           close() { socketCloseCount += 1; },
         };
+        mobileSocket = socket;
         queueMicrotask(() => socket.onopen?.());
         return socket;
       },
@@ -190,6 +199,8 @@ describe("production control adapter", () => {
     await expect(runtime.connections.list()).resolves.toEqual([
       expect.objectContaining({ availability: "online" }),
     ]);
+    mobileSocket?.onmessage?.({ data: JSON.stringify({ event: "mobile.ping" }) });
+    await waitFor(() => heartbeatPongs === 1);
     const events: TerminalEvent[] = [];
     const attachment = await runtime.terminal.attach(
       saved.id,
@@ -204,6 +215,7 @@ describe("production control adapter", () => {
     expect(terminalKinds).toEqual([KIND_ATTACH, KIND_DETACH]);
     expect(events).toContainEqual({ type: "state", state: "connected" });
     expect(socketCloseCount).toBe(0);
+    expect(heartbeatPongs).toBe(1);
   });
 
   it("reattaches multiplexed terminals after a transport fault and rejects stale output", async () => {
@@ -372,9 +384,13 @@ describe("production control adapter", () => {
       });
 
       const probe = runtime.connections.list();
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(250);
 
       await expect(probe).resolves.toEqual([
+        expect.objectContaining({ availability: "reconnecting" }),
+      ]);
+      await vi.advanceTimersByTimeAsync(9_750);
+      await expect(runtime.connections.list()).resolves.toEqual([
         expect.objectContaining({ availability: "offline" }),
       ]);
       expect(sockets).toHaveLength(2);
@@ -425,12 +441,60 @@ describe("production control adapter", () => {
       });
 
       const recoveredProbe = runtime.connections.list();
-      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(250);
       await expect(recoveredProbe).resolves.toEqual([
+        expect.objectContaining({ availability: "reconnecting" }),
+      ]);
+      await vi.advanceTimersByTimeAsync(4_750);
+      await expect(runtime.connections.list()).resolves.toEqual([
         expect.objectContaining({ availability: "online" }),
       ]);
       expect(firstClosed).toBe(true);
       expect(socketCount).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("publishes a healthy Mac without waiting for another saved Mac's timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const away: SavedConnection = {
+        ...saved,
+        id: "mac-pro",
+        name: "Ferit's MacBook Pro",
+        controlUrl: "ws://127.0.0.1:48200/control",
+        terminalUrl: "ws://127.0.0.1:48200/terminal",
+      };
+      const healthySocket = controlSocketFactory([]);
+      const runtime = createProductionRuntime({
+        repository: {
+          async list() { return [saved, away]; },
+          async get(id) { return id === saved.id ? saved : id === away.id ? away : undefined; },
+          async save() { throw new Error("not used"); },
+          async remove() { throw new Error("not used"); },
+        },
+        controlSocketFactory(url) {
+          if (url === away.controlUrl) {
+            return {
+              addEventListener() {},
+              send() { throw new Error("socket never opened"); },
+              close() {},
+            } satisfies SocketLike;
+          }
+          return healthySocket();
+        },
+        terminalSocketFactory: () => { throw new Error("terminal not used"); },
+      });
+
+      const listing = runtime.connections.list();
+      await vi.advanceTimersByTimeAsync(250);
+
+      await expect(listing).resolves.toEqual([
+        expect.objectContaining({ id: saved.id, availability: "online" }),
+        expect.objectContaining({ id: away.id, availability: "reconnecting" }),
+      ]);
+      runtime.connections.resetTransports();
     } finally {
       vi.useRealTimers();
     }

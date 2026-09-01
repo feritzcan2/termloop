@@ -38,6 +38,7 @@ export default function HomeRoute() {
   }));
   const snapshots = [...overview.byConnection.values()];
   const projectReadsSettled = connections.load !== "loading"
+    && snapshots.length === connections.connections.length
     && snapshots.every((snapshot) => !snapshot.refreshing && snapshot.load !== "loading");
   const offlineNames = connections.connections
     .filter((connection) => connection.availability === "offline")
