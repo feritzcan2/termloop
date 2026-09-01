@@ -21,6 +21,7 @@ import { TerminalView } from "@/components/terminal-view";
 import { useConnections } from "@/features/connection/connection-store";
 import { connectionRouteParams } from "@/features/connection/connection-route";
 import { useOverview } from "@/features/overview/overview-store";
+import { SessionActionsSheet } from "@/features/session-actions/session-actions-sheet";
 import { takePendingSessionInput } from "@/features/terminal/pending-session-input";
 import { useTerminalSession, type TerminalKey } from "@/features/terminal/use-terminal-session";
 import { keyboardAvoidingBehavior } from "@/platform/presentation";
@@ -75,6 +76,7 @@ export default function SessionRoute() {
   const [imagePicking, setImagePicking] = useState(false);
   const [imageSending, setImageSending] = useState(false);
   const [fontSizeIndex, setFontSizeIndex] = useState(1);
+  const [actionsOpen, setActionsOpen] = useState(false);
 
   const selectingRouteConnection = connectionId !== undefined
     && connections.selectedId !== connectionId;
@@ -233,6 +235,15 @@ export default function SessionRoute() {
               >
                 <Text style={styles.fontControlGlyph}>Aa</Text>
               </Pressable>
+              <Pressable
+                onPress={() => setActionsOpen(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Session actions"
+                hitSlop={10}
+                style={styles.menuControl}
+              >
+                <Text style={styles.menuControlGlyph}>•••</Text>
+              </Pressable>
             </View>
           }
         />
@@ -358,6 +369,27 @@ export default function SessionRoute() {
           </>
         )}
       </KeyboardAvoidingView>
+      <SessionActionsSheet
+        session={session}
+        visible={actionsOpen}
+        onClose={() => setActionsOpen(false)}
+        onOpenSession={(targetSessionId) => {
+          if (targetSessionId === session.id) return;
+          router.replace({
+            pathname: "/session/[sessionId]",
+            params: connectionRouteParams(connections.selectedId, { sessionId: targetSessionId }),
+          });
+        }}
+        onOpenTask={(taskId) => router.push({
+          pathname: "/task/[taskId]",
+          params: connectionRouteParams(connections.selectedId, { taskId }),
+        })}
+        onOpenChanges={(taskId) => router.push({
+          pathname: "/task/[taskId]/changes",
+          params: connectionRouteParams(connections.selectedId, { taskId }),
+        })}
+        onDismissed={() => router.back()}
+      />
     </Screen>
   );
 }
@@ -387,6 +419,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   fontControlGlyph: { color: color.textSecondary, fontSize: 13, fontWeight: "700" },
+  menuControl: {
+    minWidth: 30,
+    height: geometry.touchTarget,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  menuControlGlyph: { color: color.textSecondary, fontSize: 12, fontWeight: "800", letterSpacing: 0.5 },
   subHeader: {
     flexDirection: "row",
     alignItems: "center",

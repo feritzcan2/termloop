@@ -14,7 +14,7 @@ import { describe, expect, it } from "vitest";
 /// for. These tests pin both, because widening either one silently is exactly
 /// the failure that turns a read-only pager into an unaudited writer.
 describe("mobile control scope", () => {
-  it("routes pipeline, changes, both Agent launch scopes, and Steward methods on the full credential and reads on the read-only one", async () => {
+  it("routes pipeline, changes, launch, Session actions, and Steward methods on the full credential and reads on the read-only one", async () => {
     const seen = [];
     const harness = await gateway((request) => {
       seen.push({ method: request.method, token: request.token });
@@ -86,6 +86,21 @@ describe("mobile control scope", () => {
         sessionId: "session-1", name: "Investigate mobile launch",
       });
       expect(rename.ok).toBe(true);
+      for (const [method, params] of [
+        ["session.forkAgent", { sessionId: "session-1" }],
+        ["session.repairProviderHistory", { sessionId: "session-1", acknowledgeHistoryRewrite: true }],
+        ["session.requestAskTo", { sessionId: "session-1", targetAgentId: "codex" }],
+        ["session.requestHandoverTo", { sessionId: "session-1", targetSessionId: "session-2" }],
+        ["session.restartAgent", { sessionId: "session-1" }],
+        ["session.previewRelocateAgentToTask", { sessionId: "session-1", taskId: "task-1", mode: "resume" }],
+        ["session.relocateAgentToTask", { sessionId: "session-1", taskId: "task-1", operationId: "mobile-op", relocationTicket: "a".repeat(64) }],
+        ["session.previewRelocateAgentToProject", { sessionId: "session-1", projectId: "project-1" }],
+        ["session.relocateAgentToProject", { sessionId: "session-1", projectId: "project-1", operationId: "mobile-op-2", relocationTicket: "b".repeat(64) }],
+        ["session.terminate", { sessionId: "session-1" }],
+        ["session.close", { sessionId: "session-1" }],
+      ]) {
+        expect((await call(harness.port, method, params)).ok).toBe(true);
+      }
 
       // The daemon's own scopes decide what each token may do, so the gateway's
       // job is only to send the right one. A pipeline read is not in the
@@ -98,6 +113,21 @@ describe("mobile control scope", () => {
       expect(seen.find((entry) => entry.method === "session.previewAgent").token).toBe("f".repeat(64));
       expect(seen.find((entry) => entry.method === "session.launchAgent").token).toBe("f".repeat(64));
       expect(seen.find((entry) => entry.method === "session.rename").token).toBe("f".repeat(64));
+      for (const method of [
+        "session.forkAgent",
+        "session.repairProviderHistory",
+        "session.requestAskTo",
+        "session.requestHandoverTo",
+        "session.restartAgent",
+        "session.previewRelocateAgentToTask",
+        "session.relocateAgentToTask",
+        "session.previewRelocateAgentToProject",
+        "session.relocateAgentToProject",
+        "session.terminate",
+        "session.close",
+      ]) {
+        expect(seen.find((entry) => entry.method === method).token).toBe("f".repeat(64));
+      }
       expect(seen.find((entry) => entry.method === "agent.capabilityList").token).toBe("r".repeat(64));
       expect(seen.find((entry) => entry.method === "steward.configurationGet").token).toBe("r".repeat(64));
     } finally {
@@ -112,7 +142,7 @@ describe("mobile control scope", () => {
       return {};
     });
     try {
-      for (const method of ["playbook.update", "task.delete", "session.terminate", "companion.transcriptClear"]) {
+      for (const method of ["playbook.update", "task.delete", "session.deleteArchived", "companion.transcriptClear"]) {
         const response = await call(harness.port, method, { projectId: "project-1" });
         expect(response.ok).toBe(false);
         expect(response.error.code).toBe("methodNotFound");

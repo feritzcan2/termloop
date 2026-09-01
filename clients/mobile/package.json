@@ -22,6 +22,7 @@
     "expo-application": "~57.0.2",
     "expo-audio": "~57.0.4",
     "expo-camera": "~57.0.3",
+    "expo-clipboard": "~57.0.1",
     "expo-constants": "~57.0.10",
     "expo-file-system": "~57.0.6",
     "expo-image-picker": "~57.0.10",
