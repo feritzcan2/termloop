@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -6,7 +6,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   mobileAccessNodeExecutable,
   mobileAccessScriptPath,
+  packagedMobileAccessScriptPath,
   prepareMobileAccessQr,
+  reconcilePackagedMobileAccess,
+  shouldReconcilePackagedMobileAccess,
 } from "../src/platform/mobile-access.js";
 
 describe("mobile access QR preparation", () => {
@@ -44,6 +47,32 @@ describe("mobile access QR preparation", () => {
     expect(mobileAccessNodeExecutable()).toBe("node");
     expect(mobileAccessNodeExecutable(" ")).toBe("node");
     expect(mobileAccessNodeExecutable("/opt/node/bin/node")).toBe("/opt/node/bin/node");
+  });
+
+  it("runs packaged reconciliation through Electron's Node mode", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "termloop-mobile-access-bundle-"));
+    temporaryDirectories.push(directory);
+    const mobileDirectory = path.join(directory, "mobile-access");
+    await mkdir(mobileDirectory);
+    const packagedScript = packagedMobileAccessScriptPath(directory);
+    await writeFile(packagedScript, `console.log(JSON.stringify({ args: process.argv.slice(2), node: process.env.ELECTRON_RUN_AS_NODE }));`);
+
+    const outcome = JSON.parse(await reconcilePackagedMobileAccess(directory, process.execPath));
+
+    expect(outcome.node).toBe("1");
+    expect(outcome.args).toEqual(expect.arrayContaining([
+      "--reconcile",
+      "--artifact-dir",
+      mobileDirectory,
+      "--electron-run-as-node",
+    ]));
+  });
+
+  it("auto-reconciles only packaged macOS and Linux applications", () => {
+    expect(shouldReconcilePackagedMobileAccess(true, "darwin")).toBe(true);
+    expect(shouldReconcilePackagedMobileAccess(true, "linux")).toBe(true);
+    expect(shouldReconcilePackagedMobileAccess(true, "win32")).toBe(false);
+    expect(shouldReconcilePackagedMobileAccess(false, "darwin")).toBe(false);
   });
 
   it("turns a versioned pairing payload into QR geometry without returning the payload", async () => {
