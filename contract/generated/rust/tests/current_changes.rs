@@ -25,9 +25,17 @@ fn commit_change_shapes_are_opaque_strict_and_bounded() {
     let list = serde_json::json!({
         "task_id": "t1",
         "observation_id": "commits-1",
+        "branch_id": "primary",
+        "branch_name": "feature/task",
+        "branch_role": "primary",
+        "held_by_task_id": null,
         "base_ref": "refs/remotes/origin/main",
+        "base_oid": null,
+        "base_evidence": null,
         "commits": [{
             "commit_id": "commit-0",
+            "branch_id": "primary",
+            "branch_name": "feature/task",
             "short_oid": "0123456789ab",
             "subject": "bounded commit",
             "subject_encoding": "utf8",

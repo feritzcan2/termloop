@@ -264,7 +264,7 @@ export type DesktopApi = {
   taskWorktreeDiff(taskId: string, observationId: string, entryId: string): Promise<TaskWorktreeDiffResult>;
   taskWorktreePreImage(taskId: string, observationId: string, entryId: string): Promise<TaskWorktreePreImageResult>;
   taskBranchCommitSummaryList(projectId: string, taskIds: string[]): Promise<TaskBranchCommitSummaryDto[]>;
-  taskBranchCommitList(taskId: string): Promise<TaskBranchCommitListResult>;
+  taskBranchCommitList(taskId: string, branchId?: string): Promise<TaskBranchCommitListResult>;
   taskBranchCommitChangeList(taskId: string, observationId: string, commitId: string): Promise<TaskBranchCommitChangeListResult>;
   taskBranchCommitDiff(taskId: string, observationId: string, commitId: string, entryId: string): Promise<TaskBranchCommitDiffResult>;
   gitHostPullRequestList(projectId: string, taskIds: string[]): Promise<GitHostTaskProjectionDto[]>;

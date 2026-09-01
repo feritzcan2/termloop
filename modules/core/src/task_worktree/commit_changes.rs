@@ -24,7 +24,7 @@ struct CachedCommit {
 struct CachedCommitObservation {
     observation_id: String,
     task_id: String,
-    binding: TaskBranchBinding,
+    selection: TaskCommitBranchSelection,
     repository_common_dir: PathBuf,
     range: Option<BranchRangeSnapshot>,
     all_entries: Option<Vec<CommitChangeEntry>>,
@@ -68,7 +68,7 @@ impl BranchCommitObservationCache {
     fn insert(
         &mut self,
         task_id: String,
-        binding: TaskBranchBinding,
+        selection: TaskCommitBranchSelection,
         repository_common_dir: PathBuf,
         range: Option<BranchRangeSnapshot>,
         commits: Vec<BranchCommit>,
@@ -83,7 +83,7 @@ impl BranchCommitObservationCache {
         self.entries.push_back(CachedCommitObservation {
             observation_id: observation_id.clone(),
             task_id,
-            binding,
+            selection,
             repository_common_dir,
             range,
             all_entries: None,
@@ -108,7 +108,7 @@ impl BranchCommitObservationCache {
         observation_id: &str,
         commit_id: &str,
         now: u64,
-    ) -> Option<(TaskBranchBinding, PathBuf, BranchChangeTarget)> {
+    ) -> Option<(TaskCommitBranchSelection, PathBuf, BranchChangeTarget)> {
         self.retain_fresh(now);
         let observation = self.entries.iter().find(|observation| {
             observation.task_id == task_id && observation.observation_id == observation_id
@@ -124,7 +124,7 @@ impl BranchCommitObservationCache {
             BranchChangeTarget::Commit(observation.commits.get(index)?.commit.clone())
         };
         Some((
-            observation.binding.clone(),
+            observation.selection.clone(),
             observation.repository_common_dir.clone(),
             target,
         ))
@@ -166,12 +166,13 @@ impl BranchCommitObservationCache {
         entry_id: &str,
         now: u64,
     ) -> Option<(
-        TaskBranchBinding,
+        TaskCommitBranchSelection,
         PathBuf,
         BranchChangeTarget,
         CommitChangeEntry,
     )> {
-        let (binding, common_dir, target) = self.target(task_id, observation_id, commit_id, now)?;
+        let (selection, common_dir, target) =
+            self.target(task_id, observation_id, commit_id, now)?;
         let observation = self.entries.iter().find(|observation| {
             observation.task_id == task_id && observation.observation_id == observation_id
         })?;
@@ -183,7 +184,7 @@ impl BranchCommitObservationCache {
             observation.commits.get(commit_index)?.entries.as_ref()?
         };
         let entry = entries.get(entry_index)?.clone();
-        Some((binding, common_dir, target, entry))
+        Some((selection, common_dir, target, entry))
     }
 }
 
@@ -191,8 +192,20 @@ impl BranchCommitObservationCache {
 pub struct TaskBranchCommitListPlan {
     task_id: String,
     project_id: String,
+    selection: TaskCommitBranchSelection,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct TaskCommitBranchSelection {
+    branch_id: String,
     binding: TaskBranchBinding,
     recorded_base: Option<(String, String)>,
+    frozen_base: bool,
+    display_base_ref: Option<String>,
+    base_oid: Option<String>,
+    base_evidence: Option<&'static str>,
+    role: &'static str,
+    held_by_task_id: Option<String>,
 }
 
 pub struct ObservedTaskBranchCommitList {
@@ -206,7 +219,7 @@ pub struct TaskBranchCommitChangeListPlan {
     project_id: String,
     observation_id: String,
     commit_id: String,
-    binding: TaskBranchBinding,
+    selection: TaskCommitBranchSelection,
     repository_common_dir: PathBuf,
     target: BranchChangeTarget,
 }
@@ -223,7 +236,7 @@ pub struct TaskBranchCommitDiffPlan {
     observation_id: String,
     commit_id: String,
     entry_id: String,
-    binding: TaskBranchBinding,
+    selection: TaskCommitBranchSelection,
     repository_common_dir: PathBuf,
     target: BranchChangeTarget,
     entry: CommitChangeEntry,
@@ -243,14 +256,22 @@ impl TaskBranchCommitListPlan {
         let observation = GitRunner::discover()
             .map_err(super::git_mapping::map_git_observation_error)
             .and_then(|runner| {
-                let repository = Path::new(&self.binding.repository_root);
-                match &self.recorded_base {
-                    Some((base_ref, _)) => runner.list_branch_commits_with_current_base(
+                let repository = Path::new(&self.selection.binding.repository_root);
+                match (&self.selection.recorded_base, self.selection.frozen_base) {
+                    (Some((base_ref, base_oid)), true) => runner
+                        .list_branch_commits_with_recorded_base(
+                            repository,
+                            self.selection.binding.name.as_bytes(),
+                            base_ref.as_bytes(),
+                            base_oid.as_bytes(),
+                        ),
+                    (Some((base_ref, _)), false) => runner.list_branch_commits_with_current_base(
                         repository,
-                        self.binding.name.as_bytes(),
+                        self.selection.binding.name.as_bytes(),
                         base_ref.as_bytes(),
                     ),
-                    None => runner.list_branch_commits(repository, self.binding.name.as_bytes()),
+                    (None, _) => runner
+                        .list_branch_commits(repository, self.selection.binding.name.as_bytes()),
                 }
                 .map_err(super::git_mapping::map_git_observation_error)
             });
@@ -267,9 +288,9 @@ impl TaskBranchCommitChangeListPlan {
     }
 
     pub fn observe(self) -> ObservedTaskBranchCommitChanges {
-        let observation =
-            observe_repository(&self.binding, &self.repository_common_dir).and_then(|runner| {
-                let repository = Path::new(&self.binding.repository_root);
+        let observation = observe_repository(&self.selection.binding, &self.repository_common_dir)
+            .and_then(|runner| {
+                let repository = Path::new(&self.selection.binding.repository_root);
                 match &self.target {
                     BranchChangeTarget::All {
                         base_oid,
@@ -294,9 +315,9 @@ impl TaskBranchCommitDiffPlan {
     }
 
     pub fn observe(self) -> ObservedTaskBranchCommitDiff {
-        let observation =
-            observe_repository(&self.binding, &self.repository_common_dir).and_then(|runner| {
-                let repository = Path::new(&self.binding.repository_root);
+        let observation = observe_repository(&self.selection.binding, &self.repository_common_dir)
+            .and_then(|runner| {
+                let repository = Path::new(&self.selection.binding.repository_root);
                 match &self.target {
                     BranchChangeTarget::All {
                         base_oid,
@@ -332,16 +353,16 @@ impl CoreRuntime {
             .iter()
             .find(|task| task.id == task_id)
             .ok_or(CoreError::NotFound)?;
-        let binding = task
-            .branch
-            .clone()
-            .ok_or(CoreError::BranchMutationConflict)?;
-        let recorded_base = self.task_recorded_branch_base(&task_id, &binding);
+        let branch_id = match params.get("branchId") {
+            None => "primary",
+            Some(Value::String(value)) if !value.is_empty() => value,
+            _ => return Err(CoreError::InvalidParams("branchId".into())),
+        };
+        let selection = self.task_commit_branch_selection(&task_id, branch_id)?;
         Ok(TaskBranchCommitListPlan {
             task_id,
             project_id: task.project_id.clone(),
-            binding,
-            recorded_base,
+            selection,
         })
     }
 
@@ -349,25 +370,36 @@ impl CoreRuntime {
         &mut self,
         observed: ObservedTaskBranchCommitList,
     ) -> Result<Value, CoreError> {
-        self.revalidate_binding(&observed.plan.task_id, &observed.plan.binding)?;
-        if self.task_recorded_branch_base(&observed.plan.task_id, &observed.plan.binding)
-            != observed.plan.recorded_base
-        {
-            return Err(CoreError::BranchMutationConflict);
-        }
+        self.revalidate_task_commit_branch_selection(
+            &observed.plan.task_id,
+            &observed.plan.selection,
+        )?;
         let observation = observed.observation?;
-        let base_ref = std::str::from_utf8(observation.base_ref.as_bytes())
+        let observed_base_ref = std::str::from_utf8(observation.base_ref.as_bytes())
             .map_err(|_| CoreError::RepositoryUnavailable)?
             .to_owned();
+        let base_ref = observed
+            .plan
+            .selection
+            .display_base_ref
+            .clone()
+            .or_else(|| {
+                (observed.plan.selection.branch_id == "primary").then_some(observed_base_ref)
+            });
+        let base_oid = observed.plan.selection.base_oid.clone().or_else(|| {
+            std::str::from_utf8(observation.base_oid.as_bytes())
+                .ok()
+                .map(str::to_owned)
+        });
         let commits = observation.commits;
         let projected = commits
             .iter()
             .enumerate()
-            .map(project_commit)
+            .map(|commit| project_commit(commit, &observed.plan.selection))
             .collect::<Result<Vec<_>, _>>()?;
         let observation_id = self.branch_commit_observations.insert(
             observed.plan.task_id.clone(),
-            observed.plan.binding,
+            observed.plan.selection.clone(),
             observation.repository_common_dir,
             observation
                 .branch_tip_oid
@@ -381,7 +413,13 @@ impl CoreRuntime {
         Ok(json!({
             "task_id": observed.plan.task_id,
             "observation_id": observation_id,
+            "branch_id": observed.plan.selection.branch_id,
+            "branch_name": observed.plan.selection.binding.name,
+            "branch_role": observed.plan.selection.role,
+            "held_by_task_id": observed.plan.selection.held_by_task_id,
             "base_ref": base_ref,
+            "base_oid": base_oid,
+            "base_evidence": observed.plan.selection.base_evidence,
             "commits": projected,
             "truncated": observation.truncated,
         }))
@@ -394,7 +432,7 @@ impl CoreRuntime {
         let task_id = required_string(&params, "taskId")?;
         let observation_id = required_string(&params, "observationId")?;
         let commit_id = required_string(&params, "commitId")?;
-        let (binding, repository_common_dir, target) = self
+        let (selection, repository_common_dir, target) = self
             .branch_commit_observations
             .target(
                 &task_id,
@@ -403,13 +441,13 @@ impl CoreRuntime {
                 termloop_platform::current_epoch_ms(),
             )
             .ok_or(CoreError::BranchMutationConflict)?;
-        let project_id = self.revalidate_binding(&task_id, &binding)?;
+        let project_id = self.revalidate_task_commit_branch_selection(&task_id, &selection)?;
         Ok(TaskBranchCommitChangeListPlan {
             task_id,
             project_id,
             observation_id,
             commit_id,
-            binding,
+            selection,
             repository_common_dir,
             target,
         })
@@ -419,7 +457,10 @@ impl CoreRuntime {
         &mut self,
         observed: ObservedTaskBranchCommitChanges,
     ) -> Result<Value, CoreError> {
-        self.revalidate_binding(&observed.plan.task_id, &observed.plan.binding)?;
+        self.revalidate_task_commit_branch_selection(
+            &observed.plan.task_id,
+            &observed.plan.selection,
+        )?;
         let observation = observed.observation?;
         let entries = observation.entries;
         let projected = entries
@@ -454,7 +495,7 @@ impl CoreRuntime {
         let observation_id = required_string(&params, "observationId")?;
         let commit_id = required_string(&params, "commitId")?;
         let entry_id = required_string(&params, "entryId")?;
-        let (binding, repository_common_dir, target, entry) = self
+        let (selection, repository_common_dir, target, entry) = self
             .branch_commit_observations
             .diff_target(
                 &task_id,
@@ -464,14 +505,14 @@ impl CoreRuntime {
                 termloop_platform::current_epoch_ms(),
             )
             .ok_or(CoreError::BranchMutationConflict)?;
-        let project_id = self.revalidate_binding(&task_id, &binding)?;
+        let project_id = self.revalidate_task_commit_branch_selection(&task_id, &selection)?;
         Ok(TaskBranchCommitDiffPlan {
             task_id,
             project_id,
             observation_id,
             commit_id,
             entry_id,
-            binding,
+            selection,
             repository_common_dir,
             target,
             entry,
@@ -482,7 +523,10 @@ impl CoreRuntime {
         &self,
         observed: ObservedTaskBranchCommitDiff,
     ) -> Result<Value, CoreError> {
-        self.revalidate_binding(&observed.plan.task_id, &observed.plan.binding)?;
+        self.revalidate_task_commit_branch_selection(
+            &observed.plan.task_id,
+            &observed.plan.selection,
+        )?;
         let diff = observed.observation?;
         let (state, patch) = project_diff_content(diff.content);
         Ok(json!({
@@ -495,17 +539,99 @@ impl CoreRuntime {
         }))
     }
 
-    fn revalidate_binding(
+    fn revalidate_task_commit_branch_selection(
         &self,
         task_id: &str,
-        expected: &TaskBranchBinding,
+        expected: &TaskCommitBranchSelection,
     ) -> Result<String, CoreError> {
+        let current = self.task_commit_branch_selection(task_id, &expected.branch_id)?;
+        if &current != expected {
+            return Err(CoreError::BranchMutationConflict);
+        }
         self.store
             .tasks()
             .iter()
-            .find(|task| task.id == task_id && task.branch.as_ref() == Some(expected))
+            .find(|task| task.id == task_id)
             .map(|task| task.project_id.clone())
             .ok_or(CoreError::BranchMutationConflict)
+    }
+
+    fn task_commit_branch_selection(
+        &self,
+        task_id: &str,
+        branch_id: &str,
+    ) -> Result<TaskCommitBranchSelection, CoreError> {
+        let task = self
+            .store
+            .tasks()
+            .iter()
+            .find(|task| task.id == task_id)
+            .ok_or(CoreError::NotFound)?;
+        if branch_id == "primary" {
+            let binding = task
+                .branch
+                .clone()
+                .ok_or(CoreError::BranchMutationConflict)?;
+            let recorded_base = self.task_recorded_branch_base(task_id, &binding);
+            return Ok(TaskCommitBranchSelection {
+                branch_id: "primary".into(),
+                binding,
+                recorded_base,
+                frozen_base: false,
+                display_base_ref: None,
+                base_oid: None,
+                base_evidence: None,
+                role: "primary",
+                held_by_task_id: None,
+            });
+        }
+        let membership = self
+            .store
+            .task_branch_sets()
+            .iter()
+            .find(|set| set.task_id == task_id)
+            .and_then(|set| {
+                set.memberships
+                    .iter()
+                    .find(|membership| membership.id == branch_id)
+            })
+            .ok_or(CoreError::NotFound)?;
+        let name = membership
+            .ref_name
+            .strip_prefix("refs/heads/")
+            .filter(|name| !name.is_empty())
+            .ok_or(CoreError::BranchMutationConflict)?
+            .to_owned();
+        let internal_base_ref = membership
+            .parent_ref_name
+            .clone()
+            .unwrap_or_else(|| membership.ref_name.clone());
+        let (role, held_by_task_id) = associated_branch_role(
+            self,
+            task,
+            &membership.repository_root,
+            &membership.ref_name,
+        );
+        Ok(TaskCommitBranchSelection {
+            branch_id: membership.id.clone(),
+            binding: TaskBranchBinding {
+                repository_root: membership.repository_root.clone(),
+                name,
+            },
+            recorded_base: Some((internal_base_ref, membership.first_observed_oid.clone())),
+            frozen_base: true,
+            display_base_ref: membership.parent_ref_name.clone(),
+            base_oid: Some(membership.first_observed_oid.clone()),
+            base_evidence: Some(match membership.evidence {
+                termloop_domain::TaskBranchMembershipEvidence::CurrentBranch => "currentBranch",
+                termloop_domain::TaskBranchMembershipEvidence::WorktreeReflog => "worktreeReflog",
+                termloop_domain::TaskBranchMembershipEvidence::BranchCreationReflog => {
+                    "branchCreationReflog"
+                }
+            }),
+            role,
+            held_by_task_id,
+        })
     }
 }
 
@@ -523,12 +649,59 @@ fn observe_repository(
     Ok(runner)
 }
 
-fn project_commit((index, commit): (usize, &BranchCommit)) -> Result<Value, CoreError> {
+fn associated_branch_role(
+    runtime: &CoreRuntime,
+    task: &termloop_domain::TaskRecord,
+    repository_root: &str,
+    ref_name: &str,
+) -> (&'static str, Option<String>) {
+    let is_base = task
+        .branch
+        .as_ref()
+        .and_then(|binding| runtime.task_recorded_branch_base(&task.id, binding))
+        .and_then(|(reference, _)| display_ref_name(reference.as_bytes()).ok())
+        .is_some_and(|name| format!("refs/heads/{name}") == ref_name);
+    if is_base {
+        return ("baseBranch", None);
+    }
+    match runtime.store.tasks().iter().find(|candidate| {
+        candidate.id != task.id
+            && candidate.project_id == task.project_id
+            && candidate.branch.as_ref().is_some_and(|binding| {
+                binding.repository_root == repository_root
+                    && format!("refs/heads/{}", binding.name) == ref_name
+            })
+    }) {
+        Some(holder) => ("heldByOtherTask", Some(holder.id.clone())),
+        None => ("associated", None),
+    }
+}
+
+fn display_ref_name(bytes: &[u8]) -> Result<String, CoreError> {
+    let reference = std::str::from_utf8(bytes).map_err(|_| CoreError::RepositoryUnavailable)?;
+    reference
+        .strip_prefix("refs/heads/")
+        .or_else(|| {
+            reference
+                .strip_prefix("refs/remotes/")
+                .and_then(|value| value.split_once('/').map(|(_, branch)| branch))
+        })
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .ok_or(CoreError::RepositoryUnavailable)
+}
+
+fn project_commit(
+    (index, commit): (usize, &BranchCommit),
+    selection: &TaskCommitBranchSelection,
+) -> Result<Value, CoreError> {
     let oid = std::str::from_utf8(commit.oid().as_bytes())
         .map_err(|_| CoreError::RepositoryUnavailable)?;
     let (subject, encoding) = display_bytes(commit.subject(), 512);
     Ok(json!({
         "commit_id": format!("commit-{index}"),
+        "branch_id": selection.branch_id,
+        "branch_name": selection.binding.name,
         "short_oid": oid.chars().take(12).collect::<String>(),
         "subject": subject,
         "subject_encoding": encoding,
@@ -576,11 +749,22 @@ mod tests {
             repository_root: "/repo".into(),
             name: "feature".into(),
         };
+        let selection = TaskCommitBranchSelection {
+            branch_id: "primary".into(),
+            binding,
+            recorded_base: None,
+            frozen_base: false,
+            display_base_ref: None,
+            base_oid: None,
+            base_evidence: None,
+            role: "primary",
+            held_by_task_id: None,
+        };
         for index in 0..(COMMIT_OBSERVATION_CAP + 2) {
             cache
                 .insert(
                     format!("task-{index}"),
-                    binding.clone(),
+                    selection.clone(),
                     PathBuf::from("/repo/.git"),
                     Some(BranchRangeSnapshot {
                         base_oid: ObjectId::from_hex(

@@ -218,6 +218,59 @@ fn alternate_branch_and_detached_head_both_stay_launchable() {
 }
 
 #[test]
+fn exact_worktree_branch_evidence_becomes_durable_and_drives_commit_review() {
+    let mut fixture = Fixture::new();
+    let (task_id, destination, _, _) = provision_cleanup_fixture(&mut fixture);
+    let runner = GitRunner::discover().unwrap();
+    termloop_gitio::test_support::checkout_new_branch(&runner, &destination, "agent/secondary")
+        .unwrap();
+    std::fs::write(destination.join("secondary.txt"), "secondary\n").unwrap();
+    termloop_gitio::test_support::commit_all(&runner, &destination, "secondary commit").unwrap();
+
+    let observed = fixture
+        .runtime
+        .plan_task_worktree_health(&task_id)
+        .unwrap()
+        .observe();
+    fixture
+        .runtime
+        .apply_observed_task_worktree_health(observed, 10)
+        .unwrap();
+
+    let projected = fixture.runtime.task_current_projection(&task_id).unwrap();
+    let branches = projected["branches"]["items"].as_array().unwrap();
+    let secondary = branches
+        .iter()
+        .find(|branch| branch["name"] == "agent/secondary")
+        .unwrap();
+    assert_eq!(secondary["role"], "associated");
+    assert_eq!(secondary["base_ref"], "feature/cleanup");
+    assert_eq!(secondary["base_evidence"], "branchCreationReflog");
+    assert_eq!(
+        projected["branches"]["checked_out_branch_id"],
+        secondary["branch_id"]
+    );
+
+    let branch_id = secondary["branch_id"].as_str().unwrap();
+    let plan = fixture
+        .runtime
+        .plan_task_branch_commit_list(json!({
+            "taskId": task_id,
+            "branchId": branch_id,
+        }))
+        .unwrap();
+    let commits = fixture
+        .runtime
+        .complete_task_branch_commit_list(plan.observe())
+        .unwrap();
+    assert_eq!(commits["branch_name"], "agent/secondary");
+    assert_eq!(commits["base_ref"], "refs/heads/feature/cleanup");
+    assert_eq!(commits["base_evidence"], "branchCreationReflog");
+    assert_eq!(commits["commits"].as_array().unwrap().len(), 1);
+    assert_eq!(commits["commits"][0]["branch_name"], "agent/secondary");
+}
+
+#[test]
 fn cleanup_presence_uses_one_bounded_running_or_reserved_resume_predicate() {
     let mut fixture = Fixture::new();
     let (task_id, destination, _, _) = provision_cleanup_fixture(&mut fixture);

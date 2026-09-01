@@ -428,8 +428,8 @@ handleIpc(
 handleIpc("termloop:task-branch-commit-summary-list", (_event, projectId: string, taskIds: string[]) =>
   controlCall("task.branchCommitSummaryList", { projectId, taskIds }),
 );
-handleIpc("termloop:task-branch-commit-list", (_event, taskId: string) =>
-  controlCall("task.branchCommitList", { taskId }),
+handleIpc("termloop:task-branch-commit-list", (_event, taskId: string, branchId?: string) =>
+  controlCall("task.branchCommitList", { taskId, ...(branchId ? { branchId } : {}) }),
 );
 handleIpc(
   "termloop:task-branch-commit-change-list",

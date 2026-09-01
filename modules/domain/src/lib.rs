@@ -366,6 +366,39 @@ pub struct TaskBranchBinding {
     pub name: String,
 }
 
+/// Hard bound for the durable current set of local branches proven in one
+/// Task's managed worktree. This is membership, not a checkout timeline.
+pub const TASK_BRANCH_MEMBERSHIPS_MAX: usize = 64;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TaskBranchMembershipEvidence {
+    CurrentBranch,
+    WorktreeReflog,
+    BranchCreationReflog,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TaskBranchMembership {
+    pub id: String,
+    pub repository_root: String,
+    pub repository_common_dir: String,
+    pub ref_name: String,
+    pub first_observed_worktree_generation: u64,
+    pub first_observed_oid: String,
+    pub parent_ref_name: Option<String>,
+    pub evidence: TaskBranchMembershipEvidence,
+}
+
+/// One bounded, monotonic set of branches observed in a Task worktree. Live
+/// ref existence, tips, checkout state, and commit counts are projections.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TaskBranchSet {
+    pub task_id: String,
+    pub evidence_truncated: bool,
+    pub memberships: Vec<TaskBranchMembership>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TaskWorktreeBinding {
     pub path: String,

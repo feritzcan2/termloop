@@ -99,9 +99,9 @@ pub use commit_changes::{
 pub(crate) use health::WorktreeProjectionCache;
 pub use health::{
     AttachedTaskSession, CachedTaskWorktreeHealth, ObservedTaskWorktreeHealth, ProjectionApply,
-    TaskWorktreeHealthFacts, TaskWorktreeHealthPlan, TaskWorktreePresence, TaskWorktreeWatchTarget,
-    WorktreeHeadProjectionState, WorktreeHealthCacheKey, WorktreeHealthSummary,
-    WorktreePathProjectionState, WorktreeRegistrationProjectionState,
+    TaskWorktreeHealthFacts, TaskWorktreeHealthPlan, TaskWorktreeObservation, TaskWorktreePresence,
+    TaskWorktreeWatchTarget, WorktreeHeadProjectionState, WorktreeHealthCacheKey,
+    WorktreeHealthSummary, WorktreePathProjectionState, WorktreeRegistrationProjectionState,
 };
 pub use provisioning::{
     ExecutedTaskWorktreeProvisioningStep, ObservedTaskWorktreeProvisioning,
