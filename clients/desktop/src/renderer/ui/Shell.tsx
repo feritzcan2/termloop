@@ -1507,33 +1507,7 @@ export function Shell(props: ShellProps) {
               : undefined}
             openExternal={props.openExternal}
           />
-          </WorkspaceRailCache>{workspaceView === "overview" || workspaceView === "agents" ? null : workspaceView === "history" ? <HistoryRail
-            projectId={props.selectedProject?.id}
-            projectPath={props.selectedProject?.folder_path}
-            projectBranch={props.projectWorktreeSummary?.checked_out_branch}
-            currentCwd={props.selectedSession?.process.cwd ?? props.selectedProject?.folder_path}
-            sessions={props.projectSessions}
-            archivedSessions={archived.sessions}
-            deletedSessions={deleted.sessions}
-            favoriteSessionIds={favoriteAgentSessionIds}
-            termLoopHistoryLoading={archived.loading || deleted.loading}
-            selectedSessionId={props.selectedSession?.id}
-            disabled={disabled}
-            load={props.loadSessionHistory}
-            loadTermLoopPreview={props.loadSessionHistoryPreview}
-            resumeExternal={props.resumeHistorySession}
-            selectSession={selectSession}
-            resumeSession={retrySession}
-            restoreArchivedSession={archived.restoreSession}
-            deleteArchivedSession={(sessionId) => {
-              void props.deleteArchivedSession(sessionId).then((failure) => {
-                if (failure) return;
-                archived.reload();
-                deleted.reload();
-              });
-            }}
-            restoreDeletedSession={deleted.restore}
-          /> : assistantProjectId ? <AssistantRail
+          </WorkspaceRailCache><WorkspaceRailCache visible={workspaceView === "steward"}>{assistantProjectId ? <AssistantRail
             projectId={assistantProjectId}
             refreshToken={props.assistantRefreshToken}
             sessions={props.projectSessions}
@@ -1569,7 +1543,33 @@ export function Shell(props: ShellProps) {
             dismissImproverSession={dismissSession}
             openTask={openTaskDetail}
             openDetails={openAssistant}
-          /> : <p className="assistant-empty">Select a Project to configure assistants.</p>}</>}
+          /> : <p className="assistant-empty">Select a Project to configure assistants.</p>}</WorkspaceRailCache>{workspaceView === "overview" || workspaceView === "agents" || workspaceView === "steward" ? null : workspaceView === "history" ? <HistoryRail
+            projectId={props.selectedProject?.id}
+            projectPath={props.selectedProject?.folder_path}
+            projectBranch={props.projectWorktreeSummary?.checked_out_branch}
+            currentCwd={props.selectedSession?.process.cwd ?? props.selectedProject?.folder_path}
+            sessions={props.projectSessions}
+            archivedSessions={archived.sessions}
+            deletedSessions={deleted.sessions}
+            favoriteSessionIds={favoriteAgentSessionIds}
+            termLoopHistoryLoading={archived.loading || deleted.loading}
+            selectedSessionId={props.selectedSession?.id}
+            disabled={disabled}
+            load={props.loadSessionHistory}
+            loadTermLoopPreview={props.loadSessionHistoryPreview}
+            resumeExternal={props.resumeHistorySession}
+            selectSession={selectSession}
+            resumeSession={retrySession}
+            restoreArchivedSession={archived.restoreSession}
+            deleteArchivedSession={(sessionId) => {
+              void props.deleteArchivedSession(sessionId).then((failure) => {
+                if (failure) return;
+                archived.reload();
+                deleted.reload();
+              });
+            }}
+            restoreDeletedSession={deleted.restore}
+          /> : null}</>}
           </div>
           {/* Archived Agent history lives in History; this footer is Task-only. */}
           {railMode === "workspace" ? <WorkspaceRailCache visible={archivedRailVisible(true, workspaceView)}><ArchivedRail

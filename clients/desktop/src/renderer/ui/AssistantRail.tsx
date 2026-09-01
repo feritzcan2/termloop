@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { assistantRefusalMessage, isRevisionConflict, playbookPipelineWorkerId } from "./StewardPanel.js";
 import {
   adoptTemplateInto,
@@ -485,6 +485,49 @@ type Props = {
   openDetails(selection: AssistantSelection): void;
 };
 
+type AssistantRailSnapshot = {
+  steward: StewardConfigurationGetResult["configuration"];
+  stewardRevision: number;
+  workers: WorkerConfigurationDto[];
+  workerRevision: number;
+  routines: RoutineConfigurationDto[];
+  routineRevision: number;
+  health: RoutineHealthDto[];
+  playbook: PlaybookDto | null;
+};
+
+function emptyAssistantRailSnapshot(): AssistantRailSnapshot {
+  return {
+    steward: null,
+    stewardRevision: 0,
+    workers: [],
+    workerRevision: 0,
+    routines: [],
+    routineRevision: 0,
+    health: [],
+    playbook: null,
+  };
+}
+
+function assistantRailSnapshot(
+  steward: StewardConfigurationGetResult,
+  workers: WorkerConfigurationListResult,
+  routines: RoutineConfigurationListResult,
+  runtime: RoutineRuntimeListResult,
+  playbook: PlaybookGetResult,
+): AssistantRailSnapshot {
+  return {
+    steward: steward.configuration,
+    stewardRevision: steward.stateRevision,
+    workers: workers.configurations,
+    workerRevision: workers.stateRevision,
+    routines: routines.configurations,
+    routineRevision: routines.stateRevision,
+    health: runtime.health,
+    playbook: playbook.playbook,
+  };
+}
+
 export function AssistantRail(props: Props) {
   const [steward, setSteward] = useState<StewardConfigurationGetResult["configuration"]>(null);
   // Every write cites the global store revision, and only mutation handlers
@@ -497,6 +540,38 @@ export function AssistantRail(props: Props) {
   // The saved document itself: the pipeline the rail draws, and the base
   // every inline edit re-reads before writing.
   const [playbookDoc, setPlaybookDoc] = useState<PlaybookDto | null>(null);
+  const snapshotsByProject = useRef(new Map<string, AssistantRailSnapshot>());
+  const [snapshotProjectId, setSnapshotProjectId] = useState(props.projectId);
+  const applySnapshot = useCallback((projectId: string, snapshot: AssistantRailSnapshot) => {
+    setSnapshotProjectId(projectId);
+    setSteward(snapshot.steward);
+    revisions.current.steward = snapshot.stewardRevision;
+    setWorkers(snapshot.workers);
+    revisions.current.worker = snapshot.workerRevision;
+    setRoutines(snapshot.routines);
+    revisions.current.routine = snapshot.routineRevision;
+    setHealth(snapshot.health);
+    setPlaybookDoc(snapshot.playbook);
+  }, []);
+  useLayoutEffect(() => {
+    applySnapshot(
+      props.projectId,
+      snapshotsByProject.current.get(props.projectId) ?? emptyAssistantRailSnapshot(),
+    );
+  }, [applySnapshot, props.projectId]);
+  useEffect(() => {
+    if (snapshotProjectId !== props.projectId) return;
+    snapshotsByProject.current.set(props.projectId, {
+      steward,
+      stewardRevision: revisions.current.steward,
+      workers,
+      workerRevision: revisions.current.worker,
+      routines,
+      routineRevision: revisions.current.routine,
+      health,
+      playbook: playbookDoc,
+    });
+  }, [health, playbookDoc, props.projectId, routines, snapshotProjectId, steward, workers]);
   const stepIndex = useMemo(() => stepRoutineIndex(playbookDoc), [playbookDoc]);
   const playbookName = playbookDoc?.activePipelineName ?? "";
   const [failed, setFailed] = useState(false);
@@ -554,23 +629,18 @@ export function AssistantRail(props: Props) {
   }, [props.projectId]);
   useEffect(() => {
     let current = true;
+    const projectId = props.projectId;
     setFailed(false);
     setActionError(undefined);
     void Promise.all([props.getSteward(), props.listWorkers(), props.listRoutines(), props.listRuntime(), props.getPlaybook()])
       .then(([stewardResult, workerResult, routineResult, runtimeResult, playbookResult]) => {
-        if (!current) return;
-        setSteward(stewardResult.configuration);
-        revisions.current.steward = stewardResult.stateRevision;
-        setWorkers(workerResult.configurations);
-        revisions.current.worker = workerResult.stateRevision;
-        setRoutines(routineResult.configurations);
-        revisions.current.routine = routineResult.stateRevision;
-        setHealth(runtimeResult.health);
-        setPlaybookDoc(playbookResult.playbook);
+        const snapshot = assistantRailSnapshot(stewardResult, workerResult, routineResult, runtimeResult, playbookResult);
+        snapshotsByProject.current.set(projectId, snapshot);
+        if (current) applySnapshot(projectId, snapshot);
       })
       .catch(() => { if (current) setFailed(true); });
     return () => { current = false; };
-  }, [props.projectId, props.refreshToken]);
+  }, [applySnapshot, props.projectId, props.refreshToken]);
   const sessions = useMemo(() => new Map(props.sessions.map((session) => [session.id, session])), [props.sessions]);
   const healthByRoutine = useMemo(() => new Map(health.map((value) => [value.routineId, value])), [health]);
   const capabilityByAgent = useMemo(() => new Map(props.agentCapabilities.map((capability) => [capability.agent_id, capability])), [props.agentCapabilities]);
@@ -589,14 +659,9 @@ export function AssistantRail(props: Props) {
     const [stewardResult, workerResult, routineResult, runtimeResult, playbookResult] = await Promise.all([
       props.getSteward(), props.listWorkers(), props.listRoutines(), props.listRuntime(), props.getPlaybook(),
     ]);
-    setSteward(stewardResult.configuration);
-    revisions.current.steward = stewardResult.stateRevision;
-    setWorkers(workerResult.configurations);
-    revisions.current.worker = workerResult.stateRevision;
-    setRoutines(routineResult.configurations);
-    revisions.current.routine = routineResult.stateRevision;
-    setHealth(runtimeResult.health);
-    setPlaybookDoc(playbookResult.playbook);
+    const snapshot = assistantRailSnapshot(stewardResult, workerResult, routineResult, runtimeResult, playbookResult);
+    snapshotsByProject.current.set(props.projectId, snapshot);
+    applySnapshot(props.projectId, snapshot);
   };
 
   // One in-flight sidebar mutation at a time.
