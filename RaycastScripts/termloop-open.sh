@@ -71,6 +71,34 @@ fi
 
 checkout="$(cd "$checkout" && git rev-parse --show-toplevel)"
 
+# The persistent mobile-access gateway is a frozen esbuild bundle under
+# Application Support and nothing else reinstalls it on app updates. When the
+# launched checkout's gateway sources differ from what produced the installed
+# bundle, rerun the bootstrap (it keeps the connection id and device tokens, so
+# the phone's pairing survives). Best effort: a failure warns and never blocks
+# the launch.
+refresh_mobile_gateway() {
+  local access_root="$HOME/Library/Application Support/TermLoop Mobile Access"
+  local sources hash stamp
+  sources=("$checkout"/clients/mobile/scripts/mobile-access*.mjs)
+  [ -e "${sources[0]}" ] || return 0
+  ls "$access_root"/mac-*/mobile-access-gateway.mjs >/dev/null 2>&1 || return 0
+  hash="$(cat "${sources[@]}" | shasum -a 256 | cut -d' ' -f1)" || return 0
+  stamp="$access_root/gateway.source-hash"
+  [ "$(cat "$stamp" 2>/dev/null)" = "$hash" ] && return 0
+  # --print keeps the run non-interactive; its output carries pairing secrets,
+  # so nothing from the bootstrap may reach stdout.
+  if (cd "$checkout/clients/mobile" && node scripts/mobile-access.mjs --print --skip-gateway-wait >/dev/null 2>&1); then
+    printf '%s\n' "$hash" > "$stamp"
+    chmod 600 "$stamp" 2>/dev/null || true
+    echo "Mobile access gateway refreshed."
+  else
+    echo "Mobile access gateway refresh failed; launching anyway (run 'pnpm mobile-access' in clients/mobile to retry)."
+  fi
+  return 0
+}
+refresh_mobile_gateway
+
 if [ "$tag" = "main" ]; then
   if [ "$checkout" != "$TERMLOOP_DIR" ]; then
     echo "The main profile can only use the primary checkout. Pass a non-main instance tag for another checkout."
