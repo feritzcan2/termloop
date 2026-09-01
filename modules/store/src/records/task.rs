@@ -268,6 +268,9 @@ impl Store {
         let previous = self.state.clone();
         let deleted = self.state.tasks.remove(index);
         self.state
+            .task_branch_sets
+            .retain(|set| set.task_id != task_id);
+        self.state
             .managed_worktrees
             .retain(|proof| proof.task_id != task_id);
         self.state
@@ -389,6 +392,9 @@ impl Store {
             .task_archive_suspensions
             .retain(|suspension| !unique_ids.contains(suspension.session_id.as_str()));
         let deleted = self.state.tasks.remove(task_index);
+        self.state
+            .task_branch_sets
+            .retain(|set| set.task_id != task_id);
         self.state
             .managed_worktrees
             .retain(|proof| proof.task_id != task_id);

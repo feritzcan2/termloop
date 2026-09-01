@@ -91,7 +91,7 @@ export type ChangesOverlayProps = {
   list(subjectId: string): Promise<LocalChangeListResult>;
   diff(subjectId: string, observationId: string, entryId: string): Promise<LocalDiffResult>;
   preImage(subjectId: string, observationId: string, entryId: string): Promise<LocalPreImageResult>;
-  listCommits(taskId: string): Promise<TaskBranchCommitListResult>;
+  listCommits(taskId: string, branchId?: string): Promise<TaskBranchCommitListResult>;
   listCommitChanges(taskId: string, observationId: string, commitId: string): Promise<TaskBranchCommitChangeListResult>;
   commitDiff(taskId: string, observationId: string, commitId: string, entryId: string): Promise<TaskBranchCommitDiffResult>;
   gitHostProjection: GitHostProjection | undefined;
@@ -126,7 +126,9 @@ export function ChangesOverlay({
   initialSourceRef.current = initialSource;
   const initialSourceKey = initialSource.kind === "pullRequest"
     ? `pullRequest:${pullRequestKey(initialSource.pullRequest)}:${initialSource.freshnessGeneration}`
-    : initialSource.kind;
+    : initialSource.kind === "commits"
+      ? `commits:${initialSource.branchId ?? "primary"}`
+      : initialSource.kind;
   const gitHostProjectionRef = useRef(gitHostProjection);
   gitHostProjectionRef.current = gitHostProjection;
   const [localChanges, setLocalChanges] = useState<LocalChangeListResult>();
@@ -175,7 +177,10 @@ export function ChangesOverlay({
     setReviewedEntryKeys(new Set());
     const [localResult, commitResult] = await Promise.allSettled([
       hasWorktree ? list(subject.id) : Promise.resolve(undefined),
-      hasBranch ? listCommits(subject.id) : Promise.resolve(undefined),
+      hasBranch ? listCommits(
+        subject.id,
+        initialSource.kind === "commits" ? initialSource.branchId : undefined,
+      ) : Promise.resolve(undefined),
     ]);
     const nextLocal = localResult.status === "fulfilled" ? localResult.value : undefined;
     const nextCommits = commitResult.status === "fulfilled" ? commitResult.value : undefined;
@@ -494,8 +499,8 @@ export function ChangesOverlay({
         ? `Local changes · ${"side" in selected ? selected.side : "file"}`
         : selectedSource.kind === "commit"
           ? selectedSource.commitId === ALL_BRANCH_CHANGES_ID
-            ? "All changes"
-            : `Commit ${selectedCommit?.short_oid ?? selectedSource.commitId.slice(0, 8)}`
+            ? `All changes on ${commitList?.branch_name ?? "branch"}`
+            : `${commitList?.branch_name ?? "Branch"} · commit ${selectedCommit?.short_oid ?? selectedSource.commitId.slice(0, 8)}`
           : `${selectedSource.pullRequest.provider === "azureDevOps" ? "Azure PR" : "PR"} #${selectedSource.pullRequest.number}`,
       displayPath: selected.display_path,
       pathEncoding: selected.path_encoding,
@@ -770,13 +775,20 @@ function SourcePicker({ localChanges, commitList, gitHostProjection, selected, s
           className={selected.kind === "commit" && selected.commitId === ALL_BRANCH_CHANGES_ID ? "selected" : ""}
           onClick={() => select({ kind: "commit", commitId: ALL_BRANCH_CHANGES_ID })}
         >
-          <strong>Branch changes</strong>
-          <small>{commitList.commits.length}{commitList.truncated ? "+" : ""} {commitList.commits.length === 1 && !commitList.truncated ? "commit" : "commits"}</small>
+          <strong>{commitList.branch_name}</strong>
+          <small>
+            {commitList.commits.length}{commitList.truncated ? "+" : ""} {commitList.commits.length === 1 && !commitList.truncated ? "commit" : "commits"}
+            {commitList.base_ref
+              ? ` · base ${commitList.base_ref}`
+              : commitList.base_oid
+                ? ` · base ${commitList.base_oid.slice(0, 12)}`
+                : ""}
+          </small>
         </button>
       ) : null}
       {commitList?.commits.map((commit, index) => (
         <button key={commit.commit_id} type="button" className={selected.kind === "commit" && selected.commitId === commit.commit_id ? "selected" : ""} onClick={() => select({ kind: "commit", commitId: commit.commit_id })}>
-          <strong>Commit {index + 1}</strong>
+          <strong>{commit.branch_name} · commit {index + 1}</strong>
           <small>{commit.short_oid} · {commit.subject || "No subject"}</small>
         </button>
       ))}

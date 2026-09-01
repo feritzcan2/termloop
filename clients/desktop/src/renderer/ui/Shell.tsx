@@ -225,7 +225,7 @@ export type ShellProps = {
   listTaskWorktreeChanges(taskId: string): Promise<TaskWorktreeChangeListResult>;
   getTaskWorktreeDiff(taskId: string, observationId: string, entryId: string): Promise<TaskWorktreeDiffResult>;
   getTaskWorktreePreImage(taskId: string, observationId: string, entryId: string): Promise<TaskWorktreePreImageResult>;
-  listTaskBranchCommits(taskId: string): Promise<TaskBranchCommitListResult>;
+  listTaskBranchCommits(taskId: string, branchId?: string): Promise<TaskBranchCommitListResult>;
   listTaskBranchCommitChanges(taskId: string, observationId: string, commitId: string): Promise<TaskBranchCommitChangeListResult>;
   getTaskBranchCommitDiff(taskId: string, observationId: string, commitId: string, entryId: string): Promise<TaskBranchCommitDiffResult>;
   listTaskPullRequestChanges(taskId: string, expectedFreshnessGeneration: number, pullRequest: GitHostPullRequestIdentityDto): Promise<GitHostPullRequestChangeListResult>;

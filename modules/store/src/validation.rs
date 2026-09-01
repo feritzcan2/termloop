@@ -45,6 +45,7 @@ pub(super) fn validate_current_state(state: &CurrentState) -> Result<(), StoreEr
         || agent_conversation_readiness_is_invalid(state)
         || agent_plans_are_invalid(state)
         || issue_links_are_invalid(state)
+        || super::records::task_branch::task_branch_sets_are_invalid(state)
         || task_source_configurations_are_invalid(state)
         || project_task_automation_configurations_are_invalid(state)
         || archive_records_are_invalid(state)
