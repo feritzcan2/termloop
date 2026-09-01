@@ -19,168 +19,172 @@ fn json_array_unique(values: &[Value]) -> bool {
 
 static CONTRACT_PATTERN_0: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new("\\S").expect("generated contract pattern"));
-static CONTRACT_PATTERN_1: std::sync::LazyLock<regex::Regex> =
+static CONTRACT_PATTERN_1: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new("^(?:[0-9a-f]{40}|[0-9a-f]{64})$").expect("generated contract pattern")
+});
+static CONTRACT_PATTERN_2: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new("^[0-9]+$").expect("generated contract pattern"));
-static CONTRACT_PATTERN_2: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_3: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_3: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_4: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{32}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_4: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_5: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{64}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_5: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_6: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_6: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_7: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_7: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_8: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_8: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_9: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Z2-9]{4}-[A-Z2-9]{4}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_9: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_10: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9][A-Za-z0-9._:/-]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_10: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_11: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9_-]+$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_11: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_12: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9_-]{1,64}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_12: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_13: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9_-]{43}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_13: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_14: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z0-9_-]{86}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_14: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_15: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_15: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_16: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[A-Za-z_][A-Za-z0-9_]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_16: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_17: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_17: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_18: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^[a-z](?:[a-z0-9]|-[a-z0-9])*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_19: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_20: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://(?:github\\.com|dev\\.azure\\.com)/")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_20: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z](?:[A-Z0-9]{0,63})-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_21: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_22: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_22: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_23: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_23: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_24: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_24: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_25: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_25: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_26: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_26: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_27: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_27: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_28: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$")
         .expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_28: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_29: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^https?://").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_29: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_30: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^refs/heads/").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_30: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_31: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^sha256:[0-9a-f]{64}$").expect("generated contract pattern")
 });
-static CONTRACT_PATTERN_31: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+static CONTRACT_PATTERN_32: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("^sk-\\S+$").expect("generated contract pattern")
 });
 
 fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
     match pattern {
         "\\S" => CONTRACT_PATTERN_0.is_match(text),
-        "^[0-9]+$" => CONTRACT_PATTERN_1.is_match(text),
+        "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" => CONTRACT_PATTERN_1.is_match(text),
+        "^[0-9]+$" => CONTRACT_PATTERN_2.is_match(text),
         "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" => {
-            CONTRACT_PATTERN_2.is_match(text)
+            CONTRACT_PATTERN_3.is_match(text)
         }
-        "^[0-9a-f]{32}$" => CONTRACT_PATTERN_3.is_match(text),
-        "^[0-9a-f]{64}$" => CONTRACT_PATTERN_4.is_match(text),
+        "^[0-9a-f]{32}$" => CONTRACT_PATTERN_4.is_match(text),
+        "^[0-9a-f]{64}$" => CONTRACT_PATTERN_5.is_match(text),
         "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" => {
-            CONTRACT_PATTERN_5.is_match(text)
-        }
-        "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" => {
             CONTRACT_PATTERN_6.is_match(text)
         }
-        "^[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_7.is_match(text),
-        "^[A-Z2-9]{4}-[A-Z2-9]{4}$" => CONTRACT_PATTERN_8.is_match(text),
-        "^[A-Za-z0-9][A-Za-z0-9._:/-]*$" => CONTRACT_PATTERN_9.is_match(text),
-        "^[A-Za-z0-9_-]+$" => CONTRACT_PATTERN_10.is_match(text),
-        "^[A-Za-z0-9_-]{1,64}$" => CONTRACT_PATTERN_11.is_match(text),
-        "^[A-Za-z0-9_-]{43}$" => CONTRACT_PATTERN_12.is_match(text),
-        "^[A-Za-z0-9_-]{86}$" => CONTRACT_PATTERN_13.is_match(text),
-        "^[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_14.is_match(text),
-        "^[A-Za-z_][A-Za-z0-9_]*$" => CONTRACT_PATTERN_15.is_match(text),
-        "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" => CONTRACT_PATTERN_16.is_match(text),
-        "^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$" => CONTRACT_PATTERN_17.is_match(text),
-        "^[a-z](?:[a-z0-9]|-[a-z0-9])*$" => CONTRACT_PATTERN_18.is_match(text),
-        "^https://(?:github\\.com|dev\\.azure\\.com)/" => CONTRACT_PATTERN_19.is_match(text),
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z](?:[A-Z0-9]{0,63})-[1-9][0-9]{0,19}$" => {
-            CONTRACT_PATTERN_20.is_match(text)
+        "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" => {
+            CONTRACT_PATTERN_7.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$" => {
+        "^[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_8.is_match(text),
+        "^[A-Z2-9]{4}-[A-Z2-9]{4}$" => CONTRACT_PATTERN_9.is_match(text),
+        "^[A-Za-z0-9][A-Za-z0-9._:/-]*$" => CONTRACT_PATTERN_10.is_match(text),
+        "^[A-Za-z0-9_-]+$" => CONTRACT_PATTERN_11.is_match(text),
+        "^[A-Za-z0-9_-]{1,64}$" => CONTRACT_PATTERN_12.is_match(text),
+        "^[A-Za-z0-9_-]{43}$" => CONTRACT_PATTERN_13.is_match(text),
+        "^[A-Za-z0-9_-]{86}$" => CONTRACT_PATTERN_14.is_match(text),
+        "^[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => CONTRACT_PATTERN_15.is_match(text),
+        "^[A-Za-z_][A-Za-z0-9_]*$" => CONTRACT_PATTERN_16.is_match(text),
+        "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" => CONTRACT_PATTERN_17.is_match(text),
+        "^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$" => CONTRACT_PATTERN_18.is_match(text),
+        "^[a-z](?:[a-z0-9]|-[a-z0-9])*$" => CONTRACT_PATTERN_19.is_match(text),
+        "^https://(?:github\\.com|dev\\.azure\\.com)/" => CONTRACT_PATTERN_20.is_match(text),
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z](?:[A-Z0-9]{0,63})-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_21.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,62}[A-Z0-9]?-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_22.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_23.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}/?$" => {
             CONTRACT_PATTERN_24.is_match(text)
         }
-        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net$" => {
             CONTRACT_PATTERN_25.is_match(text)
         }
-        "^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$" => {
+        "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\\.atlassian\\.net/browse/[A-Za-z][A-Za-z0-9_]{0,63}-[1-9][0-9]{0,19}$" => {
             CONTRACT_PATTERN_26.is_match(text)
         }
-        "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$" => {
+        "^https://dev\\.azure\\.com/[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?/[^/?#]+/_git/[^/?#]+/pullrequest/[1-9][0-9]*$" => {
             CONTRACT_PATTERN_27.is_match(text)
         }
-        "^https?://" => CONTRACT_PATTERN_28.is_match(text),
-        "^refs/heads/" => CONTRACT_PATTERN_29.is_match(text),
-        "^sha256:[0-9a-f]{64}$" => CONTRACT_PATTERN_30.is_match(text),
-        "^sk-\\S+$" => CONTRACT_PATTERN_31.is_match(text),
+        "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$" => {
+            CONTRACT_PATTERN_28.is_match(text)
+        }
+        "^https?://" => CONTRACT_PATTERN_29.is_match(text),
+        "^refs/heads/" => CONTRACT_PATTERN_30.is_match(text),
+        "^sha256:[0-9a-f]{64}$" => CONTRACT_PATTERN_31.is_match(text),
+        "^sk-\\S+$" => CONTRACT_PATTERN_32.is_match(text),
         _ => false,
     }
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:77feb865a3264ed8129a4cf81e39a23d8a828b2050f72b2fd998ed4cfddea929";
+    "sha256:0dd9693b289b3ed619d7c78c7c5fdd45584b15628ade59b2acd2cd87a759a06e";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -1626,6 +1630,8 @@ pub struct TaskBranchNotInBaseSummaryDto {
 pub struct TaskBranchCommitListParams {
     #[serde(rename = "taskId")]
     pub task_id: String,
+    #[serde(rename = "branchId", skip_serializing_if = "Option::is_none")]
+    pub branch_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1640,6 +1646,8 @@ pub enum TaskBranchCommitSubjectEncoding {
 #[serde(deny_unknown_fields)]
 pub struct TaskBranchCommitDto {
     pub commit_id: String,
+    pub branch_id: String,
+    pub branch_name: String,
     pub short_oid: String,
     pub subject: String,
     pub subject_encoding: TaskBranchCommitSubjectEncoding,
@@ -1652,7 +1660,17 @@ pub struct TaskBranchCommitDto {
 pub struct TaskBranchCommitListResult {
     pub task_id: String,
     pub observation_id: String,
-    pub base_ref: String,
+    pub branch_id: String,
+    pub branch_name: String,
+    pub branch_role: TaskBranchMembershipRole,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub held_by_task_id: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub base_ref: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub base_oid: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub base_evidence: Option<TaskBranchBaseEvidence>,
     pub commits: Vec<TaskBranchCommitDto>,
     pub truncated: bool,
 }
@@ -2080,6 +2098,60 @@ pub struct TaskProjectionEntityScopeDto {
     pub ids: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum TaskBranchMembershipRole {
+    #[serde(rename = "primary")]
+    Primary,
+    #[serde(rename = "associated")]
+    Associated,
+    #[serde(rename = "baseBranch")]
+    BaseBranch,
+    #[serde(rename = "heldByOtherTask")]
+    HeldByOtherTask,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum TaskBranchBaseEvidence {
+    #[serde(rename = "provisioned")]
+    Provisioned,
+    #[serde(rename = "currentBranch")]
+    CurrentBranch,
+    #[serde(rename = "worktreeReflog")]
+    WorktreeReflog,
+    #[serde(rename = "branchCreationReflog")]
+    BranchCreationReflog,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct TaskBranchMembershipDto {
+    pub branch_id: String,
+    pub name: String,
+    pub role: TaskBranchMembershipRole,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub held_by_task_id: Option<String>,
+    pub checked_out: bool,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub base_ref: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub base_oid: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub base_evidence: Option<TaskBranchBaseEvidence>,
+    pub first_observed_worktree_generation: u64,
+    pub rollup_eligible: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct TaskBranchSetDto {
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub primary_branch_id: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub checked_out_branch_id: Option<String>,
+    pub evidence_truncated: bool,
+    pub items: Vec<TaskBranchMembershipDto>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TaskDto {
@@ -2095,6 +2167,8 @@ pub struct TaskDto {
     pub archived_at_epoch_ms: Option<u64>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub branch: Option<TaskBranchDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branches: Option<TaskBranchSetDto>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub worktree: Option<TaskWorktreeDto>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -10503,7 +10577,14 @@ fn validate_task_branch_commit_list_params(value: &Value) -> bool {
         object
             .get("taskId")
             .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
-            && object.keys().all(|key| ["taskId"].contains(&key.as_str()))
+            && object.get("branchId").is_none_or(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+            })
+            && object
+                .keys()
+                .all(|key| ["taskId", "branchId"].contains(&key.as_str()))
     })
 }
 
@@ -10537,6 +10618,14 @@ fn validate_task_branch_commit_dto(value: &Value) -> bool {
             field
                 .as_str()
                 .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+        }) && object.get("branch_id").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+        }) && object.get("branch_name").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 1024)
         }) && object.get("short_oid").is_some_and(|field| {
             field
                 .as_str()
@@ -10560,6 +10649,8 @@ fn validate_task_branch_commit_dto(value: &Value) -> bool {
             && object.keys().all(|key| {
                 [
                     "commit_id",
+                    "branch_id",
+                    "branch_name",
                     "short_oid",
                     "subject",
                     "subject_encoding",
@@ -10589,11 +10680,36 @@ fn validate_task_branch_commit_list_result(value: &Value) -> bool {
                     .as_str()
                     .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
             })
-            && object.get("base_ref").is_some_and(|field| {
+            && object.get("branch_id").is_some_and(|field| {
+                field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+            })
+            && object.get("branch_name").is_some_and(|field| {
                 field
                     .as_str()
                     .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 1024)
             })
+            && object
+                .get("branch_role")
+                .is_some_and(|field| validate_task_branch_membership_role(field))
+            && object.get("held_by_task_id").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| text.chars().count() >= 1) || field.is_null())
+            })
+            && object.get("base_ref").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 1024)
+                    || field.is_null())
+            })
+            && object.get("base_oid").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    contract_pattern_matches("^(?:[0-9a-f]{40}|[0-9a-f]{64})$", text)
+                }) || field.is_null())
+            })
+            && object
+                .get("base_evidence")
+                .is_some_and(|field| (validate_task_branch_base_evidence(field) || field.is_null()))
             && object.get("commits").is_some_and(|field| {
                 field.as_array().is_some_and(|items| {
                     items.len() <= 50
@@ -10609,7 +10725,13 @@ fn validate_task_branch_commit_list_result(value: &Value) -> bool {
                 [
                     "task_id",
                     "observation_id",
+                    "branch_id",
+                    "branch_name",
+                    "branch_role",
+                    "held_by_task_id",
                     "base_ref",
+                    "base_oid",
+                    "base_evidence",
                     "commits",
                     "truncated",
                 ]
@@ -11873,8 +11995,159 @@ fn validate_task_projection_entity_scope_dto(value: &Value) -> bool {
     clippy::len_zero,
     clippy::redundant_closure
 )]
+fn validate_task_branch_membership_role(value: &Value) -> bool {
+    value.as_str().is_some_and(|text| {
+        ["primary", "associated", "baseBranch", "heldByOtherTask"].contains(&text)
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_task_branch_base_evidence(value: &Value) -> bool {
+    value.as_str().is_some_and(|text| {
+        [
+            "provisioned",
+            "currentBranch",
+            "worktreeReflog",
+            "branchCreationReflog",
+        ]
+        .contains(&text)
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_task_branch_membership_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("branch_id").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+        }) && object.get("name").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 1024)
+        }) && object
+            .get("role")
+            .is_some_and(|field| validate_task_branch_membership_role(field))
+            && object.get("held_by_task_id").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| text.chars().count() >= 1) || field.is_null())
+            })
+            && object
+                .get("checked_out")
+                .is_some_and(|field| field.is_boolean())
+            && object.get("base_ref").is_some_and(|field| {
+                (field
+                    .as_str()
+                    .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 1024)
+                    || field.is_null())
+            })
+            && object.get("base_oid").is_some_and(|field| {
+                (field.as_str().is_some_and(|text| {
+                    contract_pattern_matches("^(?:[0-9a-f]{40}|[0-9a-f]{64})$", text)
+                }) || field.is_null())
+            })
+            && object
+                .get("base_evidence")
+                .is_some_and(|field| (validate_task_branch_base_evidence(field) || field.is_null()))
+            && object
+                .get("first_observed_worktree_generation")
+                .is_some_and(|field| {
+                    field.as_number().is_some_and(|number| {
+                        (number.as_i64().is_some() || number.as_u64().is_some())
+                            && (number.as_u64().is_some_and(|number| number >= 0_u64))
+                    })
+                })
+            && object
+                .get("rollup_eligible")
+                .is_some_and(|field| field.is_boolean())
+            && object.keys().all(|key| {
+                [
+                    "branch_id",
+                    "name",
+                    "role",
+                    "held_by_task_id",
+                    "checked_out",
+                    "base_ref",
+                    "base_oid",
+                    "base_evidence",
+                    "first_observed_worktree_generation",
+                    "rollup_eligible",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_task_branch_set_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("primary_branch_id").is_some_and(|field| {
+            (field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+                || field.is_null())
+        }) && object.get("checked_out_branch_id").is_some_and(|field| {
+            (field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 64)
+                || field.is_null())
+        }) && object
+            .get("evidence_truncated")
+            .is_some_and(|field| field.is_boolean())
+            && object.get("items").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 65
+                        && items
+                            .iter()
+                            .all(|item| validate_task_branch_membership_dto(item))
+                })
+            })
+            && object.keys().all(|key| {
+                [
+                    "primary_branch_id",
+                    "checked_out_branch_id",
+                    "evidence_truncated",
+                    "items",
+                ]
+                .contains(&key.as_str())
+            })
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
 fn validate_task_dto(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| object.get("id").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("project_id").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("title").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 160)) && object.get("brief").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() <= 8000) || field.is_null())) && object.get("jira_url").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() <= 2048 && contract_pattern_matches("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$", text)) || field.is_null())) && object.get("status").is_some_and(|field| validate_task_status(field)) && object.get("archived_at_epoch_ms").is_some_and(|field| (field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64))) || field.is_null())) && object.get("branch").is_some_and(|field| (validate_task_branch_dto(field) || field.is_null())) && object.get("worktree").is_some_and(|field| (validate_task_worktree_dto(field) || field.is_null())) && object.get("worktree_provisioning").is_none_or(|field| validate_task_worktree_provisioning_dto(field)) && object.get("rank").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("created_at_epoch_ms").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("updated_at_epoch_ms").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("worktree_generation").is_none_or(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("steward_brief_markdown").is_none_or(|field| field.as_str().is_some_and(|text| text.chars().count() <= 8000 && text.len() <= 8192)) && object.get("steward_brief_revision").is_none_or(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 1_u64)))) && object.get("worktree_health").is_none_or(|field| validate_task_worktree_health_dto(field)) && object.get("worktree_presence").is_none_or(|field| validate_task_worktree_presence_dto(field)) && object.get("worktree_cleanup").is_none_or(|field| validate_task_worktree_cleanup_operation_dto(field)) && object.get("worktree_repair").is_none_or(|field| validate_task_worktree_repair_operation_dto(field)) && object.get("worktree_stale_resolution").is_none_or(|field| validate_task_worktree_stale_resolution_operation_dto(field)) && object.keys().all(|key| ["id", "project_id", "title", "brief", "jira_url", "status", "archived_at_epoch_ms", "branch", "worktree", "worktree_provisioning", "rank", "created_at_epoch_ms", "updated_at_epoch_ms", "worktree_generation", "steward_brief_markdown", "steward_brief_revision", "worktree_health", "worktree_presence", "worktree_cleanup", "worktree_repair", "worktree_stale_resolution"].contains(&key.as_str())))
+    value.as_object().is_some_and(|object| object.get("id").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("project_id").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("title").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 160)) && object.get("brief").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() <= 8000) || field.is_null())) && object.get("jira_url").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() <= 2048 && contract_pattern_matches("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$", text)) || field.is_null())) && object.get("status").is_some_and(|field| validate_task_status(field)) && object.get("archived_at_epoch_ms").is_some_and(|field| (field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64))) || field.is_null())) && object.get("branch").is_some_and(|field| (validate_task_branch_dto(field) || field.is_null())) && object.get("branches").is_none_or(|field| validate_task_branch_set_dto(field)) && object.get("worktree").is_some_and(|field| (validate_task_worktree_dto(field) || field.is_null())) && object.get("worktree_provisioning").is_none_or(|field| validate_task_worktree_provisioning_dto(field)) && object.get("rank").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("created_at_epoch_ms").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("updated_at_epoch_ms").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("worktree_generation").is_none_or(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("steward_brief_markdown").is_none_or(|field| field.as_str().is_some_and(|text| text.chars().count() <= 8000 && text.len() <= 8192)) && object.get("steward_brief_revision").is_none_or(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 1_u64)))) && object.get("worktree_health").is_none_or(|field| validate_task_worktree_health_dto(field)) && object.get("worktree_presence").is_none_or(|field| validate_task_worktree_presence_dto(field)) && object.get("worktree_cleanup").is_none_or(|field| validate_task_worktree_cleanup_operation_dto(field)) && object.get("worktree_repair").is_none_or(|field| validate_task_worktree_repair_operation_dto(field)) && object.get("worktree_stale_resolution").is_none_or(|field| validate_task_worktree_stale_resolution_operation_dto(field)) && object.keys().all(|key| ["id", "project_id", "title", "brief", "jira_url", "status", "archived_at_epoch_ms", "branch", "branches", "worktree", "worktree_provisioning", "rank", "created_at_epoch_ms", "updated_at_epoch_ms", "worktree_generation", "steward_brief_markdown", "steward_brief_revision", "worktree_health", "worktree_presence", "worktree_cleanup", "worktree_repair", "worktree_stale_resolution"].contains(&key.as_str())))
 }
 
 #[allow(

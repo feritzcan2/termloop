@@ -487,6 +487,34 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
                 <span>{commitCount} {commitCount === 1 ? "commit" : "commits"} on this branch</span>
               </button>
             ) : null}
+            {task.branches?.items
+              .filter((branch) => branch.branch_id !== "primary")
+              .map((branch) => {
+                const base = branch.base_ref
+                  ?? (branch.base_oid ? branch.base_oid.slice(0, 12) : "unknown base");
+                const warning = branch.role === "baseBranch"
+                  ? "This Task's base branch was checked out in the worktree; it is not included in Task commit rollups."
+                  : branch.role === "heldByOtherTask"
+                    ? `This branch is the primary branch of another Task${branch.held_by_task_id ? ` (${branch.held_by_task_id})` : ""}; it is not included in Task commit rollups.`
+                    : `Observed in this Task worktree with activity base ${base}.`;
+                return (
+                  <button
+                    key={branch.branch_id}
+                    type="button"
+                    className={`td-fact-action${branch.checked_out ? " active" : ""}`}
+                    title={`${warning} Open commits on ${branch.name}.`}
+                    onClick={() => props.openChanges({ kind: "commits", branchId: branch.branch_id })}
+                  >
+                    <Icon name="branch" />
+                    <span>{branch.name} · base {base}</span>
+                  </button>
+                );
+              })}
+            {task.branches?.evidence_truncated ? (
+              <span className="td-fact attention" title="The exact worktree reflog was missing, expired, or exceeded its bounded observation window. The branch list may be incomplete.">
+                <i className="td-fact-dot" aria-hidden="true" />Branch history may be incomplete
+              </span>
+            ) : null}
             {integration && !firstPullRequest ? (
               <span className={`td-fact ${integrationTone(integration, Boolean(changeCount))}`} title={integration.title}>
                 <i className="td-fact-dot" aria-hidden="true" />{integration.label}

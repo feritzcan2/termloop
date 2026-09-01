@@ -44,7 +44,10 @@ pub use remote::{BranchRemoteFacts, RemoteBranchFact, RemoteFact};
 pub use repair::WorktreeRepairFacts;
 pub use repository::{GitRefName, HeadState, LocalBranchList, ObjectId, RepositoryFacts};
 pub use worktree::{GitText, RegisteredPathState, WorktreeCheckout, WorktreeFacts, WorktreeMarker};
-pub use worktree_branches::{WORKTREE_BRANCH_REFLOG_ENTRY_LIMIT, WorktreeBranchEvidence};
+pub use worktree_branches::{
+    WORKTREE_BRANCH_REFLOG_ENTRY_LIMIT, WorktreeBranchEvidence, WorktreeBranchObservation,
+    WorktreeBranchObservationSource,
+};
 
 pub fn module_name() -> &'static str {
     "gitio"

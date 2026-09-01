@@ -550,6 +550,7 @@ impl CoreRuntime {
             .find(|link| link.task_id == task.id && link.provider == IssueLinkProvider::Jira)
             .and_then(|link| link.url.as_ref())
             .map_or(Value::Null, |url| json!(url));
+        value["branches"] = self.task_branches_json(task);
         // Current protocol always emits the durable generation. It remains optional in
         // the schema only so a new client can safely detect an older daemon.
         if let Some(operation) = self
@@ -566,6 +567,127 @@ impl CoreRuntime {
         }
         Ok(value)
     }
+
+    fn task_branches_json(&self, task: &TaskRecord) -> Value {
+        let checked_out = self
+            .cached_task_worktree_health(&task.id)
+            .and_then(|health| health.checked_out_branch.as_deref());
+        let recorded_base = task
+            .branch
+            .as_ref()
+            .and_then(|binding| self.task_recorded_branch_base(&task.id, binding));
+        let mut items = Vec::new();
+        if let Some(binding) = task.branch.as_ref() {
+            items.push(json!({
+                "branch_id": "primary",
+                "name": binding.name,
+                "role": "primary",
+                "held_by_task_id": Value::Null,
+                "checked_out": checked_out == Some(binding.name.as_str()),
+                "base_ref": recorded_base.as_ref().and_then(|(reference, _)| display_branch_ref(reference)),
+                "base_oid": recorded_base.as_ref().map(|(_, oid)| oid),
+                "base_evidence": recorded_base.as_ref().map(|_| "provisioned"),
+                "first_observed_worktree_generation": task.worktree_generation,
+                "rollup_eligible": true,
+            }));
+        }
+        let branch_set = self
+            .store
+            .task_branch_sets()
+            .iter()
+            .find(|set| set.task_id == task.id);
+        if let Some(branch_set) = branch_set {
+            for membership in &branch_set.memberships {
+                let Some(name) = display_branch_ref(&membership.ref_name) else {
+                    continue;
+                };
+                let base_ref = membership
+                    .parent_ref_name
+                    .as_deref()
+                    .and_then(display_branch_ref);
+                let (role, held_by_task_id) = self.task_branch_membership_role(
+                    task,
+                    &membership.repository_root,
+                    &membership.ref_name,
+                    recorded_base
+                        .as_ref()
+                        .map(|(reference, _)| reference.as_str()),
+                );
+                items.push(json!({
+                    "branch_id": membership.id,
+                    "name": name,
+                    "role": role,
+                    "held_by_task_id": held_by_task_id,
+                    "checked_out": checked_out == Some(name.as_str()),
+                    "base_ref": base_ref,
+                    "base_oid": membership.first_observed_oid,
+                    "base_evidence": match membership.evidence {
+                        termloop_domain::TaskBranchMembershipEvidence::CurrentBranch => "currentBranch",
+                        termloop_domain::TaskBranchMembershipEvidence::WorktreeReflog => "worktreeReflog",
+                        termloop_domain::TaskBranchMembershipEvidence::BranchCreationReflog => "branchCreationReflog",
+                    },
+                    "first_observed_worktree_generation": membership.first_observed_worktree_generation,
+                    "rollup_eligible": role == "associated",
+                }));
+            }
+        }
+        let checked_out_branch_id = items.iter().find_map(|item| {
+            item.get("checked_out")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+                .then(|| item.get("branch_id").and_then(Value::as_str))
+                .flatten()
+        });
+        json!({
+            "primary_branch_id": task.branch.as_ref().map(|_| "primary"),
+            "checked_out_branch_id": checked_out_branch_id,
+            "evidence_truncated": branch_set.is_some_and(|set| set.evidence_truncated),
+            "items": items,
+        })
+    }
+
+    fn task_branch_membership_role(
+        &self,
+        task: &TaskRecord,
+        repository_root: &str,
+        ref_name: &str,
+        recorded_base_ref: Option<&str>,
+    ) -> (&'static str, Option<String>) {
+        if recorded_base_ref
+            .and_then(local_counterpart_ref)
+            .is_some_and(|base| base == ref_name)
+        {
+            return ("baseBranch", None);
+        }
+        let held = self.store.tasks().iter().find(|candidate| {
+            candidate.id != task.id
+                && candidate.project_id == task.project_id
+                && candidate.branch.as_ref().is_some_and(|binding| {
+                    binding.repository_root == repository_root
+                        && format!("refs/heads/{}", binding.name) == ref_name
+                })
+        });
+        match held {
+            Some(held) => ("heldByOtherTask", Some(held.id.clone())),
+            None => ("associated", None),
+        }
+    }
+}
+
+fn display_branch_ref(reference: &str) -> Option<String> {
+    reference
+        .strip_prefix("refs/heads/")
+        .or_else(|| {
+            reference
+                .strip_prefix("refs/remotes/")
+                .and_then(|value| value.split_once('/').map(|(_, branch)| branch))
+        })
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+fn local_counterpart_ref(reference: &str) -> Option<String> {
+    display_branch_ref(reference).map(|name| format!("refs/heads/{name}"))
 }
 
 fn normalized_required_text(params: &Value, key: &str, limit: usize) -> Result<String, CoreError> {

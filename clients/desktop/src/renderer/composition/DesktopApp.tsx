@@ -2266,7 +2266,7 @@ export function DesktopApp() {
       listTaskWorktreeChanges={(taskId) => sourceApiForTask(taskId).taskWorktreeChangeList(taskId)}
       getTaskWorktreeDiff={(taskId, observationId, entryId) => sourceApiForTask(taskId).taskWorktreeDiff(taskId, observationId, entryId)}
       getTaskWorktreePreImage={(taskId, observationId, entryId) => sourceApiForTask(taskId).taskWorktreePreImage(taskId, observationId, entryId)}
-      listTaskBranchCommits={(taskId) => sourceApiForTask(taskId).taskBranchCommitList(taskId)}
+      listTaskBranchCommits={(taskId, branchId) => sourceApiForTask(taskId).taskBranchCommitList(taskId, branchId)}
       listTaskBranchCommitChanges={(taskId, observationId, commitId) => sourceApiForTask(taskId).taskBranchCommitChangeList(taskId, observationId, commitId)}
       getTaskBranchCommitDiff={(taskId, observationId, commitId, entryId) => sourceApiForTask(taskId).taskBranchCommitDiff(taskId, observationId, commitId, entryId)}
       listTaskPullRequestChanges={(taskId, expectedFreshnessGeneration, pullRequest) => sourceApiForTask(taskId).gitHostPullRequestChangeList(taskId, expectedFreshnessGeneration, pullRequest)}

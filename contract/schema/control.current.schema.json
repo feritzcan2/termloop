@@ -3263,6 +3263,11 @@
         "taskId": {
           "type": "string",
           "minLength": 1
+        },
+        "branchId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
         }
       }
     },
@@ -3282,6 +3287,8 @@
       "additionalProperties": false,
       "required": [
         "commit_id",
+        "branch_id",
+        "branch_name",
         "short_oid",
         "subject",
         "subject_encoding",
@@ -3292,6 +3299,16 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 64
+        },
+        "branch_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "branch_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
         },
         "short_oid": {
           "type": "string",
@@ -3324,7 +3341,13 @@
       "required": [
         "task_id",
         "observation_id",
+        "branch_id",
+        "branch_name",
+        "branch_role",
+        "held_by_task_id",
         "base_ref",
+        "base_oid",
+        "base_evidence",
         "commits",
         "truncated"
       ],
@@ -3338,10 +3361,50 @@
           "minLength": 1,
           "maxLength": 64
         },
-        "base_ref": {
+        "branch_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "branch_name": {
           "type": "string",
           "minLength": 1,
           "maxLength": 1024
+        },
+        "branch_role": {
+          "$ref": "#/$defs/taskBranchMembershipRole"
+        },
+        "held_by_task_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "base_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "base_oid": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "base_evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/taskBranchBaseEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "commits": {
           "type": "array",
@@ -4411,6 +4474,85 @@
         }
       }
     },
+    "taskBranchMembershipRole": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskBranchMembershipRole",
+      "type": "string",
+      "enum": [
+        "primary",
+        "associated",
+        "baseBranch",
+        "heldByOtherTask"
+      ]
+    },
+    "taskBranchBaseEvidence": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskBranchBaseEvidence",
+      "type": "string",
+      "enum": [
+        "provisioned",
+        "currentBranch",
+        "worktreeReflog",
+        "branchCreationReflog"
+      ]
+    },
+    "taskBranchMembershipDto": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskBranchMembershipDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "branch_id",
+        "name",
+        "role",
+        "held_by_task_id",
+        "checked_out",
+        "base_ref",
+        "base_oid",
+        "base_evidence",
+        "first_observed_worktree_generation",
+        "rollup_eligible"
+      ],
+      "properties": {
+        "branch_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "role": { "$ref": "#/$defs/taskBranchMembershipRole" },
+        "held_by_task_id": { "type": ["string", "null"], "minLength": 1 },
+        "checked_out": { "type": "boolean" },
+        "base_ref": { "type": ["string", "null"], "minLength": 1, "maxLength": 1024 },
+        "base_oid": { "type": ["string", "null"], "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+        "base_evidence": {
+          "anyOf": [
+            { "$ref": "#/$defs/taskBranchBaseEvidence" },
+            { "type": "null" }
+          ]
+        },
+        "first_observed_worktree_generation": { "type": "integer", "minimum": 0, "x-rust-type": "u64" },
+        "rollup_eligible": { "type": "boolean" }
+      }
+    },
+    "taskBranchSetDto": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskBranchSetDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "primary_branch_id",
+        "checked_out_branch_id",
+        "evidence_truncated",
+        "items"
+      ],
+      "properties": {
+        "primary_branch_id": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
+        "checked_out_branch_id": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
+        "evidence_truncated": { "type": "boolean" },
+        "items": {
+          "type": "array",
+          "maxItems": 65,
+          "items": { "$ref": "#/$defs/taskBranchMembershipDto" }
+        }
+      }
+    },
     "taskDto": {
       "x-codegen": true,
       "x-codegen-name": "TaskDto",
@@ -4479,6 +4621,9 @@
               "type": "null"
             }
           ]
+        },
+        "branches": {
+          "$ref": "#/$defs/taskBranchSetDto"
         },
         "worktree": {
           "anyOf": [

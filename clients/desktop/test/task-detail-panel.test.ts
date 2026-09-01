@@ -457,6 +457,55 @@ describe("the Task detail page on screen", () => {
     await unmount();
   });
 
+  it("shows every observed Task-worktree branch with its base and opens that branch", async () => {
+    const opened: unknown[] = [];
+    const task = detailTask({
+      branches: {
+        primary_branch_id: "primary",
+        checked_out_branch_id: "branch-2",
+        evidence_truncated: false,
+        items: [
+          {
+            branch_id: "primary",
+            name: "task/pipeline-page",
+            role: "primary",
+            held_by_task_id: null,
+            checked_out: false,
+            base_ref: "develop",
+            base_oid: "a".repeat(40),
+            base_evidence: "provisioned",
+            first_observed_worktree_generation: 1,
+            rollup_eligible: true,
+          },
+          {
+            branch_id: "branch-2",
+            name: "feature/api",
+            role: "associated",
+            held_by_task_id: null,
+            checked_out: true,
+            base_ref: "task/pipeline-page",
+            base_oid: "b".repeat(40),
+            base_evidence: "branchCreationReflog",
+            first_observed_worktree_generation: 1,
+            rollup_eligible: true,
+          },
+        ],
+      },
+    });
+    const { container, unmount } = await mount({
+      task,
+      openChanges: (source: unknown) => opened.push(source),
+    });
+
+    const branch = [...container.querySelectorAll<HTMLButtonElement>(".td-fact-action")]
+      .find((button) => button.textContent?.includes("feature/api · base task/pipeline-page"));
+    expect(branch).toBeDefined();
+    await act(async () => branch!.click());
+    expect(opened).toEqual([{ kind: "commits", branchId: "branch-2" }]);
+
+    await unmount();
+  });
+
   it("measures how much of the ladder is already behind the Task", async () => {
     const { container, unmount } = await mount();
 
