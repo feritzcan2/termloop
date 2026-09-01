@@ -243,7 +243,15 @@ export function useTerminalSession(
       if (open) void open.detach();
       setBuffer(detached);
     };
-  }, [runtime, connectionId, sessionId, runtimeEpoch, reconnectRevision, lifecycle.active]);
+  }, [
+    runtime,
+    connectionId,
+    sessionId,
+    runtimeEpoch,
+    reconnectRevision,
+    lifecycle.active,
+    lifecycle.foregroundRevision,
+  ]);
 
   const canSend = buffer.stream === "live" && error === undefined;
 

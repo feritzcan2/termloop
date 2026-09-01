@@ -288,6 +288,31 @@ describe("what a step tells the reader", () => {
 });
 
 describe("the Task detail page on screen", () => {
+  function health(
+    overrides: Partial<NonNullable<Task["worktree_health"]>> = {},
+  ): NonNullable<Task["worktree_health"]> {
+    return {
+      observation_sequence: 1,
+      observed_at_epoch_ms: NOW,
+      path_state: "present",
+      registration_state: "matching",
+      head_state: "matching",
+      launch_ready: true,
+      checked_out_branch: "task/pipeline-page",
+      change_count: 0,
+      tracked_state: "clean",
+      staged_state: "clean",
+      untracked_state: "absent",
+      ignored_state: "absent",
+      submodule_state: "absent",
+      worktree_lock_state: "absent",
+      index_lock_state: "absent",
+      upstream_state: "inSync",
+      summary: "healthy",
+      ...overrides,
+    };
+  }
+
   function detailTask(overrides: Partial<Task> = {}): Task {
     return {
       id: "task-1",
@@ -412,6 +437,22 @@ describe("the Task detail page on screen", () => {
     expect([...container.querySelectorAll(".td-body > .td-block > h2, .td-body > .td-block .td-block-head h2")].map((h) => h.textContent))
       .toEqual(["Now", "Sessions", "Changes", "Pipeline"]);
     expect(container.querySelector(".td-side")).toBeNull();
+
+    await unmount();
+  });
+
+  it("shows the checked-out worktree branch as the effective branch", async () => {
+    const task = detailTask({
+      worktree_health: health({ checked_out_branch: "feature/live-checkout", head_state: "mismatch" }),
+    });
+    const { container, unmount } = await mount({ task });
+
+    expect(container.querySelector(".td-effective-branch")?.textContent)
+      .toBe("feature/live-checkout");
+    expect(container.querySelector(".td-effective-branch")?.classList.contains("attention"))
+      .toBe(true);
+    expect(container.querySelector(".td-effective-branch")?.getAttribute("title"))
+      .toContain("Task branch task/pipeline-page");
 
     await unmount();
   });

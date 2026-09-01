@@ -10,6 +10,7 @@ import {
   KIND_DETACH,
   KIND_GAP,
   KIND_INPUT,
+  KIND_INPUT_ACK,
   KIND_OUTPUT,
   KIND_REPLAY_OUTPUT,
   decodeFrame,
@@ -130,6 +131,7 @@ describe("production control adapter", () => {
     let socketCloseCount = 0;
     let heartbeatPongs = 0;
     let mobileSocket: DataSocket | undefined;
+    let inputFrame: ReturnType<typeof decodeFrame> | undefined;
     let endpoint = "";
     const runtime = createProductionRuntime({
       repository: fixedRepository(saved),
@@ -152,14 +154,19 @@ describe("production control adapter", () => {
                 controlToken?: string;
                 terminalToken?: string;
                 mobileHeartbeatVersion?: number;
+                mobileInputReceiptVersion?: number;
+                terminalInputAckVersion?: number;
               };
               if (message.type === "mobile.authenticate") {
                 expect(message.controlToken).toBe(saved.controlToken);
                 expect(message.terminalToken).toBe(saved.terminalToken);
                 expect(message.mobileHeartbeatVersion).toBe(1);
+                expect(message.mobileInputReceiptVersion).toBe(1);
+                expect(message.terminalInputAckVersion).toBe(1);
                 queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({
                   event: "mobile.ready",
                   mobileTransportVersion: 2,
+                  terminalInputAckVersion: 1,
                 }) }));
                 return;
               }
@@ -184,6 +191,8 @@ describe("production control adapter", () => {
                 frame.sequence,
                 KIND_ACK,
               ) }));
+            } else if (frame.kind === KIND_INPUT) {
+              inputFrame = frame;
             }
           },
           close() { socketCloseCount += 1; },
@@ -207,15 +216,241 @@ describe("production control adapter", () => {
       { id: sessionId, runtime_epoch: 7 },
       (event) => events.push(event),
     );
+    let delivered = false;
+    const input = attachment.input(new TextEncoder().encode("hello")).then(() => { delivered = true; });
+    await waitFor(() => inputFrame !== undefined);
+    expect(delivered).toBe(false);
+    mobileSocket?.onmessage?.({ data: encodeFrame(
+      inputFrame!.sessionId,
+      inputFrame!.epoch,
+      inputFrame!.sequence,
+      KIND_INPUT_ACK,
+    ) });
+    await input;
+    expect(delivered).toBe(true);
+    await expect(attachment.input(new Uint8Array((128 * 16 * 1024) + 1)))
+      .rejects.toThrow("Too much terminal input is awaiting delivery.");
     await attachment.detach();
 
     expect(socketCount).toBe(1);
     expect(endpoint).toBe("ws://127.0.0.1:48100/mobile");
     expect(controlMethods).toEqual(["system.version"]);
-    expect(terminalKinds).toEqual([KIND_ATTACH, KIND_DETACH]);
+    expect(terminalKinds).toEqual([KIND_ATTACH, KIND_INPUT, KIND_DETACH]);
     expect(events).toContainEqual({ type: "state", state: "connected" });
     expect(socketCloseCount).toBe(0);
     expect(heartbeatPongs).toBe(1);
+  });
+
+  it("reconnects instead of reporting success when an input receipt never arrives", async () => {
+    vi.useFakeTimers();
+    try {
+      let socketClosed = false;
+      const events: TerminalEvent[] = [];
+      const runtime = createProductionRuntime({
+        repository: fixedRepository(saved),
+        multiplexSocketFactory() {
+          const socket: DataSocket = {
+            binaryType: "blob",
+            readyState: 1,
+            onopen: null,
+            onmessage: null,
+            onerror: null,
+            onclose: null,
+            send(data) {
+              if (typeof data === "string") {
+                const message = JSON.parse(data) as { type?: string };
+                if (message.type === "mobile.authenticate") {
+                  queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({
+                    event: "mobile.ready",
+                    mobileTransportVersion: 2,
+                    mobileInputReceiptVersion: 1,
+                  }) }));
+                }
+                return;
+              }
+              const frame = decodeFrame(data instanceof Uint8Array ? data : new Uint8Array(data));
+              if (frame.kind === KIND_ATTACH) {
+                queueMicrotask(() => socket.onmessage?.({ data: encodeFrame(
+                  frame.sessionId,
+                  frame.epoch,
+                  frame.sequence,
+                  KIND_ACK,
+                ) }));
+              }
+            },
+            close() { socketClosed = true; },
+          };
+          queueMicrotask(() => socket.onopen?.());
+          return socket;
+        },
+        controlSocketFactory: () => { throw new Error("legacy control transport used"); },
+        terminalSocketFactory: () => { throw new Error("legacy terminal transport used"); },
+      });
+      const attachment = await runtime.terminal.attach(
+        saved.id,
+        { id: sessionId, runtime_epoch: 7 },
+        (event) => events.push(event),
+      );
+
+      const input = attachment.input(new TextEncoder().encode("unacknowledged"));
+      const rejection = expect(input).rejects.toThrow("Terminal input delivery timed out.");
+      await vi.advanceTimersByTimeAsync(5_000);
+      await rejection;
+
+      expect(socketClosed).toBe(true);
+      expect(events.at(-1)).toEqual({ type: "state", state: "connectionLost" });
+      runtime.connections.resetTransports();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a live terminal transport when one logical control request times out", async () => {
+    vi.useFakeTimers();
+    try {
+      let mobileSocket: DataSocket | undefined;
+      let socketClosed = false;
+      let heartbeatPongs = 0;
+      const events: TerminalEvent[] = [];
+      const runtime = createProductionRuntime({
+        repository: fixedRepository(saved),
+        multiplexSocketFactory() {
+          const socket: DataSocket = {
+            binaryType: "blob",
+            readyState: 1,
+            onopen: null,
+            onmessage: null,
+            onerror: null,
+            onclose: null,
+            send(data) {
+              if (typeof data === "string") {
+                const message = JSON.parse(data) as { type?: string };
+                if (message.type === "mobile.authenticate") {
+                  queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({
+                    event: "mobile.ready",
+                    mobileTransportVersion: 2,
+                  }) }));
+                } else if (message.type === "mobile.pong") {
+                  heartbeatPongs += 1;
+                }
+                return;
+              }
+              const frame = decodeFrame(data instanceof Uint8Array ? data : new Uint8Array(data));
+              if (frame.kind === KIND_ATTACH) {
+                queueMicrotask(() => socket.onmessage?.({ data: encodeFrame(
+                  frame.sessionId,
+                  frame.epoch,
+                  frame.sequence,
+                  KIND_ACK,
+                ) }));
+              }
+            },
+            close() { socketClosed = true; },
+          };
+          mobileSocket = socket;
+          queueMicrotask(() => socket.onopen?.());
+          return socket;
+        },
+        controlSocketFactory: () => { throw new Error("legacy control transport used"); },
+        terminalSocketFactory: () => { throw new Error("legacy terminal transport used"); },
+      });
+      const attachment = await runtime.terminal.attach(
+        saved.id,
+        { id: sessionId, runtime_epoch: 7 },
+        (event) => events.push(event),
+      );
+
+      await expect(runtime.connections.list()).resolves.toEqual([
+        expect.objectContaining({ availability: "online" }),
+      ]);
+      await vi.advanceTimersByTimeAsync(30_001);
+      await expect(runtime.connections.list()).resolves.toEqual([
+        expect.objectContaining({ availability: "online" }),
+      ]);
+      // The fresh authenticated activity must win over the older version probe
+      // when that logical control request times out a moment later.
+      mobileSocket?.onmessage?.({ data: JSON.stringify({ event: "mobile.ping" }) });
+      await waitFor(() => heartbeatPongs === 1);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(socketClosed).toBe(false);
+      expect(events).not.toContainEqual({ type: "state", state: "connectionLost" });
+      await expect(runtime.connections.list()).resolves.toEqual([
+        expect.objectContaining({ availability: "online" }),
+      ]);
+      mobileSocket?.onmessage?.({ data: encodeFrame(
+        sessionId,
+        7,
+        1n,
+        KIND_OUTPUT,
+        new TextEncoder().encode("still live"),
+      ) });
+      await waitFor(() => events.some((event) => event.type === "live"));
+
+      await attachment.detach();
+      runtime.connections.resetTransports();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rebuilds an authenticated transport that stops delivering inbound liveness", async () => {
+    vi.useFakeTimers();
+    try {
+      let socketClosed = false;
+      const events: TerminalEvent[] = [];
+      const runtime = createProductionRuntime({
+        repository: fixedRepository(saved),
+        multiplexSocketFactory() {
+          const socket: DataSocket = {
+            binaryType: "blob",
+            readyState: 1,
+            onopen: null,
+            onmessage: null,
+            onerror: null,
+            onclose: null,
+            send(data) {
+              if (typeof data === "string") {
+                const message = JSON.parse(data) as { type?: string };
+                if (message.type === "mobile.authenticate") {
+                  queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({
+                    event: "mobile.ready",
+                    mobileTransportVersion: 2,
+                  }) }));
+                }
+                return;
+              }
+              const frame = decodeFrame(data instanceof Uint8Array ? data : new Uint8Array(data));
+              if (frame.kind === KIND_ATTACH) {
+                queueMicrotask(() => socket.onmessage?.({ data: encodeFrame(
+                  frame.sessionId,
+                  frame.epoch,
+                  frame.sequence,
+                  KIND_ACK,
+                ) }));
+              }
+            },
+            close() { socketClosed = true; },
+          };
+          queueMicrotask(() => socket.onopen?.());
+          return socket;
+        },
+        controlSocketFactory: () => { throw new Error("legacy control transport used"); },
+        terminalSocketFactory: () => { throw new Error("legacy terminal transport used"); },
+      });
+      await runtime.terminal.attach(
+        saved.id,
+        { id: sessionId, runtime_epoch: 7 },
+        (event) => events.push(event),
+      );
+
+      await vi.advanceTimersByTimeAsync(75_000);
+
+      expect(socketClosed).toBe(true);
+      expect(events.at(-1)).toEqual({ type: "state", state: "connectionLost" });
+      runtime.connections.resetTransports();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("reattaches multiplexed terminals after a transport fault and rejects stale output", async () => {
@@ -591,6 +826,39 @@ describe("production control adapter", () => {
     await runtime.connections.list();
     expect(methods.filter((method) => method === "system.version")).toHaveLength(2);
     expect(socketCount).toBe(2);
+  });
+
+  it("keeps a healthy profile cached when only saved display metadata changes", async () => {
+    let current = saved;
+    const renamedLastConnectedAtEpochMs = 1_786_617_481_000;
+    const methods: string[] = [];
+    const runtime = createProductionRuntime({
+      repository: {
+        async list() { return [current]; },
+        async get(id) { return id === current.id ? current : undefined; },
+        async save() { throw new Error("not used"); },
+        async remove() { throw new Error("not used"); },
+      },
+      controlSocketFactory: controlSocketFactory(methods),
+      terminalSocketFactory: () => { throw new Error("terminal not used"); },
+    });
+
+    await expect(runtime.connections.list()).resolves.toEqual([
+      expect.objectContaining({ availability: "online", name: saved.name }),
+    ]);
+    current = {
+      ...saved,
+      name: "Renamed Mac",
+      lastConnectedAtEpochMs: renamedLastConnectedAtEpochMs,
+    };
+    await expect(runtime.connections.list()).resolves.toEqual([
+      expect.objectContaining({
+        availability: "online",
+        name: "Renamed Mac",
+        lastConnectedAtEpochMs: renamedLastConnectedAtEpochMs,
+      }),
+    ]);
+    expect(methods.filter((method) => method === "system.version")).toHaveLength(1);
   });
 
   it("keeps the overview usable when the optional Steward projection fails", async () => {

@@ -8,8 +8,16 @@ import {
 } from "react";
 import { AppState } from "react-native";
 
-import { reduceAppLifecycle, type AppLifecycleMachine } from "./app-lifecycle-state";
+import {
+  reduceAppLifecycle,
+  shouldInferForegroundAfterGap,
+  type AppLifecycleAction,
+  type AppLifecycleMachine,
+  type MobileAppState,
+} from "./app-lifecycle-state";
 import { mobileDiagnostics } from "./mobile-diagnostics";
+
+const SUSPENSION_PROBE_MS = 5_000;
 
 export interface AppLifecycleState {
   readonly active: boolean;
@@ -33,6 +41,8 @@ export function AppLifecycleProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     let observed = state;
     let backgroundStartedAtEpochMs = observed.backgrounded ? Date.now() : undefined;
+    let lastJavascriptHeartbeatAtEpochMs = Date.now();
+    let lastNativeState = AppState.currentState as MobileAppState;
     mobileDiagnostics.updateLifecycle({
       nativeState: AppState.currentState,
       foregroundRevision: observed.foregroundRevision,
@@ -43,13 +53,18 @@ export function AppLifecycleProvider({ children }: PropsWithChildren) {
       backgrounded: observed.backgrounded,
       foregroundRevision: observed.foregroundRevision,
     });
-    const subscription = AppState.addEventListener("change", (nativeState) => {
+    const transition = (
+      nativeState: MobileAppState,
+      resumeAfterGap: boolean,
+      javascriptGapMs?: number,
+    ) => {
       const previous = observed;
-      observed = reduceAppLifecycle(observed, nativeState);
+      const action: AppLifecycleAction = { nativeState, resumeAfterGap };
+      observed = reduceAppLifecycle(observed, action);
       const backgroundDurationMs = previous.backgrounded && !observed.backgrounded
         && backgroundStartedAtEpochMs !== undefined
         ? Math.max(0, Date.now() - backgroundStartedAtEpochMs)
-        : undefined;
+        : resumeAfterGap ? javascriptGapMs : undefined;
       mobileDiagnostics.updateLifecycle({
         nativeState,
         foregroundRevision: observed.foregroundRevision,
@@ -62,27 +77,57 @@ export function AppLifecycleProvider({ children }: PropsWithChildren) {
         backgrounded: observed.backgrounded,
         foregroundRevision: observed.foregroundRevision,
         changed: observed !== previous,
+        resumeAfterGap,
+        javascriptGapMs,
       });
       if (!previous.backgrounded && observed.backgrounded) {
         backgroundStartedAtEpochMs = Date.now();
         mobileDiagnostics.report("lifecycle", "backgrounded");
-      } else if (previous.backgrounded && !observed.backgrounded) {
+      } else if ((previous.backgrounded && !observed.backgrounded) || resumeAfterGap) {
         mobileDiagnostics.report("lifecycle", "foregrounded", {
-          backgroundDurationMs: backgroundStartedAtEpochMs === undefined
-            ? undefined : backgroundDurationMs,
+          backgroundDurationMs,
           foregroundRevision: observed.foregroundRevision,
         });
         backgroundStartedAtEpochMs = undefined;
       }
-      dispatch(nativeState);
-    });
+      dispatch(action);
+    };
+    const observe = (nativeState: MobileAppState) => {
+      const now = Date.now();
+      const javascriptGapMs = Math.max(0, now - lastJavascriptHeartbeatAtEpochMs);
+      const resumeAfterGap = shouldInferForegroundAfterGap(
+        observed,
+        nativeState,
+        javascriptGapMs,
+      );
+      lastJavascriptHeartbeatAtEpochMs = now;
+      lastNativeState = nativeState;
+      transition(nativeState, resumeAfterGap, resumeAfterGap ? javascriptGapMs : undefined);
+    };
+    const subscription = AppState.addEventListener("change", observe);
+    const suspensionProbe = setInterval(() => {
+      const nativeState = AppState.currentState as MobileAppState;
+      const now = Date.now();
+      const javascriptGapMs = Math.max(0, now - lastJavascriptHeartbeatAtEpochMs);
+      const resumeAfterGap = shouldInferForegroundAfterGap(
+        observed,
+        nativeState,
+        javascriptGapMs,
+      );
+      lastJavascriptHeartbeatAtEpochMs = now;
+      if (resumeAfterGap || nativeState !== lastNativeState) {
+        lastNativeState = nativeState;
+        transition(nativeState, resumeAfterGap, resumeAfterGap ? javascriptGapMs : undefined);
+      }
+    }, SUSPENSION_PROBE_MS);
     return () => {
+      clearInterval(suspensionProbe);
+      subscription.remove();
       mobileDiagnostics.report("lifecycle", "provider_unmounted", {
         active: observed.active,
         backgrounded: observed.backgrounded,
         foregroundRevision: observed.foregroundRevision,
       });
-      subscription.remove();
     };
   }, []);
 
