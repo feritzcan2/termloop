@@ -50,7 +50,7 @@ import { automaticBranchCommitTaskIds } from "../model.js";
 import { readLastQuickActionAgentSelection, readQuickActionPreset, readTaskAgentPreset, type QuickActionAgentId, type QuickActionAgentSelection } from "../quick-action-memory.js";
 import { createLayoutPersistence } from "../state/layout-persistence.js";
 import { requireQuickActionSession } from "../quick-action-result.js";
-import { GitHostRefreshCoordinator } from "./git-host-refresh.js";
+import { GitHostRefreshCoordinator, type GitHostRefreshRequestOptions } from "./git-host-refresh.js";
 import { BranchCommitRefreshQueue } from "./branch-commit-refresh.js";
 import { connectionSnapshotRefresh } from "./connection-refresh.js";
 import { portableSkillDirectoryName, remoteSkillComputers } from "./remote-skills.js";
@@ -379,7 +379,9 @@ async function refreshSelectedProjectOnce(): Promise<void> {
   }
   const requestedTaskIds = automaticGitHostTaskIds(tasks);
   if (taskProjectId && requestedTaskIds.length > 0) {
-    void refreshGitHostProjection(taskProjectId, requestedTaskIds)
+    void refreshGitHostProjection(taskProjectId, requestedTaskIds, {
+      cacheKeys: gitHostRefreshCacheKeys(tasks, requestedTaskIds),
+    })
       .catch((error) => projectionStore.setMessage(`PR status unavailable: ${controlErrorMessage(error)}`));
   }
   const requestedBranchTaskIds = automaticBranchCommitTaskIds(tasks);
@@ -523,8 +525,30 @@ async function refreshTaskProjection(taskIds: readonly string[]): Promise<void> 
   projectionStore.applyTaskPatch(taskIds, tasks);
 }
 
-async function refreshGitHostProjection(projectId: string, taskIds: readonly string[]): Promise<void> {
-  await gitHostRefreshCoordinator.request(projectId, taskIds);
+async function refreshGitHostProjection(
+  projectId: string,
+  taskIds: readonly string[],
+  options?: GitHostRefreshRequestOptions,
+): Promise<void> {
+  await gitHostRefreshCoordinator.request(projectId, taskIds, options);
+}
+
+function gitHostRefreshCacheKeys(
+  tasks: readonly Task[],
+  taskIds: readonly string[],
+): ReadonlyMap<string, string> {
+  const requestedTaskIds = new Set(taskIds);
+  return new Map(tasks.flatMap((task) => (
+    requestedTaskIds.has(task.id) && task.branch
+      ? [[task.id, [
+          task.updated_at_epoch_ms,
+          task.branch.repository_root,
+          task.branch.name,
+          task.worktree?.path ?? "",
+          task.worktree_generation ?? 0,
+        ].join("\0")] as const]
+      : []
+  )));
 }
 
 async function loadBranchCommitSummaries(projectId: string, taskIds: readonly string[]): Promise<TaskBranchCommitSummaryDto[]> {
@@ -841,7 +865,10 @@ export function DesktopApp() {
         ? payload.entityScopes?.find((scope) => scope.topic === "branchCommit")?.ids
         : undefined;
       const refresh = selectedSourceMatches && gitHostIds && projectId
-        ? refreshGitHostProjection(projectId, gitHostIds)
+        ? refreshGitHostProjection(projectId, gitHostIds, {
+            force: true,
+            cacheKeys: gitHostRefreshCacheKeys(projectionStore.getSnapshot().tasks, gitHostIds),
+          })
         : selectedSourceMatches && branchCommitIds && projectId ? refreshBranchCommitProjection(projectId, branchCommitIds)
         : selectedSourceMatches && taskIds ? refreshTaskProjection(taskIds) : profileProjectionRefresh.request(profileId);
       void refresh.catch((error) => handleProfileRefreshFailure(profileId, error));
