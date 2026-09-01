@@ -218,7 +218,7 @@ async fn refresh_checked_out_branch(project_id: &str, task_id: &str, state: &App
         Ok(plan) => plan,
         Err(_) => return,
     };
-    let Ok(_permit) = state
+    let Ok(permit) = state
         .git_observation_gate
         .acquire_until(
             project_id,
@@ -234,6 +234,7 @@ async fn refresh_checked_out_branch(project_id: &str, task_id: &str, state: &App
     else {
         return;
     };
+    drop(permit);
     let (applied, state_revision) = {
         let mut core = state.core.lock().await;
         let applied = core.apply_observed_task_worktree_health(
