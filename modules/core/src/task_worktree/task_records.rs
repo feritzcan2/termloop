@@ -3,7 +3,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::path::Path;
-use termloop_domain::{IssueLinkProvider, TaskRecord, TaskStatus, TaskSuspensionReason};
+use termloop_domain::{
+    IssueLinkProvider, TASK_DEVELOPER_NOTES_MAX, TaskDeveloperNote, TaskRecord, TaskStatus,
+    TaskSuspensionReason,
+};
 
 use super::cleanup::{
     cleanup_operation_json, health_json, presence_json, stale_resolution_operation_json,
@@ -344,6 +347,7 @@ impl CoreRuntime {
             project_id,
             title,
             brief,
+            developer_notes: Vec::new(),
             status: TaskStatus::Open,
             archived_at_epoch_ms: None,
             branch: None,
@@ -391,6 +395,27 @@ impl CoreRuntime {
                 &self.write_authority,
                 &task_id,
                 brief,
+                termloop_platform::current_epoch_ms(),
+            )
+            .map_err(store_error)?;
+        self.task_projection(&task)
+    }
+
+    pub(crate) fn update_task_developer_notes(
+        &mut self,
+        params: Value,
+    ) -> Result<Value, CoreError> {
+        let task_id = required_string(&params, "taskId")?;
+        self.ensure_task_active(&task_id)?;
+        let expected_notes = parse_developer_notes(&params, "expectedDeveloperNotes")?;
+        let developer_notes = parse_developer_notes(&params, "developerNotes")?;
+        let task = self
+            .store
+            .update_task_developer_notes(
+                &self.write_authority,
+                &task_id,
+                &expected_notes,
+                developer_notes,
                 termloop_platform::current_epoch_ms(),
             )
             .map_err(store_error)?;
@@ -672,6 +697,27 @@ impl CoreRuntime {
             None => ("associated", None),
         }
     }
+}
+
+fn parse_developer_notes(params: &Value, key: &str) -> Result<Vec<TaskDeveloperNote>, CoreError> {
+    let notes = serde_json::from_value::<Vec<TaskDeveloperNote>>(
+        params
+            .get(key)
+            .cloned()
+            .ok_or_else(|| CoreError::InvalidParams(key.into()))?,
+    )
+    .map_err(|_| CoreError::InvalidParams(key.into()))?;
+    if notes.len() > TASK_DEVELOPER_NOTES_MAX
+        || notes.iter().any(|note| !note.is_valid())
+        || notes.iter().enumerate().any(|(index, note)| {
+            notes[index + 1..]
+                .iter()
+                .any(|candidate| candidate.id == note.id)
+        })
+    {
+        return Err(CoreError::InvalidParams(key.into()));
+    }
+    Ok(notes)
 }
 
 fn display_branch_ref(reference: &str) -> Option<String> {

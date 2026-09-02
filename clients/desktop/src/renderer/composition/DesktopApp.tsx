@@ -1496,6 +1496,26 @@ export function DesktopApp() {
       return message;
     }
   }, []);
+  const updateTaskDeveloperNotes = useCallback(async (
+    taskId: string,
+    expectedDeveloperNotes: readonly import("@termloop/contract/current").TaskDeveloperNoteDto[],
+    developerNotes: readonly import("@termloop/contract/current").TaskDeveloperNoteDto[],
+  ) => {
+    try {
+      await sourceApiForTask(taskId).taskUpdateDeveloperNotes({
+        taskId,
+        expectedDeveloperNotes: [...expectedDeveloperNotes],
+        developerNotes: [...developerNotes],
+      });
+      await refreshProjection();
+      return undefined;
+    } catch (error) {
+      await refreshProjection();
+      const message = controlErrorMessage(error);
+      projectionStore.setMessage(message);
+      return message;
+    }
+  }, []);
   const bindTaskBranch = useCallback(async (taskId: string, repositoryPath: string, branchName: string) => {
     try {
       const result = await sourceApiForTask(taskId).taskBindBranch(taskId, repositoryPath, branchName);
@@ -2254,6 +2274,7 @@ export function DesktopApp() {
       deleteProject={deleteProject}
       createTask={createTask}
       updateTask={updateTask}
+      updateTaskDeveloperNotes={updateTaskDeveloperNotes}
       bindTaskBranch={bindTaskBranch}
       listProjectLocalBranches={listProjectLocalBranches}
       provisionTaskWorktree={provisionTaskWorktree}

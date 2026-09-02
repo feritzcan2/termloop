@@ -1049,6 +1049,7 @@ fn task_archive_retirement_does_not_recreate_an_exited_agent_terminal() {
                 project_id: "project-1".into(),
                 title: "Task".into(),
                 brief: None,
+                developer_notes: vec![],
                 status: termloop_domain::TaskStatus::Open,
                 archived_at_epoch_ms: None,
                 branch: None,

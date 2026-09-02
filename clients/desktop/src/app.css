@@ -391,6 +391,7 @@ kbd { padding: 2px 5px; border: 1px solid rgba(255,255,255,.07); border-radius: 
 .task-developer-note-form input { width: 100%; height: 24px; padding: 0 7px; border: 1px solid rgba(124,92,255,.3); border-radius: 5px; outline: 0; background: rgba(0,0,0,.13); color: var(--sidebar-text); font: 10.5px/1 var(--font-ui); }
 .task-developer-note-form input::placeholder { color: var(--sidebar-dimmer); }
 .task-developer-note-form input:focus { border-color: var(--accent-strong); box-shadow: 0 0 0 2px rgba(124,92,255,.08); }
+.task-developer-notes-error { margin: 2px 0 0; color: var(--danger); font: 9.5px/1.4 var(--font-ui); }
 .task-row { display: grid; grid-template-columns: 14px minmax(0,1fr) auto; align-items: start; }
 .task-toggle { width: 14px; height: 27px; }
 .task-toggle svg { width: 11px; height: 11px; }

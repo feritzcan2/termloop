@@ -819,6 +819,7 @@ mod tests {
                     project_id: project_id.clone(),
                     title: "Finish release pipeline".into(),
                     brief: None,
+                    developer_notes: vec![],
                     status: TaskStatus::Open,
                     archived_at_epoch_ms: None,
                     branch: None,

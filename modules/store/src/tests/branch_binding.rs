@@ -20,6 +20,7 @@ fn branch_binding_is_durable_idempotent_and_immutable() {
                 project_id: "project-1".into(),
                 title: "Task".into(),
                 brief: None,
+                developer_notes: vec![],
                 status: TaskStatus::Open,
                 archived_at_epoch_ms: None,
                 branch: None,
@@ -67,6 +68,61 @@ fn branch_binding_is_durable_idempotent_and_immutable() {
 }
 
 #[test]
+fn task_developer_notes_are_durable_and_revision_safe() {
+    use termloop_domain::TaskDeveloperNote;
+
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-task-notes-{}-{}.json",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    store
+        .insert_task(
+            &authority,
+            TaskRecord {
+                id: "task-notes".into(),
+                project_id: "project-1".into(),
+                title: "Task".into(),
+                brief: None,
+                developer_notes: vec![],
+                status: TaskStatus::Open,
+                archived_at_epoch_ms: None,
+                branch: None,
+                worktree: None,
+                worktree_generation: 0,
+                steward_brief_markdown: String::new(),
+                steward_brief_revision: 1,
+                rank: 0,
+                created_at_epoch_ms: 1,
+                updated_at_epoch_ms: 1,
+            },
+        )
+        .unwrap();
+    let notes = vec![TaskDeveloperNote {
+        id: "note-1".into(),
+        text: "Review the sidebar".into(),
+        completed: false,
+    }];
+    let updated = store
+        .update_task_developer_notes(&authority, "task-notes", &[], notes.clone(), 2)
+        .unwrap();
+    assert_eq!(updated.developer_notes, notes);
+    assert!(matches!(
+        store.update_task_developer_notes(&authority, "task-notes", &[], vec![], 3),
+        Err(StoreError::RevisionConflict)
+    ));
+    drop(store);
+    let reopened = Store::open(&path).unwrap();
+    assert_eq!(reopened.tasks()[0].developer_notes, notes);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn branch_reservations_are_atomic_across_binding_and_provisioning() {
     let path = std::env::temp_dir().join(format!(
         "termloop-store-branch-reservation-{}-{}.json",
@@ -87,6 +143,7 @@ fn branch_reservations_are_atomic_across_binding_and_provisioning() {
                     project_id: "project-1".into(),
                     title: id.into(),
                     brief: None,
+                    developer_notes: vec![],
                     status: TaskStatus::Open,
                     archived_at_epoch_ms: None,
                     branch: None,

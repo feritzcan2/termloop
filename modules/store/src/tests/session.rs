@@ -802,6 +802,7 @@ fn existing_state_without_tasks_migrates_to_an_empty_current_collection() {
                 project_id: "project-1".into(),
                 title: "Task".into(),
                 brief: None,
+                developer_notes: vec![],
                 status: TaskStatus::Open,
                 archived_at_epoch_ms: None,
                 branch: None,

@@ -213,6 +213,11 @@ export type ShellProps = {
   deleteProject(projectId: string): Promise<string | undefined>;
   createTask(title: string, brief: string | null): Promise<TaskCreateOutcome>;
   updateTask(taskId: string, title: string, brief: string | null): Promise<string | undefined>;
+  updateTaskDeveloperNotes(
+    taskId: string,
+    expectedDeveloperNotes: readonly import("@termloop/contract/current").TaskDeveloperNoteDto[],
+    developerNotes: readonly import("@termloop/contract/current").TaskDeveloperNoteDto[],
+  ): Promise<string | undefined>;
   bindTaskBranch(taskId: string, repositoryPath: string, branchName: string): Promise<string | undefined>;
   listProjectLocalBranches(projectId: string): Promise<ProjectLocalBranchListResult>;
   provisionTaskWorktree(params: TaskProvisionWorktreeParams): Promise<string | undefined>;
@@ -1425,6 +1430,7 @@ export function Shell(props: ShellProps) {
             disabled={disabled}
             createTask={props.createTask}
             updateTask={props.updateTask}
+            updateTaskDeveloperNotes={props.updateTaskDeveloperNotes}
             bindTaskBranch={props.bindTaskBranch}
             listProjectLocalBranches={props.listProjectLocalBranches}
             loadProjectTaskAutomation={props.taskSourceActions.getProjectAutomation}

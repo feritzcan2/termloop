@@ -13,7 +13,7 @@ import { CleanupWorktreeDialog } from "./task-dialogs/cleanup-worktree-dialog.js
 import { DeleteTaskDialog } from "./task-dialogs/delete-task-dialog.js";
 import { RepairWorktreeDialog } from "./task-dialogs/repair-worktree-dialog.js";
 import { TaskEditor, type EditorState, type TaskCreateOutcome, type TaskStartSelection } from "./task-dialogs/task-editor.js";
-import type { AgentCapabilityDto, ProjectLocalBranchListResult, ProjectTaskAutomationGetResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskArchivePreviewDto, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeCleanupPreviewDto, TaskWorktreeRepairPreviewDto } from "@termloop/contract/current";
+import type { AgentCapabilityDto, ProjectLocalBranchListResult, ProjectTaskAutomationGetResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, TaskArchivePreviewDto, TaskCleanupWorktreeParams, TaskDeveloperNoteDto, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeCleanupPreviewDto, TaskWorktreeRepairPreviewDto } from "@termloop/contract/current";
 import { pullRequestIdentity, type ChangesOpenSource } from "../change-source.js";
 import { isAssistantSession } from "./AssistantRail.js";
 import { isProjectRelocationDragCandidate, isTaskRelocationDragCandidate, useOptionalSidebarSessionDnd, type SessionDropPlacement } from "./SidebarSessionDnd.js";
@@ -239,6 +239,7 @@ export type TaskRailProps = {
   disabled: boolean;
   createTask(title: string, brief: string | null): Promise<TaskCreateOutcome>;
   updateTask(taskId: string, title: string, brief: string | null): Promise<string | undefined>;
+  updateTaskDeveloperNotes(taskId: string, expected: readonly TaskDeveloperNoteDto[], next: readonly TaskDeveloperNoteDto[]): Promise<string | undefined>;
   bindTaskBranch(taskId: string, repositoryPath: string, branchName: string): Promise<string | undefined>;
   listProjectLocalBranches(projectId: string): Promise<ProjectLocalBranchListResult>;
   loadProjectTaskAutomation?(projectId: string): Promise<ProjectTaskAutomationGetResult>;
@@ -376,6 +377,7 @@ export function TaskRail(props: TaskRailProps) {
       changeRename={changeTaskRename}
       cancelRename={cancelTaskRename}
       commitRename={commitTaskTabRename}
+      updateDeveloperNotes={props.updateTaskDeveloperNotes}
       closing={closingTaskTab?.taskId === task.id ? closingTaskTab : undefined}
       beginClose={task.status === "open" ? beginTaskClose : undefined}
       cancelClose={cancelTaskClose}
@@ -802,6 +804,7 @@ type TaskGroupProps = {
   changeRename(taskId: string, title: string): void;
   cancelRename(): void;
   commitRename(task: Task): Promise<void>;
+  updateDeveloperNotes(taskId: string, expected: readonly TaskDeveloperNoteDto[], next: readonly TaskDeveloperNoteDto[]): Promise<string | undefined>;
   closing: { busy: boolean } | undefined;
   beginClose: ((taskId: string) => void) | undefined;
   cancelClose(): void;
@@ -1156,6 +1159,8 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
         projectId={props.projectId}
         taskId={task.id}
         taskTitle={task.title}
+        notes={task.developer_notes ?? []}
+        save={(expected, next) => props.updateDeveloperNotes(task.id, expected, next)}
       /> : null}
       {collapsed || props.deleting ? null : (
         <div className="task-children">
