@@ -54,13 +54,43 @@ export function transcriptionOf(stdout) {
   return { text, onDevice: parsed?.onDevice === true };
 }
 
-function runTool(file, args) {
+function runTool(file, args, { signal } = {}) {
   return new Promise((resolve, reject) => {
-    execFile(file, args, { timeout: 30_000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile(file, args, { timeout: 30_000, maxBuffer: 1024 * 1024, signal }, (error, stdout, stderr) => {
       if (error) reject(new Error(String(stderr || error.message).trim()));
       else resolve(stdout);
     });
   });
+}
+
+/// Both promises are already running when selection begins. The primary is
+/// deliberately authoritative even when the fallback finishes first; the
+/// fallback is consumed only after a primary failure. Cancelling unused work
+/// keeps a successful primary from leaving the local recognizer behind.
+export async function preferPrimaryTranscription(primaryPromise, fallbackPromise, cancelFallback = () => {}) {
+  const primary = settled(primaryPromise);
+  const fallback = settled(fallbackPromise);
+  const primaryResult = await primary;
+  if (primaryResult.ok) {
+    cancelFallback();
+    await fallback;
+    return { provider: "openai", transcription: primaryResult.value };
+  }
+  const fallbackResult = await fallback;
+  if (fallbackResult.ok) {
+    return { provider: "apple", transcription: fallbackResult.value };
+  }
+  throw new AggregateError(
+    [primaryResult.error, fallbackResult.error],
+    "all transcription providers failed",
+  );
+}
+
+function settled(promise) {
+  return Promise.resolve(promise).then(
+    (value) => ({ ok: true, value }),
+    (error) => ({ ok: false, error }),
+  );
 }
 
 async function newerThanSource(file) {
@@ -87,11 +117,11 @@ export async function ensureTranscriber(cacheDir) {
   return executable;
 }
 
-export async function transcribeAudioFile(cacheDir, audioFile, locale) {
+export async function transcribeAudioFile(cacheDir, audioFile, locale, { signal } = {}) {
   const executable = await ensureTranscriber(cacheDir);
   const args = locale === undefined ? [audioFile] : [audioFile, locale];
   if (/\.[cm]?js$/i.test(executable)) {
-    return transcriptionOf(await runTool(process.execPath, [executable, ...args]));
+    return transcriptionOf(await runTool(process.execPath, [executable, ...args], { signal }));
   }
-  return transcriptionOf(await runTool(executable, args));
+  return transcriptionOf(await runTool(executable, args, { signal }));
 }
