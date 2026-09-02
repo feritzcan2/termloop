@@ -320,16 +320,25 @@ function AgentClusterView({ cluster, nowMs, openActions }: {
   ));
   if (cluster.manualGroup === undefined) return <>{rows}</>;
   const count = agentClusterMembers(cluster).length;
-  const name = cluster.manualGroup.name ?? "Group";
+  const name = cluster.manualGroup.name;
   return (
     <View style={styles.manualGroup}>
-      <View style={styles.manualGroupHeader}>
-        <Text
-          style={styles.manualGroupName}
-          numberOfLines={1}
-          accessibilityLabel={`${name}, Agent group with ${count} agents`}
-        >{name}</Text>
-        <Text style={styles.manualGroupCount}>{count}</Text>
+      <View pointerEvents="none" style={styles.manualGroupAccent} />
+      <View
+        style={styles.manualGroupHeader}
+        accessible
+        accessibilityRole="header"
+        accessibilityLabel={`${name ? `${name}, ` : ""}Agent group with ${count} agents`}
+      >
+        <View style={styles.manualGroupIdentity}>
+          <Text style={styles.manualGroupKind}>AGENT GROUP</Text>
+          {name === undefined ? null : (
+            <Text style={styles.manualGroupName} numberOfLines={1}>{name}</Text>
+          )}
+        </View>
+        <View style={styles.manualGroupCountBadge}>
+          <Text style={styles.manualGroupCount}>{count}</Text>
+        </View>
       </View>
       <CardDivider />
       {rows}
@@ -402,35 +411,75 @@ const styles = StyleSheet.create({
   },
   section: { gap: space.sm },
   manualGroup: {
-    margin: 5,
+    position: "relative",
+    marginHorizontal: 6,
+    marginVertical: 7,
     overflow: "hidden",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: color.borderStrong,
-    borderRadius: 9,
-    backgroundColor: color.bgRaised,
+    borderWidth: 1,
+    borderColor: `${color.accent}99`,
+    borderRadius: 11,
+    backgroundColor: color.bgSidebar,
+    shadowColor: color.accent,
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
+  manualGroupAccent: {
+    position: "absolute",
+    zIndex: 1,
+    top: 0,
+    bottom: 0,
+    left: 0,
+    width: 3,
+    backgroundColor: color.accent,
   },
   manualGroupHeader: {
-    minHeight: 28,
+    minHeight: 38,
     flexDirection: "row",
     alignItems: "center",
     gap: space.sm,
-    paddingHorizontal: 10,
-    backgroundColor: color.bgHover,
+    paddingLeft: 13,
+    paddingRight: 10,
+    backgroundColor: color.accentWash,
+  },
+  manualGroupIdentity: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+  },
+  manualGroupKind: {
+    color: color.accentStrong,
+    fontFamily: fontFamily.mono,
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1,
   },
   manualGroupName: {
     flex: 1,
-    color: color.textSecondary,
+    color: color.text,
     fontFamily: fontFamily.mono,
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: "800",
-    letterSpacing: 0.8,
+    letterSpacing: 0.5,
     textTransform: "uppercase",
   },
+  manualGroupCountBadge: {
+    minWidth: 24,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 6,
+    borderRadius: 10,
+    backgroundColor: color.accent,
+  },
   manualGroupCount: {
-    color: color.textMuted,
+    color: color.onAccent,
     fontFamily: fontFamily.mono,
     fontSize: 10,
-    fontWeight: "800",
+    fontWeight: "900",
     fontVariant: ["tabular-nums"],
   },
   helperWrap: {
