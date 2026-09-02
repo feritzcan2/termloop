@@ -172,6 +172,11 @@ describe("watch facade over the gateway", () => {
         body,
       });
       if (request.url === "/voice/transcriptions") {
+        if (body.toString("utf8").includes("force apple fallback")) {
+          response.writeHead(503, { "content-type": "application/json" });
+          response.end(JSON.stringify({ error: "provider unavailable" }));
+          return;
+        }
         response.writeHead(200, { "content-type": "application/json" });
         response.end(JSON.stringify({ text: "OpenAI saatten sesli mesaj" }));
         return;
@@ -517,10 +522,10 @@ describe("watch facade over the gateway", () => {
         },
       )).json();
       expect(voiceReplied.delivered).toBe(true);
-      expect(voiceReplied.transcript).toBe("saatten sesli mesaj");
+      expect(voiceReplied.transcript).toBe("OpenAI saatten sesli mesaj");
       expect(terminalMessages).toHaveLength(8);
       expect(terminalMessages[6].subarray(41).toString("utf8"))
-        .toBe("\u001b[200~saatten sesli mesaj\u001b[201~");
+        .toBe("\u001b[200~OpenAI saatten sesli mesaj\u001b[201~");
       expect(terminalMessages[7].subarray(41)).toEqual(Buffer.from("\r"));
 
       const invalidVoiceTarget = await fetch(`${base}/watch/reply-voice?session=../etc&epoch=3`, {
@@ -540,10 +545,10 @@ describe("watch facade over the gateway", () => {
       )).json();
       expect(voiceProjectLaunch).toMatchObject({
         sessionId: "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
-        name: "saatten sesli mesaj",
+        name: "OpenAI saatten sesli mesaj",
         runtimeEpoch: 1,
         promptDelivered: true,
-        transcript: "saatten sesli mesaj",
+        transcript: "OpenAI saatten sesli mesaj",
       });
       expect(terminalMessages).toHaveLength(8);
       const voiceQuickActionPreview = tokensSeen.filter((entry) => entry.method === "quickAction.preview").at(-1);
@@ -552,7 +557,7 @@ describe("watch facade over the gateway", () => {
         cwd: "/repo",
         agentId: "codex",
         templateRef: "builtin.quick-action.free-prompt",
-        bindings: { prompt: "saatten sesli mesaj" },
+        bindings: { prompt: "OpenAI saatten sesli mesaj" },
         attachments: [],
       });
       const voiceQuickActionLaunch = tokensSeen.filter((entry) => entry.method === "quickAction.launch").at(-1);
@@ -564,8 +569,17 @@ describe("watch facade over the gateway", () => {
         headers: { ...authorization, "content-type": "audio/m4a" },
         body: Buffer.from("fake m4a bytes"),
       })).json();
-      expect(transcribed).toEqual({ transcript: "saatten sesli mesaj" });
+      expect(transcribed).toEqual({ transcript: "OpenAI saatten sesli mesaj" });
       expect(terminalMessages).toHaveLength(8);
+
+      // Every app-owned Watch microphone shares the same already-running Apple
+      // fallback, while OpenAI remains authoritative whenever it succeeds.
+      const fallbackTranscribed = await (await fetch(`${base}/watch/transcribe`, {
+        method: "POST",
+        headers: { ...authorization, "content-type": "audio/m4a" },
+        body: Buffer.from("force apple fallback"),
+      })).json();
+      expect(fallbackTranscribed).toEqual({ transcript: "saatten sesli mesaj" });
 
       // A confirmed text prompt launches and delivers those exact words.
       const promptLaunch = await (await fetch(`${base}/watch/project-agent`, {

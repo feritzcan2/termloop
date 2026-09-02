@@ -8,6 +8,7 @@ const complication = readFileSync(
 const chatView = readFileSync(new URL("../targets/watch/ChatView.swift", import.meta.url), "utf8");
 const recorder = readFileSync(new URL("../targets/watch/VoiceRecorder.swift", import.meta.url), "utf8");
 const gatewayAPI = readFileSync(new URL("../targets/watch/WorktreesView.swift", import.meta.url), "utf8");
+const gateway = readFileSync(new URL("../scripts/mobile-access-gateway.mjs", import.meta.url), "utf8");
 
 describe("watch quick Steward message", () => {
   it("routes the complication directly to the one-shot message screen", () => {
@@ -34,5 +35,11 @@ describe("watch quick Steward message", () => {
   it("leaves enough time for the parallel transcription providers", () => {
     expect(gatewayAPI).toContain("config.timeoutIntervalForResource = 45");
     expect(gatewayAPI).toContain("request.timeoutInterval = 40");
+  });
+
+  it("uses one OpenAI-first transcription path for every in-app Watch microphone", () => {
+    expect(gateway).not.toContain("transcribeWatchRequest");
+    expect(gateway.match(/const transcription = await transcribeVoiceRequest\(request\);/g)).toHaveLength(5);
+    expect(gateway).toContain('diagnostics.report("voiceTranscription", "transcription_started"');
   });
 });
