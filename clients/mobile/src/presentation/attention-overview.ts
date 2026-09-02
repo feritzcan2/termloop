@@ -5,7 +5,11 @@ import type {
   TaskDto,
 } from "@termloop/contract/current";
 
-import type { ConnectionProfile, MobileOverview } from "../application/ports";
+import type {
+  ConnectionProfile,
+  MobileAgentGroupLayout,
+  MobileOverview,
+} from "../application/ports";
 import {
   basename,
   ellipsizeMiddle,
@@ -68,6 +72,21 @@ export interface AgentRow {
   readonly attachable: boolean;
 }
 
+export interface AgentRelationshipGroup {
+  readonly source: AgentRow;
+  readonly helpers: readonly AgentRow[];
+}
+
+export interface AgentCluster {
+  readonly key: string;
+  readonly groups: readonly AgentRelationshipGroup[];
+  readonly manualGroup: MobileAgentGroupLayout | undefined;
+}
+
+export function agentClusterMembers(cluster: AgentCluster): readonly AgentRow[] {
+  return cluster.groups.flatMap(({ source, helpers }) => [source, ...helpers]);
+}
+
 export interface TaskRow {
   readonly taskId: string;
   readonly title: string;
@@ -107,6 +126,9 @@ export interface ProjectOverview {
   /// resume must remain reachable so the phone can offer the same Fix/Retry action
   /// as desktop instead of silently removing the only way to recover it.
   readonly agents: readonly AgentRow[];
+  /// Exact Ask-To/fork relationships nested under their source, optionally
+  /// wrapped in the peer group explicitly authored on this Mac's desktop.
+  readonly agentClusters: readonly AgentCluster[];
   readonly tasks: readonly TaskRow[];
   readonly terminals: readonly TerminalRow[];
   readonly counts: OverviewCounts;
@@ -185,6 +207,93 @@ function buildAgentRow(options: {
   };
 }
 
+function buildAgentClusters(
+  agentRows: readonly AgentRow[],
+  sessions: readonly SessionDto[],
+  manualGroups: readonly MobileAgentGroupLayout[],
+): readonly AgentCluster[] {
+  const sessionsById = new Map(sessions.map((session) => [session.id, session]));
+  const rowsById = new Map(agentRows.map((row) => [row.sessionId, row]));
+  const helpersBySourceId = new Map<string, AgentRow[]>();
+  const sources: AgentRow[] = [];
+  for (const row of agentRows) {
+    const session = sessionsById.get(row.sessionId);
+    const sourceId = session?.ask_to_source_session_id ?? session?.fork_source_session_id;
+    const source = sourceId ? sessionsById.get(sourceId) : undefined;
+    const sourceRow = sourceId ? rowsById.get(sourceId) : undefined;
+    const validRelationship = session?.kind === "Agent"
+      && source?.kind === "Agent"
+      && sourceRow !== undefined
+      && source.id !== session.id
+      && (session.fork_source_session_id === source.id
+        || (session.ask_to_source_session_id === source.id && source.ask_to_source_session_id === null));
+    if (!validRelationship || !sourceId) {
+      sources.push(row);
+      continue;
+    }
+    const helpers = helpersBySourceId.get(sourceId) ?? [];
+    helpers.push(row);
+    helpersBySourceId.set(sourceId, helpers);
+  }
+
+  const relationships = sources.map((source): AgentRelationshipGroup => ({
+    source,
+    helpers: helpersBySourceId.get(source.sessionId) ?? [],
+  }));
+  const relationshipByRootId = new Map(relationships.map((group) => [group.source.sessionId, group]));
+  const rootIdBySessionId = new Map<string, string>();
+  for (const group of relationships) {
+    rootIdBySessionId.set(group.source.sessionId, group.source.sessionId);
+    for (const helper of group.helpers) rootIdBySessionId.set(helper.sessionId, group.source.sessionId);
+  }
+
+  const claimedRootIds = new Set<string>();
+  const normalizedGroups: Array<{ layout: MobileAgentGroupLayout; rootIds: string[] }> = [];
+  for (const layout of manualGroups) {
+    const rootIds: string[] = [];
+    for (const sessionId of layout.sessionIds) {
+      const rootId = rootIdBySessionId.get(sessionId);
+      if (!rootId || rootIds.includes(rootId) || claimedRootIds.has(rootId)) continue;
+      rootIds.push(rootId);
+    }
+    if (rootIds.length < 2) continue;
+    const scopes = new Set(rootIds.map((rootId) => relationshipByRootId.get(rootId)?.source.taskId ?? "project"));
+    if (scopes.size !== 1) continue;
+    rootIds.forEach((rootId) => claimedRootIds.add(rootId));
+    normalizedGroups.push({ layout, rootIds });
+  }
+  const manualGroupByRootId = new Map<string, { layout: MobileAgentGroupLayout; rootIds: readonly string[] }>();
+  for (const group of normalizedGroups) {
+    for (const rootId of group.rootIds) manualGroupByRootId.set(rootId, group);
+  }
+
+  const emitted = new Set<MobileAgentGroupLayout>();
+  const clusters: AgentCluster[] = [];
+  for (const relationship of relationships) {
+    const manual = manualGroupByRootId.get(relationship.source.sessionId);
+    if (!manual) {
+      clusters.push({ key: relationship.source.sessionId, groups: [relationship], manualGroup: undefined });
+      continue;
+    }
+    if (emitted.has(manual.layout)) continue;
+    emitted.add(manual.layout);
+    clusters.push({
+      key: `manual:${manual.rootIds.join("|")}`,
+      groups: manual.rootIds.flatMap((rootId) => {
+        const group = relationshipByRootId.get(rootId);
+        return group ? [group] : [];
+      }),
+      manualGroup: manual.layout,
+    });
+  }
+
+  const rankById = new Map(agentRows.map((row, index) => [row.sessionId, index]));
+  const rank = (cluster: AgentCluster) => Math.min(
+    ...agentClusterMembers(cluster).map((row) => rankById.get(row.sessionId) ?? Number.MAX_SAFE_INTEGER),
+  );
+  return clusters.sort((left, right) => rank(left) - rank(right));
+}
+
 export function buildProjectOverview(
   overview: MobileOverview,
   projectId: string,
@@ -216,6 +325,11 @@ export function buildProjectOverview(
     .sort(byUrgencyThenRecency);
 
   const needsYou = agentRows.filter((row) => asksForUser(row.tone));
+  const agentClusters = buildAgentClusters(
+    agentRows,
+    sessions,
+    overview.agentGroupsByProject[projectId] ?? [],
+  );
 
   const taskRows = tasks
     .filter((task) => task.status === "open")
@@ -263,6 +377,7 @@ export function buildProjectOverview(
     project,
     needsYou,
     agents: agentRows,
+    agentClusters,
     tasks: taskRows,
     terminals,
     counts: {

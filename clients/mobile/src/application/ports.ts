@@ -31,6 +31,11 @@ export interface ConnectionProfile {
   contractIdentity: string | null;
 }
 
+export interface MobileAgentGroupLayout {
+  readonly sessionIds: readonly string[];
+  readonly name?: string | undefined;
+}
+
 export interface MobileOverview {
   projects: readonly ProjectDto[];
   /// Project ids whose authoritative Steward configuration exists and is enabled.
@@ -40,6 +45,9 @@ export interface MobileOverview {
   /// Exact executor Session ids from the authoritative Steward configurations.
   /// Voice status uses this projection instead of guessing from Session names.
   stewardExecutorSessionIds: Readonly<Record<string, string>>;
+  /// Desktop-authored, client-local peer groups published through this Mac's
+  /// owner-authenticated mobile gateway. Core remains unaware of visual layout.
+  agentGroupsByProject: Readonly<Record<string, readonly MobileAgentGroupLayout[]>>;
   tasks: readonly TaskDto[];
   sessions: readonly SessionDto[];
   agentStatuses: readonly AgentStatusDto[];

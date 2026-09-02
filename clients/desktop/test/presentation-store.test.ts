@@ -187,6 +187,29 @@ describe("presentation store", () => {
       .toEqual([{ sessionIds: ["session-a2", "session-a4", "session-a3"] }]);
   });
 
+  it("merges complete Agent groups without a two-Agent ceiling", () => {
+    const sessions = new Map<string, readonly string[]>([[
+      "project-a",
+      ["session-a1", "session-a2", "session-a3", "session-a4", "session-a5"],
+    ]]);
+    presentationStore.getState().ensureSelection(["project-a"], sessions);
+    presentationStore.getState().groupAgentSessions("project-a", "session-a2", "session-a1");
+    presentationStore.getState().renameAgentGroup("project-a", "session-a1", "First group");
+    presentationStore.getState().groupAgentSessions("project-a", "session-a4", "session-a3");
+    presentationStore.getState().renameAgentGroup("project-a", "session-a3", "Destination");
+
+    expect(presentationStore.getState().groupAgentSessions("project-a", "session-a1", "session-a3")).toBe(true);
+    expect(presentationStore.getState().groupAgentSessions("project-a", "session-a5", "session-a3")).toBe(true);
+
+    expect(presentationStore.getState().agentGroupsByProject["project-a"]).toEqual([{
+      sessionIds: ["session-a3", "session-a5", "session-a1", "session-a2", "session-a4"],
+      name: "Destination",
+    }]);
+    expect(presentationStore.getState().sessionOrderByProject["project-a"]).toEqual([
+      "session-a3", "session-a5", "session-a1", "session-a2", "session-a4",
+    ]);
+  });
+
   it("moves the dragged Agent to the target when grouping downward", () => {
     const sessions = new Map<string, readonly string[]>([[
       "project-a",

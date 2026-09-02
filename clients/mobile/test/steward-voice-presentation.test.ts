@@ -19,6 +19,7 @@ const overview = {
   projects: fixtureProjects,
   stewardEnabledProjectIds: fixtureProjects.map((project) => project.id),
   stewardExecutorSessionIds: {},
+  agentGroupsByProject: {},
   tasks: fixtureTasks,
   sessions: fixtureSessions,
   agentStatuses: [],
