@@ -274,18 +274,28 @@ export class MobileConnectionCoordinator {
   /// foreground recovery and are attached again when the next authenticated
   /// transport becomes ready. Closing the whole coordinator here strands an
   /// already-resolved TerminalAttachment on a permanently stopped owner.
-  resetTransport(): void {
+  resetTransport(reconnect = false): void {
     if (this.stopped) return;
     if (this.reconnectTimer !== undefined) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = undefined;
     }
     this.reconnectDelay = MIN_RECONNECT_MS;
+    if (!reconnect) this.clearReconnectCycle();
     const generation = this.generation;
     const socket = this.physical;
-    if (socket === undefined && this.connecting === undefined && !this.ready) return;
-    this.handleDisconnected(generation, "clientReset", false);
+    if (socket === undefined && this.connecting === undefined && !this.ready) {
+      if (reconnect) {
+        this.beginReconnectCycle("clientResume");
+        void this.ensureConnected().catch(() => this.scheduleReconnect("clientResumeFailed"));
+      }
+      return;
+    }
+    this.handleDisconnected(generation, "clientReset", reconnect);
     socket?.close();
+    if (reconnect) {
+      void this.ensureConnected().catch(() => this.scheduleReconnect("clientResumeFailed"));
+    }
   }
 
   close(): void {
@@ -692,7 +702,7 @@ export class MobileConnectionCoordinator {
 
   private handleDisconnected(generation: number, reason: string, reconnect = true): void {
     if (generation !== this.generation) return;
-    this.beginReconnectCycle(reason);
+    if (reconnect) this.beginReconnectCycle(reason);
     this.cancelConnecting?.(new Error("Mobile transport disconnected."));
     this.cancelConnecting = undefined;
     this.generation += 1;
@@ -799,6 +809,10 @@ export class MobileConnectionCoordinator {
       reconnectElapsedMs: Date.now() - this.reconnectStartedAtEpochMs,
       ...this.diagnostics.correlation(),
     });
+    this.clearReconnectCycle();
+  }
+
+  private clearReconnectCycle(): void {
     if (this.reconnectStallTimer !== undefined) clearTimeout(this.reconnectStallTimer);
     this.reconnectStallTimer = undefined;
     this.reconnectStartedAtEpochMs = undefined;

@@ -412,7 +412,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
             : profile(connection, "reconnecting");
         });
       },
-      resetTransports() {
+      resetTransports(reconnect = false) {
         profileGeneration += 1;
         profileCache.clear();
         profileProbes.clear();
@@ -420,7 +420,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
         for (const connection of controlClients.values()) connection.client.close();
         controlClients.clear();
         for (const connection of coordinators.values()) {
-          connection.coordinator.resetTransport();
+          connection.coordinator.resetTransport(reconnect);
         }
       },
       async pair(code) {

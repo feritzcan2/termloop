@@ -352,8 +352,10 @@ describe("production control adapter", () => {
   it("preserves a terminal subscription while foreground recovery replaces its socket", async () => {
     const sockets: Array<DataSocket & { closed: boolean }> = [];
     const attachGenerations: number[] = [];
+    const diagnosticLines: string[] = [];
     const runtime = createProductionRuntime({
       repository: fixedRepository(saved),
+      diagnostics: createMobileDiagnosticReporter((line) => diagnosticLines.push(line)),
       multiplexSocketFactory() {
         const generation = sockets.length + 1;
         const socket: DataSocket & { closed: boolean } = {
@@ -420,19 +422,22 @@ describe("production control adapter", () => {
     sockets[0]?.onmessage?.({ data: stalledMessage });
     await waitFor(() => stalledReadStarted);
 
-    runtime.connections.resetTransports();
+    runtime.connections.resetTransports(false);
     expect(sockets[0]?.closed).toBe(true);
     expect(events.at(-1)).toEqual({ type: "state", state: "connectionLost" });
+    expect(sockets).toHaveLength(1);
+    expect(diagnosticLines.some((line) => line.includes('"event":"reconnect_cycle_started"')))
+      .toBe(false);
 
-    await expect(runtime.connections.list()).resolves.toEqual([
-      expect.objectContaining({ availability: "online" }),
-    ]);
+    runtime.connections.resetTransports(true);
     await waitFor(() => events.filter((event) => (
       event.type === "state" && event.state === "connected"
     )).length === 2);
 
     expect(sockets).toHaveLength(2);
     expect(attachGenerations).toEqual([1, 2]);
+    expect(diagnosticLines.some((line) => line.includes('"event":"reconnect_cycle_started"')))
+      .toBe(true);
     await expect(attachment.input(new TextEncoder().encode("foreground recovered")))
       .resolves.toBeUndefined();
 
