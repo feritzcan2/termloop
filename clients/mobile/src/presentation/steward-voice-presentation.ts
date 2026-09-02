@@ -1,42 +1,14 @@
-import type {
-  MobileOverview,
-  StewardMessage,
-  StewardVoiceReceipt,
-} from "@/application/ports";
-
-export type VoiceMode = "single" | "handsFree";
+import type { MobileOverview } from "@/application/ports";
 
 export type VoicePhase =
-  | "connecting"
   | "ready"
   | "permission"
   | "listening"
   | "transcribing"
   | "reviewing"
   | "sending"
-  | "thinking"
-  | "speaking"
-  | "reconnecting"
-  | "offline"
-  | "error";
-
-export type VoiceTurnStatus =
-  | "received"
   | "sent"
-  | "thinking"
-  | "answered"
-  | "speaking"
-  | "spoken"
-  | "failed";
-
-export interface VoiceTurn {
-  readonly id: string;
-  readonly transcript: string;
-  readonly status: VoiceTurnStatus;
-  readonly userSequence: number | null;
-  readonly reply: StewardMessage | null;
-  readonly error: string | null;
-}
+  | "error";
 
 export interface VoiceRouteParams {
   connectionId?: string | readonly string[] | undefined;
@@ -54,33 +26,6 @@ export interface VoiceSilenceUpdate {
   state: VoiceSilenceState;
   shouldStop: boolean;
   shouldReset: boolean;
-}
-
-export interface VoiceTranscriptUpdate {
-  cursor: number;
-  stewardMessages: readonly StewardMessage[];
-}
-
-export interface VoiceTranscriptResume {
-  readonly cursor: number;
-  readonly receipt: StewardVoiceReceipt;
-  readonly stewardMessages: readonly StewardMessage[];
-}
-
-export type VoiceStewardActivityId =
-  | "waiting"
-  | "working"
-  | "compacting"
-  | "needsInput"
-  | "restarting"
-  | "failed"
-  | "interrupted"
-  | "unavailable";
-
-export interface VoiceStewardActivity {
-  readonly id: VoiceStewardActivityId;
-  readonly label: string;
-  readonly tone: "neutral" | "active" | "attention" | "danger";
 }
 
 export interface VoicePcmBuffer {
@@ -225,124 +170,8 @@ export function voiceProjectId(
   return overview.projects.find((project) => enabledProjectIds.has(project.id))?.id;
 }
 
-const voiceStewardActivities: Record<VoiceStewardActivityId, VoiceStewardActivity> = {
-  waiting: { id: "waiting", label: "Cevap bekleniyor", tone: "neutral" },
-  working: { id: "working", label: "Steward düşünüyor", tone: "active" },
-  compacting: { id: "compacting", label: "Steward konuşmayı özetliyor", tone: "active" },
-  needsInput: { id: "needsInput", label: "Steward senden bilgi bekliyor", tone: "attention" },
-  restarting: { id: "restarting", label: "Steward yeniden başlıyor", tone: "attention" },
-  failed: { id: "failed", label: "Steward yanıt veremedi", tone: "danger" },
-  interrupted: { id: "interrupted", label: "Steward durduruldu", tone: "danger" },
-  unavailable: { id: "unavailable", label: "Steward kullanılamıyor", tone: "danger" },
-};
-
-/// Describes only the configured executor for this Project. A locally pending
-/// voice turn remains "waiting" until the daemon reports that exact Session as
-/// working; an ordinary Agent in the same Project can never make Steward appear
-/// active.
-export function voiceStewardActivity(
-  projectId: string | undefined,
-  overview: MobileOverview | undefined,
-): VoiceStewardActivity {
-  if (projectId === undefined || overview === undefined) return voiceStewardActivities.waiting;
-  const executorSessionId = overview.stewardExecutorSessionIds[projectId];
-  if (executorSessionId === undefined) return voiceStewardActivities.waiting;
-  const executor = overview.sessions.find((session) => session.id === executorSessionId);
-  if (executor === undefined || executor.project_id !== projectId) return voiceStewardActivities.waiting;
-  if (executor.lifecycle_state === "resuming") return voiceStewardActivities.restarting;
-  if (executor.lifecycle_state !== "running") return voiceStewardActivities.unavailable;
-  const status = overview.agentStatuses.find((candidate) => candidate.sessionId === executorSessionId)?.status;
-  switch (status) {
-    case "working": return voiceStewardActivities.working;
-    case "compacting": return voiceStewardActivities.compacting;
-    case "awaitingInput": return voiceStewardActivities.needsInput;
-    case "failed": return voiceStewardActivities.failed;
-    case "interrupted": return voiceStewardActivities.interrupted;
-    case "exited": return voiceStewardActivities.unavailable;
-    case "unknown":
-    case "idle":
-    case undefined:
-      return voiceStewardActivities.waiting;
-  }
-}
-
-/// Advances one live voice transcript cursor and returns every newly persisted
-/// Steward message in sequence order. Durable resume establishes the opening
-/// cursor; polling then speaks later chat, Routine, and delivery updates once.
-export function updateVoiceTranscript(
-  messages: readonly StewardMessage[],
-  cursor: number,
-): VoiceTranscriptUpdate {
-  const nextCursor = messages.reduce(
-    (latest, message) => Math.max(latest, message.sequence),
-    cursor,
-  );
-  const seen = new Set<number>();
-  const stewardMessages = messages
-    .filter((message) => {
-      if (message.author !== "steward" || message.sequence <= cursor || seen.has(message.sequence)) {
-        return false;
-      }
-      seen.add(message.sequence);
-      return true;
-    })
-    .sort((left, right) => left.sequence - right.sequence);
-  return { cursor: nextCursor, stewardMessages };
-}
-
-/// Rebuilds delivery state from the daemon transcript and the tiny local receipt.
-/// The first activation starts at "now" so old chat history is not read aloud;
-/// every later activation returns only replies that never finished speaking.
-export function resumeVoiceTranscript(
-  messages: readonly StewardMessage[],
-  receipt: StewardVoiceReceipt,
-): VoiceTranscriptResume {
-  const cursor = messages.reduce((latest, message) => Math.max(latest, message.sequence), 0);
-  if (!receipt.initialized && receipt.pendingUserSequence === null) {
-    return {
-      cursor,
-      receipt: { initialized: true, acknowledgedSequence: cursor, pendingUserSequence: null },
-      stewardMessages: [],
-    };
-  }
-  const seen = new Set<number>();
-  const stewardMessages = messages
-    .filter((message) => {
-      if (message.author !== "steward"
-        || message.sequence <= receipt.acknowledgedSequence
-        || seen.has(message.sequence)) return false;
-      seen.add(message.sequence);
-      return true;
-    })
-    .sort((left, right) => left.sequence - right.sequence);
-  return {
-    cursor,
-    receipt: { ...receipt, initialized: true },
-    stewardMessages,
-  };
-}
-
-export function updateVoiceTurn(
-  turns: readonly VoiceTurn[],
-  turnId: string,
-  update: Partial<Omit<VoiceTurn, "id">>,
-): VoiceTurn[] {
-  return turns.map((turn) => turn.id === turnId ? { ...turn, ...update } : turn);
-}
-
-export function voiceTurnForReply(
-  turns: readonly VoiceTurn[],
-  pendingUserSequence: number | null,
-  reply: StewardMessage,
-): string | undefined {
-  if (pendingUserSequence === null || reply.sequence <= pendingUserSequence) return undefined;
-  return [...turns]
-    .reverse()
-    .find((turn) => turn.userSequence === pendingUserSequence && turn.reply === null)?.id;
-}
-
-/// Ends a spoken turn after real speech followed by a short quiet window. A hard
-/// ceiling bounds uploads even when background noise never crosses the threshold.
+/// Ends one recorded message after a short quiet window. A hard ceiling bounds
+/// uploads even when background noise never crosses the threshold.
 export function updateVoiceSilence(
   current: VoiceSilenceState,
   durationMs: number,

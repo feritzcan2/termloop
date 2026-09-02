@@ -4,20 +4,14 @@ import {
   appendVoiceFloatPcmBuffer,
   createVoicePcmCapture,
   createVoicePcmWav,
-  resumeVoiceTranscript,
-  updateVoiceTurn,
-  updateVoiceTranscript,
   updateVoiceSilence,
   voiceDetailsMaxHeight,
   voiceDockWidth,
   voiceProjectId,
-  voiceStewardActivity,
-  voiceTurnForReply,
 } from "../src/presentation/steward-voice-presentation";
 import {
   fixtureProjects,
   fixtureSessions,
-  fixtureStewardTranscript,
   fixtureTasks,
 } from "../src/fixtures/mobile-overview";
 
@@ -85,103 +79,7 @@ describe("Steward voice presentation", () => {
     expect(voiceProjectId({}, disabled)).toBeUndefined();
   });
 
-  it("shows thinking only while the configured Steward executor is really working", () => {
-    const projectId = fixtureProjects[0]!.id;
-    const executorSessionId = "steward-executor";
-    const executor = {
-      ...fixtureSessions[0]!,
-      id: executorSessionId,
-      project_id: projectId,
-      name: "Project Steward",
-      lifecycle_state: "running" as const,
-    };
-    const snapshot = {
-      ...overview,
-      stewardExecutorSessionIds: { [projectId]: executorSessionId },
-      sessions: [executor],
-    };
-    const activity = (status: "working" | "compacting" | "awaitingInput" | "idle" | "failed" | "interrupted") => (
-      voiceStewardActivity(projectId, {
-        ...snapshot,
-        agentStatuses: [{ sessionId: executorSessionId, status, source: "hook", observedAtEpochMs: 10 }],
-      })
-    );
-
-    expect(voiceStewardActivity(projectId, overview).label).toBe("Cevap bekleniyor");
-    expect(activity("working")).toMatchObject({ id: "working", label: "Steward düşünüyor", tone: "active" });
-    expect(activity("compacting").id).toBe("compacting");
-    expect(activity("awaitingInput").id).toBe("needsInput");
-    expect(activity("idle").id).toBe("waiting");
-    expect(activity("failed").id).toBe("failed");
-    expect(activity("interrupted").id).toBe("interrupted");
-    expect(voiceStewardActivity(projectId, {
-      ...snapshot,
-      agentStatuses: [
-        { sessionId: fixtureSessions[0]!.id, status: "working", source: "hook", observedAtEpochMs: 11 },
-        { sessionId: executorSessionId, status: "idle", source: "hook", observedAtEpochMs: 10 },
-      ],
-    }).id).toBe("waiting");
-
-    expect(voiceStewardActivity(projectId, {
-      ...snapshot,
-      sessions: [{ ...executor, lifecycle_state: "exited" as const }],
-      agentStatuses: [{ sessionId: executorSessionId, status: "working", source: "hook", observedAtEpochMs: 10 }],
-    }).id).toBe("unavailable");
-  });
-
-  it("queues every new Steward message once and advances past all authors", () => {
-    const messages = [
-      { ...fixtureStewardTranscript[2]!, sequence: 8, author: "steward" as const },
-      { ...fixtureStewardTranscript[0]!, sequence: 6, author: "user" as const },
-      { ...fixtureStewardTranscript[1]!, sequence: 7, author: "steward" as const },
-      { ...fixtureStewardTranscript[1]!, sequence: 7, author: "steward" as const },
-    ];
-
-    const update = updateVoiceTranscript(messages, 5);
-
-    expect(update.cursor).toBe(8);
-    expect(update.stewardMessages.map((message) => message.sequence)).toEqual([7, 8]);
-    expect(updateVoiceTranscript(messages, update.cursor).stewardMessages).toEqual([]);
-  });
-
-  it("baselines history once, then restores only replies that never finished speaking", () => {
-    const initial = resumeVoiceTranscript(fixtureStewardTranscript, {
-      initialized: false,
-      acknowledgedSequence: 0,
-      pendingUserSequence: null,
-    });
-    expect(initial.stewardMessages).toEqual([]);
-    expect(initial.receipt).toEqual({
-      initialized: true,
-      acknowledgedSequence: 3,
-      pendingUserSequence: null,
-    });
-
-    const resumed = resumeVoiceTranscript(fixtureStewardTranscript, {
-      initialized: true,
-      acknowledgedSequence: 1,
-      pendingUserSequence: 1,
-    });
-    expect(resumed.stewardMessages.map((message) => message.sequence)).toEqual([2, 3]);
-    expect(resumeVoiceTranscript(fixtureStewardTranscript, {
-      initialized: true,
-      acknowledgedSequence: 3,
-      pendingUserSequence: null,
-    }).stewardMessages).toEqual([]);
-  });
-
-  it("tracks one voice turn through delivery without replacing sibling turns", () => {
-    const turns = [
-      { id: "turn-1", transcript: "Merhaba", status: "received" as const, userSequence: null, reply: null, error: null },
-      { id: "turn-2", transcript: "Diğer", status: "spoken" as const, userSequence: 2, reply: null, error: null },
-    ];
-    const sent = updateVoiceTurn(turns, "turn-1", { status: "thinking", userSequence: 4 });
-    expect(sent[0]).toMatchObject({ status: "thinking", userSequence: 4 });
-    expect(sent[1]).toBe(turns[1]);
-    expect(voiceTurnForReply(sent, 4, { ...fixtureStewardTranscript[1]!, sequence: 5 })).toBe("turn-1");
-  });
-
-  it("stops spoken turns but rolls an entirely silent live capture at the hard ceiling", () => {
+  it("stops a recorded message but rolls an entirely silent capture at the hard ceiling", () => {
     const heard = updateVoiceSilence({ heardVoice: false, lastVoiceAtMs: 0 }, 900, -20);
     expect(heard.shouldStop).toBe(false);
     expect(heard.shouldReset).toBe(false);
