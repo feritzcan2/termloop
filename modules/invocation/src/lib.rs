@@ -105,7 +105,7 @@ const IMPROVER_WORKER_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const IMPROVER_ROUTINE_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.improver.routine-instructions",
-    version: 7,
+    version: 8,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.improver.routine-instructions.md"
     ),
@@ -125,13 +125,13 @@ const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.steward.executor",
-    version: 33,
+    version: 34,
     authored_body: include_str!("../../../resources/prompts/builtin.steward.executor.md"),
 };
 
 const WORKER_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.worker.executor",
-    version: 20,
+    version: 21,
     authored_body: include_str!("../../../resources/prompts/builtin.worker.executor.md"),
 };
 
@@ -5896,7 +5896,7 @@ mod tests {
     #[test]
     fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
         let prompt = executor_prompt(ExecutorRole::Steward).unwrap();
-        assert_eq!(prompt.provenance().template_version, 33);
+        assert_eq!(prompt.provenance().template_version, 34);
         assert!(prompt.authored_preview().contains("routine_finding_read"));
         assert!(prompt.authored_preview().contains("playbook_read"));
         assert!(prompt.authored_preview().contains("task_set_steward_brief"));
@@ -5976,7 +5976,11 @@ mod tests {
                 .authored_preview()
                 .contains("call `agent_message_send` to the same running Source Session")
         );
-        assert!(prompt.authored_preview().contains("call `task_close`"));
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("Call `task_close` only when the Task-level outcome is complete")
+        );
         assert!(
             prompt
                 .authored_preview()
@@ -6073,6 +6077,12 @@ mod tests {
                 .authored_preview()
                 .contains("Never turn a safe Project-management decision into a question")
         );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("Every current `ask` or `auto` finding must leave the wake")
+        );
+        assert!(prompt.authored_preview().contains("use `task_agent_start`"));
 
         let retired =
             include_str!("../../../resources/prompts/retired/builtin.steward.executor.v2.md")
@@ -6085,7 +6095,7 @@ mod tests {
             default_steward_system_prompt()
         );
         let latest_retired =
-            include_str!("../../../resources/prompts/retired/builtin.steward.executor.v32.md")
+            include_str!("../../../resources/prompts/retired/builtin.steward.executor.v33.md")
                 .splitn(3, "\n\n")
                 .nth(2)
                 .unwrap()
@@ -6127,7 +6137,7 @@ mod tests {
     #[test]
     fn pipeline_prompts_treat_a_step_title_as_a_label_not_a_yes_no_contract() {
         let worker = executor_prompt(ExecutorRole::Worker).unwrap();
-        assert_eq!(worker.provenance().template_version, 20);
+        assert_eq!(worker.provenance().template_version, 21);
         assert!(
             worker
                 .authored_preview()

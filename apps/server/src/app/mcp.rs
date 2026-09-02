@@ -841,9 +841,9 @@ fn task_read_projection(
         "agentStatuses": agent_statuses,
         "evidenceSemantics": {
             "task": "durableTermLoopRecordNotDeliveryCompletionEvidence",
-            "effectiveBranch": "checkedOutWorktreeBranchOtherwiseDurableTaskBranch",
-            "branchCommitSummary": "boundedGitObservation",
-            "pullRequest": "providerProjectionUseEachSignalSourceAndFreshness",
+            "effectiveBranch": "currentCheckoutConvenienceNotUniversalDeliveryIdentity",
+            "branchCommitSummary": "boundedGitObservationBranchDivergedIsNotTaskOwnedWork",
+            "pullRequest": "providerProjectionUseExactHeadBaseMergeCommitAndFreshness",
             "agentStatus": "runtimeObservation",
             "agentPlan": "agentReportedClaimNotIndependentlyVerified",
         },
@@ -1408,18 +1408,18 @@ async fn worker_report_routine_problem(
         termloop_platform::generate_opaque_id(),
         super::current_epoch_ms(),
     );
-    finish_worker_report_attempt(state, session_id, &capability, result).await?;
+    let result = finish_worker_report_attempt(state, session_id, &capability, result).await?;
     if let Ok(mut capabilities) = state.tracker_report_capabilities.lock() {
         capabilities.revoke_check(session_id, &capability.check_id);
     }
-    finish_routine_report(project_id, state, None).await;
+    finish_routine_report(project_id, state, routine_finding_wake(&result)).await;
     Ok(json!({ "status": "problemReported" }))
 }
 
 /// A step Routine reports completion for its one focused Task at this stage.
-/// Only a passed verdict moves that Task along the board. A materially new waiting
-/// verdict may separately wake the Steward when that Routine's response policy
-/// asks for review; unchanged evidence remains silent.
+/// Only a passed verdict moves that Task along the board. A current unresolved
+/// waiting finding wakes the Steward unless an already-visible proposal owns
+/// that decision, so a prior Steward no-op cannot strand the Task forever.
 async fn worker_report_step_verdicts(
     project_id: &str,
     session_id: &str,
@@ -1482,7 +1482,7 @@ async fn worker_report_step_verdicts(
 fn step_verdict_wake(result: &Value) -> Option<protocol::CompanionWakeReason> {
     match (
         result["passedCount"].as_u64().unwrap_or(0) > 0,
-        result["newPendingFindingCount"].as_u64().unwrap_or(0) > 0,
+        result["stewardReviewRequired"].as_bool().unwrap_or(false),
     ) {
         (true, true) => Some(protocol::CompanionWakeReason::PipelineMovedAndRoutineFinding),
         (true, false) => Some(protocol::CompanionWakeReason::PipelineMoved),
@@ -1514,7 +1514,9 @@ async fn finish_worker_report_attempt<T>(
 }
 
 fn routine_finding_wake(result: &Value) -> Option<protocol::CompanionWakeReason> {
-    (result["newPendingFindingCount"].as_u64().unwrap_or(0) > 0)
+    result["stewardReviewRequired"]
+        .as_bool()
+        .unwrap_or_else(|| result["newPendingFindingCount"].as_u64().unwrap_or(0) > 0)
         .then_some(protocol::CompanionWakeReason::RoutineFinding)
 }
 
@@ -1853,6 +1855,14 @@ mod tests {
         assert!(tool_names(&steward).contains(&"task_create"));
         assert!(tool_names(&steward).contains(&"send_to_agent"));
         assert!(tool_names(&steward).contains(&"task_agent_start"));
+        let task_agent_start = steward
+            .iter()
+            .find(|tool| tool["name"] == "task_agent_start")
+            .unwrap();
+        assert_eq!(task_agent_start["inputSchema"]["type"], "object");
+        assert!(task_agent_start["inputSchema"]["allOf"].is_null());
+        assert!(task_agent_start["inputSchema"]["properties"]["taskId"].is_object());
+        assert!(task_agent_start["inputSchema"]["properties"]["assignment"].is_object());
         assert!(tool_names(&steward).contains(&"task_set_jira_url"));
         assert!(tool_names(&steward).contains(&"steward_system_prompt_read"));
         assert!(tool_names(&steward).contains(&"steward_system_prompt_update"));
@@ -1995,24 +2005,24 @@ mod tests {
     }
 
     #[test]
-    fn step_verdict_wake_preserves_movement_and_new_waiting_findings() {
+    fn step_verdict_wake_preserves_movement_and_unresolved_waiting_findings() {
         assert_eq!(
-            step_verdict_wake(&json!({ "passedCount": 1, "newPendingFindingCount": 0 })),
+            step_verdict_wake(&json!({ "passedCount": 1, "stewardReviewRequired": false })),
             Some(protocol::CompanionWakeReason::PipelineMoved)
         );
         assert_eq!(
-            step_verdict_wake(&json!({ "passedCount": 0, "newPendingFindingCount": 1 })),
+            step_verdict_wake(&json!({ "passedCount": 0, "stewardReviewRequired": true })),
             Some(protocol::CompanionWakeReason::RoutineFinding)
         );
         assert_eq!(
-            step_verdict_wake(&json!({ "passedCount": 1, "newPendingFindingCount": 1 })),
+            step_verdict_wake(&json!({ "passedCount": 1, "stewardReviewRequired": true })),
             Some(protocol::CompanionWakeReason::PipelineMovedAndRoutineFinding)
         );
         assert_eq!(step_verdict_wake(&json!({})), None);
     }
 
     #[test]
-    fn only_a_novel_pending_finding_wakes_the_steward() {
+    fn routine_finding_wake_supports_novel_and_recoverable_findings() {
         assert_eq!(
             routine_finding_wake(&json!({ "newPendingFindingCount": 1 })),
             Some(protocol::CompanionWakeReason::RoutineFinding)
@@ -2020,6 +2030,13 @@ mod tests {
         assert_eq!(
             routine_finding_wake(&json!({ "newPendingFindingCount": 0 })),
             None
+        );
+        assert_eq!(
+            routine_finding_wake(&json!({
+                "newPendingFindingCount": 0,
+                "stewardReviewRequired": true
+            })),
+            Some(protocol::CompanionWakeReason::RoutineFinding)
         );
         assert_eq!(routine_finding_wake(&json!({})), None);
     }
@@ -2168,7 +2185,7 @@ mod tests {
         );
         assert_eq!(
             projection["evidenceSemantics"]["pullRequest"],
-            "providerProjectionUseEachSignalSourceAndFreshness"
+            "providerProjectionUseExactHeadBaseMergeCommitAndFreshness"
         );
 
         let fallback = task_read_projection(

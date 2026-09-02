@@ -14,7 +14,7 @@ test("generated validator rejects cross-provider Git-host identities", () => {
       provider: "azureDevOps", host: "dev.azure.com", repository_owner: "fiber-teams",
       repository_project: "Fiber Tests", repository_name: "widget", number: 42,
       title: "Safe", url: "https://dev.azure.com/fiber-teams/Fiber%20Tests/_git/widget/pullrequest/42",
-      state: "open", base_branch: "main", head_branch: "feature",
+      state: "open", merge_commit_oid: null, base_branch: "main", head_branch: "feature",
       head_repository_owner: "fiber-teams", head_repository_project: "Forks",
       head_repository_name: "widget-fork", check_rollup: "unsupported",
       check_rollup_source: "unsupported", review_signal: "reviewRequired",

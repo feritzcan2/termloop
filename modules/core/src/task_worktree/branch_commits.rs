@@ -190,10 +190,11 @@ impl TaskBranchCommitSummaryListPlan {
                         &targets
                             .iter()
                             .map(|target| match target.recorded_base.as_ref() {
-                                Some((base_ref, _)) => {
-                                    BranchCommitSummaryRequest::with_current_base(
+                                Some((base_ref, base_oid)) => {
+                                    BranchCommitSummaryRequest::with_current_base_and_recorded_base(
                                         target.binding.name.as_bytes().to_vec(),
                                         base_ref.as_bytes().to_vec(),
+                                        base_oid.as_bytes().to_vec(),
                                     )
                                 }
                                 None => BranchCommitSummaryRequest::new(
@@ -474,6 +475,7 @@ fn project_observation(
             let mut summary = unavailable(match reason {
                 BranchCommitUnavailable::AmbiguousRemote => "ambiguousRemote",
                 BranchCommitUnavailable::BaseRefUnavailable => "baseRefUnavailable",
+                BranchCommitUnavailable::BranchDiverged => "branchDiverged",
                 BranchCommitUnavailable::BranchMissing => "branchMissing",
             });
             summary.not_in_base = not_in_base;
@@ -502,6 +504,7 @@ fn project_not_in_base(state: &BranchCommitState) -> BranchNotInBaseSummary {
         BranchCommitState::Unavailable { reason, .. } => unavailable_not_in_base(match reason {
             BranchCommitUnavailable::AmbiguousRemote => "ambiguousRemote",
             BranchCommitUnavailable::BaseRefUnavailable => "baseRefUnavailable",
+            BranchCommitUnavailable::BranchDiverged => "branchDiverged",
             BranchCommitUnavailable::BranchMissing => "branchMissing",
         }),
     }

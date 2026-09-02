@@ -71,6 +71,7 @@ function pullRequest(number: number): GitHostProjection["matches"][number] {
     title: `PR ${number}`,
     url: `https://github.com/acme/widget/pull/${number}`,
     state: "open",
+    merge_commit_oid: null,
     base_branch: "main",
     head_branch: `feature-${number}`,
     head_repository_owner: "acme",
