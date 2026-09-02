@@ -3,7 +3,7 @@ import SwiftUI
 import WatchKit
 
 // Records straight from the wrist mic instead of going through the system
-// dictation sheet: one tap starts listening, falling silent ends it, and the
+// dictation sheet: one tap starts listening, a short pause ends it, and the
 // recording is transcribed by the paired Mac's own on-device speech
 // recognition through the paired Mac daemon (OpenAI when configured, on-device
 // fallback otherwise). That removes the sheet and its confirm button from the
@@ -31,7 +31,7 @@ final class VoiceRecorder: NSObject, ObservableObject {
 
     private let tick = 0.1
     private let speechThresholdDb: Float = -32
-    private let silenceTicksToStop = 20   // 2s of quiet ends and sends the take
+    private let silenceTicksToStop = 10   // 1s of quiet ends and sends the take
     private let maximumTicks = 600        // 60s ceiling
 
     var isBusy: Bool { phase == .listening || phase == .transcribing }
