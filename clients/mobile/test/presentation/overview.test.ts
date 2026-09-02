@@ -11,7 +11,10 @@ import {
   preferredConnectionId,
   shouldResetConnectionTransports,
 } from "../../src/features/connection/connection-resilience";
-import { snapshotWhileUnavailable } from "../../src/features/overview/overview-resilience";
+import {
+  snapshotWhileBackgrounded,
+  snapshotWhileUnavailable,
+} from "../../src/features/overview/overview-resilience";
 import {
   buildLocatedProjectSummaries,
   buildProjectOverview,
@@ -443,6 +446,23 @@ describe("connection presentation", () => {
       readAtEpochMs: 100,
     });
     expect(snapshotWhileUnavailable("revoked", previous).overview).toBeUndefined();
+  });
+
+  it("settles a visible overview refresh when the app moves to the background", () => {
+    const refreshing = {
+      load: "ready" as const,
+      error: undefined,
+      overview: baseOverview,
+      refreshing: true,
+      reviewReadySessionIds: new Set<string>(),
+      readAtEpochMs: 100,
+    };
+
+    expect(snapshotWhileBackgrounded(refreshing)).toEqual({
+      ...refreshing,
+      refreshing: false,
+    });
+    expect(snapshotWhileBackgrounded(undefined).refreshing).toBe(false);
   });
 
   it("keeps every paired Mac as its own selector group and carries its identity into retained routes", () => {

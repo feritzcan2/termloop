@@ -8,12 +8,14 @@ import { reconcileReviewReadySessions, statusMap } from "@/presentation/agent-re
 import { useAppLifecycle } from "@/platform/app-lifecycle";
 import {
   emptyOverviewSnapshot as emptySnapshot,
+  snapshotWhileBackgrounded,
   snapshotWhileUnavailable,
   type ConnectionOverviewSnapshot,
   type OverviewLoad,
 } from "./overview-resilience";
 
 export {
+  snapshotWhileBackgrounded,
   snapshotWhileUnavailable,
   type ConnectionOverviewSnapshot,
   type OverviewLoad,
@@ -143,7 +145,11 @@ function ConnectionOverviewLoader({
   const readable = connectionPresentation(availability).block === undefined;
 
   useEffect(() => {
-    if (!lifecycle.active) return;
+    if (!lifecycle.active) {
+      activeRead.current = undefined;
+      updateSnapshot(connectionId, snapshotWhileBackgrounded);
+      return;
+    }
     if (!readable) {
       activeRead.current = undefined;
       if (availability !== "offline") previousStatuses.current = new Map();
