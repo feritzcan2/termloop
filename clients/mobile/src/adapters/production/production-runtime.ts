@@ -7,6 +7,7 @@ import type {
   AgentLaunchInspection,
   AgentLaunchSelection,
   ConnectionProfile,
+  MobileAgentGroupLayout,
   MobileRuntime,
   PlaybookProjection,
   SelectedImage,
@@ -698,10 +699,11 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
       async loadOverview(connectionId) {
         const connection = await resolve(connectionId);
         const control = controlClient(connection);
-        const [projects, sessions, agentStatuses] = await Promise.all([
+        const [projects, sessions, agentStatuses, agentGroupsByProject] = await Promise.all([
           control.call("project.list"),
           control.call("session.list"),
           control.call("agent.statusList"),
+          readMobileAgentGroups(request, connection, diagnostics),
         ]);
         const [taskPages, stewardConfigurations] = await Promise.all([
           Promise.all(projects.map((project) => listActiveTasks(control, project.id))),
@@ -741,6 +743,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
           projects,
           stewardEnabledProjectIds,
           stewardExecutorSessionIds,
+          agentGroupsByProject,
           tasks,
           sessions,
           agentStatuses,
@@ -886,6 +889,80 @@ function gatewayHttpEndpoint(connection: SavedConnection, pathname: string): URL
   endpoint.search = "";
   endpoint.hash = "";
   return endpoint;
+}
+
+async function readMobileAgentGroups(
+  request: typeof fetch,
+  connection: SavedConnection,
+  diagnostics: MobileDiagnosticReporter,
+): Promise<Readonly<Record<string, readonly MobileAgentGroupLayout[]>>> {
+  try {
+    const response = await request(gatewayHttpEndpoint(connection, "/agent-groups").toString(), {
+      headers: { authorization: `Bearer ${connection.controlToken}` },
+    });
+    // Agent grouping is an optional presentation projection. An older gateway
+    // must not hide Projects, Sessions, or statuses while desktop upgrades it.
+    if (response.status === 404) return {};
+    if (!response.ok) {
+      diagnostics.report("control", "optional_agent_groups_read_failed", {
+        connectionId: connection.id,
+        status: response.status,
+      });
+      return {};
+    }
+    const decoded = decodeMobileAgentGroups(await response.json());
+    if (decoded !== undefined) return decoded;
+    diagnostics.report("control", "optional_agent_groups_read_failed", {
+      connectionId: connection.id,
+      reason: "invalidProjection",
+    });
+  } catch (cause: unknown) {
+    diagnostics.report("control", "optional_agent_groups_read_failed", {
+      connectionId: connection.id,
+      errorType: cause instanceof Error ? cause.name : "unknown",
+    });
+  }
+  return {};
+}
+
+function decodeMobileAgentGroups(
+  value: unknown,
+): Readonly<Record<string, readonly MobileAgentGroupLayout[]>> | undefined {
+  if (!isRecord(value) || value.version !== 1 || !isRecord(value.groupsByProject)) return undefined;
+  const result: Record<string, MobileAgentGroupLayout[]> = {};
+  for (const [projectId, candidate] of Object.entries(value.groupsByProject)) {
+    if (!validAgentGroupId(projectId) || !Array.isArray(candidate)) return undefined;
+    const seenSessionIds = new Set<string>();
+    const groups: MobileAgentGroupLayout[] = [];
+    for (const item of candidate) {
+      if (!isRecord(item) || !Array.isArray(item.sessionIds) || item.sessionIds.length < 2
+        || !item.sessionIds.every(validAgentGroupId)
+        || new Set(item.sessionIds).size !== item.sessionIds.length
+        || item.sessionIds.some((sessionId) => seenSessionIds.has(sessionId))) {
+        return undefined;
+      }
+      if (!(item.name === undefined || (typeof item.name === "string"
+        && item.name.trim().length > 0 && [...item.name.trim()].length <= 80))) {
+        return undefined;
+      }
+      item.sessionIds.forEach((sessionId) => seenSessionIds.add(sessionId));
+      groups.push({
+        sessionIds: [...item.sessionIds],
+        ...(typeof item.name === "string" ? { name: item.name.trim() } : {}),
+      });
+    }
+    if (groups.length > 0) result[projectId] = groups;
+  }
+  return result;
+}
+
+function validAgentGroupId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 128
+    && !/[\u0000-\u001F\u007F]/u.test(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 

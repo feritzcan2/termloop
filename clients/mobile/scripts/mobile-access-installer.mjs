@@ -38,7 +38,7 @@ export function defaultArtifactMetadata(options = {}) {
     manifestVersion: 1,
     releaseVersion: options.releaseVersion ?? "2.0.0",
     channel,
-    sequence: integer(options.sequence ?? 2, "gateway sequence"),
+    sequence: integer(options.sequence ?? 3, "gateway sequence"),
     owner: options.owner ?? defaultInstallerOwner(channel),
     compatibility: GATEWAY_COMPATIBILITY,
   };

@@ -84,6 +84,13 @@ describe("persistent mobile access gateway", () => {
       controlToken: "c".repeat(64),
       terminalToken: "m".repeat(64),
     }));
+    const groupedSessionIds = ["agent-1", "agent-2", "agent-3", "agent-4"];
+    writeFileSync(path.join(directory, "agent-groups.json"), JSON.stringify({
+      version: 1,
+      groupsByProject: {
+        "project-1": [{ sessionIds: groupedSessionIds, name: "Review crew" }],
+      },
+    }));
     const gateway = spawn(process.execPath, [path.resolve("scripts/mobile-access-gateway.mjs"), gatewayConfig], {
       cwd: path.resolve("."), stdio: "ignore",
     });
@@ -107,6 +114,18 @@ describe("persistent mobile access gateway", () => {
       });
       const health = await fetch(`http://127.0.0.1:${gatewayPort}/health`);
       expect(await health.json()).toMatchObject({ ready: true, buildId: "source-development" });
+      const refusedGroups = await fetch(`http://127.0.0.1:${gatewayPort}/agent-groups`);
+      expect(refusedGroups.status).toBe(401);
+      const agentGroups = await fetch(`http://127.0.0.1:${gatewayPort}/agent-groups`, {
+        headers: { authorization: `Bearer ${"c".repeat(64)}` },
+      });
+      expect(agentGroups.status).toBe(200);
+      expect(await agentGroups.json()).toEqual({
+        version: 1,
+        groupsByProject: {
+          "project-1": [{ sessionIds: groupedSessionIds, name: "Review crew" }],
+        },
+      });
       const unsupported = await refusedUpgrade(gatewayPort, "/future-transport");
       expect(unsupported.status).toBe(426);
       expect(unsupported.headers["x-termloop-gateway-build"]).toBe("source-development");

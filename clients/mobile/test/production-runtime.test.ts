@@ -1278,9 +1278,20 @@ describe("production control adapter", () => {
       protocolVersion: string | undefined;
     }> = [];
     let socketCount = 0;
+    const groupedSessionIds = ["agent-1", "agent-2", "agent-3", "agent-4"];
+    const httpRequests: string[] = [];
     const createControlSocket = controlSocketFactory(methods, requests);
     const runtime = createProductionRuntime({
       repository,
+      async fetch(input) {
+        httpRequests.push(String(input));
+        return new Response(JSON.stringify({
+          version: 1,
+          groupsByProject: {
+            [fixtureProjects[0]!.id]: [{ sessionIds: groupedSessionIds, name: "Review crew" }],
+          },
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      },
       controlSocketFactory() {
         socketCount += 1;
         return createControlSocket();
@@ -1301,6 +1312,9 @@ describe("production control adapter", () => {
     expect(overview.stewardExecutorSessionIds).toEqual({
       [fixtureProjects[0]!.id]: "steward-session",
     });
+    expect(overview.agentGroupsByProject).toEqual({
+      [fixtureProjects[0]!.id]: [{ sessionIds: groupedSessionIds, name: "Review crew" }],
+    });
     expect(overview.tasks).toEqual(fixtureTasks);
     expect(overview.sessions).toEqual(fixtureSessions);
     expect(overview.agentStatuses).toEqual(fixtureAgentStatuses);
@@ -1320,6 +1334,7 @@ describe("production control adapter", () => {
     expect(requests.every(({ mobileApiVersion }) => mobileApiVersion === MOBILE_API_VERSION)).toBe(true);
     expect(requests.every(({ protocolVersion }) => protocolVersion === undefined)).toBe(true);
     expect(socketCount).toBe(1);
+    expect(httpRequests).toEqual(["http://127.0.0.1:48100/agent-groups"]);
 
     await runtime.connections.list();
     expect(methods.filter((method) => method === "system.version")).toHaveLength(1);

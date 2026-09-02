@@ -99,7 +99,7 @@ fi
     expect(installManifest).toMatchObject({
       manifestVersion: 1,
       channel: "development",
-      sequence: 2,
+      sequence: 3,
       compatibility: {
         mobileTransport: { min: 2, max: 2 },
         mobileApi: { min: 1, max: 1 },
