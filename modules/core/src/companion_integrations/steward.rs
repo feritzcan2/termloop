@@ -554,19 +554,44 @@ impl CoreRuntime {
             .iter()
             .find(|task| task.id == task_id && task.project_id == project_id)
             .ok_or(CoreError::CapabilityDenied)?;
-        let Some(worktree) = task.worktree.as_ref() else {
+        if task.worktree.is_none() {
             return Ok(None);
-        };
+        }
+        let candidates = self.current_task_agent_sessions_for_steward_start(project_id, task_id)?;
+        match select_steward_assignment_session(candidates.into_iter(), agent_id, launch_selection)
+        {
+            Ok(session) => Ok(session.map(|session| session.id.clone())),
+            Err(session) => Err(CoreError::TaskAgentAlreadyAttached {
+                task_id: task_id.to_owned(),
+                session_id: session.id.clone(),
+            }),
+        }
+    }
+
+    /// Returns the live ordinary Agent Sessions represented by the exact
+    /// Task's own worktree projection. A running Session blocks a second
+    /// Steward launch even while its structured provider status is temporarily
+    /// unknown or resuming.
+    pub(crate) fn current_task_agent_sessions_for_steward_start<'a>(
+        &'a self,
+        project_id: &str,
+        task_id: &str,
+    ) -> Result<Vec<&'a termloop_domain::SessionRecord>, CoreError> {
+        let task = self
+            .store
+            .tasks()
+            .iter()
+            .find(|task| task.id == task_id && task.project_id == project_id)
+            .ok_or(CoreError::CapabilityDenied)?;
+        let worktree = task.worktree.as_ref().ok_or(CoreError::CapabilityDenied)?;
         Ok(self
             .store
             .sessions()
             .iter()
-            .find(|session| {
+            .filter(|session| {
                 session.project_id == project_id
                     && session.kind == SessionKind::Agent
-                    && self.agent_session_runtime_is_current(session)
-                    && session.process.agent_id.as_deref() == Some(agent_id)
-                    && session.launch_selection == *launch_selection
+                    && matches!(session.lifecycle_state.as_str(), "running" | "resuming")
                     && session.resume_launch_guard.as_ref().is_some_and(|guard| {
                         guard.task_id == task_id
                             && guard.path == worktree.path
@@ -574,7 +599,7 @@ impl CoreRuntime {
                     })
                     && !self.is_assistant_executor_session(&session.id)
             })
-            .map(|session| session.id.clone()))
+            .collect())
     }
 
     pub fn steward_task_agent_assignment_state(
@@ -919,6 +944,36 @@ fn initial_assignment_state(
     })
 }
 
+/// `task_agent_start` may idempotently reuse only a Session that this same
+/// Steward assignment path created. Any other current Task Agent already owns
+/// the worktree and must receive coordination through `agent_message_send`.
+fn select_steward_assignment_session<'a>(
+    sessions: impl Iterator<Item = &'a termloop_domain::SessionRecord>,
+    agent_id: &str,
+    launch_selection: &AgentLaunchSelection,
+) -> Result<Option<&'a termloop_domain::SessionRecord>, &'a termloop_domain::SessionRecord> {
+    let mut reusable = None;
+    let mut attached = None;
+    for session in sessions {
+        let steward_assignment =
+            session.process.template_ref.as_deref() == Some("builtin.steward.task-assignment");
+        if !steward_assignment {
+            return Err(session);
+        }
+        if reusable.is_none()
+            && session.process.agent_id.as_deref() == Some(agent_id)
+            && session.launch_selection == *launch_selection
+        {
+            reusable = Some(session);
+        }
+        attached.get_or_insert(session);
+    }
+    reusable.map_or_else(
+        || attached.map_or(Ok(None), Err),
+        |session| Ok(Some(session)),
+    )
+}
+
 fn steward_wake(configuration: &StewardConfiguration) -> CurrentStewardWake {
     CurrentStewardWake {
         project_id: configuration.project_id.clone(),
@@ -936,6 +991,39 @@ mod tests {
     use termloop_domain::{ProcessDescriptor, SessionKind, SessionRecord};
     use termloop_store::{Store, issue_core_write_authority_for_composition};
     use termloop_terminal::TerminalService;
+
+    fn task_agent_candidate(
+        id: &str,
+        agent_id: &str,
+        template_ref: &str,
+        launch_selection: AgentLaunchSelection,
+    ) -> SessionRecord {
+        SessionRecord {
+            id: id.into(),
+            project_id: "project-1".into(),
+            name: None,
+            kind: SessionKind::Agent,
+            process: ProcessDescriptor {
+                program: agent_id.into(),
+                args: vec![],
+                cwd: "/tmp/task-worktree".into(),
+                agent_id: Some(agent_id.into()),
+                template_ref: Some(template_ref.into()),
+                template_version: Some(1),
+            },
+            lifecycle_state: "running".into(),
+            runtime_epoch: 1,
+            archived_at_epoch_ms: None,
+            ask_to_source_session_id: None,
+            run_configuration_id: None,
+            improver_target: None,
+            ask_to_continuation: None,
+            resume_ref: None,
+            resume_launch_guard: None,
+            resume_failure: None,
+            launch_selection,
+        }
+    }
 
     #[test]
     fn checked_out_branch_precedes_the_durable_and_planned_fallbacks() {
@@ -955,6 +1043,57 @@ mod tests {
             effective_branch_name(None, None, "feature/planned"),
             "feature/planned"
         );
+    }
+
+    #[test]
+    fn steward_start_reuses_only_its_own_matching_assignment_session() {
+        let codex = AgentLaunchSelection::new("gpt-5.6-sol", "bypassPermissions", "high");
+        let claude = AgentLaunchSelection::new("fable", "acceptEdits", "high");
+        let ordinary = task_agent_candidate(
+            "123e4567-e89b-42d3-a456-426614174000",
+            "codex",
+            "builtin.task-agent.kickoff",
+            codex.clone(),
+        );
+        let steward_started = task_agent_candidate(
+            "123e4567-e89b-42d3-a456-426614174001",
+            "claude",
+            "builtin.steward.task-assignment",
+            claude.clone(),
+        );
+
+        assert!(matches!(
+            select_steward_assignment_session([&ordinary].into_iter(), "codex", &codex),
+            Err(session) if session.id == ordinary.id
+        ));
+        assert!(matches!(
+            select_steward_assignment_session(
+                [&steward_started].into_iter(),
+                "claude",
+                &claude,
+            ),
+            Ok(Some(session)) if session.id == steward_started.id
+        ));
+        assert!(matches!(
+            select_steward_assignment_session(
+                [&steward_started].into_iter(),
+                "codex",
+                &codex,
+            ),
+            Err(session) if session.id == steward_started.id
+        ));
+        assert!(matches!(
+            select_steward_assignment_session(
+                [&steward_started, &ordinary].into_iter(),
+                "claude",
+                &claude,
+            ),
+            Err(session) if session.id == ordinary.id
+        ));
+        assert!(matches!(
+            select_steward_assignment_session(std::iter::empty(), "codex", &codex),
+            Ok(None)
+        ));
     }
 
     #[test]

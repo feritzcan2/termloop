@@ -419,7 +419,8 @@ fn stage_error(
         CoreError::CapabilityDenied
         | CoreError::AgentUnsupported
         | CoreError::InvalidParams(_)
-        | CoreError::TaskAgentStartFailed { .. } => error,
+        | CoreError::TaskAgentStartFailed { .. }
+        | CoreError::TaskAgentAlreadyAttached { .. } => error,
         _ => start_error(stage, retryable_for(&error, retryable), choose_base),
     }
 }
@@ -593,6 +594,20 @@ mod tests {
                 suggested_action: TaskAgentStartSuggestedAction::InspectTask,
                 ..
             }
+        ));
+        assert!(matches!(
+            stage_error(
+                CoreError::TaskAgentAlreadyAttached {
+                    task_id: "task-1".into(),
+                    session_id: "123e4567-e89b-42d3-a456-426614174000".into(),
+                },
+                TaskAgentStartStage::AgentLaunch,
+                true,
+                false,
+            ),
+            CoreError::TaskAgentAlreadyAttached { task_id, session_id }
+                if task_id == "task-1"
+                    && session_id == "123e4567-e89b-42d3-a456-426614174000"
         ));
     }
 }
