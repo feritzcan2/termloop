@@ -33,12 +33,20 @@ describe("Task developer notes in the sidebar", () => {
     document.body.append(container);
     let root = createRoot(container);
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    const view = createElement(TaskDeveloperNotes, {
+    let serverNotes: import("@termloop/contract/current").TaskDeveloperNoteDto[] = [];
+    const saves: Array<{ expected: readonly import("@termloop/contract/current").TaskDeveloperNoteDto[]; next: readonly import("@termloop/contract/current").TaskDeveloperNoteDto[] }> = [];
+    const view = () => createElement(TaskDeveloperNotes, {
       projectId: "project-1",
       taskId: "task-1",
       taskTitle: "Ship developer notes",
+      notes: serverNotes,
+      save: async (expected, next) => {
+        saves.push({ expected, next });
+        serverNotes = [...next];
+        return undefined;
+      },
     });
-    await act(async () => root.render(view));
+    await act(async () => root.render(view()));
 
     expect(container.querySelector('[aria-label="Developer notes for Ship developer notes"]')).not.toBeNull();
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Add developer note to Ship developer notes"]')!.click());
@@ -54,6 +62,7 @@ describe("Task developer notes in the sidebar", () => {
     expect(items).toHaveLength(1);
     expect(items[0]?.textContent).toContain("Check the compact layout");
     expect(container.querySelector(".task-developer-notes-head small")?.textContent).toBe("0/1");
+    expect(saves[0]?.expected).toEqual([]);
 
     await act(async () => container.querySelector<HTMLInputElement>('[aria-label^="Complete:"]')!.click());
     expect(container.querySelector(".task-developer-note-list > li")?.className).toBe("completed");
@@ -61,7 +70,7 @@ describe("Task developer notes in the sidebar", () => {
 
     await act(async () => root.unmount());
     root = createRoot(container);
-    await act(async () => root.render(view));
+    await act(async () => root.render(view()));
     expect(container.querySelector(".task-developer-note-list > li")?.className).toBe("completed");
 
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label^="Delete developer note:"]')!.click());
@@ -70,6 +79,53 @@ describe("Task developer notes in the sidebar", () => {
 
     await act(async () => root.unmount());
     container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+
+  it("migrates an existing local checklist into the shared Task projection", async () => {
+    const local = [{ id: "legacy-note", text: "Keep this note", completed: false }];
+    writeTaskDeveloperNotes("project-1", "task-1", local);
+    const calls: unknown[][] = [];
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => root.render(createElement(TaskDeveloperNotes, {
+      projectId: "project-1",
+      taskId: "task-1",
+      taskTitle: "Migrated Task",
+      notes: [],
+      save: async (expected, next) => { calls.push([expected, next]); return undefined; },
+    })));
+
+    expect(calls).toEqual([[[], local]]);
+    expect(readTaskDeveloperNotes("project-1", "task-1")).toEqual([]);
+    expect(container.textContent).toContain("Keep this note");
+    await act(async () => root.unmount());
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+
+  it("keeps legacy notes locally when the synchronized checklist is full", async () => {
+    const local = [{ id: "legacy-note", text: "Do not discard me", completed: false }];
+    writeTaskDeveloperNotes("project-1", "task-1", local);
+    const serverNotes = Array.from({ length: 50 }, (_, index) => ({
+      id: `server-${index}`,
+      text: `Shared note ${index}`,
+      completed: false,
+    }));
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => root.render(createElement(TaskDeveloperNotes, {
+      projectId: "project-1",
+      taskId: "task-1",
+      taskTitle: "Full Task",
+      notes: serverNotes,
+      save: async () => { throw new Error("save must not be called"); },
+    })));
+
+    expect(readTaskDeveloperNotes("project-1", "task-1")).toEqual(local);
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("still stored on this device");
+    await act(async () => root.unmount());
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 });

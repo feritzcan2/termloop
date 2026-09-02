@@ -208,6 +208,7 @@ function railProps(options: RailOptions = {}): TaskRailProps {
     disabled: false,
     createTask: unused,
     updateTask: unused,
+    updateTaskDeveloperNotes: unused,
     bindTaskBranch: unused,
     listProjectLocalBranches: unused,
     provisionTaskWorktree: unused,

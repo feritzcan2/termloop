@@ -184,7 +184,7 @@ fn contract_pattern_matches(pattern: &str, text: &str) -> bool {
 }
 
 pub const CONTRACT_IDENTITY: &str =
-    "sha256:0dd9693b289b3ed619d7c78c7c5fdd45584b15628ade59b2acd2cd87a759a06e";
+    "sha256:abfca7244b2eea45c9649ad8275a0961ff81e1bf22e539c49bc594747e029102";
 pub const ACCESS_PROTOCOL_IDENTITY: &str =
     "sha256:9dcd6794425b25e3f7740fda8a5e7607bcb5716962bcf5f234f4d0a8a8933beb";
 pub const METHODS: &[&str] = &[
@@ -254,6 +254,7 @@ pub const METHODS: &[&str] = &[
     "task.dismissWorktreeProvisioning",
     "task.rename",
     "task.updateBrief",
+    "task.updateDeveloperNotes",
     "task.close",
     "task.finalizeClosedWorktreeRemoval",
     "task.reopen",
@@ -2160,6 +2161,8 @@ pub struct TaskDto {
     pub title: String,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub brief: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub developer_notes: Option<Vec<TaskDeveloperNoteDto>>,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub jira_url: Option<String>,
     pub status: TaskStatus,
@@ -3033,6 +3036,25 @@ pub struct TaskUpdateBriefParams {
     pub task_id: String,
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub brief: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct TaskDeveloperNoteDto {
+    pub id: String,
+    pub text: String,
+    pub completed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct TaskUpdateDeveloperNotesParams {
+    #[serde(rename = "taskId")]
+    pub task_id: String,
+    #[serde(rename = "expectedDeveloperNotes")]
+    pub expected_developer_notes: Vec<TaskDeveloperNoteDto>,
+    #[serde(rename = "developerNotes")]
+    pub developer_notes: Vec<TaskDeveloperNoteDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -7665,6 +7687,7 @@ pub type TaskDismissWorktreeRepairResult = TaskDto;
 pub type TaskDismissWorktreeProvisioningResult = TaskDto;
 pub type TaskRenameResult = TaskDto;
 pub type TaskUpdateBriefResult = TaskDto;
+pub type TaskUpdateDeveloperNotesResult = TaskDto;
 pub type TaskCloseParams = TaskIdParams;
 pub type TaskCloseResult = TaskDto;
 pub type TaskFinalizeClosedWorktreeRemovalParams = TaskIdParams;
@@ -7836,6 +7859,7 @@ fn validate_method(value: &Value) -> bool {
             "task.dismissWorktreeProvisioning",
             "task.rename",
             "task.updateBrief",
+            "task.updateDeveloperNotes",
             "task.close",
             "task.finalizeClosedWorktreeRemoval",
             "task.reopen",
@@ -12147,7 +12171,7 @@ fn validate_task_branch_set_dto(value: &Value) -> bool {
     clippy::redundant_closure
 )]
 fn validate_task_dto(value: &Value) -> bool {
-    value.as_object().is_some_and(|object| object.get("id").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("project_id").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("title").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 160)) && object.get("brief").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() <= 8000) || field.is_null())) && object.get("jira_url").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() <= 2048 && contract_pattern_matches("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$", text)) || field.is_null())) && object.get("status").is_some_and(|field| validate_task_status(field)) && object.get("archived_at_epoch_ms").is_some_and(|field| (field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64))) || field.is_null())) && object.get("branch").is_some_and(|field| (validate_task_branch_dto(field) || field.is_null())) && object.get("branches").is_none_or(|field| validate_task_branch_set_dto(field)) && object.get("worktree").is_some_and(|field| (validate_task_worktree_dto(field) || field.is_null())) && object.get("worktree_provisioning").is_none_or(|field| validate_task_worktree_provisioning_dto(field)) && object.get("rank").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("created_at_epoch_ms").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("updated_at_epoch_ms").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("worktree_generation").is_none_or(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("steward_brief_markdown").is_none_or(|field| field.as_str().is_some_and(|text| text.chars().count() <= 8000 && text.len() <= 8192)) && object.get("steward_brief_revision").is_none_or(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 1_u64)))) && object.get("worktree_health").is_none_or(|field| validate_task_worktree_health_dto(field)) && object.get("worktree_presence").is_none_or(|field| validate_task_worktree_presence_dto(field)) && object.get("worktree_cleanup").is_none_or(|field| validate_task_worktree_cleanup_operation_dto(field)) && object.get("worktree_repair").is_none_or(|field| validate_task_worktree_repair_operation_dto(field)) && object.get("worktree_stale_resolution").is_none_or(|field| validate_task_worktree_stale_resolution_operation_dto(field)) && object.keys().all(|key| ["id", "project_id", "title", "brief", "jira_url", "status", "archived_at_epoch_ms", "branch", "branches", "worktree", "worktree_provisioning", "rank", "created_at_epoch_ms", "updated_at_epoch_ms", "worktree_generation", "steward_brief_markdown", "steward_brief_revision", "worktree_health", "worktree_presence", "worktree_cleanup", "worktree_repair", "worktree_stale_resolution"].contains(&key.as_str())))
+    value.as_object().is_some_and(|object| object.get("id").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("project_id").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1)) && object.get("title").is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 160)) && object.get("brief").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() <= 8000) || field.is_null())) && object.get("developer_notes").is_none_or(|field| field.as_array().is_some_and(|items| items.len() <= 50 && items.iter().all(|item| validate_task_developer_note_dto(item)))) && object.get("jira_url").is_some_and(|field| (field.as_str().is_some_and(|text| text.chars().count() <= 2048 && contract_pattern_matches("^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/browse/[A-Z][A-Z0-9]{0,63}-[1-9][0-9]{0,19}$", text)) || field.is_null())) && object.get("status").is_some_and(|field| validate_task_status(field)) && object.get("archived_at_epoch_ms").is_some_and(|field| (field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64))) || field.is_null())) && object.get("branch").is_some_and(|field| (validate_task_branch_dto(field) || field.is_null())) && object.get("branches").is_none_or(|field| validate_task_branch_set_dto(field)) && object.get("worktree").is_some_and(|field| (validate_task_worktree_dto(field) || field.is_null())) && object.get("worktree_provisioning").is_none_or(|field| validate_task_worktree_provisioning_dto(field)) && object.get("rank").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("created_at_epoch_ms").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("updated_at_epoch_ms").is_some_and(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("worktree_generation").is_none_or(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 0_u64)))) && object.get("steward_brief_markdown").is_none_or(|field| field.as_str().is_some_and(|text| text.chars().count() <= 8000 && text.len() <= 8192)) && object.get("steward_brief_revision").is_none_or(|field| field.as_number().is_some_and(|number| (number.as_i64().is_some() || number.as_u64().is_some()) && (number.as_u64().is_some_and(|number| number >= 1_u64)))) && object.get("worktree_health").is_none_or(|field| validate_task_worktree_health_dto(field)) && object.get("worktree_presence").is_none_or(|field| validate_task_worktree_presence_dto(field)) && object.get("worktree_cleanup").is_none_or(|field| validate_task_worktree_cleanup_operation_dto(field)) && object.get("worktree_repair").is_none_or(|field| validate_task_worktree_repair_operation_dto(field)) && object.get("worktree_stale_resolution").is_none_or(|field| validate_task_worktree_stale_resolution_operation_dto(field)) && object.keys().all(|key| ["id", "project_id", "title", "brief", "developer_notes", "jira_url", "status", "archived_at_epoch_ms", "branch", "branches", "worktree", "worktree_provisioning", "rank", "created_at_epoch_ms", "updated_at_epoch_ms", "worktree_generation", "steward_brief_markdown", "steward_brief_revision", "worktree_health", "worktree_presence", "worktree_cleanup", "worktree_repair", "worktree_stale_resolution"].contains(&key.as_str())))
 }
 
 #[allow(
@@ -14352,6 +14376,70 @@ fn validate_task_update_brief_params(value: &Value) -> bool {
             && object
                 .keys()
                 .all(|key| ["taskId", "brief"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_task_developer_note_dto(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.get("id").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 120)
+        }) && object.get("text").is_some_and(|field| {
+            field
+                .as_str()
+                .is_some_and(|text| text.chars().count() >= 1 && text.chars().count() <= 280)
+        }) && object
+            .get("completed")
+            .is_some_and(|field| field.is_boolean())
+            && object
+                .keys()
+                .all(|key| ["id", "text", "completed"].contains(&key.as_str()))
+    })
+}
+
+#[allow(
+    dead_code,
+    unused_comparisons,
+    unused_parens,
+    unused_variables,
+    clippy::absurd_extreme_comparisons,
+    clippy::len_zero,
+    clippy::redundant_closure
+)]
+fn validate_task_update_developer_notes_params(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object
+            .get("taskId")
+            .is_some_and(|field| field.as_str().is_some_and(|text| text.chars().count() >= 1))
+            && object.get("expectedDeveloperNotes").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 50
+                        && items
+                            .iter()
+                            .all(|item| validate_task_developer_note_dto(item))
+                })
+            })
+            && object.get("developerNotes").is_some_and(|field| {
+                field.as_array().is_some_and(|items| {
+                    items.len() <= 50
+                        && items
+                            .iter()
+                            .all(|item| validate_task_developer_note_dto(item))
+                })
+            })
+            && object.keys().all(|key| {
+                ["taskId", "expectedDeveloperNotes", "developerNotes"].contains(&key.as_str())
+            })
     })
 }
 
@@ -27527,6 +27615,10 @@ pub fn validate_method_params(method: &str, params: &Value) -> bool {
             serde_json::from_value::<TaskUpdateBriefParams>(params.clone()).is_ok()
                 && validate_task_update_brief_params(params)
         }
+        "task.updateDeveloperNotes" => {
+            serde_json::from_value::<TaskUpdateDeveloperNotesParams>(params.clone()).is_ok()
+                && validate_task_update_developer_notes_params(params)
+        }
         "task.close" => {
             serde_json::from_value::<TaskCloseParams>(params.clone()).is_ok()
                 && validate_task_id_params(params)
@@ -28234,6 +28326,10 @@ pub fn validate_method_result(method: &str, result: &Value) -> bool {
         }
         "task.updateBrief" => {
             serde_json::from_value::<TaskUpdateBriefResult>(result.clone()).is_ok()
+                && validate_task_dto(result)
+        }
+        "task.updateDeveloperNotes" => {
+            serde_json::from_value::<TaskUpdateDeveloperNotesResult>(result.clone()).is_ok()
                 && validate_task_dto(result)
         }
         "task.close" => {

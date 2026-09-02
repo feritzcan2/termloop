@@ -1,6 +1,6 @@
-/// Client-local notes for a developer's own Task follow-up. They deliberately
-/// do not enter the shared Task projection: Core owns Task lifecycle, while
-/// this small checklist belongs only to the desktop user and this profile.
+/// Legacy client-local developer notes. The sidebar reads these only to migrate
+/// notes created before durable Task synchronization was introduced, then
+/// clears the Task entry after the daemon accepts them.
 const TASK_DEVELOPER_NOTES_KEY = "termloop.taskDeveloperNotes.v1";
 export const MAX_TASK_DEVELOPER_NOTES = 50;
 export const MAX_TASK_DEVELOPER_NOTE_LENGTH = 280;
@@ -91,4 +91,3 @@ export function writeTaskDeveloperNotes(
     // A blocked or full preference store must not make the Task rail unusable.
   }
 }
-

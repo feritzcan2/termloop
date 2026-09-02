@@ -24,6 +24,7 @@ import {
   type QuickActionLaunchParams,
   type ResultFor,
   type TaskProvisionWorktreeParams,
+  type TaskUpdateDeveloperNotesParams,
 } from "@termloop/contract/current";
 import {
   connectionConfig,
@@ -763,6 +764,9 @@ handleIpc("termloop:task-rename", (_event, taskId: string, title: string) =>
 );
 handleIpc("termloop:task-update-brief", (_event, taskId: string, brief: string | null) =>
   controlCall("task.updateBrief", { taskId, brief }),
+);
+handleIpc("termloop:task-update-developer-notes", (_event, params: TaskUpdateDeveloperNotesParams) =>
+  typedControlCall("task.updateDeveloperNotes", params),
 );
 handleIpc("termloop:task-close", (_event, taskId: string) =>
   controlCall("task.close", { taskId }),

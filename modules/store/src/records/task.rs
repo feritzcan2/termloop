@@ -1,4 +1,7 @@
-use termloop_domain::{TASK_STEWARD_BRIEF_MAX_BYTES, TaskBranchBinding, TaskRecord, TaskStatus};
+use termloop_domain::{
+    TASK_DEVELOPER_NOTES_MAX, TASK_STEWARD_BRIEF_MAX_BYTES, TaskBranchBinding, TaskDeveloperNote,
+    TaskRecord, TaskStatus,
+};
 
 use super::super::{CoreWriteAuthority, Store, StoreError};
 
@@ -50,6 +53,44 @@ impl Store {
         if !changed {
             return Ok(updated);
         }
+        self.commit_or_restore(previous)?;
+        Ok(updated)
+    }
+
+    pub fn update_task_developer_notes(
+        &mut self,
+        _authority: &CoreWriteAuthority,
+        task_id: &str,
+        expected_notes: &[TaskDeveloperNote],
+        developer_notes: Vec<TaskDeveloperNote>,
+        updated_at_epoch_ms: u64,
+    ) -> Result<TaskRecord, StoreError> {
+        if developer_notes.len() > TASK_DEVELOPER_NOTES_MAX
+            || developer_notes.iter().any(|note| !note.is_valid())
+            || developer_notes.iter().enumerate().any(|(index, note)| {
+                developer_notes[index + 1..]
+                    .iter()
+                    .any(|candidate| candidate.id == note.id)
+            })
+        {
+            return Err(StoreError::ConstraintViolation);
+        }
+        let previous = self.state.clone();
+        let task = self
+            .state
+            .tasks
+            .iter_mut()
+            .find(|value| value.id == task_id)
+            .ok_or(StoreError::NotFound)?;
+        if task.developer_notes != expected_notes {
+            return Err(StoreError::RevisionConflict);
+        }
+        if task.developer_notes == developer_notes {
+            return Ok(task.clone());
+        }
+        task.developer_notes = developer_notes;
+        task.updated_at_epoch_ms = updated_at_epoch_ms.max(task.updated_at_epoch_ms + 1);
+        let updated = task.clone();
         self.commit_or_restore(previous)?;
         Ok(updated)
     }

@@ -1,8 +1,8 @@
 use termloop_domain::{
     COMPANION_TRANSCRIPT_HARD_BYTES, COMPANION_TRANSCRIPT_HARD_MESSAGES, IssueLinkProvider,
-    SessionKind, SessionRelocationStage, SessionRelocationTarget, TASK_STEWARD_BRIEF_MAX_BYTES,
-    TaskStatus, TaskSuspensionReason, WorktreeCleanupBlocker, WorktreeCleanupFailure,
-    WorktreeCleanupMode, WorktreeCleanupOperation, WorktreeCleanupReceipt,
+    SessionKind, SessionRelocationStage, SessionRelocationTarget, TASK_DEVELOPER_NOTES_MAX,
+    TASK_STEWARD_BRIEF_MAX_BYTES, TaskStatus, TaskSuspensionReason, WorktreeCleanupBlocker,
+    WorktreeCleanupFailure, WorktreeCleanupMode, WorktreeCleanupOperation, WorktreeCleanupReceipt,
     WorktreeStaleResolutionFailure, WorktreeStaleResolutionOperation,
     WorktreeStaleResolutionReceipt,
 };
@@ -66,6 +66,17 @@ pub(super) fn validate_current_state(state: &CurrentState) -> Result<(), StoreEr
             })
         || state.tasks.iter().any(|task| {
             (task.worktree.is_some() && task.branch.is_none())
+                || task.developer_notes.len() > TASK_DEVELOPER_NOTES_MAX
+                || task.developer_notes.iter().any(|note| !note.is_valid())
+                || task
+                    .developer_notes
+                    .iter()
+                    .enumerate()
+                    .any(|(index, note)| {
+                        task.developer_notes[index + 1..]
+                            .iter()
+                            .any(|candidate| candidate.id == note.id)
+                    })
                 || task.steward_brief_revision == 0
                 || task.steward_brief_markdown.len() > TASK_STEWARD_BRIEF_MAX_BYTES
                 || (!task.steward_brief_markdown.is_empty()
