@@ -126,7 +126,10 @@ interface MobileControlResults {
   "companion.proposalRespond": CompanionProposalRespondResult;
 }
 
-const REQUEST_TIMEOUT_MS = 5_000;
+/// Includes Tailnet wake-up and WebSocket authentication. Five seconds caused a
+/// retry loop to retire the native socket at exactly the point an iPhone was still
+/// restoring its VPN route after foregrounding.
+const REQUEST_TIMEOUT_MS = 12_000;
 /// A successful control response is stronger reachability evidence than another
 /// dedicated version probe. Reusing it for one foreground polling window avoids
 /// making the health check race the overview reads on the same WebSocket.

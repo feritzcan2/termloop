@@ -154,6 +154,10 @@ export interface ProductionRuntimeOptions {
   /// Enables the v2 route-independent `/mobile` transport. Kept injectable so
   /// legacy adapter tests can exercise the v1 control/terminal fallbacks.
   readonly multiplexSocketFactory?: DataSocketFactory;
+  /// Secret-free HTTP reachability proof used before allocating a native multiplex
+  /// WebSocket. Production enables it; adapter tests may omit it when exercising
+  /// transport state directly.
+  readonly connectionPreflight?: (connection: SavedConnection) => Promise<void>;
   readonly fetch?: typeof fetch;
   readonly watchBridge?: {
     syncCredentials(
@@ -225,10 +229,14 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
     if (current?.coordinator.matches(connection)) return current.coordinator;
     current?.unsubscribeStatus();
     current?.coordinator.close();
+    const connectionPreflight = options.connectionPreflight;
     const coordinator = new MobileConnectionCoordinator(
       connection,
       options.multiplexSocketFactory,
       diagnostics,
+      connectionPreflight === undefined
+        ? undefined
+        : () => connectionPreflight(connection),
     );
     const unsubscribeStatus = coordinator.subscribeStatus((status) => {
       const cached = profileCache.get(connection.id);
