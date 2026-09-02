@@ -406,6 +406,26 @@ pub struct TaskWorktreeBinding {
 
 /// Byte bound for the one current Steward-authored Task brief.
 pub const TASK_STEWARD_BRIEF_MAX_BYTES: usize = 8 * 1024;
+pub const TASK_DEVELOPER_NOTES_MAX: usize = 50;
+pub const TASK_DEVELOPER_NOTE_ID_MAX_CHARS: usize = 120;
+pub const TASK_DEVELOPER_NOTE_TEXT_MAX_CHARS: usize = 280;
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskDeveloperNote {
+    pub id: String,
+    pub text: String,
+    pub completed: bool,
+}
+
+impl TaskDeveloperNote {
+    pub fn is_valid(&self) -> bool {
+        !self.id.is_empty()
+            && self.id.chars().count() <= TASK_DEVELOPER_NOTE_ID_MAX_CHARS
+            && !self.text.trim().is_empty()
+            && self.text.chars().count() <= TASK_DEVELOPER_NOTE_TEXT_MAX_CHARS
+    }
+}
 
 const fn initial_steward_brief_revision() -> u64 {
     1
@@ -417,6 +437,8 @@ pub struct TaskRecord {
     pub project_id: String,
     pub title: String,
     pub brief: Option<String>,
+    #[serde(default)]
+    pub developer_notes: Vec<TaskDeveloperNote>,
     pub status: TaskStatus,
     #[serde(default)]
     pub archived_at_epoch_ms: Option<u64>,

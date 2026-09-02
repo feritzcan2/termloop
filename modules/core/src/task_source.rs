@@ -796,6 +796,7 @@ impl CoreRuntime {
             project_id: source.project_id,
             title: imported_title(&candidate.candidate),
             brief: imported_brief(&candidate.candidate),
+            developer_notes: Vec::new(),
             status: TaskStatus::Open,
             archived_at_epoch_ms: None,
             branch: None,

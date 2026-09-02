@@ -105,6 +105,45 @@ fn worktree_less_task_lifecycle_is_current_state_only() {
 }
 
 #[test]
+fn developer_notes_are_durable_and_compare_and_swap_the_current_list() {
+    let mut fixture = Fixture::new();
+    let task = fixture.create_task("Track follow-up", Value::Null);
+    let task_id = task["id"].as_str().unwrap();
+    assert_eq!(task["developer_notes"], json!([]));
+
+    let first =
+        json!([{ "id": "note-1", "text": "Review the narrow sidebar", "completed": false }]);
+    let updated = fixture
+        .runtime
+        .update_task_developer_notes(json!({
+            "taskId": task_id,
+            "expectedDeveloperNotes": [],
+            "developerNotes": first,
+        }))
+        .unwrap();
+    assert_eq!(updated["developer_notes"], first);
+
+    assert!(matches!(
+        fixture.runtime.update_task_developer_notes(json!({
+            "taskId": task_id,
+            "expectedDeveloperNotes": [],
+            "developerNotes": [{ "id": "note-2", "text": "Stale write", "completed": false }],
+        })),
+        Err(CoreError::RevisionConflict)
+    ));
+
+    let completed = fixture
+        .runtime
+        .update_task_developer_notes(json!({
+            "taskId": task_id,
+            "expectedDeveloperNotes": first,
+            "developerNotes": [{ "id": "note-1", "text": "Review the narrow sidebar", "completed": true }],
+        }))
+        .unwrap();
+    assert_eq!(completed["developer_notes"][0]["completed"], true);
+}
+
+#[test]
 fn task_list_cursor_is_opaque_filter_scoped_and_revision_fenced() {
     let mut fixture = Fixture::new();
     let first = fixture.create_task("First", Value::Null);

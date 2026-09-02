@@ -579,6 +579,14 @@
         "$ref": "#/$defs/taskDto"
       }
     },
+    "task.updateDeveloperNotes": {
+      "params": {
+        "$ref": "#/$defs/taskUpdateDeveloperNotesParams"
+      },
+      "result": {
+        "$ref": "#/$defs/taskDto"
+      }
+    },
     "task.close": {
       "params": {
         "$ref": "#/$defs/taskIdParams"
@@ -1455,6 +1463,7 @@
         "task.dismissWorktreeProvisioning",
         "task.rename",
         "task.updateBrief",
+        "task.updateDeveloperNotes",
         "task.close",
         "task.finalizeClosedWorktreeRemoval",
         "task.reopen",
@@ -4593,6 +4602,11 @@
           ],
           "maxLength": 8000
         },
+        "developer_notes": {
+          "type": "array",
+          "maxItems": 50,
+          "items": { "$ref": "#/$defs/taskDeveloperNoteDto" }
+        },
         "jira_url": {
           "type": [
             "string",
@@ -6201,6 +6215,38 @@
             "null"
           ],
           "maxLength": 8000
+        }
+      }
+    },
+    "taskDeveloperNoteDto": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskDeveloperNoteDto",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text", "completed"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 280 },
+        "completed": { "type": "boolean" }
+      }
+    },
+    "taskUpdateDeveloperNotesParams": {
+      "x-codegen": true,
+      "x-codegen-name": "TaskUpdateDeveloperNotesParams",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskId", "expectedDeveloperNotes", "developerNotes"],
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1 },
+        "expectedDeveloperNotes": {
+          "type": "array",
+          "maxItems": 50,
+          "items": { "$ref": "#/$defs/taskDeveloperNoteDto" }
+        },
+        "developerNotes": {
+          "type": "array",
+          "maxItems": 50,
+          "items": { "$ref": "#/$defs/taskDeveloperNoteDto" }
         }
       }
     },

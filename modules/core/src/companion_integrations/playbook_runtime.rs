@@ -858,6 +858,7 @@ mod tests {
                         project_id: project_id.clone(),
                         title: task_id.into(),
                         brief: None,
+                        developer_notes: vec![],
                         status: termloop_domain::TaskStatus::Open,
                         archived_at_epoch_ms: None,
                         branch: None,

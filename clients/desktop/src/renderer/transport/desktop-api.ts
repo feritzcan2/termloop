@@ -155,6 +155,7 @@ import type {
   TaskArchiveAbandonResultDto,
   TaskRestoreResultDto,
   TaskArchivedContextDto,
+  TaskUpdateDeveloperNotesParams,
   SessionArchivePreviewDto,
   SessionRelocationPreviewDto,
   SessionRepairProviderHistoryResult,
@@ -285,6 +286,7 @@ export type DesktopApi = {
   taskCreate(projectId: string, title: string, brief: string | null): Promise<Task>;
   taskRename(taskId: string, title: string): Promise<Task>;
   taskUpdateBrief(taskId: string, brief: string | null): Promise<Task>;
+  taskUpdateDeveloperNotes(params: TaskUpdateDeveloperNotesParams): Promise<Task>;
   taskClose(taskId: string): Promise<Task>;
   taskFinalizeClosedWorktreeRemoval(taskId: string): Promise<Task>;
   taskInspectArchive(taskId: string): Promise<TaskArchivePreviewDto>;
