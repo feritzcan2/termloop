@@ -22,6 +22,7 @@ import {
   validWatchReply,
 } from "../scripts/mobile-access-terminal-input.mjs";
 import {
+  preferPrimaryTranscription,
   transcriptionOf,
   validVoiceUpload,
   voiceContainerOf,
@@ -57,6 +58,26 @@ describe("watch voice upload helpers", () => {
       .toEqual({ text: "merhaba stew", onDevice: true });
     expect(transcriptionOf('{"text":"","onDevice":false}')).toEqual({ text: "", onDevice: false });
     expect(() => transcriptionOf("not json")).toThrow();
+  });
+
+  it("starts both transcribers but keeps OpenAI authoritative when it succeeds", async () => {
+    let resolveOpenAI;
+    const openAI = new Promise((resolve) => { resolveOpenAI = resolve; });
+    const apple = Promise.resolve("apple was faster");
+    const selected = preferPrimaryTranscription(openAI, apple);
+
+    resolveOpenAI("openai wins");
+    await expect(selected).resolves.toEqual({ provider: "openai", transcription: "openai wins" });
+  });
+
+  it("uses the already-running Apple result only after OpenAI fails", async () => {
+    const openAI = Promise.reject(new Error("provider failed"));
+    const apple = Promise.resolve("apple fallback");
+
+    await expect(preferPrimaryTranscription(openAI, apple)).resolves.toEqual({
+      provider: "apple",
+      transcription: "apple fallback",
+    });
   });
 
 });
