@@ -1,6 +1,6 @@
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -19,13 +19,19 @@ import { ProjectSelector } from "@/components/project-selector";
 import { MockBadge, Screen, ScreenHeader } from "@/components/screen";
 import { TerminalView } from "@/components/terminal-view";
 import { useConnections } from "@/features/connection/connection-store";
-import { connectionRouteParams } from "@/features/connection/connection-route";
+import {
+  connectionRouteParams,
+  missingSessionRouteState,
+  resolveSessionRouteConnectionId,
+} from "@/features/connection/connection-route";
 import { useOverview } from "@/features/overview/overview-store";
 import { SessionActionsSheet } from "@/features/session-actions/session-actions-sheet";
 import { takePendingSessionInput } from "@/features/terminal/pending-session-input";
 import { useTerminalSession, type TerminalKey } from "@/features/terminal/use-terminal-session";
+import { mobileDiagnostics } from "@/platform/mobile-diagnostics";
 import { keyboardAvoidingBehavior } from "@/platform/presentation";
 import { buildProjectSummaries } from "@/presentation/attention-overview";
+import { connectionPresentation } from "@/presentation/connection-presentation";
 import { agentName, basename, sessionLabel, taskIdBySessionId } from "@/presentation/dto-readers";
 import { sessionState } from "@/presentation/session-presentation";
 import type { TerminalStreamState } from "@/presentation/terminal-buffer";
@@ -77,10 +83,22 @@ export default function SessionRoute() {
   const [imageSending, setImageSending] = useState(false);
   const [fontSizeIndex, setFontSizeIndex] = useState(1);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const lastRouteDiagnostic = useRef<string | undefined>(undefined);
 
-  const selectingRouteConnection = connectionId !== undefined
-    && connections.selectedId !== connectionId;
-  const session = selectingRouteConnection
+  const connectionScopes = useMemo(() => connections.connections.map((connection) => ({
+    connectionId: connection.id,
+    sessionIds: store.byConnection.get(connection.id)?.overview?.sessions.map(({ id }) => id) ?? [],
+  })), [connections.connections, store.byConnection]);
+  const resolvedRouteConnectionId = resolveSessionRouteConnectionId(
+    connectionId,
+    sessionId,
+    connectionScopes,
+  ) ?? (connectionId === undefined ? connections.selectedId : undefined);
+  const selectingRouteConnection = resolvedRouteConnectionId !== undefined
+    && connections.selectedId !== resolvedRouteConnectionId;
+  const unresolvedScopedRoute = connectionId !== undefined
+    && resolvedRouteConnectionId === undefined;
+  const session = selectingRouteConnection || unresolvedScopedRoute
     ? undefined
     : store.overview?.sessions.find((candidate) => candidate.id === sessionId);
   const status = store.overview?.agentStatuses.find((candidate) => candidate.sessionId === sessionId);
@@ -105,10 +123,11 @@ export default function SessionRoute() {
   );
   const stream = streamPresentation[terminal.buffer.stream];
   useEffect(() => {
-    if (connectionId !== undefined && connections.selectedId !== connectionId) {
-      connections.select(connectionId);
+    if (resolvedRouteConnectionId !== undefined
+      && connections.selectedId !== resolvedRouteConnectionId) {
+      connections.select(resolvedRouteConnectionId);
     }
-  }, [connectionId, connections.select, connections.selectedId]);
+  }, [resolvedRouteConnectionId, connections.select, connections.selectedId]);
   useEffect(() => {
     if (sessionId) store.dismissReview(sessionId);
   }, [sessionId, store.dismissReview]);
@@ -122,14 +141,99 @@ export default function SessionRoute() {
     if (pending !== undefined) setDraft((current) => current.length === 0 ? pending : current);
   }, [connections.selectedId, session?.id, session?.runtime_epoch]);
 
+  const targetConnectionSelected = resolvedRouteConnectionId !== undefined
+    && connections.selectedId === resolvedRouteConnectionId;
+  const targetConnectionPresentation = targetConnectionSelected && connections.selected !== undefined
+    ? connectionPresentation(connections.selected.availability)
+    : undefined;
+  const unresolvedSnapshots = connections.connections
+    .map(({ id }) => store.byConnection.get(id));
+  const routeState = missingSessionRouteState({
+    catalogLoad: connections.load,
+    selectingConnection: selectingRouteConnection,
+    targetConnectionSelected,
+    targetConnectionReadable: targetConnectionPresentation !== undefined
+      && targetConnectionPresentation.block === undefined,
+    overviewLoad: store.load,
+    unresolvedProjectionsPending: unresolvedSnapshots.some((snapshot) => (
+      snapshot === undefined || snapshot.load === "idle" || snapshot.load === "loading"
+    )),
+    unresolvedProjectionFailed: unresolvedSnapshots.some((snapshot) => snapshot?.load === "failed"),
+  });
+  const unresolvedOverviewError = targetConnectionSelected
+    ? store.error
+    : unresolvedSnapshots.find((snapshot) => snapshot?.load === "failed")?.error;
+  const retryRoute = () => {
+    connections.refresh();
+    store.refresh();
+  };
+  useEffect(() => {
+    if (session !== undefined || routeState === "loading") {
+      lastRouteDiagnostic.current = undefined;
+      return;
+    }
+    const signature = `${routeState}:${connectionId ?? "none"}:${resolvedRouteConnectionId ?? "none"}`;
+    if (lastRouteDiagnostic.current === signature) return;
+    lastRouteDiagnostic.current = signature;
+    mobileDiagnostics.report("navigation", "session_route_unresolved", {
+      connectionId,
+      sessionId,
+      hasResolvedConnection: resolvedRouteConnectionId !== undefined,
+      pairedConnectionCount: connections.connections.length,
+      reason: routeState,
+    });
+  }, [
+    connectionId,
+    connections.connections.length,
+    resolvedRouteConnectionId,
+    routeState,
+    session,
+    sessionId,
+  ]);
+
   if (!session) {
+    const placeholder = routeState === "loading"
+      ? <ActivityIndicator color={color.accentStrong} />
+      : routeState === "catalogFailed"
+        ? (
+          <Banner
+            kind="danger"
+            message={connections.error ?? "The saved Macs could not be read."}
+            action="Retry"
+            onAction={retryRoute}
+          />
+        )
+        : routeState === "overviewFailed"
+          ? (
+            <Banner
+              kind="danger"
+              message={unresolvedOverviewError ?? "This Mac's sessions could not be read."}
+              action="Retry"
+              onAction={retryRoute}
+            />
+          )
+          : routeState === "connectionBlocked"
+            ? (
+              <Banner
+                kind="warning"
+                message={targetConnectionPresentation?.summary ?? "This Mac is not available right now."}
+                action="Retry"
+                onAction={retryRoute}
+              />
+            )
+            : (
+              <Banner
+                kind="warning"
+                message="This session is no longer in a connected Mac's projection."
+                action="Retry"
+                onAction={retryRoute}
+              />
+            );
     return (
       <Screen edges={["top", "bottom"]}>
         <ScreenHeader back="Project" title="Session" right={<MockBadge />} />
         <View style={styles.centre}>
-          {store.load === "ready" && !selectingRouteConnection
-            ? <Banner kind="warning" message="This session is no longer in the connected Mac's projection." />
-            : <ActivityIndicator color={color.accentStrong} />}
+          {placeholder}
         </View>
       </Screen>
     );

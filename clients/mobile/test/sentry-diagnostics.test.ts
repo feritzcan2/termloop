@@ -60,6 +60,28 @@ describe("mobile Sentry diagnostics", () => {
     expect(JSON.stringify(diagnostic)).not.toContain("mac-private");
     expect(JSON.stringify(diagnostic)).not.toContain("session-private");
   });
+
+  it("keeps unresolved Session-route evidence without exposing route identities", () => {
+    const diagnostic = mobileSentryDiagnostic(event("navigation", "session_route_unresolved", {
+      connectionId: "mac-private",
+      sessionId: "session-private",
+      hasResolvedConnection: false,
+      pairedConnectionCount: 2,
+      reason: "overviewFailed",
+    }));
+
+    expect(diagnostic).toMatchObject({
+      message: "mobile.navigation.session_route_unresolved",
+      level: "info",
+      attributes: {
+        hasResolvedConnection: false,
+        pairedConnectionCount: 2,
+        reason: "overviewFailed",
+      },
+    });
+    expect(JSON.stringify(diagnostic)).not.toContain("mac-private");
+    expect(JSON.stringify(diagnostic)).not.toContain("session-private");
+  });
 });
 
 function event(
