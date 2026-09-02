@@ -20,7 +20,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "ai.termloop.mobile",
-      "buildNumber": "202608272300",
+      "buildNumber": "202609012354",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSSupportsLiveActivities": true,
@@ -43,6 +43,14 @@
         }
       ],
       "expo-secure-store",
+      [
+        "@sentry/react-native/expo",
+        {
+          "organization": "agentloop-22",
+          "project": "termloop-mobile",
+          "url": "https://sentry.io/"
+        }
+      ],
       [
         "expo-camera",
         {

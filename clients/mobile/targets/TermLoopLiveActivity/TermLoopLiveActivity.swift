@@ -1,5 +1,5 @@
 import ActivityKit
-import StewardLiveActivity
+import StewardLiveActivityWidgetModel
 import SwiftUI
 import WidgetKit
 

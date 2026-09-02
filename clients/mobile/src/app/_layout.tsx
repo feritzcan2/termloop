@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/react-native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -10,13 +11,14 @@ import { OverviewProvider } from "@/features/overview/overview-store";
 import { WatchSyncCoordinator } from "@/features/watch/watch-sync-coordinator";
 import { StewardVoiceDock } from "@/components/steward-voice-dock";
 import { AppLifecycleProvider } from "@/platform/app-lifecycle";
+import "@/platform/mobile-sentry";
 import { color } from "@/theme/tokens";
 
 /// The native header is off for every route. Each screen renders its own 47pt header
 /// so it can carry the Project selector and a compact right slot at the geometry the
 /// legacy mobile client proved on a phone; the stack still owns navigation and the
 /// iOS back gesture.
-export default function RootLayout() {
+function RootLayout() {
   return (
     <SafeAreaProvider>
       <AppLifecycleProvider>
@@ -50,3 +52,5 @@ export default function RootLayout() {
     </SafeAreaProvider>
   );
 }
+
+export default Sentry.wrap(RootLayout);
