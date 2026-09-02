@@ -79,6 +79,25 @@ fn mcp_tool_errors_are_schema_generated_and_strict() {
         jira_error.code,
         termloop_contract::current::McpToolErrorCode::JiraUrlAlreadySet
     ));
+    let existing_agent: McpToolError = serde_json::from_value(json!({
+        "code": "taskAgentStartFailed",
+        "message": "use the existing Agent",
+        "details": {
+            "taskId": "task-1",
+            "sessionId": "123e4567-e89b-42d3-a456-426614174000",
+            "suggestedAction": "messageExistingAgent"
+        }
+    }))
+    .unwrap();
+    let existing_agent_details = existing_agent.details.unwrap();
+    assert_eq!(
+        existing_agent_details.session_id.as_deref(),
+        Some("123e4567-e89b-42d3-a456-426614174000")
+    );
+    assert_eq!(
+        existing_agent_details.suggested_action.as_deref(),
+        Some("messageExistingAgent")
+    );
     let pending_proposal: McpToolError = serde_json::from_value(json!({
         "code": "proposalPending",
         "message": "awaiting a decision",
@@ -203,6 +222,11 @@ fn steward_task_agent_selection_is_optional_bounded_and_reported() {
         .iter()
         .find(|definition| definition["name"] == "task_agent_start")
         .unwrap();
+    assert!(
+        definition["description"]
+            .as_str()
+            .is_some_and(|description| description.contains("messageExistingAgent"))
+    );
     assert_eq!(
         definition["inputSchema"]["properties"]["agentId"]["enum"],
         json!(["claude", "codex"])

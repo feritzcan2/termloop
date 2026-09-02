@@ -2281,6 +2281,205 @@ fn task_launch_requires_a_managed_worktree_without_spawning() {
 }
 
 #[test]
+fn steward_launch_ticket_refuses_an_agent_that_appeared_in_the_task_worktree() {
+    let root = std::env::temp_dir().join(format!(
+        "termloop-core-steward-duplicate-agent-{}-{}",
+        std::process::id(),
+        Uuid::new_v4()
+    ));
+    let worktree = root.join("task-worktree");
+    std::fs::create_dir_all(&worktree).unwrap();
+    let repository_root = termloop_platform::canonical_existing_directory_path(&root)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let worktree_path = termloop_platform::canonical_existing_directory_path(&worktree)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let authority = termloop_store::issue_core_write_authority_for_composition();
+    let store = Store::open(root.join("state.json")).unwrap();
+    let mut runtime = CoreRuntime::new(store, authority, TerminalService::default(), 1).unwrap();
+    let project = runtime
+        .handle(
+            "project.create",
+            json!({"name":"Demo","folderPath":repository_root}),
+        )
+        .unwrap();
+    let project_id = project["id"].as_str().unwrap().to_owned();
+    let task = runtime
+        .handle(
+            "task.create",
+            json!({
+                "projectId": project_id,
+                "title": "Task",
+                "brief": null,
+                "worktreeIntent": "none"
+            }),
+        )
+        .unwrap();
+    let task_id = task["id"].as_str().unwrap().to_owned();
+    let operation_id = Uuid::new_v4().to_string();
+    let branch_name = "termloop/task";
+    let spec = termloop_domain::NormalizedWorktreeSpec {
+        version: 1,
+        repository_root: repository_root.clone(),
+        repository_common_dir: root.join(".git").display().to_string(),
+        destination_path: worktree_path.clone(),
+        branch_name: branch_name.into(),
+        branch_mode: termloop_domain::ProvisioningBranchMode::Create,
+        base_ref: Some("refs/heads/main".into()),
+        base_oid: Some("a".repeat(40)),
+    };
+    runtime
+        .store
+        .begin_task_worktree_provisioning(
+            &runtime.write_authority,
+            termloop_domain::WorktreeProvisioningOperation {
+                operation_id: operation_id.clone(),
+                task_id: task_id.clone(),
+                project_id: project_id.clone(),
+                spec: spec.clone(),
+                stage: termloop_domain::ProvisioningStage::Reserved,
+                created_branch_ref: false,
+                failure: None,
+                started_at_epoch_ms: 1,
+                updated_at_epoch_ms: 1,
+            },
+        )
+        .unwrap();
+    runtime
+        .store
+        .advance_task_worktree_provisioning(
+            &runtime.write_authority,
+            &task_id,
+            &operation_id,
+            termloop_domain::ProvisioningStage::WorktreeAdded,
+            true,
+            2,
+        )
+        .unwrap();
+    let bound_task = runtime
+        .store
+        .commit_task_worktree_provisioning(
+            &runtime.write_authority,
+            &task_id,
+            &operation_id,
+            termloop_store::ProvisioningCommit {
+                branch: termloop_domain::TaskBranchBinding {
+                    repository_root: repository_root.clone(),
+                    name: branch_name.into(),
+                },
+                worktree: termloop_domain::TaskWorktreeBinding {
+                    path: worktree_path.clone(),
+                },
+                proof: termloop_domain::ManagedWorktreeProof {
+                    task_id: task_id.clone(),
+                    operation_id: operation_id.clone(),
+                    worktree_generation: 0,
+                    normalized_spec_version: 1,
+                    normalized_spec: spec,
+                    repository_common_dir: root.join(".git").display().to_string(),
+                    registered_worktree_path: worktree_path.clone(),
+                    branch_ref: format!("refs/heads/{branch_name}"),
+                },
+                updated_at_epoch_ms: 3,
+            },
+        )
+        .unwrap();
+    runtime
+        .store
+        .clear_task_worktree_provisioning(&runtime.write_authority, &task_id, &operation_id)
+        .unwrap();
+
+    let existing_session_id = "123e4567-e89b-42d3-a456-426614174000";
+    runtime
+        .store
+        .insert_session(
+            &runtime.write_authority,
+            SessionRecord {
+                id: existing_session_id.into(),
+                project_id: project_id.clone(),
+                name: None,
+                kind: SessionKind::Agent,
+                process: ProcessDescriptor {
+                    program: "codex".into(),
+                    args: vec![],
+                    cwd: worktree_path.clone(),
+                    agent_id: Some("codex".into()),
+                    template_ref: Some("builtin.agent.task-kickoff".into()),
+                    template_version: Some(1),
+                },
+                lifecycle_state: "running".into(),
+                runtime_epoch: 1,
+                archived_at_epoch_ms: None,
+                ask_to_source_session_id: None,
+                run_configuration_id: None,
+                improver_target: None,
+                ask_to_continuation: None,
+                resume_ref: None,
+                resume_launch_guard: Some(termloop_domain::ResumeLaunchGuard {
+                    task_id: task_id.clone(),
+                    managed_worktree_operation_id: operation_id.clone(),
+                    worktree_generation: bound_task.worktree_generation,
+                    path: worktree_path.clone(),
+                }),
+                resume_failure: None,
+                launch_selection: AgentLaunchSelection::new(
+                    "gpt-5.6-sol",
+                    "bypassPermissions",
+                    "high",
+                ),
+            },
+        )
+        .unwrap();
+
+    let mut launch_plan = runtime
+        .plan_agent_launch(json!({
+            "projectId": project_id,
+            "cwd": worktree_path,
+            "agentId": "claude"
+        }))
+        .unwrap();
+    launch_plan.task_guard = Some(TaskLaunchGuard {
+        task_id: task_id.clone(),
+        managed_worktree_operation_id: operation_id,
+        worktree_generation: bound_task.worktree_generation,
+        cwd: worktree_path,
+        repository_common_dir: root.join(".git").display().to_string(),
+        branch_ref: format!("refs/heads/{branch_name}"),
+    });
+    let launch_plan = runtime
+        .attach_steward_task_assignment(
+            launch_plan,
+            "123e4567-e89b-42d3-a456-426614174099",
+            &task_id,
+            "Prepare the next delivery artifact.",
+        )
+        .unwrap();
+    let preview = runtime
+        .preview_prepared_task_agent_launch(launch_plan)
+        .unwrap();
+    let error = match runtime.take_agent_launch(json!({
+        "taskId": task_id,
+        "agentId": "claude",
+        "launchTicket": preview["launch_ticket"]
+    })) {
+        Ok(_) => panic!("Steward launch ticket reused an occupied Task worktree"),
+        Err(error) => error,
+    };
+    assert!(matches!(
+        error,
+        CoreError::TaskAgentAlreadyAttached {
+            task_id: existing_task_id,
+            session_id,
+        } if existing_task_id == task_id && session_id == existing_session_id
+    ));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn steward_task_assignment_derives_jira_context_from_the_sidecar() {
     let root = std::env::temp_dir().join(format!(
         "termloop-core-steward-jira-assignment-{}-{}",
