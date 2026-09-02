@@ -136,6 +136,7 @@ export class MobileConnectionCoordinator {
     private readonly connection: SavedConnection,
     private readonly socketFactory: DataSocketFactory,
     private readonly diagnostics: MobileDiagnosticReporter = mobileDiagnostics,
+    private readonly prepareConnection?: () => Promise<void>,
   ) {
     this.control = new MobileControlClient(
       mobileEndpoint(connection.controlUrl),
@@ -401,6 +402,47 @@ export class MobileConnectionCoordinator {
       endpoint: websocketEndpointLabel(mobileEndpoint(this.connection.controlUrl)),
       activeTerminalSubscriptions: this.subscriptions.size,
     });
+    const connecting = this.openPreparedConnection(generation, startedAtEpochMs);
+    this.connecting = connecting;
+    void connecting.then(
+      () => {},
+      () => {
+        if (this.connecting === connecting) this.connecting = undefined;
+      },
+    );
+    return connecting;
+  }
+
+  private async openPreparedConnection(
+    generation: number,
+    startedAtEpochMs: number,
+  ): Promise<DataSocket> {
+    if (this.prepareConnection !== undefined) {
+      const preflightStartedAtEpochMs = Date.now();
+      this.diagnostics.report("connection", "preflight_started", {
+        connectionId: this.connection.id,
+        generation,
+      });
+      try {
+        await this.prepareConnection();
+      } catch (cause: unknown) {
+        this.diagnostics.report("connection", "preflight_failed", {
+          connectionId: this.connection.id,
+          generation,
+          durationMs: Date.now() - preflightStartedAtEpochMs,
+          causeType: cause instanceof Error ? cause.name : typeof cause,
+        });
+        throw cause;
+      }
+      if (generation !== this.generation || this.stopped) {
+        throw new Error("Mobile connection was superseded.");
+      }
+      this.diagnostics.report("connection", "preflight_completed", {
+        connectionId: this.connection.id,
+        generation,
+        durationMs: Date.now() - preflightStartedAtEpochMs,
+      });
+    }
     let socket: DataSocket;
     try {
       socket = this.socketFactory(mobileEndpoint(this.connection.controlUrl));
@@ -409,7 +451,7 @@ export class MobileConnectionCoordinator {
     }
     this.physical = socket;
     socket.binaryType = "arraybuffer";
-    const connecting = new Promise<DataSocket>((resolve, reject) => {
+    return await new Promise<DataSocket>((resolve, reject) => {
       let opened = false;
       let settled = false;
       const fail = (cause: Error) => {
@@ -519,8 +561,6 @@ export class MobileConnectionCoordinator {
         this.handleDisconnected(generation, "socketClose");
       };
     });
-    this.connecting = connecting;
-    return connecting;
   }
 
   private async receive(data: unknown): Promise<void> {

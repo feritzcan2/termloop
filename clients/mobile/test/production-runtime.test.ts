@@ -260,6 +260,72 @@ describe("production control adapter", () => {
     expect(heartbeatPongs).toBe(1);
   });
 
+  it("waits for gateway reachability before allocating the native multiplex socket", async () => {
+    vi.useFakeTimers();
+    try {
+      let finishPreflight: (() => void) | undefined;
+      const preflight = new Promise<void>((resolve) => { finishPreflight = resolve; });
+      let socketCount = 0;
+      const runtime = createProductionRuntime({
+        repository: fixedRepository(saved),
+        connectionPreflight: () => preflight,
+        multiplexSocketFactory() {
+          socketCount += 1;
+          const socket: DataSocket = {
+            binaryType: "blob",
+            readyState: 1,
+            onopen: null,
+            onmessage: null,
+            onerror: null,
+            onclose: null,
+            send(data) {
+              if (typeof data !== "string") return;
+              const message = JSON.parse(data) as { type?: string; id?: string; method?: string };
+              if (message.type === "mobile.authenticate") {
+                queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({
+                  event: "mobile.ready",
+                  mobileTransportVersion: 2,
+                }) }));
+                return;
+              }
+              queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({
+                id: message.id,
+                ok: true,
+                result: controlResult(message.method ?? ""),
+              }) }));
+            },
+            close() {},
+          };
+          queueMicrotask(() => socket.onopen?.());
+          return socket;
+        },
+        controlSocketFactory: () => { throw new Error("legacy control transport used"); },
+        terminalSocketFactory: () => { throw new Error("legacy terminal transport used"); },
+      });
+      let connectionChanges = 0;
+      const unsubscribe = runtime.connections.subscribeChanges(() => { connectionChanges += 1; });
+
+      const firstListing = runtime.connections.list();
+      await vi.advanceTimersByTimeAsync(250);
+      await expect(firstListing).resolves.toEqual([
+        expect.objectContaining({ availability: "reconnecting" }),
+      ]);
+      expect(socketCount).toBe(0);
+
+      finishPreflight?.();
+      await waitFor(() => socketCount === 1);
+      await waitFor(() => connectionChanges > 0);
+      await expect(runtime.connections.list()).resolves.toEqual([
+        expect.objectContaining({ availability: "online" }),
+      ]);
+      expect(socketCount).toBe(1);
+      unsubscribe();
+      runtime.connections.resetTransports();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("publishes a paced multiplex replay once after a full quiet window", async () => {
     vi.useFakeTimers();
     try {
@@ -1059,7 +1125,7 @@ describe("production control adapter", () => {
       await expect(probe).resolves.toEqual([
         expect.objectContaining({ availability: "reconnecting" }),
       ]);
-      await vi.advanceTimersByTimeAsync(9_750);
+      await vi.advanceTimersByTimeAsync(24_750);
       await expect(runtime.connections.list()).resolves.toEqual([
         expect.objectContaining({ availability: "offline" }),
       ]);
@@ -1115,7 +1181,7 @@ describe("production control adapter", () => {
       await expect(recoveredProbe).resolves.toEqual([
         expect.objectContaining({ availability: "reconnecting" }),
       ]);
-      await vi.advanceTimersByTimeAsync(4_750);
+      await vi.advanceTimersByTimeAsync(11_750);
       await expect(runtime.connections.list()).resolves.toEqual([
         expect.objectContaining({ availability: "online" }),
       ]);
@@ -1194,7 +1260,7 @@ describe("production control adapter", () => {
 
       const command = client.call("session.rename", { sessionId, name: "Recovered" });
       const rejected = expect(command).rejects.toThrow("request timeout");
-      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(12_000);
       await rejected;
       expect(socketCount).toBe(1);
     } finally {

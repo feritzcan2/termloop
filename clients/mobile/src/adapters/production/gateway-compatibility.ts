@@ -4,12 +4,27 @@ import { MOBILE_API_VERSION } from "./mobile-control-client";
 
 const MOBILE_TRANSPORT_VERSION = 2;
 const GATEWAY_PROBE_TIMEOUT_MS = 900;
+const GATEWAY_WAKE_TIMEOUT_MS = 4_000;
 
 export type GatewayCompatibilityProbe =
   | "reachable"
   | "unreachable"
   | "gatewayUpdateRequired"
   | "mobileUpdateRequired";
+
+/// Proves the Tailnet route and gateway HTTP listener before iOS is allowed to
+/// allocate another native WebSocket. A CONNECTING WebSocket can outlive its JS
+/// wrapper for tens of seconds after `close()`, so blind retries accumulate stale
+/// handshakes and only an app restart clears them. The secret-free health request
+/// wakes the same route without creating another terminal transport.
+export async function waitForGatewayReachability(
+  connection: SavedConnection,
+  request: typeof fetch,
+): Promise<void> {
+  const health = gatewayHttpEndpoint(connection, "/health");
+  const response = await requestWithTimeout(request, health.toString(), GATEWAY_WAKE_TIMEOUT_MS);
+  if (!response?.ok) throw new Error("Mobile gateway is not reachable.");
+}
 
 /// Distinguishes an unreachable Mac from a reachable persistent gateway that
 /// predates the phone's transport. This endpoint is intentionally secret-free;
@@ -23,8 +38,8 @@ export async function probeGatewayCompatibility(
   // Probe both routes concurrently so an offline Mac adds at most one bounded
   // timeout. React Native provides AbortController but not AbortSignal.timeout.
   const [wellKnownResponse, healthResponse] = await Promise.all([
-    requestWithTimeout(request, wellKnown.toString()),
-    requestWithTimeout(request, health.toString()),
+    requestWithTimeout(request, wellKnown.toString(), GATEWAY_PROBE_TIMEOUT_MS),
+    requestWithTimeout(request, health.toString(), GATEWAY_PROBE_TIMEOUT_MS),
   ]);
   if (wellKnownResponse?.ok) {
     return gatewayIdentityCompatibility(await wellKnownResponse.json().catch(() => undefined));
@@ -36,7 +51,11 @@ export async function probeGatewayCompatibility(
   return gatewayIdentityCompatibility(identity);
 }
 
-async function requestWithTimeout(request: typeof fetch, url: string): Promise<Response | undefined> {
+async function requestWithTimeout(
+  request: typeof fetch,
+  url: string,
+  timeoutMs: number,
+): Promise<Response | undefined> {
   const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -44,11 +63,12 @@ async function requestWithTimeout(request: typeof fetch, url: string): Promise<R
       timeout = setTimeout(() => {
         controller.abort();
         reject(new Error("Gateway compatibility probe timed out."));
-      }, GATEWAY_PROBE_TIMEOUT_MS);
+      }, timeoutMs);
     });
     return await Promise.race([
       request(url, {
-        headers: { accept: "application/json" },
+        cache: "no-store",
+        headers: { accept: "application/json", "cache-control": "no-cache" },
         signal: controller.signal,
       }),
       deadline,
