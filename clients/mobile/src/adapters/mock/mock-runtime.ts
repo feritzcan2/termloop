@@ -264,6 +264,17 @@ export function createMockRuntime(): MobileRuntime & { inspection: MockTerminalI
         assertMockSession(connectionId, sessionId);
         sessionActions.push({ action: "repairProviderHistory", sessionId });
       },
+      async retry(connectionId, sessionId) {
+        const session = assertMockSession(connectionId, sessionId);
+        sessionActions.push({ action: "retry", sessionId });
+        return {
+          ...session,
+          lifecycle_state: "running",
+          resume_failure_reason: null,
+          retryable: false,
+          runtime_epoch: session.runtime_epoch + 1,
+        };
+      },
       async restart(connectionId, sessionId) {
         const session = assertMockSession(connectionId, sessionId);
         sessionActions.push({ action: "restart", sessionId });

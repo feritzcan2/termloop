@@ -534,6 +534,14 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Mobi
           acknowledgeHistoryRewrite: true,
         });
       },
+      async retry(connectionId, sessionId) {
+        const control = controlClient(await resolve(connectionId));
+        const preview = await control.call("session.previewResumeAgent", { sessionId });
+        return await control.call("session.resumeAgent", {
+          sessionId,
+          launchTicket: preview.launch_ticket,
+        });
+      },
       async restart(connectionId, sessionId) {
         return await controlClient(await resolve(connectionId)).call("session.restartAgent", { sessionId });
       },
