@@ -90,6 +90,8 @@ pub enum CoreError {
         suggested_action: TaskAgentStartSuggestedAction,
         observed_branches: Vec<String>,
     },
+    #[error("Task {task_id} already has current Agent Session {session_id}")]
+    TaskAgentAlreadyAttached { task_id: String, session_id: String },
     #[error("Task {task_id} already has Jira URL {jira_url}")]
     TaskJiraUrlAlreadySet { task_id: String, jira_url: String },
     #[error("agent conversation fork is unavailable: {reason:?}")]

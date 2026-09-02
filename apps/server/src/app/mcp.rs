@@ -1695,6 +1695,19 @@ fn core_tool_error(id: Value, error: &termloop_core::CoreError) -> Response {
                 "observedBranches": observed_branches,
             })),
         ),
+        termloop_core::CoreError::TaskAgentAlreadyAttached {
+            task_id,
+            session_id,
+        } => tool_error(
+            id,
+            "taskAgentStartFailed",
+            "Task already has a current Agent; send the assignment to that Session with agent_message_send",
+            Some(json!({
+                "taskId": task_id,
+                "sessionId": session_id,
+                "suggestedAction": "messageExistingAgent",
+            })),
+        ),
         termloop_core::CoreError::TaskJiraUrlAlreadySet { task_id, jira_url } => tool_error(
             id,
             "jiraUrlAlreadySet",
@@ -2233,6 +2246,31 @@ mod tests {
                 "details": {
                     "taskId": "task-1",
                     "jiraUrl": "https://example.atlassian.net/browse/TERM-42"
+                }
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn existing_task_agent_error_returns_the_exact_reuse_action() {
+        let response = response_json(core_tool_error(
+            json!(9),
+            &termloop_core::CoreError::TaskAgentAlreadyAttached {
+                task_id: "task-1".into(),
+                session_id: "123e4567-e89b-42d3-a456-426614174000".into(),
+            },
+        ))
+        .await;
+        assert_eq!(response["result"]["isError"], true);
+        assert_eq!(
+            response["result"]["structuredContent"],
+            json!({
+                "code": "taskAgentStartFailed",
+                "message": "Task already has a current Agent; send the assignment to that Session with agent_message_send",
+                "details": {
+                    "taskId": "task-1",
+                    "sessionId": "123e4567-e89b-42d3-a456-426614174000",
+                    "suggestedAction": "messageExistingAgent"
                 }
             })
         );

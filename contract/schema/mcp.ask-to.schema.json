@@ -247,7 +247,7 @@
       }
     },
     "task_agent_start": {
-      "description": "Start or reuse an Agent for an existing Task in this authenticated Project. When the user explicitly requests a provider or model, pass agentId and the optional matching model; an explicit provider with no model uses that provider's default model, permission, and reasoning. Otherwise omit both fields and TermLoop replays the exact provider, model, permission, and reasoning from the last successful ordinary Agent launch. Never infer a provider/model preference from the Steward's own launch. Invalid missing-provider or cross-provider model selections are rejected by Core. TermLoop chooses a safe managed branch and sibling worktree, performs the inspected launch, and returns success only after the visible assignment is delivered. Do not call shell or Git tools to plan paths or refs.",
+      "description": "Start or idempotently reuse a Steward-started Agent for an existing Task in this authenticated Project. Read task_read first. When any other current ordinary Agent is already attached to the exact Task worktree, Core refuses to launch a second Agent and returns its exact Session ID with suggestedAction messageExistingAgent; deliver the assignment with agent_message_send instead. When the user explicitly requests a provider or model, pass agentId and the optional matching model; an explicit provider with no model uses that provider's default model, permission, and reasoning. Otherwise omit both fields and TermLoop replays the exact provider, model, permission, and reasoning from the last successful ordinary Agent launch. Never infer a provider/model preference from the Steward's own launch. Invalid missing-provider or cross-provider model selections are rejected by Core. TermLoop chooses a safe managed branch and sibling worktree, performs the inspected launch, and returns success only after the visible assignment is delivered. Do not call shell or Git tools to plan paths or refs.",
       "role": "steward",
       "params": {
         "$ref": "#/$defs/mcpStewardTaskAgentStartParams"
@@ -931,7 +931,8 @@
             "chooseBaseBranch",
             "configureAgent",
             "retry",
-            "inspectTask"
+            "inspectTask",
+            "messageExistingAgent"
           ]
         },
         "observedBranches": {
@@ -947,6 +948,11 @@
         "taskId": {
           "type": "string",
           "minLength": 1
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
         },
         "jiraUrl": {
           "type": "string",

@@ -125,7 +125,7 @@ const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.steward.executor",
-    version: 34,
+    version: 35,
     authored_body: include_str!("../../../resources/prompts/builtin.steward.executor.md"),
 };
 
@@ -5896,7 +5896,7 @@ mod tests {
     #[test]
     fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
         let prompt = executor_prompt(ExecutorRole::Steward).unwrap();
-        assert_eq!(prompt.provenance().template_version, 34);
+        assert_eq!(prompt.provenance().template_version, 35);
         assert!(prompt.authored_preview().contains("routine_finding_read"));
         assert!(prompt.authored_preview().contains("playbook_read"));
         assert!(prompt.authored_preview().contains("task_set_steward_brief"));
@@ -6083,6 +6083,41 @@ mod tests {
                 .contains("Every current `ask` or `auto` finding must leave the wake")
         );
         assert!(prompt.authored_preview().contains("use `task_agent_start`"));
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("suggestedAction: messageExistingAgent")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("Never call `task_agent_start` for that Task")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("Exact Task state reconciliation")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("evidence is not state drift")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("Never reconcile from another Task's branch")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("The Worker remains the sole authority")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("is disposition 6, not a reason to leave it pending")
+        );
 
         let retired =
             include_str!("../../../resources/prompts/retired/builtin.steward.executor.v2.md")
@@ -6095,7 +6130,7 @@ mod tests {
             default_steward_system_prompt()
         );
         let latest_retired =
-            include_str!("../../../resources/prompts/retired/builtin.steward.executor.v33.md")
+            include_str!("../../../resources/prompts/retired/builtin.steward.executor.v34.md")
                 .splitn(3, "\n\n")
                 .nth(2)
                 .unwrap()
