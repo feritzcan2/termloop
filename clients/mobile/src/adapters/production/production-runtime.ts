@@ -47,9 +47,11 @@ import {
   KIND_INPUT,
   KIND_OUTPUT,
   KIND_REPLAY_OUTPUT,
+  decodeReplayAck,
   decodeFrame,
   decodeGapCount,
   encodeFrame,
+  replayRequestPayload,
 } from "./terminal-frame";
 
 const AUTH_TIMEOUT_MS = 5_000;
@@ -59,11 +61,10 @@ const MIN_RECONNECT_MS = 500;
 const MAX_RECONNECT_MS = 30_000;
 const STABLE_CONNECTION_MS = 30_000;
 const MAX_INPUT_FRAME_BYTES = 16 * 1024;
-/// A replay is a frozen bounded snapshot, but the wire must split it into 16 KiB
-/// frames. Publishing every transport frame separately makes React reconcile dozens
-/// of incomplete Claude redraws before it ever sees the current screen. Fold one
-/// replay burst back into its snapshot boundary before presentation sees it.
-const REPLAY_BATCH_SETTLE_MS = 16;
+/// Older daemons have no replay-complete metadata. Their 16 KiB replay frames can be
+/// 700+ ms apart over Tailnet, so retain a one-second quiet-window fallback. Newer
+/// daemons negotiate the exact replay frame count and complete synchronously.
+const REPLAY_BATCH_SETTLE_MS = 1_000;
 const MAX_REPLAY_BATCH_BYTES = 1024 * 1024;
 const STEWARD_TRANSCRIPT_LIMIT = 60;
 const STEWARD_MESSAGE_LIMIT = 8_192;
@@ -1003,6 +1004,11 @@ async function attachTerminal(
   let stabilityTimer: ReturnType<typeof setTimeout> | undefined;
   let replayChunks: Uint8Array[] = [];
   let replayBytes = 0;
+  let replayExpectedFrames: number | undefined;
+  let replayExpectedBytes: number | undefined;
+  let replayReceivedFrames = 0;
+  let replayDroppedFrames = 0;
+  let replayEof = false;
   let inbound = Promise.resolve();
   let successfulConnections = 0;
   let connectionAttempt = 0;
@@ -1046,6 +1052,11 @@ async function attachTerminal(
     clearReplayTimer();
     replayChunks = [];
     replayBytes = 0;
+    replayExpectedFrames = undefined;
+    replayExpectedBytes = undefined;
+    replayReceivedFrames = 0;
+    replayDroppedFrames = 0;
+    replayEof = false;
   };
 
   const settleReconnectWaiters = (cause?: Error) => {
@@ -1067,7 +1078,12 @@ async function attachTerminal(
 
   const flushReplay = () => {
     clearReplayTimer();
-    if (detached || replayBytes === 0) return;
+    if (detached) return;
+    const expectedFrames = replayExpectedFrames;
+    const expectedBytes = replayExpectedBytes;
+    const receivedFrames = replayReceivedFrames;
+    const droppedFrames = replayDroppedFrames;
+    const eof = replayEof;
     const chunkCount = replayChunks.length;
     const bytes = new Uint8Array(replayBytes);
     let offset = 0;
@@ -1075,13 +1091,21 @@ async function attachTerminal(
       bytes.set(chunk, offset);
       offset += chunk.byteLength;
     }
-    replayChunks = [];
-    replayBytes = 0;
-    report("replay_received", {
-      bytes: bytes.byteLength,
-      chunks: chunkCount,
-    });
-    onEvent({ type: "replay", bytes });
+    discardReplay();
+    if (droppedFrames > 0) onEvent({ type: "gap", droppedFrames });
+    if (bytes.byteLength > 0) onEvent({ type: "replay", bytes });
+    if (eof) onEvent({ type: "eof" });
+    if (bytes.byteLength > 0 || droppedFrames > 0 || eof || expectedFrames !== undefined) {
+      report("replay_received", {
+        bytes: bytes.byteLength,
+        chunks: chunkCount,
+        droppedFrames,
+        expectedFrames,
+        expectedBytes,
+        receivedFrames,
+        complete: expectedFrames === undefined || receivedFrames === expectedFrames,
+      });
+    }
   };
 
   const queueReplay = (bytes: Uint8Array) => {
@@ -1093,6 +1117,29 @@ async function attachTerminal(
     replayBytes += bytes.byteLength;
     clearReplayTimer();
     replayTimer = setTimeout(flushReplay, REPLAY_BATCH_SETTLE_MS);
+  };
+
+  const consumeNegotiatedReplayFrame = (kind: number, payload: Uint8Array): boolean => {
+    const expected = replayExpectedFrames;
+    if (expected === undefined || replayReceivedFrames >= expected) return false;
+    if (kind === KIND_REPLAY_OUTPUT) {
+      if (replayBytes + payload.byteLength > MAX_REPLAY_BATCH_BYTES) {
+        flushReplay();
+        return false;
+      }
+      replayChunks.push(payload);
+      replayBytes += payload.byteLength;
+    } else if (kind === KIND_GAP) {
+      replayDroppedFrames += decodeGapCount(payload);
+    } else if (kind === KIND_EOF) {
+      replayEof = true;
+    } else {
+      flushReplay();
+      return false;
+    }
+    replayReceivedFrames += 1;
+    if (replayReceivedFrames === expected) flushReplay();
+    return true;
   };
 
   const failFirst = (message: string, reason = "initialConnectionFailed") => {
@@ -1276,7 +1323,14 @@ async function attachTerminal(
         reconnected: successfulConnections > 1,
       });
       onEvent({ type: "state", state: "connected" });
-      source.send(encodeFrame(session.id, session.runtime_epoch, sequence++, KIND_ATTACH));
+      discardReplay();
+      source.send(encodeFrame(
+        session.id,
+        session.runtime_epoch,
+        sequence++,
+        KIND_ATTACH,
+        replayRequestPayload(),
+      ));
       settleReconnectWaiters();
       resolveFirst?.();
       resolveFirst = undefined;
@@ -1303,6 +1357,22 @@ async function attachTerminal(
       });
       return;
     }
+    if (frame.kind === KIND_ACK) {
+      const replay = decodeReplayAck(frame.payload);
+      if (replay !== undefined) {
+        replayExpectedFrames = replay.frameCount;
+        replayExpectedBytes = replay.outputBytes;
+        replayReceivedFrames = 0;
+        report("replay_negotiated", {
+          connectionAttempt,
+          replayFrames: replay.frameCount,
+          replayBytes: replay.outputBytes,
+        });
+        if (replay.frameCount === 0) flushReplay();
+      }
+      return;
+    }
+    if (consumeNegotiatedReplayFrame(frame.kind, frame.payload)) return;
     if (frame.kind === KIND_REPLAY_OUTPUT) {
       queueReplay(frame.payload);
       return;
@@ -1324,7 +1394,7 @@ async function attachTerminal(
         errorBytes: frame.payload.byteLength,
       });
       source.close();
-    } else if (frame.kind === KIND_ACK) return;
+    }
   };
 
   connect();

@@ -25,9 +25,11 @@ import {
   KIND_INPUT_ACK,
   KIND_OUTPUT,
   KIND_REPLAY_OUTPUT,
+  decodeReplayAck,
   decodeFrame,
   decodeGapCount,
   encodeFrame,
+  replayRequestPayload,
 } from "./terminal-frame";
 
 const MOBILE_TRANSPORT_VERSION = 2;
@@ -43,7 +45,10 @@ const STABLE_CONNECTION_MS = 30_000;
 const ONLINE_ACTIVITY_PUBLISH_MS = 5_000;
 const MAX_INPUT_FRAME_BYTES = 16 * 1024;
 const MAX_PENDING_INPUT_RECEIPTS = 128;
-const REPLAY_BATCH_SETTLE_MS = 16;
+/// Older daemons have no replay-complete metadata. Their 16 KiB replay frames can be
+/// 700+ ms apart over Tailnet, so retain a one-second quiet-window fallback. Newer
+/// daemons negotiate the exact replay frame count and complete synchronously.
+const REPLAY_BATCH_SETTLE_MS = 1_000;
 const MAX_REPLAY_BATCH_BYTES = 1024 * 1024;
 
 export interface ProjectionInvalidation {
@@ -71,6 +76,11 @@ interface TerminalSubscription {
   replayChunks: Uint8Array[];
   replayBytes: number;
   replayTimer: ReturnType<typeof setTimeout> | undefined;
+  replayExpectedFrames: number | undefined;
+  replayExpectedBytes: number | undefined;
+  replayReceivedFrames: number;
+  replayDroppedFrames: number;
+  replayEof: boolean;
   firstResolve: (() => void) | undefined;
   firstReject: ((cause: Error) => void) | undefined;
   readonly reconnectWaiters: Set<{
@@ -195,6 +205,11 @@ export class MobileConnectionCoordinator {
       replayChunks: [],
       replayBytes: 0,
       replayTimer: undefined,
+      replayExpectedFrames: undefined,
+      replayExpectedBytes: undefined,
+      replayReceivedFrames: 0,
+      replayDroppedFrames: 0,
+      replayEof: false,
       firstResolve,
       firstReject,
       reconnectWaiters: new Set(),
@@ -556,6 +571,17 @@ export class MobileConnectionCoordinator {
       return;
     }
     if (frame.kind === KIND_ACK) {
+      const replay = decodeReplayAck(frame.payload);
+      if (replay !== undefined) {
+        subscription.replayExpectedFrames = replay.frameCount;
+        subscription.replayExpectedBytes = replay.outputBytes;
+        subscription.replayReceivedFrames = 0;
+        this.reportTerminal(subscription, "replay_negotiated", {
+          replayFrames: replay.frameCount,
+          replayBytes: replay.outputBytes,
+        });
+        if (replay.frameCount === 0) this.flushReplay(subscription);
+      }
       subscription.awaitingAck = false;
       subscription.attachedCount += 1;
       subscription.onEvent({ type: "state", state: "connected" });
@@ -614,6 +640,7 @@ export class MobileConnectionCoordinator {
       });
     }
     subscription.lastInboundSequence = frame.sequence;
+    if (this.consumeNegotiatedReplayFrame(subscription, frame.kind, frame.payload)) return;
     if (frame.kind === KIND_REPLAY_OUTPUT) {
       this.queueReplay(subscription, frame.payload);
       return;
@@ -638,6 +665,7 @@ export class MobileConnectionCoordinator {
       subscription.runtimeEpoch,
       subscription.sequence++,
       KIND_ATTACH,
+      replayRequestPayload(),
     ));
     this.reportTerminal(subscription, "attach_sent", { transportGeneration: this.generation });
   }
@@ -851,21 +879,68 @@ export class MobileConnectionCoordinator {
     subscription.replayTimer = setTimeout(() => this.flushReplay(subscription), REPLAY_BATCH_SETTLE_MS);
   }
 
+  /// A negotiated ACK describes the exact number of frozen replay events. Hold every
+  /// one — including its leading Gap and trailing EOF — until the final frame, then
+  /// publish the snapshot synchronously with no quiet-window delay.
+  private consumeNegotiatedReplayFrame(
+    subscription: TerminalSubscription,
+    kind: number,
+    payload: Uint8Array,
+  ): boolean {
+    const expected = subscription.replayExpectedFrames;
+    if (expected === undefined || subscription.replayReceivedFrames >= expected) return false;
+    if (kind === KIND_REPLAY_OUTPUT) {
+      if (subscription.replayBytes + payload.byteLength > MAX_REPLAY_BATCH_BYTES) {
+        this.flushReplay(subscription);
+        return false;
+      }
+      subscription.replayChunks.push(payload);
+      subscription.replayBytes += payload.byteLength;
+    } else if (kind === KIND_GAP) {
+      subscription.replayDroppedFrames += decodeGapCount(payload);
+    } else if (kind === KIND_EOF) {
+      subscription.replayEof = true;
+    } else {
+      this.flushReplay(subscription);
+      return false;
+    }
+    subscription.replayReceivedFrames += 1;
+    if (subscription.replayReceivedFrames === expected) this.flushReplay(subscription);
+    return true;
+  }
+
   private flushReplay(subscription: TerminalSubscription): void {
     if (subscription.replayTimer !== undefined) clearTimeout(subscription.replayTimer);
     subscription.replayTimer = undefined;
-    if (subscription.detached || subscription.replayBytes === 0) return;
-    const bytes = new Uint8Array(subscription.replayBytes);
+    if (subscription.detached) return;
+    const expectedFrames = subscription.replayExpectedFrames;
+    const expectedBytes = subscription.replayExpectedBytes;
+    const receivedFrames = subscription.replayReceivedFrames;
+    const droppedFrames = subscription.replayDroppedFrames;
+    const eof = subscription.replayEof;
+    const replayBytes = subscription.replayBytes;
+    const bytes = new Uint8Array(replayBytes);
     let offset = 0;
     for (const chunk of subscription.replayChunks) {
       bytes.set(chunk, offset);
       offset += chunk.byteLength;
     }
     const chunks = subscription.replayChunks.length;
-    subscription.replayChunks = [];
-    subscription.replayBytes = 0;
-    subscription.onEvent({ type: "replay", bytes });
-    this.reportTerminal(subscription, "replay_received", { bytes: bytes.byteLength, chunks });
+    this.clearReplay(subscription);
+    if (droppedFrames > 0) subscription.onEvent({ type: "gap", droppedFrames });
+    if (bytes.byteLength > 0) subscription.onEvent({ type: "replay", bytes });
+    if (eof) subscription.onEvent({ type: "eof" });
+    if (bytes.byteLength > 0 || droppedFrames > 0 || eof || expectedFrames !== undefined) {
+      this.reportTerminal(subscription, "replay_received", {
+        bytes: bytes.byteLength,
+        chunks,
+        droppedFrames,
+        expectedFrames,
+        expectedBytes,
+        receivedFrames,
+        complete: expectedFrames === undefined || receivedFrames === expectedFrames,
+      });
+    }
   }
 
   private clearReplay(subscription: TerminalSubscription): void {
@@ -873,6 +948,11 @@ export class MobileConnectionCoordinator {
     subscription.replayTimer = undefined;
     subscription.replayChunks = [];
     subscription.replayBytes = 0;
+    subscription.replayExpectedFrames = undefined;
+    subscription.replayExpectedBytes = undefined;
+    subscription.replayReceivedFrames = 0;
+    subscription.replayDroppedFrames = 0;
+    subscription.replayEof = false;
   }
 
   private settleWaiters(subscription: TerminalSubscription, cause?: Error): void {

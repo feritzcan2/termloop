@@ -20,6 +20,17 @@ const TERMINAL_HEADER_LEN: usize = 41;
 const MAX_TERMINAL_PAYLOAD: usize = termloop_terminal::MAX_IO_CHUNK_BYTES;
 const MAX_ATTACHMENT_FRAMES: usize = 256;
 const TERMINAL_INPUT_RECEIPT_TIMEOUT: Duration = Duration::from_secs(4);
+const REPLAY_REQUEST_MAGIC: &[u8; 4] = b"TLRQ";
+const REPLAY_ACK_MAGIC: &[u8; 4] = b"TLRA";
+const REPLAY_REQUEST_BYTES: usize = 12;
+const REPLAY_ACK_BYTES: usize = 12;
+const MAX_REPLAY_WIRE_CHUNK_BYTES: usize = 256 * 1024;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ReplayRequest {
+    max_bytes: usize,
+    max_chunk_bytes: usize,
+}
 
 #[derive(Clone)]
 pub(super) struct TerminalResizeRegistry {
@@ -375,8 +386,20 @@ async fn terminal_socket(
                 input_ack_enabled = true;
             }
             value if value == FrameKind::Attach as u8 => {
-                match state.terminal.subscribe(&session, frame.epoch) {
+                let replay_request = requested_replay_options(&frame.payload);
+                let subscription = match replay_request {
+                    Some(request) => state.terminal.subscribe_with_replay_options(
+                        &session,
+                        frame.epoch,
+                        request.max_bytes,
+                        request.max_chunk_bytes,
+                    ),
+                    None => state.terminal.subscribe(&session, frame.epoch),
+                };
+                match subscription {
                     Ok(mut receiver) => {
+                        let replay_event_count = receiver.replay_event_count();
+                        let replay_output_bytes = receiver.replay_output_bytes();
                         attached_epochs.insert(frame.session_id, frame.epoch);
                         let claimed = allow_input
                             && state
@@ -403,6 +426,22 @@ async fn terminal_socket(
                             previous.abort();
                             let _ = (&mut previous).await;
                         }
+                        // Queue negotiated metadata before starting the replay pump. The
+                        // outbound buffer prioritises Attach ACKs, but enqueuing first also
+                        // removes the race where a newly spawned replay task could wake the
+                        // socket writer before its ACK existed.
+                        enqueue_outbound(
+                            &outbound,
+                            &outbound_notify,
+                            TerminalFrame {
+                                kind: FrameKind::Ack as u8,
+                                payload: replay_request.map_or_else(
+                                    || frame.payload.clone(),
+                                    |_| replay_ack_payload(replay_event_count, replay_output_bytes),
+                                ),
+                                ..frame.clone()
+                            },
+                        );
                         let queue = outbound.clone();
                         let notify = outbound_notify.clone();
                         let id = frame.session_id;
@@ -448,14 +487,6 @@ async fn terminal_socket(
                             }
                         });
                         attachment_tasks.insert(id, task);
-                        enqueue_outbound(
-                            &outbound,
-                            &outbound_notify,
-                            TerminalFrame {
-                                kind: FrameKind::Ack as u8,
-                                ..frame
-                            },
-                        );
                     }
                     Err(error) => {
                         enqueue_outbound(
@@ -618,6 +649,36 @@ fn enqueue_outbound(buffer: &StdMutex<OutboundBuffer>, notify: &Notify, frame: T
     notify.notify_one();
 }
 
+fn requested_replay_options(payload: &[u8]) -> Option<ReplayRequest> {
+    if payload.len() != REPLAY_REQUEST_BYTES || &payload[..4] != REPLAY_REQUEST_MAGIC {
+        return None;
+    }
+    let requested_bytes = u32::from_be_bytes(payload[4..8].try_into().ok()?) as usize;
+    let requested_chunk_bytes = u32::from_be_bytes(payload[8..12].try_into().ok()?) as usize;
+    Some(ReplayRequest {
+        max_bytes: requested_bytes.clamp(
+            termloop_terminal::MAX_IO_CHUNK_BYTES,
+            termloop_terminal::MAX_RECENT_REPLAY_BYTES,
+        ),
+        max_chunk_bytes: requested_chunk_bytes.clamp(
+            termloop_terminal::MAX_IO_CHUNK_BYTES,
+            MAX_REPLAY_WIRE_CHUNK_BYTES,
+        ),
+    })
+}
+
+fn replay_ack_payload(event_count: usize, output_bytes: usize) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(REPLAY_ACK_BYTES);
+    payload.extend_from_slice(REPLAY_ACK_MAGIC);
+    payload.extend_from_slice(&u32::try_from(event_count).unwrap_or(u32::MAX).to_be_bytes());
+    payload.extend_from_slice(
+        &u32::try_from(output_bytes)
+            .unwrap_or(u32::MAX)
+            .to_be_bytes(),
+    );
+    payload
+}
+
 fn encode_terminal_frame(frame: &TerminalFrame) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(TERMINAL_HEADER_LEN + frame.payload.len());
     bytes.extend_from_slice(b"TL01");
@@ -680,6 +741,40 @@ mod tests {
                 MAX_TERMINAL_PAYLOAD + 1
             ])))
             .is_err()
+        );
+    }
+
+    #[test]
+    fn replay_negotiation_clamps_wire_options_and_describes_the_snapshot() {
+        let mut request = REPLAY_REQUEST_MAGIC.to_vec();
+        request.extend_from_slice(&(1024_u32 * 1024).to_be_bytes());
+        request.extend_from_slice(&(256_u32 * 1024).to_be_bytes());
+        assert_eq!(
+            requested_replay_options(&request),
+            Some(ReplayRequest {
+                max_bytes: 1024 * 1024,
+                max_chunk_bytes: 256 * 1024,
+            })
+        );
+
+        let mut too_small = REPLAY_REQUEST_MAGIC.to_vec();
+        too_small.extend_from_slice(&1_u32.to_be_bytes());
+        too_small.extend_from_slice(&1_u32.to_be_bytes());
+        assert_eq!(
+            requested_replay_options(&too_small),
+            Some(ReplayRequest {
+                max_bytes: termloop_terminal::MAX_IO_CHUNK_BYTES,
+                max_chunk_bytes: termloop_terminal::MAX_IO_CHUNK_BYTES,
+            })
+        );
+        assert_eq!(requested_replay_options(b"TLRA\0\0\0\x01"), None);
+
+        let ack = replay_ack_payload(18, 256 * 1024);
+        assert_eq!(&ack[..4], REPLAY_ACK_MAGIC);
+        assert_eq!(u32::from_be_bytes(ack[4..8].try_into().unwrap()), 18);
+        assert_eq!(
+            u32::from_be_bytes(ack[8..12].try_into().unwrap()),
+            256 * 1024
         );
     }
 

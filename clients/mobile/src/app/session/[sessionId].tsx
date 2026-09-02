@@ -368,6 +368,7 @@ export default function SessionRoute() {
 
       <View style={[styles.terminal, dimmed && styles.dimmed]}>
         <TerminalView
+          key={`${connections.selectedId}:${session.id}:${session.runtime_epoch}`}
           buffer={terminal.buffer}
           fontSizeIndex={fontSizeIndex}
           capNotice={terminal.capNotice}

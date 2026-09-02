@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -11,7 +11,11 @@ import {
 } from "react-native";
 
 import type { TerminalBuffer, TerminalLine } from "@/presentation/terminal-buffer";
-import { overscrollRequest } from "@/presentation/terminal-scroll";
+import {
+  overscrollRequest,
+  reduceInitialTerminalPosition,
+  type InitialTerminalPosition,
+} from "@/presentation/terminal-scroll";
 import type { TerminalSpan, TerminalStyle } from "@/presentation/terminal-screen";
 import { color, space, terminalGeometry } from "@/theme/tokens";
 import { fontFamily } from "@/theme/typography";
@@ -40,8 +44,14 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
 }) {
   const scroll = useRef<ScrollView>(null);
   const [atBottom, setAtBottom] = useState(true);
+  const [initialPosition, setInitialPosition] = useState<InitialTerminalPosition>("waitingForContent");
+  const revealFrame = useRef<number | undefined>(undefined);
   const fontSize = terminalGeometry.fontSizes[fontSizeIndex] ?? terminalGeometry.fontSizes[1];
   const lineHeight = terminalGeometry.lineHeights[fontSizeIndex] ?? terminalGeometry.lineHeights[1];
+  const hasContent = capNotice !== undefined
+    || buffer.screen !== undefined
+    || buffer.lines.length !== 0
+    || buffer.pending.length !== 0;
 
   /// How far the current drag has already been converted into scroll requests. The
   /// bounce animates back through the same offsets it came in on, so without a
@@ -82,19 +92,52 @@ export function TerminalView({ buffer, fontSizeIndex, capNotice, onScrollBack }:
     requested.current = { direction: 0, lines: 0 };
   }, []);
 
+  /// Let the first `scrollToEnd` reach native layout, repeat it against the settled
+  /// content height, and reveal only on the following frame. Keeping this local to the
+  /// initial snapshot avoids delaying ordinary live output after startup.
+  const finishInitialPosition = useCallback(() => {
+    if (revealFrame.current !== undefined) return;
+    revealFrame.current = requestAnimationFrame(() => {
+      scroll.current?.scrollToEnd({ animated: false });
+      revealFrame.current = requestAnimationFrame(() => {
+        revealFrame.current = undefined;
+        setInitialPosition((current) => reduceInitialTerminalPosition(current, { type: "positioned" }));
+      });
+    });
+  }, []);
+
+  useEffect(() => () => {
+    if (revealFrame.current !== undefined) cancelAnimationFrame(revealFrame.current);
+  }, []);
+
   /// Auto-scroll only while the reader is already at the bottom. Yanking a scrolled-up
   /// reader back down every time an agent writes a line makes reading the middle of a
   /// stream impossible.
   const onContentChange = useCallback(() => {
+    if (initialPosition !== "ready") {
+      const next = reduceInitialTerminalPosition(initialPosition, {
+        type: "contentChanged",
+        hasContent,
+      });
+      if (next === "positioning") {
+        setInitialPosition(next);
+        scroll.current?.scrollToEnd({ animated: false });
+        finishInitialPosition();
+      }
+      return;
+    }
     if (atBottom) scroll.current?.scrollToEnd({ animated: false });
-  }, [atBottom]);
+  }, [atBottom, finishInitialPosition, hasContent, initialPosition]);
 
   return (
     <View style={styles.surface}>
       <ScrollView
         ref={scroll}
         style={styles.scroll}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          initialPosition === "ready" ? null : styles.initiallyHidden,
+        ]}
         onScroll={onScroll}
         scrollEventThrottle={16}
         onScrollEndDrag={onScrollEnd}
@@ -231,6 +274,7 @@ const styles = StyleSheet.create({
   /// itself is a grid of lines whose spacing is the line height — inserting flex gaps
   /// into it would open stripes through a TUI frame.
   content: { padding: terminalGeometry.contentPadding },
+  initiallyHidden: { opacity: 0 },
   /// `minWidth` rather than `width`, so short output still fills the surface while a wide
   /// line is free to push the content box past the screen and become scrollable.
   horizontal: { minWidth: "100%" },
