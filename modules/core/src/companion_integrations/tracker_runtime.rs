@@ -2402,6 +2402,32 @@ mod tests {
             .unwrap();
         assert_eq!(duplicate["newPendingFindingCount"], 0);
 
+        let before_problem = runtime.state_revision();
+        let problem = runtime
+            .append_steward_suggestion(
+                "steward-session",
+                &project_id,
+                "problem",
+                crate::companion_integrations::transcript::CompanionMessageRefsInput {
+                    task_id: None,
+                    session_id: None,
+                    routine_finding_id: Some("finding-2".into()),
+                    routine_finding_ids: vec![],
+                },
+                "The required review source is unavailable.".into(),
+                1_290,
+            )
+            .unwrap();
+        assert_eq!(runtime.state_revision(), before_problem + 1);
+        assert_eq!(problem["dismissedRoutineFindingIds"], json!(["finding-2"]));
+        assert_eq!(
+            runtime.read_routine_findings(&project_id).unwrap()["routines"][0]["findings"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+
         assert!(matches!(
             runtime.resolve_routine_finding(&project_id, "finding-1", "completed", 1_300),
             Err(CoreError::CapabilityDenied)
@@ -2430,13 +2456,30 @@ mod tests {
                 crate::companion_integrations::transcript::CompanionMessageRefsInput {
                     task_id: None,
                     session_id: None,
-                    routine_finding_id: None,
-                    routine_finding_ids: vec!["finding-1".into(), "finding-2".into()],
+                    routine_finding_id: Some("finding-1".into()),
+                    routine_finding_ids: vec![],
                 },
-                "Ask the assigned reviewer to review PRs 42 and 43?".into(),
+                "Ask the assigned reviewer to review PR 42?".into(),
                 1_310,
             )
             .unwrap();
+        assert!(matches!(
+            runtime.append_steward_suggestion(
+                "steward-session",
+                &project_id,
+                "attention",
+                crate::companion_integrations::transcript::CompanionMessageRefsInput {
+                    task_id: None,
+                    session_id: None,
+                    routine_finding_id: Some("finding-1".into()),
+                    routine_finding_ids: vec![],
+                },
+                "Please review PR 42 yourself.".into(),
+                1_312,
+            ),
+            Err(CoreError::CompanionProposalPending { proposal_message_id })
+                if proposal_message_id == proposal["message"]["id"]
+        ));
         assert!(matches!(
             runtime.append_steward_suggestion(
                 "steward-session",
@@ -2464,9 +2507,6 @@ mod tests {
             .unwrap();
         runtime
             .resolve_routine_finding(&project_id, "finding-1", "completed", 1_330)
-            .unwrap();
-        runtime
-            .resolve_routine_finding(&project_id, "finding-2", "completed", 1_340)
             .unwrap();
         assert!(
             runtime.read_routine_findings(&project_id).unwrap()["routines"]
