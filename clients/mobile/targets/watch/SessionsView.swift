@@ -57,9 +57,9 @@ struct SessionsView: View {
                     }
                     .frame(width: 42, height: 42)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Hızlı konuş")
+                        Text("Sesli mesaj")
                             .font(.system(size: 14, weight: .semibold))
-                        Text("Sessizlikte gönderilir")
+                        Text("Dokun, söyle, gönder")
                             .font(.mono(10))
                             .foregroundStyle(.secondary)
                     }
