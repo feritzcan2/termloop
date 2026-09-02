@@ -30,3 +30,9 @@ export function snapshotWhileUnavailable(
     ? { ...previous, load: "ready", error: undefined, refreshing: false }
     : emptyOverviewSnapshot();
 }
+
+export function snapshotWhileBackgrounded(
+  previous: ConnectionOverviewSnapshot | undefined,
+): ConnectionOverviewSnapshot {
+  return { ...(previous ?? emptyOverviewSnapshot()), refreshing: false };
+}
