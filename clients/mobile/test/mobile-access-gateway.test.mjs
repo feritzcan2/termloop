@@ -52,6 +52,18 @@ describe("persistent mobile access gateway", () => {
           }));
           return;
         }
+        if (requestMessage.method === "session.forkAgent") {
+          socket.send(JSON.stringify({
+            id: requestMessage.id,
+            ok: false,
+            error: {
+              code: "conflict",
+              message: "agent conversation fork is unavailable",
+              details: { kind: "agentForkUnavailable", reason: "runtimeConflict" },
+            },
+          }));
+          return;
+        }
         socket.send(JSON.stringify({
           id: requestMessage.id,
           ok: true,
@@ -60,7 +72,10 @@ describe("persistent mobile access gateway", () => {
       });
     });
     const upstreamPort = await listen(upstreamServer);
-    writeFileSync(runtimeFile, runtime(upstreamPort, "r", "t", "a", 1));
+    writeFileSync(runtimeFile, JSON.stringify({
+      ...JSON.parse(runtime(upstreamPort, "r", "t", "a", 1)),
+      token: "a".repeat(64),
+    }));
     const gatewayPort = await freePort();
     writeFileSync(gatewayConfig, JSON.stringify({
       version: 1,
@@ -150,6 +165,22 @@ describe("persistent mobile access gateway", () => {
         params: {},
       }));
       expect(JSON.parse((await message(mobile)).toString())).toMatchObject({ id: "control-1", ok: true });
+      mobile.send(JSON.stringify({
+        id: "control-fork",
+        mobileApiVersion: 1,
+        token: "c".repeat(64),
+        method: "session.forkAgent",
+        params: { sessionId: "session-1" },
+      }));
+      expect(JSON.parse((await message(mobile)).toString())).toEqual({
+        id: "control-fork",
+        ok: false,
+        error: {
+          code: "conflict",
+          message: "agent conversation fork is unavailable",
+          details: { kind: "agentForkUnavailable", reason: "runtimeConflict" },
+        },
+      });
 
       const session = "11111111-2222-4333-8444-555555555555";
       mobile.send(encodeFrame(session, 7, 1n, KIND_ATTACH));

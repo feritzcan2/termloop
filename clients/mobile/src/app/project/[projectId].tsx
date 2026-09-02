@@ -10,6 +10,7 @@ import { Row } from "@/components/row";
 import { MockBadge, Screen, ScreenHeader } from "@/components/screen";
 import { WorkspaceTabs, type WorkspaceTabId } from "@/components/workspace-tabs";
 import { SessionActionsSheet } from "@/features/session-actions/session-actions-sheet";
+import { SwipeableSessionRow } from "@/features/session-actions/swipeable-session-row";
 import { useConnections } from "@/features/connection/connection-store";
 import { connectionRouteParams } from "@/features/connection/connection-route";
 import { useOverview } from "@/features/overview/overview-store";
@@ -298,11 +299,12 @@ function AgentRowView({ row, nowMs, openActions }: { row: AgentRow; nowMs: numbe
   const router = useRouter();
   const connections = useConnections();
   const store = useOverview();
+  const session = store.overview?.sessions.find((candidate) => candidate.id === row.sessionId);
   /// The headline is what the agent is for. The avatar already names the agent, so a
   /// Task-attached row spends its title on the Task and its state line on who runs it.
   const title = row.taskTitle ?? row.title;
   const detail = row.taskTitle === undefined ? row.folder : row.runner ?? row.title;
-  return (
+  const content = (
     <Row
       tone={row.tone}
       title={title}
@@ -325,6 +327,9 @@ function AgentRowView({ row, nowMs, openActions }: { row: AgentRow; nowMs: numbe
       onLongPress={() => openActions(row.sessionId)}
     />
   );
+  return session === undefined
+    ? content
+    : <SwipeableSessionRow session={session}>{content}</SwipeableSessionRow>;
 }
 
 function asksForUser(tone: AgentRow["tone"]): boolean {

@@ -1376,6 +1376,7 @@ async function acceptMobileControl(client, request, connectionId) {
       method: request.method,
       ok: false,
       errorCode: error.code,
+      reason: typeof error.details?.reason === "string" ? error.details.reason : undefined,
       causeType: cause instanceof Error ? cause.name : typeof cause,
       durationMs: Date.now() - startedAtEpochMs,
       delivered: client.readyState === WebSocket.OPEN,
@@ -2073,6 +2074,7 @@ class CurrentControlConnection {
         message: typeof response.error.message === "string"
           ? response.error.message
           : "TermLoop could not complete the request.",
+        ...(isRecord(response.error.details) ? { details: response.error.details } : {}),
       }
       : { code: "operationFailed", message: "TermLoop could not complete the request." };
     diagnostics.report("upstreamControl", "request_completed", {
@@ -2081,6 +2083,7 @@ class CurrentControlConnection {
       method: pending.method,
       ok: false,
       errorCode: error.code,
+      reason: typeof error.details?.reason === "string" ? error.details.reason : undefined,
       durationMs: Date.now() - pending.startedAtEpochMs,
       pendingRequests: this.#pending.size,
       ...pending.trace,

@@ -177,7 +177,11 @@ interface PendingMobileCall {
 }
 
 export class MobileControlError extends Error {
-  constructor(message: string, readonly code: string | undefined) {
+  constructor(
+    message: string,
+    readonly code: string | undefined,
+    readonly details: Readonly<Record<string, unknown>> | undefined = undefined,
+  ) {
     super(message);
     this.name = "MobileControlError";
   }
@@ -504,16 +508,18 @@ export class MobileControlClient {
       const error = isRecord(response.error) ? response.error : undefined;
       const message = typeof error?.message === "string" ? error.message : "request failed";
       const code = typeof error?.code === "string" ? error.code : undefined;
+      const details = isRecord(error?.details) ? error.details : undefined;
       this.diagnostics.report("control", "request_completed", {
         connectionId: this.connectionId,
         requestId: response.id,
         method: pending.method,
         ok: false,
         errorCode: code,
+        reason: typeof details?.reason === "string" ? details.reason : undefined,
         durationMs: Date.now() - pending.startedAtEpochMs,
         pendingRequests: this.pending.size,
       });
-      pending.reject(new MobileControlError(message, code));
+      pending.reject(new MobileControlError(message, code, details));
       return;
     }
     try {

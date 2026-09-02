@@ -6,6 +6,7 @@ import {
   fixtureTasks,
 } from "../../src/fixtures/mobile-overview";
 import {
+  agentForkErrorMessage,
   relocationBlockerMessage,
   relocationWarningMessage,
   sessionActionPresentation,
@@ -110,6 +111,16 @@ describe("mobile Session actions", () => {
       label: "Remove Session",
     });
     expect(sessionDismissAction({ ...source, lifecycle_state: "stale", closable: false })).toBeUndefined();
+  });
+
+  it("turns structured fork failures into actionable mobile copy", () => {
+    expect(agentForkErrorMessage(Object.assign(new Error("agent conversation fork is unavailable"), {
+      code: "conflict",
+      details: { kind: "agentForkUnavailable", reason: "runtimeConflict" },
+    }))).toContain("Wait a moment");
+    expect(agentForkErrorMessage(Object.assign(new Error("agent is not supported"), {
+      code: "agentUnsupported",
+    }))).toContain("does not support conversation forks");
   });
 
   it("turns relocation contract facts into readable messages", () => {

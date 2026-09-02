@@ -17,6 +17,7 @@ import { TaskPipeline } from "@/components/task-pipeline";
 import { useConnections } from "@/features/connection/connection-store";
 import { connectionRouteParams } from "@/features/connection/connection-route";
 import { SessionActionsSheet } from "@/features/session-actions/session-actions-sheet";
+import { SwipeableSessionRow } from "@/features/session-actions/swipeable-session-row";
 import { launchBlockedReason } from "@/presentation/agent-launch-presentation";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { ProjectSelector } from "@/components/project-selector";
@@ -188,9 +189,9 @@ export default function TaskRoute() {
         {attached.length === 0 ? null : (
           <Section label="Agents" trailing={<Text style={styles.count}>{attached.length}</Text>}>
             <Card>
-              {attached.map((row, index) => (
-                <View key={row.sessionId}>
-                  {index === 0 ? null : <CardDivider />}
+              {attached.map((row, index) => {
+                const session = store.overview?.sessions.find((candidate) => candidate.id === row.sessionId);
+                const content = (
                   <Row
                     tone={row.tone}
                     title={row.title}
@@ -211,8 +212,16 @@ export default function TaskRoute() {
                     }}
                     onLongPress={() => setActionSessionId(row.sessionId)}
                   />
-                </View>
-              ))}
+                );
+                return (
+                  <View key={row.sessionId}>
+                    {index === 0 ? null : <CardDivider />}
+                    {session === undefined
+                      ? content
+                      : <SwipeableSessionRow session={session}>{content}</SwipeableSessionRow>}
+                  </View>
+                );
+              })}
             </Card>
           </Section>
         )}
