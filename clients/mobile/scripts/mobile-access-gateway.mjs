@@ -132,6 +132,8 @@ const MOBILE_FULL_CONTROL_METHODS = new Set([
   "session.repairProviderHistory",
   "session.requestAskTo",
   "session.requestHandoverTo",
+  "session.previewResumeAgent",
+  "session.resumeAgent",
   "session.restartAgent",
   "session.previewRelocateAgentToTask",
   "session.relocateAgentToTask",

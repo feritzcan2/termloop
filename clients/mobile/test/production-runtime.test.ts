@@ -2117,6 +2117,25 @@ describe("production pipeline, launch, and Steward adapters", () => {
     });
   });
 
+  it("retries a stopped Agent with a freshly previewed resume ticket", async () => {
+    const methods: string[] = [];
+    const requests: Array<{
+      method: string;
+      params: Record<string, unknown>;
+      mobileApiVersion: number | undefined;
+      protocolVersion: string | undefined;
+    }> = [];
+    const runtime = runtimeWith(methods, requests);
+
+    await expect(runtime.sessionActions.retry(saved.id, sessionId)).resolves.toMatchObject({
+      id: sessionId,
+    });
+
+    expect(methods).toEqual(["session.previewResumeAgent", "session.resumeAgent"]);
+    expect(requests[0]?.params).toEqual({ sessionId });
+    expect(requests[1]?.params).toEqual({ sessionId, launchTicket: "ticket-1" });
+  });
+
   it("orders the Steward transcript oldest first, whatever order the daemon answers in", async () => {
     const runtime = runtimeWith([], []);
 
@@ -2464,7 +2483,9 @@ function controlResult(
     return { taskId: "task-mobile", passedMilestoneCount: 1, stateRevision: 15 };
   }
   if (method === "routine.runNow") return { ok: true };
-  if (method === "task.previewAgent" || method === "session.previewAgent") {
+  if (method === "task.previewAgent"
+    || method === "session.previewAgent"
+    || method === "session.previewResumeAgent") {
     return {
       launch_ticket: "ticket-1",
       manifest: {
@@ -2487,7 +2508,9 @@ function controlResult(
       },
     };
   }
-  if (method === "task.launchAgent" || method === "session.launchAgent") {
+  if (method === "task.launchAgent"
+    || method === "session.launchAgent"
+    || method === "session.resumeAgent") {
     return { ...fixtureSessions[0], id: sessionId };
   }
   if (method === "session.rename") return { ...fixtureSessions[0], id: sessionId };

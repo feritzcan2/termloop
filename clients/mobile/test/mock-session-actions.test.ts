@@ -9,6 +9,7 @@ describe("mock mobile Session actions", () => {
     const sessionId = "session-claude";
 
     const forked = await runtime.sessionActions.fork(connectionId, sessionId);
+    await runtime.sessionActions.retry(connectionId, sessionId);
     await runtime.sessionActions.restart(connectionId, sessionId);
     await runtime.sessionActions.askTo(connectionId, sessionId, "codex");
     await runtime.sessionActions.handoverTo(connectionId, sessionId, "session-reviewer");
@@ -32,6 +33,7 @@ describe("mock mobile Session actions", () => {
     expect(preview).toMatchObject({ can_relocate: true, target_cwd: "/Users/demo/Projects/termloop-next" });
     expect(runtime.inspection.sessionActions.map(({ action }) => action)).toEqual([
       "fork",
+      "retry",
       "restart",
       "askTo",
       "handoverTo",
