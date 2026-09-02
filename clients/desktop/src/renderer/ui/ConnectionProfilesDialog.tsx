@@ -22,29 +22,33 @@ type Tone = "ok" | "warn" | "danger" | "idle";
 
 const DISCOVERY_REFRESH_MS = 10_000;
 
-export function ConnectionProfilesDialog({
-  close,
-  connect,
-  disableHost,
-  discoverTailscaleServers,
-  enableHost,
-  hostStatus,
-  list,
-  remove,
-  setEnabled,
-  subscribeStatus,
-}: {
+export type ConnectionProfilesDialogProps = {
   close(): void;
   connect(input: ConnectionProfileConnectInput): Promise<ConnectionProfileConnectResult>;
   disableHost(): Promise<RemoteHostStatus>;
   discoverTailscaleServers(): Promise<TailscaleServerDiscovery>;
+  embedded?: boolean;
   enableHost(transport: RemoteHostTransport): Promise<RemoteHostStatus>;
   hostStatus(): Promise<RemoteHostStatus>;
   list(): Promise<ConnectionProfileSummary[]>;
   remove(profileId: string): Promise<ConnectionProfileSummary[]>;
   setEnabled(profileId: string, enabled: boolean): Promise<ConnectionProfileSummary[]>;
   subscribeStatus(listener: (summary: ConnectionSourceSummary) => void): () => void;
-}) {
+};
+
+export function ConnectionProfilesDialog({
+  close,
+  connect,
+  disableHost,
+  discoverTailscaleServers,
+  embedded = false,
+  enableHost,
+  hostStatus,
+  list,
+  remove,
+  setEnabled,
+  subscribeStatus,
+}: ConnectionProfilesDialogProps) {
   const [view, setView] = useState<View>("connect");
   const [profiles, setProfiles] = useState<ConnectionProfileSummary[]>();
   const [message, setMessage] = useState<Message>();
@@ -445,6 +449,22 @@ export function ConnectionProfilesDialog({
     );
   }
 
+  const content = (
+    <>
+      <div className="conn-toggle" role="group" aria-label="Connection settings">
+        <button type="button" aria-pressed={view === "connect"} className={view === "connect" ? "active" : ""} onClick={() => setView("connect")}>Connect</button>
+        <button type="button" aria-pressed={view === "share"} className={view === "share" ? "active" : ""} onClick={() => { setMessage(undefined); setView("share"); }}>Share this computer</button>
+      </div>
+
+      <div className="server-profiles-body">
+        {view === "connect" ? renderConnect() : renderShare()}
+      </div>
+      <footer>Each connection creates a device credential that stays on the connecting computer and can be revoked from the server.</footer>
+    </>
+  );
+
+  if (embedded) return <section className="settings-servers-panel">{content}</section>;
+
   return (
     <div className="server-profiles-layer" role="presentation">
       <button className="server-profiles-backdrop" type="button" tabIndex={-1} aria-label="Close computers" onClick={close} />
@@ -453,16 +473,7 @@ export function ConnectionProfilesDialog({
           <div><span>Remote Desktop</span><h2 id="server-profiles-title">Computers</h2></div>
           <button type="button" aria-label="Close" onClick={close}>×</button>
         </header>
-
-        <div className="conn-toggle" role="group" aria-label="Connection settings">
-          <button type="button" aria-pressed={view === "connect"} className={view === "connect" ? "active" : ""} onClick={() => setView("connect")}>Connect</button>
-          <button type="button" aria-pressed={view === "share"} className={view === "share" ? "active" : ""} onClick={() => { setMessage(undefined); setView("share"); }}>Share this computer</button>
-        </div>
-
-        <div className="server-profiles-body">
-          {view === "connect" ? renderConnect() : renderShare()}
-        </div>
-        <footer>Each connection creates a device credential that stays on the connecting computer and can be revoked from the server.</footer>
+        {content}
       </section>
     </div>
   );

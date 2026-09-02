@@ -2215,6 +2215,8 @@ export function DesktopApp() {
       prepareMobileAccess={desktopApi.mobileAccessPairing}
       loadVoiceSettings={localSourceApi.voiceSettingsGet}
       saveVoiceCredentials={localSourceApi.voiceCredentialsSet}
+      loadNotificationPreferences={desktopApi.notificationPreferencesGet}
+      saveNotificationPreferences={desktopApi.notificationPreferencesSet}
       listConnectionProfiles={desktopApi.connectionProfileList}
       connectConnectionProfile={async (input) => {
         const result = await desktopApi.connectionProfileConnect(input);

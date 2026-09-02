@@ -3,6 +3,7 @@ import type { MobileAccessPairingResult } from "../mobile-access.js";
 import type { PromptAsset } from "../prompt-settings.js";
 import type { QuickActionImageHandle } from "../../quick-action-image.js";
 import type { LayoutDocument } from "../../layout/model.js";
+import type { NotificationPreferences } from "../../notification-preferences.js";
 import type {
   ConnectionProfileConnectInput,
   ConnectionProfileConnectResult,
@@ -199,6 +200,8 @@ export type ProjectDeleteCallResult =
 
 export type DesktopApi = {
   isPackaged(): Promise<boolean>;
+  notificationPreferencesGet(): Promise<NotificationPreferences>;
+  notificationPreferencesSet(preferences: NotificationPreferences): Promise<NotificationPreferences>;
   pickLocalFolder(defaultPath?: string): Promise<string | null>;
   mobileAccessPairing(): Promise<MobileAccessPairingResult>;
   connectionProfileList(): Promise<ConnectionProfileSummary[]>;
