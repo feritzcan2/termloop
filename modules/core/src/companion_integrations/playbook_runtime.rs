@@ -364,10 +364,18 @@ impl CoreRuntime {
             .and_then(|standing| match standing.position {
                 PlaybookPosition::At(index) => {
                     let milestone = playbook.milestones.get(index)?;
+                    if milestone.routine_id != configuration.id {
+                        return Some(false);
+                    }
+                    if super::tracker_runtime::is_worker_problem_source_key(
+                        configuration.kind,
+                        &finding.source_key,
+                    ) {
+                        return Some(true);
+                    }
                     let answer = standing.answer_for(&milestone.id)?;
                     Some(
-                        milestone.routine_id == configuration.id
-                            && answer.verdict == PlaybookStepVerdict::Waiting
+                        answer.verdict == PlaybookStepVerdict::Waiting
                             && answer.evidence == finding.evidence,
                     )
                 }
@@ -445,6 +453,7 @@ impl CoreRuntime {
             });
         }
         let mut new_pending_findings = Vec::new();
+        let mut steward_review_required = false;
         for (index, answer) in answers.iter().enumerate() {
             if answer.verdict == PlaybookStepVerdict::Passed {
                 configuration
@@ -466,6 +475,12 @@ impl CoreRuntime {
                 if !configuration.recent_source_keys.contains(&source_key) {
                     configuration.recent_source_keys.push(source_key);
                 }
+                // A waiting finding is current work until the Steward resolves
+                // it. Re-present it on a later Worker cadence when the prior
+                // Steward wake produced no action. An already-visible proposal
+                // owns the decision channel and must remain quiet instead.
+                steward_review_required |=
+                    !self.companion_has_pending_proposal(&configuration.project_id);
                 continue;
             }
             if configuration.action_handling == RoutineActionHandling::Off {
@@ -479,15 +494,16 @@ impl CoreRuntime {
                 .map(|task| task.title.as_str())
                 .unwrap_or(answer.task_id.as_str());
             let summary = format!("{title} is waiting at “{}”.", assignment.milestone.title);
-            if let Some(existing) = configuration
+            if let Some(existing_index) = configuration
                 .pending_routine_findings
-                .iter_mut()
-                .find(|finding| finding.related_task_ids.contains(&answer.task_id))
+                .iter()
+                .position(|finding| finding.related_task_ids.contains(&answer.task_id))
             {
                 // New evidence may refine the same pending Steward decision,
                 // but it must not manufacture another proposal opportunity.
                 // Preserve the finding identity and refresh only its current
                 // factual observation.
+                let existing = &mut configuration.pending_routine_findings[existing_index];
                 existing.source_key = source_key.clone();
                 existing.summary = summary;
                 existing.evidence = answer.evidence.clone();
@@ -496,6 +512,8 @@ impl CoreRuntime {
                 if !configuration.recent_source_keys.contains(&source_key) {
                     configuration.recent_source_keys.push(source_key);
                 }
+                steward_review_required |=
+                    !self.companion_has_pending_proposal(&configuration.project_id);
                 continue;
             }
             if configuration.recent_source_keys.contains(&source_key) {
@@ -509,6 +527,7 @@ impl CoreRuntime {
                 continue;
             }
             configuration.recent_source_keys.push(source_key.clone());
+            steward_review_required = true;
             new_pending_findings.push(PendingRoutineFinding {
                 id: format!("{report_id}-{index}"),
                 source_key,
@@ -598,6 +617,7 @@ impl CoreRuntime {
             "passedCount": passed.len(),
             "waitingCount": still_waiting,
             "newPendingFindingCount": new_pending_findings.len(),
+            "stewardReviewRequired": steward_review_required,
             "stateRevision": self.store.revision(),
         }))
     }
@@ -1561,6 +1581,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(first["newPendingFindingCount"], 1);
+        assert_eq!(first["stewardReviewRequired"], true);
         let findings = runtime.read_routine_findings(&project_id).unwrap();
         assert_eq!(findings["routines"][0]["routineId"], "routine-pr");
         assert_eq!(findings["routines"][0]["actionHandling"], "ask");
@@ -1591,6 +1612,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(changed["newPendingFindingCount"], 0);
+        assert_eq!(changed["stewardReviewRequired"], true);
         let findings = runtime.read_routine_findings(&project_id).unwrap();
         assert_eq!(
             findings["routines"][0]["findings"]
@@ -1626,6 +1648,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(duplicate["newPendingFindingCount"], 0);
+        assert_eq!(duplicate["stewardReviewRequired"], true);
         assert_eq!(
             runtime.read_routine_findings(&project_id).unwrap()["routines"][0]["findings"]
                 .as_array()
@@ -1634,9 +1657,41 @@ mod tests {
             1
         );
 
+        runtime
+            .append_companion_message(
+                &project_id,
+                "steward",
+                "proposal",
+                super::super::transcript::CompanionMessageRefsInput {
+                    routine_finding_id: Some(first_finding_id.clone()),
+                    ..Default::default()
+                },
+                "I can request the missing review.".into(),
+                NOW + 5_500,
+            )
+            .unwrap();
         assert!(runtime.run_routine_now("routine-pr", NOW + 6_000).unwrap());
-        let passed_claim = runtime
+        let proposed_claim = runtime
             .claim_next_worker_routine(&project_id, "worker-session", "check-4".into(), NOW + 6_000)
+            .unwrap();
+        let proposed = runtime
+            .report_worker_step_verdicts(
+                &proposed_claim.capability.unwrap(),
+                vec![WorkerStepVerdict {
+                    task_id: "task-1".into(),
+                    passed: false,
+                    evidence: "The PR exists, but its required reviewer has not approved it."
+                        .into(),
+                }],
+                "report-4".into(),
+                NOW + 7_000,
+            )
+            .unwrap();
+        assert_eq!(proposed["stewardReviewRequired"], false);
+
+        assert!(runtime.run_routine_now("routine-pr", NOW + 8_000).unwrap());
+        let passed_claim = runtime
+            .claim_next_worker_routine(&project_id, "worker-session", "check-5".into(), NOW + 8_000)
             .unwrap();
         let passed = runtime
             .report_worker_step_verdicts(
@@ -1646,8 +1701,8 @@ mod tests {
                     passed: true,
                     evidence: "The required approval is now visible.".into(),
                 }],
-                "report-4".into(),
-                NOW + 7_000,
+                "report-5".into(),
+                NOW + 9_000,
             )
             .unwrap();
         assert_eq!(passed["passedCount"], 1);
@@ -1655,6 +1710,84 @@ mod tests {
         assert_eq!(
             runtime.read_routine_findings(&project_id).unwrap()["routines"],
             json!([])
+        );
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn step_problem_is_task_related_deduplicated_and_recoverable_by_the_steward() {
+        let (mut runtime, root, project_id) = pipeline_runtime();
+        let mut routine = runtime
+            .store
+            .tracker_configurations()
+            .iter()
+            .find(|routine| routine.id == "routine-pr")
+            .cloned()
+            .unwrap();
+        routine.action_handling = termloop_domain::RoutineActionHandling::Auto;
+        routine.steward_instructions = "Restore the missing evidence path.".into();
+        let revision = runtime.state_revision();
+        runtime
+            .store
+            .set_tracker_configuration(&runtime.write_authority, routine, revision)
+            .unwrap();
+
+        let claim = runtime
+            .claim_next_worker_routine(&project_id, "worker-session", "problem-1".into(), NOW)
+            .unwrap()
+            .capability
+            .unwrap();
+        let first = runtime
+            .report_worker_routine_problem(
+                &claim,
+                "The exact Task provider projection is unavailable.".into(),
+                vec!["provider://pull-request".into()],
+                "problem-report-1".into(),
+                NOW + 1_000,
+            )
+            .unwrap();
+        assert_eq!(first["relatedTaskIds"], json!(["task-1"]));
+        assert_eq!(first["reportCreated"], true);
+        assert_eq!(first["newPendingFindingCount"], 1);
+        assert_eq!(first["stewardReviewRequired"], true);
+        let findings = runtime.read_routine_findings(&project_id).unwrap();
+        assert_eq!(
+            findings["routines"][0]["findings"][0]["relatedTaskIds"],
+            json!(["task-1"])
+        );
+
+        assert!(runtime.run_routine_now("routine-pr", NOW + 2_000).unwrap());
+        let duplicate_claim = runtime
+            .claim_next_worker_routine(
+                &project_id,
+                "worker-session",
+                "problem-2".into(),
+                NOW + 2_000,
+            )
+            .unwrap()
+            .capability
+            .unwrap();
+        let duplicate = runtime
+            .report_worker_routine_problem(
+                &duplicate_claim,
+                "The exact Task provider projection is unavailable.".into(),
+                vec!["provider://pull-request".into()],
+                "problem-report-2".into(),
+                NOW + 3_000,
+            )
+            .unwrap();
+        assert_eq!(duplicate["reportCreated"], false);
+        assert_eq!(duplicate["newPendingFindingCount"], 0);
+        assert_eq!(duplicate["stewardReviewRequired"], true);
+        assert_eq!(
+            runtime
+                .list_tracker_runtime(json!({"projectId":project_id}))
+                .unwrap()["reports"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
         );
 
         std::fs::remove_dir_all(root).ok();

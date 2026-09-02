@@ -231,11 +231,14 @@ fn steward_task_agent_selection_is_optional_bounded_and_reported() {
         "task_agent_start",
         &json!({"taskId":"task-1","assignment":"Implement it.","agentId":"codex"})
     ));
-    assert!(!validate_mcp_tool_params(
+    // The transport keeps one simple object-shaped tool declaration for model
+    // callers. Core remains the authority that rejects a model without its
+    // provider or a cross-provider model at execution time.
+    assert!(validate_mcp_tool_params(
         "task_agent_start",
         &json!({"taskId":"task-1","assignment":"Implement it.","model":"fable"})
     ));
-    assert!(!validate_mcp_tool_params(
+    assert!(validate_mcp_tool_params(
         "task_agent_start",
         &json!({
             "taskId":"task-1",

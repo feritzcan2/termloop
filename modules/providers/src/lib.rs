@@ -149,6 +149,7 @@ pub struct PullRequestSummary {
     pub title: String,
     pub url: String,
     pub state: PullRequestState,
+    pub merge_commit_oid: Option<String>,
     pub base_branch: String,
     pub head_branch: String,
     pub head_repository_owner: String,
@@ -731,7 +732,7 @@ fn build_graphql_body(queries: &[PullRequestQuery]) -> Result<Vec<u8>, ProviderF
         let head = serde_json::to_string(&item.head_branch)
             .map_err(|_| ProviderFailure::ProviderFailure)?;
         query.push_str(&format!(
-            "q{index}:repository(owner:{owner},name:{name}){{isFork pullRequests(first:17,headRefName:{head},orderBy:{{field:UPDATED_AT,direction:DESC}}){{pageInfo{{hasNextPage}} nodes{{number title state isDraft baseRefName headRefName headRepository{{nameWithOwner}} updatedAt mergeable reviewDecision commits(last:1){{nodes{{commit{{statusCheckRollup{{state}}}}}}}}}}}} parent{{nameWithOwner pullRequests(first:17,headRefName:{head},orderBy:{{field:UPDATED_AT,direction:DESC}}){{pageInfo{{hasNextPage}} nodes{{number title state isDraft baseRefName headRefName headRepository{{nameWithOwner}} updatedAt mergeable reviewDecision commits(last:1){{nodes{{commit{{statusCheckRollup{{state}}}}}}}}}}}}}}}}"
+            "q{index}:repository(owner:{owner},name:{name}){{isFork pullRequests(first:17,headRefName:{head},orderBy:{{field:UPDATED_AT,direction:DESC}}){{pageInfo{{hasNextPage}} nodes{{number title state isDraft baseRefName headRefName headRepository{{nameWithOwner}} mergeCommit{{oid}} updatedAt mergeable reviewDecision commits(last:1){{nodes{{commit{{statusCheckRollup{{state}}}}}}}}}}}} parent{{nameWithOwner pullRequests(first:17,headRefName:{head},orderBy:{{field:UPDATED_AT,direction:DESC}}){{pageInfo{{hasNextPage}} nodes{{number title state isDraft baseRefName headRefName headRepository{{nameWithOwner}} mergeCommit{{oid}} updatedAt mergeable reviewDecision commits(last:1){{nodes{{commit{{statusCheckRollup{{state}}}}}}}}}}}}}}}}"
         ));
     }
     query.push_str(" rateLimit { remaining resetAt } }");
@@ -971,6 +972,10 @@ fn normalize_matching_summary(
         title: bounded_text(node.get("title")?.as_str()?, 512),
         url,
         state,
+        merge_commit_oid: merged_commit_oid(
+            state,
+            node.pointer("/mergeCommit/oid").and_then(Value::as_str),
+        ),
         base_branch: bounded_text(node.get("baseRefName")?.as_str()?, 255),
         head_branch: head_branch.to_owned(),
         head_repository_owner: head_owner.to_owned(),
@@ -1096,7 +1101,7 @@ fn map_mergeability(value: Option<&str>) -> Mergeability {
     }
 }
 
-const AZURE_PR_QUERY: &str = "[].{pullRequestId:pullRequestId,title:title,status:status,isDraft:isDraft,sourceRefName:sourceRefName,targetRefName:targetRefName,mergeStatus:mergeStatus,creationDate:creationDate,closedDate:closedDate,sourceCommitDate:lastMergeSourceCommit.committer.date,repository:{name:repository.name,project:repository.project.name},forkSource:{repository:{name:forkSource.repository.name,project:forkSource.repository.project.name}},reviewers:reviewers[?isRequired].{vote:vote,isRequired:isRequired}}";
+const AZURE_PR_QUERY: &str = "[].{pullRequestId:pullRequestId,title:title,status:status,isDraft:isDraft,sourceRefName:sourceRefName,targetRefName:targetRefName,mergeStatus:mergeStatus,mergeCommitId:lastMergeCommit.commitId,creationDate:creationDate,closedDate:closedDate,sourceCommitDate:lastMergeSourceCommit.committer.date,repository:{name:repository.name,project:repository.project.name},forkSource:{repository:{name:forkSource.repository.name,project:forkSource.repository.project.name}},reviewers:reviewers[?isRequired].{vote:vote,isRequired:isRequired}}";
 const AZURE_REPOSITORY_QUERY: &str = "{name:name,project:project.name,parentRepository:{name:parentRepository.name,project:parentRepository.project.name}}";
 
 /// The resolved `az` request with its fixed non-interactive environment.
@@ -1686,6 +1691,10 @@ fn normalize_azure_summary(
         title: bounded_text(row.get("title")?.as_str()?, 512),
         url,
         state,
+        merge_commit_oid: merged_commit_oid(
+            state,
+            row.get("mergeCommitId").and_then(Value::as_str),
+        ),
         base_branch: bounded_text(base_branch, 1024),
         head_branch: bounded_text(head_branch, 1024),
         head_repository_owner: query.repository.organization.clone(),
@@ -1702,6 +1711,18 @@ fn normalize_azure_summary(
         },
         updated_at_epoch_ms,
     })
+}
+
+fn merged_commit_oid(state: PullRequestState, value: Option<&str>) -> Option<String> {
+    if state != PullRequestState::Merged {
+        return None;
+    }
+    let value = value?.trim();
+    if matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        Some(value.to_ascii_lowercase())
+    } else {
+        None
+    }
 }
 
 fn map_azure_review(value: &Value) -> ReviewState {
@@ -1924,6 +1945,7 @@ mod tests {
         assert!(!query.contains("token"));
         assert!(query.contains("first:17"));
         assert!(query.contains("pageInfo{hasNextPage}"));
+        assert!(query.contains("mergeCommit{oid}"));
     }
 
     #[test]
@@ -2103,6 +2125,21 @@ mod tests {
             parse_azure_pull_request_scan(query, None, &serde_json::to_vec(&vec![row]).unwrap())
                 .unwrap();
         assert_eq!(scan.pull_requests[0].mergeability, Mergeability::Blocked);
+    }
+
+    #[test]
+    fn merge_commit_is_exposed_only_for_a_merged_pull_request() {
+        let oid = "A".repeat(40);
+        assert_eq!(
+            merged_commit_oid(PullRequestState::Merged, Some(&oid)),
+            Some("a".repeat(40))
+        );
+        assert_eq!(merged_commit_oid(PullRequestState::Open, Some(&oid)), None);
+        assert_eq!(
+            merged_commit_oid(PullRequestState::Merged, Some("not-an-object-id")),
+            None
+        );
+        assert!(AZURE_PR_QUERY.contains("mergeCommitId:lastMergeCommit.commitId"));
     }
 
     #[test]

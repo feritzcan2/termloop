@@ -85,7 +85,7 @@
       }
     },
     "task_read": {
-      "description": "Read current Task state for this authenticated Project. Omit taskId to list Task records. Pass an exact taskId to read one Task together with all bounded Task-owned delivery evidence TermLoop currently projects: branch and worktree state, Jira link, branch commit summary, pull request projection, and ordinary Task Agent status. A scoped result includes effectiveBranch: the checked-out worktree branch when observed, otherwise the durable Task branch. The durable task.branch remains the stable delivery identity. The result declares evidence semantics: an Agent plan is an unverified Agent-authored claim, Task state is not delivery completion, and every pull-request signal must be interpreted only at its named source and scope. `unsupported` and `notReported` never prove a gate passed. Each external projection keeps its own freshness or unavailability fields; missing or stale evidence is not completion. A Worker processing a Playbook step must pass that assignment's exact taskId and checkId before inspecting other evidence or reporting its verdict. The successful scoped read is required for that exact verdict; never infer Task identity from the Project checkout HEAD, a ticket key, title, or a guessed branch. Raw transcripts, secrets, credentials, and unrestricted logs are never returned.",
+      "description": "Read current Task state for this authenticated Project. Omit taskId to list Task records. Pass an exact taskId to read one Task together with all bounded Task-owned delivery evidence TermLoop currently projects: branch and worktree state, Jira link, branch commit summary, pull request projection (including a provider-confirmed merge commit when available), and ordinary Task Agent status. A scoped result includes effectiveBranch as a current-checkout convenience only: the checked-out worktree branch when observed, otherwise the durable Task branch. It is not a universal delivery identity; select an exact Task-projected branch or pull request whose head and base fit the current stage. The result declares evidence semantics: an Agent plan is an unverified Agent-authored claim, Task state is not delivery completion, `branchDiverged` cannot prove Task-owned commits, and every pull-request signal must be interpreted only at its named source and scope. `unsupported` and `notReported` never prove a gate passed. Each external projection keeps its own freshness or unavailability fields; missing or stale evidence is not completion. A Worker processing a Playbook step must pass that assignment's exact taskId and checkId before inspecting other evidence or reporting its verdict. The successful scoped read is required for that exact verdict; never infer Task identity from the Project checkout HEAD, a ticket key, title, or a guessed branch. Raw transcripts, secrets, credentials, and unrestricted logs are never returned.",
       "role": [
         "steward",
         "worker"
@@ -247,7 +247,7 @@
       }
     },
     "task_agent_start": {
-      "description": "Start or reuse an Agent for an existing Task in this authenticated Project. When the user explicitly requests a provider or model, pass agentId and the optional matching model; an explicit provider with no model uses that provider's default model, permission, and reasoning. Otherwise omit both fields and TermLoop replays the exact provider, model, permission, and reasoning from the last successful ordinary Agent launch. Never infer a provider/model preference from the Steward's own launch. TermLoop chooses a safe managed branch and sibling worktree, performs the inspected launch, and returns success only after the visible assignment is delivered. Do not call shell or Git tools to plan paths or refs.",
+      "description": "Start or reuse an Agent for an existing Task in this authenticated Project. When the user explicitly requests a provider or model, pass agentId and the optional matching model; an explicit provider with no model uses that provider's default model, permission, and reasoning. Otherwise omit both fields and TermLoop replays the exact provider, model, permission, and reasoning from the last successful ordinary Agent launch. Never infer a provider/model preference from the Steward's own launch. Invalid missing-provider or cross-provider model selections are rejected by Core. TermLoop chooses a safe managed branch and sibling worktree, performs the inspected launch, and returns success only after the visible assignment is delivered. Do not call shell or Git tools to plan paths or refs.",
       "role": "steward",
       "params": {
         "$ref": "#/$defs/mcpStewardTaskAgentStartParams"
@@ -1457,81 +1457,7 @@
             "gpt-5.5-pro"
           ]
         }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "model": {}
-            },
-            "required": [
-              "model"
-            ]
-          },
-          "then": {
-            "properties": {
-              "agentId": {}
-            },
-            "required": [
-              "agentId"
-            ]
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "agentId": {
-                "const": "claude"
-              }
-            },
-            "required": [
-              "agentId"
-            ]
-          },
-          "then": {
-            "properties": {
-              "model": {
-                "type": "string",
-                "enum": [
-                  "default",
-                  "opus[1m]",
-                  "fable",
-                  "sonnet",
-                  "haiku",
-                  "opus"
-                ]
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "agentId": {
-                "const": "codex"
-              }
-            },
-            "required": [
-              "agentId"
-            ]
-          },
-          "then": {
-            "properties": {
-              "model": {
-                "type": "string",
-                "enum": [
-                  "default",
-                  "gpt-5.6-sol",
-                  "gpt-5.6-terra",
-                  "gpt-5.6-luna",
-                  "gpt-5.5",
-                  "gpt-5.5-pro"
-                ]
-              }
-            }
-          }
-        }
-      ]
+      }
     },
     "mcpStewardTaskAgentStartResult": {
       "x-codegen": true,

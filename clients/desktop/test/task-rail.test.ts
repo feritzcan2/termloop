@@ -78,6 +78,7 @@ function mergedProjection(task: Task): GitHostProjection {
       title: "Ship compact launchers",
       url: "https://github.com/termloop/termloop-next/pull/42",
       state: "merged",
+      merge_commit_oid: "a".repeat(40),
       base_branch: "main",
       head_branch: "feature/launchers",
       head_repository_owner: "termloop",
