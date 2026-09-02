@@ -2,7 +2,11 @@ import type { AgentStatusDto, SessionDto, TaskDto } from "@termloop/contract/cur
 import { describe, expect, it } from "vitest";
 
 import type { ConnectionProfile, MobileOverview } from "../../src/application/ports";
-import { connectionRouteParams } from "../../src/features/connection/connection-route";
+import {
+  connectionRouteParams,
+  missingSessionRouteState,
+  resolveSessionRouteConnectionId,
+} from "../../src/features/connection/connection-route";
 import {
   preferredConnectionId,
   shouldResetConnectionTransports,
@@ -457,6 +461,41 @@ describe("connection presentation", () => {
       sessionId: "session-1",
       connectionId: "mac-away",
     });
+  });
+
+  it("recovers a retained Session route from a stale Mac hint using the live projection", () => {
+    const scopes = [
+      { connectionId: "mac-home", sessionIds: ["session-other"] },
+      { connectionId: "mac-away", sessionIds: ["session-target"] },
+    ];
+
+    expect(resolveSessionRouteConnectionId("mac-removed", "session-target", scopes))
+      .toBe("mac-away");
+    expect(resolveSessionRouteConnectionId("mac-removed", "session-missing", scopes))
+      .toBeUndefined();
+    expect(resolveSessionRouteConnectionId("mac-home", "session-missing", scopes))
+      .toBe("mac-home");
+  });
+
+  it("never leaves failed or blocked Session routes in a loading state", () => {
+    const base = {
+      catalogLoad: "ready" as const,
+      selectingConnection: false,
+      targetConnectionSelected: true,
+      targetConnectionReadable: true,
+      overviewLoad: "ready" as const,
+      unresolvedProjectionsPending: false,
+      unresolvedProjectionFailed: false,
+    };
+
+    expect(missingSessionRouteState({ ...base, overviewLoad: "failed" })).toBe("overviewFailed");
+    expect(missingSessionRouteState({ ...base, targetConnectionReadable: false })).toBe("connectionBlocked");
+    expect(missingSessionRouteState({
+      ...base,
+      targetConnectionSelected: false,
+      unresolvedProjectionFailed: true,
+    })).toBe("overviewFailed");
+    expect(missingSessionRouteState({ ...base, overviewLoad: "loading" })).toBe("loading");
   });
 
   it("shortens a contract identity while keeping enough to compare two of them", () => {
