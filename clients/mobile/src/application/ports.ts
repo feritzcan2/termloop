@@ -51,10 +51,10 @@ export interface ConnectionCatalogPort {
   /// performs its normal authoritative probe; the event itself is not status.
   subscribeChanges(listener: () => void): () => void;
   /// Drops cached physical WebSocket paths without removing any saved Mac or
-  /// logical terminal subscription. The lifecycle owner calls this around
-  /// background transitions so a suspended native socket is never reused as
-  /// foreground connectivity evidence.
-  resetTransports(): void;
+  /// logical terminal subscription. Entering the background deliberately pauses
+  /// reconnects; foreground recovery requests a fresh authenticated path
+  /// immediately instead of depending on a later catalog probe.
+  resetTransports(reconnect?: boolean): void;
   pair(code: string): Promise<string>;
 }
 

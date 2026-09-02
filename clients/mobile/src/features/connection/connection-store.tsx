@@ -64,7 +64,7 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
     const previous = transportLifecycle.current;
     transportLifecycle.current = lifecycle;
     if (shouldResetConnectionTransports(previous, lifecycle)) {
-      runtime.connections.resetTransports();
+      runtime.connections.resetTransports(lifecycle.active);
     }
   }, [runtime, lifecycle.active, lifecycle.foregroundRevision]);
 
