@@ -65,7 +65,8 @@ import type { SessionHistoryListResult } from "@termloop/contract/current";
 import { ErrorLogPanel } from "./ErrorLogPanel.js";
 import { MobileConnectDialog } from "./MobileConnectDialog.js";
 import type { MobileAccessPairingResult } from "../mobile-access.js";
-import { ConnectionProfilesDialog } from "./ConnectionProfilesDialog.js";
+import { SettingsDialog, type SettingsPage } from "./SettingsDialog.js";
+import type { NotificationPreferences } from "../../notification-preferences.js";
 import type {
   ConnectionProfileConnectInput,
   ConnectionProfileConnectResult,
@@ -148,6 +149,8 @@ export type ShellProps = {
   prepareMobileAccess(): Promise<MobileAccessPairingResult>;
   loadVoiceSettings(): Promise<VoiceSettingsResult>;
   saveVoiceCredentials(params: VoiceCredentialsSetParams): Promise<VoiceSettingsResult>;
+  loadNotificationPreferences(): Promise<NotificationPreferences>;
+  saveNotificationPreferences(preferences: NotificationPreferences): Promise<NotificationPreferences>;
   listConnectionProfiles(): Promise<ConnectionProfileSummary[]>;
   connectConnectionProfile(input: ConnectionProfileConnectInput): Promise<ConnectionProfileConnectResult>;
   setConnectionProfileEnabled(profileId: string, enabled: boolean): Promise<ConnectionProfileSummary[]>;
@@ -439,7 +442,7 @@ export function Shell(props: ShellProps) {
     && props.projectSessions.some((session) => session.id === projectRunSessionId && isLiveSession(session)),
   );
   const [mobileConnectOpen, setMobileConnectOpen] = useState(false);
-  const [connectionProfilesOpen, setConnectionProfilesOpen] = useState(false);
+  const [settingsPage, setSettingsPage] = useState<SettingsPage>();
   const [sessionMenu, setSessionMenu] = useState<SessionMenuState>();
   const [relocationSessionId, setRelocationSessionId] = useState<string>();
   const [relocationTaskId, setRelocationTaskId] = useState<string>();
@@ -933,7 +936,7 @@ export function Shell(props: ShellProps) {
     restore: props.restoreDeletedSession,
   });
   const projectActionDisabled = !props.selectedProject || props.connection !== "connected" || selectedSourceOffline;
-  const shortcutsBlocked = mobileConnectOpen || connectionProfilesOpen || shellShortcutsBlocked({
+  const shortcutsBlocked = mobileConnectOpen || Boolean(settingsPage) || shellShortcutsBlocked({
     projectDialogOpen: props.projectDialogOpen,
     projectMenuOpen,
     editProjectOpen,
@@ -949,7 +952,7 @@ export function Shell(props: ShellProps) {
     projectMenu: projectMenuOpen,
     editProject: editProjectOpen,
     deleteProject: deleteProjectOpen,
-    connectionProfiles: connectionProfilesOpen,
+    connectionProfiles: Boolean(settingsPage),
     renameSession: Boolean(renameTarget),
     commandPalette: commandPaletteOpen,
     shortcutSettings: shortcutSettingsOpen,
@@ -1245,7 +1248,7 @@ export function Shell(props: ShellProps) {
     <>
       {props.connection !== "connected" ? <div className="server-connection-alert" role="status">
         <div><strong>{connectionTitle}</strong><span>{props.connectionMessage ?? "TermLoop will keep retrying in the background."}</span></div>
-        <button type="button" onClick={() => setConnectionProfilesOpen(true)}>Servers</button>
+        <button type="button" onClick={() => setSettingsPage("servers")}>Settings</button>
       </div> : null}
       <SidebarSessionDndProvider
         sessions={props.projectSessions.filter((session) => !isAssistantSession(session))}
@@ -1628,7 +1631,7 @@ export function Shell(props: ShellProps) {
               openReference={() => openAssistant({ kind: "steward", initialView: "terminal" })}
             /> : null}
             <div className="sidebar-footer-actions">
-              <button className="server-connect-trigger" type="button" onClick={() => setConnectionProfilesOpen(true)}>Servers</button><button className="mobile-connect-trigger" type="button" onClick={() => setMobileConnectOpen(true)}>Connect Mobile</button><KeepAwakePanel load={props.loadKeepAwake} save={props.setKeepAwake} refreshToken={props.keepAwakeRefreshToken} />{!props.isPackaged ? <ErrorLogPanel entries={props.errorLog} clear={props.clearErrorLog} /> : null}
+              <button className="settings-trigger" type="button" onClick={() => setSettingsPage("notifications")}>Settings</button><button className="mobile-connect-trigger" type="button" onClick={() => setMobileConnectOpen(true)}>Connect Mobile</button><KeepAwakePanel load={props.loadKeepAwake} save={props.setKeepAwake} refreshToken={props.keepAwakeRefreshToken} />{!props.isPackaged ? <ErrorLogPanel entries={props.errorLog} clear={props.clearErrorLog} /> : null}
             </div>
           </footer>
         </aside>
@@ -1926,7 +1929,10 @@ export function Shell(props: ShellProps) {
         remove={props.deleteRunConfiguration}
         run={async () => undefined}
       /> : null}
-      {connectionProfilesOpen ? <ConnectionProfilesDialog
+      {settingsPage ? <SettingsDialog
+        initialPage={settingsPage}
+        loadNotificationPreferences={props.loadNotificationPreferences}
+        saveNotificationPreferences={props.saveNotificationPreferences}
         list={props.listConnectionProfiles}
         connect={props.connectConnectionProfile}
         setEnabled={props.setConnectionProfileEnabled}
@@ -1936,7 +1942,7 @@ export function Shell(props: ShellProps) {
         hostStatus={props.remoteHostStatus}
         enableHost={props.enableRemoteHost}
         disableHost={props.disableRemoteHost}
-        close={() => setConnectionProfilesOpen(false)}
+        close={() => setSettingsPage(undefined)}
       /> : null}
       {sessionMenu && menuSession ? (
         <SessionContextMenu

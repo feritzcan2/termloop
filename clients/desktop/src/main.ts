@@ -96,6 +96,12 @@ import {
 import { UpdateManager } from "./main/update-manager.js";
 import { autoUpdateSupported } from "./platform/auto-update-policy.js";
 import { createAutoUpdateDriver, scheduleAutoUpdateTask } from "./platform/auto-update.js";
+import {
+  notificationPreferencesOf,
+  shouldShowAgentAttentionNotification,
+  type NotificationPreferences,
+} from "./notification-preferences.js";
+import { NotificationPreferencesFileStore } from "./platform/notification-preferences-store.js";
 
 declare const TERMLOOP_COMPILED_DEV_PROFILE: string | null;
 
@@ -139,6 +145,9 @@ const clientLaunchId = createClientLaunchId();
 let clientLaunchRestartSent = false;
 let restartAgentsForLocalSubscription = false;
 let promptAssetStore: PromptAssetStore | undefined;
+let notificationPreferencesStore: NotificationPreferencesFileStore | undefined;
+let notificationPreferencesCache: NotificationPreferences | undefined;
+let notificationPreferencesLoad: Promise<NotificationPreferences> | undefined;
 
 const connections = new ConnectionRegistry({
   invalidated(profileId, payload) {
@@ -243,6 +252,32 @@ function clientLayoutStore(): LayoutFileStore {
   return layoutStore;
 }
 
+function clientNotificationPreferencesStore(): NotificationPreferencesFileStore {
+  notificationPreferencesStore ??= new NotificationPreferencesFileStore(
+    path.join(app.getPath("userData"), "notification-preferences.v1.json"),
+  );
+  return notificationPreferencesStore;
+}
+
+async function currentNotificationPreferences(): Promise<NotificationPreferences> {
+  if (notificationPreferencesCache) return notificationPreferencesCache;
+  notificationPreferencesLoad ??= clientNotificationPreferencesStore().load();
+  const loaded = await notificationPreferencesLoad;
+  notificationPreferencesCache ??= loaded;
+  return notificationPreferencesCache;
+}
+
+async function updateNotificationPreferences(value: unknown): Promise<NotificationPreferences> {
+  const preferences = notificationPreferencesOf(value);
+  if (!preferences) throw new Error("invalidNotificationPreferences");
+  notificationPreferencesCache = await clientNotificationPreferencesStore().save(preferences);
+  if (!preferences.enabled) {
+    for (const notification of attentionNotifications.values()) notification.close();
+    attentionNotifications.clear();
+  }
+  return notificationPreferencesCache;
+}
+
 async function publishClientMobileAgentGroups(document: LayoutDocument): Promise<void> {
   try {
     await publishMobileAgentGroups(document);
@@ -254,6 +289,16 @@ async function publishClientMobileAgentGroups(document: LayoutDocument): Promise
 handleIpc("termloop:app-is-packaged", (event) => {
   requireMainRenderer(event);
   return app.isPackaged;
+});
+
+handleIpc("termloop:notification-preferences-get", (event) => {
+  requireMainRenderer(event);
+  return currentNotificationPreferences();
+});
+
+handleIpc("termloop:notification-preferences-set", (event, value: unknown) => {
+  requireMainRenderer(event);
+  return updateNotificationPreferences(value);
 });
 
 /// The OS folder panel, offered next to the daemon's own folder listing. It can
@@ -1072,9 +1117,10 @@ handleIpc(
 handleIpc("termloop:agent-attention-notify", async (_event, sessionId: string) => {
   const profileId = currentConnectionProfileId();
   const notificationKey = connectionEntityKey(profileId, sessionId);
-  const [sessions, statuses] = await Promise.all([
+  const [sessions, statuses, notificationPreferences] = await Promise.all([
     controlCall("session.list"),
     controlCall("agent.statusList"),
+    currentNotificationPreferences(),
   ]);
   const session = sessions.find((value) => value.id === sessionId);
   const status = statuses.find((value) => value.sessionId === sessionId);
@@ -1087,13 +1133,17 @@ handleIpc("termloop:agent-attention-notify", async (_event, sessionId: string) =
   ) {
     return { accepted: false };
   }
-  if (!Notification.isSupported()) return { accepted: false };
+  if (!shouldShowAgentAttentionNotification(notificationPreferences, {
+    supported: Notification.isSupported(),
+    appFocused: mainWindow?.isFocused() === true,
+  })) return { accepted: false };
   const profileName = (await connectionProfiles().list())
     .find((profile) => profile.id === profileId)?.name ?? "Computer";
   attentionNotifications.get(notificationKey)?.close();
   const notification = new Notification({
     title: `${session.process.agent_id === "codex" ? "Codex" : "Claude"} needs input`,
     body: `${profileName} · ${session.name?.trim() || session.process.cwd}`,
+    silent: !notificationPreferences.playSound,
   });
   notification.on("click", () => {
     attentionNotifications.delete(notificationKey);
