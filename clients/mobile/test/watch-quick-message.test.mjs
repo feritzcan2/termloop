@@ -7,6 +7,7 @@ const complication = readFileSync(
 );
 const chatView = readFileSync(new URL("../targets/watch/ChatView.swift", import.meta.url), "utf8");
 const recorder = readFileSync(new URL("../targets/watch/VoiceRecorder.swift", import.meta.url), "utf8");
+const gatewayAPI = readFileSync(new URL("../targets/watch/WorktreesView.swift", import.meta.url), "utf8");
 
 describe("watch quick Steward message", () => {
   it("routes the complication directly to the one-shot message screen", () => {
@@ -28,5 +29,10 @@ describe("watch quick Steward message", () => {
     expect(recorder).toContain("private let silenceTicksToStop = 10");
     expect(chatView).toContain('path: "/watch/voice"');
     expect(chatView).toContain('caption: "Yanıt bildirimle gelecek"');
+  });
+
+  it("leaves enough time for the parallel transcription providers", () => {
+    expect(gatewayAPI).toContain("config.timeoutIntervalForResource = 45");
+    expect(gatewayAPI).toContain("request.timeoutInterval = 40");
   });
 });

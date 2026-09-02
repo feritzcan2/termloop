@@ -52,6 +52,7 @@ import {
 import { readTerminalNotificationPreview } from "./mobile-access-terminal-preview.mjs";
 import {
   ensureTranscriber,
+  preferPrimaryTranscription,
   transcribeAudioFile,
   validVoiceUpload,
   voiceContainerOf,
@@ -802,42 +803,98 @@ async function transcribeStewardRequest(request) {
 }
 
 async function transcribeStewardAudio(runtime, audio, contentType) {
-  let providerStatus = "unreachable";
-  try {
-    const provider = await daemonVoiceFetch(runtime, "/voice/transcriptions", {
-      method: "POST",
-      headers: { "content-type": contentType },
-      body: audio,
-    });
-    providerStatus = String(provider.status);
-    if (provider.ok) {
-      const payload = await provider.json();
-      const text = typeof payload?.text === "string" ? payload.text.trim() : "";
-      if (text.length > 0 && text.length <= 64 * 1024) {
-        process.stdout.write(
-          `${new Date().toISOString()} steward transcription provider=openai status=${provider.status} container=${voiceContainerOf(audio)} bytes=${audio.length}\n`,
-        );
-        return text;
-      }
-    }
-  } catch {
-    // The no-secret local recognizer below preserves the existing wrist path.
-  }
   const runtimeDir = path.dirname(configFile);
   const audioFile = path.join(runtimeDir, `watch-voice-${randomUUID()}.m4a`);
+  const container = voiceContainerOf(audio);
+  const startedAt = Date.now();
+  let providerStatus = "unreachable";
+  let providerDurationMs;
+  let fallbackStatus = "pending";
+  let fallbackDurationMs;
+  const fallbackAbort = new AbortController();
+  diagnostics.report("stewardVoice", "transcription_started", {
+    container,
+    bytes: audio.length,
+  });
   try {
     await writeFile(audioFile, audio, { mode: 0o600 });
-    const transcription = await transcribeAudioFile(runtimeDir, audioFile);
-    process.stdout.write(
-      `${new Date().toISOString()} steward transcription provider=${transcription.onDevice ? "apple-on-device" : "apple-speech"} status=200 container=${voiceContainerOf(audio)} bytes=${audio.length}\n`,
+    // Start the local recognizer before awaiting OpenAI. OpenAI remains the
+    // source of truth when it succeeds; after a failure, the already-running
+    // Apple result is available without paying a second serial wait.
+    const providerStartedAt = Date.now();
+    const providerPromise = (async () => {
+      try {
+        const provider = await daemonVoiceFetch(runtime, "/voice/transcriptions", {
+          method: "POST",
+          headers: { "content-type": contentType },
+          body: audio,
+        });
+        providerStatus = String(provider.status);
+        if (!provider.ok) throw new Error("OpenAI transcription failed");
+        const payload = await provider.json();
+        const text = typeof payload?.text === "string" ? payload.text.trim() : "";
+        if (text.length === 0 || text.length > 64 * 1024) {
+          providerStatus = `${provider.status}-invalid`;
+          throw new Error("OpenAI transcription was empty or oversized");
+        }
+        return text;
+      } finally {
+        providerDurationMs = Date.now() - providerStartedAt;
+      }
+    })();
+    const fallbackStartedAt = Date.now();
+    const fallbackPromise = (async () => {
+      try {
+        const transcription = await transcribeAudioFile(
+          runtimeDir,
+          audioFile,
+          undefined,
+          { signal: fallbackAbort.signal },
+        );
+        const text = transcription.text.trim();
+        if (text.length === 0 || text.length > 64 * 1024) {
+          fallbackStatus = "invalid";
+          throw new Error("Apple transcription was empty or oversized");
+        }
+        fallbackStatus = transcription.onDevice ? "apple-on-device" : "apple-speech";
+        return text;
+      } catch (cause) {
+        if (fallbackAbort.signal.aborted) fallbackStatus = "cancelled";
+        else if (fallbackStatus === "pending") fallbackStatus = "failed";
+        throw cause;
+      } finally {
+        fallbackDurationMs = Date.now() - fallbackStartedAt;
+      }
+    })();
+    const selected = await preferPrimaryTranscription(
+      providerPromise,
+      fallbackPromise,
+      () => fallbackAbort.abort(),
     );
-    return transcription.text;
+    diagnostics.report("stewardVoice", "transcription_completed", {
+      provider: selected.provider,
+      providerStatus,
+      providerDurationMs,
+      fallbackStatus,
+      fallbackDurationMs,
+      totalDurationMs: Date.now() - startedAt,
+      container,
+      bytes: audio.length,
+    });
+    return selected.transcription;
   } catch (cause) {
-    process.stdout.write(
-      `${new Date().toISOString()} steward transcription failed provider=${providerStatus} container=${voiceContainerOf(audio)} bytes=${audio.length}\n`,
-    );
+    diagnostics.report("stewardVoice", "transcription_failed", {
+      providerStatus,
+      providerDurationMs,
+      fallbackStatus,
+      fallbackDurationMs,
+      totalDurationMs: Date.now() - startedAt,
+      container,
+      bytes: audio.length,
+    });
     throw cause;
   } finally {
+    fallbackAbort.abort();
     await rm(audioFile, { force: true });
   }
 }

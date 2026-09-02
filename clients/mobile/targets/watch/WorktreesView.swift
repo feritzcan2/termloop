@@ -55,7 +55,7 @@ enum GatewayAPI {
     static let session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 20
-        config.timeoutIntervalForResource = 30
+        config.timeoutIntervalForResource = 45
         return URLSession(configuration: config)
     }()
 
@@ -102,7 +102,7 @@ enum GatewayAPI {
         var request = try authorizedRequest(credential: credential, path: path, query: query)
         request.httpMethod = "POST"
         request.setValue("audio/m4a", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 25
+        request.timeoutInterval = 40
         let audio = try Data(contentsOf: fileURL)
         let (data, response) = try await session.upload(for: request, from: audio)
         try validate(response: response, data: data)
