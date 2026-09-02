@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { probeGatewayCompatibility } from "../src/adapters/production/gateway-compatibility";
+import {
+  probeGatewayCompatibility,
+  waitForGatewayReachability,
+} from "../src/adapters/production/gateway-compatibility";
 import type { SavedConnection } from "../src/platform/secure-connections";
 
 const connection = {
@@ -54,5 +57,35 @@ describe("gateway compatibility probe", () => {
     await vi.advanceTimersByTimeAsync(900);
 
     await expect(outcome).resolves.toBe("unreachable");
+  });
+
+  it("proves the secret-free health route before a WebSocket is created", async () => {
+    const urls: string[] = [];
+    const request = vi.fn(async (input: string | URL | Request) => {
+      urls.push(String(input));
+      return new Response(null, { status: 200 });
+    });
+
+    await expect(waitForGatewayReachability(
+      connection,
+      request as typeof fetch,
+    )).resolves.toBeUndefined();
+
+    expect(request).toHaveBeenCalledOnce();
+    expect(urls).toEqual(["https://mac.example.ts.net/health"]);
+  });
+
+  it("bounds a Tailnet wake-up that never answers", async () => {
+    vi.useFakeTimers();
+    const request = vi.fn((_url: string | URL | Request, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+      })) as typeof fetch;
+
+    const waking = waitForGatewayReachability(connection, request);
+    const rejected = expect(waking).rejects.toThrow("not reachable");
+    await vi.advanceTimersByTimeAsync(4_000);
+
+    await rejected;
   });
 });
