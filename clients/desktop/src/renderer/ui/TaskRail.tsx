@@ -24,6 +24,7 @@ import { AgentPlanDisclosure } from "./AgentPlanDisclosure.js";
 import { RunSessionLine, TaskRunLaunchers, runCommandsBySessionId, runtimesBySessionId } from "./TaskRuns.js";
 import type { RunImprovement } from "./TaskRuns.js";
 import { AgentGroupFrame, agentSessionClusterMembers, agentSessionClusters, type AgentSessionCluster } from "./AgentGroup.js";
+import { TaskDeveloperNotes } from "./TaskDeveloperNotes.js";
 
 type MenuState = { taskId: string; x: number; y: number; invoker: HTMLElement };
 let taskRowRenderCount = 0;
@@ -1151,6 +1152,11 @@ const TaskGroup = memo(function TaskGroup(props: TaskGroupProps) {
           </button>
         )
       ) : null}
+      {props.focused && task.status === "open" && !props.deleting ? <TaskDeveloperNotes
+        projectId={props.projectId}
+        taskId={task.id}
+        taskTitle={task.title}
+      /> : null}
       {collapsed || props.deleting ? null : (
         <div className="task-children">
           <GitHostPullRequests

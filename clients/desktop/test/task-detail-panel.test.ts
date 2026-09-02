@@ -457,7 +457,7 @@ describe("the Task detail page on screen", () => {
     await unmount();
   });
 
-  it("shows every observed Task-worktree branch with its base and opens that branch", async () => {
+  it("shows every observed Task-worktree branch with its named base and opens that branch", async () => {
     const opened: unknown[] = [];
     const task = detailTask({
       branches: {
@@ -489,6 +489,18 @@ describe("the Task detail page on screen", () => {
             first_observed_worktree_generation: 1,
             rollup_eligible: true,
           },
+          {
+            branch_id: "branch-3",
+            name: "feature/legacy-checkout",
+            role: "associated",
+            held_by_task_id: null,
+            checked_out: false,
+            base_ref: null,
+            base_oid: "c".repeat(40),
+            base_evidence: "worktreeReflog",
+            first_observed_worktree_generation: 1,
+            rollup_eligible: true,
+          },
         ],
       },
     });
@@ -500,6 +512,10 @@ describe("the Task detail page on screen", () => {
     const branch = [...container.querySelectorAll<HTMLButtonElement>(".td-fact-action")]
       .find((button) => button.textContent?.includes("feature/api · base task/pipeline-page"));
     expect(branch).toBeDefined();
+    const branchWithoutNamedBase = [...container.querySelectorAll<HTMLButtonElement>(".td-fact-action")]
+      .find((button) => button.textContent?.includes("feature/legacy-checkout"));
+    expect(branchWithoutNamedBase?.textContent).toBe("feature/legacy-checkout");
+    expect(container.textContent).not.toContain("cccccccccccc");
     await act(async () => branch!.click());
     expect(opened).toEqual([{ kind: "commits", branchId: "branch-2" }]);
 
