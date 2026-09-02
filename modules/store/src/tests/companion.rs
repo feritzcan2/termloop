@@ -1,10 +1,11 @@
 use super::*;
 use termloop_domain::{
     CompanionMessage, CompanionMessageAuthor, CompanionMessageInputMode, CompanionMessageKind,
-    PlaybookConfiguration, PlaybookGateKind, PlaybookMilestone, PlaybookStepProgress,
-    PlaybookStepVerdict, ProcessDescriptor, ResumeFailureReason, ResumeProvider, ResumeRef,
-    RoutineActionHandling, RoutineTriggerMode, SessionKind, SessionRecord, StewardAgentId,
-    StewardConfiguration, TaskStatus, TrackerConfiguration, TrackerKind, WorkerConfiguration,
+    CompanionMessageRefs, PendingRoutineFinding, PlaybookConfiguration, PlaybookGateKind,
+    PlaybookMilestone, PlaybookStepProgress, PlaybookStepVerdict, ProcessDescriptor,
+    ResumeFailureReason, ResumeProvider, ResumeRef, RoutineActionHandling, RoutineTriggerMode,
+    SessionKind, SessionRecord, StewardAgentId, StewardConfiguration, TaskStatus,
+    TrackerConfiguration, TrackerKind, WorkerConfiguration,
 };
 
 #[test]
@@ -74,6 +75,112 @@ fn transcript_append_is_ordered_bounded_and_survives_reopen() {
 
     let store = Store::open(&path).unwrap();
     assert_eq!(store.companion_messages(), &[persisted]);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn companion_message_and_finding_dismissal_commit_atomically() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-companion-finding-{}-{}.json",
+        std::process::id(),
+        termloop_platform::current_epoch_ms()
+    ));
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    store
+        .insert_project(&authority, project("project-a"))
+        .unwrap();
+    store
+        .set_worker_configuration(
+            &authority,
+            worker_configuration("worker-1", "project-a", 1, true),
+            store.revision(),
+        )
+        .unwrap();
+    let finding = PendingRoutineFinding {
+        id: "finding-1".into(),
+        source_key: "ci:missing-pr".into(),
+        routine_generation: 1,
+        summary: "The pull request is missing.".into(),
+        evidence: "No matching provider result was observed.".into(),
+        source_references: vec![],
+        related_task_ids: vec![],
+        created_at_epoch_ms: 1,
+    };
+    store
+        .set_tracker_configuration(
+            &authority,
+            TrackerConfiguration {
+                id: "routine-1".into(),
+                project_id: "project-a".into(),
+                kind: TrackerKind::CiPr,
+                trigger_mode: RoutineTriggerMode::Schedule,
+                name: "Pull request".into(),
+                prompt: "Read the current pull request state.".into(),
+                steward_instructions: "Surface a useful response.".into(),
+                worker_id: "worker-1".into(),
+                enabled: true,
+                schedule_interval_seconds: 60,
+                generation: 1,
+                context_markdown: String::new(),
+                context_revision: 1,
+                recent_source_keys: vec![],
+                related_task_ids: vec![],
+                action_handling: RoutineActionHandling::Ask,
+                pending_routine_findings: vec![finding],
+                last_check_started_at_epoch_ms: None,
+                last_attempt_at_epoch_ms: None,
+                last_successful_report_at_epoch_ms: None,
+                updated_at_epoch_ms: 1,
+            },
+            store.revision(),
+        )
+        .unwrap();
+
+    let mut problem = message("project-a", 1, "The provider is unavailable.");
+    problem.author = CompanionMessageAuthor::Steward;
+    problem.kind = CompanionMessageKind::Problem;
+    problem.refs = Some(CompanionMessageRefs {
+        task_id: None,
+        session_id: None,
+        routine_finding_id: Some("finding-1".into()),
+        routine_finding_ids: vec![],
+    });
+    let revision = store.revision();
+    assert!(matches!(
+        store.append_companion_message_and_dismiss_routine_findings(
+            &authority,
+            problem.clone(),
+            &["missing-finding".into()],
+        ),
+        Err(StoreError::ConstraintViolation)
+    ));
+    assert_eq!(store.revision(), revision);
+    assert!(store.companion_messages().is_empty());
+
+    store
+        .append_companion_message_and_dismiss_routine_findings(
+            &authority,
+            problem.clone(),
+            &["finding-1".into()],
+        )
+        .unwrap();
+    assert_eq!(store.revision(), revision + 1);
+    assert_eq!(store.companion_messages(), &[problem]);
+    assert!(
+        store.tracker_configurations()[0]
+            .pending_routine_findings
+            .is_empty()
+    );
+
+    drop(store);
+    let reopened = Store::open(&path).unwrap();
+    assert_eq!(reopened.companion_messages().len(), 1);
+    assert!(
+        reopened.tracker_configurations()[0]
+            .pending_routine_findings
+            .is_empty()
+    );
     let _ = std::fs::remove_file(path);
 }
 

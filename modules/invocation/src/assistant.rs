@@ -130,6 +130,7 @@ const RETIRED_STEWARD_EXECUTOR_DEFAULTS: &[&str] = &[
     include_str!("../../../resources/prompts/retired/builtin.steward.executor.v32.md"),
     include_str!("../../../resources/prompts/retired/builtin.steward.executor.v33.md"),
     include_str!("../../../resources/prompts/retired/builtin.steward.executor.v34.md"),
+    include_str!("../../../resources/prompts/retired/builtin.steward.executor.v35.md"),
 ];
 
 pub fn resolved_steward_system_prompt(configured: &str) -> &str {

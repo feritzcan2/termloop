@@ -105,7 +105,7 @@ const IMPROVER_WORKER_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const IMPROVER_ROUTINE_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.improver.routine-instructions",
-    version: 8,
+    version: 9,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.improver.routine-instructions.md"
     ),
@@ -119,19 +119,19 @@ const ROUTINE_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.playbook",
-    version: 16,
+    version: 17,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.playbook.md"),
 };
 
 const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.steward.executor",
-    version: 35,
+    version: 36,
     authored_body: include_str!("../../../resources/prompts/builtin.steward.executor.md"),
 };
 
 const WORKER_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.worker.executor",
-    version: 21,
+    version: 22,
     authored_body: include_str!("../../../resources/prompts/builtin.worker.executor.md"),
 };
 
@@ -4079,8 +4079,8 @@ mod tests {
         let launch = prompt_improver_launch(target);
         let delivered = launch.delivered_prompt().unwrap();
 
-        assert_eq!(template.version, 16);
-        assert_eq!(launch.provenance().template_version, 16);
+        assert_eq!(template.version, 17);
+        assert_eq!(launch.provenance().template_version, 17);
         for expected in [
             "two compact review",
             "For a scoped edit to one or a few existing steps",
@@ -4103,9 +4103,11 @@ mod tests {
             "Project checkout cwd or",
             "task_agent_request",
             "Worker-to-Agent coordination among the recommended options",
+            "pullRequestCandidatesByBaseBranch",
+            "`coordinationAgent` projection",
             "sole authority",
-            "never require the Worker to re-prove that Agent identity",
-            "attempt `task_agent_request` before reporting",
+            "never require the Worker to re-prove Agent",
+            "Worker to attempt",
             "ordinary unmet evidence and is `waiting`",
         ] {
             assert!(delivered.contains(expected), "missing {expected:?}");
@@ -5896,7 +5898,7 @@ mod tests {
     #[test]
     fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
         let prompt = executor_prompt(ExecutorRole::Steward).unwrap();
-        assert_eq!(prompt.provenance().template_version, 35);
+        assert_eq!(prompt.provenance().template_version, 36);
         assert!(prompt.authored_preview().contains("routine_finding_read"));
         assert!(prompt.authored_preview().contains("playbook_read"));
         assert!(prompt.authored_preview().contains("task_set_steward_brief"));
@@ -6004,12 +6006,12 @@ mod tests {
         assert!(
             prompt
                 .authored_preview()
-                .contains("set `refs.routineFindingIds` to\nevery exact `findings[].id`")
+                .contains("`refs.routineFindingIds` for a batch")
         );
         assert!(
             prompt
                 .authored_preview()
-                .contains("Never use a Routine\n`routineId`")
+                .contains("Never use a\nRoutine `routineId`")
         );
         assert!(
             prompt
@@ -6091,7 +6093,7 @@ mod tests {
         assert!(
             prompt
                 .authored_preview()
-                .contains("Never call `task_agent_start` for that Task")
+                .contains("Never call `task_agent_start` for")
         );
         assert!(
             prompt
@@ -6118,6 +6120,17 @@ mod tests {
                 .authored_preview()
                 .contains("is disposition 6, not a reason to leave it pending")
         );
+        assert!(prompt.authored_preview().contains("deliveredAndDismissed"));
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("`task_read.coordinationAgent` projection")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("Do not run repository, provider, build, test")
+        );
 
         let retired =
             include_str!("../../../resources/prompts/retired/builtin.steward.executor.v2.md")
@@ -6130,7 +6143,7 @@ mod tests {
             default_steward_system_prompt()
         );
         let latest_retired =
-            include_str!("../../../resources/prompts/retired/builtin.steward.executor.v34.md")
+            include_str!("../../../resources/prompts/retired/builtin.steward.executor.v35.md")
                 .splitn(3, "\n\n")
                 .nth(2)
                 .unwrap()
@@ -6172,7 +6185,7 @@ mod tests {
     #[test]
     fn pipeline_prompts_treat_a_step_title_as_a_label_not_a_yes_no_contract() {
         let worker = executor_prompt(ExecutorRole::Worker).unwrap();
-        assert_eq!(worker.provenance().template_version, 21);
+        assert_eq!(worker.provenance().template_version, 22);
         assert!(
             worker
                 .authored_preview()
@@ -6203,7 +6216,17 @@ mod tests {
         assert!(
             worker
                 .authored_preview()
-                .contains("sole authority for the request target")
+                .contains("`pullRequestCandidatesByBaseBranch`")
+        );
+        assert!(
+            worker
+                .authored_preview()
+                .contains("`coordinationAgent.state`")
+        );
+        assert!(
+            worker
+                .authored_preview()
+                .contains("sole authority\nfor the request target")
         );
         assert!(
             worker

@@ -690,7 +690,7 @@ fn role_instructions(role: &termloop_core::session_launch::AgentMcpRole) -> &'st
             "Authenticated Project Steward profile. Follow the visible versioned Steward and wake prompts; the exposed MCP tools enforce Project scope and mutation authority."
         }
         termloop_core::session_launch::AgentMcpRole::Worker { .. } => {
-            "Authenticated Project Worker profile. Follow the visible versioned Worker and wake prompts; the exposed MCP tools enforce Routine reporting scope. Use task_agent_transcript_tail_read when Task completion evidence depends on recent developer Agent reports. During an exact claimed Playbook step, task_agent_request may send one Task-scoped question or delegated follow-up only to an ordinary Agent returned by that Task's successful scoped task_read; the Agent may return a visible handoff to this exact Worker Session. Workers cannot contact any other Agent or launch a replacement."
+            "Authenticated Project Worker profile. Follow the visible versioned Worker and wake prompts; the exposed MCP tools enforce Routine reporting scope. Use task_agent_transcript_tail_read when Task completion evidence depends on recent developer Agent reports. During an exact claimed Playbook step, task_agent_request may send one Task-scoped question or delegated follow-up only to the canonical Agent selected by that Task's successful scoped task_read coordinationAgent projection; the Agent may return a visible handoff to this exact Worker Session. Workers cannot contact any other Agent or launch a replacement."
         }
         termloop_core::session_launch::AgentMcpRole::Helper {
             request_id: Some(_),
@@ -775,7 +775,7 @@ async fn read_tasks(
     let branch_commits = branch_commits?;
     let pull_requests = pull_requests?;
 
-    let (task, agent_statuses) = {
+    let (task, agent_statuses, coordination_agent) = {
         let core = state.core.lock().await;
         if let Some((_, _, capability)) = worker_claim.as_ref() {
             let claimed_task_id = core.tracker_check_task_id(capability)?;
@@ -789,6 +789,7 @@ async fn read_tasks(
         (
             core.task_projection_for_executor(project_id, &task_id)?,
             core.task_agent_status_projection_for_executor(project_id, &task_id)?,
+            core.task_coordination_agent_projection_for_executor(project_id, &task_id)?,
         )
     };
     if let Some((session_id, check_id, _)) = worker_claim {
@@ -815,6 +816,7 @@ async fn read_tasks(
         branch_commits,
         pull_requests,
         agent_statuses,
+        coordination_agent,
     )))
 }
 
@@ -823,6 +825,7 @@ fn task_read_projection(
     branch_commits: Value,
     pull_requests: Value,
     agent_statuses: Value,
+    coordination_agent: Value,
 ) -> Value {
     let effective_branch = task
         .get("worktree_health")
@@ -833,21 +836,60 @@ fn task_read_projection(
                 .and_then(|branch| branch.get("name"))
                 .and_then(Value::as_str)
         });
+    let pull_request = pull_requests
+        .as_array()
+        .and_then(|items| items.first())
+        .cloned();
+    let pull_request_candidates_by_base_branch = pull_request
+        .as_ref()
+        .map(pull_request_candidates_by_base_branch)
+        .unwrap_or_default();
     json!({
         "task": task,
         "effectiveBranch": effective_branch,
         "branchCommitSummary": branch_commits.as_array().and_then(|items| items.first()).cloned(),
-        "pullRequest": pull_requests.as_array().and_then(|items| items.first()).cloned(),
+        "pullRequest": pull_request,
+        "pullRequestCandidatesByBaseBranch": pull_request_candidates_by_base_branch,
         "agentStatuses": agent_statuses,
+        "coordinationAgent": coordination_agent,
         "evidenceSemantics": {
             "task": "durableTermLoopRecordNotDeliveryCompletionEvidence",
             "effectiveBranch": "currentCheckoutConvenienceNotUniversalDeliveryIdentity",
             "branchCommitSummary": "boundedGitObservationBranchDivergedIsNotTaskOwnedWork",
             "pullRequest": "providerProjectionUseExactHeadBaseMergeCommitAndFreshness",
+            "pullRequestCandidatesByBaseBranch": "sameExactTaskProviderMatchesGroupedForStageSpecificSelectionCurrentCheckoutDoesNotInvalidateAMatchingPullRequest",
             "agentStatus": "runtimeObservation",
+            "coordinationAgent": "canonicalCurrentTaskAgentForWorkerAndStewardCoordination",
             "agentPlan": "agentReportedClaimNotIndependentlyVerified",
         },
     })
+}
+
+fn pull_request_candidates_by_base_branch(pull_request: &Value) -> Vec<Value> {
+    let mut groups = std::collections::BTreeMap::<String, Vec<Value>>::new();
+    for candidate in pull_request
+        .get("matches")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let Some(base_branch) = candidate.get("base_branch").and_then(Value::as_str) else {
+            continue;
+        };
+        groups
+            .entry(base_branch.to_owned())
+            .or_default()
+            .push(candidate.clone());
+    }
+    groups
+        .into_iter()
+        .map(|(base_branch, matches)| {
+            json!({
+                "baseBranch": base_branch,
+                "matches": matches,
+            })
+        })
+        .collect()
 }
 
 async fn read_pull_requests(
@@ -952,7 +994,7 @@ async fn steward_suggest(
         .pointer("/refs/routineFindingId")
         .and_then(Value::as_str)
         .map(str::to_owned);
-    let routine_finding_ids = arguments
+    let routine_finding_ids: Vec<String> = arguments
         .pointer("/refs/routineFindingIds")
         .and_then(Value::as_array)
         .map(|finding_ids| {
@@ -963,6 +1005,8 @@ async fn steward_suggest(
                 .collect()
         })
         .unwrap_or_default();
+    let dismisses_findings = matches!(kind, "update" | "attention" | "problem")
+        && (routine_finding_id.is_some() || !routine_finding_ids.is_empty());
     let mut core = state.core.lock().await;
     core.append_steward_suggestion(
         session_id,
@@ -980,11 +1024,21 @@ async fn steward_suggest(
     let state_revision = core.state_revision();
     drop(core);
     let _ = state.invalidation_requests.try_send(InvalidationRequest {
-        topics: vec![ProjectionTopic::Companion],
+        topics: if dismisses_findings {
+            vec![ProjectionTopic::Companion, ProjectionTopic::Routine]
+        } else {
+            vec![ProjectionTopic::Companion]
+        },
         state_revision,
         observation_sequence: state.observation_sequence.load(Ordering::Relaxed),
     });
-    Ok(json!({ "status": "delivered" }))
+    Ok(json!({
+        "status": if dismisses_findings {
+            "deliveredAndDismissed"
+        } else {
+            "delivered"
+        }
+    }))
 }
 
 async fn resolve_routine_finding(
@@ -2183,15 +2237,40 @@ mod tests {
                 "worktree_health": { "checked_out_branch": "termloop/current" }
             }),
             json!([{ "task_id": "task-1", "count": 2, "freshness": "fresh" }]),
-            json!([{ "taskId": "task-1", "matches": [{ "number": 42 }] }]),
+            json!([{
+                "taskId": "task-1",
+                "matches": [
+                    { "number": 43, "base_branch": "master" },
+                    { "number": 42, "base_branch": "development" }
+                ]
+            }]),
             json!([{ "sessionId": "agent-1", "status": "idle" }]),
+            json!({
+                "state": "selected",
+                "sessionId": "agent-1",
+                "reason": "soleCurrentTaskAgent",
+                "candidateSessionIds": ["agent-1"]
+            }),
         );
         assert_eq!(projection["task"]["id"], "task-1");
         assert_eq!(projection["task"]["branch"]["name"], "termloop/exact");
         assert_eq!(projection["effectiveBranch"], "termloop/current");
         assert_eq!(projection["branchCommitSummary"]["count"], 2);
-        assert_eq!(projection["pullRequest"]["matches"][0]["number"], 42);
+        assert_eq!(projection["pullRequest"]["matches"][0]["number"], 43);
+        assert_eq!(
+            projection["pullRequestCandidatesByBaseBranch"][0]["baseBranch"],
+            "development"
+        );
+        assert_eq!(
+            projection["pullRequestCandidatesByBaseBranch"][0]["matches"][0]["number"],
+            42
+        );
+        assert_eq!(
+            projection["pullRequestCandidatesByBaseBranch"][1]["baseBranch"],
+            "master"
+        );
         assert_eq!(projection["agentStatuses"][0]["sessionId"], "agent-1");
+        assert_eq!(projection["coordinationAgent"]["sessionId"], "agent-1");
         assert_eq!(
             projection["evidenceSemantics"]["agentPlan"],
             "agentReportedClaimNotIndependentlyVerified"
@@ -2206,13 +2285,20 @@ mod tests {
             json!([]),
             json!([]),
             json!([]),
+            json!({ "state": "none", "sessionId": null }),
         );
         assert_eq!(fallback["effectiveBranch"], "termloop/fallback");
-        let unavailable =
-            task_read_projection(json!({ "id": "task-3" }), json!([]), json!([]), json!([]));
+        let unavailable = task_read_projection(
+            json!({ "id": "task-3" }),
+            json!([]),
+            json!([]),
+            json!([]),
+            json!({ "state": "none", "sessionId": null }),
+        );
         assert!(unavailable["effectiveBranch"].is_null());
         assert!(unavailable["branchCommitSummary"].is_null());
         assert!(unavailable["pullRequest"].is_null());
+        assert_eq!(unavailable["pullRequestCandidatesByBaseBranch"], json!([]));
     }
 
     #[test]

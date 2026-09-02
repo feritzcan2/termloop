@@ -165,6 +165,12 @@ impl CoreRuntime {
                 proposal_message_id: pending.id.clone(),
             });
         }
+        let routine_finding_ids = refs
+            .all_routine_finding_ids()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let finding_reference_kind_allowed =
+            matches!(kind, "proposal" | "update" | "attention" | "problem");
         if refs.task_id.as_deref().is_some_and(|task_id| {
             !self
                 .store
@@ -179,40 +185,68 @@ impl CoreRuntime {
                     session.id == referenced_session_id && session.project_id == project_id
                 })
             })
-            || refs.all_routine_finding_ids().any(|finding_id| {
-                kind != "proposal"
-                    || self
-                        .current_routine_finding(project_id, finding_id)
-                        .is_none()
+            || (!routine_finding_ids.is_empty() && !finding_reference_kind_allowed)
+            || routine_finding_ids.iter().any(|finding_id| {
+                self.current_routine_finding(project_id, finding_id)
+                    .is_none()
             })
         {
             // Model-authored references are presentation links, not authority.
             // Only identifiers already observed in this Project may be projected.
             return Err(CoreError::CapabilityDenied);
         }
-        if refs.all_routine_finding_ids().any(|finding_id| {
-            self.store.companion_messages().iter().any(|message| {
-                message.project_id == project_id
-                    && message.author == termloop_domain::CompanionMessageAuthor::Steward
-                    && message.kind == termloop_domain::CompanionMessageKind::Proposal
-                    && message.refs.as_ref().is_some_and(|message_refs| {
-                        message_refs.references_routine_finding(finding_id)
-                    })
+        if kind != "proposal"
+            && let Some(pending) = self.current_pending_companion_proposal(project_id)
+            && pending.refs.as_ref().is_some_and(|pending_refs| {
+                routine_finding_ids
+                    .iter()
+                    .any(|finding_id| pending_refs.references_routine_finding(finding_id))
             })
-        }) {
+        {
+            return Err(CoreError::CompanionProposalPending {
+                proposal_message_id: pending.id.clone(),
+            });
+        }
+        if kind == "proposal"
+            && routine_finding_ids.iter().any(|finding_id| {
+                self.store.companion_messages().iter().any(|message| {
+                    message.project_id == project_id
+                        && message.author == termloop_domain::CompanionMessageAuthor::Steward
+                        && message.kind == termloop_domain::CompanionMessageKind::Proposal
+                        && message.refs.as_ref().is_some_and(|message_refs| {
+                            message_refs.references_routine_finding(finding_id)
+                        })
+                })
+            })
+        {
             // A finding is one current decision, even if its evidence is
             // refreshed while the user considers it. Re-proposing the same
             // decision would turn a heartbeat into chat spam.
             return Err(CoreError::RevisionConflict);
         }
-        self.append_companion_message(
-            project_id,
-            "steward",
-            kind,
-            refs,
-            content,
-            created_at_epoch_ms,
-        )
+        if matches!(kind, "update" | "attention" | "problem") && !routine_finding_ids.is_empty() {
+            self.append_companion_message_input_and_dismiss_routine_findings(
+                project_id,
+                crate::companion_integrations::transcript::CompanionMessageAppendInput {
+                    author: "steward".into(),
+                    kind: kind.into(),
+                    input_mode: "text".into(),
+                    refs,
+                    content,
+                },
+                created_at_epoch_ms,
+                &routine_finding_ids,
+            )
+        } else {
+            self.append_companion_message(
+                project_id,
+                "steward",
+                kind,
+                refs,
+                content,
+                created_at_epoch_ms,
+            )
+        }
     }
 
     pub fn append_steward_action(

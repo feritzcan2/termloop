@@ -27,6 +27,48 @@ struct TaskListCursor {
     offset: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CoordinationAgentSelection<'a> {
+    None,
+    Selected {
+        session_id: &'a str,
+        reason: &'static str,
+    },
+    Ambiguous {
+        reason: &'static str,
+    },
+}
+
+fn select_coordination_agent(candidates: &[(String, bool)]) -> CoordinationAgentSelection<'_> {
+    let preferred = candidates
+        .iter()
+        .filter(|(_, steward_started)| !steward_started)
+        .collect::<Vec<_>>();
+    match preferred.as_slice() {
+        [(session_id, _)] => CoordinationAgentSelection::Selected {
+            session_id,
+            reason: if candidates.len() == 1 {
+                "soleCurrentTaskAgent"
+            } else {
+                "preferredNonStewardTaskAgent"
+            },
+        },
+        [_, _, ..] => CoordinationAgentSelection::Ambiguous {
+            reason: "multipleNonStewardTaskAgents",
+        },
+        [] => match candidates {
+            [] => CoordinationAgentSelection::None,
+            [(session_id, _)] => CoordinationAgentSelection::Selected {
+                session_id,
+                reason: "soleStewardStartedTaskAgent",
+            },
+            [_, _, ..] => CoordinationAgentSelection::Ambiguous {
+                reason: "multipleStewardStartedTaskAgents",
+            },
+        },
+    }
+}
+
 fn decode_task_list_cursor(value: &str) -> Result<TaskListCursor, CoreError> {
     let bytes = URL_SAFE_NO_PAD
         .decode(value)
@@ -290,6 +332,43 @@ impl CoreRuntime {
         ))
     }
 
+    /// Selects the one current ordinary Agent that Worker and Steward
+    /// coordination should address for this exact Task. A non-Steward Agent
+    /// remains canonical when a legacy Steward-started duplicate also exists;
+    /// genuinely competing peers remain explicit ambiguity rather than an
+    /// order-dependent guess.
+    pub fn task_coordination_agent_projection_for_executor(
+        &self,
+        project_id: &str,
+        task_id: &str,
+    ) -> Result<Value, CoreError> {
+        let candidates = self.current_task_coordination_agent_candidates(project_id, task_id)?;
+        let candidate_session_ids = candidates
+            .iter()
+            .map(|(session_id, _)| session_id)
+            .collect::<Vec<_>>();
+        Ok(match select_coordination_agent(&candidates) {
+            CoordinationAgentSelection::None => json!({
+                "state": "none",
+                "sessionId": null,
+                "reason": "noCurrentTaskAgent",
+                "candidateSessionIds": candidate_session_ids,
+            }),
+            CoordinationAgentSelection::Selected { session_id, reason } => json!({
+                "state": "selected",
+                "sessionId": session_id,
+                "reason": reason,
+                "candidateSessionIds": candidate_session_ids,
+            }),
+            CoordinationAgentSelection::Ambiguous { reason } => json!({
+                "state": "ambiguous",
+                "sessionId": null,
+                "reason": reason,
+                "candidateSessionIds": candidate_session_ids,
+            }),
+        })
+    }
+
     /// Authorizes one Worker request target only when it is an ordinary Agent
     /// projected into this exact Task worktree. The server separately proves
     /// the Worker's live Playbook check and scoped Task-read receipt before
@@ -300,10 +379,40 @@ impl CoreRuntime {
         task_id: &str,
         target_session_id: &str,
     ) -> Result<(), CoreError> {
-        self.task_agent_session_ids_for_executor(project_id, task_id)?
-            .contains(target_session_id)
-            .then_some(())
-            .ok_or(CoreError::CapabilityDenied)
+        let candidates = self.current_task_coordination_agent_candidates(project_id, task_id)?;
+        matches!(
+            select_coordination_agent(&candidates),
+            CoordinationAgentSelection::Selected { session_id, .. }
+                if session_id == target_session_id
+        )
+        .then_some(())
+        .ok_or(CoreError::CapabilityDenied)
+    }
+
+    fn current_task_coordination_agent_candidates(
+        &self,
+        project_id: &str,
+        task_id: &str,
+    ) -> Result<Vec<(String, bool)>, CoreError> {
+        let task_session_ids = self.task_agent_session_ids_for_executor(project_id, task_id)?;
+        let mut candidates = self
+            .store
+            .sessions()
+            .iter()
+            .filter(|session| {
+                task_session_ids.contains(&session.id)
+                    && matches!(session.lifecycle_state.as_str(), "running" | "resuming")
+            })
+            .map(|session| {
+                (
+                    session.id.clone(),
+                    session.process.template_ref.as_deref()
+                        == Some("builtin.steward.task-assignment"),
+                )
+            })
+            .collect::<Vec<_>>();
+        candidates.sort_by(|left, right| left.0.cmp(&right.0));
+        Ok(candidates)
     }
 
     pub(crate) fn create_task(&mut self, params: Value) -> Result<Value, CoreError> {
@@ -763,4 +872,35 @@ fn normalized_nullable_text(
         return Err(CoreError::InvalidParams(key.into()));
     }
     Ok(value.chars().next().is_some().then(|| value.to_owned()))
+}
+
+#[cfg(test)]
+mod coordination_tests {
+    use super::{CoordinationAgentSelection, select_coordination_agent};
+
+    #[test]
+    fn coordination_prefers_the_existing_non_steward_agent_over_a_legacy_duplicate() {
+        let candidates = vec![
+            ("agent-from-task".to_owned(), false),
+            ("agent-from-steward".to_owned(), true),
+        ];
+        assert_eq!(
+            select_coordination_agent(&candidates),
+            CoordinationAgentSelection::Selected {
+                session_id: "agent-from-task",
+                reason: "preferredNonStewardTaskAgent",
+            }
+        );
+    }
+
+    #[test]
+    fn coordination_never_guesses_between_peer_agents() {
+        let candidates = vec![("agent-a".to_owned(), false), ("agent-b".to_owned(), false)];
+        assert_eq!(
+            select_coordination_agent(&candidates),
+            CoordinationAgentSelection::Ambiguous {
+                reason: "multipleNonStewardTaskAgents",
+            }
+        );
+    }
 }
