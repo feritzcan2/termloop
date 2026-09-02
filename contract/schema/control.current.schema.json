@@ -3130,6 +3130,7 @@
       "enum": [
         "noBranch",
         "baseRefUnavailable",
+        "branchDiverged",
         "ambiguousRemote",
         "branchMissing",
         "repositoryUnavailable",
@@ -9982,6 +9983,7 @@
         "title",
         "url",
         "state",
+        "merge_commit_oid",
         "base_branch",
         "head_branch",
         "head_repository_owner",
@@ -10046,6 +10048,13 @@
         },
         "state": {
           "$ref": "#/$defs/gitHostPullRequestState"
+        },
+        "merge_commit_oid": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
         },
         "base_branch": {
           "type": "string",

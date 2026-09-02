@@ -224,6 +224,52 @@ fn no_remote_uses_only_the_caller_proven_exact_local_base() {
 }
 
 #[test]
+fn current_base_count_fails_closed_when_the_managed_branch_lost_its_recorded_base() {
+    let repository = TestRepository::init("branch-commit-diverged");
+    repository.create_commit("managed base");
+    let recorded_base_oid = repository.git(["rev-parse", "HEAD"]).stdout;
+    let recorded_base_oid = recorded_base_oid.strip_suffix(b"\n").unwrap();
+    repository.git([
+        "remote",
+        "add",
+        "origin",
+        "https://example.invalid/repository.git",
+    ]);
+    repository.git(["update-ref", "refs/remotes/origin/development", "HEAD"]);
+    repository.git(["checkout", "--orphan", "unrelated"]);
+    fs::write(repository.root().join("unrelated.txt"), "unrelated\n").unwrap();
+    repository.git(["add", "--", "unrelated.txt"]);
+    repository.git(["commit", "-m", "unrelated history"]);
+    repository.git(["branch", "feature/diverged"]);
+
+    let observed = GitRunner::discover()
+        .unwrap()
+        .observe_branch_commit_summary_requests(
+            repository.root(),
+            &[
+                termloop_gitio::BranchCommitSummaryRequest::with_current_base_and_recorded_base(
+                    b"feature/diverged".to_vec(),
+                    b"refs/heads/development".to_vec(),
+                    recorded_base_oid.to_vec(),
+                ),
+            ],
+        )
+        .unwrap()
+        .observations
+        .pop()
+        .unwrap()
+        .unwrap();
+
+    assert!(matches!(
+        observed.state,
+        BranchCommitState::Unavailable {
+            reason: BranchCommitUnavailable::BranchDiverged,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn ambiguous_remote_and_missing_remote_head_fail_closed() {
     let ambiguous = TestRepository::init("branch-commit-ambiguous");
     ambiguous.create_commit("base");

@@ -17,6 +17,7 @@ const BRANCH_COMMIT_OUTPUT_LIMIT: usize = 1024 * 1024;
 pub enum BranchCommitUnavailable {
     AmbiguousRemote,
     BaseRefUnavailable,
+    BranchDiverged,
     BranchMissing,
 }
 
@@ -82,6 +83,19 @@ impl BranchCommitSummaryRequest {
             branch,
             base_ref: Some(base_ref),
             recorded_base_oid: None,
+            use_current_base_ref: true,
+        }
+    }
+
+    pub fn with_current_base_and_recorded_base(
+        branch: Vec<u8>,
+        base_ref: Vec<u8>,
+        base_oid: Vec<u8>,
+    ) -> Self {
+        Self {
+            branch,
+            base_ref: Some(base_ref),
+            recorded_base_oid: Some(base_oid),
             use_current_base_ref: true,
         }
     }
@@ -293,7 +307,29 @@ impl GitRunner {
                 }
             };
 
-            if let Some(base_oid) = request.recorded_base_oid.clone() {
+            if request.use_current_base_ref {
+                let mut observation = not_in_base;
+                observation.not_in_base = observation.state.clone();
+                if let Some(base_oid) = request.recorded_base_oid.clone() {
+                    let base_oid = ObjectId::from_hex(base_oid)?;
+                    if !recorded_base_is_ancestor(
+                        repository_path,
+                        &base_oid,
+                        &branch_ref,
+                        &mut scope,
+                    )? {
+                        let base_ref = match &observation.state {
+                            BranchCommitState::Available { base_ref, .. } => Some(base_ref.clone()),
+                            BranchCommitState::Unavailable { base_ref, .. } => base_ref.clone(),
+                        };
+                        observation.state = BranchCommitState::Unavailable {
+                            base_ref,
+                            reason: BranchCommitUnavailable::BranchDiverged,
+                        };
+                    }
+                }
+                observations.push(Ok(observation));
+            } else if let Some(base_oid) = request.recorded_base_oid.clone() {
                 let Some(base_ref) = request.base_ref.clone() else {
                     observations.push(Err(GitError::ParseFailed {
                         operation: GitOperation::BranchCommitSummary,
@@ -355,6 +391,36 @@ impl GitRunner {
                 .collect(),
             git_process_count,
         })
+    }
+}
+
+fn recorded_base_is_ancestor(
+    repository_path: &Path,
+    recorded_base_oid: &ObjectId,
+    branch_ref: &GitRefName,
+    scope: &mut GitCommandScope<'_>,
+) -> Result<bool, GitError> {
+    let outcome = scope.execute(
+        GitOperation::BranchCommitSummary,
+        repository_path,
+        [
+            OsString::from("merge-base"),
+            OsString::from("--is-ancestor"),
+            termloop_platform::os_string_from_process_bytes(recorded_base_oid.as_bytes().to_vec())
+                .map_err(|_| GitError::ParseFailed {
+                    operation: GitOperation::BranchCommitSummary,
+                })?,
+            exact_ref_argument(branch_ref)?,
+        ],
+    )?;
+    match outcome.termination {
+        CommandTermination::Exited { code: 0 } => Ok(true),
+        CommandTermination::Exited { code: 1 } => Ok(false),
+        termination => Err(command_failure(
+            GitOperation::BranchCommitSummary,
+            termination,
+            &outcome.stderr,
+        )),
     }
 }
 
