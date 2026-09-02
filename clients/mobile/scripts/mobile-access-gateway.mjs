@@ -756,7 +756,7 @@ async function mobileStewardVoiceSend(request, response) {
 
 async function mobileStewardTranscribe(request, response) {
   if (!ownerAuthorized(request)) return json(response, 401, {});
-  const transcription = await transcribeStewardRequest(request);
+  const transcription = await transcribeVoiceRequest(request);
   if (transcription.status !== 200) {
     return json(response, transcription.status, { error: transcription.error });
   }
@@ -766,7 +766,7 @@ async function mobileStewardTranscribe(request, response) {
 async function stewardVoiceSend(request, response) {
   const projectId = new URL(request.url, "http://127.0.0.1").searchParams.get("project") ?? "";
   if (!/^[A-Za-z0-9-]{1,64}$/.test(projectId)) return json(response, 400, { error: "invalid project" });
-  const transcription = await transcribeStewardRequest(request);
+  const transcription = await transcribeVoiceRequest(request);
   if (transcription.status !== 200) {
     return json(response, transcription.status, { error: transcription.error });
   }
@@ -778,7 +778,7 @@ async function stewardVoiceSend(request, response) {
   }
 }
 
-async function transcribeStewardRequest(request) {
+async function transcribeVoiceRequest(request) {
   let audio;
   try {
     audio = await readBinaryBody(request, voiceUploadLimitBytes);
@@ -791,7 +791,7 @@ async function transcribeStewardRequest(request) {
   try {
     const runtime = await currentRuntime();
     if (runtime.fullToken === undefined) throw new Error("TermLoop is unavailable");
-    const text = await transcribeStewardAudio(runtime, audio, request.headers["content-type"]);
+    const text = await transcribeVoiceAudio(runtime, audio, request.headers["content-type"]);
     if (text.length === 0) {
       return { status: 422, error: "no speech recognized" };
     }
@@ -802,7 +802,7 @@ async function transcribeStewardRequest(request) {
   }
 }
 
-async function transcribeStewardAudio(runtime, audio, contentType) {
+async function transcribeVoiceAudio(runtime, audio, contentType) {
   const runtimeDir = path.dirname(configFile);
   const audioFile = path.join(runtimeDir, `watch-voice-${randomUUID()}.m4a`);
   const container = voiceContainerOf(audio);
@@ -812,7 +812,7 @@ async function transcribeStewardAudio(runtime, audio, contentType) {
   let fallbackStatus = "pending";
   let fallbackDurationMs;
   const fallbackAbort = new AbortController();
-  diagnostics.report("stewardVoice", "transcription_started", {
+  diagnostics.report("voiceTranscription", "transcription_started", {
     container,
     bytes: audio.length,
   });
@@ -871,7 +871,7 @@ async function transcribeStewardAudio(runtime, audio, contentType) {
       fallbackPromise,
       () => fallbackAbort.abort(),
     );
-    diagnostics.report("stewardVoice", "transcription_completed", {
+    diagnostics.report("voiceTranscription", "transcription_completed", {
       provider: selected.provider,
       providerStatus,
       providerDurationMs,
@@ -883,7 +883,7 @@ async function transcribeStewardAudio(runtime, audio, contentType) {
     });
     return selected.transcription;
   } catch (cause) {
-    diagnostics.report("stewardVoice", "transcription_failed", {
+    diagnostics.report("voiceTranscription", "transcription_failed", {
       providerStatus,
       providerDurationMs,
       fallbackStatus,
@@ -980,7 +980,7 @@ async function watchVoiceReply(request, response) {
     || !Number.isSafeInteger(runtimeEpoch) || runtimeEpoch < 0) {
     return json(response, 400, { error: "invalid reply target" });
   }
-  const transcription = await transcribeWatchRequest(request);
+  const transcription = await transcribeVoiceRequest(request);
   if (transcription.status !== 200) return json(response, transcription.status, { error: transcription.error });
   try {
     const runtime = await currentRuntime();
@@ -999,41 +999,14 @@ async function watchVoiceReply(request, response) {
 
 /// Transcribe-only: the watch shows the recognized text before anything is
 /// sent, so the user reads exactly what a later launch or reply will deliver.
-/// One content-free outcome line per request: transcription failures are
-/// otherwise invisible from the wrist, and this is the only evidence of them.
+/// Keep one endpoint-level outcome beside the shared provider timing records.
 async function watchTranscribe(request, response) {
   if (!watchAuthorized(request)) return json(response, 401, {});
   const startedAt = Date.now();
-  const transcription = await transcribeWatchRequest(request);
+  const transcription = await transcribeVoiceRequest(request);
   process.stdout.write(`${new Date().toISOString()} watch transcribe status=${transcription.status} ms=${Date.now() - startedAt}\n`);
   if (transcription.status !== 200) return json(response, transcription.status, { error: transcription.error });
   return json(response, 200, { transcript: transcription.text });
-}
-
-async function transcribeWatchRequest(request) {
-  let audio;
-  try {
-    audio = await readBinaryBody(request, voiceUploadLimitBytes);
-  } catch {
-    return { status: 413, error: "recording too large" };
-  }
-  if (!validVoiceUpload(request.headers["content-type"], audio.length)) {
-    return { status: 400, error: "invalid recording" };
-  }
-  const runtimeDir = path.dirname(configFile);
-  const audioFile = path.join(runtimeDir, `watch-voice-${randomUUID()}.m4a`);
-  try {
-    await writeFile(audioFile, audio, { mode: 0o600 });
-    const { text } = await transcribeAudioFile(runtimeDir, audioFile);
-    if (text.length === 0) {
-      return { status: 422, error: "no speech recognized" };
-    }
-    return { status: 200, text };
-  } catch {
-    return { status: 503, error: "transcription unavailable" };
-  } finally {
-    await rm(audioFile, { force: true });
-  }
 }
 
 /// Watch task launches follow the same inspected-manifest path as every other
@@ -1117,7 +1090,7 @@ async function watchProjectAgentVoice(request, response) {
   if (!/^[A-Za-z0-9-]{1,64}$/.test(projectId)) {
     return json(response, 400, { error: "invalid project" });
   }
-  const transcription = await transcribeWatchRequest(request);
+  const transcription = await transcribeVoiceRequest(request);
   if (transcription.status !== 200) return json(response, transcription.status, { error: transcription.error });
   try {
     const runtime = await currentRuntime();
