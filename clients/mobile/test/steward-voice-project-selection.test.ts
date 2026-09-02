@@ -30,14 +30,13 @@ describe("Steward voice project selection", () => {
     }]);
   });
 
-  it("allows switching only while no recording, delivery, or playback is in flight", () => {
+  it("allows switching only before a recording or after a recoverable error", () => {
     expect(canSwitchVoiceProject("ready")).toBe(true);
-    expect(canSwitchVoiceProject("thinking")).toBe(true);
-    expect(canSwitchVoiceProject("offline")).toBe(true);
+    expect(canSwitchVoiceProject("error")).toBe(true);
     expect(canSwitchVoiceProject("listening")).toBe(false);
     expect(canSwitchVoiceProject("transcribing")).toBe(false);
     expect(canSwitchVoiceProject("sending")).toBe(false);
-    expect(canSwitchVoiceProject("speaking")).toBe(false);
+    expect(canSwitchVoiceProject("sent")).toBe(false);
   });
 
   it("keeps same-named Projects on different Macs as distinct selectable targets", () => {
@@ -62,6 +61,6 @@ describe("Steward voice project selection", () => {
     expect(targets[0]?.id).not.toBe(targets[1]?.id);
     expect(switchableVoiceTarget(targets, targets[0]?.id, targets[1]!.id, "ready")).toBe(targets[1]);
     expect(switchableVoiceTarget(targets, targets[0]?.id, "missing", "ready")).toBeUndefined();
-    expect(switchableVoiceTarget(targets, targets[0]?.id, targets[1]!.id, "speaking")).toBeUndefined();
+    expect(switchableVoiceTarget(targets, targets[0]?.id, targets[1]!.id, "sending")).toBeUndefined();
   });
 });

@@ -35,7 +35,7 @@ export function enabledVoiceTargets(scopes: readonly VoiceProjectScope[]): Voice
 }
 
 export function canSwitchVoiceProject(phase: VoicePhase): boolean {
-  return ["ready", "thinking", "reconnecting", "offline", "error"].includes(phase);
+  return phase === "ready" || phase === "error";
 }
 
 export function switchableVoiceTarget(

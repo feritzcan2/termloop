@@ -1,14 +1,17 @@
+import {
+  setAudioModeAsync,
+  useAudioPlayer,
+  useAudioPlayerStatus,
+} from "expo-audio";
+import { File, Paths } from "expo-file-system";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
@@ -19,21 +22,22 @@ import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
 import { useOverview } from "@/features/overview/overview-store";
 import { relativeAge } from "@/presentation/relative-time";
-import { color, geometry, radius, space } from "@/theme/tokens";
+import { stewardLocalSpeech } from "@/platform/steward-local-speech";
+import {
+  configureStewardAudioSession,
+  stewardVoiceAudioErrorMessage,
+} from "@/platform/steward-voice-audio";
+import { color, radius, space } from "@/theme/tokens";
 import { fontFamily, text } from "@/theme/typography";
 
 const POLL_MS = 6_000;
 
-/// The Steward conversation for one Project.
+/// Steward's asynchronous Project inbox.
 ///
-/// This is the same transcript the desktop and the Watch append to: sending here
-/// is an ordinary Companion transcript append, and the daemon's own chat wake
-/// brings the Steward up. The phone holds no Steward authority of its own — it
-/// cannot edit the Steward's instructions, and a proposal is answered by the
-/// Steward's own named commands, never by the client acting on its behalf.
-///
-/// It is also how a pipeline gets built from a phone: ask the Steward, and it
-/// edits the Playbook through its own Project-scoped commands.
+/// Mobile sends new turns through the global voice-message composer. This route
+/// remains the durable transcript and decision surface: it refreshes replies,
+/// opens from push notifications, and can read any Steward response aloud without
+/// pretending the delayed work is a live call.
 export default function StewardRoute() {
   const { projectId, connectionId: routeConnectionId } = useLocalSearchParams<{
     projectId: string;
@@ -50,10 +54,15 @@ export default function StewardRoute() {
   const connectionId = selected?.id;
 
   const [messages, setMessages] = useState<readonly StewardMessage[] | undefined>(undefined);
-  const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | undefined>(undefined);
+  const [speechError, setSpeechError] = useState<string | undefined>(undefined);
   const scroll = useRef<ScrollView | null>(null);
+  const speechAttempt = useRef(0);
+  const speechFile = useRef<File | undefined>(undefined);
+  const player = useAudioPlayer(null, { updateInterval: 100 });
+  const playerStatus = useAudioPlayerStatus(player);
   const nowMs = store.readAtEpochMs ?? 0;
 
   useEffect(() => {
@@ -74,27 +83,74 @@ export default function StewardRoute() {
 
   useEffect(() => {
     void read();
-    // The Steward answers on its own schedule, so the transcript is polled while
-    // this screen is open rather than waited on. Sending refreshes immediately.
+    // Replies are asynchronous and normally announced by push. Polling only keeps
+    // an already-open inbox fresh; it is not exposed as a live typing state.
     const handle = setInterval(() => { void read(); }, POLL_MS);
     return () => clearInterval(handle);
   }, [read]);
 
-  const send = useCallback(async () => {
-    if (connectionId === undefined || projectId === undefined) return;
-    const content = draft.trim();
-    if (content.length === 0) return;
-    setBusy(true);
-    try {
-      setMessages(await runtime.steward.send(connectionId, projectId, content));
-      setDraft("");
-      setError(undefined);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
+  const cleanSpeechFile = useCallback(() => {
+    const file = speechFile.current;
+    speechFile.current = undefined;
+    if (file?.exists) {
+      try { file.delete(); } catch { /* The cache may evict speech first. */ }
     }
-  }, [connectionId, draft, projectId, runtime]);
+  }, []);
+
+  const stopSpeech = useCallback(() => {
+    speechAttempt.current += 1;
+    player.pause();
+    stewardLocalSpeech.stop();
+    cleanSpeechFile();
+    setSpeakingMessageId(undefined);
+  }, [cleanSpeechFile, player]);
+
+  const readAloud = useCallback(async (message: StewardMessage) => {
+    if (connectionId === undefined) {
+      setSpeechError("Steward yanıtını okumak için Mac bağlantısı gerekli.");
+      return;
+    }
+    if (speakingMessageId === message.id) {
+      stopSpeech();
+      return;
+    }
+    stopSpeech();
+    const attempt = speechAttempt.current;
+    setSpeakingMessageId(message.id);
+    setSpeechError(undefined);
+    try {
+      await configureVoicePlaybackAudio();
+      const audio = await runtime.steward.speech(connectionId, projectId, message.sequence);
+      if (attempt !== speechAttempt.current) return;
+      const file = new File(Paths.cache, `termloop-steward-message-${message.sequence}.mp3`);
+      file.write(audio);
+      speechFile.current = file;
+      player.replace(file.uri);
+      player.play();
+    } catch (remoteCause) {
+      if (attempt !== speechAttempt.current) return;
+      try {
+        await configureVoicePlaybackAudio();
+        const spoken = await stewardLocalSpeech.speak(message.content);
+        if (!spoken) throw new Error("iPhone seslendirmesi kullanılamıyor.");
+        if (attempt === speechAttempt.current) setSpeakingMessageId(undefined);
+      } catch (localCause) {
+        if (attempt !== speechAttempt.current) return;
+        const remoteMessage = stewardVoiceAudioErrorMessage(remoteCause, "Mac sesi üretilemedi.");
+        const localMessage = stewardVoiceAudioErrorMessage(localCause, "iPhone da okuyamadı.");
+        setSpeechError(remoteMessage === localMessage ? remoteMessage : `${remoteMessage} ${localMessage}`);
+        setSpeakingMessageId(undefined);
+      }
+    }
+  }, [connectionId, player, projectId, runtime, speakingMessageId, stopSpeech]);
+
+  useEffect(() => {
+    if (!playerStatus.didJustFinish) return;
+    cleanSpeechFile();
+    setSpeakingMessageId(undefined);
+  }, [cleanSpeechFile, playerStatus.didJustFinish]);
+
+  useEffect(() => () => stopSpeech(), [stopSpeech]);
 
   const respond = useCallback(async (messageId: string, action: "approve" | "decline" | "accept") => {
     if (connectionId === undefined || projectId === undefined) return;
@@ -122,64 +178,47 @@ export default function StewardRoute() {
   return (
     <Screen>
       <ScreenHeader back="Project" title="Steward" subtitle={project?.name} />
-      <KeyboardAvoidingView
-        style={styles.fill}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        {messages === undefined ? (
-          <View style={styles.centre}>
-            {error === undefined
-              ? <ActivityIndicator color={color.accentStrong} />
-              : <Banner kind="warning" message={error} action="Retry" onAction={() => void read()} />}
-          </View>
-        ) : (
-          <ScrollView
-            ref={scroll}
-            contentContainerStyle={styles.thread}
-            onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}
-          >
-            {messages.length === 0 ? (
-              <UnavailableNote>
-                No Steward conversation yet for this Project. Ask it something — it can read
-                the Project and set up its delivery pipeline.
-              </UnavailableNote>
-            ) : messages.map((message) => (
-              <StewardBubble
-                key={message.id}
-                message={message}
-                nowMs={nowMs}
-                busy={busy}
-                respond={respond}
-              />
-            ))}
-            {error === undefined ? null : (
-              <View style={styles.threadError}><Banner kind="warning" message={error} /></View>
-            )}
-          </ScrollView>
-        )}
-        <View style={styles.composer}>
-          <TextInput
-            style={styles.input}
-            value={draft}
-            onChangeText={setDraft}
-            placeholder="Message the Steward"
-            placeholderTextColor={color.textMuted}
-            multiline
-            editable={!busy}
-            accessibilityLabel="Message the Steward"
-          />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Send to the Steward"
-            accessibilityState={{ disabled: busy || draft.trim().length === 0 }}
-            disabled={busy || draft.trim().length === 0}
-            onPress={() => void send()}
-            style={[styles.send, busy || draft.trim().length === 0 ? styles.sendDisabled : null]}
-          >
-            <Text style={styles.sendLabel}>{busy ? "…" : "Send"}</Text>
-          </Pressable>
+      {messages === undefined ? (
+        <View style={styles.centre}>
+          {error === undefined
+            ? <ActivityIndicator color={color.accentStrong} />
+            : <Banner kind="warning" message={error} action="Retry" onAction={() => void read()} />}
         </View>
-      </KeyboardAvoidingView>
+      ) : (
+        <ScrollView
+          ref={scroll}
+          contentContainerStyle={styles.thread}
+          onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}
+        >
+          <Banner
+            kind="info"
+            message="Sesli mesajını gönder; Steward yanıtladığında bildirim alırsın. Bu ekranda beklemene gerek yok."
+          />
+          {messages.length === 0 ? (
+            <UnavailableNote>
+              Henüz Steward mesajı yok. Sağ alttaki mikrofondan ilk sesli mesajını gönderebilirsin.
+            </UnavailableNote>
+          ) : messages.map((message) => (
+            <StewardBubble
+              key={message.id}
+              message={message}
+              nowMs={nowMs}
+              busy={busy}
+              speaking={speakingMessageId === message.id}
+              readAloud={readAloud}
+              respond={respond}
+            />
+          ))}
+          {error === undefined ? null : (
+            <View style={styles.threadError}><Banner kind="warning" message={error} /></View>
+          )}
+          {speechError === undefined ? null : (
+            <View style={styles.threadError}>
+              <Banner kind="warning" message={speechError} onDismiss={() => setSpeechError(undefined)} />
+            </View>
+          )}
+        </ScrollView>
+      )}
       {project === undefined && store.load === "ready" ? (
         <View style={styles.centre}>
           <Banner
@@ -194,13 +233,12 @@ export default function StewardRoute() {
   );
 }
 
-/// A Steward message that is waiting on the user gets its own controls. Every
-/// other kind is read-only: an approval already recorded is history, not a
-/// prompt to answer twice.
-function StewardBubble({ message, nowMs, busy, respond }: {
+function StewardBubble({ message, nowMs, busy, speaking, readAloud, respond }: {
   message: StewardMessage;
   nowMs: number;
   busy: boolean;
+  speaking: boolean;
+  readAloud: (message: StewardMessage) => Promise<void>;
   respond: (messageId: string, action: "approve" | "decline" | "accept") => Promise<void>;
 }) {
   const mine = message.author === "user";
@@ -209,19 +247,26 @@ function StewardBubble({ message, nowMs, busy, respond }: {
       <View style={[styles.bubble, mine ? styles.bubbleMine : null]}>
         <Text style={[styles.bubbleText, mine ? styles.bubbleTextMine : null]}>{message.content}</Text>
         <Text style={styles.bubbleMeta}>
-          {message.kind === "reply" ? "" : `${message.kind} · `}
+          {message.inputMode === "voice" ? "sesli mesaj · " : message.kind === "reply" ? "" : `${message.kind} · `}
           {nowMs === 0 ? "" : relativeAge(message.createdAtEpochMs, nowMs)}
         </Text>
       </View>
-      {message.author === "steward" && message.kind === "proposal" ? (
+      {message.author === "steward" ? (
         <View style={styles.bubbleActions}>
-          <BubbleAction label="Approve" busy={busy} onPress={() => void respond(message.id, "approve")} accent />
-          <BubbleAction label="Decline" busy={busy} onPress={() => void respond(message.id, "decline")} />
-        </View>
-      ) : null}
-      {message.author === "steward" && message.kind === "suggestion" ? (
-        <View style={styles.bubbleActions}>
-          <BubbleAction label="Accept" busy={busy} onPress={() => void respond(message.id, "accept")} accent />
+          <BubbleAction
+            label={speaking ? "Durdur" : "Sesli oku"}
+            busy={false}
+            onPress={() => { void readAloud(message); }}
+          />
+          {message.kind === "proposal" ? (
+            <>
+              <BubbleAction label="Approve" busy={busy} onPress={() => void respond(message.id, "approve")} accent />
+              <BubbleAction label="Decline" busy={busy} onPress={() => void respond(message.id, "decline")} />
+            </>
+          ) : null}
+          {message.kind === "suggestion" ? (
+            <BubbleAction label="Accept" busy={busy} onPress={() => void respond(message.id, "accept")} accent />
+          ) : null}
         </View>
       ) : null}
     </View>
@@ -250,12 +295,22 @@ function BubbleAction({ label, busy, accent, onPress }: {
   );
 }
 
+async function configureVoicePlaybackAudio(): Promise<void> {
+  await configureStewardAudioSession(() => setAudioModeAsync({
+    allowsRecording: false,
+    allowsBackgroundRecording: false,
+    shouldPlayInBackground: false,
+    shouldRouteThroughEarpiece: false,
+    playsInSilentMode: true,
+    interruptionMode: "doNotMix",
+  }));
+}
+
 const styles = StyleSheet.create({
-  fill: { flex: 1 },
   centre: { flex: 1, justifyContent: "center", padding: space.screen },
-  thread: { gap: space.sm, padding: space.screen, paddingBottom: space.lg },
+  thread: { gap: space.sm, padding: space.screen, paddingBottom: 112 },
   threadError: { paddingTop: space.sm },
-  bubbleWrap: { alignItems: "flex-start", gap: 6, maxWidth: "88%" },
+  bubbleWrap: { alignItems: "flex-start", gap: 6, maxWidth: "92%" },
   bubbleWrapMine: { alignSelf: "flex-end", alignItems: "flex-end" },
   bubble: {
     borderRadius: radius.card,
@@ -268,7 +323,7 @@ const styles = StyleSheet.create({
   bubbleText: { ...text.body, color: color.text, lineHeight: 19 },
   bubbleTextMine: { color: color.text },
   bubbleMeta: { color: color.textMuted, fontFamily: fontFamily.mono, fontSize: 10 },
-  bubbleActions: { flexDirection: "row", gap: space.sm },
+  bubbleActions: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
   bubbleAction: {
     minHeight: 34,
     justifyContent: "center",
@@ -279,37 +334,4 @@ const styles = StyleSheet.create({
   bubbleActionAccent: { backgroundColor: color.accent },
   bubbleActionLabel: { color: color.textSecondary, fontSize: 12, fontWeight: "700" },
   bubbleActionLabelAccent: { color: color.onAccent },
-  composer: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: space.sm,
-    padding: space.screen,
-    paddingTop: space.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: color.rule,
-    backgroundColor: color.bgApp,
-  },
-  input: {
-    flex: 1,
-    minHeight: geometry.touchTarget,
-    maxHeight: 120,
-    borderRadius: radius.control,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: color.borderStrong,
-    backgroundColor: color.bgRaised,
-    color: color.text,
-    fontSize: 14,
-    paddingHorizontal: space.md,
-    paddingTop: space.sm,
-    paddingBottom: space.sm,
-  },
-  send: {
-    minHeight: geometry.touchTarget,
-    justifyContent: "center",
-    paddingHorizontal: space.lg,
-    borderRadius: radius.control,
-    backgroundColor: color.accent,
-  },
-  sendDisabled: { backgroundColor: color.bgHover },
-  sendLabel: { color: color.onAccent, fontSize: 14, fontWeight: "700" },
 });
