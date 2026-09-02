@@ -107,6 +107,55 @@ export function sessionDismissAction(session: SessionDto): SessionDismissAction 
   } : undefined;
 }
 
+export function agentForkErrorMessage(cause: unknown): string {
+  const reason = structuredErrorReason(cause, "agentForkUnavailable");
+  const messages: Readonly<Record<string, string>> = {
+    sourceNotRunning: "This source Agent is no longer available. Refresh and try again.",
+    resumeRefMissing: "This Agent has no verified provider conversation to fork.",
+    capabilityUnavailable: "The installed provider does not support conversation forks.",
+    cwdUnavailable: "The Agent's working directory or managed worktree is unavailable.",
+    launchReserved: "Cleanup or repair currently reserves this Agent's working directory.",
+    providerRejected: "The provider rejected this fork. Check its local history and authentication, then retry.",
+    providerHistoryDamaged: "This provider conversation history is damaged and must be repaired before forking.",
+    conversationUnconfirmed: "The fork started, but its exact provider conversation could not be confirmed.",
+    startupExited: "The forked Agent exited before it became ready. Retry or inspect the provider thread.",
+    startupTimedOut: "The forked Agent did not become ready before the timeout. Retry the fork.",
+    runtimeConflict: "Another runtime operation conflicted with this fork. Wait a moment and retry.",
+  };
+  if (reason !== undefined) return messages[reason] ?? fallbackErrorMessage(cause);
+  if (structuredErrorCode(cause) === "agentUnsupported") {
+    return "This Agent's provider does not support conversation forks.";
+  }
+  return fallbackErrorMessage(cause);
+}
+
+export function sessionDismissErrorMessage(cause: unknown): string {
+  const message = fallbackErrorMessage(cause);
+  return /record not found/iu.test(message)
+    ? "This Session is no longer available. Refreshing will remove it."
+    : message;
+}
+
+function structuredErrorReason(cause: unknown, kind: string): string | undefined {
+  if (typeof cause !== "object" || cause === null || !("details" in cause)) return undefined;
+  const details = (cause as { details?: unknown }).details;
+  if (typeof details !== "object" || details === null) return undefined;
+  const candidate = details as { kind?: unknown; reason?: unknown };
+  return candidate.kind === kind && typeof candidate.reason === "string"
+    ? candidate.reason
+    : undefined;
+}
+
+function structuredErrorCode(cause: unknown): string | undefined {
+  if (typeof cause !== "object" || cause === null || !("code" in cause)) return undefined;
+  const code = (cause as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
+
+function fallbackErrorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : "This Session action could not be completed.";
+}
+
 function coordinationActions(
   session: SessionDto,
   sessions: readonly SessionDto[],

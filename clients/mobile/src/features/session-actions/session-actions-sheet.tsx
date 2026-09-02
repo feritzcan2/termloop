@@ -26,6 +26,7 @@ import { clipboardBridge } from "@/platform/clipboard";
 import { keyboardAvoidingBehavior } from "@/platform/presentation";
 import { basename, sessionLabel } from "@/presentation/dto-readers";
 import {
+  agentForkErrorMessage,
   relocationBlockerMessage,
   relocationTargetLabel,
   relocationWarningMessage,
@@ -123,6 +124,7 @@ export function SessionActionsSheet(props: SessionActionsSheetProps) {
     label: string,
     action: () => Promise<Result>,
     callback?: ((result: Result) => void) | undefined,
+    describeError: (cause: unknown) => string = errorMessage,
   ) => {
     if (busy !== undefined) return;
     setBusy(label);
@@ -131,7 +133,7 @@ export function SessionActionsSheet(props: SessionActionsSheetProps) {
       const result = await action();
       finish(() => callback?.(result));
     } catch (cause: unknown) {
-      setError(errorMessage(cause));
+      setError(describeError(cause));
     } finally {
       setBusy(undefined);
     }
@@ -351,6 +353,7 @@ export function SessionActionsSheet(props: SessionActionsSheetProps) {
                       "Forking conversation",
                       () => runtime.sessionActions.fork(connectionId, session.id),
                       (forked) => props.onOpenSession?.(forked.id),
+                      agentForkErrorMessage,
                     )}
                   /> : null}
                   {presentation.coordination ? <ActionRow
