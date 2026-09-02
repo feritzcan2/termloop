@@ -354,8 +354,40 @@ impl RecentReplay {
     }
 
     fn snapshot(&self) -> VecDeque<TerminalEvent> {
+        self.snapshot_with_options(MAX_RECENT_REPLAY_BYTES, MAX_IO_CHUNK_BYTES)
+    }
+
+    /// Returns a contiguous newest suffix without changing the process-wide ring.
+    /// Attachments with a smaller display budget get an explicit Gap for output reads
+    /// omitted in addition to any reads the 1 MiB ring already evicted.
+    fn snapshot_with_options(
+        &self,
+        max_output_bytes: usize,
+        max_chunk_bytes: usize,
+    ) -> VecDeque<TerminalEvent> {
         if !self.enabled {
             return VecDeque::new();
+        }
+        let chunk_limit = max_chunk_bytes.clamp(MAX_IO_CHUNK_BYTES, MAX_RECENT_REPLAY_BYTES);
+        let mut retained = VecDeque::new();
+        let mut remaining = max_output_bytes.min(MAX_RECENT_REPLAY_BYTES);
+        let mut budget_exhausted = false;
+        let mut omitted_frames = self.dropped_frames;
+        for event in self.events.iter().rev() {
+            match event {
+                TerminalEvent::Output(bytes) if !budget_exhausted && bytes.len() <= remaining => {
+                    remaining -= bytes.len();
+                    retained.push_front(TerminalEvent::Output(bytes.clone()));
+                }
+                TerminalEvent::Output(_) => {
+                    budget_exhausted = true;
+                    omitted_frames = omitted_frames.saturating_add(1);
+                }
+                TerminalEvent::Gap(count) => {
+                    retained.push_front(TerminalEvent::Gap(*count));
+                }
+                TerminalEvent::Eof => retained.push_front(TerminalEvent::Eof),
+            }
         }
         // PTYs commonly produce many tiny reads while a TUI redraws. Replaying each
         // read as its own outbound frame can overflow an attachment's bounded frame
@@ -363,29 +395,29 @@ impl RecentReplay {
         // byte budget. Coalesce only the frozen snapshot; live delivery and the
         // eviction accounting above retain their original frame boundaries.
         let mut snapshot = VecDeque::new();
-        for event in &self.events {
+        for event in retained {
             match event {
                 TerminalEvent::Output(bytes) => {
                     let append_to_last = snapshot.back_mut().and_then(|last| match last {
                         TerminalEvent::Output(existing)
-                            if existing.len().saturating_add(bytes.len()) <= MAX_IO_CHUNK_BYTES =>
+                            if existing.len().saturating_add(bytes.len()) <= chunk_limit =>
                         {
                             Some(existing)
                         }
                         _ => None,
                     });
                     if let Some(existing) = append_to_last {
-                        existing.extend_from_slice(bytes);
+                        existing.extend_from_slice(&bytes);
                     } else {
-                        snapshot.push_back(TerminalEvent::Output(bytes.clone()));
+                        snapshot.push_back(TerminalEvent::Output(bytes));
                     }
                 }
-                TerminalEvent::Gap(count) => snapshot.push_back(TerminalEvent::Gap(*count)),
+                TerminalEvent::Gap(count) => snapshot.push_back(TerminalEvent::Gap(count)),
                 TerminalEvent::Eof => snapshot.push_back(TerminalEvent::Eof),
             }
         }
-        if self.dropped_frames > 0 {
-            snapshot.push_front(TerminalEvent::Gap(self.dropped_frames));
+        if omitted_frames > 0 {
+            snapshot.push_front(TerminalEvent::Gap(omitted_frames));
         }
         snapshot
     }
@@ -402,6 +434,20 @@ pub struct TerminalDelivery {
 }
 
 impl TerminalSubscription {
+    pub fn replay_event_count(&self) -> usize {
+        self.replay.len()
+    }
+
+    pub fn replay_output_bytes(&self) -> usize {
+        self.replay
+            .iter()
+            .filter_map(|event| match event {
+                TerminalEvent::Output(bytes) => Some(bytes.len()),
+                TerminalEvent::Gap(_) | TerminalEvent::Eof => None,
+            })
+            .sum()
+    }
+
     pub async fn recv(&mut self) -> Result<TerminalEvent, broadcast::error::RecvError> {
         Ok(self.recv_delivery().await?.event)
     }
@@ -812,6 +858,23 @@ impl TerminalService {
         session_id: &str,
         epoch: u64,
     ) -> Result<TerminalSubscription, TerminalError> {
+        self.subscribe_with_replay_options(
+            session_id,
+            epoch,
+            MAX_RECENT_REPLAY_BYTES,
+            MAX_IO_CHUNK_BYTES,
+        )
+    }
+
+    /// Subscribes with the same gap-free replay-to-live handoff while allowing a
+    /// bounded client to request a smaller newest suffix than the retained 1 MiB ring.
+    pub fn subscribe_with_replay_options(
+        &self,
+        session_id: &str,
+        epoch: u64,
+        max_replay_bytes: usize,
+        max_replay_chunk_bytes: usize,
+    ) -> Result<TerminalSubscription, TerminalError> {
         let runtime = self.runtime(session_id)?;
         let runtime = runtime
             .lock()
@@ -827,7 +890,15 @@ impl TerminalService {
         // reader around buffer+publish. This makes the handoff gap-free and
         // prevents one chunk from appearing in both replay and live.
         let live = runtime.events.subscribe();
-        let replay = recent.snapshot();
+        let replay = if max_replay_bytes >= MAX_RECENT_REPLAY_BYTES {
+            if max_replay_chunk_bytes <= MAX_IO_CHUNK_BYTES {
+                recent.snapshot()
+            } else {
+                recent.snapshot_with_options(max_replay_bytes, max_replay_chunk_bytes)
+            }
+        } else {
+            recent.snapshot_with_options(max_replay_bytes, max_replay_chunk_bytes)
+        };
         Ok(TerminalSubscription { replay, live })
     }
 
@@ -1954,6 +2025,50 @@ mod tests {
         let truncated = replay.snapshot();
         assert!(matches!(truncated.front(), Some(TerminalEvent::Gap(count)) if *count > 0));
         assert!(replay.bytes <= MAX_RECENT_REPLAY_BYTES);
+    }
+
+    #[test]
+    fn attachment_replay_budget_keeps_a_contiguous_newest_suffix() {
+        let mut replay = RecentReplay {
+            enabled: true,
+            ..RecentReplay::default()
+        };
+        replay.record_output(b"older-");
+        replay.record_output(b"middle-");
+        replay.record_output(b"latest");
+
+        let snapshot = replay.snapshot_with_options(13, MAX_IO_CHUNK_BYTES);
+        assert!(matches!(snapshot.front(), Some(TerminalEvent::Gap(1))));
+        assert!(
+            matches!(snapshot.get(1), Some(TerminalEvent::Output(bytes)) if bytes == b"middle-latest")
+        );
+        assert_eq!(
+            snapshot
+                .iter()
+                .filter_map(|event| match event {
+                    TerminalEvent::Output(bytes) => Some(bytes.len()),
+                    TerminalEvent::Gap(_) | TerminalEvent::Eof => None,
+                })
+                .sum::<usize>(),
+            13
+        );
+    }
+
+    #[test]
+    fn attachment_replay_can_coalesce_the_full_ring_into_large_wire_chunks() {
+        let mut replay = RecentReplay {
+            enabled: true,
+            ..RecentReplay::default()
+        };
+        for _ in 0..64 {
+            replay.record_output(&vec![b'x'; MAX_IO_CHUNK_BYTES]);
+        }
+
+        let snapshot = replay.snapshot_with_options(MAX_RECENT_REPLAY_BYTES, 256 * 1024);
+        assert_eq!(snapshot.len(), 4);
+        assert!(snapshot.iter().all(
+            |event| matches!(event, TerminalEvent::Output(bytes) if bytes.len() == 256 * 1024)
+        ));
     }
 
     #[test]

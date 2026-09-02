@@ -1,5 +1,29 @@
 import type { TerminalMouseTracking } from "./terminal-screen";
 
+/// The first terminal snapshot must reach the live edge before it becomes visible.
+/// React Native lays a ScrollView out at offset zero and only then accepts an
+/// imperative `scrollToEnd`, so revealing the content immediately makes a long Agent
+/// transcript visibly sweep from its oldest rows to its newest ones.
+export type InitialTerminalPosition = "waitingForContent" | "positioning" | "ready";
+
+export type InitialTerminalPositionEvent =
+  | { readonly type: "contentChanged"; readonly hasContent: boolean }
+  | { readonly type: "positioned" };
+
+/// Keeps empty layout callbacks from revealing the terminal, and never returns a
+/// visible terminal to its hidden startup state once the first placement completed.
+export function reduceInitialTerminalPosition(
+  current: InitialTerminalPosition,
+  event: InitialTerminalPositionEvent,
+): InitialTerminalPosition {
+  if (current === "ready") return current;
+  if (event.type === "contentChanged") {
+    if (current === "positioning" || !event.hasContent) return current;
+    return "positioning";
+  }
+  return current === "positioning" ? "ready" : current;
+}
+
 /// Choosing what to send when a reader asks to go further back than the current frame.
 ///
 /// The alternate screen has no scrollback. The program owns the grid and repaints it,

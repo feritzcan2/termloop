@@ -14,6 +14,8 @@ import {
   KIND_INPUT_ACK,
   KIND_OUTPUT,
   KIND_REPLAY_OUTPUT,
+  MOBILE_REPLAY_BUDGET_BYTES,
+  MOBILE_REPLAY_CHUNK_BYTES,
   decodeFrame,
   encodeFrame,
 } from "../src/adapters/production/terminal-frame";
@@ -133,6 +135,7 @@ describe("production control adapter", () => {
     let heartbeatPongs = 0;
     let mobileSocket: DataSocket | undefined;
     let inputFrame: ReturnType<typeof decodeFrame> | undefined;
+    let attachFrame: ReturnType<typeof decodeFrame> | undefined;
     let endpoint = "";
     const runtime = createProductionRuntime({
       repository: fixedRepository(saved),
@@ -186,11 +189,13 @@ describe("production control adapter", () => {
             const frame = decodeFrame(data instanceof Uint8Array ? data : new Uint8Array(data));
             terminalKinds.push(frame.kind);
             if (frame.kind === KIND_ATTACH) {
+              attachFrame = frame;
               queueMicrotask(() => socket.onmessage?.({ data: encodeFrame(
                 frame.sessionId,
                 frame.epoch,
                 frame.sequence,
                 KIND_ACK,
+                replayAckPayload(2, 13),
               ) }));
             } else if (frame.kind === KIND_INPUT) {
               inputFrame = frame;
@@ -217,6 +222,19 @@ describe("production control adapter", () => {
       { id: sessionId, runtime_epoch: 7 },
       (event) => events.push(event),
     );
+    expect(new TextDecoder().decode(attachFrame?.payload.slice(0, 4))).toBe("TLRQ");
+    expect(new DataView(attachFrame!.payload.buffer).getUint32(4)).toBe(MOBILE_REPLAY_BUDGET_BYTES);
+    expect(new DataView(attachFrame!.payload.buffer).getUint32(8)).toBe(MOBILE_REPLAY_CHUNK_BYTES);
+    mobileSocket?.onmessage?.({ data: encodeFrame(
+      sessionId, 7, 1n, KIND_REPLAY_OUTPUT, new TextEncoder().encode("older "),
+    ) });
+    mobileSocket?.onmessage?.({ data: encodeFrame(
+      sessionId, 7, 2n, KIND_REPLAY_OUTPUT, new TextEncoder().encode("latest\n"),
+    ) });
+    await waitFor(() => events.some((event) => event.type === "replay"));
+    const replay = events.find((event) => event.type === "replay");
+    expect(replay?.type === "replay" ? new TextDecoder().decode(replay.bytes) : undefined)
+      .toBe("older latest\n");
     let delivered = false;
     const input = attachment.input(new TextEncoder().encode("hello")).then(() => { delivered = true; });
     await waitFor(() => inputFrame !== undefined);
@@ -240,6 +258,80 @@ describe("production control adapter", () => {
     expect(events).toContainEqual({ type: "state", state: "connected" });
     expect(socketCloseCount).toBe(0);
     expect(heartbeatPongs).toBe(1);
+  });
+
+  it("publishes a paced multiplex replay once after a full quiet window", async () => {
+    vi.useFakeTimers();
+    try {
+      let mobileSocket: DataSocket | undefined;
+      const runtime = createProductionRuntime({
+        repository: fixedRepository(saved),
+        multiplexSocketFactory() {
+          const socket: DataSocket = {
+            binaryType: "blob",
+            readyState: 1,
+            onopen: null,
+            onmessage: null,
+            onerror: null,
+            onclose: null,
+            send(data) {
+              if (typeof data === "string") {
+                const message = JSON.parse(data) as { type?: string };
+                if (message.type === "mobile.authenticate") {
+                  queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({
+                    event: "mobile.ready",
+                    mobileTransportVersion: 2,
+                  }) }));
+                }
+                return;
+              }
+              const frame = decodeFrame(data instanceof Uint8Array ? data : new Uint8Array(data));
+              if (frame.kind === KIND_ATTACH) {
+                queueMicrotask(() => socket.onmessage?.({ data: encodeFrame(
+                  frame.sessionId,
+                  frame.epoch,
+                  frame.sequence,
+                  KIND_ACK,
+                ) }));
+              }
+            },
+            close() {},
+          };
+          mobileSocket = socket;
+          queueMicrotask(() => socket.onopen?.());
+          return socket;
+        },
+        controlSocketFactory: () => { throw new Error("legacy control transport used"); },
+        terminalSocketFactory: () => { throw new Error("legacy terminal transport used"); },
+      });
+      const events: TerminalEvent[] = [];
+      const attachment = await runtime.terminal.attach(
+        saved.id,
+        { id: sessionId, runtime_epoch: 7 },
+        (event) => events.push(event),
+      );
+
+      mobileSocket?.onmessage?.({ data: encodeFrame(
+        sessionId, 7, 1n, KIND_REPLAY_OUTPUT, new TextEncoder().encode("older "),
+      ) });
+      await vi.advanceTimersByTimeAsync(600);
+      mobileSocket?.onmessage?.({ data: encodeFrame(
+        sessionId, 7, 2n, KIND_REPLAY_OUTPUT, new TextEncoder().encode("latest\n"),
+      ) });
+      await vi.advanceTimersByTimeAsync(999);
+      expect(events.some((event) => event.type === "replay")).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1);
+      const replays = events.filter((event) => event.type === "replay");
+      expect(replays).toHaveLength(1);
+      expect(replays[0]?.type === "replay" ? new TextDecoder().decode(replays[0].bytes) : undefined)
+        .toBe("older latest\n");
+
+      await attachment.detach();
+      runtime.connections.resetTransports();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("lets a newer route replace an attachment that is still awaiting its ACK", async () => {
@@ -1565,13 +1657,23 @@ describe("production terminal adapter", () => {
     const attachFrame = decodeFrame(new Uint8Array(socket.sent[1] as ArrayBuffer));
     expect(attachFrame.kind).toBe(KIND_ATTACH);
     expect(attachFrame.sessionId).toBe(sessionId);
+    expect(new TextDecoder().decode(attachFrame.payload.slice(0, 4))).toBe("TLRQ");
+    expect(new DataView(attachFrame.payload.buffer).getUint32(4)).toBe(MOBILE_REPLAY_BUDGET_BYTES);
+    expect(new DataView(attachFrame.payload.buffer).getUint32(8)).toBe(MOBILE_REPLAY_CHUNK_BYTES);
 
-    socket.message(encodeFrame(sessionId, 17, 1n, KIND_REPLAY_OUTPUT, new TextEncoder().encode("recent ")));
-    socket.message(encodeFrame(sessionId, 17, 2n, KIND_REPLAY_OUTPUT, new TextEncoder().encode("screen\n")));
-    socket.message(encodeFrame(sessionId, 17, 3n, KIND_GAP, gapPayload(3)));
+    socket.message(encodeFrame(
+      sessionId,
+      17,
+      attachFrame.sequence,
+      KIND_ACK,
+      replayAckPayload(3, 14),
+    ));
+    socket.message(encodeFrame(sessionId, 17, 1n, KIND_GAP, gapPayload(3)));
+    socket.message(encodeFrame(sessionId, 17, 2n, KIND_REPLAY_OUTPUT, new TextEncoder().encode("recent ")));
+    socket.message(encodeFrame(sessionId, 17, 3n, KIND_REPLAY_OUTPUT, new TextEncoder().encode("screen\n")));
     socket.message(encodeFrame(sessionId, 17, 4n, KIND_OUTPUT, new TextEncoder().encode("live\n")));
     await waitFor(() => events.length === 5);
-    expect(events.map((event) => event.type)).toEqual(["state", "state", "replay", "gap", "live"]);
+    expect(events.map((event) => event.type)).toEqual(["state", "state", "gap", "replay", "live"]);
     const replay = events.find((event) => event.type === "replay");
     expect(replay?.type === "replay" ? new TextDecoder().decode(replay.bytes) : undefined)
       .toBe("recent screen\n");
@@ -1629,7 +1731,7 @@ describe("production terminal adapter", () => {
     await second.detach();
   });
 
-  it("publishes an idle replay burst after its short batching window", async () => {
+  it("publishes a paced legacy replay once after a full quiet window", async () => {
     vi.useFakeTimers();
     try {
       const sockets: FakeDataSocket[] = [];
@@ -1658,12 +1760,23 @@ describe("production terminal adapter", () => {
         17,
         1n,
         KIND_REPLAY_OUTPUT,
-        new TextEncoder().encode("idle screen\n"),
+        new TextEncoder().encode("older "),
       ));
-      await vi.advanceTimersByTimeAsync(15);
+      await vi.advanceTimersByTimeAsync(600);
+      sockets[0]!.message(encodeFrame(
+        sessionId,
+        17,
+        2n,
+        KIND_REPLAY_OUTPUT,
+        new TextEncoder().encode("latest\n"),
+      ));
+      await vi.advanceTimersByTimeAsync(999);
       expect(events.map((event) => event.type)).toEqual(["state", "state"]);
       await vi.advanceTimersByTimeAsync(1);
       expect(events.map((event) => event.type)).toEqual(["state", "state", "replay"]);
+      const replay = events.at(-1);
+      expect(replay?.type === "replay" ? new TextDecoder().decode(replay.bytes) : undefined)
+        .toBe("older latest\n");
 
       await attachment.detach();
     } finally {
@@ -2558,6 +2671,15 @@ class FakeDataSocket implements DataSocket {
 function gapPayload(count: number): Uint8Array {
   const payload = new Uint8Array(8);
   new DataView(payload.buffer).setBigUint64(0, BigInt(count));
+  return payload;
+}
+
+function replayAckPayload(frameCount: number, outputBytes: number): Uint8Array {
+  const payload = new Uint8Array(12);
+  payload.set(new TextEncoder().encode("TLRA"));
+  const view = new DataView(payload.buffer);
+  view.setUint32(4, frameCount);
+  view.setUint32(8, outputBytes);
   return payload;
 }
 
