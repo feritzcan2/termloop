@@ -15,8 +15,10 @@ import { useConnections } from "@/features/connection/connection-store";
 import { connectionRouteParams } from "@/features/connection/connection-route";
 import { useOverview } from "@/features/overview/overview-store";
 import {
+  agentClusterMembers,
   buildProjectOverview,
   buildProjectSummaries,
+  type AgentCluster,
   type AgentRow,
 } from "@/presentation/attention-overview";
 import { connectionPresentation } from "@/presentation/connection-presentation";
@@ -91,6 +93,7 @@ export default function ProjectRoute() {
   }
 
   const agentRows = model?.agents ?? [];
+  const agentClusters = model?.agentClusters ?? [];
   const taskAttentionCount = model?.tasks.filter((row) => asksForUser(row.tone)).length ?? 0;
   const stewardReachable = model?.project !== undefined && connections.selectedId !== undefined;
 
@@ -172,10 +175,10 @@ export default function ProjectRoute() {
                     />
                   ) : (
                     <Card>
-                      {agentRows.map((row, index) => (
-                        <View key={row.sessionId}>
+                      {agentClusters.map((cluster, index) => (
+                        <View key={cluster.key}>
                           {index === 0 ? null : <CardDivider />}
-                          <AgentRowView row={row} nowMs={nowMs} openActions={setActionSessionId} />
+                          <AgentClusterView cluster={cluster} nowMs={nowMs} openActions={setActionSessionId} />
                         </View>
                       ))}
                     </Card>
@@ -295,6 +298,45 @@ export default function ProjectRoute() {
   );
 }
 
+function AgentClusterView({ cluster, nowMs, openActions }: {
+  cluster: AgentCluster;
+  nowMs: number;
+  openActions(sessionId: string): void;
+}) {
+  const rows = cluster.groups.map(({ source, helpers }, groupIndex) => (
+    <View key={source.sessionId}>
+      {groupIndex === 0 ? null : <CardDivider />}
+      <AgentRowView row={source} nowMs={nowMs} openActions={openActions} />
+      {helpers.map((helper) => (
+        <View key={helper.sessionId} style={styles.helperWrap}>
+          <View style={styles.helperConnector} />
+          <View style={styles.helperBody}>
+            <CardDivider />
+            <AgentRowView row={helper} nowMs={nowMs} openActions={openActions} />
+          </View>
+        </View>
+      ))}
+    </View>
+  ));
+  if (cluster.manualGroup === undefined) return <>{rows}</>;
+  const count = agentClusterMembers(cluster).length;
+  const name = cluster.manualGroup.name ?? "Group";
+  return (
+    <View style={styles.manualGroup}>
+      <View style={styles.manualGroupHeader}>
+        <Text
+          style={styles.manualGroupName}
+          numberOfLines={1}
+          accessibilityLabel={`${name}, Agent group with ${count} agents`}
+        >{name}</Text>
+        <Text style={styles.manualGroupCount}>{count}</Text>
+      </View>
+      <CardDivider />
+      {rows}
+    </View>
+  );
+}
+
 function AgentRowView({ row, nowMs, openActions }: { row: AgentRow; nowMs: number; openActions(sessionId: string): void }) {
   const router = useRouter();
   const connections = useConnections();
@@ -359,6 +401,54 @@ const styles = StyleSheet.create({
     paddingBottom: space.xl + 64,
   },
   section: { gap: space.sm },
+  manualGroup: {
+    margin: 5,
+    overflow: "hidden",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: color.borderStrong,
+    borderRadius: 9,
+    backgroundColor: color.bgRaised,
+  },
+  manualGroupHeader: {
+    minHeight: 28,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.sm,
+    paddingHorizontal: 10,
+    backgroundColor: color.bgHover,
+  },
+  manualGroupName: {
+    flex: 1,
+    color: color.textSecondary,
+    fontFamily: fontFamily.mono,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  manualGroupCount: {
+    color: color.textMuted,
+    fontFamily: fontFamily.mono,
+    fontSize: 10,
+    fontWeight: "800",
+    fontVariant: ["tabular-nums"],
+  },
+  helperWrap: {
+    position: "relative",
+    paddingLeft: 18,
+  },
+  helperConnector: {
+    position: "absolute",
+    top: 0,
+    left: 7,
+    width: 11,
+    height: 29,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: `${color.accent}66`,
+    borderBottomLeftRadius: 6,
+  },
+  helperBody: { overflow: "hidden" },
   count: {
     color: color.textMuted,
     fontFamily: fontFamily.mono,

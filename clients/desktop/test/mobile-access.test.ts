@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -8,6 +8,7 @@ import {
   mobileAccessScriptPath,
   packagedMobileAccessScriptPath,
   prepareMobileAccessQr,
+  publishMobileAgentGroups,
   reconcilePackagedMobileAccess,
   shouldReconcilePackagedMobileAccess,
 } from "../src/platform/mobile-access.js";
@@ -92,5 +93,42 @@ describe("mobile access QR preparation", () => {
     await expect(prepareMobileAccessQr(pairingScript, process.execPath)).rejects.toThrow(
       "Mobile Access did not produce a valid pairing code.",
     );
+  });
+
+  it("publishes every local peer-group member to enrolled mobile gateways", async () => {
+    const stateRoot = await mkdtemp(path.join(os.tmpdir(), "termloop-mobile-groups-"));
+    temporaryDirectories.push(stateRoot);
+    const gatewayDirectory = path.join(stateRoot, "mac-0123456789abcdef");
+    await mkdir(gatewayDirectory);
+    await writeFile(path.join(gatewayDirectory, "gateway.json"), "{}", { mode: 0o600 });
+    const sessionIds = ["agent-1", "agent-2", "agent-3", "agent-4"];
+
+    await expect(publishMobileAgentGroups({
+      version: 2,
+      profiles: {
+        local: {
+          projects: {},
+          sessionOrderByProject: { "project-1": sessionIds },
+          agentGroupsByProject: {
+            "project-1": [{ sessionIds, name: "Review crew" }],
+          },
+        },
+        remote: {
+          projects: {},
+          sessionOrderByProject: {},
+          agentGroupsByProject: {
+            "remote-project": [{ sessionIds: ["remote-1", "remote-2"] }],
+          },
+        },
+      },
+    }, stateRoot)).resolves.toBe(1);
+
+    expect(JSON.parse(await readFile(path.join(gatewayDirectory, "agent-groups.json"), "utf8")))
+      .toEqual({
+        version: 1,
+        groupsByProject: {
+          "project-1": [{ sessionIds, name: "Review crew" }],
+        },
+      });
   });
 });

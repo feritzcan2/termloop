@@ -54,6 +54,7 @@ import { RemoteHostManager } from "./main/remote-host.js";
 import { TailscaleServerDiscoveryManager } from "./main/tailscale-discovery.js";
 import { validatedExternalUrl, validatedLoopbackRunUrl } from "./main/external-link.js";
 import { LayoutFileStore } from "./platform/layout-store.js";
+import { decodeLayoutDocument, type LayoutDocument } from "./layout/model.js";
 import { createArchiveOperationId, createClientLaunchId } from "./platform/client-launch.js";
 import {
   publishDevelopmentReadyMarker,
@@ -87,6 +88,7 @@ import {
   mobileAccessNodeExecutable,
   mobileAccessScriptPath,
   prepareMobileAccessQr,
+  publishMobileAgentGroups,
   reconcilePackagedMobileAccess,
   shouldReconcilePackagedMobileAccess,
 } from "./platform/mobile-access.js";
@@ -240,6 +242,14 @@ function clientLayoutStore(): LayoutFileStore {
   return layoutStore;
 }
 
+async function publishClientMobileAgentGroups(document: LayoutDocument): Promise<void> {
+  try {
+    await publishMobileAgentGroups(document);
+  } catch (cause: unknown) {
+    console.warn("Mobile Agent groups could not be published.", cause instanceof Error ? cause.name : "unknown");
+  }
+}
+
 handleIpc("termloop:app-is-packaged", (event) => {
   requireMainRenderer(event);
   return app.isPackaged;
@@ -290,12 +300,14 @@ handleIpc("termloop:mobile-access-pairing", async (event) => {
   }
   try {
     const script = mobileAccessScriptPath(directory, process.env.TERMLOOP_DEV_CHECKOUT);
+    const qrSvg = await prepareMobileAccessQr(
+      script,
+      mobileAccessNodeExecutable(process.env.TERMLOOP_DEV_NODE_BINARY),
+    );
+    await publishClientMobileAgentGroups(await clientLayoutStore().load());
     return {
       ok: true,
-      qrSvg: await prepareMobileAccessQr(
-        script,
-        mobileAccessNodeExecutable(process.env.TERMLOOP_DEV_NODE_BINARY),
-      ),
+      qrSvg,
     } as const;
   } catch (cause: unknown) {
     return {
@@ -795,9 +807,16 @@ handleIpc("termloop:browse-directory", async (event, folderPath: string) => {
   if (typeof folderPath !== "string") throw new Error("directoryBrowsePathInvalid");
   return controlCall("system.browseDirectory", { path: folderPath });
 });
-handleIpc("termloop:layout-load", () => clientLayoutStore().load());
-handleIpc("termloop:layout-save", (_event, document: unknown) => {
-  clientLayoutStore().stage(document);
+handleIpc("termloop:layout-load", async () => {
+  const document = await clientLayoutStore().load();
+  await publishClientMobileAgentGroups(document);
+  return document;
+});
+handleIpc("termloop:layout-save", async (_event, document: unknown) => {
+  const decoded = decodeLayoutDocument(document);
+  if (!decoded) throw new Error("invalidLayoutDocument");
+  clientLayoutStore().stage(decoded);
+  await publishClientMobileAgentGroups(decoded);
 });
 handleIpc("termloop:session-list", () => controlCall("session.list"));
 handleIpc("termloop:agent-status-list", () => controlCall("agent.statusList"));

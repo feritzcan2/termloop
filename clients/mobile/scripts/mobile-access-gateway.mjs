@@ -66,7 +66,7 @@ const GATEWAY_IDENTITY = typeof __TERMLOOP_GATEWAY_IDENTITY__ === "undefined"
     buildId: "source-development",
     releaseVersion: "2.0.0",
     channel: "development",
-    sequence: 2,
+    sequence: 3,
     owner: "termloop.source",
     compatibility: {
       mobileTransport: { min: MOBILE_TRANSPORT_VERSION, max: MOBILE_TRANSPORT_VERSION },
@@ -85,6 +85,7 @@ const GATEWAY_VERSION_HEADERS = Object.freeze({
 const LOG_LIMIT_BYTES = 4 * 1024 * 1024;
 const DOWNSTREAM_HEARTBEAT_MS = 30_000;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_AGENT_GROUP_PROJECTION_BYTES = 256 * 1024;
 const IMAGE_RETENTION_MS = 24 * 60 * 60 * 1_000;
 const IMAGE_MEDIA_TYPES = new Map([
   ["image/jpeg", "jpg"],
@@ -157,6 +158,7 @@ const MAX_UPSTREAM_CONTROL_IN_FLIGHT = 128;
 const configFile = process.argv[2];
 if (!configFile) throw new Error("usage: mobile-access-gateway <config-file>");
 const config = validateConfig(JSON.parse(await readFile(configFile, "utf8")));
+const agentGroupsFile = path.join(path.dirname(configFile), "agent-groups.json");
 await boundLog();
 const diagnostics = createGatewayDiagnosticReporter((line) => process.stdout.write(`${line}\n`));
 const sockets = new Set();
@@ -177,6 +179,10 @@ const server = http.createServer(async (request, response) => {
   if (request.url === "/health") {
     response.writeHead(200, GATEWAY_VERSION_HEADERS);
     response.end(JSON.stringify({ ready: true, ...GATEWAY_IDENTITY }));
+    return;
+  }
+  if (request.method === "GET" && safePathname(request.url) === "/agent-groups") {
+    await mobileAgentGroups(request, response);
     return;
   }
   if (request.method === "POST" && request.url === "/push/register") {
@@ -377,6 +383,60 @@ async function registerPushDevice(request, response) {
   } catch {
     return json(response, 400, { registered: false });
   }
+}
+
+async function mobileAgentGroups(request, response) {
+  if (!ownerAuthorized(request)) return json(response, 401, { version: 1, groupsByProject: {} });
+  try {
+    const info = await stat(agentGroupsFile);
+    if (!info.isFile() || info.size > MAX_AGENT_GROUP_PROJECTION_BYTES) {
+      return json(response, 422, { version: 1, groupsByProject: {} });
+    }
+    const projection = decodeAgentGroupProjection(JSON.parse(await readFile(agentGroupsFile, "utf8")));
+    return projection === undefined
+      ? json(response, 422, { version: 1, groupsByProject: {} })
+      : json(response, 200, projection);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return json(response, 200, { version: 1, groupsByProject: {} });
+    }
+    diagnostics.report("gateway", "agent_groups_read_failed", { errorType: error?.name });
+    return json(response, 503, { version: 1, groupsByProject: {} });
+  }
+}
+
+function decodeAgentGroupProjection(value) {
+  if (!isRecord(value) || value.version !== 1 || !isRecord(value.groupsByProject)) return undefined;
+  const groupsByProject = {};
+  for (const [projectId, candidate] of Object.entries(value.groupsByProject)) {
+    if (!validAgentGroupId(projectId) || !Array.isArray(candidate)) return undefined;
+    const seen = new Set();
+    const groups = [];
+    for (const group of candidate) {
+      if (!isRecord(group) || !Array.isArray(group.sessionIds) || group.sessionIds.length < 2
+        || !group.sessionIds.every(validAgentGroupId) || new Set(group.sessionIds).size !== group.sessionIds.length
+        || group.sessionIds.some((sessionId) => seen.has(sessionId))) {
+        return undefined;
+      }
+      const name = group.name;
+      if (!(name === undefined || (typeof name === "string" && name.trim().length > 0
+        && [...name.trim()].length <= 80))) {
+        return undefined;
+      }
+      group.sessionIds.forEach((sessionId) => seen.add(sessionId));
+      groups.push({
+        sessionIds: [...group.sessionIds],
+        ...(typeof name === "string" ? { name: name.trim() } : {}),
+      });
+    }
+    if (groups.length > 0) groupsByProject[projectId] = groups;
+  }
+  return { version: 1, groupsByProject };
+}
+
+function validAgentGroupId(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= 128
+    && !/[\u0000-\u001F\u007F]/u.test(value);
 }
 
 /// Images are deliberately not terminal frames: the terminal plane remains raw

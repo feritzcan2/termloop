@@ -49,6 +49,7 @@ const baseOverview: MobileOverview = {
   projects: fixtureProjects,
   stewardEnabledProjectIds: fixtureProjects.map((project) => project.id),
   stewardExecutorSessionIds: {},
+  agentGroupsByProject: {},
   tasks: fixtureTasks,
   sessions: fixtureSessions,
   agentStatuses: fixtureAgentStatuses,
@@ -100,6 +101,7 @@ describe("project overview sectioning", () => {
       projects: fixtureProjects.map((project) => ({ ...project, id: `second-${project.id}` })),
       stewardEnabledProjectIds: [],
       stewardExecutorSessionIds: {},
+      agentGroupsByProject: {},
       tasks: [],
       sessions: [],
       agentStatuses: [],
@@ -160,6 +162,46 @@ describe("project overview sectioning", () => {
       "ses_working_new",
       "ses_working_old",
     ]);
+  });
+
+  it("nests every Ask-To helper under its exact source without a two-row limit", () => {
+    const source = session({ id: "ses_source", ask_to_source_session_id: null });
+    const helpers = [1, 2, 3].map((index) => session({
+      id: `ses_helper_${index}`,
+      ask_to_source_session_id: source.id,
+    }));
+    const overview: MobileOverview = {
+      ...baseOverview,
+      sessions: [...helpers, source],
+      agentStatuses: [],
+    };
+
+    const [cluster] = buildProjectOverview(overview, source.project_id).agentClusters;
+    expect(cluster?.groups).toHaveLength(1);
+    expect(cluster?.groups[0]?.source.sessionId).toBe(source.id);
+    expect(cluster?.groups[0]?.helpers.map((row) => row.sessionId)).toEqual(
+      helpers.map((helper) => helper.id),
+    );
+  });
+
+  it("keeps every member and name of a desktop-authored peer group", () => {
+    const agents = [1, 2, 3, 4].map((index) => session({ id: `ses_group_${index}` }));
+    const overview: MobileOverview = {
+      ...baseOverview,
+      sessions: agents,
+      agentStatuses: [],
+      agentGroupsByProject: {
+        [agents[0]!.project_id]: [{
+          sessionIds: agents.map((agent) => agent.id),
+          name: "Review crew",
+        }],
+      },
+    };
+
+    const [cluster] = buildProjectOverview(overview, agents[0]!.project_id).agentClusters;
+    expect(cluster?.manualGroup?.name).toBe("Review crew");
+    expect(cluster?.groups.flatMap(({ source, helpers }) => [source, ...helpers])
+      .map((row) => row.sessionId)).toEqual(agents.map((agent) => agent.id));
   });
 
   it("separates terminals from agents and keeps stopped Agents reachable for recovery", () => {

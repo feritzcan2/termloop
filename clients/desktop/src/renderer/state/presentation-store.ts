@@ -272,14 +272,33 @@ export const presentationStore = createStore<PresentationState>((set, get) => ({
     const targetGroup = groups.find((group) => group.sessionIds.includes(targetSessionId));
     if (sourceGroup && sourceGroup === targetGroup) return false;
 
-    const nextGroups = removeSessionFromGroups(groups, sessionId);
+    // Dropping any member of a peer group moves that whole group. Moving only
+    // the grabbed row made two existing pairs look like an implicit two-Agent
+    // cap: the grabbed Agent joined the destination while its former peers were
+    // silently dissolved back into standalone rows.
+    const movingSessionIds = sourceGroup ? [...sourceGroup.sessionIds] : [sessionId];
+    const movingSet = new Set(movingSessionIds);
+    const nextGroups = groups
+      .filter((group) => group !== sourceGroup)
+      .map((group) => ({
+        ...group,
+        sessionIds: group.sessionIds.filter((value) => !movingSet.has(value)),
+      }))
+      .filter((group) => group.sessionIds.length >= 2);
     const destination = nextGroups.find((group) => group.sessionIds.includes(targetSessionId));
     if (destination) {
-      destination.sessionIds.splice(destination.sessionIds.indexOf(targetSessionId) + 1, 0, sessionId);
+      destination.sessionIds.splice(
+        destination.sessionIds.indexOf(targetSessionId) + 1,
+        0,
+        ...movingSessionIds,
+      );
     } else {
-      nextGroups.push({ sessionIds: [targetSessionId, sessionId] });
+      nextGroups.push({
+        sessionIds: [targetSessionId, ...movingSessionIds],
+        ...(sourceGroup?.name === undefined ? {} : { name: sourceGroup.name }),
+      });
     }
-    const nextOrder = placeGroupAtTarget(order, nextGroups, sessionId, targetSessionId);
+    const nextOrder = placeGroupAtTarget(order, nextGroups, movingSessionIds, targetSessionId);
     set({
       sessionOrderByProject: { ...current.sessionOrderByProject, [projectId]: nextOrder },
       agentGroupsByProject: { ...current.agentGroupsByProject, [projectId]: nextGroups },
@@ -479,13 +498,14 @@ function groupedSessionOrder(
 function placeGroupAtTarget(
   order: readonly string[],
   groups: readonly AgentGroupLayout[],
-  sourceSessionId: string,
+  sourceSessionIds: readonly string[],
   targetSessionId: string,
 ): string[] {
   const destination = groups.find((group) => group.sessionIds.includes(targetSessionId));
   if (!destination) return groupedSessionOrder(order, groups);
   const destinationIds = new Set(destination.sessionIds);
-  const withoutSource = order.filter((sessionId) => sessionId !== sourceSessionId);
+  const sourceIds = new Set(sourceSessionIds);
+  const withoutSource = order.filter((sessionId) => !sourceIds.has(sessionId));
   const insertionIndex = withoutSource.findIndex((sessionId) => destinationIds.has(sessionId));
   const next = withoutSource.filter((sessionId) => !destinationIds.has(sessionId));
   next.splice(insertionIndex < 0 ? next.length : insertionIndex, 0, ...destination.sessionIds);
