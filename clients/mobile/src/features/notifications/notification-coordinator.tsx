@@ -9,10 +9,12 @@ import { useMobileRuntime } from "@/composition/runtime-context";
 import { useConnections } from "@/features/connection/connection-store";
 import {
   notificationDestination,
+  notificationRoute,
   resolveNotificationConnectionId,
   type NotificationDestination,
 } from "@/features/notifications/notification-navigation";
 import { useOverview } from "@/features/overview/overview-store";
+import { mobileDiagnostics } from "@/platform/mobile-diagnostics";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -28,7 +30,6 @@ export function NotificationCoordinator() {
   const connections = useConnections();
   const overview = useOverview();
   const router = useRouter();
-  const lastResponse = Notifications.useLastNotificationResponse();
   const handledResponse = useRef<string | undefined>(undefined);
   const [pendingDestination, setPendingDestination] = useState<NotificationDestination | undefined>();
 
@@ -59,7 +60,11 @@ export function NotificationCoordinator() {
           environment,
           bundleId,
         });
-      } catch {
+      } catch (cause: unknown) {
+        mobileDiagnostics.report("notification", "registration_failed", {
+          connectionId,
+          causeType: cause instanceof Error ? cause.name : typeof cause,
+        });
         if (active) retry = setTimeout(register, 10_000);
       }
     };
@@ -71,16 +76,37 @@ export function NotificationCoordinator() {
   }, [runtime, connections.selected?.id, connections.selected?.availability]);
 
   useEffect(() => {
-    if (!lastResponse) return;
-    const identifier = lastResponse.notification.request.identifier;
-    if (handledResponse.current === identifier) return;
-    const destination = notificationDestination(lastResponse.notification.request.content.data);
-    if (destination === undefined) return;
-    handledResponse.current = identifier;
-    if (destination.connectionId !== undefined) connections.select(destination.connectionId);
-    setPendingDestination(destination);
-    void Notifications.clearLastNotificationResponseAsync();
-  }, [connections.select, lastResponse]);
+    let active = true;
+    const receive = (response: Notifications.NotificationResponse | null) => {
+      if (!active || response === null) return;
+      const identifier = response.notification.request.identifier;
+      if (handledResponse.current === identifier) return;
+      handledResponse.current = identifier;
+      const destination = notificationDestination(response.notification.request.content.data);
+      mobileDiagnostics.report("notification", destination === undefined ? "response_rejected" : "response_received", {
+        hasDestination: destination !== undefined,
+        hasConnectionHint: destination?.connectionId !== undefined,
+        reason: destination?.kind,
+      });
+      if (destination === undefined) {
+        void clearNotificationResponse();
+        return;
+      }
+      // Keep the native response until routing succeeds. If iOS kills the app while
+      // its paired-Mac catalog is still loading, the next cold start can try again.
+      setPendingDestination(destination);
+    };
+    const subscription = Notifications.addNotificationResponseReceivedListener(receive);
+    void Notifications.getLastNotificationResponseAsync().then(receive, (cause: unknown) => {
+      mobileDiagnostics.report("notification", "response_read_failed", {
+        causeType: cause instanceof Error ? cause.name : typeof cause,
+      });
+    });
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (pendingDestination === undefined) return;
@@ -99,22 +125,28 @@ export function NotificationCoordinator() {
       return;
     }
 
-    if (pendingDestination.kind === "steward") {
-      // The phone does not have a Steward chat route yet. Land on the exact
-      // Project instead of trying to open the synthetic Watch chat Session ID.
-      router.navigate({
-        pathname: "/project/[projectId]",
-        params: { projectId: pendingDestination.projectId, connectionId },
-      });
-    } else {
-      router.navigate({
-        pathname: "/session/[sessionId]",
-        params: { sessionId: pendingDestination.sessionId, connectionId },
-      });
-    }
+    router.replace(notificationRoute(pendingDestination, connectionId));
+    mobileDiagnostics.report("notification", "route_replaced", {
+      connectionId,
+      reason: pendingDestination.kind,
+      ...(pendingDestination.kind === "session"
+        ? { sessionId: pendingDestination.sessionId }
+        : { projectId: pendingDestination.projectId }),
+    });
     setPendingDestination(undefined);
+    void clearNotificationResponse();
     void Notifications.setBadgeCountAsync(0);
   }, [connections.connections, connections.select, connections.selectedId, overview.byConnection, pendingDestination, router]);
 
   return null;
+}
+
+async function clearNotificationResponse(): Promise<void> {
+  try {
+    await Notifications.clearLastNotificationResponseAsync();
+  } catch (cause: unknown) {
+    mobileDiagnostics.report("notification", "response_clear_failed", {
+      causeType: cause instanceof Error ? cause.name : typeof cause,
+    });
+  }
 }

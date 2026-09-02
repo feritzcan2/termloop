@@ -194,6 +194,10 @@ export interface AgentLaunchPort {
 export interface SessionActionsPort {
   fork(connectionId: string, sessionId: string): Promise<SessionDto>;
   repairProviderHistory(connectionId: string, sessionId: string): Promise<void>;
+  /// Retries a stopped Agent through a freshly previewed resume ticket. This is
+  /// intentionally distinct from `restart`, which refreshes an already-running
+  /// provider process and cannot recover a `resumeFailed` Session.
+  retry(connectionId: string, sessionId: string): Promise<SessionDto>;
   restart(connectionId: string, sessionId: string): Promise<SessionDto>;
   askTo(
     connectionId: string,

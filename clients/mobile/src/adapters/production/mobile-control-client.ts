@@ -18,9 +18,11 @@ import type {
   SessionRelocateAgentToProjectResult,
   SessionRelocateAgentToTaskResult,
   SessionRepairProviderHistoryResult,
+  SessionPreviewResumeAgentResult,
   SessionRenameResult,
   SessionRequestAskToResult,
   SessionRequestHandoverToResult,
+  SessionResumeAgentResult,
   SessionRestartAgentResult,
   SessionPreviewRelocateAgentToProjectResult,
   SessionPreviewRelocateAgentToTaskResult,
@@ -69,6 +71,8 @@ type MobileControlMethod =
   | "session.repairProviderHistory"
   | "session.requestAskTo"
   | "session.requestHandoverTo"
+  | "session.previewResumeAgent"
+  | "session.resumeAgent"
   | "session.restartAgent"
   | "session.previewRelocateAgentToTask"
   | "session.relocateAgentToTask"
@@ -106,6 +110,8 @@ interface MobileControlResults {
   "session.repairProviderHistory": SessionRepairProviderHistoryResult;
   "session.requestAskTo": SessionRequestAskToResult;
   "session.requestHandoverTo": SessionRequestHandoverToResult;
+  "session.previewResumeAgent": SessionPreviewResumeAgentResult;
+  "session.resumeAgent": SessionResumeAgentResult;
   "session.restartAgent": SessionRestartAgentResult;
   "session.previewRelocateAgentToTask": SessionPreviewRelocateAgentToTaskResult;
   "session.relocateAgentToTask": SessionRelocateAgentToTaskResult;
@@ -137,6 +143,8 @@ const SLOW_METHOD_TIMEOUT_MS: Partial<Record<MobileControlMethod, number>> = {
   "session.repairProviderHistory": 20_000,
   "session.requestAskTo": 20_000,
   "session.requestHandoverTo": 20_000,
+  "session.previewResumeAgent": 30_000,
+  "session.resumeAgent": 120_000,
   "session.restartAgent": 120_000,
   "session.previewRelocateAgentToTask": 30_000,
   "session.relocateAgentToTask": 120_000,
@@ -684,7 +692,8 @@ function decodeResult<M extends MobileControlMethod>(
       // well-formed is accepted rather than pinned to a shape it never uses.
       return value as MobileControlResults[M];
     case "task.previewAgent":
-    case "session.previewAgent": {
+    case "session.previewAgent":
+    case "session.previewResumeAgent": {
       if (!isRecord(value) || typeof value.launch_ticket !== "string"
         || !isRecord(value.manifest) || !isRecord(value.manifest.target)
         || typeof value.manifest.target.executable !== "string"
@@ -697,6 +706,7 @@ function decodeResult<M extends MobileControlMethod>(
     case "task.launchAgent":
     case "session.launchAgent":
     case "session.forkAgent":
+    case "session.resumeAgent":
     case "session.restartAgent":
     case "session.relocateAgentToTask":
     case "session.relocateAgentToProject":

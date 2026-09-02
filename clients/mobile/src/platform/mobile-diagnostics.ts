@@ -1,6 +1,6 @@
 export type MobileDiagnosticValue = string | number | boolean | null;
 
-export type MobileDiagnosticArea = "connection" | "control" | "lifecycle" | "terminal";
+export type MobileDiagnosticArea = "connection" | "control" | "lifecycle" | "notification" | "terminal";
 
 export interface MobileDiagnosticEvent {
   readonly atEpochMs: number;

@@ -8,6 +8,16 @@ export interface NotificationConnectionScope {
   readonly projectIds: readonly string[];
 }
 
+export type NotificationRoute =
+  | {
+    readonly pathname: "/session/[sessionId]";
+    readonly params: { readonly sessionId: string; readonly connectionId: string };
+  }
+  | {
+    readonly pathname: "/project/[projectId]";
+    readonly params: { readonly projectId: string; readonly connectionId: string };
+  };
+
 /// APNs data is untrusted input. Resolve only the identifiers needed for a known
 /// mobile route, and keep Steward chat's synthetic Session ID out of the terminal.
 export function notificationDestination(data: unknown): NotificationDestination | undefined {
@@ -46,6 +56,24 @@ export function resolveNotificationConnectionId(
     return destination.connectionId;
   }
   return scopes.length === 1 ? scopes[0]?.connectionId : undefined;
+}
+
+/// A notification is an explicit navigation intent, so its target replaces the
+/// currently visible route. This avoids React Navigation reusing an older dynamic
+/// Session route with the same route name and stale params.
+export function notificationRoute(
+  destination: NotificationDestination,
+  connectionId: string,
+): NotificationRoute {
+  return destination.kind === "session"
+    ? {
+      pathname: "/session/[sessionId]",
+      params: { sessionId: destination.sessionId, connectionId },
+    }
+    : {
+      pathname: "/project/[projectId]",
+      params: { projectId: destination.projectId, connectionId },
+    };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

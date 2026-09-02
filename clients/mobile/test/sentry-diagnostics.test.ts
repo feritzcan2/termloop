@@ -44,6 +44,22 @@ describe("mobile Sentry diagnostics", () => {
       errorCode: "unavailable",
     }))).toMatchObject({ level: "error" });
   });
+
+  it("keeps notification routing evidence without exposing target identifiers", () => {
+    const diagnostic = mobileSentryDiagnostic(event("notification", "route_replaced", {
+      connectionId: "mac-private",
+      sessionId: "session-private",
+      reason: "session",
+    }));
+
+    expect(diagnostic).toMatchObject({
+      message: "mobile.notification.route_replaced",
+      level: "info",
+      attributes: { reason: "session" },
+    });
+    expect(JSON.stringify(diagnostic)).not.toContain("mac-private");
+    expect(JSON.stringify(diagnostic)).not.toContain("session-private");
+  });
 });
 
 function event(
