@@ -490,13 +490,12 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
             {task.branches?.items
               .filter((branch) => branch.branch_id !== "primary")
               .map((branch) => {
-                const base = branch.base_ref
-                  ?? (branch.base_oid ? branch.base_oid.slice(0, 12) : "unknown base");
+                const base = branch.base_ref;
                 const warning = branch.role === "baseBranch"
                   ? "This Task's base branch was checked out in the worktree; it is not included in Task commit rollups."
                   : branch.role === "heldByOtherTask"
                     ? `This branch is the primary branch of another Task${branch.held_by_task_id ? ` (${branch.held_by_task_id})` : ""}; it is not included in Task commit rollups.`
-                    : `Observed in this Task worktree with activity base ${base}.`;
+                    : `Observed in this Task worktree${base ? ` with activity base ${base}` : ""}.`;
                 return (
                   <button
                     key={branch.branch_id}
@@ -506,7 +505,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
                     onClick={() => props.openChanges({ kind: "commits", branchId: branch.branch_id })}
                   >
                     <Icon name="branch" />
-                    <span>{branch.name} · base {base}</span>
+                    <span>{branch.name}{base ? ` · base ${base}` : ""}</span>
                   </button>
                 );
               })}

@@ -358,7 +358,7 @@ kbd { padding: 2px 5px; border: 1px solid rgba(255,255,255,.07); border-radius: 
 .task-group.focused:hover .task-open-hint { opacity: 1; }
 /* The hint speaks for the card's own click, so it stays up over the title row
    too and yields only above controls that do something else. */
-.task-group.focused:hover:has(:is(.task-toggle, .row-actions, .task-launch, .task-children, .task-agents, .task-next-step, .task-meta button, input):hover) .task-open-hint { opacity: 0; }
+.task-group.focused:hover:has(:is(.task-toggle, .row-actions, .task-launch, .task-children, .task-agents, .task-next-step, .task-meta button, .task-developer-notes, input):hover) .task-open-hint { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .task-open-hint { transition: none; } }
 .task-group.focused[data-disclosed] { margin: 0 8px 6px; padding: 7px 7px 8px; }
 .task-group.focused:has(.task-item.showing-detail) { border-color: rgba(124,92,255,.28); background: rgba(124,92,255,.05); }
@@ -367,6 +367,30 @@ kbd { padding: 2px 5px; border: 1px solid rgba(255,255,255,.07); border-radius: 
 .task-group.focused .task-item.showing-detail { background: transparent; }
 .task-group.focused .task-next-step { margin-left: 28px; }
 .task-group.focused .task-launch { padding-left: 0; }
+.task-developer-notes { display: grid; gap: 3px; margin: 7px 5px 1px 28px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,.055); cursor: default; }
+.task-developer-notes-head { display: flex; min-height: 19px; align-items: center; gap: 5px; color: var(--sidebar-dimmer); font: 700 8.5px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.task-developer-notes-head > span { min-width: 0; flex: 1; }
+.task-developer-notes-head > small { color: var(--sidebar-dimmer); font: 700 8.5px/1 var(--font-mono); letter-spacing: 0; }
+.task-developer-notes-head > button, .task-developer-note-list li > button { display: grid; flex: none; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--sidebar-dimmer); }
+.task-developer-notes-head > button:hover:not(:disabled) { background: rgba(124,92,255,.12); color: var(--accent-strong); }
+.task-developer-notes-head > button:disabled { opacity: .35; }
+.task-developer-notes-head svg, .task-developer-note-list li > button svg { width: 10px; height: 10px; }
+.task-developer-note-list { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+.task-developer-note-list li { display: grid; min-width: 0; min-height: 22px; grid-template-columns: 14px minmax(0,1fr) 18px; align-items: start; gap: 5px; padding: 2px 0; border-radius: 4px; color: var(--sidebar-dim); font: 10.5px/1.45 var(--font-ui); }
+.task-developer-note-list li:hover { color: var(--sidebar-text); }
+.task-developer-note-list li > input { appearance: none; width: 12px; height: 12px; margin: 1px 0 0; border: 1px solid var(--sidebar-dimmer); border-radius: 3px; background: transparent; }
+.task-developer-note-list li > input:hover, .task-developer-note-list li > input:focus-visible { border-color: var(--accent-strong); }
+.task-developer-note-list li > input:focus-visible { outline: 1px solid rgba(124,92,255,.35); outline-offset: 1px; }
+.task-developer-note-list li > input:checked { border-color: var(--success); background: var(--success); }
+.task-developer-note-list li > input:checked::after { content: ""; display: block; width: 5px; height: 3px; margin: 2px 0 0 2px; border-bottom: 1.5px solid var(--bg-sidebar); border-left: 1.5px solid var(--bg-sidebar); transform: rotate(-45deg); }
+.task-developer-note-list li > span { min-width: 0; overflow-wrap: anywhere; }
+.task-developer-note-list li.completed > span { color: var(--sidebar-dimmer); text-decoration: line-through; text-decoration-color: rgba(255,255,255,.18); }
+.task-developer-note-list li > button { opacity: 0; }
+.task-developer-note-list li:hover > button, .task-developer-note-list li > button:focus-visible { color: var(--sidebar-dimmer); opacity: 1; }
+.task-developer-note-list li > button:hover { background: rgba(201,61,54,.12); color: var(--danger); }
+.task-developer-note-form input { width: 100%; height: 24px; padding: 0 7px; border: 1px solid rgba(124,92,255,.3); border-radius: 5px; outline: 0; background: rgba(0,0,0,.13); color: var(--sidebar-text); font: 10.5px/1 var(--font-ui); }
+.task-developer-note-form input::placeholder { color: var(--sidebar-dimmer); }
+.task-developer-note-form input:focus { border-color: var(--accent-strong); box-shadow: 0 0 0 2px rgba(124,92,255,.08); }
 .task-row { display: grid; grid-template-columns: 14px minmax(0,1fr) auto; align-items: start; }
 .task-toggle { width: 14px; height: 27px; }
 .task-toggle svg { width: 11px; height: 11px; }
