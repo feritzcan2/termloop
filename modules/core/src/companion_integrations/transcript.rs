@@ -142,6 +142,21 @@ impl CoreRuntime {
         input: CompanionMessageAppendInput,
         created_at_epoch_ms: u64,
     ) -> Result<Value, CoreError> {
+        self.append_companion_message_input_and_dismiss_routine_findings(
+            project_id,
+            input,
+            created_at_epoch_ms,
+            &[],
+        )
+    }
+
+    pub(crate) fn append_companion_message_input_and_dismiss_routine_findings(
+        &mut self,
+        project_id: &str,
+        input: CompanionMessageAppendInput,
+        created_at_epoch_ms: u64,
+        routine_finding_ids: &[String],
+    ) -> Result<Value, CoreError> {
         let CompanionMessageAppendInput {
             author,
             kind,
@@ -206,13 +221,22 @@ impl CoreRuntime {
             content,
             created_at_epoch_ms,
         };
-        let message = self
-            .store
-            .append_companion_message(&self.write_authority, message)
-            .map_err(store_error)?;
+        let message = if routine_finding_ids.is_empty() {
+            self.store
+                .append_companion_message(&self.write_authority, message)
+        } else {
+            self.store
+                .append_companion_message_and_dismiss_routine_findings(
+                    &self.write_authority,
+                    message,
+                    routine_finding_ids,
+                )
+        }
+        .map_err(store_error)?;
         let usage = self.companion_transcript_usage(project_id);
         Ok(json!({
             "message": companion_message_projection(&message)?,
+            "dismissedRoutineFindingIds": routine_finding_ids,
             "usage": usage,
             "stateRevision": self.store.revision(),
         }))
