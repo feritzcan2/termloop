@@ -246,9 +246,9 @@ final class AppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCent
 }
 
 // Assignable to the Ultra's Action Button via Shortcuts: one press opens the
-// app straight into the hands-free Steward voice loop.
+// app straight into one bounded Steward voice message.
 struct TalkToStewIntent: AppIntent {
-    static let title: LocalizedStringResource = "Stew Canlı Konuşma"
+    static let title: LocalizedStringResource = "Stew'a Sesli Mesaj"
     static let openAppWhenRun = true
 
     @MainActor
@@ -306,9 +306,9 @@ struct TermLoopShortcuts: AppShortcutsProvider {
         )
         AppShortcut(
             intent: TalkToStewIntent(),
-            phrases: ["\(.applicationName) Stew canlı konuşma"],
-            shortTitle: "Stew Canlı",
-            systemImageName: "waveform.circle.fill"
+            phrases: ["\(.applicationName) Stew'a sesli mesaj"],
+            shortTitle: "Stew'a Mesaj",
+            systemImageName: "mic.circle.fill"
         )
     }
 }
@@ -360,10 +360,9 @@ struct ContentView: View {
         }
         .onOpenURL { url in
             switch url.host {
-            case "talk":
+            case "message", "talk":
                 path = NavigationPath()
-                path.append(WatchDestination.chat)
-                appState.autoTalkRequested = true
+                path.append(WatchDestination.talk)
             case "launch-agent":
                 path = NavigationPath()
                 path.append(ProjectAgentLauncherRoute())
