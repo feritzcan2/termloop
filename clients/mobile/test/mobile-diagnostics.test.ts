@@ -50,4 +50,20 @@ describe("mobile diagnostics", () => {
     expect(websocketEndpointLabel("not a websocket endpoint"))
       .toBe("invalid-websocket-endpoint");
   });
+
+  it("emits structured events to an external sink without letting sink failures escape", () => {
+    const received: string[] = [];
+    const diagnostics = createMobileDiagnosticReporter(
+      () => {},
+      { now: () => 1_788_300_000_000 },
+      (event) => {
+        received.push(`${event.area}.${event.event}`);
+        throw new Error("sink unavailable");
+      },
+    );
+
+    expect(() => diagnostics.report("connection", "reconnect_stalled", { reconnectAttempt: 3 }))
+      .not.toThrow();
+    expect(received).toEqual(["connection.reconnect_stalled"]);
+  });
 });

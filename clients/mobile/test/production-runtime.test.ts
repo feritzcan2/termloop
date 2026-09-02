@@ -810,6 +810,80 @@ describe("production control adapter", () => {
     }
   });
 
+  it("reports a reconnect stall with attempts and elapsed time", async () => {
+    vi.useFakeTimers();
+    try {
+      const sockets: DataSocket[] = [];
+      const diagnosticLines: string[] = [];
+      const runtime = createProductionRuntime({
+        repository: fixedRepository(saved),
+        diagnostics: createMobileDiagnosticReporter((line) => diagnosticLines.push(line)),
+        multiplexSocketFactory() {
+          const socketIndex = sockets.length;
+          const socket: DataSocket = {
+            binaryType: "blob",
+            readyState: 1,
+            onopen: null,
+            onmessage: null,
+            onerror: null,
+            onclose: null,
+            send(data) {
+              if (socketIndex !== 0) return;
+              if (typeof data === "string") {
+                const message = JSON.parse(data) as { type?: string };
+                if (message.type === "mobile.authenticate") {
+                  queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({
+                    event: "mobile.ready",
+                    mobileTransportVersion: 2,
+                  }) }));
+                }
+                return;
+              }
+              const frame = decodeFrame(data instanceof Uint8Array ? data : new Uint8Array(data));
+              if (frame.kind === KIND_ATTACH) {
+                queueMicrotask(() => socket.onmessage?.({ data: encodeFrame(
+                  frame.sessionId,
+                  frame.epoch,
+                  frame.sequence,
+                  KIND_ACK,
+                ) }));
+              }
+            },
+            close() {},
+          };
+          sockets.push(socket);
+          queueMicrotask(() => socket.onopen?.());
+          return socket;
+        },
+        controlSocketFactory: () => { throw new Error("legacy control transport used"); },
+        terminalSocketFactory: () => { throw new Error("legacy terminal transport used"); },
+      });
+      const attachment = await runtime.terminal.attach(
+        saved.id,
+        { id: sessionId, runtime_epoch: 7 },
+        () => {},
+      );
+
+      sockets[0]!.onclose?.({ code: 1006, wasClean: false });
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      const records = diagnosticLines.map((line) => JSON.parse(
+        line.replace("[termloop-mobile] ", ""),
+      ) as Record<string, unknown>);
+      expect(records).toContainEqual(expect.objectContaining({
+        event: "reconnect_stalled",
+        reconnectElapsedMs: 15_000,
+        reconnectAttempt: expect.any(Number),
+      }));
+      expect(records.some(({ event }) => event === "reconnect_attempt_failed")).toBe(true);
+
+      await attachment.detach();
+      runtime.connections.resetTransports();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("correlates control requests with the current mobile run without logging request parameters", async () => {
     const diagnosticLines: string[] = [];
     const diagnostics = createMobileDiagnosticReporter((line) => diagnosticLines.push(line));

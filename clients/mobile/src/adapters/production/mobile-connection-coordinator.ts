@@ -38,6 +38,7 @@ const INBOUND_LIVENESS_TIMEOUT_MS = 75_000;
 const FORCE_RECONNECT_TIMEOUT_MS = 12_000;
 const MIN_RECONNECT_MS = 500;
 const MAX_RECONNECT_MS = 30_000;
+const RECONNECT_STALLED_MS = 15_000;
 const STABLE_CONNECTION_MS = 30_000;
 const ONLINE_ACTIVITY_PUBLISH_MS = 5_000;
 const MAX_INPUT_FRAME_BYTES = 16 * 1024;
@@ -108,6 +109,9 @@ export class MobileConnectionCoordinator {
   private inputReceiptSource: "daemon" | "gateway" | undefined;
   private reconnectDelay = MIN_RECONNECT_MS;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  private reconnectStallTimer: ReturnType<typeof setTimeout> | undefined;
+  private reconnectStartedAtEpochMs: number | undefined;
+  private reconnectAttempt = 0;
   private stabilityTimer: ReturnType<typeof setTimeout> | undefined;
   private livenessTimer: ReturnType<typeof setTimeout> | undefined;
   private controlChannel: ControlChannel | undefined;
@@ -288,6 +292,7 @@ export class MobileConnectionCoordinator {
     if (this.stopped) return;
     this.stopped = true;
     if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer);
+    if (this.reconnectStallTimer !== undefined) clearTimeout(this.reconnectStallTimer);
     if (this.stabilityTimer !== undefined) clearTimeout(this.stabilityTimer);
     if (this.livenessTimer !== undefined) clearTimeout(this.livenessTimer);
     this.control.close();
@@ -355,6 +360,16 @@ export class MobileConnectionCoordinator {
     if (this.connecting !== undefined) return this.connecting;
     const generation = ++this.generation;
     const startedAtEpochMs = Date.now();
+    if (this.reconnectStartedAtEpochMs !== undefined) {
+      this.reconnectAttempt += 1;
+      this.diagnostics.report("connection", "reconnect_attempt_started", {
+        connectionId: this.connection.id,
+        generation,
+        reconnectAttempt: this.reconnectAttempt,
+        reconnectElapsedMs: startedAtEpochMs - this.reconnectStartedAtEpochMs,
+        ...this.diagnostics.correlation(),
+      });
+    }
     this.diagnostics.report("connection", "connection_started", {
       connectionId: this.connection.id,
       generation,
@@ -420,6 +435,7 @@ export class MobileConnectionCoordinator {
               settled = true;
               resolve(socket);
             }
+            this.finishReconnectCycle(generation);
             this.diagnostics.report("connection", "connection_ready", {
               connectionId: this.connection.id,
               generation,
@@ -676,6 +692,7 @@ export class MobileConnectionCoordinator {
 
   private handleDisconnected(generation: number, reason: string, reconnect = true): void {
     if (generation !== this.generation) return;
+    this.beginReconnectCycle(reason);
     this.cancelConnecting?.(new Error("Mobile transport disconnected."));
     this.cancelConnecting = undefined;
     this.generation += 1;
@@ -716,6 +733,7 @@ export class MobileConnectionCoordinator {
   private scheduleReconnect(reason: string): void {
     if (this.stopped || this.reconnectTimer !== undefined
       || this.subscriptions.size + this.invalidationListeners.size + this.statusListeners.size === 0) return;
+    this.beginReconnectCycle(reason);
     const delayMs = this.reconnectDelay;
     this.reconnectDelay = Math.min(MAX_RECONNECT_MS, this.reconnectDelay * 2);
     this.diagnostics.report("connection", "reconnect_scheduled", {
@@ -725,8 +743,66 @@ export class MobileConnectionCoordinator {
     });
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined;
-      void this.ensureConnected().catch(() => this.scheduleReconnect("reconnectFailed"));
+      const attempt = this.reconnectAttempt + 1;
+      void this.ensureConnected().catch((cause: unknown) => {
+        this.diagnostics.report("connection", "reconnect_attempt_failed", {
+          connectionId: this.connection.id,
+          reconnectAttempt: attempt,
+          reconnectElapsedMs: this.reconnectStartedAtEpochMs === undefined
+            ? undefined
+            : Date.now() - this.reconnectStartedAtEpochMs,
+          causeType: cause instanceof Error ? cause.name : typeof cause,
+          reason: "connectionAttemptRejected",
+          ...this.diagnostics.correlation(),
+        });
+        this.scheduleReconnect("reconnectFailed");
+      });
     }, delayMs);
+  }
+
+  private beginReconnectCycle(reason: string): void {
+    if (this.reconnectStartedAtEpochMs !== undefined) return;
+    this.reconnectStartedAtEpochMs = Date.now();
+    this.reconnectAttempt = 0;
+    this.diagnostics.report("connection", "reconnect_cycle_started", {
+      connectionId: this.connection.id,
+      generation: this.generation,
+      reason,
+      activeTerminalSubscriptions: this.subscriptions.size,
+      ...this.diagnostics.correlation(),
+    });
+    if (this.reconnectStallTimer !== undefined) clearTimeout(this.reconnectStallTimer);
+    this.reconnectStallTimer = setTimeout(() => {
+      this.reconnectStallTimer = undefined;
+      if (this.stopped || this.ready || this.reconnectStartedAtEpochMs === undefined) return;
+      this.diagnostics.report("connection", "reconnect_stalled", {
+        connectionId: this.connection.id,
+        generation: this.generation,
+        reconnectAttempt: this.reconnectAttempt,
+        reconnectElapsedMs: Date.now() - this.reconnectStartedAtEpochMs,
+        activeTerminalSubscriptions: this.subscriptions.size,
+        invalidationSubscribers: this.invalidationListeners.size,
+        statusSubscribers: this.statusListeners.size,
+        socketReadyState: this.physical?.readyState,
+        connecting: this.connecting !== undefined,
+        ...this.diagnostics.correlation(),
+      });
+    }, RECONNECT_STALLED_MS);
+  }
+
+  private finishReconnectCycle(generation: number): void {
+    if (this.reconnectStartedAtEpochMs === undefined) return;
+    this.diagnostics.report("connection", "reconnect_recovered", {
+      connectionId: this.connection.id,
+      generation,
+      reconnectAttempts: this.reconnectAttempt,
+      reconnectElapsedMs: Date.now() - this.reconnectStartedAtEpochMs,
+      ...this.diagnostics.correlation(),
+    });
+    if (this.reconnectStallTimer !== undefined) clearTimeout(this.reconnectStallTimer);
+    this.reconnectStallTimer = undefined;
+    this.reconnectStartedAtEpochMs = undefined;
+    this.reconnectAttempt = 0;
   }
 
   private openSocket(): DataSocket | undefined {
