@@ -11,6 +11,13 @@ export const KIND_DETACH = 15;
 export const KIND_INPUT_ACK = 16;
 
 const HEADER_BYTES = 41;
+const REPLAY_REQUEST_MAGIC = "TLRQ";
+const REPLAY_ACK_MAGIC = "TLRA";
+const REPLAY_REQUEST_BYTES = 12;
+const REPLAY_ACK_BYTES = 12;
+const MAX_NEGOTIATED_REPLAY_FRAMES = 128;
+export const MOBILE_REPLAY_BUDGET_BYTES = 1024 * 1024;
+export const MOBILE_REPLAY_CHUNK_BYTES = 256 * 1024;
 const encoder = new TextEncoder();
 
 export interface DecodedTerminalFrame {
@@ -19,6 +26,34 @@ export interface DecodedTerminalFrame {
   readonly sequence: bigint;
   readonly kind: number;
   readonly payload: Uint8Array;
+}
+
+export interface TerminalReplayAck {
+  readonly frameCount: number;
+  readonly outputBytes: number;
+}
+
+/// Requests a bounded newest suffix. Older daemons echo this payload in their Attach
+/// ACK; the distinct TLRA response magic ensures that echo selects the quiet-window
+/// fallback rather than being mistaken for negotiated metadata.
+export function replayRequestPayload(): Uint8Array {
+  const payload = new Uint8Array(REPLAY_REQUEST_BYTES);
+  payload.set(encoder.encode(REPLAY_REQUEST_MAGIC));
+  const view = new DataView(payload.buffer);
+  view.setUint32(4, MOBILE_REPLAY_BUDGET_BYTES);
+  view.setUint32(8, MOBILE_REPLAY_CHUNK_BYTES);
+  return payload;
+}
+
+export function decodeReplayAck(payload: Uint8Array): TerminalReplayAck | undefined {
+  if (payload.byteLength !== REPLAY_ACK_BYTES
+    || new TextDecoder().decode(payload.slice(0, 4)) !== REPLAY_ACK_MAGIC) return undefined;
+  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  const frameCount = view.getUint32(4);
+  const outputBytes = view.getUint32(8);
+  if (frameCount > MAX_NEGOTIATED_REPLAY_FRAMES
+    || outputBytes > MOBILE_REPLAY_BUDGET_BYTES) return undefined;
+  return { frameCount, outputBytes };
 }
 
 export function encodeFrame(
