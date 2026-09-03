@@ -19,6 +19,7 @@ fn task(id: &str, project_id: &str) -> TaskRecord {
         project_id: project_id.into(),
         title: id.into(),
         brief: None,
+        developer_notes: vec![],
         status: TaskStatus::Open,
         archived_at_epoch_ms: None,
         branch: None,

@@ -13,6 +13,8 @@
 
 ## Invariants
 
+- All TermLoop-authored prompt prose and model-facing instructions are written
+  in English; user-provided multilingual content remains an explicit binding.
 - Every TermLoop-generated launch resolves to `templateRef + bindings` and a
   user-visible delivered preview. A non-empty arbitrary string is not provenance.
 - No production inline/fallback prompt. Add or change the visible asset instead.

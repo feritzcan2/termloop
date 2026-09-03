@@ -144,7 +144,7 @@ pub(in crate::app::control) async fn task_worktree_pre_image(
     core.complete_task_worktree_pre_image(observed)
 }
 
-pub(in crate::app::control) async fn task_branch_commit_summary_list(
+pub(in crate::app) async fn task_branch_commit_summary_list(
     params: serde_json::Value,
     state: &AppState,
 ) -> Result<serde_json::Value, CoreError> {

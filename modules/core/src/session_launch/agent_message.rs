@@ -1,9 +1,39 @@
 use serde_json::{Value, json};
 use termloop_domain::SessionKind;
 
-use crate::{CoreError, CoreRuntime, terminal_error};
+use crate::{CoreError, CoreRuntime, required_string, terminal_error};
 
 impl CoreRuntime {
+    pub fn paste_agent_image(&mut self, params: Value) -> Result<Value, CoreError> {
+        let session_id = required_string(&params, "sessionId")?;
+        let attachments = super::quick_action_attachments(&params)?;
+        let [attachment] = attachments.as_slice() else {
+            return Err(CoreError::InvalidParams("attachments".into()));
+        };
+        let session = self
+            .store
+            .sessions()
+            .iter()
+            .find(|session| {
+                session.id == session_id
+                    && session.kind == SessionKind::Agent
+                    && session.lifecycle_state == "running"
+                    && session
+                        .process
+                        .agent_id
+                        .as_deref()
+                        .is_some_and(termloop_agents::is_supported_agent)
+            })
+            .ok_or(CoreError::NotFound)?;
+        let runtime_epoch = session.runtime_epoch;
+        let paste = termloop_invocation::image_attachment_terminal_paste(attachment)
+            .map_err(super::invocation_error)?;
+        self.terminal
+            .input_user(&session_id, runtime_epoch, &paste)
+            .map_err(terminal_error)?;
+        Ok(json!({ "sessionId": session_id, "status": "delivered" }))
+    }
+
     pub fn request_agent_ask_to(
         &mut self,
         source_session_id: &str,
@@ -495,6 +525,36 @@ mod tests {
         await_handoff_fixture_ready(&terminal, SOURCE_ID, &mut source_output).await;
         await_handoff_fixture_ready(&terminal, TARGET_ID, &mut target_output).await;
         let generated_input_events = runtime.take_generated_input_runtime_events().unwrap();
+
+        let image_id = "123e4567-e89b-42d3-a456-426614174002";
+        let image_path = root
+            .join("termloop-quick-action-images")
+            .join(image_id)
+            .join("image.png");
+        let activity_before = terminal.user_input_activity(TARGET_ID, 17).unwrap();
+        assert_eq!(
+            runtime
+                .paste_agent_image(json!({
+                    "sessionId": TARGET_ID,
+                    "attachments": [{
+                        "attachmentId": image_id,
+                        "filePath": image_path,
+                        "mediaType": "image/png",
+                        "byteLength": 128,
+                        "sha256": format!("sha256:{}", "a".repeat(64)),
+                        "width": 8,
+                        "height": 8
+                    }]
+                }))
+                .unwrap(),
+            json!({"sessionId":TARGET_ID,"status":"delivered"})
+        );
+        let activity_after = terminal.user_input_activity(TARGET_ID, 17).unwrap();
+        assert_eq!(activity_after.sequence, activity_before.sequence + 1);
+        assert_eq!(
+            activity_after.mutation_sequence,
+            activity_before.mutation_sequence + 1
+        );
 
         assert_eq!(
             runtime.request_agent_ask_to(SOURCE_ID, "claude").unwrap(),

@@ -12,6 +12,7 @@ import {
   taskDeleteTerminationNotFoundSatisfied,
   relativeTaskWorktreeChangeEntryId,
   taskCheckedOutBranch,
+  taskEffectiveBranch,
   taskHasWorktreeChanges,
   taskJiraIssueKey,
   taskWorktreeChangeNeedsDiff,
@@ -88,6 +89,7 @@ describe("Task presentation metadata", () => {
     };
 
     expect(taskCheckedOutBranch(task)).toBeUndefined();
+    expect(taskEffectiveBranch(task)).toBe("feature/binding");
     expect(taskWorktreeInlineAction(task)).toBe("create");
   });
 
@@ -274,6 +276,7 @@ describe("Task presentation metadata", () => {
 
     expect(taskWorktreeInlineAction(task)).toBe("launch");
     expect(taskCheckedOutBranch(task)).toBe("agent/current-work");
+    expect(taskEffectiveBranch(task)).toBe("agent/current-work");
   });
 
   it("refuses to dismiss a failure that left recovery artifacts", () => {

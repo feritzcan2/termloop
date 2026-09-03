@@ -92,15 +92,20 @@ pub struct GitHostPullRequestSummary {
     pub title: String,
     pub url: String,
     pub state: String,
+    pub merge_commit_oid: Option<String>,
     pub base_branch: String,
     pub head_branch: String,
     pub head_repository_owner: String,
     pub head_repository_project: Option<String>,
     pub head_repository_name: String,
-    pub checks: String,
-    pub review: String,
-    pub mergeability: String,
-    pub updated_at_epoch_ms: u64,
+    pub check_rollup: String,
+    pub check_rollup_source: String,
+    pub review_signal: String,
+    pub review_signal_source: String,
+    pub merge_conflict: String,
+    pub merge_conflict_source: String,
+    pub activity_at_epoch_ms: u64,
+    pub activity_at_source: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -665,8 +670,8 @@ impl GitHostPullRequestListPlan {
         let mut follow_up_task_ids = BTreeSet::new();
         let mut rows = BTreeMap::<String, ProviderCacheRow>::new();
         for observation in &task_observations {
-            let mut wave_admitted = 0;
-            for query in &observation.candidates {
+            let mut refreshable = Vec::new();
+            for (rank, query) in observation.candidates.iter().enumerate() {
                 let key = cache_key(query);
                 let cached = self.cache.get(&key);
                 let cache_suppresses_refresh = cached.as_ref().is_some_and(|row| {
@@ -679,6 +684,9 @@ impl GitHostPullRequestListPlan {
                                 .retry_after
                                 .is_some_and(|retry_after| self.observed_at < retry_after))
                 });
+                let last_attempt = cached
+                    .as_ref()
+                    .map_or(0, |row| row.last_attempt_observed_at);
                 if let Some(row) = cached {
                     // A bounded provider wave may defer this candidate. Keep its
                     // last safe row in the composed projection while a later wave
@@ -689,9 +697,17 @@ impl GitHostPullRequestListPlan {
                 if cache_suppresses_refresh {
                     continue;
                 }
-                if wave_admitted < MAX_PROVIDER_QUERIES_PER_TASK_WAVE {
+                refreshable.push((last_attempt, rank, query));
+            }
+            // Admit the least recently attempted candidate first so the bounded
+            // wave rotates. Fixed rank order starves every alias past the bound:
+            // the leading ranks fall due again each wave, so a deferred alias is
+            // never refreshed and its matches eventually age past STALE_MS and
+            // drop out of the composed projection.
+            refreshable.sort_unstable_by_key(|(last_attempt, rank, _)| (*last_attempt, *rank));
+            for (admitted, (_, _, query)) in refreshable.into_iter().enumerate() {
+                if admitted < MAX_PROVIDER_QUERIES_PER_TASK_WAVE {
                     pending.push(query.clone());
-                    wave_admitted += 1;
                 } else {
                     follow_up_task_ids.insert(observation.snapshot.task_id.clone());
                 }
@@ -1447,8 +1463,8 @@ fn project_task(
     }
     summaries.sort_by(|left, right| {
         right
-            .updated_at_epoch_ms
-            .cmp(&left.updated_at_epoch_ms)
+            .activity_at_epoch_ms
+            .cmp(&left.activity_at_epoch_ms)
             .then_with(|| left.provider.cmp(&right.provider))
             .then_with(|| left.host.cmp(&right.host))
             .then_with(|| left.repository_owner.cmp(&right.repository_owner))
@@ -1670,6 +1686,7 @@ fn cache_summary(summary: &termloop_providers::PullRequestSummary) -> CachedPull
         title: summary.title.clone(),
         url: summary.url.clone(),
         state: state_name(summary.state).into(),
+        merge_commit_oid: summary.merge_commit_oid.clone(),
         base_branch: summary.base_branch.clone(),
         head_branch: summary.head_branch.clone(),
         head_repository_owner: summary.head_repository_owner.clone(),
@@ -1683,6 +1700,7 @@ fn cache_summary(summary: &termloop_providers::PullRequestSummary) -> CachedPull
 }
 
 fn projection_summary(summary: &CachedPullRequest) -> GitHostPullRequestSummary {
+    let github = summary.provider == "github";
     GitHostPullRequestSummary {
         provider: summary.provider.clone(),
         host: summary.host.clone(),
@@ -1693,15 +1711,50 @@ fn projection_summary(summary: &CachedPullRequest) -> GitHostPullRequestSummary 
         title: summary.title.clone(),
         url: summary.url.clone(),
         state: summary.state.clone(),
+        merge_commit_oid: summary.merge_commit_oid.clone(),
         base_branch: summary.base_branch.clone(),
         head_branch: summary.head_branch.clone(),
         head_repository_owner: summary.head_repository_owner.clone(),
         head_repository_project: summary.head_repository_project.clone(),
         head_repository_name: summary.head_repository_name.clone(),
-        checks: summary.checks.clone(),
-        review: summary.review.clone(),
-        mergeability: summary.mergeability.clone(),
-        updated_at_epoch_ms: summary.updated_at_epoch_ms,
+        check_rollup: if github {
+            summary.checks.clone()
+        } else {
+            "unsupported".into()
+        },
+        check_rollup_source: if github {
+            "githubStatusCheckRollup"
+        } else {
+            "unsupported"
+        }
+        .into(),
+        review_signal: summary.review.clone(),
+        review_signal_source: if github {
+            "githubReviewDecision"
+        } else {
+            "azureRequiredReviewerVotes"
+        }
+        .into(),
+        merge_conflict: match summary.mergeability.as_str() {
+            "mergeable" => "noneDetected",
+            "conflicting" => "conflicting",
+            "blocked" => "policyBlocked",
+            _ => "unknown",
+        }
+        .into(),
+        merge_conflict_source: if github {
+            "githubMergeable"
+        } else {
+            "azureMergeStatus"
+        }
+        .into(),
+        activity_at_epoch_ms: summary.updated_at_epoch_ms,
+        activity_at_source: if github {
+            "githubUpdatedAt"
+        } else {
+            "azureLifecycleApproximation"
+        }
+        .into(),
     }
 }
 
@@ -1770,6 +1823,8 @@ fn checks_name(value: CheckState) -> &'static str {
         CheckState::Passing => "passing",
         CheckState::Failing => "failing",
         CheckState::Pending => "pending",
+        CheckState::NotReported => "notReported",
+        CheckState::Unsupported => "unsupported",
         CheckState::Unknown => "unknown",
     }
 }
@@ -1779,6 +1834,7 @@ fn review_name(value: ReviewState) -> &'static str {
         ReviewState::Approved => "approved",
         ReviewState::ChangesRequested => "changesRequested",
         ReviewState::ReviewRequired => "reviewRequired",
+        ReviewState::NotReported => "notReported",
         ReviewState::Unknown => "unknown",
     }
 }
@@ -1989,6 +2045,7 @@ mod tests {
             url: "https://dev.azure.com/fiber-teams/Parent%20Project/_git/Widget/pullrequest/42"
                 .into(),
             state: "open".into(),
+            merge_commit_oid: None,
             base_branch: "main".into(),
             head_branch: "feature".into(),
             head_repository_owner: "fiber-teams".into(),
@@ -1996,9 +2053,19 @@ mod tests {
             head_repository_name: "Widget Fork".into(),
             checks: "unknown".into(),
             review: "unknown".into(),
-            mergeability: "unknown".into(),
+            mergeability: "blocked".into(),
             updated_at_epoch_ms: 10,
         };
+        let projection = projection_summary(&summary);
+        assert_eq!(projection.check_rollup, "unsupported");
+        assert_eq!(projection.check_rollup_source, "unsupported");
+        assert_eq!(
+            projection.review_signal_source,
+            "azureRequiredReviewerVotes"
+        );
+        assert_eq!(projection.merge_conflict, "policyBlocked");
+        assert_eq!(projection.merge_conflict_source, "azureMergeStatus");
+        assert_eq!(projection.activity_at_source, "azureLifecycleApproximation");
         let mut row = ProviderCacheRow {
             key: cache_key(&ProviderQuery::Azure(alias.clone())),
             matches: vec![summary.clone()],
@@ -2237,6 +2304,7 @@ mod tests {
                         "https://dev.azure.com/valuespaces/Nucleus/_git/Nucleus/pullrequest/{number}"
                     ),
                     state: "closed".into(),
+                    merge_commit_oid: None,
                     base_branch: "development".into(),
                     head_branch: branch.into(),
                     head_repository_owner: "valuespaces".into(),
@@ -2285,6 +2353,86 @@ mod tests {
         assert!(projection_refresh_due(projection, observed_at));
 
         drop(observed);
+        drop(store);
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn bounded_provider_wave_rotates_to_the_least_recently_attempted_alias() {
+        let observed_at = 24 * 60 * 60 * 1_000;
+        let snapshot = TaskSnapshot {
+            task_id: "task".into(),
+            project_id: "project".into(),
+            branch_name: Some("termloop/generated".into()),
+            repository_root: Some(PathBuf::from("/repo")),
+            worktree_path: Some(PathBuf::from("/repo-worktree")),
+            worktree_generation: 1,
+            force_refresh: false,
+        };
+        let facts = azure_worktree_facts(&["UKIE-835-current", "termloop/generated", "UKIE-835"]);
+        let local_facts = GitHostLocalFactsCache::default();
+        local_facts.insert(local_facts_key(&snapshot).unwrap(), Ok(facts), observed_at);
+        let directory = std::env::temp_dir().join(format!(
+            "termloop-git-host-wave-rotation-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let store = termloop_store::Store::open(directory.join("state.json")).unwrap();
+        let cache = store.open_provider_cache().unwrap();
+        let alias_key = |branch: &str| {
+            cache_key(&ProviderQuery::Azure(AzurePullRequestQuery {
+                repository: AzureRepository {
+                    organization: "valuespaces".into(),
+                    project: "Nucleus".into(),
+                    name: "Nucleus".into(),
+                },
+                head_branch: branch.into(),
+            }))
+        };
+        // The two leading aliases fall due every wave. Only the trailing alias
+        // has been starved past STALE_MS, so it must displace the lower-ranked
+        // of the two rather than being deferred again.
+        for (branch, last_attempt) in [
+            ("UKIE-835-current", observed_at - FRESH_MS),
+            ("termloop/generated", observed_at - FRESH_MS),
+            ("UKIE-835", observed_at - 16 * 60 * 60 * 1_000),
+        ] {
+            cache
+                .update(ProviderCacheRow {
+                    key: alias_key(branch),
+                    matches: vec![],
+                    truncated: false,
+                    parent_resolved: true,
+                    failure: None,
+                    last_success_observed_at: Some(last_attempt),
+                    last_attempt_observed_at: last_attempt,
+                    retry_after: None,
+                })
+                .unwrap();
+        }
+
+        let prepared = GitHostPullRequestListPlan {
+            tasks: vec![snapshot],
+            cache,
+            github: None,
+            azure: None,
+            local_facts,
+            observed_at,
+            deadline: termloop_platform::MonotonicDeadline::after(Duration::from_secs(10)).unwrap(),
+        }
+        .prepare();
+
+        assert_eq!(
+            prepared
+                .jobs
+                .iter()
+                .map(|job| job.key().to_owned())
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([alias_key("UKIE-835"), alias_key("UKIE-835-current")])
+        );
+        assert_eq!(prepared.follow_up_task_ids, vec!["task"]);
+
+        drop(prepared);
         drop(store);
         let _ = std::fs::remove_dir_all(directory);
     }

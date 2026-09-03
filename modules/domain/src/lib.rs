@@ -61,13 +61,13 @@ pub use companion::{
     COMPANION_MESSAGE_MAX_BYTES, COMPANION_TRANSCRIPT_HARD_BYTES,
     COMPANION_TRANSCRIPT_HARD_MESSAGES, COMPANION_TRANSCRIPT_SOFT_BYTES,
     COMPANION_TRANSCRIPT_SOFT_MESSAGES, CompanionMessage, CompanionMessageAuthor,
-    CompanionMessageKind, CompanionMessageRefs, PendingRoutineFinding, ROUTINE_CONTEXT_MAX_BYTES,
-    ROUTINE_FINDING_EVIDENCE_MAX_BYTES, ROUTINE_FINDING_SUMMARY_MAX_BYTES,
-    ROUTINE_PENDING_FINDINGS_MAX, ROUTINE_RECENT_SOURCE_KEYS_MAX, ROUTINE_RELATED_TASKS_MAX,
-    ROUTINE_SOURCE_KEY_MAX_BYTES, RoutineActionHandling, RoutineTriggerMode,
-    STEWARD_SYSTEM_PROMPT_MAX_BYTES, StewardAgentId, StewardConfiguration, StewardConversationRef,
-    TRACKER_NAME_MAX_BYTES, TRACKER_PROMPT_MAX_BYTES, TRACKER_REPORT_MAX_BYTES,
-    TRACKER_REPORT_SOURCE_REF_MAX_BYTES, TRACKER_REPORT_SOURCE_REFS_MAX,
+    CompanionMessageInputMode, CompanionMessageKind, CompanionMessageRefs, PendingRoutineFinding,
+    ROUTINE_CONTEXT_MAX_BYTES, ROUTINE_FINDING_EVIDENCE_MAX_BYTES,
+    ROUTINE_FINDING_SUMMARY_MAX_BYTES, ROUTINE_PENDING_FINDINGS_MAX,
+    ROUTINE_RECENT_SOURCE_KEYS_MAX, ROUTINE_RELATED_TASKS_MAX, ROUTINE_SOURCE_KEY_MAX_BYTES,
+    RoutineActionHandling, RoutineTriggerMode, STEWARD_SYSTEM_PROMPT_MAX_BYTES, StewardAgentId,
+    StewardConfiguration, StewardConversationRef, TRACKER_NAME_MAX_BYTES, TRACKER_PROMPT_MAX_BYTES,
+    TRACKER_REPORT_MAX_BYTES, TRACKER_REPORT_SOURCE_REF_MAX_BYTES, TRACKER_REPORT_SOURCE_REFS_MAX,
     TRACKER_REPORTS_PER_PROJECT_MAX, TRACKER_SCHEDULE_MAX_SECONDS, TRACKER_SCHEDULE_MIN_SECONDS,
     TrackerConfiguration, TrackerKind, TrackerReport, TrackerReportKind, WORKER_NAME_MAX_BYTES,
     WORKER_PROMPT_MAX_BYTES, WORKER_SYSTEM_PROMPT_MAX_BYTES, WORKERS_PER_PROJECT_MAX,
@@ -97,6 +97,8 @@ pub enum McpToolName {
     AgentStatusRead,
     #[serde(rename = "task_agent_transcript_tail_read")]
     TaskAgentTranscriptTailRead,
+    #[serde(rename = "task_agent_request")]
+    TaskAgentRequest,
     #[serde(rename = "pull_request_read")]
     PullRequestRead,
     #[serde(rename = "routine_report_read", alias = "tracker_report_read")]
@@ -157,7 +159,7 @@ pub enum McpToolName {
 }
 
 impl McpToolName {
-    pub const ALL: [Self; 32] = [
+    pub const ALL: [Self; 33] = [
         Self::AskTo,
         Self::SendToAgent,
         Self::ReplyToRequest,
@@ -165,6 +167,7 @@ impl McpToolName {
         Self::TaskRead,
         Self::AgentStatusRead,
         Self::TaskAgentTranscriptTailRead,
+        Self::TaskAgentRequest,
         Self::PullRequestRead,
         Self::RoutineReportRead,
         Self::CompanionTranscriptRead,
@@ -201,6 +204,7 @@ impl McpToolName {
             Self::TaskRead => "task_read",
             Self::AgentStatusRead => "agent_status_read",
             Self::TaskAgentTranscriptTailRead => "task_agent_transcript_tail_read",
+            Self::TaskAgentRequest => "task_agent_request",
             Self::PullRequestRead => "pull_request_read",
             Self::RoutineReportRead => "routine_report_read",
             Self::CompanionTranscriptRead => "companion_transcript_read",
@@ -242,6 +246,7 @@ impl std::str::FromStr for McpToolName {
             "task_read" => Ok(Self::TaskRead),
             "agent_status_read" => Ok(Self::AgentStatusRead),
             "task_agent_transcript_tail_read" => Ok(Self::TaskAgentTranscriptTailRead),
+            "task_agent_request" => Ok(Self::TaskAgentRequest),
             "pull_request_read" => Ok(Self::PullRequestRead),
             "routine_report_read" | "tracker_report_read" => Ok(Self::RoutineReportRead),
             "companion_transcript_read" => Ok(Self::CompanionTranscriptRead),
@@ -361,6 +366,39 @@ pub struct TaskBranchBinding {
     pub name: String,
 }
 
+/// Hard bound for the durable current set of local branches proven in one
+/// Task's managed worktree. This is membership, not a checkout timeline.
+pub const TASK_BRANCH_MEMBERSHIPS_MAX: usize = 64;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TaskBranchMembershipEvidence {
+    CurrentBranch,
+    WorktreeReflog,
+    BranchCreationReflog,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TaskBranchMembership {
+    pub id: String,
+    pub repository_root: String,
+    pub repository_common_dir: String,
+    pub ref_name: String,
+    pub first_observed_worktree_generation: u64,
+    pub first_observed_oid: String,
+    pub parent_ref_name: Option<String>,
+    pub evidence: TaskBranchMembershipEvidence,
+}
+
+/// One bounded, monotonic set of branches observed in a Task worktree. Live
+/// ref existence, tips, checkout state, and commit counts are projections.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TaskBranchSet {
+    pub task_id: String,
+    pub evidence_truncated: bool,
+    pub memberships: Vec<TaskBranchMembership>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TaskWorktreeBinding {
     pub path: String,
@@ -368,6 +406,26 @@ pub struct TaskWorktreeBinding {
 
 /// Byte bound for the one current Steward-authored Task brief.
 pub const TASK_STEWARD_BRIEF_MAX_BYTES: usize = 8 * 1024;
+pub const TASK_DEVELOPER_NOTES_MAX: usize = 50;
+pub const TASK_DEVELOPER_NOTE_ID_MAX_CHARS: usize = 120;
+pub const TASK_DEVELOPER_NOTE_TEXT_MAX_CHARS: usize = 280;
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskDeveloperNote {
+    pub id: String,
+    pub text: String,
+    pub completed: bool,
+}
+
+impl TaskDeveloperNote {
+    pub fn is_valid(&self) -> bool {
+        !self.id.is_empty()
+            && self.id.chars().count() <= TASK_DEVELOPER_NOTE_ID_MAX_CHARS
+            && !self.text.trim().is_empty()
+            && self.text.chars().count() <= TASK_DEVELOPER_NOTE_TEXT_MAX_CHARS
+    }
+}
 
 const fn initial_steward_brief_revision() -> u64 {
     1
@@ -379,6 +437,8 @@ pub struct TaskRecord {
     pub project_id: String,
     pub title: String,
     pub brief: Option<String>,
+    #[serde(default)]
+    pub developer_notes: Vec<TaskDeveloperNote>,
     pub status: TaskStatus,
     #[serde(default)]
     pub archived_at_epoch_ms: Option<u64>,
@@ -583,6 +643,8 @@ pub struct WorktreeCleanupBaseline {
     pub worktree_path: String,
     pub registered_worktree_path: String,
     pub branch_ref: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkout_branch_ref: Option<String>,
     pub head_oid: String,
 }
 
@@ -1362,6 +1424,7 @@ mod tests {
                 "task_read",
                 "agent_status_read",
                 "task_agent_transcript_tail_read",
+                "task_agent_request",
                 "pull_request_read",
                 "routine_report_read",
                 "companion_transcript_read",

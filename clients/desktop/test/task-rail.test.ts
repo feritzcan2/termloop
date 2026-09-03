@@ -78,15 +78,20 @@ function mergedProjection(task: Task): GitHostProjection {
       title: "Ship compact launchers",
       url: "https://github.com/termloop/termloop-next/pull/42",
       state: "merged",
+      merge_commit_oid: "a".repeat(40),
       base_branch: "main",
       head_branch: "feature/launchers",
       head_repository_owner: "termloop",
       head_repository_project: null,
       head_repository_name: "termloop-next",
-      checks: "passing",
-      review: "approved",
-      mergeability: "unknown",
-      updated_at_epoch_ms: 1,
+      check_rollup: "passing",
+      check_rollup_source: "githubStatusCheckRollup",
+      review_signal: "approved",
+      review_signal_source: "githubReviewDecision",
+      merge_conflict: "unknown",
+      merge_conflict_source: "githubMergeable",
+      activity_at_epoch_ms: 1,
+      activity_at_source: "githubUpdatedAt",
     }],
     truncated: false,
     candidate_truncated: false,
@@ -173,7 +178,7 @@ function agentStatus(sessionId: string, status: AgentStatus["status"]): AgentSta
   return { sessionId, status, source: "appServer", observedAtEpochMs: 1 };
 }
 
-type RailOptions = { task?: Task; tasks?: readonly Task[]; gitHostProjection?: GitHostProjection; branchCommitSummary?: BranchCommitSummary; runConfigurations?: readonly RunConfiguration[]; runRuntimes?: readonly RunRuntime[]; sessions?: readonly Session[]; agentGroups?: readonly import("../src/layout/model.js").AgentGroupLayout[]; statuses?: readonly AgentStatus[]; reviewReadySessionIds?: ReadonlySet<string>; selectedSessionId?: string; deleting?: boolean; archivedTaskCount?: number; nowEpochMs?: number; openTaskChanges?: TaskRailProps["openTaskChanges"]; openTaskDetail?(taskId: string): void; detailTaskId?: string };
+type RailOptions = { task?: Task; tasks?: readonly Task[]; gitHostProjection?: GitHostProjection; branchCommitSummary?: BranchCommitSummary; runConfigurations?: readonly RunConfiguration[]; runRuntimes?: readonly RunRuntime[]; sessions?: readonly Session[]; agentGroups?: readonly import("../src/layout/model.js").AgentGroupLayout[]; statuses?: readonly AgentStatus[]; reviewReadySessionIds?: ReadonlySet<string>; selectedSessionId?: string; deleting?: boolean; archivedTaskCount?: number; nowEpochMs?: number; openTaskChanges?: TaskRailProps["openTaskChanges"]; openTaskDetail?(taskId: string): void; detailTaskId?: string; closeTaskAndWorktree?: TaskRailProps["closeTaskAndWorktree"] };
 
 function railProps(options: RailOptions = {}): TaskRailProps {
   const unused = async (): Promise<never> => { throw new Error("unused test callback"); };
@@ -204,6 +209,7 @@ function railProps(options: RailOptions = {}): TaskRailProps {
     disabled: false,
     createTask: unused,
     updateTask: unused,
+    updateTaskDeveloperNotes: unused,
     bindTaskBranch: unused,
     listProjectLocalBranches: unused,
     provisionTaskWorktree: unused,
@@ -231,6 +237,7 @@ function railProps(options: RailOptions = {}): TaskRailProps {
     archiveTask: unused,
     archivedTaskCount: options.archivedTaskCount ?? 0,
     archivedTasksChanged: () => {},
+    closeTaskAndWorktree: options.closeTaskAndWorktree ?? unused,
     deleteTaskAndWorktree: unused,
     openExternal: async () => {},
     overlayVisibilityChanged: () => {},
@@ -250,7 +257,7 @@ async function renderRailTab(options: RailOptions, tab: "active" | "closed"): Pr
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   await act(async () => root.render(createElement(TaskRail, railProps(options))));
   if (tab === "closed") {
-    await act(async () => container.querySelector<HTMLButtonElement>('[data-task-list-tab="closed"]')!.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('.task-archive-toggle')!.click());
   }
   const markup = container.innerHTML;
   await act(async () => root.unmount());
@@ -260,6 +267,35 @@ async function renderRailTab(options: RailOptions, tab: "active" | "closed"): Pr
 }
 
 describe("Task rail native overlay", () => {
+  it("keeps a tall Task menu inside the viewport", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const originalBoundingRect = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
+      if (this.classList.contains("task-context-menu")) {
+        return { x: 0, y: 0, left: 0, top: 0, right: 222, bottom: 360, width: 222, height: 360, toJSON: () => ({}) };
+      }
+      if (this.getAttribute("aria-label") === "More actions for Compact launchers") {
+        return { x: 980, y: 708, left: 980, top: 708, right: 1010, bottom: 740, width: 30, height: 32, toJSON: () => ({}) };
+      }
+      return originalBoundingRect.call(this);
+    };
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+    await act(async () => root.render(createElement(TaskRail, railProps())));
+    await act(async () => container.querySelector<HTMLButtonElement>("[aria-label='More actions for Compact launchers']")?.click());
+
+    const menu = container.querySelector<HTMLElement>(".task-context-menu")!;
+    expect(menu.style.left).toBe("794px");
+    expect(menu.style.top).toBe("400px");
+
+    HTMLElement.prototype.getBoundingClientRect = originalBoundingRect;
+    await act(async () => root.unmount());
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+
   it("keeps the Task menu and Archive dialog above Ghostty in the overlay window", async () => {
     const container = document.createElement("div");
     const overlayContainer = document.createElement("div");
@@ -597,6 +633,9 @@ describe("Task rail row anatomy", () => {
     const markup = renderRail({ deleting: true });
     expect(markup).toContain("Deleting");
     expect(markup).toContain('class="task-row deleting"');
+    // No hover actions on a Task that is on its way out.
+    expect(markup).not.toContain("task-close");
+    expect(markup).not.toContain("task-favorite");
     expect(markup).toContain('class="task-pulse"');
     expect(markup).toContain('class="task-item open" disabled=""');
     expect(markup).toContain('class="task-meta-flag busy"');
@@ -638,12 +677,11 @@ describe("Task rail row anatomy", () => {
     expect(collapsed).not.toContain("task-note");
     expect(collapsed).not.toContain("task-identity");
     expect(collapsed).not.toContain("row-rail");
-    // The dot and meta line are the fixed anatomy, so they survive collapsing;
-    // only the children fold away. A closed Task keeps its identity but stops
-    // asking for anything — no signals on parked work.
+    // An archive row is one line: the dot and title stay, the meta line and
+    // its signals do not exist on parked work at all.
     expect(collapsed).toContain('class="task-dot quiet"');
-    expect(collapsed).toContain('class="task-meta"');
-    expect(collapsed).toContain('class="task-meta-branch"');
+    expect(collapsed).not.toContain('class="task-meta"');
+    expect(collapsed).not.toContain("task-meta-branch");
     expect(collapsed).not.toContain("3 changes");
     expect(collapsed).not.toContain("5 unmerged");
     expect(collapsed).not.toContain("task-children");
@@ -667,6 +705,18 @@ describe("Task rail row anatomy", () => {
     const closed = await renderRailTab({ task: { ...launchableTask(), status: "closed" } }, "closed");
     expect(closed).not.toContain('class="task-meta-flag');
     expect(closed).toContain('class="task-item closed"');
+  });
+
+  it("marks only closed Tasks that still retain a worktree", async () => {
+    const retained = { ...launchableTask(), status: "closed" as const };
+    const retainedMarkup = await renderRailTab({ task: retained }, "closed");
+    expect(retainedMarkup).toContain('class="task-archive-worktree"');
+    expect(retainedMarkup).toContain(`Worktree still attached: ${retained.worktree!.path}`);
+
+    const detached = { ...worktreeLessTask(), status: "closed" as const };
+    const detachedMarkup = await renderRailTab({ task: detached }, "closed");
+    expect(detachedMarkup).not.toContain("task-archive-worktree");
+    expect(detachedMarkup).not.toContain("Worktree still attached");
   });
 
   it("explains a failed worktree in words and offers the retry as a recovery step", () => {
@@ -1081,75 +1131,87 @@ describe("Task rail row anatomy", () => {
 });
 
 describe("Task rail first-run UX", () => {
-  it("tabs active Tasks individually and keeps closed Tasks in the original combined list", async () => {
+  it("boards every active Task as a card and folds closed Tasks into an archive", async () => {
     const active = { ...launchableTask(), brief: "Keep the selected Task context visible in the sidebar." };
-    const closed = { ...launchableTask(), id: "task-closed", title: "Finished Task", status: "closed" as const };
-    const olderClosed = { ...launchableTask(), id: "task-older-closed", title: "Older finished Task", status: "closed" as const };
+    const second = { ...launchableTask(), id: "task-2", title: "Second Task" };
+    const closed = { ...launchableTask(), id: "task-closed", title: "Finished Task", status: "closed" as const, updated_at_epoch_ms: 200 };
+    const olderClosed = { ...launchableTask(), id: "task-older-closed", title: "Older finished Task", status: "closed" as const, updated_at_epoch_ms: 100 };
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    await act(async () => root.render(createElement(TaskRail, railProps({ tasks: [active, closed, olderClosed] }))));
+    await act(async () => root.render(createElement(TaskRail, railProps({ tasks: [active, second, closed, olderClosed] }))));
 
-    const activeTab = container.querySelector<HTMLButtonElement>('[role="tab"][data-task-list-tab="active"]')!;
-    const closedTab = container.querySelector<HTMLButtonElement>('[role="tab"][data-task-list-tab="closed"]')!;
-    expect(activeTab.getAttribute("aria-selected")).toBe("true");
-    expect(closedTab.getAttribute("aria-selected")).toBe("false");
-    expect(container.querySelector('[data-task-tab-id="task-1"]')).not.toBeNull();
-    expect(container.querySelector('.task-list [data-task-id="task-1"]')).not.toBeNull();
-    expect(container.querySelector('.task-list [data-task-id="task-closed"]')).toBeNull();
-    expect(container.querySelector(".task-group.focused")).not.toBeNull();
+    // No status tabs, no Task tab strip: both active Tasks are on the board at once.
+    expect(container.querySelector('[role="tab"]')).toBeNull();
+    expect(container.querySelector(".task-board-count")?.textContent).toBe("2");
+    expect(container.querySelectorAll('.task-board .task-group.focused')).toHaveLength(2);
+    expect(container.querySelector('.task-board [data-task-id="task-1"]')).not.toBeNull();
+    expect(container.querySelector('.task-board [data-task-id="task-2"]')).not.toBeNull();
     expect(container.querySelector(".task-focus-brief")?.textContent).toContain("selected Task context");
-    expect(container.querySelector(".task-focus-facts")?.textContent).toContain("Ready to run agents");
-
-    await act(async () => closedTab.click());
-    expect(activeTab.getAttribute("aria-selected")).toBe("false");
-    expect(closedTab.getAttribute("aria-selected")).toBe("true");
-    expect(container.querySelector(".task-item-tabs")).toBeNull();
-    expect(container.querySelector('[data-task-tab-id="task-closed"]')).toBeNull();
-    expect(container.querySelector('.task-list [data-task-id="task-1"]')).toBeNull();
-    expect(container.querySelector('.task-list [data-task-id="task-closed"]')).not.toBeNull();
-    expect(container.querySelector('.task-list [data-task-id="task-older-closed"]')).not.toBeNull();
-    expect(container.querySelector(".task-group.focused")).toBeNull();
+    // The Status/Checkout fact box is gone; the meta line and launchers carry that.
     expect(container.querySelector(".task-focus-facts")).toBeNull();
+    expect(container.textContent).not.toContain("Ready to run agents");
+
+    // Closed Tasks stay folded and unmounted until asked for.
+    const toggle = container.querySelector<HTMLButtonElement>(".task-archive-toggle")!;
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.textContent).toContain("Closed");
+    expect(container.querySelector(".task-archive-count")?.textContent).toBe("2");
+    expect(container.querySelector('[data-task-id="task-closed"]')).toBeNull();
+
+    await act(async () => toggle.click());
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    const archived = [...container.querySelectorAll<HTMLElement>('.task-archive-list [data-task-id]')].map((row) => row.dataset.taskId);
+    expect(archived).toEqual(["task-closed", "task-older-closed"]);
+    expect(container.querySelector('.task-archive-list .task-group.focused')).toBeNull();
+    // A short archive needs no search box.
+    expect(container.querySelector(".task-archive-search")).toBeNull();
+    // The board is untouched by the archive opening.
+    expect(container.querySelector('.task-board [data-task-id="task-1"]')).not.toBeNull();
 
     await act(async () => root.unmount());
     container.remove();
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
-  it("shows one active Task panel, keeps tab navigation local, and remembers the selection", async () => {
-    const first = launchableTask();
-    const second = { ...launchableTask(), id: "task-2", title: "Second Task" };
-    const openTaskDetail = vi.fn();
+  it("searches and pages a large archive instead of mounting every closed Task", async () => {
+    const closed = Array.from({ length: 45 }, (_, index) => ({
+      ...launchableTask(),
+      id: `closed-${index}`,
+      title: index === 7 ? "Welsh translations UKIE-7" : `Closed Task ${index}`,
+      status: "closed" as const,
+      updated_at_epoch_ms: 1_000 - index,
+    }));
     const container = document.createElement("div");
     document.body.append(container);
-    let root = createRoot(container);
+    const root = createRoot(container);
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    const props = railProps({ tasks: [first, second], openTaskDetail });
-    await act(async () => root.render(createElement(TaskRail, props)));
+    await act(async () => root.render(createElement(TaskRail, railProps({ tasks: closed }))));
 
-    expect(container.querySelectorAll(".task-item-tabs [role=\"tab\"]")).toHaveLength(2);
-    expect(container.querySelector('.task-list [data-task-id="task-1"]')).not.toBeNull();
-    expect(container.querySelector('.task-list [data-task-id="task-2"]')).toBeNull();
-    await act(async () => container.querySelector<HTMLButtonElement>('[data-task-tab-id="task-2"]')!.click());
-    expect(container.querySelector('.task-list [data-task-id="task-1"]')).toBeNull();
-    expect(container.querySelector('.task-list [data-task-id="task-2"]')).not.toBeNull();
-    expect(openTaskDetail).not.toHaveBeenCalled();
+    await act(async () => container.querySelector<HTMLButtonElement>(".task-archive-toggle")!.click());
+    expect(container.querySelectorAll('.task-archive-list [data-task-id]')).toHaveLength(30);
+    const more = container.querySelector<HTMLButtonElement>(".task-archive-more")!;
+    expect(more.textContent).toContain("Show 15 more");
+    await act(async () => more.click());
+    expect(container.querySelectorAll('.task-archive-list [data-task-id]')).toHaveLength(45);
+    expect(container.querySelector(".task-archive-more")).toBeNull();
 
-    await act(async () => root.unmount());
-    root = createRoot(container);
-    await act(async () => root.render(createElement(TaskRail, props)));
-    expect(container.querySelector('[data-task-tab-id="task-2"]')?.getAttribute("aria-selected")).toBe("true");
-    expect(container.querySelector('.task-list [data-task-id="task-2"]')).not.toBeNull();
+    const search = container.querySelector<HTMLInputElement>(".task-archive-search")!;
+    await act(async () => typeInto(search, "welsh ukie"));
+    const matches = [...container.querySelectorAll<HTMLElement>('.task-archive-list [data-task-id]')].map((row) => row.dataset.taskId);
+    expect(matches).toEqual(["closed-7"]);
+    await act(async () => typeInto(search, "nothing here"));
+    expect(container.textContent).toContain("No closed Tasks match.");
 
     await act(async () => root.unmount());
     container.remove();
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
-  it("creates from the fixed leading button and closes an active Task from its tab", async () => {
+  it("confirms before routing a worktree Task through cleanup and close", async () => {
     const setTaskClosed = vi.fn(async () => {});
+    const closeTaskAndWorktree = vi.fn(async () => ({ status: "completed" } as const));
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
@@ -1157,14 +1219,26 @@ describe("Task rail first-run UX", () => {
     await act(async () => root.render(createElement(TaskRail, {
       ...railProps(),
       setTaskClosed,
+      closeTaskAndWorktree,
     })));
 
-    const create = container.querySelector<HTMLButtonElement>('.task-item-tab-bar > [aria-label="Create Task"]');
-    const close = container.querySelector<HTMLButtonElement>('.task-item-tab-close[aria-label="Close Compact launchers"]');
+    const create = container.querySelector<HTMLButtonElement>('.task-board-head > [aria-label="Create Task"]');
+    const close = container.querySelector<HTMLButtonElement>('.task-close[aria-label="Close Compact launchers"]');
     expect(create).not.toBeNull();
     expect(close).not.toBeNull();
     await act(async () => close!.click());
-    expect(setTaskClosed).toHaveBeenCalledWith("task-1", true);
+    expect(setTaskClosed).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="group"][aria-label="Close Compact launchers?"]')?.textContent).toContain("Close?");
+
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Cancel close Compact launchers"]')!.click());
+    expect(setTaskClosed).not.toHaveBeenCalled();
+    expect(container.querySelector('[aria-label="Confirm close Compact launchers"]')).toBeNull();
+
+    await act(async () => container.querySelector<HTMLButtonElement>('.task-close[aria-label="Close Compact launchers"]')!.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Confirm close Compact launchers"]')!.click());
+    expect(setTaskClosed).not.toHaveBeenCalled();
+    expect(closeTaskAndWorktree).not.toHaveBeenCalled();
+    expect(document.querySelector('[aria-labelledby="delete-task-title"]')?.textContent).toContain("Delete worktree and close Task");
 
     await act(async () => create!.click());
     expect(document.querySelector(".task-create-dialog")?.textContent).toContain("Create a Task");
@@ -1174,7 +1248,27 @@ describe("Task rail first-run UX", () => {
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
-  it("favorites from the hover action, moves favorites left, and remembers them", async () => {
+  it("closes a worktree-less Task directly after confirmation", async () => {
+    const setTaskClosed = vi.fn(async () => {});
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => root.render(createElement(TaskRail, {
+      ...railProps({ task: worktreeLessTask() }),
+      setTaskClosed,
+    })));
+
+    await act(async () => container.querySelector<HTMLButtonElement>('.task-close')!.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Confirm close Compact launchers"]')!.click());
+    expect(setTaskClosed).toHaveBeenCalledWith("task-1", true);
+
+    await act(async () => root.unmount());
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+
+  it("favorites from the hover action, moves favorites up, and remembers them", async () => {
     const first = launchableTask();
     const second = { ...launchableTask(), id: "task-favorite", title: "Favorite candidate" };
     const container = document.createElement("div");
@@ -1184,16 +1278,16 @@ describe("Task rail first-run UX", () => {
     const props = { ...railProps({ tasks: [first, second] }), projectId: "favorite-project" };
     await act(async () => root.render(createElement(TaskRail, props)));
 
+    const boardOrder = () => [...container.querySelectorAll<HTMLElement>(".task-board [data-task-id]")].map((row) => row.dataset.taskId);
+    expect(boardOrder()).toEqual(["task-1", "task-favorite"]);
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Favorite Favorite candidate"]')!.click());
-    expect([...container.querySelectorAll<HTMLElement>("[data-task-tab-id]")].map((tab) => tab.dataset.taskTabId))
-      .toEqual(["task-favorite", "task-1"]);
+    expect(boardOrder()).toEqual(["task-favorite", "task-1"]);
     expect(container.querySelector('[aria-label="Unfavorite Favorite candidate"]')?.getAttribute("aria-pressed")).toBe("true");
 
     await act(async () => root.unmount());
     root = createRoot(container);
     await act(async () => root.render(createElement(TaskRail, props)));
-    expect([...container.querySelectorAll<HTMLElement>("[data-task-tab-id]")].map((tab) => tab.dataset.taskTabId))
-      .toEqual(["task-favorite", "task-1"]);
+    expect(boardOrder()).toEqual(["task-favorite", "task-1"]);
 
     await act(async () => root.unmount());
     window.localStorage.removeItem("termloop.taskFavorite.v1");
@@ -1201,7 +1295,7 @@ describe("Task rail first-run UX", () => {
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
-  it("renames an active Task inline after a tab double click", async () => {
+  it("renames an active Task inline from the actions menu", async () => {
     const task = launchableTask();
     const updateTask = vi.fn(async () => undefined);
     const container = document.createElement("div");
@@ -1210,16 +1304,19 @@ describe("Task rail first-run UX", () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     await act(async () => root.render(createElement(TaskRail, { ...railProps({ task }), updateTask })));
 
-    await act(async () => container.querySelector<HTMLButtonElement>('[data-task-tab-id="task-1"]')!
-      .dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    await act(async () => container.querySelector<HTMLButtonElement>('.task-item[data-task-id="task-1"]')!
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
+    const rename = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      .find((item) => item.textContent?.includes("Rename"))!;
+    await act(async () => rename.click());
     const input = container.querySelector<HTMLInputElement>('[aria-label="Rename Compact launchers"]')!;
     expect(input.value).toBe("Compact launchers");
-    await act(async () => typeInto(input, "Renamed from tab"));
+    await act(async () => typeInto(input, "Renamed from card"));
     await act(async () => {
       input.blur();
       await Promise.resolve();
     });
-    expect(updateTask).toHaveBeenCalledWith("task-1", "Renamed from tab", task.brief);
+    expect(updateTask).toHaveBeenCalledWith("task-1", "Renamed from card", task.brief);
 
     await act(async () => root.unmount());
     container.remove();
@@ -1351,6 +1448,56 @@ function typeInto(element: HTMLInputElement | HTMLTextAreaElement, value: string
 }
 
 describe("Task rail create flow", () => {
+  it("remembers the selected base branch across restarts and worktree-create dialogs", async () => {
+    const task: Task = { ...worktreeLessTask(), branch: null };
+    const listProjectLocalBranches = vi.fn(async () => ({
+      repository_root: "/repository",
+      branches: [
+        { name: "main", exact_ref: "refs/heads/main" },
+        { name: "develop", exact_ref: "refs/heads/develop" },
+      ],
+      truncated: false,
+    }));
+    const props = {
+      ...railProps({ task }),
+      listProjectLocalBranches,
+    };
+    const container = document.createElement("div");
+    document.body.append(container);
+    let root = createRoot(container);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => root.render(createElement(TaskRail, props)));
+
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Create Task"]')!.click());
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const createBase = container.querySelector<HTMLSelectElement>("#create-base-ref")!;
+    expect(createBase.value).toBe("refs/heads/main");
+    await act(async () => {
+      createBase.value = "refs/heads/develop";
+      createBase.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(createBase.value).toBe("refs/heads/develop");
+
+    /// Remounting represents a renderer/application restart: the next dialog
+    /// must recover the Project-scoped choice from client-local storage.
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(createElement(TaskRail, props)));
+    await act(async () => container.querySelector<HTMLButtonElement>(".task-next-step.optional")!.click());
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const branchMode = container.querySelector<HTMLSelectElement>("#worktree-branch-mode")!;
+    await act(async () => {
+      branchMode.value = "create";
+      branchMode.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.querySelector<HTMLSelectElement>("#worktree-base-ref")?.value)
+      .toBe("refs/heads/develop");
+
+    await act(async () => root.unmount());
+    container.remove();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+
   it("opens the Create Task dialog when the tab bar asks for it and keeps no title row", async () => {
     const container = document.createElement("div");
     document.body.append(container);
@@ -1361,10 +1508,10 @@ describe("Task rail create flow", () => {
 
     expect(container.querySelector('[role="dialog"]')?.textContent).toContain("Create a Task");
     expect(createRequestHandled).toHaveBeenCalledTimes(1);
-    /// The Tasks tab above names the view and hosts the action; the rail
-    /// itself starts with the Task status tabs.
+    /// The Tasks tab above names the view; the rail itself starts with the
+    /// board header that carries the count and the create action.
     expect(container.querySelector(".task-section .rail-header")).toBeNull();
-    expect(container.querySelector(".task-section > :first-child")?.className).toBe("task-list-tabs");
+    expect(container.querySelector(".task-section > :first-child")?.className).toBe("task-board-head");
 
     await act(async () => root.unmount());
     container.remove();
@@ -1474,6 +1621,21 @@ describe("Task rail create flow", () => {
     const claudeOption = [...container.querySelectorAll<HTMLButtonElement>(".start-chip")]
       .find((option) => option.textContent?.includes("Claude"))!;
     expect(claudeOption.getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector<HTMLSelectElement>("#create-agent-claude-model")?.value).toBe("opus[1m]");
+    expect(container.querySelector<HTMLSelectElement>("#create-agent-claude-permission")?.value).toBe("bypassPermissions");
+    expect(container.querySelector<HTMLSelectElement>("#create-agent-claude-reasoning")?.value).toBe("high");
+
+    await act(async () => {
+      const model = container.querySelector<HTMLSelectElement>("#create-agent-claude-model")!;
+      model.value = "sonnet";
+      model.dispatchEvent(new Event("change", { bubbles: true }));
+      const permission = container.querySelector<HTMLSelectElement>("#create-agent-claude-permission")!;
+      permission.value = "plan";
+      permission.dispatchEvent(new Event("change", { bubbles: true }));
+      const reasoning = container.querySelector<HTMLSelectElement>("#create-agent-claude-reasoning")!;
+      reasoning.value = "medium";
+      reasoning.dispatchEvent(new Event("change", { bubbles: true }));
+    });
 
     const submit = [...container.querySelectorAll<HTMLButtonElement>(".primary-button")]
       .find((button) => button.textContent === "Create & Start")!;
@@ -1504,9 +1666,9 @@ describe("Task rail create flow", () => {
     expect(launchTaskAgent).toHaveBeenCalledWith(
       "task-new",
       "claude",
-      "opus[1m]",
-      "bypassPermissions",
-      "high",
+      "sonnet",
+      "plan",
+      "medium",
       "Implement and verify this Task.",
     );
     expect(launchTaskTerminal).not.toHaveBeenCalled();
@@ -1534,7 +1696,7 @@ describe("Task rail agent cue", () => {
       ...railProps({ task, sessions: [session], statuses: [agentStatus(session.id, "awaitingInput")] }),
       selectSession,
     })));
-    await act(async () => container.querySelector<HTMLButtonElement>('[data-task-list-tab="closed"]')!.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('.task-archive-toggle')!.click());
 
     const cue = container.querySelector<HTMLButtonElement>(".task-next-step.attention")!;
     expect(cue).not.toBeNull();
@@ -1600,11 +1762,13 @@ describe("Task rail live activity", () => {
       sessions: [busyAgent, waitingAgent],
       statuses: [agentStatus(busyAgent.id, "working"), agentStatus(waitingAgent.id, "awaitingInput")],
     });
-    const order = [...markup.matchAll(/data-task-tab-id="([^"]+)"/gu)].map((match) => match[1]);
+    const order = [...markup.matchAll(/class="task-item open" data-task-id="([^"]+)"/gu)].map((match) => match[1]);
     expect(order).toEqual(["task-waiting", "task-busy", "task-quiet"]);
-    expect(markup).toContain('data-task-tab-id="task-waiting" data-tone="attention" aria-selected="true"');
-    expect(markup).toContain('data-task-id="task-waiting"');
-    expect(markup).not.toContain('data-task-id="task-busy"');
+    // Every active Task is on the board; the loudest carries the attention tone.
+    const attentionDot = markup.indexOf('class="task-dot attention"');
+    expect(attentionDot).toBeGreaterThan(markup.indexOf('data-task-id="task-waiting"'));
+    expect(attentionDot).toBeLessThan(markup.indexOf('data-task-id="task-busy"'));
+    expect(markup).toContain('data-task-id="task-busy"');
   });
 
   it("discloses a Task with a live agent over a stored collapse, honoring the preference once quiet", () => {
@@ -1646,35 +1810,53 @@ describe("Task rail live activity", () => {
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 
-  it("discloses the row and opens the detail on a click, toggling once the detail is showing", async () => {
+  it("opens the loudest live Session on a card click, and the detail only when nothing runs", async () => {
     writeTaskCollapsed("project-1", "task-1", true);
     const openTaskDetail = vi.fn();
+    const selectSession = vi.fn();
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    await act(async () => root.render(createElement(TaskRail, railProps({ openTaskDetail }))));
+    await act(async () => root.render(createElement(TaskRail, { ...railProps({ openTaskDetail }), selectSession })));
 
+    /// No Session: the click discloses the row and puts the detail on the
+    /// stage, and a repeat click re-raises the same intent instead of folding.
     expect(container.querySelector(".task-children")).toBeNull();
     const row = () => container.querySelector<HTMLButtonElement>(".task-item")!;
     await act(async () => row().click());
     expect(openTaskDetail).toHaveBeenCalledWith("task-1");
     expect(container.querySelector(".task-children")).not.toBeNull();
-    /// The disclosure persists like a chevron expand.
     expect(readTaskCollapsed("project-1", "task-1", true)).toBe(false);
+    await act(async () => row().click());
+    expect(openTaskDetail).toHaveBeenCalledTimes(2);
+    expect(selectSession).not.toHaveBeenCalled();
+    expect(container.querySelector(".task-open-hint")?.textContent).toBe("Open details");
 
-    /// With the detail on the stage, a repeat press folds the row back and the
-    /// next one grows it again, without re-raising the detail intent.
-    await act(async () => root.render(createElement(TaskRail, railProps({ openTaskDetail, detailTaskId: "task-1" }))));
+    /// A live agent takes the click over: the card is the way into its
+    /// terminal, from the row and from the card surface around it alike.
+    const agent = agentSession("live-agent");
+    await act(async () => root.render(createElement(TaskRail, {
+      ...railProps({ openTaskDetail, sessions: [agent], statuses: [agentStatus(agent.id, "working")] }),
+      selectSession,
+    })));
+    expect(container.querySelector(".task-open-hint")?.textContent).toBe("Open Codex");
     await act(async () => row().click());
-    expect(container.querySelector(".task-children")).toBeNull();
-    expect(readTaskCollapsed("project-1", "task-1", false)).toBe(true);
-    await act(async () => row().click());
-    expect(container.querySelector(".task-children")).not.toBeNull();
-    expect(openTaskDetail).toHaveBeenCalledTimes(1);
+    expect(selectSession).toHaveBeenCalledWith(agent.id);
+    await act(async () => container.querySelector<HTMLElement>(".task-group.focused")!.click());
+    expect(selectSession).toHaveBeenCalledTimes(2);
+    /// Clicks that land on a real control keep their own meaning.
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Open details for Compact launchers"]')!.click());
+    expect(openTaskDetail).toHaveBeenCalledTimes(3);
+    expect(selectSession).toHaveBeenCalledTimes(2);
+    /// A double click reaches the detail page even while a live agent owns the
+    /// single click.
+    await act(async () => row().dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    expect(openTaskDetail).toHaveBeenCalledTimes(4);
 
     await act(async () => root.unmount());
     container.remove();
+    window.localStorage.removeItem("termloop.taskCollapse.v1");
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
   });
 });

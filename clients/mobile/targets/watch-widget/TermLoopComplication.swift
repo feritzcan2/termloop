@@ -157,8 +157,9 @@ struct TermLoopComplication: Widget {
     }
 }
 
-// One tap from the watch face into dictation: the deep link tells the app to
-// present the text input controller immediately and send the result to Stew.
+// One tap from the watch face opens the foreground app directly into one bounded
+// Steward voice message. WidgetKit cannot own microphone capture, so this is the
+// shortest watchOS-permitted path: tap, speak, pause, delivered.
 struct StewTalkEntry: TimelineEntry {
     let date: Date
 }
@@ -179,18 +180,18 @@ struct StewTalkView: View {
     var body: some View {
         Group {
             if family == .accessoryInline {
-                Text("🎤 Stew")
+                Text("🎙️ Stew'a söyle")
             } else {
                 VStack(spacing: 0) {
-                    Image(systemName: "mic.fill")
+                    Image(systemName: "mic.circle.fill")
                         .font(.system(size: 18, weight: .semibold))
-                    Text("Stew")
+                    Text("SÖYLE")
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(.secondary)
                 }
             }
         }
-        .widgetURL(URL(string: "termloop-watch://talk"))
+        .widgetURL(URL(string: "termloop-watch://message"))
         .containerBackground(.clear, for: .widget)
     }
 }
@@ -201,7 +202,7 @@ struct StewTalkComplication: Widget {
             StewTalkView()
         }
         .configurationDisplayName("Stew'a Söyle")
-        .description("Tek dokunuşla dikteyi açar ve Stew'a gönderir.")
+        .description("Tek dokunuşla Steward'a sesli mesaj kaydetmeye başlar.")
         .supportedFamilies([.accessoryCircular, .accessoryCorner, .accessoryInline])
     }
 }

@@ -3,7 +3,7 @@
 import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RoutineConfigurationDto, RoutineHealthDto, WorkerConfigurationDto } from "@termloop/contract/current";
+import type { RoutineConfigurationDto, RoutineHealthDto, WorkerConfigurationDto, WorkerConfigurationListResult } from "@termloop/contract/current";
 import { AssistantRail } from "../src/renderer/ui/AssistantRail.js";
 
 const worker: WorkerConfigurationDto = {
@@ -94,5 +94,41 @@ describe("Assistant rail Playbook Routine status", () => {
     const badge = host.querySelector<HTMLElement>(".ar-routine.playbook-step .ar-flag.attention");
     expect(badge?.textContent).toBe("Attention");
     expect(badge?.title).toContain("Azure DevOps authentication is unavailable.");
+  });
+
+  it("restores each Project immediately while its silent refresh is pending", async () => {
+    let resolveProjectB: ((value: WorkerConfigurationListResult) => void) | undefined;
+    const projectBWorkers = new Promise<WorkerConfigurationListResult>((resolve) => {
+      resolveProjectB = resolve;
+    });
+    const projectBWorker = { ...worker, id: "worker-b", projectId: "project-b", name: "Project B Worker" };
+
+    await act(async () => {
+      root.render(createElement(AssistantRail, props()));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(host.textContent).toContain("Playbook Worker");
+
+    await act(async () => root.render(createElement(AssistantRail, {
+      ...props(),
+      projectId: "project-b",
+      listWorkers: () => projectBWorkers,
+    })));
+    expect(host.textContent).not.toContain("Playbook Worker");
+
+    await act(async () => {
+      resolveProjectB?.({ configurations: [projectBWorker], promptContexts: [], stateRevision: 2 });
+      await projectBWorkers;
+      await Promise.resolve();
+    });
+    expect(host.textContent).toContain("Project B Worker");
+
+    await act(async () => root.render(createElement(AssistantRail, {
+      ...props(),
+      listWorkers: () => new Promise<WorkerConfigurationListResult>(() => undefined),
+    })));
+    expect(host.textContent).toContain("Playbook Worker");
+    expect(host.textContent).not.toContain("Project B Worker");
   });
 });

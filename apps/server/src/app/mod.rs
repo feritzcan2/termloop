@@ -38,6 +38,7 @@ mod task_automation;
 mod terminal_grids;
 mod terminal_plane;
 mod tracker_runtime;
+mod voice;
 
 use control::{control_upgrade, reconcile_agent_resumes_after_start};
 use core_lock::{CoreProjectionSnapshot, MonitoredMutex};
@@ -99,6 +100,8 @@ struct AppState {
     mcp_tool_descriptions: termloop_core::McpToolDescriptions,
     skill_manager: termloop_platform::SkillManager,
     secure_credentials: Arc<dyn termloop_platform::SecureCredentialStore>,
+    voice: termloop_core::VoiceService,
+    voice_settings: voice::VoiceSettingsStore,
     task_source_credential_states:
         Arc<StdMutex<HashMap<String, control::TaskSourceCredentialPresence>>>,
     task_source_refresh_observer: Arc<dyn termloop_core::TaskSourceJiraObserver>,
@@ -450,6 +453,10 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
             Ok(Ok(observer)) => Arc::new(observer),
             Ok(Err(_)) | Err(_) => Arc::new(termloop_core::UnavailableTaskSourceRefreshObserver),
         };
+    let secure_credentials: Arc<dyn termloop_platform::SecureCredentialStore> =
+        Arc::new(termloop_platform::NativeSecureCredentialStore);
+    let voice = termloop_core::VoiceService::new(secure_credentials.clone());
+    let voice_settings = voice::VoiceSettingsStore::open(&state_directory);
     let state = AppState {
         access_plane,
         attachments,
@@ -466,7 +473,9 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         mcp_authorizer,
         mcp_tool_descriptions,
         skill_manager,
-        secure_credentials: Arc::new(termloop_platform::NativeSecureCredentialStore),
+        secure_credentials,
+        voice,
+        voice_settings,
         task_source_credential_states: Arc::new(StdMutex::new(HashMap::new())),
         task_source_refresh_observer,
         terminal: terminal.clone(),
@@ -553,6 +562,15 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         )
         .route("/terminal", get(terminal_upgrade))
         .route("/attachments", post(attachments::attachment_upload))
+        .route(
+            "/voice/transcriptions",
+            post(voice::transcription_post)
+                .layer(DefaultBodyLimit::max(voice::MAX_TRANSCRIPTION_BODY_BYTES)),
+        )
+        .route(
+            "/voice/speech",
+            post(voice::speech_post).layer(DefaultBodyLimit::max(voice::MAX_SPEECH_BODY_BYTES)),
+        )
         .route("/mcp", get(mcp_get).post(mcp_post).delete(mcp_delete))
         .with_state(state.clone());
     let discovery_path = discovery::write(

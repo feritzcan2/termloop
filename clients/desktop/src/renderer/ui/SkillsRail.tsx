@@ -12,6 +12,12 @@ import { useRailGroups } from "./rail-groups.js";
 
 type SkillSection = "project" | "library" | "provider";
 
+export type RemoteSkillComputer = {
+  profileId: string;
+  name: string;
+  writable: boolean;
+};
+
 type SkillDisplayGroup = {
   key: string;
   name: string;
@@ -24,6 +30,14 @@ const sections: { id: SkillSection; label: string }[] = [
   { id: "library", label: "Personal library" },
   { id: "provider", label: "Plugins & built-ins" },
 ];
+
+function normalizedSkillName(name: string): string {
+  return name.trim().toLocaleLowerCase("en-US");
+}
+
+function errorMessage(reason: unknown): string {
+  return reason instanceof Error ? reason.message : String(reason);
+}
 
 function sectionFor(skill: SkillCatalogItemDto): SkillSection {
   if (skill.scopes.includes("project")) return "project";
@@ -46,7 +60,7 @@ function folderOf(skill: SkillCatalogItemDto): { label: string; path: string } {
 function groupByName(skills: SkillCatalogItemDto[]): SkillDisplayGroup[] {
   const groups = new Map<string, SkillCatalogItemDto[]>();
   for (const skill of skills) {
-    const key = skill.name.trim().toLocaleLowerCase("en-US");
+    const key = normalizedSkillName(skill.name);
     const existing = groups.get(key);
     if (existing) existing.push(skill);
     else groups.set(key, [skill]);
@@ -80,12 +94,24 @@ function groupByFolder(skillGroups: SkillDisplayGroup[]): { label: string; path:
   return [...groups.values()].sort((a, b) => a.label.localeCompare(b.label, "en-US"));
 }
 
-export function SkillsRail({ load, setDeployment, openEditor, improveSkill, disabled }: {
+export function SkillsRail({
+  load,
+  setDeployment,
+  openEditor,
+  improveSkill,
+  listRemoteComputers,
+  loadRemoteCatalog,
+  createRemoteSkill,
+  disabled,
+}: {
   load(): Promise<SkillCatalogResult>;
   setDeployment(skillId: string, agent: SkillAgent, deployed: boolean): Promise<SkillCatalogResult>;
   openEditor(skillId: string): void;
   /// Absent while no Project is open: the improver runs in a checkout.
   improveSkill?: ((skillId: string, name: string) => void) | undefined;
+  listRemoteComputers?: (() => Promise<RemoteSkillComputer[]>) | undefined;
+  loadRemoteCatalog?: ((profileId: string) => Promise<SkillCatalogResult>) | undefined;
+  createRemoteSkill?: ((profileId: string, sourceSkillId: string) => Promise<SkillCatalogResult>) | undefined;
   disabled?: boolean;
 }) {
   const [catalog, setCatalog] = useState<SkillCatalogResult>();
@@ -95,6 +121,12 @@ export function SkillsRail({ load, setDeployment, openEditor, improveSkill, disa
   const [error, setError] = useState<string>();
   const [actionError, setActionError] = useState<string>();
   const [busyChip, setBusyChip] = useState<string>();
+  const [remoteComputers, setRemoteComputers] = useState<RemoteSkillComputer[]>([]);
+  const [showRemoteComputers, setShowRemoteComputers] = useState(false);
+  const [remoteCatalogs, setRemoteCatalogs] = useState<Record<string, SkillCatalogResult>>({});
+  const [remoteErrors, setRemoteErrors] = useState<Record<string, string>>({});
+  const [remoteListError, setRemoteListError] = useState<string>();
+  const [busyRemoteChip, setBusyRemoteChip] = useState<string>();
   const folders = useRailGroups();
 
   useEffect(() => {
@@ -104,12 +136,49 @@ export function SkillsRail({ load, setDeployment, openEditor, improveSkill, disa
     void load().then((result) => {
       if (active) setCatalog(result);
     }).catch((reason) => {
-      if (active) setError(reason instanceof Error ? reason.message : String(reason));
+      if (active) setError(errorMessage(reason));
     }).finally(() => {
       if (active) setLoading(false);
     });
     return () => { active = false; };
   }, [load, reloadToken]);
+
+  useEffect(() => {
+    if (!listRemoteComputers) {
+      setRemoteComputers([]);
+      setShowRemoteComputers(false);
+      return;
+    }
+    let active = true;
+    setRemoteListError(undefined);
+    void listRemoteComputers().then((computers) => {
+      if (!active) return;
+      setRemoteComputers(computers);
+      if (computers.length === 0) setShowRemoteComputers(false);
+    }).catch((reason) => {
+      if (!active) return;
+      setRemoteComputers([]);
+      setShowRemoteComputers(false);
+      setRemoteListError(errorMessage(reason));
+    });
+    return () => { active = false; };
+  }, [listRemoteComputers, reloadToken]);
+
+  useEffect(() => {
+    if (!showRemoteComputers || !loadRemoteCatalog || remoteComputers.length === 0) return;
+    let active = true;
+    setRemoteCatalogs({});
+    setRemoteErrors({});
+    for (const computer of remoteComputers) {
+      void loadRemoteCatalog(computer.profileId).then((result) => {
+        if (active) setRemoteCatalogs((current) => ({ ...current, [computer.profileId]: result }));
+      }).catch((reason) => {
+        if (!active) return;
+        setRemoteErrors((current) => ({ ...current, [computer.profileId]: errorMessage(reason) }));
+      });
+    }
+    return () => { active = false; };
+  }, [loadRemoteCatalog, remoteComputers, reloadToken, showRemoteComputers]);
 
   const normalizedQuery = query.trim().toLocaleLowerCase("en-US");
   const visibleSections = useMemo(() => sections.map((section) => ({
@@ -125,6 +194,12 @@ export function SkillsRail({ load, setDeployment, openEditor, improveSkill, disa
         return haystack.includes(normalizedQuery);
       }),
   })).filter((section) => section.id === "project" || section.skillGroups.length > 0), [catalog?.skills, normalizedQuery]);
+  const remoteSkillNames = useMemo(() => new Map(
+    Object.entries(remoteCatalogs).map(([profileId, remoteCatalog]) => [
+      profileId,
+      new Set(remoteCatalog.skills.map((skill) => normalizedSkillName(skill.name))),
+    ]),
+  ), [remoteCatalogs]);
 
   const changeDeployment = async (skill: SkillCatalogItemDto, agent: SkillAgent, deployed: boolean) => {
     setBusyChip(`${skill.id}:${agent}`);
@@ -132,10 +207,73 @@ export function SkillsRail({ load, setDeployment, openEditor, improveSkill, disa
     try {
       setCatalog(await setDeployment(skill.id, agent, deployed));
     } catch (reason) {
-      setActionError(reason instanceof Error ? reason.message : String(reason));
+      setActionError(errorMessage(reason));
     } finally {
       setBusyChip(undefined);
     }
+  };
+
+  const copyToRemoteComputer = async (skill: SkillCatalogItemDto, computer: RemoteSkillComputer) => {
+    if (!createRemoteSkill) return;
+    const key = `${computer.profileId}:${skill.id}`;
+    setBusyRemoteChip(key);
+    setActionError(undefined);
+    try {
+      const result = await createRemoteSkill(computer.profileId, skill.id);
+      setRemoteCatalogs((current) => ({ ...current, [computer.profileId]: result }));
+      setRemoteErrors((current) => {
+        if (!(computer.profileId in current)) return current;
+        const next = { ...current };
+        delete next[computer.profileId];
+        return next;
+      });
+    } catch (reason) {
+      setActionError(errorMessage(reason));
+    } finally {
+      setBusyRemoteChip(undefined);
+    }
+  };
+
+  const renderRemoteChips = (skill: SkillCatalogItemDto) => {
+    if (!showRemoteComputers) return null;
+    const normalizedName = normalizedSkillName(skill.name);
+    return <span className="skill-computer-chips">
+      {remoteComputers.map((computer) => {
+        const key = `${computer.profileId}:${skill.id}`;
+        const busy = busyRemoteChip === key;
+        const remoteCatalog = remoteCatalogs[computer.profileId];
+        const loadError = remoteErrors[computer.profileId];
+        const present = remoteSkillNames.get(computer.profileId)?.has(normalizedName);
+        if (present) return <span
+          key={computer.profileId}
+          className="skill-computer-chip on"
+          title={`${skill.name} is available on ${computer.name}`}
+        ><span>{computer.name}</span><em>✓</em></span>;
+        const canCreate = Boolean(remoteCatalog)
+          && computer.writable
+          && skill.manageable
+          && Boolean(createRemoteSkill)
+          && !disabled;
+        const title = loadError
+          ? `${computer.name}: ${loadError}`
+          : !remoteCatalog
+            ? `Loading skills from ${computer.name}…`
+            : !computer.writable
+              ? `${computer.name} is connected read-only`
+              : !skill.manageable
+                ? `${skill.name} is provider-owned and cannot be copied`
+                : `Create ${skill.name} on ${computer.name}`;
+        return <button
+          key={computer.profileId}
+          className={`skill-computer-chip off${loadError ? " error" : ""}`}
+          type="button"
+          aria-label={`Create ${skill.name} on ${computer.name}`}
+          title={title}
+          disabled={Boolean(busyRemoteChip) || !canCreate}
+          onClick={() => void copyToRemoteComputer(skill, computer)}
+        ><span>{computer.name}</span><em>{busy ? "…" : loadError ? "!" : "+"}</em></button>;
+      })}
+    </span>;
   };
 
   const agentPath = (skill: SkillCatalogItemDto, state: SkillAgentStateDto) =>
@@ -195,11 +333,12 @@ export function SkillsRail({ load, setDeployment, openEditor, improveSkill, disa
       aria-label={`Improve ${skill.name} with agent`}
       onClick={() => improveSkill(skill.id, skill.name)}
     ><Icon name="sparkles" /></button> : null}
-    <div className="skill-chips">{skill.agentStates.map((state) => renderChip(skill, state))}</div>
+    <div className="skill-chips">{skill.agentStates.map((state) => renderChip(skill, state))}{renderRemoteChips(skill)}</div>
   </div>;
 
   const renderGroupedRow = (group: SkillDisplayGroup, section: SkillSection) => {
     const groupKey = `skill:${section}:${group.key}`;
+    const representative = group.skills[0];
     const collapsed = folders.collapsed(groupKey, true);
     const locations = group.skills.flatMap((skill) => skill.locations);
     const locationLabel = `${locations.length} ${locations.length === 1 ? "location" : "locations"}`;
@@ -233,7 +372,7 @@ export function SkillsRail({ load, setDeployment, openEditor, improveSkill, disa
           <span><i aria-hidden="true" /><strong>{group.name}</strong></span>
           <small>{group.description}</small>
         </button>
-        <div className="skill-chips">{aggregateChips}</div>
+        <div className="skill-chips">{aggregateChips}{representative ? renderRemoteChips(representative) : null}</div>
         <button
           className="skill-location-count"
           type="button"
@@ -265,7 +404,7 @@ export function SkillsRail({ load, setDeployment, openEditor, improveSkill, disa
               aria-label={`Improve ${skill.name} from ${sources} with agent`}
               onClick={() => improveSkill(skill.id, skill.name)}
             ><Icon name="sparkles" /></button> : null}
-            <div className="skill-chips">{skill.agentStates.map((state) => renderChip(skill, state))}</div>
+            <div className="skill-chips">{skill.agentStates.map((state) => renderChip(skill, state))}{renderRemoteChips(skill)}</div>
           </div>;
         })}
       </div>}
@@ -287,9 +426,27 @@ export function SkillsRail({ load, setDeployment, openEditor, improveSkill, disa
         <label className="skills-search"><Icon name="search" /><input value={query} aria-label="Search skills" placeholder="Search skills" onChange={(event) => setQuery(event.target.value)} /></label>
         <button className="icon-button quiet" type="button" title={loading ? "Scanning…" : "Refresh skills"} aria-label="Refresh skills" disabled={loading} onClick={() => setReloadToken((current) => current + 1)}><Icon name="restart" /></button>
       </div>
+      {remoteComputers.length > 0 ? <div className="skills-remote-control">
+        <span><strong>Show remote computers</strong><small>{remoteComputers.length} connected</small></span>
+        <button
+          className={`skills-remote-switch${showRemoteComputers ? " on" : ""}`}
+          type="button"
+          role="switch"
+          aria-checked={showRemoteComputers}
+          aria-label="Show remote computers"
+          disabled={disabled}
+          onClick={() => setShowRemoteComputers((current) => !current)}
+        ><span /></button>
+      </div> : null}
+      {showRemoteComputers ? <div className="skills-remote-legend" aria-label="Remote computers">
+        {remoteComputers.map((computer) => <span key={computer.profileId} title={computer.writable ? "Full access" : "Read-only access"}>
+          <i className={computer.writable ? "writable" : "readonly"} />{computer.name}<em>{computer.writable ? "Enabled" : "Read only"}</em>
+        </span>)}
+      </div> : null}
+      {remoteListError ? <p className="skills-warning" role="status"><Icon name="sparkles" />Could not list remote computers: {remoteListError}</p> : null}
       {catalog && !catalog.managerAvailable ? <p className="skills-rail-note">Read only — managed actions require the bundled Skills Manager CLI.</p> : null}
       {error ? <p className="skills-error" role="alert">Could not load skills: {error}</p> : null}
-      {actionError ? <p className="skills-error" role="alert">Could not update skill deployment: {actionError}</p> : null}
+      {actionError ? <p className="skills-error" role="alert">Could not update skill: {actionError}</p> : null}
       {catalog?.warnings.map((warning) => <p key={warning} className="skills-warning" role="status"><Icon name="sparkles" />{warning}</p>)}
 
       {visibleSections.map((section) => <section key={section.id} className={`skill-section${section.id === "project" ? " project" : ""}`} aria-label={section.label}>

@@ -1265,6 +1265,26 @@ impl CoreRuntime {
         {
             return Err(CoreError::InvalidParams("launchTicket".into()));
         }
+        if let Some(assignment) = preview.plan.steward_task_assignment.as_ref() {
+            let current = self.current_task_agent_sessions_for_steward_start(
+                &preview.plan.project_id,
+                &assignment.task_id,
+            )?;
+            if let Some(session) = current
+                .iter()
+                .copied()
+                .find(|session| {
+                    session.process.template_ref.as_deref()
+                        != Some("builtin.steward.task-assignment")
+                })
+                .or_else(|| current.first().copied())
+            {
+                return Err(CoreError::TaskAgentAlreadyAttached {
+                    task_id: assignment.task_id.clone(),
+                    session_id: session.id.clone(),
+                });
+            }
+        }
         Ok(preview.plan)
     }
 

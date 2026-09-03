@@ -12,6 +12,7 @@ mod run_configuration;
 mod session;
 mod steward;
 mod task;
+pub(crate) mod task_branch;
 mod task_source;
 mod tracker;
 mod worker;

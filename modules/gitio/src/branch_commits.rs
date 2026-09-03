@@ -17,6 +17,7 @@ const BRANCH_COMMIT_OUTPUT_LIMIT: usize = 1024 * 1024;
 pub enum BranchCommitUnavailable {
     AmbiguousRemote,
     BaseRefUnavailable,
+    BranchDiverged,
     BranchMissing,
 }
 
@@ -43,13 +44,16 @@ pub struct BranchCommitSummaryObservation {
 
 /// Exact branch plus an optional caller-proven base. A recorded base OID is an
 /// immutable managed-branch creation point and takes precedence over remote
-/// resolution. A base ref without an OID is only a no-remote fallback;
-/// configured-but-ambiguous or incomplete remote facts continue to fail closed.
+/// resolution. A current base maps the exact local base branch into the selected
+/// remote when one exists and otherwise uses that local ref. The legacy base-ref
+/// constructor remains only a no-remote fallback; configured-but-ambiguous or
+/// incomplete remote facts continue to fail closed.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct BranchCommitSummaryRequest {
     branch: Vec<u8>,
     base_ref: Option<Vec<u8>>,
     recorded_base_oid: Option<Vec<u8>>,
+    use_current_base_ref: bool,
 }
 
 impl std::fmt::Debug for BranchCommitSummaryRequest {
@@ -59,6 +63,7 @@ impl std::fmt::Debug for BranchCommitSummaryRequest {
             .field("branch_bytes", &self.branch.len())
             .field("has_base_ref", &self.base_ref.is_some())
             .field("has_recorded_base_oid", &self.recorded_base_oid.is_some())
+            .field("use_current_base_ref", &self.use_current_base_ref)
             .finish()
     }
 }
@@ -69,6 +74,29 @@ impl BranchCommitSummaryRequest {
             branch,
             base_ref: no_remote_base_ref,
             recorded_base_oid: None,
+            use_current_base_ref: false,
+        }
+    }
+
+    pub fn with_current_base(branch: Vec<u8>, base_ref: Vec<u8>) -> Self {
+        Self {
+            branch,
+            base_ref: Some(base_ref),
+            recorded_base_oid: None,
+            use_current_base_ref: true,
+        }
+    }
+
+    pub fn with_current_base_and_recorded_base(
+        branch: Vec<u8>,
+        base_ref: Vec<u8>,
+        base_oid: Vec<u8>,
+    ) -> Self {
+        Self {
+            branch,
+            base_ref: Some(base_ref),
+            recorded_base_oid: Some(base_oid),
+            use_current_base_ref: true,
         }
     }
 
@@ -77,6 +105,7 @@ impl BranchCommitSummaryRequest {
             branch,
             base_ref: Some(base_ref),
             recorded_base_oid: Some(base_oid),
+            use_current_base_ref: false,
         }
     }
 
@@ -187,7 +216,8 @@ impl GitRunner {
             &unique_branches,
             &mut scope,
         )?;
-        let mut remote_heads = HashMap::<Vec<u8>, Result<Option<GitRefName>, GitError>>::new();
+        let mut remote_bases =
+            HashMap::<(Vec<u8>, Option<Vec<u8>>), Result<Option<GitRefName>, GitError>>::new();
         let mut base_exists = HashMap::<Vec<u8>, Result<bool, GitError>>::new();
         let mut observations = Vec::with_capacity(unique_requests.len());
 
@@ -206,27 +236,21 @@ impl GitRunner {
                 continue;
             };
             let not_in_base = if remotes.remotes.is_empty() {
-                if request.recorded_base_oid.is_some() {
-                    match request.base_ref.clone() {
-                        Some(base_ref) => observe_count_against_base(
-                            repository_path,
-                            &common_dir,
-                            branch_ref.clone(),
-                            GitRefName::from_bytes(base_ref)?,
-                            &mut base_exists,
-                            &mut scope,
-                        ),
-                        None => Err(GitError::ParseFailed {
-                            operation: GitOperation::BranchCommitSummary,
-                        }),
-                    }
-                } else {
-                    Ok(unavailable_observation(
+                match request.base_ref.clone() {
+                    Some(base_ref) => observe_count_against_base(
+                        repository_path,
+                        &common_dir,
+                        branch_ref.clone(),
+                        GitRefName::from_bytes(base_ref)?,
+                        &mut base_exists,
+                        &mut scope,
+                    ),
+                    None => Ok(unavailable_observation(
                         &common_dir,
                         branch_ref.clone(),
                         None,
                         BranchCommitUnavailable::BaseRefUnavailable,
-                    ))
+                    )),
                 }
             } else {
                 match select_remote(remotes) {
@@ -238,12 +262,21 @@ impl GitRunner {
                     )),
                     Ok(remote) => {
                         let remote = remote.to_vec();
-                        let base_ref = if let Some(cached) = remote_heads.get(&remote) {
+                        let requested_base = request
+                            .use_current_base_ref
+                            .then(|| request.base_ref.clone())
+                            .flatten();
+                        let remote_base_key = (remote.clone(), requested_base.clone());
+                        let base_ref = if let Some(cached) = remote_bases.get(&remote_base_key) {
                             cached.clone()
                         } else {
-                            let resolved =
-                                resolve_remote_head(repository_path, &remote, &mut scope);
-                            remote_heads.insert(remote.clone(), resolved.clone());
+                            let resolved = resolve_remote_base(
+                                repository_path,
+                                &remote,
+                                requested_base.as_deref(),
+                                &mut scope,
+                            );
+                            remote_bases.insert(remote_base_key, resolved.clone());
                             resolved
                         };
                         match base_ref {
@@ -274,7 +307,29 @@ impl GitRunner {
                 }
             };
 
-            if let Some(base_oid) = request.recorded_base_oid.clone() {
+            if request.use_current_base_ref {
+                let mut observation = not_in_base;
+                observation.not_in_base = observation.state.clone();
+                if let Some(base_oid) = request.recorded_base_oid.clone() {
+                    let base_oid = ObjectId::from_hex(base_oid)?;
+                    if !recorded_base_is_ancestor(
+                        repository_path,
+                        &base_oid,
+                        &branch_ref,
+                        &mut scope,
+                    )? {
+                        let base_ref = match &observation.state {
+                            BranchCommitState::Available { base_ref, .. } => Some(base_ref.clone()),
+                            BranchCommitState::Unavailable { base_ref, .. } => base_ref.clone(),
+                        };
+                        observation.state = BranchCommitState::Unavailable {
+                            base_ref,
+                            reason: BranchCommitUnavailable::BranchDiverged,
+                        };
+                    }
+                }
+                observations.push(Ok(observation));
+            } else if let Some(base_oid) = request.recorded_base_oid.clone() {
                 let Some(base_ref) = request.base_ref.clone() else {
                     observations.push(Err(GitError::ParseFailed {
                         operation: GitOperation::BranchCommitSummary,
@@ -298,25 +353,13 @@ impl GitRunner {
                     }),
                 );
             } else if remotes.remotes.is_empty() {
-                let Some(base_ref) = request.base_ref.clone() else {
+                if request.base_ref.is_none() {
                     observations.push(Ok(not_in_base));
                     continue;
-                };
-                let base_ref = GitRefName::from_bytes(base_ref)?;
-                observations.push(
-                    observe_count_against_base(
-                        repository_path,
-                        &common_dir,
-                        branch_ref,
-                        base_ref,
-                        &mut base_exists,
-                        &mut scope,
-                    )
-                    .map(|mut observation| {
-                        observation.not_in_base = not_in_base.state;
-                        observation
-                    }),
-                );
+                }
+                let mut observation = not_in_base;
+                observation.not_in_base = observation.state.clone();
+                observations.push(Ok(observation));
             } else {
                 let mut observation = not_in_base;
                 observation.not_in_base = observation.state.clone();
@@ -348,6 +391,36 @@ impl GitRunner {
                 .collect(),
             git_process_count,
         })
+    }
+}
+
+fn recorded_base_is_ancestor(
+    repository_path: &Path,
+    recorded_base_oid: &ObjectId,
+    branch_ref: &GitRefName,
+    scope: &mut GitCommandScope<'_>,
+) -> Result<bool, GitError> {
+    let outcome = scope.execute(
+        GitOperation::BranchCommitSummary,
+        repository_path,
+        [
+            OsString::from("merge-base"),
+            OsString::from("--is-ancestor"),
+            termloop_platform::os_string_from_process_bytes(recorded_base_oid.as_bytes().to_vec())
+                .map_err(|_| GitError::ParseFailed {
+                    operation: GitOperation::BranchCommitSummary,
+                })?,
+            exact_ref_argument(branch_ref)?,
+        ],
+    )?;
+    match outcome.termination {
+        CommandTermination::Exited { code: 0 } => Ok(true),
+        CommandTermination::Exited { code: 1 } => Ok(false),
+        termination => Err(command_failure(
+            GitOperation::BranchCommitSummary,
+            termination,
+            &outcome.stderr,
+        )),
     }
 }
 
@@ -491,11 +564,25 @@ fn select_remote(facts: &BranchRemoteFacts) -> Result<&[u8], BranchCommitUnavail
     Ok(remote)
 }
 
-fn resolve_remote_head(
+fn resolve_remote_base(
     repository_path: &Path,
     remote: &[u8],
+    local_base_ref: Option<&[u8]>,
     scope: &mut GitCommandScope<'_>,
 ) -> Result<Option<GitRefName>, GitError> {
+    if let Some(local_base_ref) = local_base_ref {
+        let Some(branch) = local_base_ref.strip_prefix(b"refs/heads/") else {
+            return Ok(None);
+        };
+        if branch.is_empty() {
+            return Ok(None);
+        }
+        let mut remote_base = b"refs/remotes/".to_vec();
+        remote_base.extend_from_slice(remote);
+        remote_base.push(b'/');
+        remote_base.extend_from_slice(branch);
+        return GitRefName::from_bytes(remote_base).map(Some);
+    }
     let mut symbolic = b"refs/remotes/".to_vec();
     symbolic.extend_from_slice(remote);
     symbolic.extend_from_slice(b"/HEAD");

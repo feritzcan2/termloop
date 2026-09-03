@@ -338,4 +338,82 @@ describe("Skills rail", () => {
 
     expect(load).toHaveBeenCalledTimes(2);
   });
+
+  it("shows connected remote computers on demand and creates missing skills", async () => {
+    const remoteCatalog: SkillCatalogResult = {
+      ...catalog,
+      skills: [catalog.skills[0]!],
+      projectIncluded: false,
+      projectName: null,
+    };
+    const listRemoteComputers = vi.fn().mockResolvedValue([
+      { profileId: "remote-a", name: "Studio Mac", writable: true },
+      { profileId: "remote-b", name: "Build PC", writable: false },
+    ]);
+    const loadRemoteCatalog = vi.fn().mockResolvedValue(remoteCatalog);
+    const createRemoteSkill = vi.fn().mockResolvedValue({
+      ...remoteCatalog,
+      skills: [...remoteCatalog.skills, catalog.skills[1]!],
+    });
+    await render({ listRemoteComputers, loadRemoteCatalog, createRemoteSkill });
+    await act(async () => undefined);
+
+    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Show remote computers"]');
+    expect(toggle?.getAttribute("aria-checked")).toBe("false");
+    expect(toggle?.closest(".skills-remote-control")?.textContent).toContain("2 connected");
+    expect(loadRemoteCatalog).not.toHaveBeenCalled();
+
+    await act(async () => toggle?.click());
+    await act(async () => undefined);
+
+    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+    expect(loadRemoteCatalog).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[aria-label="Remote computers"]')?.textContent)
+      .toContain("Studio MacEnabled");
+    expect(container.querySelector('[title="shared-review is available on Studio Mac"]')).not.toBeNull();
+
+    const create = container.querySelector<HTMLButtonElement>('[aria-label="Create release on Studio Mac"]');
+    const readOnly = container.querySelector<HTMLButtonElement>('[aria-label="Create release on Build PC"]');
+    expect(create?.disabled).toBe(false);
+    expect(readOnly?.disabled).toBe(true);
+    expect(readOnly?.title).toContain("read-only");
+
+    await act(async () => create?.click());
+    await act(async () => undefined);
+    expect(createRemoteSkill).toHaveBeenCalledWith("remote-a", "b".repeat(64));
+    expect(container.querySelector('[title="release is available on Studio Mac"]')).not.toBeNull();
+  });
+
+  it("omits the remote-computer switch when no remote computer is connected", async () => {
+    await render({ listRemoteComputers: async () => [] });
+    await act(async () => undefined);
+
+    expect(container.querySelector('[aria-label="Show remote computers"]')).toBeNull();
+  });
+
+  it("remounts cleanly when the selected Project changes", async () => {
+    const props = {
+      load: async () => catalog,
+      setDeployment: vi.fn(),
+      openEditor: vi.fn(),
+      listRemoteComputers: async () => [
+        { profileId: "remote-a", name: "Studio Mac", writable: true },
+      ],
+      loadRemoteCatalog: async () => catalog,
+    };
+    await act(async () => root.render(createElement(SkillsRail, { key: "project-a", ...props })));
+    await act(async () => undefined);
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Show remote computers"]')?.click();
+    });
+    expect(container.querySelector('[aria-label="Show remote computers"]')?.getAttribute("aria-checked"))
+      .toBe("true");
+
+    await act(async () => root.render(createElement(SkillsRail, { key: "project-b", ...props })));
+    await act(async () => undefined);
+
+    expect(container.querySelector(".skills-rail")).not.toBeNull();
+    expect(container.querySelector('[aria-label="Show remote computers"]')?.getAttribute("aria-checked"))
+      .toBe("false");
+  });
 });

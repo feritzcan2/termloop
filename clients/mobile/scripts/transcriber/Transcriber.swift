@@ -3,8 +3,8 @@ import Speech
 
 // Transcribes one recorded audio file with the Mac's own speech recognition and
 // prints {"text": "..."} on stdout. On-device recognition is attempted first.
-// Some installed Turkish models accept Watch AAC but return an empty final; in
-// that exact case one network-capable Speech attempt keeps wrist dictation usable.
+// Some installed on-device models accept Watch AAC but return an empty final;
+// in that case one network-capable Speech attempt keeps wrist dictation usable.
 //
 // Runs from inside a minimal signed .app bundle: speech recognition is a TCC
 // permission and the bundle gives it a stable identity to grant.
@@ -19,7 +19,9 @@ guard arguments.count >= 2 else {
     fail(64, "usage: transcriber <audio-file> [locale]")
 }
 let audioURL = URL(fileURLWithPath: arguments[1])
-let localeIdentifier = arguments.count >= 3 ? arguments[2] : "tr-TR"
+let localeIdentifier = arguments.count >= 3
+    ? arguments[2]
+    : (Locale.preferredLanguages.first ?? Locale.current.identifier)
 
 guard FileManager.default.fileExists(atPath: audioURL.path) else {
     fail(66, "audio file not found: \(audioURL.path)")

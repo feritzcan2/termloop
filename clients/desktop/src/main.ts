@@ -16,6 +16,7 @@ import {
   type McpToolDescriptionUpdateParams,
   type SkillCatalogGetParams,
   type SkillDefinitionGetParams,
+  type SkillDefinitionCreateParams,
   type SkillDefinitionSaveParams,
   type SkillDeploymentSetParams,
   type ProtocolErrorDetails,
@@ -23,6 +24,7 @@ import {
   type QuickActionLaunchParams,
   type ResultFor,
   type TaskProvisionWorktreeParams,
+  type TaskUpdateDeveloperNotesParams,
 } from "@termloop/contract/current";
 import {
   connectionConfig,
@@ -53,6 +55,7 @@ import { RemoteHostManager } from "./main/remote-host.js";
 import { TailscaleServerDiscoveryManager } from "./main/tailscale-discovery.js";
 import { validatedExternalUrl, validatedLoopbackRunUrl } from "./main/external-link.js";
 import { LayoutFileStore } from "./platform/layout-store.js";
+import { decodeLayoutDocument, type LayoutDocument } from "./layout/model.js";
 import { createArchiveOperationId, createClientLaunchId } from "./platform/client-launch.js";
 import {
   publishDevelopmentReadyMarker,
@@ -86,10 +89,20 @@ import {
   mobileAccessNodeExecutable,
   mobileAccessScriptPath,
   prepareMobileAccessQr,
+  publishMobileAgentGroups,
+  publishMobileNotificationPreferences,
+  reconcilePackagedMobileAccess,
+  shouldReconcilePackagedMobileAccess,
 } from "./platform/mobile-access.js";
 import { UpdateManager } from "./main/update-manager.js";
 import { autoUpdateSupported } from "./platform/auto-update-policy.js";
 import { createAutoUpdateDriver, scheduleAutoUpdateTask } from "./platform/auto-update.js";
+import {
+  notificationPreferencesOf,
+  shouldShowAgentAttentionNotification,
+  type NotificationPreferences,
+} from "./notification-preferences.js";
+import { NotificationPreferencesFileStore } from "./platform/notification-preferences-store.js";
 
 declare const TERMLOOP_COMPILED_DEV_PROFILE: string | null;
 
@@ -133,6 +146,9 @@ const clientLaunchId = createClientLaunchId();
 let clientLaunchRestartSent = false;
 let restartAgentsForLocalSubscription = false;
 let promptAssetStore: PromptAssetStore | undefined;
+let notificationPreferencesStore: NotificationPreferencesFileStore | undefined;
+let notificationPreferencesCache: NotificationPreferences | undefined;
+let notificationPreferencesLoad: Promise<NotificationPreferences> | undefined;
 
 const connections = new ConnectionRegistry({
   invalidated(profileId, payload) {
@@ -237,9 +253,64 @@ function clientLayoutStore(): LayoutFileStore {
   return layoutStore;
 }
 
+function clientNotificationPreferencesStore(): NotificationPreferencesFileStore {
+  notificationPreferencesStore ??= new NotificationPreferencesFileStore(
+    path.join(app.getPath("userData"), "notification-preferences.v1.json"),
+  );
+  return notificationPreferencesStore;
+}
+
+async function currentNotificationPreferences(): Promise<NotificationPreferences> {
+  if (notificationPreferencesCache) return notificationPreferencesCache;
+  notificationPreferencesLoad ??= clientNotificationPreferencesStore().load();
+  const loaded = await notificationPreferencesLoad;
+  notificationPreferencesCache ??= loaded;
+  return notificationPreferencesCache;
+}
+
+async function updateNotificationPreferences(value: unknown): Promise<NotificationPreferences> {
+  const preferences = notificationPreferencesOf(value);
+  if (!preferences) throw new Error("invalidNotificationPreferences");
+  notificationPreferencesCache = await clientNotificationPreferencesStore().save(preferences);
+  if (!preferences.enabled) {
+    for (const notification of attentionNotifications.values()) notification.close();
+    attentionNotifications.clear();
+  }
+  await publishClientMobileNotificationPreferences(preferences);
+  return notificationPreferencesCache;
+}
+
+async function publishClientMobileAgentGroups(document: LayoutDocument): Promise<void> {
+  try {
+    await publishMobileAgentGroups(document);
+  } catch (cause: unknown) {
+    console.warn("Mobile Agent groups could not be published.", cause instanceof Error ? cause.name : "unknown");
+  }
+}
+
+async function publishClientMobileNotificationPreferences(
+  preferences: NotificationPreferences,
+): Promise<void> {
+  try {
+    await publishMobileNotificationPreferences(preferences);
+  } catch (cause: unknown) {
+    console.warn("Mobile notification preferences could not be published.", cause instanceof Error ? cause.name : "unknown");
+  }
+}
+
 handleIpc("termloop:app-is-packaged", (event) => {
   requireMainRenderer(event);
   return app.isPackaged;
+});
+
+handleIpc("termloop:notification-preferences-get", (event) => {
+  requireMainRenderer(event);
+  return currentNotificationPreferences();
+});
+
+handleIpc("termloop:notification-preferences-set", (event, value: unknown) => {
+  requireMainRenderer(event);
+  return updateNotificationPreferences(value);
 });
 
 /// The OS folder panel, offered next to the daemon's own folder listing. It can
@@ -287,12 +358,15 @@ handleIpc("termloop:mobile-access-pairing", async (event) => {
   }
   try {
     const script = mobileAccessScriptPath(directory, process.env.TERMLOOP_DEV_CHECKOUT);
+    const qrSvg = await prepareMobileAccessQr(
+      script,
+      mobileAccessNodeExecutable(process.env.TERMLOOP_DEV_NODE_BINARY),
+    );
+    await publishClientMobileAgentGroups(await clientLayoutStore().load());
+    await publishClientMobileNotificationPreferences(await currentNotificationPreferences());
     return {
       ok: true,
-      qrSvg: await prepareMobileAccessQr(
-        script,
-        mobileAccessNodeExecutable(process.env.TERMLOOP_DEV_NODE_BINARY),
-      ),
+      qrSvg,
     } as const;
   } catch (cause: unknown) {
     return {
@@ -326,6 +400,12 @@ handleIpc("termloop:keep-awake-get", () => controlCall("system.keepAwake.get"));
 handleIpc("termloop:keep-awake-set", (_event, params: KeepAwakeSetParams) =>
   controlCall("system.keepAwake.set", params),
 );
+handleIpc("termloop:voice-settings-get", () => controlCall("voice.settingsGet"));
+handleIpc(
+  "termloop:voice-credentials-set",
+  (_event, params: import("@termloop/contract/current").VoiceCredentialsSetParams) =>
+    controlCall("voice.credentialsSet", params),
+);
 handleIpc("termloop:mcp-tool-settings-get", () => controlCall("mcp.toolSettingsGet"));
 handleIpc(
   "termloop:mcp-tool-description-update",
@@ -351,6 +431,9 @@ handleIpc("termloop:skill-definition-get", (_event, params: SkillDefinitionGetPa
 );
 handleIpc("termloop:skill-definition-save", (_event, params: SkillDefinitionSaveParams) =>
   controlCall("skill.definitionSave", params),
+);
+handleIpc("termloop:skill-definition-create", (_event, params: SkillDefinitionCreateParams) =>
+  controlCall("skill.definitionCreate", params),
 );
 handleIpc("termloop:context-bank-catalog-get", (_event, params: ContextBankCatalogGetParams) =>
   controlCall("contextBank.catalogGet", params),
@@ -418,8 +501,8 @@ handleIpc(
 handleIpc("termloop:task-branch-commit-summary-list", (_event, projectId: string, taskIds: string[]) =>
   controlCall("task.branchCommitSummaryList", { projectId, taskIds }),
 );
-handleIpc("termloop:task-branch-commit-list", (_event, taskId: string) =>
-  controlCall("task.branchCommitList", { taskId }),
+handleIpc("termloop:task-branch-commit-list", (_event, taskId: string, branchId?: string) =>
+  controlCall("task.branchCommitList", { taskId, ...(branchId ? { branchId } : {}) }),
 );
 handleIpc(
   "termloop:task-branch-commit-change-list",
@@ -616,27 +699,40 @@ handleIpc("termloop:ghostty-surface-diagnostic-text", (event, surfaceId: unknown
 handleIpc("termloop:ghostty-surface-destroy", (event, surfaceId: unknown) => {
   requireGhosttyManager(event).destroy(requireSurfaceId(surfaceId));
 });
-handleIpc("termloop:quick-action-paste-image", async (event) => {
-  requireMainRenderer(event);
+function clipboardPng() {
   const image = clipboard.readImage();
   if (image.isEmpty()) throw new Error("quickActionClipboardImageMissing");
-  const size = image.getSize();
-  const previewScale = Math.min(1, 160 / Math.max(size.width, size.height));
+  const { width, height } = image.getSize();
+  return { png: image.toPNG(), width, height, image };
+}
+handleIpc("termloop:quick-action-paste-image", async (event) => {
+  requireMainRenderer(event);
+  const { image, png, width, height } = clipboardPng();
+  const previewScale = Math.min(1, 160 / Math.max(width, height));
   const preview = image.resize({
-    width: Math.max(1, Math.round(size.width * previewScale)),
-    height: Math.max(1, Math.round(size.height * previewScale)),
+    width: Math.max(1, Math.round(width * previewScale)),
+    height: Math.max(1, Math.round(height * previewScale)),
     quality: "good",
   });
-  const png = image.toPNG();
-  const attachment = await uploadQuickActionImage(png, size.width, size.height);
+  const attachment = await uploadQuickActionImage(png, width, height);
   return quickActionImages().stage(
     png,
-    size.width,
-    size.height,
+    width,
+    height,
     preview.toDataURL(),
     attachment,
     currentConnectionProfileId(),
   );
+});
+handleIpc("termloop:session-paste-image", async (event, sessionId: string) => {
+  requireMainRenderer(event);
+  if (typeof sessionId !== "string"
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(sessionId)) {
+    throw new Error("invalidSessionId");
+  }
+  const { png, width, height } = clipboardPng();
+  const attachment = await uploadQuickActionImage(png, width, height);
+  return typedControlCall("session.pasteImage", { sessionId, attachments: [attachment] });
 });
 handleIpc("termloop:quick-action-restore-image", async (event, attachmentId: string) => {
   requireMainRenderer(event);
@@ -727,6 +823,9 @@ handleIpc("termloop:task-rename", (_event, taskId: string, title: string) =>
 handleIpc("termloop:task-update-brief", (_event, taskId: string, brief: string | null) =>
   controlCall("task.updateBrief", { taskId, brief }),
 );
+handleIpc("termloop:task-update-developer-notes", (_event, params: TaskUpdateDeveloperNotesParams) =>
+  typedControlCall("task.updateDeveloperNotes", params),
+);
 handleIpc("termloop:task-close", (_event, taskId: string) =>
   controlCall("task.close", { taskId }),
 );
@@ -770,9 +869,16 @@ handleIpc("termloop:browse-directory", async (event, folderPath: string) => {
   if (typeof folderPath !== "string") throw new Error("directoryBrowsePathInvalid");
   return controlCall("system.browseDirectory", { path: folderPath });
 });
-handleIpc("termloop:layout-load", () => clientLayoutStore().load());
-handleIpc("termloop:layout-save", (_event, document: unknown) => {
-  clientLayoutStore().stage(document);
+handleIpc("termloop:layout-load", async () => {
+  const document = await clientLayoutStore().load();
+  await publishClientMobileAgentGroups(document);
+  return document;
+});
+handleIpc("termloop:layout-save", async (_event, document: unknown) => {
+  const decoded = decodeLayoutDocument(document);
+  if (!decoded) throw new Error("invalidLayoutDocument");
+  clientLayoutStore().stage(decoded);
+  await publishClientMobileAgentGroups(decoded);
 });
 handleIpc("termloop:session-list", () => controlCall("session.list"));
 handleIpc("termloop:agent-status-list", () => controlCall("agent.statusList"));
@@ -1024,9 +1130,10 @@ handleIpc(
 handleIpc("termloop:agent-attention-notify", async (_event, sessionId: string) => {
   const profileId = currentConnectionProfileId();
   const notificationKey = connectionEntityKey(profileId, sessionId);
-  const [sessions, statuses] = await Promise.all([
+  const [sessions, statuses, notificationPreferences] = await Promise.all([
     controlCall("session.list"),
     controlCall("agent.statusList"),
+    currentNotificationPreferences(),
   ]);
   const session = sessions.find((value) => value.id === sessionId);
   const status = statuses.find((value) => value.sessionId === sessionId);
@@ -1039,13 +1146,17 @@ handleIpc("termloop:agent-attention-notify", async (_event, sessionId: string) =
   ) {
     return { accepted: false };
   }
-  if (!Notification.isSupported()) return { accepted: false };
+  if (!shouldShowAgentAttentionNotification(notificationPreferences, {
+    supported: Notification.isSupported(),
+    appFocused: mainWindow?.isFocused() === true,
+  })) return { accepted: false };
   const profileName = (await connectionProfiles().list())
     .find((profile) => profile.id === profileId)?.name ?? "Computer";
   attentionNotifications.get(notificationKey)?.close();
   const notification = new Notification({
     title: `${session.process.agent_id === "codex" ? "Codex" : "Claude"} needs input`,
     body: `${profileName} · ${session.name?.trim() || session.process.cwd}`,
+    silent: !notificationPreferences.playSound,
   });
   notification.on("click", () => {
     attentionNotifications.delete(notificationKey);
@@ -1283,9 +1394,28 @@ handleIpc("termloop:remote-host-disable", async (event) => {
   return remoteHost.disable();
 });
 
-if (ownsSingleInstance) app.whenReady().then(async () => {
+if (ownsSingleInstance) void app.whenReady().then(async () => {
   if (shouldRemoveApplicationMenu()) Menu.setApplicationMenu(null);
   else Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate()));
+  if (shouldReconcilePackagedMobileAccess(app.isPackaged)) {
+    void reconcilePackagedMobileAccess(directory).then(
+      async (outcome) => {
+        console.info(`[mobile-access] ${outcome || "reconciled"}`);
+        await publishClientMobileNotificationPreferences(await currentNotificationPreferences());
+      },
+      (cause: unknown) => console.error(
+        `[mobile-access] reconcile failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+      ),
+    );
+  } else {
+    void currentNotificationPreferences().then(
+      publishClientMobileNotificationPreferences,
+      (cause: unknown) => console.warn(
+        "Mobile notification preferences could not be loaded.",
+        cause instanceof Error ? cause.name : "unknown",
+      ),
+    );
+  }
   // Bundled desktop flavor: a packaged application that ships the daemon
   // binaries supervises its own daemon. Development, smoke, and client-only
   // flows (env override or unpackaged) never reach the spawn path, and a live
@@ -1630,14 +1760,15 @@ if (ownsSingleInstance) app.whenReady().then(async () => {
       processType: typeof globalThis.process,
       requireType: typeof globalThis.require,
       apiKeys: Object.keys(globalThis.termloop ?? {}).sort(),
-      credentialKeys: Object.keys(globalThis.termloop ?? {}).filter((key) => /token|credential|secret/i.test(key)),
+      sensitiveReadKeys: Object.keys(globalThis.termloop ?? {}).filter((key) =>
+        /token|secret/i.test(key) || (/credential/i.test(key) && !/Set$/.test(key))),
       csp: document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content ?? '',
       shell: document.querySelector('[aria-label="Projects and sessions"]')?.getAttribute('aria-label') ?? ''
     })`);
     if (security.processType !== "undefined" || security.requireType !== "undefined") {
       throw new Error("renderer privilege leak");
     }
-    if (security.apiKeys.includes("call") || security.credentialKeys.length > 0) {
+    if (security.apiKeys.includes("call") || security.sensitiveReadKeys.length > 0) {
       throw new Error("renderer capability leak");
     }
     if (!security.csp.includes("default-src 'self'") || !security.csp.includes("connect-src 'none'")) {
@@ -1647,6 +1778,9 @@ if (ownsSingleInstance) app.whenReady().then(async () => {
     console.log("TERMLOOP_DESKTOP_SMOKE_READY");
     app.quit();
   }
+}).catch((cause: unknown) => {
+  console.error(cause);
+  app.exit(1);
 });
 
 function serializableControlError(error: unknown): {

@@ -52,6 +52,10 @@ export function nativeTerminalSurfaceVisible(terminalOccluded: boolean, nativeOv
   return !terminalOccluded && !nativeOverlayActive;
 }
 
+export function nativeOverlayPassiveVisible(hasSelectedProject: boolean, suppressed: boolean): boolean {
+  return hasSelectedProject && !suppressed;
+}
+
 export function nativeOverlayPointerInteractiveAt(
   document: Document,
   clientX: number,

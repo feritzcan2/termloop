@@ -161,6 +161,69 @@ fn dirty_alternate_attached_branch_uses_existing_destructive_acknowledgement() {
 }
 
 #[test]
+fn destructive_cleanup_uses_the_exact_alternate_checkout_head_when_task_branch_is_missing() {
+    let mut fixture = Fixture::new();
+    let (task_id, destination, proof_id, generation) = provision_cleanup_fixture(&mut fixture);
+    let runner = GitRunner::discover().unwrap();
+    termloop_gitio::test_support::checkout_new_branch(
+        &runner,
+        &destination,
+        "feature/alternate-without-task-branch",
+    )
+    .unwrap();
+    let task_branch = GitRefName::from_bytes(b"refs/heads/feature/cleanup".to_vec()).unwrap();
+    let task_branch_oid = runner
+        .resolve_ref(&fixture.project_directory, &task_branch)
+        .unwrap()
+        .unwrap();
+    runner
+        .delete_ref_if_matches(&fixture.project_directory, &task_branch, &task_branch_oid)
+        .unwrap();
+    std::fs::write(destination.join("local.txt"), "local\n").unwrap();
+
+    let preview = fixture
+        .runtime
+        .inspect_task_worktree_cleanup(json!({ "taskId": task_id }))
+        .unwrap();
+    assert_eq!(preview["decision"], "refused");
+    assert_eq!(preview["blockers"], json!(["untrackedContent"]));
+    assert_eq!(preview["destructive_cleanup"]["status"], "available");
+    assert_eq!(
+        preview["health"]["checked_out_branch"],
+        "feature/alternate-without-task-branch"
+    );
+
+    let result = fixture
+        .runtime
+        .cleanup_task_worktree(json!({
+            "operationId": Uuid::new_v4().to_string(),
+            "taskId": task_id,
+            "expectedManagedWorktreeOperationId": proof_id,
+            "expectedWorktreeGeneration": generation,
+            "cleanupMode": "discardCheckoutContent",
+            "acknowledgedContentBlockers": ["untrackedContent"],
+        }))
+        .unwrap();
+    assert_eq!(result["outcome"], "removed");
+    assert!(!destination.exists());
+    assert!(
+        runner
+            .resolve_ref(&fixture.project_directory, &task_branch)
+            .unwrap()
+            .is_none()
+    );
+    let alternate =
+        GitRefName::from_bytes(b"refs/heads/feature/alternate-without-task-branch".to_vec())
+            .unwrap();
+    assert!(
+        runner
+            .resolve_ref(&fixture.project_directory, &alternate)
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[test]
 fn alternate_branch_that_detaches_before_final_revalidation_is_not_removed() {
     let mut fixture = Fixture::new();
     let (task_id, destination, proof_id, generation) = provision_cleanup_fixture(&mut fixture);

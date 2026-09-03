@@ -6,6 +6,7 @@ import type {
   PlaybookRuntimeResult,
   ProjectDto,
   SessionDto,
+  SessionRelocationPreviewDto,
   TaskDto,
   TaskWorktreeChangeListResult,
   TaskWorktreeDiffResult,
@@ -14,8 +15,10 @@ import type {
 
 export type ConnectionAvailability =
   | "online"
+  | "reconnecting"
   | "offline"
   | "revoked"
+  | "gatewayUpdateRequired"
   | "updateRequired";
 
 export interface ConnectionProfile {
@@ -28,8 +31,23 @@ export interface ConnectionProfile {
   contractIdentity: string | null;
 }
 
+export interface MobileAgentGroupLayout {
+  readonly sessionIds: readonly string[];
+  readonly name?: string | undefined;
+}
+
 export interface MobileOverview {
   projects: readonly ProjectDto[];
+  /// Project ids whose authoritative Steward configuration exists and is enabled.
+  /// Voice presentation treats absence from this list as unavailable rather than
+  /// inferring availability from Project or Session presence.
+  stewardEnabledProjectIds: readonly string[];
+  /// Exact executor Session ids from the authoritative Steward configurations.
+  /// Voice status uses this projection instead of guessing from Session names.
+  stewardExecutorSessionIds: Readonly<Record<string, string>>;
+  /// Desktop-authored, client-local peer groups published through this Mac's
+  /// owner-authenticated mobile gateway. Core remains unaware of visual layout.
+  agentGroupsByProject: Readonly<Record<string, readonly MobileAgentGroupLayout[]>>;
   tasks: readonly TaskDto[];
   sessions: readonly SessionDto[];
   agentStatuses: readonly AgentStatusDto[];
@@ -37,11 +55,30 @@ export interface MobileOverview {
 
 export interface ConnectionCatalogPort {
   list(): Promise<ConnectionProfile[]>;
+  /// Signals a proven transport transition for any saved Mac. The catalog then
+  /// performs its normal authoritative probe; the event itself is not status.
+  subscribeChanges(listener: () => void): () => void;
+  /// Drops cached physical WebSocket paths without removing any saved Mac or
+  /// logical terminal subscription. Entering the background deliberately pauses
+  /// reconnects; foreground recovery requests a fresh authenticated path
+  /// immediately instead of depending on a later catalog probe.
+  resetTransports(reconnect?: boolean): void;
   pair(code: string): Promise<string>;
 }
 
 export interface ControlReadPort {
   loadOverview(connectionId: string): Promise<MobileOverview>;
+  /// A hint that one or more authoritative projections changed. Revisions make
+  /// duplicate/out-of-order delivery harmless; consumers still perform normal
+  /// reads, so events never become a second source of domain truth.
+  subscribeInvalidations(
+    connectionId: string,
+    listener: (event: {
+      readonly stateRevision: number;
+      readonly observationSequence: number;
+      readonly topics: readonly string[];
+    }) => void,
+  ): () => void;
 }
 
 /// A bounded, read-only snapshot of one Task's local checkout. The observation id
@@ -159,13 +196,93 @@ export interface AgentLaunchPort {
   ): Promise<AgentLaunchResult>;
 }
 
+/// Session lifecycle and Agent-coordination commands exposed by the paired Mac.
+/// Presentation chooses only from current generated projections; the adapter sends
+/// named control methods and never reconstructs provider or process authority.
+export interface SessionActionsPort {
+  fork(connectionId: string, sessionId: string): Promise<SessionDto>;
+  repairProviderHistory(connectionId: string, sessionId: string): Promise<void>;
+  /// Retries a stopped Agent through a freshly previewed resume ticket. This is
+  /// intentionally distinct from `restart`, which refreshes an already-running
+  /// provider process and cannot recover a `resumeFailed` Session.
+  retry(connectionId: string, sessionId: string): Promise<SessionDto>;
+  restart(connectionId: string, sessionId: string): Promise<SessionDto>;
+  askTo(
+    connectionId: string,
+    sessionId: string,
+    targetAgentId: "claude" | "codex",
+  ): Promise<void>;
+  handoverTo(connectionId: string, sessionId: string, targetSessionId: string): Promise<void>;
+  rename(connectionId: string, sessionId: string, name: string | null): Promise<SessionDto>;
+  previewRelocateToTask(
+    connectionId: string,
+    sessionId: string,
+    taskId: string,
+    mode: "resume" | "fresh",
+  ): Promise<SessionRelocationPreviewDto>;
+  relocateToTask(
+    connectionId: string,
+    sessionId: string,
+    taskId: string,
+    operationId: string,
+    relocationTicket: string,
+  ): Promise<SessionDto>;
+  previewRelocateToProject(
+    connectionId: string,
+    sessionId: string,
+    projectId: string,
+  ): Promise<SessionRelocationPreviewDto>;
+  relocateToProject(
+    connectionId: string,
+    sessionId: string,
+    projectId: string,
+    operationId: string,
+    relocationTicket: string,
+  ): Promise<SessionDto>;
+  terminate(connectionId: string, sessionId: string): Promise<void>;
+  close(connectionId: string, sessionId: string): Promise<void>;
+}
+
 export type StewardMessage = CompanionMessageDto;
+
+export interface StewardVoiceClip {
+  /// Bounded recording bytes read by the platform-owned recorder UI. Keeping
+  /// file:// handling out of the transport avoids React Native fetch adapters
+  /// re-encoding or partially reading a freshly finalized native recording.
+  bytes: ArrayBuffer;
+  mediaType: "audio/m4a" | "audio/mp4" | "audio/wav" | "audio/webm";
+}
+
+export interface StewardVoiceAppend {
+  transcript: string;
+  userSequence: number;
+}
+
+export interface StewardVoiceReceipt {
+  readonly initialized: boolean;
+  readonly acknowledgedSequence: number;
+  readonly pendingUserSequence: number | null;
+}
+
+export interface StewardVoiceReceiptStore {
+  read(connectionId: string, projectId: string): Promise<StewardVoiceReceipt>;
+  write(connectionId: string, projectId: string, receipt: StewardVoiceReceipt): Promise<void>;
+}
 
 export interface StewardPort {
   transcript(connectionId: string, projectId: string): Promise<readonly StewardMessage[]>;
   /// Appends one user message. The daemon's own chat wake brings the Steward up,
   /// exactly as it does for the desktop and Watch chats.
   send(connectionId: string, projectId: string, content: string): Promise<readonly StewardMessage[]>;
+  /// Transcribes one bounded recording without appending it. The caller shows
+  /// this preview so a recognition mistake can be corrected before delivery.
+  transcribeVoice(connectionId: string, clip: StewardVoiceClip): Promise<string>;
+  /// Appends the user-confirmed transcript as a voice turn and returns the
+  /// sequence that a later Steward reply must follow.
+  commitVoice(connectionId: string, projectId: string, transcript: string): Promise<StewardVoiceAppend>;
+  /// Returns daemon-generated speech bytes for the exact persisted Steward
+  /// message. Provider credentials never cross this port.
+  speech(connectionId: string, projectId: string, sequence: number): Promise<Uint8Array>;
   /// Answers one pending Steward proposal or accepts one suggestion.
   respond(connectionId: string, projectId: string, messageId: string, action: "approve" | "decline" | "accept"): Promise<readonly StewardMessage[]>;
 }
@@ -237,7 +354,9 @@ export interface MobileRuntime {
   worktreeChanges: WorktreeChangesPort;
   playbook: PlaybookPort;
   agentLaunch: AgentLaunchPort;
+  sessionActions: SessionActionsPort;
   steward: StewardPort;
+  voiceReceipts: StewardVoiceReceiptStore;
   terminal: TerminalPort;
   images: SessionImagePort;
   notifications: NotificationRegistrationPort;

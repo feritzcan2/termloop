@@ -38,6 +38,10 @@ runs:
       if: inputs.cache-pnpm != 'true'
       with:
         node-version: 22
+    - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+      if: runner.os == 'macOS'
+      with:
+        version: 0.15.2
     - name: Verify pinned Zig for Ghostty
       if: runner.os == 'macOS'
       shell: bash
@@ -74,6 +78,7 @@ runs:
       env:
         ELECTRON_DISABLE_SANDBOX: "1"
         TERMLOOP_NON_UTF_FS: "1"
+        TERMLOOP_SKIP_DEV_LAUNCH_CYCLE: "1"
     - name: Test (Windows bounded concurrency)
       if: runner.os == 'Windows'
       shell: bash
@@ -86,6 +91,7 @@ runs:
       run: pnpm test
       env:
         RUST_TEST_THREADS: "1"
+        TERMLOOP_SKIP_DEV_LAUNCH_CYCLE: "1"
         TERMLOOP_RUNTIME_FILE: ${{ runner.temp }}/termloop-native-verify-no-runtime.json
         TERMLOOP_TERMINAL_RENDERER: xterm
     - name: S0 acceptance (Linux virtual display)

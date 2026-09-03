@@ -40,6 +40,8 @@ pub struct CachedPullRequest {
     pub title: String,
     pub url: String,
     pub state: String,
+    #[serde(default)]
+    pub merge_commit_oid: Option<String>,
     pub base_branch: String,
     pub head_branch: String,
     pub head_repository_owner: String,

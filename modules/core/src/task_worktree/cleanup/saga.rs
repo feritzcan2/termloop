@@ -97,7 +97,7 @@ impl TaskWorktreeCleanupPlan {
         let runner =
             GitRunner::discover_with_timeout(termloop_gitio::CLEANUP_GIT_SUBPROCESS_DEADLINE)
                 .map_err(map_git_observation_error)?;
-        let facts = observe_cleanup_facts(&runner, &self.proof)?;
+        let facts = observe_cleanup_facts(&runner, &self.proof, None)?;
         Ok(ObservedTaskWorktreeCleanup {
             expected_task_archived_at_epoch_ms: self.expected_task_archived_at_epoch_ms,
             operation_id: self.operation_id,
@@ -120,7 +120,17 @@ impl TaskWorktreeCleanupObservationStep {
             .runner
             .with_absolute_timeout(termloop_gitio::CLEANUP_GIT_SUBPROCESS_DEADLINE)
             .map_err(map_git_observation_error)?;
-        let facts = observe_cleanup_facts(&runner, &self.proof)?;
+        let facts = observe_cleanup_facts(
+            &runner,
+            &self.proof,
+            Some(
+                self.operation
+                    .baseline
+                    .checkout_branch_ref
+                    .as_deref()
+                    .unwrap_or(&self.operation.baseline.branch_ref),
+            ),
+        )?;
         Ok(ObservedTaskWorktreeCleanup {
             expected_task_archived_at_epoch_ms: self.expected_task_archived_at_epoch_ms,
             operation_id: self.operation.operation_id,
@@ -704,17 +714,38 @@ impl CoreRuntime {
 fn cleanup_baseline(
     observed: &ObservedTaskWorktreeCleanup,
 ) -> Result<WorktreeCleanupBaseline, CoreError> {
-    let head_oid = observed
-        .facts
-        .head_oid
-        .clone()
-        .ok_or_else(|| cleanup_refused(observed, vec![WorktreeCleanupBlocker::HeadMismatch]))?;
+    let (checkout_branch_ref, head_oid) = if observed.facts.alternate_checkout_matches {
+        match observed
+            .facts
+            .health
+            .as_ref()
+            .map(|health| &health.repository.head)
+        {
+            Some(termloop_gitio::HeadState::Attached { branch, oid }) => (
+                Some(String::from_utf8_lossy(branch.as_bytes()).into_owned()),
+                String::from_utf8_lossy(oid.as_bytes()).into_owned(),
+            ),
+            _ => {
+                return Err(cleanup_refused(
+                    observed,
+                    vec![WorktreeCleanupBlocker::HeadMismatch],
+                ));
+            }
+        }
+    } else {
+        let head_oid =
+            observed.facts.head_oid.clone().ok_or_else(|| {
+                cleanup_refused(observed, vec![WorktreeCleanupBlocker::HeadMismatch])
+            })?;
+        (None, head_oid)
+    };
     Ok(WorktreeCleanupBaseline {
         repository_root: observed.proof.normalized_spec.repository_root.clone(),
         repository_common_dir: observed.proof.repository_common_dir.clone(),
         worktree_path: observed.proof.registered_worktree_path.clone(),
         registered_worktree_path: observed.proof.registered_worktree_path.clone(),
         branch_ref: observed.proof.branch_ref.clone(),
+        checkout_branch_ref,
         head_oid,
     })
 }

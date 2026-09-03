@@ -3,6 +3,19 @@ import { describe, expect, it } from "vitest";
 
 import type { ConnectionProfile, MobileOverview } from "../../src/application/ports";
 import {
+  connectionRouteParams,
+  missingSessionRouteState,
+  resolveSessionRouteConnectionId,
+} from "../../src/features/connection/connection-route";
+import {
+  preferredConnectionId,
+  shouldResetConnectionTransports,
+} from "../../src/features/connection/connection-resilience";
+import {
+  snapshotWhileBackgrounded,
+  snapshotWhileUnavailable,
+} from "../../src/features/overview/overview-resilience";
+import {
   buildLocatedProjectSummaries,
   buildProjectOverview,
   buildProjectSummaries,
@@ -11,6 +24,7 @@ import {
 import { connectionBlockCopy, connectionPresentation, shortContractIdentity } from "../../src/presentation/connection-presentation";
 import { ellipsizeMiddle, shortenPath } from "../../src/presentation/dto-readers";
 import { relativeAge, relativeAgeSentence } from "../../src/presentation/relative-time";
+import { projectSelectorGroups } from "../../src/presentation/project-selector-model";
 import {
   provisioningFailureNote,
   taskAtAGlance,
@@ -33,6 +47,9 @@ const now = 1_786_617_600_000;
 /// drifted from the wire.
 const baseOverview: MobileOverview = {
   projects: fixtureProjects,
+  stewardEnabledProjectIds: fixtureProjects.map((project) => project.id),
+  stewardExecutorSessionIds: {},
+  agentGroupsByProject: {},
   tasks: fixtureTasks,
   sessions: fixtureSessions,
   agentStatuses: fixtureAgentStatuses,
@@ -82,6 +99,9 @@ describe("project overview sectioning", () => {
   it("keeps each Project's Mac location when flattening several connections", () => {
     const secondOverview: MobileOverview = {
       projects: fixtureProjects.map((project) => ({ ...project, id: `second-${project.id}` })),
+      stewardEnabledProjectIds: [],
+      stewardExecutorSessionIds: {},
+      agentGroupsByProject: {},
       tasks: [],
       sessions: [],
       agentStatuses: [],
@@ -144,7 +164,47 @@ describe("project overview sectioning", () => {
     ]);
   });
 
-  it("separates terminals from agents and excludes stopped agents", () => {
+  it("nests every Ask-To helper under its exact source without a two-row limit", () => {
+    const source = session({ id: "ses_source", ask_to_source_session_id: null });
+    const helpers = [1, 2, 3].map((index) => session({
+      id: `ses_helper_${index}`,
+      ask_to_source_session_id: source.id,
+    }));
+    const overview: MobileOverview = {
+      ...baseOverview,
+      sessions: [...helpers, source],
+      agentStatuses: [],
+    };
+
+    const [cluster] = buildProjectOverview(overview, source.project_id).agentClusters;
+    expect(cluster?.groups).toHaveLength(1);
+    expect(cluster?.groups[0]?.source.sessionId).toBe(source.id);
+    expect(cluster?.groups[0]?.helpers.map((row) => row.sessionId)).toEqual(
+      helpers.map((helper) => helper.id),
+    );
+  });
+
+  it("keeps every member and name of a desktop-authored peer group", () => {
+    const agents = [1, 2, 3, 4].map((index) => session({ id: `ses_group_${index}` }));
+    const overview: MobileOverview = {
+      ...baseOverview,
+      sessions: agents,
+      agentStatuses: [],
+      agentGroupsByProject: {
+        [agents[0]!.project_id]: [{
+          sessionIds: agents.map((agent) => agent.id),
+          name: "Review crew",
+        }],
+      },
+    };
+
+    const [cluster] = buildProjectOverview(overview, agents[0]!.project_id).agentClusters;
+    expect(cluster?.manualGroup?.name).toBe("Review crew");
+    expect(cluster?.groups.flatMap(({ source, helpers }) => [source, ...helpers])
+      .map((row) => row.sessionId)).toEqual(agents.map((agent) => agent.id));
+  });
+
+  it("separates terminals from agents and keeps stopped Agents reachable for recovery", () => {
     const overview: MobileOverview = {
       ...baseOverview,
       sessions: [
@@ -155,7 +215,33 @@ describe("project overview sectioning", () => {
     };
     const model = buildProjectOverview(overview, "project-termloop-next");
     expect(model.terminals.map((row) => row.sessionId)).toEqual(["ses_term"]);
-    expect(model.agents.map((row) => row.sessionId)).not.toContain("ses_gone");
+    expect(model.agents.map((row) => row.sessionId)).toEqual(["ses_gone"]);
+    expect(model.agents[0]).toMatchObject({
+      attachable: false,
+      state: { id: "processExited", label: "Exited" },
+    });
+  });
+
+  it("surfaces a failed provider-history resume as blocked recovery work", () => {
+    const overview: MobileOverview = {
+      ...baseOverview,
+      sessions: [session({
+        id: "ses_fix",
+        lifecycle_state: "resumeFailed",
+        resume_failure_reason: "providerHistoryDamaged",
+        retryable: true,
+      })],
+      agentStatuses: [],
+    };
+
+    const model = buildProjectOverview(overview, "project-termloop-next");
+    expect(model.agents[0]).toMatchObject({
+      sessionId: "ses_fix",
+      attachable: false,
+      stateLabel: "Retry available",
+      tone: "blocked",
+    });
+    expect(model.needsYou.map((row) => row.sessionId)).toEqual(["ses_fix"]);
   });
 
   it("excludes persistent assistants from Active Agents regardless of lifecycle", () => {
@@ -338,11 +424,36 @@ describe("task presentation", () => {
 });
 
 describe("connection presentation", () => {
+  it("forces fresh transports after foregrounding even when background never rendered", () => {
+    const active = { active: true, foregroundRevision: 3 };
+
+    expect(shouldResetConnectionTransports(active, active)).toBe(false);
+    expect(shouldResetConnectionTransports(active, {
+      active: false,
+      foregroundRevision: 3,
+    })).toBe(true);
+    expect(shouldResetConnectionTransports(active, {
+      active: true,
+      foregroundRevision: 4,
+    })).toBe(true);
+  });
+
   it("blocks every availability that cannot be read, and only those", () => {
     expect(connectionPresentation("online").block).toBeUndefined();
+    expect(connectionPresentation("reconnecting")).toMatchObject({
+      dot: "connecting",
+      block: undefined,
+    });
     expect(connectionPresentation("offline").block).toBe("offline");
     expect(connectionPresentation("revoked").block).toBe("revoked");
+    expect(connectionPresentation("gatewayUpdateRequired").block).toBe("gatewayUpdateRequired");
     expect(connectionPresentation("updateRequired").block).toBe("updateRequired");
+  });
+
+  it("directs a stale persistent gateway back to the Mac", () => {
+    const copy = connectionBlockCopy("gatewayUpdateRequired");
+    expect(`${copy.body} ${copy.resolution}`).toContain("gateway");
+    expect(copy.resolution).toContain("open TermLoop on your Mac");
   });
 
   it("never offers a way past a contract mismatch", () => {
@@ -351,6 +462,102 @@ describe("connection presentation", () => {
     const words = `${copy.title} ${copy.body} ${copy.resolution}`.toLowerCase();
     expect(words).not.toContain("anyway");
     expect(words).not.toContain("ignore");
+  });
+
+  it("keeps a saved Mac selected and its last projection visible through a transient outage", () => {
+    const offline: ConnectionProfile = {
+      ...mac("offline-mac", "Offline Mac"),
+      availability: "offline",
+      lastConnectedAtEpochMs: 200,
+    };
+    expect(preferredConnectionId([offline])).toBe("offline-mac");
+
+    const previous = {
+      load: "failed" as const,
+      error: "request timeout",
+      overview: baseOverview,
+      refreshing: true,
+      reviewReadySessionIds: new Set<string>(),
+      readAtEpochMs: 100,
+    };
+    expect(snapshotWhileUnavailable("offline", previous)).toMatchObject({
+      load: "ready",
+      error: undefined,
+      overview: previous.overview,
+      refreshing: false,
+      readAtEpochMs: 100,
+    });
+    expect(snapshotWhileUnavailable("revoked", previous).overview).toBeUndefined();
+  });
+
+  it("settles a visible overview refresh when the app moves to the background", () => {
+    const refreshing = {
+      load: "ready" as const,
+      error: undefined,
+      overview: baseOverview,
+      refreshing: true,
+      reviewReadySessionIds: new Set<string>(),
+      readAtEpochMs: 100,
+    };
+
+    expect(snapshotWhileBackgrounded(refreshing)).toEqual({
+      ...refreshing,
+      refreshing: false,
+    });
+    expect(snapshotWhileBackgrounded(undefined).refreshing).toBe(false);
+  });
+
+  it("keeps every paired Mac as its own selector group and carries its identity into retained routes", () => {
+    const home = mac("mac-home", "Home Mac");
+    const offline = { ...mac("mac-away", "Away Mac"), availability: "offline" as const };
+    const located = buildLocatedProjectSummaries([{ connection: home, overview: baseOverview }]);
+
+    expect(projectSelectorGroups([home, offline], located).map((group) => ({
+      connectionId: group.connection.id,
+      projectCount: group.projects.length,
+    }))).toEqual([
+      { connectionId: "mac-home", projectCount: baseOverview.projects.length },
+      { connectionId: "mac-away", projectCount: 0 },
+    ]);
+    expect(connectionRouteParams("mac-away", { sessionId: "session-1" })).toEqual({
+      sessionId: "session-1",
+      connectionId: "mac-away",
+    });
+  });
+
+  it("recovers a retained Session route from a stale Mac hint using the live projection", () => {
+    const scopes = [
+      { connectionId: "mac-home", sessionIds: ["session-other"] },
+      { connectionId: "mac-away", sessionIds: ["session-target"] },
+    ];
+
+    expect(resolveSessionRouteConnectionId("mac-removed", "session-target", scopes))
+      .toBe("mac-away");
+    expect(resolveSessionRouteConnectionId("mac-removed", "session-missing", scopes))
+      .toBeUndefined();
+    expect(resolveSessionRouteConnectionId("mac-home", "session-missing", scopes))
+      .toBe("mac-home");
+  });
+
+  it("never leaves failed or blocked Session routes in a loading state", () => {
+    const base = {
+      catalogLoad: "ready" as const,
+      selectingConnection: false,
+      targetConnectionSelected: true,
+      targetConnectionReadable: true,
+      overviewLoad: "ready" as const,
+      unresolvedProjectionsPending: false,
+      unresolvedProjectionFailed: false,
+    };
+
+    expect(missingSessionRouteState({ ...base, overviewLoad: "failed" })).toBe("overviewFailed");
+    expect(missingSessionRouteState({ ...base, targetConnectionReadable: false })).toBe("connectionBlocked");
+    expect(missingSessionRouteState({
+      ...base,
+      targetConnectionSelected: false,
+      unresolvedProjectionFailed: true,
+    })).toBe("overviewFailed");
+    expect(missingSessionRouteState({ ...base, overviewLoad: "loading" })).toBe("loading");
   });
 
   it("shortens a contract identity while keeping enough to compare two of them", () => {

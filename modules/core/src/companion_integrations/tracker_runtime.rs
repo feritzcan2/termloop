@@ -4,6 +4,7 @@ use std::collections::{HashMap, VecDeque};
 
 use crate::{CoreError, CoreRuntime, required_string, store_error};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use termloop_domain::{
     PendingRoutineFinding, ROUTINE_CONTEXT_MAX_BYTES, ROUTINE_FINDING_EVIDENCE_MAX_BYTES,
     ROUTINE_FINDING_SUMMARY_MAX_BYTES, ROUTINE_PENDING_FINDINGS_MAX,
@@ -901,6 +902,23 @@ impl CoreRuntime {
         completed_at_epoch_ms: u64,
     ) -> Result<Value, CoreError> {
         let mut configuration = self.validate_current_check(capability, completed_at_epoch_ms)?;
+        let related_task_ids: Vec<String> = if configuration.trigger_mode.is_scheduled() {
+            configuration
+                .related_task_ids
+                .iter()
+                .filter(|task_id| {
+                    self.store.tasks().iter().any(|task| {
+                        task.id == **task_id && task.project_id == configuration.project_id
+                    })
+                })
+                .cloned()
+                .collect()
+        } else {
+            self.claimed_step_task_id(&capability.tracker_id)
+                .into_iter()
+                .collect()
+        };
+        let message = message.trim().to_owned();
         let report = TrackerReport {
             id: report_id,
             project_id: capability.project_id.clone(),
@@ -908,13 +926,114 @@ impl CoreRuntime {
             check_id: capability.check_id.clone(),
             generation: capability.generation,
             kind: TrackerReportKind::Problem,
-            message,
-            source_references,
-            related_task_ids: configuration.related_task_ids.clone(),
+            message: message.clone(),
+            source_references: source_references.clone(),
+            related_task_ids: related_task_ids.clone(),
             created_at_epoch_ms: completed_at_epoch_ms,
         };
         if !report.is_valid() {
             return Err(CoreError::TrackerReportInvalid);
+        }
+        let duplicate_report = self
+            .tracker_runtime
+            .reports
+            .iter()
+            .rev()
+            .find(|candidate| {
+                candidate.project_id == report.project_id
+                    && candidate.routine_id == report.routine_id
+            })
+            .is_some_and(|candidate| {
+                candidate.kind == TrackerReportKind::Problem
+                    && candidate.message == report.message
+                    && candidate.source_references == report.source_references
+                    && candidate.related_task_ids == report.related_task_ids
+            });
+        let problem_episode = configuration
+            .last_successful_report_at_epoch_ms
+            .unwrap_or(0)
+            .to_string();
+        let source_key = worker_problem_source_key(
+            configuration.kind,
+            &configuration.id,
+            &problem_episode,
+            &message,
+            &source_references,
+            &related_task_ids,
+        );
+        let mut new_pending_finding_count = 0;
+        let mut steward_review_required = false;
+        if configuration.action_handling != RoutineActionHandling::Off {
+            if configuration
+                .pending_routine_findings
+                .iter()
+                .any(|finding| finding.source_key == source_key)
+            {
+                steward_review_required =
+                    !self.companion_has_pending_proposal(&configuration.project_id);
+            } else if !configuration.recent_source_keys.contains(&source_key) {
+                let summary = format!(
+                    "{} could not complete its evidence check.",
+                    configuration.name
+                );
+                let evidence = truncate_utf8(&message, ROUTINE_FINDING_EVIDENCE_MAX_BYTES);
+                let replacement_index = if related_task_ids.is_empty() {
+                    None
+                } else {
+                    configuration
+                        .pending_routine_findings
+                        .iter()
+                        .position(|finding| {
+                            finding
+                                .related_task_ids
+                                .iter()
+                                .any(|task_id| related_task_ids.contains(task_id))
+                        })
+                };
+                if let Some(index) = replacement_index {
+                    let finding_id = configuration.pending_routine_findings[index].id.clone();
+                    configuration.pending_routine_findings[index] = PendingRoutineFinding {
+                        id: finding_id.clone(),
+                        source_key: source_key.clone(),
+                        routine_generation: configuration.generation,
+                        summary,
+                        evidence,
+                        source_references: source_references.clone(),
+                        related_task_ids: related_task_ids.clone(),
+                        created_at_epoch_ms: completed_at_epoch_ms,
+                    };
+                    steward_review_required =
+                        !self.companion_has_pending_proposal(&configuration.project_id);
+                } else if configuration.pending_routine_findings.len()
+                    < ROUTINE_PENDING_FINDINGS_MAX
+                {
+                    configuration
+                        .pending_routine_findings
+                        .push(PendingRoutineFinding {
+                            id: report.id.clone(),
+                            source_key: source_key.clone(),
+                            routine_generation: configuration.generation,
+                            summary,
+                            evidence,
+                            source_references: source_references.clone(),
+                            related_task_ids: related_task_ids.clone(),
+                            created_at_epoch_ms: completed_at_epoch_ms,
+                        });
+                    new_pending_finding_count = 1;
+                    steward_review_required = true;
+                }
+                if steward_review_required {
+                    configuration.recent_source_keys.push(source_key);
+                }
+            }
+        }
+        if configuration.recent_source_keys.len() > ROUTINE_RECENT_SOURCE_KEYS_MAX {
+            configuration.recent_source_keys.drain(
+                ..configuration
+                    .recent_source_keys
+                    .len()
+                    .saturating_sub(ROUTINE_RECENT_SOURCE_KEYS_MAX),
+            );
         }
         configuration.last_check_started_at_epoch_ms = Some(capability.claimed_at_epoch_ms);
         configuration.last_attempt_at_epoch_ms = Some(completed_at_epoch_ms);
@@ -928,14 +1047,21 @@ impl CoreRuntime {
             .map_err(store_error)?;
         let pending_trigger = self.finish_worker_routine_check(
             capability,
-            Some(report.message.clone()),
+            Some(message),
             completed_at_epoch_ms,
             &configuration,
         );
-        self.push_runtime_report(report);
+        if !duplicate_report {
+            self.push_runtime_report(report);
+        }
         Ok(json!({
             "status": "problemReported",
             "pendingTrigger": pending_trigger,
+            "problemChanged": !duplicate_report,
+            "reportCreated": !duplicate_report,
+            "relatedTaskIds": related_task_ids,
+            "newPendingFindingCount": new_pending_finding_count,
+            "stewardReviewRequired": steward_review_required,
             "stateRevision": self.store.revision(),
         }))
     }
@@ -1099,6 +1225,17 @@ impl CoreRuntime {
     pub fn tracker_check_is_current(&self, capability: &TrackerCheckCapability) -> bool {
         self.validate_current_check(capability, capability.claimed_at_epoch_ms)
             .is_ok()
+    }
+
+    /// Returns the exact focused Task for a current Playbook step check, or
+    /// `None` for a current scheduled Routine. Server-side Task-read receipts
+    /// use this to prevent one Task's read from authorizing another's verdict.
+    pub fn tracker_check_task_id(
+        &self,
+        capability: &TrackerCheckCapability,
+    ) -> Result<Option<String>, CoreError> {
+        self.validate_current_check(capability, capability.claimed_at_epoch_ms)?;
+        Ok(self.claimed_step_task_id(&capability.tracker_id))
     }
 
     pub fn release_worker_routine_claim(&mut self, capability: &TrackerCheckCapability) -> bool {
@@ -1445,6 +1582,8 @@ fn assigned_routine_result(
         "context": {
             "revision": routine.context_revision,
             "markdown": routine.context_markdown,
+            "evidenceKind": "workerAuthoredMemory",
+            "independentlyVerified": false,
             "scanSinceEpochMs": scan_since,
             "lastFinishedAtEpochMs": routine.last_attempt_at_epoch_ms,
             "recentSourceKeys": routine.recent_source_keys,
@@ -1465,6 +1604,14 @@ fn assigned_routine_result(
             "approver": step.milestone.approver,
             "retryDelaySeconds": step.milestone.retry_delay_seconds,
             "finishWith": "worker_report_step_verdicts",
+            "taskRead": {
+                "requiredBeforeVerdict": true,
+                "tool": "task_read",
+                "arguments": {
+                    "taskId": step.waiting[0].task_id,
+                    "checkId": capability.check_id,
+                },
+            },
             "tasks": step
                 .waiting
                 .iter()
@@ -1474,6 +1621,8 @@ fn assigned_routine_result(
                         "title": task.title,
                         "dueAtEpochMs": task.due_at_epoch_ms,
                         "lastEvidence": task.last_evidence,
+                        "lastEvidenceKind": "previousWorkerVerdict",
+                        "lastEvidenceIndependentlyVerified": false,
                     })
                 })
                 .collect::<Vec<_>>(),
@@ -1491,6 +1640,48 @@ pub(crate) fn routine_source_prefix(kind: TrackerKind) -> &'static str {
         TrackerKind::CiPr => "ci-pr:",
         TrackerKind::Custom => "custom:",
     }
+}
+
+pub(crate) fn is_worker_problem_source_key(kind: TrackerKind, value: &str) -> bool {
+    value.starts_with(&format!("{}worker-problem:", routine_source_prefix(kind)))
+}
+
+fn worker_problem_source_key(
+    kind: TrackerKind,
+    routine_id: &str,
+    episode: &str,
+    message: &str,
+    source_references: &[String],
+    related_task_ids: &[String],
+) -> String {
+    let mut digest = Sha256::new();
+    for part in std::iter::once(routine_id)
+        .chain(std::iter::once(episode))
+        .chain(std::iter::once(message))
+        .chain(source_references.iter().map(String::as_str))
+        .chain(related_task_ids.iter().map(String::as_str))
+    {
+        digest.update(part.as_bytes());
+        digest.update([0]);
+    }
+    let digest = digest.finalize();
+    let mut hex = String::with_capacity(64);
+    for byte in digest {
+        use std::fmt::Write as _;
+        write!(&mut hex, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    format!("{}worker-problem:{hex}", routine_source_prefix(kind))
+}
+
+fn truncate_utf8(value: &str, max_bytes: usize) -> String {
+    if value.len() <= max_bytes {
+        return value.to_owned();
+    }
+    let mut end = max_bytes;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    value[..end].to_owned()
 }
 
 fn valid_source_key(value: &str) -> bool {
@@ -1957,6 +2148,7 @@ mod tests {
             Err(CoreError::RevisionConflict)
         ));
         assert!(runtime.tracker_check_is_current(&first));
+        assert_eq!(runtime.tracker_check_task_id(&first).unwrap(), None);
 
         let finding = WorkerRoutineFinding {
             id: "finding-1".into(),
@@ -2210,6 +2402,32 @@ mod tests {
             .unwrap();
         assert_eq!(duplicate["newPendingFindingCount"], 0);
 
+        let before_problem = runtime.state_revision();
+        let problem = runtime
+            .append_steward_suggestion(
+                "steward-session",
+                &project_id,
+                "problem",
+                crate::companion_integrations::transcript::CompanionMessageRefsInput {
+                    task_id: None,
+                    session_id: None,
+                    routine_finding_id: Some("finding-2".into()),
+                    routine_finding_ids: vec![],
+                },
+                "The required review source is unavailable.".into(),
+                1_290,
+            )
+            .unwrap();
+        assert_eq!(runtime.state_revision(), before_problem + 1);
+        assert_eq!(problem["dismissedRoutineFindingIds"], json!(["finding-2"]));
+        assert_eq!(
+            runtime.read_routine_findings(&project_id).unwrap()["routines"][0]["findings"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+
         assert!(matches!(
             runtime.resolve_routine_finding(&project_id, "finding-1", "completed", 1_300),
             Err(CoreError::CapabilityDenied)
@@ -2238,13 +2456,30 @@ mod tests {
                 crate::companion_integrations::transcript::CompanionMessageRefsInput {
                     task_id: None,
                     session_id: None,
-                    routine_finding_id: None,
-                    routine_finding_ids: vec!["finding-1".into(), "finding-2".into()],
+                    routine_finding_id: Some("finding-1".into()),
+                    routine_finding_ids: vec![],
                 },
-                "Ask the assigned reviewer to review PRs 42 and 43?".into(),
+                "Ask the assigned reviewer to review PR 42?".into(),
                 1_310,
             )
             .unwrap();
+        assert!(matches!(
+            runtime.append_steward_suggestion(
+                "steward-session",
+                &project_id,
+                "attention",
+                crate::companion_integrations::transcript::CompanionMessageRefsInput {
+                    task_id: None,
+                    session_id: None,
+                    routine_finding_id: Some("finding-1".into()),
+                    routine_finding_ids: vec![],
+                },
+                "Please review PR 42 yourself.".into(),
+                1_312,
+            ),
+            Err(CoreError::CompanionProposalPending { proposal_message_id })
+                if proposal_message_id == proposal["message"]["id"]
+        ));
         assert!(matches!(
             runtime.append_steward_suggestion(
                 "steward-session",
@@ -2272,9 +2507,6 @@ mod tests {
             .unwrap();
         runtime
             .resolve_routine_finding(&project_id, "finding-1", "completed", 1_330)
-            .unwrap();
-        runtime
-            .resolve_routine_finding(&project_id, "finding-2", "completed", 1_340)
             .unwrap();
         assert!(
             runtime.read_routine_findings(&project_id).unwrap()["routines"]
@@ -2422,6 +2654,11 @@ mod tests {
             .claim_next_worker_routine(&project_id, "worker-session", "check-context".into(), 500)
             .unwrap();
         assert_eq!(claim.result["context"]["revision"], 2);
+        assert_eq!(
+            claim.result["context"]["evidenceKind"],
+            "workerAuthoredMemory"
+        );
+        assert_eq!(claim.result["context"]["independentlyVerified"], false);
         assert_eq!(
             claim.result["context"]["markdown"],
             "# User context\nWatch the release channel."

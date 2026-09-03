@@ -19,7 +19,7 @@ import { ArchivedRail, archivedRailVisible, useArchivedTasks } from "./ArchivedR
 import { useDeletedSessions } from "./DeletedRail.js";
 import { ChangesOverlay, type ChangesSubject } from "./ChangesOverlay.js";
 import { taskReviewAgentSessions } from "../changes-review.js";
-import type { AgentCapabilityDto, AssistantPromptImproverTarget, GitHostPullRequestChangeListResult, GitHostPullRequestDiffResult, GitHostPullRequestIdentityDto, KeepAwakeSetParams, KeepAwakeStatusResult, McpToolDescriptionResetParams, McpToolDescriptionUpdateParams, McpToolSettingsResult, PlaybookRuntimeResult, ProjectLocalBranchListResult, ProjectWorktreeChangeListResult, ProjectWorktreeDiffResult, ProjectWorktreePreImageResult, QuickActionPreviewResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SessionRelocationPreviewDto, SettingsImproverTarget, TaskArchivePreviewDto, TaskBranchCommitChangeListResult, TaskBranchCommitDiffResult, TaskBranchCommitListResult, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeChangeListResult, TaskWorktreeCleanupPreviewDto, TaskWorktreeDiffResult, TaskWorktreePreImageResult, TaskWorktreeRepairPreviewDto } from "@termloop/contract/current";
+import type { AgentCapabilityDto, AssistantPromptImproverTarget, GitHostPullRequestChangeListResult, GitHostPullRequestDiffResult, GitHostPullRequestIdentityDto, KeepAwakeSetParams, KeepAwakeStatusResult, McpToolDescriptionResetParams, McpToolDescriptionUpdateParams, McpToolSettingsResult, PlaybookRuntimeResult, ProjectLocalBranchListResult, ProjectWorktreeChangeListResult, ProjectWorktreeDiffResult, ProjectWorktreePreImageResult, QuickActionPreviewResult, RunConfigurationCreateParams, RunConfigurationDto, RunConfigurationImproverTarget, RunConfigurationUpdateParams, SessionRelocationPreviewDto, SettingsImproverTarget, TaskArchivePreviewDto, TaskBranchCommitChangeListResult, TaskBranchCommitDiffResult, TaskBranchCommitListResult, TaskCleanupWorktreeParams, TaskProvisionWorktreeParams, TaskRepairWorktreeParams, TaskWorktreeChangeListResult, TaskWorktreeCleanupPreviewDto, TaskWorktreeDiffResult, TaskWorktreePreImageResult, TaskWorktreeRepairPreviewDto, VoiceCredentialsSetParams, VoiceSettingsResult } from "@termloop/contract/current";
 import type { DeletedSessionDto, SessionHistoryPreviewResult } from "@termloop/contract/current";
 import type { ChangesOpenSource } from "../change-source.js";
 import { CommandPalette, KeyboardShortcutsDialog } from "./CommandPalette.js";
@@ -35,7 +35,7 @@ import { McpToolPanel } from "./McpToolPanel.js";
 import { PromptPanel } from "./PromptPanel.js";
 import { PromptsRail } from "./PromptsRail.js";
 import { SkillEditorPanel } from "./SkillEditorPanel.js";
-import { SkillsRail } from "./SkillsRail.js";
+import { SkillsRail, type RemoteSkillComputer } from "./SkillsRail.js";
 import { ContextBankEditorPanel } from "./ContextBankEditorPanel.js";
 import { ContextBankRail } from "./ContextBankRail.js";
 import { KeepAwakePanel } from "./KeepAwakePanel.js";
@@ -51,10 +51,12 @@ import { SidebarSessionDndProvider, isProjectRelocationDragCandidate, isTaskRelo
 import { ActiveAgentRail } from "./ActiveAgentRail.js";
 import { HistoryRail } from "./HistoryRail.js";
 import { playbookBuilderSession } from "../prompt-improver-session-link.js";
-import { WorkspaceViewSwitch, type WorkspaceView } from "./WorkspaceViewSwitch.js";
+import { WorkspaceViewSwitch } from "./WorkspaceViewSwitch.js";
+import { WorkspaceRailCache } from "./WorkspaceRailCache.js";
 import type { GhosttyShellShortcut } from "../../ghostty-shell-shortcut.js";
 import { persistActiveAgentFavoriteToggle, readActiveAgentFavorites } from "../active-agent-favorites.js";
 import { readActiveAgentActivityMemory, updateActiveAgentActivityMemory, writeActiveAgentActivityMemory } from "../active-agent-activity-memory.js";
+import { readWorkspaceViewMemory, rememberWorkspaceView, workspaceViewForProject, type WorkspaceView } from "../workspace-view-memory.js";
 import { SessionTabStrip } from "./SessionTabStrip.js";
 import { TaskSourcesPanel, type TaskSourceActions } from "./TaskSourcesPanel.js";
 import type { TaskCreateOutcome } from "./task-dialogs/task-editor.js";
@@ -63,7 +65,8 @@ import type { SessionHistoryListResult } from "@termloop/contract/current";
 import { ErrorLogPanel } from "./ErrorLogPanel.js";
 import { MobileConnectDialog } from "./MobileConnectDialog.js";
 import type { MobileAccessPairingResult } from "../mobile-access.js";
-import { ConnectionProfilesDialog } from "./ConnectionProfilesDialog.js";
+import { SettingsDialog, type SettingsPage } from "./SettingsDialog.js";
+import type { NotificationPreferences } from "../../notification-preferences.js";
 import type {
   ConnectionProfileConnectInput,
   ConnectionProfileConnectResult,
@@ -74,6 +77,7 @@ import type {
   TailscaleServerDiscovery,
 } from "../../connection-profile-types.js";
 import { ProjectDialog, ProjectDetailsDialog } from "./project-dialogs/project-dialogs.js";
+import { DeleteProjectDialog } from "./project-dialogs/delete-project-dialog.js";
 import { BackgroundSessionRelocation, type BackgroundSessionRelocationIntent } from "../background-session-relocation.js";
 import type { FolderPickerActions } from "./project-dialogs/folder-picker.js";
 import {
@@ -95,6 +99,7 @@ type AssistantActions = Pick<StewardPanelProps,
 > & Pick<ComponentProps<typeof TaskDetailPanel>, "setPlaybookTaskPosition">
   & Pick<ComponentProps<typeof AssistantRail>, "updatePlaybook"> & {
   deleteConfiguration(expectedRevision: number): Promise<import("@termloop/contract/current").StewardConfigurationDeleteResult>;
+  getPresence(): ReturnType<StewardPanelProps["getConfiguration"]>;
   restartSteward(): Promise<string | null>;
   restartWorker(workerId: string): Promise<string | null>;
 };
@@ -142,6 +147,10 @@ export type ShellProps = {
   errorLog: readonly ErrorLogEntry[];
   clearErrorLog(): void;
   prepareMobileAccess(): Promise<MobileAccessPairingResult>;
+  loadVoiceSettings(): Promise<VoiceSettingsResult>;
+  saveVoiceCredentials(params: VoiceCredentialsSetParams): Promise<VoiceSettingsResult>;
+  loadNotificationPreferences(): Promise<NotificationPreferences>;
+  saveNotificationPreferences(preferences: NotificationPreferences): Promise<NotificationPreferences>;
   listConnectionProfiles(): Promise<ConnectionProfileSummary[]>;
   connectConnectionProfile(input: ConnectionProfileConnectInput): Promise<ConnectionProfileConnectResult>;
   setConnectionProfileEnabled(profileId: string, enabled: boolean): Promise<ConnectionProfileSummary[]>;
@@ -162,6 +171,12 @@ export type ShellProps = {
     skillId: string,
     agent: "claude" | "codex",
     deployed: boolean,
+  ): Promise<import("@termloop/contract/current").SkillCatalogResult>;
+  listRemoteSkillComputers(): Promise<RemoteSkillComputer[]>;
+  loadRemoteSkillCatalog(profileId: string): Promise<import("@termloop/contract/current").SkillCatalogResult>;
+  createRemoteSkill(
+    profileId: string,
+    sourceSkillId: string,
   ): Promise<import("@termloop/contract/current").SkillCatalogResult>;
   loadSkillDefinition(skillId: string): Promise<import("@termloop/contract/current").SkillDefinitionDto>;
   saveSkillDefinition(
@@ -201,6 +216,11 @@ export type ShellProps = {
   deleteProject(projectId: string): Promise<string | undefined>;
   createTask(title: string, brief: string | null): Promise<TaskCreateOutcome>;
   updateTask(taskId: string, title: string, brief: string | null): Promise<string | undefined>;
+  updateTaskDeveloperNotes(
+    taskId: string,
+    expectedDeveloperNotes: readonly import("@termloop/contract/current").TaskDeveloperNoteDto[],
+    developerNotes: readonly import("@termloop/contract/current").TaskDeveloperNoteDto[],
+  ): Promise<string | undefined>;
   bindTaskBranch(taskId: string, repositoryPath: string, branchName: string): Promise<string | undefined>;
   listProjectLocalBranches(projectId: string): Promise<ProjectLocalBranchListResult>;
   provisionTaskWorktree(params: TaskProvisionWorktreeParams): Promise<string | undefined>;
@@ -213,7 +233,7 @@ export type ShellProps = {
   listTaskWorktreeChanges(taskId: string): Promise<TaskWorktreeChangeListResult>;
   getTaskWorktreeDiff(taskId: string, observationId: string, entryId: string): Promise<TaskWorktreeDiffResult>;
   getTaskWorktreePreImage(taskId: string, observationId: string, entryId: string): Promise<TaskWorktreePreImageResult>;
-  listTaskBranchCommits(taskId: string): Promise<TaskBranchCommitListResult>;
+  listTaskBranchCommits(taskId: string, branchId?: string): Promise<TaskBranchCommitListResult>;
   listTaskBranchCommitChanges(taskId: string, observationId: string, commitId: string): Promise<TaskBranchCommitChangeListResult>;
   getTaskBranchCommitDiff(taskId: string, observationId: string, commitId: string, entryId: string): Promise<TaskBranchCommitDiffResult>;
   listTaskPullRequestChanges(taskId: string, expectedFreshnessGeneration: number, pullRequest: GitHostPullRequestIdentityDto): Promise<GitHostPullRequestChangeListResult>;
@@ -231,6 +251,7 @@ export type ShellProps = {
   restoreArchivedSession(sessionId: string): Promise<string | undefined>;
   deleteArchivedSession(sessionId: string): Promise<string | undefined>;
   restoreDeletedSession(sessionId: string): Promise<string | undefined>;
+  closeTaskAndWorktree(taskId: string, review?: TaskDeleteWorktreeReview): Promise<TaskDeleteWorktreeResult>;
   deleteTaskAndWorktree(taskId: string, review?: TaskDeleteWorktreeReview): Promise<TaskDeleteWorktreeResult>;
   deleteArchivedTaskAndWorktree(task: Task, review?: TaskDeleteWorktreeReview): Promise<TaskDeleteWorktreeResult>;
   openExternal(url: string, runSessionId?: string): Promise<void>;
@@ -263,6 +284,7 @@ export type ShellProps = {
   repairProviderHistory(sessionId: string): Promise<string | undefined>;
   requestAgentAskTo(sessionId: string, targetAgentId: "claude" | "codex"): Promise<void>;
   requestAgentHandoverTo(sessionId: string, targetSessionId: string): Promise<void>;
+  pasteSessionImage(sessionId: string): Promise<void>;
   dismissSession(sessionId: string): Promise<void>;
   resumeSession(sessionId: string): Promise<void>;
   restartAgent(sessionId: string): Promise<void>;
@@ -275,6 +297,7 @@ export type ShellProps = {
   setTerminalOccluded(occluded: boolean): void;
   subscribeNativeShellShortcut(listener: (shortcut: GhosttyShellShortcut) => void): () => void;
   setNativeOverlayOpen(open: boolean): void;
+  setNativeOverlaySuppressed(suppressed: boolean): void;
   overlayContainer: Element | undefined;
   openSessionInSplit(sessionId: string, direction: SplitDirection): void;
   openSessionInSplitAtPane(sessionId: string, paneId: string, direction: SplitDirection, placement: SplitPlacement): boolean;
@@ -344,6 +367,12 @@ export type StagePage =
   | { kind: "prompt"; id: string }
   | { kind: "taskSources" };
 
+export function stagePageAfterProjectChange(page: StagePage | undefined): StagePage | undefined {
+  return page?.kind === "skill" || page?.kind === "contextFile" || page?.kind === "taskSources"
+    ? undefined
+    : page;
+}
+
 export function shellAssistantStageVisible(
   railMode: RailMode,
   workspaceView: WorkspaceView,
@@ -352,11 +381,16 @@ export function shellAssistantStageVisible(
   return railMode === "workspace" && workspaceView === "steward" && selection !== undefined;
 }
 
-export function shellTerminalOccluded(changesOpen: boolean, sidebarDragging: boolean, sessionDragging = false): boolean {
+export function shellTerminalOccluded(
+  changesOpen: boolean,
+  sidebarDragging: boolean,
+  sessionDragging = false,
+  mobileConnectOpen = false,
+): boolean {
   // Ghostty is a native child view above Chromium. It must yield for the whole
   // Session drag or it can intercept a quick pointer path into a terminal pane
   // before the DOM drop target sees that pointer.
-  return changesOpen || sidebarDragging || sessionDragging;
+  return changesOpen || sidebarDragging || sessionDragging || mobileConnectOpen;
 }
 
 export function shellNativeOverlayOpen(state: {
@@ -364,7 +398,6 @@ export function shellNativeOverlayOpen(state: {
   projectMenu: boolean;
   editProject: boolean;
   deleteProject: boolean;
-  mobileConnect: boolean;
   connectionProfiles?: boolean;
   renameSession: boolean;
   commandPalette: boolean;
@@ -393,6 +426,9 @@ export function Shell(props: ShellProps) {
   /// One page at a time replaces the terminal stage, so the settings editors
   /// share the single slot the Skill editor introduced.
   const [stagePage, setStagePage] = useState<StagePage>();
+  useEffect(() => {
+    setStagePage(stagePageAfterProjectChange);
+  }, [props.selectedProject?.id]);
   const runEditorOpen = Boolean(runEditor);
   /// The named offer is a first-run affordance: once the Project can actually
   /// run a dev server, the same slot becomes the button that starts it in the
@@ -406,7 +442,7 @@ export function Shell(props: ShellProps) {
     && props.projectSessions.some((session) => session.id === projectRunSessionId && isLiveSession(session)),
   );
   const [mobileConnectOpen, setMobileConnectOpen] = useState(false);
-  const [connectionProfilesOpen, setConnectionProfilesOpen] = useState(false);
+  const [settingsPage, setSettingsPage] = useState<SettingsPage>();
   const [sessionMenu, setSessionMenu] = useState<SessionMenuState>();
   const [relocationSessionId, setRelocationSessionId] = useState<string>();
   const [relocationTaskId, setRelocationTaskId] = useState<string>();
@@ -488,7 +524,11 @@ export function Shell(props: ShellProps) {
   }, []);
   const [railMode, setRailMode] = useState<RailMode>("workspace");
   const [contextBankRefreshToken, setContextBankRefreshToken] = useState(0);
-  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("agents");
+  const [workspaceViewMemory, setWorkspaceViewMemory] = useState(readWorkspaceViewMemory);
+  const workspaceView = workspaceViewForProject(workspaceViewMemory, props.selectedProject?.id);
+  const setWorkspaceView = useCallback((view: WorkspaceView) => {
+    setWorkspaceViewMemory((current) => rememberWorkspaceView(current, props.selectedProject?.id, view));
+  }, [props.selectedProject?.id]);
   const [activeAgentFavorites, setActiveAgentFavorites] = useState(readActiveAgentFavorites);
   const [activeAgentActivityMemory, setActiveAgentActivityMemory] = useState(readActiveAgentActivityMemory);
   const [assistantSelection, setAssistantSelection] = useState<AssistantSelection>();
@@ -814,7 +854,7 @@ export function Shell(props: ShellProps) {
       setStagePage(undefined);
       dismissChangesBeforeNavigation(dismissChanges, setAssistantSelection, selection);
     },
-    [dismissChanges],
+    [dismissChanges, setWorkspaceView],
   );
   const toggleRail = useCallback(
     (mode: Exclude<RailMode, "workspace">) => setRailMode((current) => current === mode ? "workspace" : mode),
@@ -823,14 +863,15 @@ export function Shell(props: ShellProps) {
   const revealStewardRail = useCallback(() => {
     setRailMode("workspace");
     setWorkspaceView("steward");
-  }, []);
+  }, [setWorkspaceView]);
   const selectWorkspaceView = useCallback((view: WorkspaceView) => {
     setRailMode("workspace");
-    setWorkspaceView(view);
     if (view === "steward" && !assistantSelection && props.selectedProject) {
       openAssistant({ kind: "steward" });
+      return;
     }
-  }, [assistantSelection, openAssistant, props.selectedProject]);
+    setWorkspaceView(view);
+  }, [assistantSelection, openAssistant, props.selectedProject, setWorkspaceView]);
   const assistantStageVisible = shellAssistantStageVisible(railMode, workspaceView, assistantSelection);
   const mcpLibrary = useSettingsLibrary(
     props.loadMcpToolSettings,
@@ -895,7 +936,7 @@ export function Shell(props: ShellProps) {
     restore: props.restoreDeletedSession,
   });
   const projectActionDisabled = !props.selectedProject || props.connection !== "connected" || selectedSourceOffline;
-  const shortcutsBlocked = mobileConnectOpen || connectionProfilesOpen || shellShortcutsBlocked({
+  const shortcutsBlocked = mobileConnectOpen || Boolean(settingsPage) || shellShortcutsBlocked({
     projectDialogOpen: props.projectDialogOpen,
     projectMenuOpen,
     editProjectOpen,
@@ -911,8 +952,7 @@ export function Shell(props: ShellProps) {
     projectMenu: projectMenuOpen,
     editProject: editProjectOpen,
     deleteProject: deleteProjectOpen,
-    mobileConnect: mobileConnectOpen,
-    connectionProfiles: connectionProfilesOpen,
+    connectionProfiles: Boolean(settingsPage),
     renameSession: Boolean(renameTarget),
     commandPalette: commandPaletteOpen,
     shortcutSettings: shortcutSettingsOpen,
@@ -930,9 +970,19 @@ export function Shell(props: ShellProps) {
     return () => props.setNativeOverlayOpen(false);
   }, [nativeOverlayOpen, props.setNativeOverlayOpen]);
   useEffect(() => {
-    props.setTerminalOccluded(shellTerminalOccluded(Boolean(changesSubject), sidebarDragging, sessionDragging));
+    props.setNativeOverlaySuppressed(mobileConnectOpen);
+    return () => props.setNativeOverlaySuppressed(false);
+  }, [mobileConnectOpen, props.setNativeOverlaySuppressed]);
+  const terminalOccluded = shellTerminalOccluded(
+    Boolean(changesSubject),
+    sidebarDragging,
+    sessionDragging,
+    mobileConnectOpen,
+  );
+  useEffect(() => {
+    props.setTerminalOccluded(terminalOccluded);
     return () => props.setTerminalOccluded(false);
-  }, [changesSubject, props.setTerminalOccluded, sessionDragging, sidebarDragging]);
+  }, [props.setTerminalOccluded, terminalOccluded]);
   const resizeSidebar = useCallback((width: number) => {
     const next = clampSidebarWidth(width, window.innerWidth);
     setSidebarWidth(next);
@@ -1106,6 +1156,14 @@ export function Shell(props: ShellProps) {
   }, [shortcutsBlocked, closeCommandPalette, commandPaletteOpen, openCommandPalette, openQuickAction, platform]);
   useEffect(() => props.subscribeNativeShellShortcut((shortcut) => {
     doubleShiftRef.current.reset();
+    if (shortcut === "pasteImage") {
+      const session = props.selectedSession;
+      if (!shortcutsBlocked && !commandPaletteOpen
+        && session?.kind === "Agent" && session.lifecycle_state === "running") {
+        void props.pasteSessionImage(session.id);
+      }
+      return;
+    }
     if (shortcut === "quickAction") {
       if (!shortcutsBlocked && !commandPaletteOpen) openQuickAction();
       return;
@@ -1128,7 +1186,7 @@ export function Shell(props: ShellProps) {
       : undefined;
     if (!command || command.disabled) return;
     void command.perform();
-  }), [shortcutsBlocked, closeCommandPalette, commandPaletteOpen, openCommandPalette, openQuickAction, props.subscribeNativeShellShortcut]);
+  }), [shortcutsBlocked, closeCommandPalette, commandPaletteOpen, openCommandPalette, openQuickAction, props.pasteSessionImage, props.selectedSession, props.subscribeNativeShellShortcut]);
   useEffect(() => {
     setRenameSessionId(undefined);
     setProjectMenuOpen(false);
@@ -1190,7 +1248,7 @@ export function Shell(props: ShellProps) {
     <>
       {props.connection !== "connected" ? <div className="server-connection-alert" role="status">
         <div><strong>{connectionTitle}</strong><span>{props.connectionMessage ?? "TermLoop will keep retrying in the background."}</span></div>
-        <button type="button" onClick={() => setConnectionProfilesOpen(true)}>Servers</button>
+        <button type="button" onClick={() => setSettingsPage("servers")}>Settings</button>
       </div> : null}
       <SidebarSessionDndProvider
         sessions={props.projectSessions.filter((session) => !isAssistantSession(session))}
@@ -1304,8 +1362,12 @@ export function Shell(props: ShellProps) {
           />
           <div className="sidebar-scroll">
           {railMode === "skills" ? <SkillsRail
+            key={props.selectedProject?.id ?? "global"}
             load={props.loadSkillCatalog}
             setDeployment={props.setSkillDeployment}
+            listRemoteComputers={props.listRemoteSkillComputers}
+            loadRemoteCatalog={props.loadRemoteSkillCatalog}
+            createRemoteSkill={props.createRemoteSkill}
             openEditor={(skillId) => openStagePage({ kind: "skill", id: skillId })}
             improveSkill={props.selectedProject
               ? (skillId, name) => openSettingsImproverSetup(
@@ -1342,7 +1404,7 @@ export function Shell(props: ShellProps) {
             openPrompt={openPromptPage}
             improvePrompt={props.selectedProject ? improvePrompt : undefined}
             reload={promptLibrary.reload}
-          /> : workspaceView === "overview" ? <TaskRail
+          /> : <><WorkspaceRailCache visible={workspaceView === "overview"}><TaskRail
             projectId={props.selectedProject?.id}
             projectFolder={props.selectedProject?.folder_path}
             tasks={props.projectTasks}
@@ -1371,6 +1433,7 @@ export function Shell(props: ShellProps) {
             disabled={disabled}
             createTask={props.createTask}
             updateTask={props.updateTask}
+            updateTaskDeveloperNotes={props.updateTaskDeveloperNotes}
             bindTaskBranch={props.bindTaskBranch}
             listProjectLocalBranches={props.listProjectLocalBranches}
             loadProjectTaskAutomation={props.taskSourceActions.getProjectAutomation}
@@ -1397,6 +1460,7 @@ export function Shell(props: ShellProps) {
             archiveTask={props.archiveTask}
             archivedTaskCount={archived.count}
             archivedTasksChanged={archived.reload}
+            closeTaskAndWorktree={props.closeTaskAndWorktree}
             deleteTaskAndWorktree={props.deleteTaskAndWorktree}
             openExternal={props.openExternal}
             provisionRequestedTaskId={provisionRequestedTaskId}
@@ -1405,7 +1469,7 @@ export function Shell(props: ShellProps) {
             createRequestHandled={() => setTaskCreateRequested(false)}
             overlayVisibilityChanged={setTaskRailOverlayOpen}
             overlayContainer={props.overlayContainer}
-          /> : workspaceView === "agents" ? <>
+          /></WorkspaceRailCache><WorkspaceRailCache visible={workspaceView === "agents"}>
           <ActiveAgentRail
             sessions={props.projectSessions}
             searchOpen={agentSearchOpen}
@@ -1453,33 +1517,7 @@ export function Shell(props: ShellProps) {
               : undefined}
             openExternal={props.openExternal}
           />
-          </> : workspaceView === "history" ? <HistoryRail
-            projectId={props.selectedProject?.id}
-            projectPath={props.selectedProject?.folder_path}
-            projectBranch={props.projectWorktreeSummary?.checked_out_branch}
-            currentCwd={props.selectedSession?.process.cwd ?? props.selectedProject?.folder_path}
-            sessions={props.projectSessions}
-            archivedSessions={archived.sessions}
-            deletedSessions={deleted.sessions}
-            favoriteSessionIds={favoriteAgentSessionIds}
-            termLoopHistoryLoading={archived.loading || deleted.loading}
-            selectedSessionId={props.selectedSession?.id}
-            disabled={disabled}
-            load={props.loadSessionHistory}
-            loadTermLoopPreview={props.loadSessionHistoryPreview}
-            resumeExternal={props.resumeHistorySession}
-            selectSession={selectSession}
-            resumeSession={retrySession}
-            restoreArchivedSession={archived.restoreSession}
-            deleteArchivedSession={(sessionId) => {
-              void props.deleteArchivedSession(sessionId).then((failure) => {
-                if (failure) return;
-                archived.reload();
-                deleted.reload();
-              });
-            }}
-            restoreDeletedSession={deleted.restore}
-          /> : assistantProjectId ? <AssistantRail
+          </WorkspaceRailCache><WorkspaceRailCache visible={workspaceView === "steward"}>{assistantProjectId ? <AssistantRail
             projectId={assistantProjectId}
             refreshToken={props.assistantRefreshToken}
             sessions={props.projectSessions}
@@ -1515,10 +1553,36 @@ export function Shell(props: ShellProps) {
             dismissImproverSession={dismissSession}
             openTask={openTaskDetail}
             openDetails={openAssistant}
-          /> : <p className="assistant-empty">Select a Project to configure assistants.</p>}
+          /> : <p className="assistant-empty">Select a Project to configure assistants.</p>}</WorkspaceRailCache>{workspaceView === "overview" || workspaceView === "agents" || workspaceView === "steward" ? null : workspaceView === "history" ? <HistoryRail
+            projectId={props.selectedProject?.id}
+            projectPath={props.selectedProject?.folder_path}
+            projectBranch={props.projectWorktreeSummary?.checked_out_branch}
+            currentCwd={props.selectedSession?.process.cwd ?? props.selectedProject?.folder_path}
+            sessions={props.projectSessions}
+            archivedSessions={archived.sessions}
+            deletedSessions={deleted.sessions}
+            favoriteSessionIds={favoriteAgentSessionIds}
+            termLoopHistoryLoading={archived.loading || deleted.loading}
+            selectedSessionId={props.selectedSession?.id}
+            disabled={disabled}
+            load={props.loadSessionHistory}
+            loadTermLoopPreview={props.loadSessionHistoryPreview}
+            resumeExternal={props.resumeHistorySession}
+            selectSession={selectSession}
+            resumeSession={retrySession}
+            restoreArchivedSession={archived.restoreSession}
+            deleteArchivedSession={(sessionId) => {
+              void props.deleteArchivedSession(sessionId).then((failure) => {
+                if (failure) return;
+                archived.reload();
+                deleted.reload();
+              });
+            }}
+            restoreDeletedSession={deleted.restore}
+          /> : null}</>}
           </div>
           {/* Archived Agent history lives in History; this footer is Task-only. */}
-          {archivedRailVisible(railMode === "workspace", workspaceView) ? <ArchivedRail
+          {railMode === "workspace" ? <WorkspaceRailCache visible={archivedRailVisible(true, workspaceView)}><ArchivedRail
             tasks={archived.tasks}
             loading={archived.loading}
             disabled={disabled}
@@ -1531,7 +1595,7 @@ export function Shell(props: ShellProps) {
             })}
             overlayVisibilityChanged={setArchivedRailOverlayOpen}
             overlayContainer={props.overlayContainer}
-          /> : null}
+          /></WorkspaceRailCache> : null}
           <footer className="sidebar-footer">
             {assistantProjectId ? <StewardPetHost
               projectId={assistantProjectId}
@@ -1555,6 +1619,7 @@ export function Shell(props: ShellProps) {
               }}
               userBusy={false}
               getSteward={props.assistantActions.getConfiguration}
+              getPresence={props.assistantActions.getPresence}
               getPlaybook={props.assistantActions.getPlaybook}
               openPlaybookSetup={openPlaybookBuilder}
               listTranscript={props.assistantActions.listTranscript}
@@ -1566,7 +1631,7 @@ export function Shell(props: ShellProps) {
               openReference={() => openAssistant({ kind: "steward", initialView: "terminal" })}
             /> : null}
             <div className="sidebar-footer-actions">
-              <button className="server-connect-trigger" type="button" onClick={() => setConnectionProfilesOpen(true)}>Servers</button><button className="mobile-connect-trigger" type="button" onClick={() => setMobileConnectOpen(true)}>Connect Mobile</button><KeepAwakePanel load={props.loadKeepAwake} save={props.setKeepAwake} refreshToken={props.keepAwakeRefreshToken} />{!props.isPackaged ? <ErrorLogPanel entries={props.errorLog} clear={props.clearErrorLog} /> : null}
+              <button className="settings-trigger" type="button" onClick={() => setSettingsPage("notifications")}>Settings</button><button className="mobile-connect-trigger" type="button" onClick={() => setMobileConnectOpen(true)}>Connect Mobile</button><KeepAwakePanel load={props.loadKeepAwake} save={props.setKeepAwake} refreshToken={props.keepAwakeRefreshToken} />{!props.isPackaged ? <ErrorLogPanel entries={props.errorLog} clear={props.clearErrorLog} /> : null}
             </div>
           </footer>
         </aside>
@@ -1627,6 +1692,9 @@ export function Shell(props: ShellProps) {
               listRoutines={props.assistantActions.listRoutines}
               listRoutineRuntime={props.assistantActions.listRoutineRuntime}
               runRoutineNow={props.assistantActions.runRoutineNow}
+              agentCapabilities={props.agentCapabilities}
+              launchTerminal={props.launchTaskTerminal}
+              launchAgent={props.launchTaskAgent}
             /> : stagePage?.kind === "skill" ? <SkillEditorPanel
               key={stagePage.id}
               skillId={stagePage.id}
@@ -1792,7 +1860,23 @@ export function Shell(props: ShellProps) {
         updateProject={props.updateProject}
         pickLocalFolder={props.pickLocalFolder}
       /> : null}
-      {deleteProjectOpen && props.selectedProject ? <DeleteProjectDialog project={props.selectedProject} close={() => setDeleteProjectOpen(false)} deleteProject={props.deleteProject} /> : null}
+      {deleteProjectOpen && props.selectedProject ? <DeleteProjectDialog
+        key={props.selectedProject.id}
+        project={props.selectedProject}
+        tasks={[...props.projectTasks, ...archived.tasks]}
+        tasksLoading={archived.loading}
+        close={() => setDeleteProjectOpen(false)}
+        deleteProject={props.deleteProject}
+        inspectTaskWorktreeCleanup={props.inspectTaskWorktreeCleanup}
+        deleteBlockingTask={async (task, review) => {
+          const result = task.archived_at_epoch_ms === null
+            ? await props.deleteTaskAndWorktree(task.id, review)
+            : await props.deleteArchivedTaskAndWorktree(task, review);
+          if (task.archived_at_epoch_ms !== null && result.status === "completed") archived.reload();
+          return result;
+        }}
+        reviewTasks={() => { setDeleteProjectOpen(false); selectWorkspaceView("overview"); }}
+      /> : null}
       {renameTarget ? <RenameSessionDialog session={renameTarget} close={() => setRenameSessionId(undefined)} rename={(name) => props.renameSession(renameTarget.id, name)} /> : null}
       {providerHistoryRepairSession ? <ProviderHistoryRepairDialog
         session={providerHistoryRepairSession}
@@ -1845,8 +1929,10 @@ export function Shell(props: ShellProps) {
         remove={props.deleteRunConfiguration}
         run={async () => undefined}
       /> : null}
-      {mobileConnectOpen ? <MobileConnectDialog prepare={props.prepareMobileAccess} close={() => setMobileConnectOpen(false)} /> : null}
-      {connectionProfilesOpen ? <ConnectionProfilesDialog
+      {settingsPage ? <SettingsDialog
+        initialPage={settingsPage}
+        loadNotificationPreferences={props.loadNotificationPreferences}
+        saveNotificationPreferences={props.saveNotificationPreferences}
         list={props.listConnectionProfiles}
         connect={props.connectConnectionProfile}
         setEnabled={props.setConnectionProfileEnabled}
@@ -1856,7 +1942,7 @@ export function Shell(props: ShellProps) {
         hostStatus={props.remoteHostStatus}
         enableHost={props.enableRemoteHost}
         disableHost={props.disableRemoteHost}
-        close={() => setConnectionProfilesOpen(false)}
+        close={() => setSettingsPage(undefined)}
       /> : null}
       {sessionMenu && menuSession ? (
         <SessionContextMenu
@@ -1945,6 +2031,12 @@ export function Shell(props: ShellProps) {
         repairProviderHistory={repairBackgroundRelocation}
       />
       </OverlayPortal>
+      {mobileConnectOpen ? <MobileConnectDialog
+        prepare={props.prepareMobileAccess}
+        loadVoiceSettings={props.loadVoiceSettings}
+        saveVoiceCredentials={props.saveVoiceCredentials}
+        close={() => setMobileConnectOpen(false)}
+      /> : null}
     </>
   );
 }
@@ -2170,19 +2262,6 @@ function SplitDivider({ split, resize }: { split: SplitNode; resize(splitId: str
     resize(split.id, split.ratio + (increase ? 0.05 : -0.05));
   };
   return <div className="split-divider" role="separator" tabIndex={0} aria-label={split.direction === "horizontal" ? "Resize left and right panes" : "Resize top and bottom panes"} aria-orientation={split.direction === "horizontal" ? "vertical" : "horizontal"} aria-valuemin={15} aria-valuemax={85} aria-valuenow={Math.round(split.ratio * 100)} onKeyDown={keyDown} onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); dragging.current = true; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={updateFromPointer} onPointerUp={(event) => { dragging.current = false; event.currentTarget.releasePointerCapture(event.pointerId); }} onPointerCancel={() => { dragging.current = false; }} />;
-}
-
-function DeleteProjectDialog({ project, close, deleteProject }: { project: Project; close(): void; deleteProject(projectId: string): Promise<string | undefined> }) {
-  const [error, setError] = useState<string>();
-  const [busy, setBusy] = useState(false);
-  const submit = async () => {
-    setBusy(true); setError(undefined);
-    try {
-      const failure = await deleteProject(project.id);
-      if (failure) setError(failure); else close();
-    } finally { setBusy(false); }
-  };
-  return <div className="dialog-layer" onKeyDown={(event) => event.key === "Escape" && close()}><button className="dialog-backdrop" aria-label="Cancel deleting Project" onClick={close} /><section className="dialog-card" role="dialog" aria-modal="true" aria-labelledby="delete-project-title"><header className="dialog-header"><div><span className="dialog-eyebrow danger-eyebrow">Delete Project</span><h2 id="delete-project-title">Remove {project.name} from TermLoop?</h2></div><button className="icon-button quiet" aria-label="Close dialog" onClick={close}><Icon name="close" /></button></header><div className="dialog-body"><p className="confirm-copy">This force-closes the Project's Sessions and removes everything TermLoop keeps for this Project, including its bounded configuration versions. Your own files in <strong>{project.folder_path}</strong> stay untouched.</p><p className="field-help">Deletion is blocked only while one of its Tasks still has a worktree.</p>{error ? <p className="form-error" role="alert">{error}</p> : null}</div><footer className="dialog-actions"><button className="secondary-button" disabled={busy} onClick={close}>Cancel</button><button id="confirm-delete-project" className="danger-button" disabled={busy} onClick={() => void submit()}>{busy ? "Deleting…" : "Delete Project"}</button></footer></section></div>;
 }
 
 function RenameSessionDialog({ session, close, rename }: { session: Session; close(): void; rename(name: string | null): Promise<string | undefined> }) {

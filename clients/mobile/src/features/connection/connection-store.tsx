@@ -2,13 +2,17 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 
 import type { ConnectionProfile } from "@/application/ports";
 import { useMobileRuntime } from "@/composition/runtime-context";
-import { connectionPresentation } from "@/presentation/connection-presentation";
 import { useAppLifecycle } from "@/platform/app-lifecycle";
+import { preferredConnectionId, shouldResetConnectionTransports } from "./connection-resilience";
+
+export { preferredConnectionId } from "./connection-resilience";
 
 /// Longer than the generated control client's 12s request timeout, so a probe always
 /// gets to finish before the next tick is even considered. A poll faster than the thing
 /// it polls cannot converge — see the in-flight guard below.
-const ACTIVE_PROBE_MS = 15_000;
+const FALLBACK_PROBE_MS = 60_000;
+const RECONNECT_PROBE_MS = 3_000;
+export const CONNECTION_RECONNECT_GRACE_MS = 12_000;
 
 /// Which saved Mac the app is currently reading, and the catalog it came from.
 ///
@@ -42,22 +46,73 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
   const [connections, setConnections] = useState<readonly ConnectionProfile[]>([]);
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [reloads, setReloads] = useState(0);
+  const connectionsRef = useRef<readonly ConnectionProfile[]>([]);
   /// Whether a probe is currently in flight. A tick that lands mid-probe must be dropped
   /// rather than restarting the effect: the restart's cleanup marks the running attempt
   /// stale, so its result is discarded when it finally arrives.
-  const probing = useRef(false);
+  const probeSequence = useRef(0);
+  const activeProbe = useRef<number | undefined>(undefined);
+  const unreachableSince = useRef(new Map<string, number>());
+  const pendingTransportChange = useRef(false);
+  const transportLifecycle = useRef(lifecycle);
+
+  useEffect(() => {
+    /// iOS can retain a WebSocket object across suspension after its network path
+    /// has disappeared. Close cached transports before suspension when that state
+    /// commits, and again after every real foreground so batched lifecycle events
+    /// cannot leave catalog, overview, and terminal reads on a zombie path.
+    const previous = transportLifecycle.current;
+    transportLifecycle.current = lifecycle;
+    if (shouldResetConnectionTransports(previous, lifecycle)) {
+      runtime.connections.resetTransports(lifecycle.active);
+    }
+  }, [runtime, lifecycle.active, lifecycle.foregroundRevision]);
 
   useEffect(() => {
     if (!lifecycle.active) return;
     let active = true;
-    probing.current = true;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const probe = ++probeSequence.current;
+    activeProbe.current = probe;
     setLoad((current) => (current === "ready" ? current : "loading"));
     setError(undefined);
+    const scheduleRetry = () => {
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => {
+        if (active && activeProbe.current === undefined) setReloads((count) => count + 1);
+      }, RECONNECT_PROBE_MS);
+    };
     runtime.connections.list().then(
       (profiles) => {
-        probing.current = false;
+        if (activeProbe.current === probe) activeProbe.current = undefined;
         if (!active) return;
-        setConnections(profiles);
+        const now = Date.now();
+        let reconnecting = false;
+        const knownIds = new Set(profiles.map((profile) => profile.id));
+        for (const connectionId of unreachableSince.current.keys()) {
+          if (!knownIds.has(connectionId)) unreachableSince.current.delete(connectionId);
+        }
+        const nextConnections: ConnectionProfile[] = profiles.map((profile) => {
+          if (profile.availability !== "offline" && profile.availability !== "reconnecting") {
+            unreachableSince.current.delete(profile.id);
+            return profile;
+          }
+          const startedAt = unreachableSince.current.get(profile.id) ?? now;
+          unreachableSince.current.set(profile.id, startedAt);
+          if (profile.availability === "offline" && now - startedAt >= CONNECTION_RECONNECT_GRACE_MS) {
+            return profile;
+          }
+          reconnecting = true;
+          const previous = connectionsRef.current.find((candidate) => candidate.id === profile.id);
+          return {
+            ...profile,
+            availability: "reconnecting",
+            productVersion: profile.productVersion ?? previous?.productVersion ?? null,
+            contractIdentity: profile.contractIdentity ?? previous?.contractIdentity ?? null,
+          };
+        });
+        connectionsRef.current = nextConnections;
+        setConnections(nextConnections);
         setLoad("ready");
         /// One resume of the last-used Mac per cold start. Any explicit tap wins,
         /// which is why this only fills an empty selection and never replaces one.
@@ -66,16 +121,38 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
             ? current
             : preferredConnectionId(profiles)
         ));
+        if (reconnecting) scheduleRetry();
+        if (pendingTransportChange.current) {
+          pendingTransportChange.current = false;
+          queueMicrotask(() => {
+            if (active) setReloads((count) => count + 1);
+          });
+        }
       },
       (cause: unknown) => {
-        probing.current = false;
+        if (activeProbe.current === probe) activeProbe.current = undefined;
         if (!active) return;
         setError(describe(cause));
         setLoad("failed");
+        scheduleRetry();
       },
     );
-    return () => { active = false; };
+    return () => {
+      active = false;
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
+    };
   }, [runtime, reloads, lifecycle.active, lifecycle.foregroundRevision]);
+
+  useEffect(() => {
+    if (!lifecycle.active) return;
+    return runtime.connections.subscribeChanges(() => {
+      if (activeProbe.current !== undefined) {
+        pendingTransportChange.current = true;
+        return;
+      }
+      setReloads((count) => count + 1);
+    });
+  }, [runtime, lifecycle.active]);
 
   // The phone never asks the user to tap Retry just because the Mac, Tailscale,
   // Wi-Fi, or daemon was briefly unavailable. While visible it keeps probing the
@@ -88,9 +165,9 @@ export function ConnectionProvider({ children }: PropsWithChildren) {
       /// to answer, so every probe is replaced a moment before it settles and the
       /// catalog never leaves `loading` — a permanent spinner produced by the retry
       /// loop itself rather than by the network.
-      if (probing.current) return;
+      if (activeProbe.current !== undefined) return;
       setReloads((count) => count + 1);
-    }, ACTIVE_PROBE_MS);
+    }, FALLBACK_PROBE_MS);
     return () => clearInterval(timer);
   }, [lifecycle.active]);
 
@@ -124,16 +201,6 @@ export function useConnections(): ConnectionStore {
   const store = useContext(ConnectionContext);
   if (!store) throw new Error("Connection provider is missing");
   return store;
-}
-
-/// The Mac the app opens on: the most recently connected one that can actually be
-/// read. An unreachable or update-blocked Mac is never auto-selected, because
-/// landing the user on a dead screen is worse than landing them on the list.
-function preferredConnectionId(profiles: readonly ConnectionProfile[]): string | undefined {
-  const usable = profiles
-    .filter((profile) => connectionPresentation(profile.availability).block === undefined)
-    .sort((left, right) => (right.lastConnectedAtEpochMs ?? 0) - (left.lastConnectedAtEpochMs ?? 0));
-  return usable[0]?.id;
 }
 
 function describe(cause: unknown): string {

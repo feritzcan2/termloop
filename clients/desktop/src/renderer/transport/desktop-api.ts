@@ -3,6 +3,7 @@ import type { MobileAccessPairingResult } from "../mobile-access.js";
 import type { PromptAsset } from "../prompt-settings.js";
 import type { QuickActionImageHandle } from "../../quick-action-image.js";
 import type { LayoutDocument } from "../../layout/model.js";
+import type { NotificationPreferences } from "../../notification-preferences.js";
 import type {
   ConnectionProfileConnectInput,
   ConnectionProfileConnectResult,
@@ -146,6 +147,8 @@ import type {
   McpToolDescriptionResetParams,
   KeepAwakeSetParams,
   KeepAwakeStatusResult,
+  VoiceCredentialsSetParams,
+  VoiceSettingsResult,
   McpToolDescriptionUpdateParams,
   McpToolSettingsResult,
   TaskArchivePreviewDto,
@@ -153,6 +156,7 @@ import type {
   TaskArchiveAbandonResultDto,
   TaskRestoreResultDto,
   TaskArchivedContextDto,
+  TaskUpdateDeveloperNotesParams,
   SessionArchivePreviewDto,
   SessionRelocationPreviewDto,
   SessionRepairProviderHistoryResult,
@@ -166,6 +170,7 @@ import type {
   SkillCatalogGetParams,
   SkillCatalogResult,
   SkillDefinitionDto,
+  SkillDefinitionCreateParams,
   SkillDefinitionGetParams,
   SkillDefinitionSaveParams,
   SkillDeploymentSetParams,
@@ -195,6 +200,8 @@ export type ProjectDeleteCallResult =
 
 export type DesktopApi = {
   isPackaged(): Promise<boolean>;
+  notificationPreferencesGet(): Promise<NotificationPreferences>;
+  notificationPreferencesSet(preferences: NotificationPreferences): Promise<NotificationPreferences>;
   pickLocalFolder(defaultPath?: string): Promise<string | null>;
   mobileAccessPairing(): Promise<MobileAccessPairingResult>;
   connectionProfileList(): Promise<ConnectionProfileSummary[]>;
@@ -224,6 +231,8 @@ export type DesktopApi = {
   systemInfo(): Promise<Record<string, unknown>>;
   keepAwakeGet(): Promise<KeepAwakeStatusResult>;
   keepAwakeSet(params: KeepAwakeSetParams): Promise<KeepAwakeStatusResult>;
+  voiceSettingsGet(): Promise<VoiceSettingsResult>;
+  voiceCredentialsSet(params: VoiceCredentialsSetParams): Promise<VoiceSettingsResult>;
   mcpToolSettingsGet(): Promise<McpToolSettingsResult>;
   mcpToolDescriptionUpdate(params: McpToolDescriptionUpdateParams): Promise<TaskControlDesktopResult<McpToolSettingsResult>>;
   mcpToolDescriptionReset(params: McpToolDescriptionResetParams): Promise<TaskControlDesktopResult<McpToolSettingsResult>>;
@@ -234,6 +243,7 @@ export type DesktopApi = {
   skillDeploymentSet(params: SkillDeploymentSetParams): Promise<SkillCatalogResult>;
   skillDefinitionGet(params: SkillDefinitionGetParams): Promise<SkillDefinitionDto>;
   skillDefinitionSave(params: SkillDefinitionSaveParams): Promise<SkillDefinitionDto>;
+  skillDefinitionCreate(params: SkillDefinitionCreateParams): Promise<SkillCatalogResult>;
   contextBankCatalogGet(params: ContextBankCatalogGetParams): Promise<ContextBankCatalogResult>;
   contextBankFileGet(params: ContextBankFileGetParams): Promise<ContextBankFileDto>;
   contextBankFileSave(params: ContextBankFileSaveParams): Promise<ContextBankFileDto>;
@@ -258,7 +268,7 @@ export type DesktopApi = {
   taskWorktreeDiff(taskId: string, observationId: string, entryId: string): Promise<TaskWorktreeDiffResult>;
   taskWorktreePreImage(taskId: string, observationId: string, entryId: string): Promise<TaskWorktreePreImageResult>;
   taskBranchCommitSummaryList(projectId: string, taskIds: string[]): Promise<TaskBranchCommitSummaryDto[]>;
-  taskBranchCommitList(taskId: string): Promise<TaskBranchCommitListResult>;
+  taskBranchCommitList(taskId: string, branchId?: string): Promise<TaskBranchCommitListResult>;
   taskBranchCommitChangeList(taskId: string, observationId: string, commitId: string): Promise<TaskBranchCommitChangeListResult>;
   taskBranchCommitDiff(taskId: string, observationId: string, commitId: string, entryId: string): Promise<TaskBranchCommitDiffResult>;
   gitHostPullRequestList(projectId: string, taskIds: string[]): Promise<GitHostTaskProjectionDto[]>;
@@ -279,6 +289,7 @@ export type DesktopApi = {
   taskCreate(projectId: string, title: string, brief: string | null): Promise<Task>;
   taskRename(taskId: string, title: string): Promise<Task>;
   taskUpdateBrief(taskId: string, brief: string | null): Promise<Task>;
+  taskUpdateDeveloperNotes(params: TaskUpdateDeveloperNotesParams): Promise<Task>;
   taskClose(taskId: string): Promise<Task>;
   taskFinalizeClosedWorktreeRemoval(taskId: string): Promise<Task>;
   taskInspectArchive(taskId: string): Promise<TaskArchivePreviewDto>;
@@ -386,6 +397,7 @@ export type DesktopApi = {
   sessionHistoryResumeAgent(projectId: string, historyHandle: string, launchTicket: string): Promise<Session>;
   sessionRequestAskTo(sessionId: string, targetAgentId: "claude" | "codex"): Promise<AgentCoordinationDeliveryResult>;
   sessionRequestHandoverTo(sessionId: string, targetSessionId: string): Promise<AgentCoordinationDeliveryResult>;
+  sessionPasteImage(sessionId: string): Promise<AgentCoordinationDeliveryResult>;
   sessionClose(sessionId: string): Promise<{ sessionId: string; closed: boolean }>;
   terminalAttach(requestId: string, sessionId: string, runtimeEpoch: number): Promise<{ accepted: true }>;
 };
@@ -398,7 +410,7 @@ type DesktopBridge = Omit<DesktopApi, ProfiledOperationName> & {
     : never;
 };
 
-export type MultiSourceDesktopApi = DesktopApi & {
+export type MultiSourceDesktopApi = Omit<DesktopApi, ProfiledOperationName> & {
   source(profileId: string): SourceDesktopApi;
 };
 

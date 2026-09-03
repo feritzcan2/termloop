@@ -25,7 +25,7 @@ export function StaleDeleteOptions({ preview, choice, choose, allowKeep = true }
     </p>
     {allowKeep && forgetAvailable ? <label className="stale-delete-choice">
       <input type="radio" name="stale-delete-choice" checked={choice === "forgetStaleBinding"} onChange={() => choose("forgetStaleBinding")} />
-      <span><strong>Keep the folder</strong><small>Forget only the stale Task binding. The folder and its Sessions remain untouched.</small></span>
+      <span><strong>Forget the stale worktree binding</strong><small>Do not modify files or Sessions. If the folder is already missing, only TermLoop&apos;s binding is removed.</small></span>
     </label> : null}
     {disposalAvailable ? <label className="stale-delete-choice danger-choice">
       <input type="radio" name="stale-delete-choice" checked={choice === "discardStaleDirectory"} onChange={() => choose("discardStaleDirectory")} />
@@ -117,7 +117,7 @@ export function DeleteTaskDialog({ task, inspect, close, remove, closeAfterWorkt
         </>}
         {error ? <p className="form-error" role="alert">{error}</p> : null}
       </div>
-      <footer className="dialog-actions"><button className="secondary-button" onClick={close}>Cancel</button><button className="danger-button loading-button" disabled={!canDelete} onClick={submit}>{inspecting ? <span className="loading-spinner" aria-hidden="true" /> : null}{inspecting ? "Checking…" : closeAfterWorktreeRemoval && canDelete ? "Delete worktree & close" : canDelete && staleChoice === "forgetStaleBinding" ? "Delete Task; keep folder" : canDelete && staleChoice === "discardStaleDirectory" ? "Delete Task and folder" : canDelete ? "Delete" : staleResolutionOffered ? "Choose folder action" : "Delete blocked"}</button></footer>
+      <footer className="dialog-actions"><button className="secondary-button" onClick={close}>Cancel</button><button className="danger-button loading-button" disabled={!canDelete} onClick={submit}>{inspecting ? <span className="loading-spinner" aria-hidden="true" /> : null}{inspecting ? "Checking…" : closeAfterWorktreeRemoval && canDelete ? "Delete worktree & close" : canDelete && staleChoice === "forgetStaleBinding" ? "Delete Task; don't touch files" : canDelete && staleChoice === "discardStaleDirectory" ? "Delete Task and folder" : canDelete ? "Delete" : staleResolutionOffered ? "Choose folder action" : "Delete blocked"}</button></footer>
     </section>
   </div>;
 }

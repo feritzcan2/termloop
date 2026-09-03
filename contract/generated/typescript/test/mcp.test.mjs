@@ -32,6 +32,8 @@ test("MCP role definitions are generated and excluded from control methods", () 
   assert.ok(MCP_WORKER_TOOLS.includes("worker_get_next_routine"));
   assert.ok(MCP_WORKER_TOOLS.includes("task_agent_transcript_tail_read"));
   assert.ok(!MCP_STEWARD_TOOLS.includes("task_agent_transcript_tail_read"));
+  assert.ok(MCP_WORKER_TOOLS.includes("task_agent_request"));
+  assert.ok(!MCP_STEWARD_TOOLS.includes("task_agent_request"));
   assert.ok(!MCP_WORKER_TOOLS.includes("send_to_agent"));
   assert.ok(MCP_WORKER_TOOLS.includes("worker_complete_routine"));
   assert.ok(MCP_WORKER_TOOLS.includes("worker_report_routine_problem"));
@@ -80,6 +82,17 @@ test("send_to_agent accepts exact Session IDs and typed delivery outcomes", () =
     reason: "targetAgentTurnFailed",
   }), false);
   assert.equal(validateMcpToolResult("send_to_agent", { sessionId, status: "pending" }), false);
+});
+
+test("task_agent_request is exact-step scoped and returns a typed handoff outcome", () => {
+  const sessionId = "123e4567-e89b-42d3-a456-426614174000";
+  const definition = MCP_TOOL_DEFINITIONS.find((tool) => tool.name === "task_agent_request");
+  assert.ok(definition);
+  assert.deepEqual(definition.inputSchema.required, ["checkId", "taskId", "sessionId", "message"]);
+  assert.equal(definition.inputSchema.properties.message.maxLength, 8192);
+  assert.match(definition.description, /exact focused Task/);
+  assert.equal(validateMcpToolResult("task_agent_request", { sessionId, status: "submitting" }), true);
+  assert.equal(validateMcpToolResult("task_agent_request", { sessionId, status: "pending" }), false);
 });
 
 test("Steward Task Agent results validate provider/model pairs", () => {

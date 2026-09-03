@@ -108,9 +108,34 @@ pub(in crate::app) async fn save_skill_definition(
     .map_err(|_| CoreError::Terminal("skill definition worker stopped unexpectedly".into()))?
 }
 
+pub(in crate::app) async fn create_skill_definition(
+    params: Value,
+    state: &AppState,
+) -> Result<Value, CoreError> {
+    let params = serde_json::from_value::<protocol::SkillDefinitionCreateParams>(params)
+        .expect("validated skill definition create params");
+    let manager = state.skill_manager.clone();
+    tokio::task::spawn_blocking(move || {
+        manager
+            .create_user_definition(&params.directory_name, &params.content)
+            .map_err(skill_error)
+            .and_then(|catalog| {
+                serde_json::to_value(catalog)
+                    .map_err(|error| CoreError::Terminal(error.to_string()))
+            })
+    })
+    .await
+    .map_err(|_| {
+        CoreError::Terminal("skill definition create worker stopped unexpectedly".into())
+    })?
+}
+
 fn skill_error(error: termloop_platform::SkillManagerError) -> CoreError {
     match error {
         termloop_platform::SkillManagerError::SkillNotFound => CoreError::NotFound,
+        termloop_platform::SkillManagerError::InvalidDirectoryName => {
+            CoreError::InvalidParams("directoryName".into())
+        }
         other => CoreError::Terminal(other.to_string()),
     }
 }

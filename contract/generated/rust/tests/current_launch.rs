@@ -60,6 +60,59 @@ fn quick_action_surface_is_strict_and_full_control_only() {
 }
 
 #[test]
+fn session_image_paste_is_strict_and_full_control_only() {
+    use termloop_contract::current::{
+        COMPANION_METHODS, METHODS, READ_ONLY_METHODS, validate_method_result,
+    };
+
+    let session_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    let attachment = serde_json::json!({
+        "attachmentId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "mediaType": "image/png",
+        "byteLength": 128,
+        "sha256": format!("sha256:{}", "c".repeat(64)),
+        "width": 12,
+        "height": 8
+    });
+    let params = serde_json::json!({
+        "sessionId": session_id,
+        "attachments": [attachment]
+    });
+
+    assert!(validate_method_params("session.pasteImage", &params));
+    assert!(!validate_method_params(
+        "session.pasteImage",
+        &serde_json::json!({"sessionId": session_id, "attachments": []})
+    ));
+    assert!(!validate_method_params(
+        "session.pasteImage",
+        &serde_json::json!({
+            "sessionId": session_id,
+            "attachments": [attachment, attachment]
+        })
+    ));
+    assert!(!validate_method_params(
+        "session.pasteImage",
+        &serde_json::json!({
+            "sessionId": session_id,
+            "attachments": [attachment],
+            "provider": "codex"
+        })
+    ));
+    assert!(validate_method_result(
+        "session.pasteImage",
+        &serde_json::json!({"sessionId": session_id, "status": "delivered"})
+    ));
+    assert!(!validate_method_result(
+        "session.pasteImage",
+        &serde_json::json!({"sessionId": session_id, "status": "queued"})
+    ));
+    assert!(METHODS.contains(&"session.pasteImage"));
+    assert!(!READ_ONLY_METHODS.contains(&"session.pasteImage"));
+    assert!(!COMPANION_METHODS.contains(&"session.pasteImage"));
+}
+
+#[test]
 fn assistant_prompt_preview_accepts_large_routine_builder_content_and_remains_bounded() {
     use termloop_contract::current::validate_method_result;
 

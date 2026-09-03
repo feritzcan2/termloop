@@ -219,6 +219,18 @@ static bool embedderOwnsLifecycleKeyEquivalent(NSEvent *event) {
   return event.keyCode == 0x0D;  // Every Cmd+W variant is window lifecycle.
 }
 
+static bool isImageOnlyPasteKeyEquivalent(NSEvent *event) {
+  const NSEventModifierFlags flags = event.modifierFlags &
+      (NSEventModifierFlagShift | NSEventModifierFlagControl |
+       NSEventModifierFlagOption | NSEventModifierFlagCommand);
+  if (flags != NSEventModifierFlagCommand || event.keyCode != 0x09) {
+    return false;
+  }
+  NSPasteboard *pasteboard = [NSPasteboard generalPasteboard];
+  NSString *text = [pasteboard stringForType:NSPasteboardTypeString];
+  return text.length == 0 && [NSImage canInitWithPasteboard:pasteboard];
+}
+
 // Budget for the whole Shift-release-Shift cycle. Must stay equal to
 // DOUBLE_SHIFT_WINDOW_MS in src/renderer/command-surface.ts, which runs the
 // same detection whenever the renderer rather than a native surface has focus.
@@ -247,7 +259,10 @@ static void notifyShellShortcut(const char *shortcut) {
 @property(nonatomic, assign) BOOL shiftReleased;
 @property(nonatomic, strong) NSMutableAttributedString *markedText;
 @property(nonatomic, strong, nullable) NSMutableArray<NSString *> *keyTextAccumulator;
+@property(nonatomic, weak, nullable) NSResponder *restorationResponder;
 - (void)syncSurfaceSize;
+- (void)focusSurface;
+- (void)restoreFocusIfOwned;
 @end
 
 @implementation TLGhosttyView
@@ -317,6 +332,27 @@ static void notifyShellShortcut(const char *shortcut) {
   if (accepted && self.surface) ghostty_surface_set_focus(self.surface, false);
   if (accepted) self.surfaceFocused = NO;
   return accepted;
+}
+
+- (void)focusSurface {
+  NSWindow *window = self.window;
+  if (window == nil || window.firstResponder == self) return;
+  NSResponder *current = window.firstResponder;
+  if ([current isKindOfClass:[TLGhosttyView class]]) {
+    current = ((TLGhosttyView *)current).restorationResponder;
+  }
+  if (current != nil) self.restorationResponder = current;
+  [window makeFirstResponder:self];
+}
+
+- (void)restoreFocusIfOwned {
+  NSWindow *window = self.window;
+  if (window == nil || window.firstResponder != self) return;
+  NSResponder *responder = self.restorationResponder;
+  self.restorationResponder = nil;
+  if (responder != nil && [window makeFirstResponder:responder]) return;
+  if ([window makeFirstResponder:self.superview]) return;
+  [window makeFirstResponder:nil];
 }
 
 // -- keyboard / IME ---------------------------------------------------------
@@ -461,6 +497,15 @@ static void notifyShellShortcut(const char *shortcut) {
   // consume them while the native surface is first responder.
   if (const char *shortcut = termLoopShortcutForEvent(event)) {
     notifyShellShortcut(shortcut);
+    return YES;
+  }
+
+  // A remote Agent cannot read the local AppKit pasteboard. Route an
+  // image-only Cmd+V to Electron so it can upload the PNG and ask the daemon
+  // to paste the resulting remote path into the active Agent composer. Text
+  // and mixed-content pasteboards retain Ghostty's native paste behavior.
+  if (isImageOnlyPasteKeyEquivalent(event)) {
+    notifyShellShortcut("pasteImage");
     return YES;
   }
 
@@ -663,7 +708,7 @@ static void notifyShellShortcut(const char *shortcut) {
 }
 
 - (void)mouseDown:(NSEvent *)event {
-  [self.window makeFirstResponder:self];
+  [self focusSurface];
   [self reportMousePos:event];
   if (self.surface)
     ghostty_surface_mouse_button(self.surface, GHOSTTY_MOUSE_PRESS,
@@ -980,11 +1025,21 @@ static Napi::Value SetSurfaceVisible(const Napi::CallbackInfo &info) {
       entryForId(info[0].As<Napi::Number>().Uint32Value());
   if (e == nullptr) return env.Undefined();
   const bool visible = info[1].As<Napi::Boolean>().Value();
+  if (!visible) [e->view restoreFocusIfOwned];
   e->view.hidden = !visible;
   // Despite the API name, Ghostty expects whether the surface is visible,
   // matching NSWindow.occlusionState.contains(.visible). Passing the inverse
   // leaves the native view present while pausing its renderer.
   ghostty_surface_set_occlusion(e->surface, visible);
+  if (visible) {
+    // Unhiding an embedded CAMetalLayer does not itself guarantee that its
+    // drawable is repainted. In particular, reopening the desktop window can
+    // expose the last partially presented atlas until an AppKit resize forces
+    // a synchronous draw. Refreshing only schedules work on Ghostty's render
+    // loop; draw now gives the newly visible layer the same full repaint that
+    // a window resize would have triggered.
+    ghostty_surface_draw(e->surface);
+  }
   return env.Undefined();
 }
 
@@ -993,7 +1048,7 @@ static Napi::Value FocusSurface(const Napi::CallbackInfo &info) {
   SurfaceEntry *e =
       entryForId(info[0].As<Napi::Number>().Uint32Value());
   if (e == nullptr) return env.Undefined();
-  [e->view.window makeFirstResponder:e->view];
+  [e->view focusSurface];
   return env.Undefined();
 }
 
@@ -1080,6 +1135,7 @@ static Napi::Value DestroySurface(const Napi::CallbackInfo &info) {
   const uint32_t id = info[0].As<Napi::Number>().Uint32Value();
   SurfaceEntry *e = entryForId(id);
   if (e == nullptr) return env.Undefined();
+  [e->view restoreFocusIfOwned];
   e->view.surface = nullptr;
   e->callbacks->alive.store(false, std::memory_order_release);
   ghostty_surface_free(e->surface);

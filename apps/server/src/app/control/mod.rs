@@ -31,6 +31,7 @@ pub(super) use handlers::git_host_pull_request_list;
 pub(super) use handlers::git_host_pull_request_list_background;
 pub(super) use handlers::launch_current_worker;
 pub(super) use handlers::reconcile_agent_resumes_after_start;
+pub(super) use handlers::task_branch_commit_summary_list;
 pub(in crate::app) use handlers::{
     launch_task_session, preview_steward_task_agent_session, preview_task_agent_session,
     project_list_local_branches, provision_task_worktree, terminate_session,
@@ -638,6 +639,7 @@ fn cancellation_safe_method(method: &str) -> bool {
             | "playbook.runtime"
             | "companion.transcriptList"
             | "companion.wakeNext"
+            | "voice.settingsGet"
             | "task.branchCommitSummaryList"
     )
 }
@@ -839,6 +841,9 @@ mod tests {
                             "taskSource.statusList",
                             "taskSource.statusListStored",
                             "task.branchCommitSummaryList",
+                            // Credential presence is safe to cancel, but voice
+                            // configuration remains local Full-scope metadata.
+                            "voice.settingsGet",
                         ]
                         .contains(method)
                 })
@@ -897,11 +902,24 @@ mod tests {
         assert!(!read_only_method("task.bindBranch"));
         assert!(!read_only_method("task.provisionWorktree"));
         assert!(!read_only_method("task.dismissWorktreeProvisioning"));
-        // Catalog reads invoke the bundled manager process, and deployment
-        // changes provider files. Neither surface belongs to a narrow client.
+        // A remote read-only client may compare the bounded catalog, but it
+        // cannot read definition content or mutate provider files.
+        assert!(scope_allows_method(ClientScope::Full, "skill.catalogGet"));
+        assert!(scope_allows_method(
+            ClientScope::ReadOnly,
+            "skill.catalogGet"
+        ));
+        assert!(!scope_allows_method(
+            ClientScope::Companion,
+            "skill.catalogGet"
+        ));
+        assert!(!scope_allows_method(ClientScope::Hook, "skill.catalogGet"));
+        assert!(!cancellation_safe_method("skill.catalogGet"));
         for method in [
-            "skill.catalogGet",
             "skill.deploymentSet",
+            "skill.definitionGet",
+            "skill.definitionSave",
+            "skill.definitionCreate",
             "contextBank.catalogGet",
             "contextBank.fileGet",
             "contextBank.fileSave",

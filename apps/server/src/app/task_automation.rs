@@ -99,7 +99,7 @@ pub(super) async fn auto_import_after_refresh(
             let before_revision = core.state_revision();
             let imported = core.import_task_source_candidate(
                 source_id,
-                &candidate.issue.external_id,
+                &candidate.candidate.external_id,
                 candidate.observed_generation,
                 candidate.observation_sequence,
                 before_revision,

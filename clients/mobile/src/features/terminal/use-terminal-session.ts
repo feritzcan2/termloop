@@ -52,8 +52,8 @@ const keyBytes: Record<TerminalKey, readonly number[]> = {
 /// reads a line and immediately redraws can otherwise consume the newline while the
 /// pasted text is still arriving, and the turn is submitted half-written.
 const SUBMIT_SETTLE_MS = 60;
-const INITIAL_ATTACH_RETRY_MS = 500;
-const MAX_ATTACH_RETRY_MS = 2_000;
+const INITIAL_ATTACH_RETRY_MS = 1_000;
+const MAX_ATTACH_RETRY_MS = 30_000;
 
 export interface TerminalSession {
   readonly buffer: TerminalBuffer;
@@ -106,13 +106,15 @@ export function useTerminalSession(
   const runtimeEpoch = session?.runtime_epoch;
 
   useEffect(() => {
-    if (connectionId === undefined || sessionId === undefined || runtimeEpoch === undefined) return;
+    if (!lifecycle.active
+      || connectionId === undefined || sessionId === undefined || runtimeEpoch === undefined) return;
     const continuityKey = terminalContinuityKey(connectionId, sessionId, runtimeEpoch);
     const cached = terminalContinuityCache.get(continuityKey);
     let active = true;
     let reconcilingReplay = cached !== undefined;
     let attachRetry: ReturnType<typeof setTimeout> | undefined;
     let attachRetryDelay = INITIAL_ATTACH_RETRY_MS;
+    let ownedAttachment: TerminalAttachment | undefined;
     /// A fresh decoder per attachment. Carrying one across attachments would let a
     /// half-decoded character from the previous stream corrupt the first line of the
     /// next one.
@@ -197,9 +199,14 @@ export function useTerminalSession(
       ).then(
         (value) => {
           if (active) {
+            ownedAttachment = value;
             attachment.current = value;
             attachRetryDelay = INITIAL_ATTACH_RETRY_MS;
             setError(undefined);
+            /// The port promise resolves only after authentication. Reaffirm that
+            /// fact at the hook boundary: a retained route can batch its old
+            /// `reconnecting` cleanup after the adapter's first connected event.
+            onEvent({ type: "state", state: "connected" });
           } else void value.detach();
         },
         () => {
@@ -231,12 +238,20 @@ export function useTerminalSession(
         });
       }
       projection.current = undefined;
-      const open = attachment.current;
-      attachment.current = undefined;
+      const open = ownedAttachment;
+      if (attachment.current === open) attachment.current = undefined;
       if (open) void open.detach();
       setBuffer(detached);
     };
-  }, [runtime, connectionId, sessionId, runtimeEpoch, reconnectRevision]);
+  }, [
+    runtime,
+    connectionId,
+    sessionId,
+    runtimeEpoch,
+    reconnectRevision,
+    lifecycle.active,
+    lifecycle.foregroundRevision,
+  ]);
 
   const canSend = buffer.stream === "live" && error === undefined;
 
@@ -270,17 +285,6 @@ export function useTerminalSession(
       }
     });
   }, []);
-
-  useEffect(() => {
-    if (lifecycle.foregroundRevision === 0) return;
-    /// Closing the terminal socket while iOS is already suspending JavaScript can
-    /// leave its native transport alive but unusable. Keep the attachment across
-    /// backgrounding, then replace and authenticate its socket once execution is
-    /// foregrounded again. This also keeps one event closure responsible for the
-    /// connectionLost -> connected transition, so a late cleanup cannot overwrite
-    /// the newly-live composer with a detached state.
-    reconnect();
-  }, [lifecycle.foregroundRevision, reconnect]);
 
   const submit = useCallback((text: string) => {
     const open = attachment.current;

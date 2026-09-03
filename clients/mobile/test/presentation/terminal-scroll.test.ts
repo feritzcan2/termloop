@@ -1,8 +1,39 @@
 import { describe, expect, it } from "vitest";
 
-import { overscrollRequest, scrollSequence } from "../../src/presentation/terminal-scroll";
+import {
+  overscrollRequest,
+  reduceInitialTerminalPosition,
+  scrollSequence,
+} from "../../src/presentation/terminal-scroll";
 
 const esc = String.fromCharCode(0x1b);
+
+describe("initial terminal position", () => {
+  it("waits for real output instead of revealing the empty top of the scroll view", () => {
+    expect(reduceInitialTerminalPosition("waitingForContent", {
+      type: "contentChanged",
+      hasContent: false,
+    })).toBe("waitingForContent");
+    expect(reduceInitialTerminalPosition("waitingForContent", { type: "positioned" }))
+      .toBe("waitingForContent");
+  });
+
+  it("reveals the first output only after its bottom placement finishes", () => {
+    const positioning = reduceInitialTerminalPosition("waitingForContent", {
+      type: "contentChanged",
+      hasContent: true,
+    });
+    expect(positioning).toBe("positioning");
+    expect(reduceInitialTerminalPosition(positioning, { type: "positioned" })).toBe("ready");
+  });
+
+  it("stays visible while later live output changes the content size", () => {
+    expect(reduceInitialTerminalPosition("ready", {
+      type: "contentChanged",
+      hasContent: true,
+    })).toBe("ready");
+  });
+});
 
 /// The alternate screen has no scrollback: the program owns the grid and repaints it,
 /// so the only way past the current frame is to ask the program to scroll itself. That

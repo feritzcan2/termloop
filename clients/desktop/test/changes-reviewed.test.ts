@@ -55,7 +55,7 @@ function props(list: ChangesOverlayProps["list"]): ChangesOverlayProps {
       revision: "head",
       content: null,
     }),
-    listCommits: async (taskId) => ({ task_id: taskId, observation_id: "commits-1", base_ref: "main", commits: [], truncated: false }),
+    listCommits: async (taskId) => ({ task_id: taskId, observation_id: "commits-1", branch_id: "primary", branch_name: "feature/task", branch_role: "primary", held_by_task_id: null, base_ref: "main", base_oid: null, base_evidence: null, commits: [], truncated: false }),
     listCommitChanges: async (taskId, observationId, commitId) => ({ task_id: taskId, observation_id: observationId, commit_id: commitId, state: "available", entries: [], truncated: false }),
     commitDiff: async (taskId, observationId, commitId, entryId) => ({ task_id: taskId, observation_id: observationId, commit_id: commitId, entry_id: entryId, state: "notShown", patch: null }),
     gitHostProjection: undefined,
@@ -166,26 +166,36 @@ describe("Changes reviewed files", () => {
     }));
     const editorProps = props(async () => changeList("local-1"));
     editorProps.subject = { ...editorProps.subject, hasBranch: true };
-    editorProps.initialSource = { kind: "commits" };
-    editorProps.listCommits = async (taskId) => ({
+    editorProps.initialSource = { kind: "commits", branchId: "branch-secondary" };
+    const listCommits = vi.fn<ChangesOverlayProps["listCommits"]>(async (taskId) => ({
       task_id: taskId,
       observation_id: "commits-branch",
+      branch_id: "branch-secondary",
+      branch_name: "feature/api",
+      branch_role: "associated",
+      held_by_task_id: null,
       base_ref: "refs/heads/main",
+      base_oid: null,
+      base_evidence: null,
       commits: [{
         commit_id: "commit-0",
+        branch_id: "branch-secondary",
+        branch_name: "feature/api",
         short_oid: "0123456789ab",
         subject: "Ship the change",
         subject_encoding: "utf8",
         authored_at_epoch_ms: 1,
       }],
       truncated: false,
-    });
+    }));
+    editorProps.listCommits = listCommits;
     editorProps.listCommitChanges = listCommitChanges;
 
     ({ container, root } = await renderEditor(editorProps));
+    expect(listCommits).toHaveBeenCalledWith("task-1", "branch-secondary");
     await vi.waitFor(() => expect(listCommitChanges).toHaveBeenCalledWith("task-1", "commits-branch", "all"));
 
-    expect(container.querySelector(".changes-sources button.selected strong")?.textContent).toBe("Branch changes");
+    expect(container.querySelector(".changes-sources button.selected strong")?.textContent).toBe("feature/api");
     expect(container.querySelector(".changes-header p")?.textContent).toContain("Branch changes");
   });
 });

@@ -3,6 +3,7 @@ import { parseGhosttyShellShortcut } from "../src/ghostty-shell-shortcut.js";
 
 describe("Ghostty shell shortcut boundary", () => {
   it.each([
+    "pasteImage",
     "quickAction",
     "commandPalette",
     "newTerminal",

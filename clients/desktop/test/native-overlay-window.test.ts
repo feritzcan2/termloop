@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { isNativeOverlayWindowRequest, NativeOverlayWindowManager } from "../src/main/native-overlay-window.js";
 import {
+  nativeOverlayPassiveVisible,
   nativeOverlayPassiveRegion,
   nativeOverlayPointerInteractiveAt,
   nativeTerminalSurfaceVisible,
@@ -24,6 +25,12 @@ describe("native overlay window request", () => {
     expect(nativeTerminalSurfaceVisible(false, true)).toBe(false);
     expect(nativeTerminalSurfaceVisible(true, false)).toBe(false);
     expect(nativeTerminalSurfaceVisible(true, true)).toBe(false);
+  });
+
+  it("hides the passive native overlay while a DOM-owned dialog is open", () => {
+    expect(nativeOverlayPassiveVisible(true, false)).toBe(true);
+    expect(nativeOverlayPassiveVisible(true, true)).toBe(false);
+    expect(nativeOverlayPassiveVisible(false, false)).toBe(false);
   });
 
   it("hit-tests forwarded pointer coordinates instead of the event target", () => {

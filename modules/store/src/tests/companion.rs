@@ -1,10 +1,11 @@
 use super::*;
 use termloop_domain::{
-    CompanionMessage, CompanionMessageAuthor, CompanionMessageKind, PlaybookConfiguration,
-    PlaybookGateKind, PlaybookMilestone, PlaybookStepProgress, PlaybookStepVerdict,
-    ProcessDescriptor, ResumeFailureReason, ResumeProvider, ResumeRef, RoutineActionHandling,
-    RoutineTriggerMode, SessionKind, SessionRecord, StewardAgentId, StewardConfiguration,
-    TaskStatus, TrackerConfiguration, TrackerKind, WorkerConfiguration,
+    CompanionMessage, CompanionMessageAuthor, CompanionMessageInputMode, CompanionMessageKind,
+    CompanionMessageRefs, PendingRoutineFinding, PlaybookConfiguration, PlaybookGateKind,
+    PlaybookMilestone, PlaybookStepProgress, PlaybookStepVerdict, ProcessDescriptor,
+    ResumeFailureReason, ResumeProvider, ResumeRef, RoutineActionHandling, RoutineTriggerMode,
+    SessionKind, SessionRecord, StewardAgentId, StewardConfiguration, TaskStatus,
+    TrackerConfiguration, TrackerKind, WorkerConfiguration,
 };
 
 #[test]
@@ -38,6 +39,7 @@ fn message(project_id: &str, sequence: u64, content: &str) -> CompanionMessage {
         sequence,
         author: CompanionMessageAuthor::User,
         kind: CompanionMessageKind::Reply,
+        input_mode: CompanionMessageInputMode::Text,
         refs: None,
         content: content.into(),
         created_at_epoch_ms: sequence,
@@ -73,6 +75,112 @@ fn transcript_append_is_ordered_bounded_and_survives_reopen() {
 
     let store = Store::open(&path).unwrap();
     assert_eq!(store.companion_messages(), &[persisted]);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn companion_message_and_finding_dismissal_commit_atomically() {
+    let path = std::env::temp_dir().join(format!(
+        "termloop-store-companion-finding-{}-{}.json",
+        std::process::id(),
+        termloop_platform::current_epoch_ms()
+    ));
+    let authority = issue_core_write_authority_for_composition();
+    let mut store = Store::open(&path).unwrap();
+    store
+        .insert_project(&authority, project("project-a"))
+        .unwrap();
+    store
+        .set_worker_configuration(
+            &authority,
+            worker_configuration("worker-1", "project-a", 1, true),
+            store.revision(),
+        )
+        .unwrap();
+    let finding = PendingRoutineFinding {
+        id: "finding-1".into(),
+        source_key: "ci:missing-pr".into(),
+        routine_generation: 1,
+        summary: "The pull request is missing.".into(),
+        evidence: "No matching provider result was observed.".into(),
+        source_references: vec![],
+        related_task_ids: vec![],
+        created_at_epoch_ms: 1,
+    };
+    store
+        .set_tracker_configuration(
+            &authority,
+            TrackerConfiguration {
+                id: "routine-1".into(),
+                project_id: "project-a".into(),
+                kind: TrackerKind::CiPr,
+                trigger_mode: RoutineTriggerMode::Schedule,
+                name: "Pull request".into(),
+                prompt: "Read the current pull request state.".into(),
+                steward_instructions: "Surface a useful response.".into(),
+                worker_id: "worker-1".into(),
+                enabled: true,
+                schedule_interval_seconds: 60,
+                generation: 1,
+                context_markdown: String::new(),
+                context_revision: 1,
+                recent_source_keys: vec![],
+                related_task_ids: vec![],
+                action_handling: RoutineActionHandling::Ask,
+                pending_routine_findings: vec![finding],
+                last_check_started_at_epoch_ms: None,
+                last_attempt_at_epoch_ms: None,
+                last_successful_report_at_epoch_ms: None,
+                updated_at_epoch_ms: 1,
+            },
+            store.revision(),
+        )
+        .unwrap();
+
+    let mut problem = message("project-a", 1, "The provider is unavailable.");
+    problem.author = CompanionMessageAuthor::Steward;
+    problem.kind = CompanionMessageKind::Problem;
+    problem.refs = Some(CompanionMessageRefs {
+        task_id: None,
+        session_id: None,
+        routine_finding_id: Some("finding-1".into()),
+        routine_finding_ids: vec![],
+    });
+    let revision = store.revision();
+    assert!(matches!(
+        store.append_companion_message_and_dismiss_routine_findings(
+            &authority,
+            problem.clone(),
+            &["missing-finding".into()],
+        ),
+        Err(StoreError::ConstraintViolation)
+    ));
+    assert_eq!(store.revision(), revision);
+    assert!(store.companion_messages().is_empty());
+
+    store
+        .append_companion_message_and_dismiss_routine_findings(
+            &authority,
+            problem.clone(),
+            &["finding-1".into()],
+        )
+        .unwrap();
+    assert_eq!(store.revision(), revision + 1);
+    assert_eq!(store.companion_messages(), &[problem]);
+    assert!(
+        store.tracker_configurations()[0]
+            .pending_routine_findings
+            .is_empty()
+    );
+
+    drop(store);
+    let reopened = Store::open(&path).unwrap();
+    assert_eq!(reopened.companion_messages().len(), 1);
+    assert!(
+        reopened.tracker_configurations()[0]
+            .pending_routine_findings
+            .is_empty()
+    );
     let _ = std::fs::remove_file(path);
 }
 
@@ -610,6 +718,7 @@ fn steward_delete_resets_only_the_project_assistant_tree_in_one_commit() {
             project_id: "project-a".into(),
             title: "A".into(),
             brief: None,
+            developer_notes: vec![],
             status: TaskStatus::Open,
             archived_at_epoch_ms: None,
             branch: None,
@@ -626,6 +735,7 @@ fn steward_delete_resets_only_the_project_assistant_tree_in_one_commit() {
             project_id: "project-b".into(),
             title: "B".into(),
             brief: None,
+            developer_notes: vec![],
             status: TaskStatus::Open,
             archived_at_epoch_ms: None,
             branch: None,
@@ -1023,8 +1133,9 @@ fn restart_reconcile_resumes_current_assistants_and_sweeps_only_obsolete_debris(
         debris.lifecycle_state = "exited".into();
         store.state.sessions.push(debris);
     }
-    // Live assistants retain their exact logical Session and provider-native
-    // conversation identities across the daemon epoch.
+    // Current assistants retain their exact logical Session and provider-native
+    // conversation identities across the daemon epoch, even when a previous
+    // daemon already observed their process exit.
     let mut live = assistant_session(
         "steward-live",
         "project-a",
@@ -1037,6 +1148,7 @@ fn restart_reconcile_resumes_current_assistants_and_sweeps_only_obsolete_debris(
     )
     .unwrap();
     live.resume_ref = Some(steward_resume_ref.clone());
+    live.lifecycle_state = "exited".into();
     store.state.sessions.push(live);
     let mut configuration = steward_configuration("project-a", 1, true);
     configuration.executor_session_id = Some("steward-live".into());
@@ -1053,6 +1165,7 @@ fn restart_reconcile_resumes_current_assistants_and_sweeps_only_obsolete_debris(
     )
     .unwrap();
     worker_live.resume_ref = Some(worker_resume_ref.clone());
+    worker_live.lifecycle_state = "exited".into();
     store.state.sessions.push(worker_live);
     let mut worker = worker_configuration("worker-1", "project-a", 1, true);
     worker.executor_session_id = Some("worker-live".into());
@@ -1074,6 +1187,13 @@ fn restart_reconcile_resumes_current_assistants_and_sweeps_only_obsolete_debris(
     let mut exited_ordinary = ordinary_agent_session("ordinary-exited", "project-a");
     exited_ordinary.lifecycle_state = "exited".into();
     store.state.sessions.push(exited_ordinary);
+    store.state.agent_conversation_readiness = ["steward-live", "worker-live", "ordinary-exited"]
+        .into_iter()
+        .map(|session_id| AgentConversationReadinessRecord {
+            session_id: session_id.into(),
+            readiness: AgentConversationReadiness::Unconfirmed,
+        })
+        .collect();
 
     store.reconcile_restart(&authority).unwrap();
 
@@ -1156,7 +1276,7 @@ fn restart_reconcile_resumes_current_assistants_and_sweeps_only_obsolete_debris(
             .unwrap()
             .lifecycle_state,
         "resumeFailed",
-        "a failed resume stays available for explicit same-conversation Retry"
+        "reconciliation must preserve the failed resume for Core's startup fallback"
     );
     assert_eq!(
         store.steward_configurations()[0]

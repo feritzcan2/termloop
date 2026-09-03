@@ -209,11 +209,22 @@ impl CoreRuntime {
                 resume_ref.provider == ResumeProvider::Codex && resume_ref.validate()
             })
             .ok_or_else(|| unavailable(ProviderHistoryRepairUnavailableReason::ResumeRefMissing))?;
-        if session.lifecycle_state == "running"
-            || self
-                .terminal
-                .contains_session(&session_id)
-                .map_err(terminal_error)?
+        if session.lifecycle_state == "running" {
+            return Err(unavailable(
+                ProviderHistoryRepairUnavailableReason::SessionRunning,
+            ));
+        }
+        // Ordinary stopped Agents keep a continuation shell under their
+        // logical Session id. That shell is not provider ownership and must
+        // not make the explicit repair command report `sessionRunning`.
+        // Retire only a core-tracked hold; an untracked PTY still fails closed
+        // below as a genuinely conflicting runtime.
+        self.release_agent_terminal_hold_for_resume(&session_id)
+            .map_err(|_| unavailable(ProviderHistoryRepairUnavailableReason::RuntimeConflict))?;
+        if self
+            .terminal
+            .contains_session(&session_id)
+            .map_err(terminal_error)?
         {
             return Err(unavailable(
                 ProviderHistoryRepairUnavailableReason::SessionRunning,

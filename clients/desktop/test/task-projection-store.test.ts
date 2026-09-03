@@ -71,19 +71,46 @@ function pullRequest(number: number): GitHostProjection["matches"][number] {
     title: `PR ${number}`,
     url: `https://github.com/acme/widget/pull/${number}`,
     state: "open",
+    merge_commit_oid: null,
     base_branch: "main",
     head_branch: `feature-${number}`,
     head_repository_owner: "acme",
     head_repository_project: null,
     head_repository_name: "widget",
-    checks: "passing",
-    review: "approved",
-    mergeability: "mergeable",
-    updated_at_epoch_ms: number,
+    check_rollup: "passing",
+    check_rollup_source: "githubStatusCheckRollup",
+    review_signal: "approved",
+    review_signal_source: "githubReviewDecision",
+    merge_conflict: "noneDetected",
+    merge_conflict_source: "githubMergeable",
+    activity_at_epoch_ms: number,
+    activity_at_source: "githubUpdatedAt",
   };
 }
 
 describe("scoped Task projection merge", () => {
+  it("restores each Project snapshot immediately and ignores inactive refreshes", () => {
+    const store = new ProjectionStore();
+    const projectA = { ...task("one", 1), project_id: "project-a" };
+    const projectB = { ...task("two", 1), project_id: "project-b" };
+
+    store.activateProjectSnapshot("project-a");
+    store.applySelectedProjectSnapshot("project-a", [projectA]);
+    store.activateProjectSnapshot("project-b");
+    expect(store.getSnapshot().tasks).toEqual([]);
+
+    store.applySelectedProjectSnapshot("project-b", [projectB]);
+    store.activateProjectSnapshot("project-a");
+    expect(store.getSnapshot().tasks).toEqual([projectA]);
+
+    const refreshedProjectB = { ...projectB, title: "fresh project B" };
+    store.applySelectedProjectSnapshot("project-b", [refreshedProjectB]);
+    expect(store.getSnapshot().tasks).toEqual([projectA]);
+
+    store.activateProjectSnapshot("project-b");
+    expect(store.getSnapshot().tasks).toEqual([refreshedProjectB]);
+  });
+
   it("keeps the exact Playbook processing Task from the latest full snapshot", () => {
     const store = new ProjectionStore();
     const playbookRuntime = {

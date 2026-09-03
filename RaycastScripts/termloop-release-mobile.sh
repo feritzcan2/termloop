@@ -2,7 +2,7 @@
 
 # Required parameters:
 # @raycast.schemaVersion 1
-# @raycast.title Release TermLoop Mobile
+# @raycast.title TermLoop Release Mobile
 # @raycast.mode fullOutput
 
 # Optional parameters:

@@ -2,7 +2,7 @@
 
 # Required parameters:
 # @raycast.schemaVersion 1
-# @raycast.title Promote TermLoop to Main
+# @raycast.title TermLoop Promote to Main
 # @raycast.mode fullOutput
 
 # Optional parameters:
