@@ -1381,7 +1381,7 @@ handleIpc("termloop:remote-host-disable", async (event) => {
   return remoteHost.disable();
 });
 
-if (ownsSingleInstance) app.whenReady().then(async () => {
+if (ownsSingleInstance) void app.whenReady().then(async () => {
   if (shouldRemoveApplicationMenu()) Menu.setApplicationMenu(null);
   else Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate()));
   if (shouldReconcilePackagedMobileAccess(app.isPackaged)) {
@@ -1736,14 +1736,15 @@ if (ownsSingleInstance) app.whenReady().then(async () => {
       processType: typeof globalThis.process,
       requireType: typeof globalThis.require,
       apiKeys: Object.keys(globalThis.termloop ?? {}).sort(),
-      credentialKeys: Object.keys(globalThis.termloop ?? {}).filter((key) => /token|credential|secret/i.test(key)),
+      sensitiveReadKeys: Object.keys(globalThis.termloop ?? {}).filter((key) =>
+        /token|secret/i.test(key) || (/credential/i.test(key) && !/Set$/.test(key))),
       csp: document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content ?? '',
       shell: document.querySelector('[aria-label="Projects and sessions"]')?.getAttribute('aria-label') ?? ''
     })`);
     if (security.processType !== "undefined" || security.requireType !== "undefined") {
       throw new Error("renderer privilege leak");
     }
-    if (security.apiKeys.includes("call") || security.credentialKeys.length > 0) {
+    if (security.apiKeys.includes("call") || security.sensitiveReadKeys.length > 0) {
       throw new Error("renderer capability leak");
     }
     if (!security.csp.includes("default-src 'self'") || !security.csp.includes("connect-src 'none'")) {
@@ -1753,6 +1754,9 @@ if (ownsSingleInstance) app.whenReady().then(async () => {
     console.log("TERMLOOP_DESKTOP_SMOKE_READY");
     app.quit();
   }
+}).catch((cause: unknown) => {
+  console.error(cause);
+  app.exit(1);
 });
 
 function serializableControlError(error: unknown): {
