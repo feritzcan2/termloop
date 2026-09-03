@@ -470,34 +470,33 @@ impl CoreRuntime {
                         .is_some();
                 plan.target.clone()
             }
-            ImproverSessionTargetKind::RunConfiguration
-            | ImproverSessionTargetKind::NewRunConfiguration => {
+            ImproverSessionTargetKind::RunConfiguration => {
                 let snapshot: RunConfigurationSnapshot = parse_snapshot(&plan.content)?;
                 let mut params = serde_json::to_value(snapshot)
                     .map_err(|error| CoreError::Store(error.to_string()))?;
                 params["expectedRevision"] = json!(self.store.revision());
-                let (method, activated_target) =
-                    if let Some(configuration_id) = plan.target.target_id.as_ref() {
-                        params["configurationId"] = json!(configuration_id);
-                        ("runConfiguration.update", plan.target.clone())
-                    } else {
-                        params["projectId"] = json!(plan.project_id.clone());
-                        (
-                            "runConfiguration.create",
-                            ImproverSessionTarget {
-                                target_kind: ImproverSessionTargetKind::RunConfiguration,
-                                target_id: None,
-                            },
-                        )
-                    };
-                let result = self.handle(method, params)?;
-                let mut activated_target = activated_target;
-                if activated_target.target_id.is_none() {
-                    activated_target.target_id = result["configuration"]["id"]
+                let configuration_id = plan
+                    .target
+                    .target_id
+                    .as_ref()
+                    .ok_or_else(|| CoreError::InvalidParams("targetId".into()))?;
+                params["configurationId"] = json!(configuration_id);
+                self.handle("runConfiguration.update", params)?;
+                plan.target.clone()
+            }
+            ImproverSessionTargetKind::NewRunConfiguration => {
+                let snapshot: RunConfigurationSnapshot = parse_snapshot(&plan.content)?;
+                let mut params = serde_json::to_value(snapshot)
+                    .map_err(|error| CoreError::Store(error.to_string()))?;
+                params["expectedRevision"] = json!(self.store.revision());
+                params["projectId"] = json!(plan.project_id.clone());
+                let result = self.handle("runConfiguration.create", params)?;
+                ImproverSessionTarget {
+                    target_kind: ImproverSessionTargetKind::RunConfiguration,
+                    target_id: result["configuration"]["id"]
                         .as_str()
-                        .map(ToOwned::to_owned);
+                        .map(ToOwned::to_owned),
                 }
-                activated_target
             }
             ImproverSessionTargetKind::SettingsMcpTool => {
                 let tool = plan
@@ -1176,6 +1175,74 @@ mod tests {
             .unwrap();
         assert_eq!(listed["activeVersionId"], restored["activeVersion"]["id"]);
         assert_eq!(listed["versions"].as_array().unwrap().len(), 2);
+        let _ = std::fs::remove_file(&state_path);
+        let _ = std::fs::remove_dir_all(state_path.with_extension("project"));
+    }
+
+    #[test]
+    fn new_run_configuration_target_uses_kind_marker_to_create_configuration() {
+        let (mut runtime, state_path, _) = runtime();
+        let project_id = runtime.store.projects()[0].id.clone();
+        let initial_configuration_count = runtime.store.run_configurations().len();
+        let target = ImproverSessionTarget {
+            target_kind: ImproverSessionTargetKind::NewRunConfiguration,
+            target_id: Some("devServer".into()),
+        };
+        let content = serialize(&RunConfigurationSnapshot {
+            name: "Dev server".into(),
+            kind: RunConfigurationKind::DevServer,
+            command: "cargo build -p termloop-server && cargo run -p termloop-server".into(),
+            working_directory: ".".into(),
+            env: vec![],
+            setup_command: None,
+            setup_policy: RunSetupPolicy::Never,
+            url_auto_detect: false,
+            fallback_urls: vec![],
+            auto_open_first_url: false,
+        })
+        .unwrap();
+        let plan = ConfigurationApplicationPlan {
+            project_id: project_id.clone(),
+            target: target.clone(),
+            content,
+            summary: "Create the dev server run configuration".into(),
+            expected_previous_version_id: None,
+            expected_current_content: None,
+            source_session_id: Some("improver-session".into()),
+            selected_existing_version_id: None,
+        };
+
+        let (result, _) = runtime
+            .apply_owned_configuration_application(plan, AssistantAvailability::Proven, 2)
+            .unwrap();
+
+        assert_eq!(
+            runtime.store.run_configurations().len(),
+            initial_configuration_count + 1
+        );
+        let created_id = result["target"]["targetId"].as_str().unwrap();
+        assert_eq!(result["target"]["kind"], "runConfiguration");
+        assert_eq!(result["activeVersion"]["target"], result["target"]);
+        assert_eq!(
+            result["activeVersion"]["sourceSessionId"],
+            "improver-session"
+        );
+        assert!(
+            runtime
+                .store
+                .run_configurations()
+                .iter()
+                .any(|configuration| {
+                    configuration.id == created_id
+                        && configuration.command.contains("termloop-server")
+                })
+        );
+        assert!(
+            runtime
+                .store
+                .active_configuration_version(&project_id, &target)
+                .is_none()
+        );
         let _ = std::fs::remove_file(&state_path);
         let _ = std::fs::remove_dir_all(state_path.with_extension("project"));
     }

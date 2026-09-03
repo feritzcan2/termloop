@@ -267,10 +267,13 @@ function integrationVerdict(
   const completeProjection = projection?.freshness === "fresh"
     && !projection.truncated
     && !projection.candidate_truncated;
-  const merged = completeProjection
+  /// A provider refresh failure makes cached lifecycle data stale, not false.
+  /// Keep using an otherwise complete cached projection to settle an all-merged
+  /// result; freshness still governs every non-terminal provider verdict below.
+  const merged = projection && !projection.truncated && !projection.candidate_truncated
     ? projection.matches.filter((pullRequest) => pullRequest.state === "merged")
     : [];
-  const everyMatchMerged = merged.length > 0 && merged.length === projection!.matches.length;
+  const everyMatchMerged = merged.length > 0 && merged.length === projection?.matches.length;
   const notInBase = branchCommitSummary?.not_in_base;
 
   if (completeProjection && projection.matches.length > 0 && !everyMatchMerged) {
