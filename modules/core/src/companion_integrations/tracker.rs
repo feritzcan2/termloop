@@ -135,7 +135,7 @@ impl CoreRuntime {
             })
     }
 
-    fn routine_finding_is_current(
+    pub(crate) fn routine_finding_is_current(
         &self,
         configuration: &TrackerConfiguration,
         finding: &termloop_domain::PendingRoutineFinding,

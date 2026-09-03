@@ -2372,11 +2372,28 @@ mod tests {
             .unwrap();
         assert_eq!(completed["newPendingFindingCount"], 2);
         assert!(runtime.has_current_routine_findings(&project_id));
-        let pending = runtime.read_routine_findings(&project_id).unwrap();
+        let pending = runtime
+            .read_routine_findings_for_steward(&project_id, "steward-session")
+            .unwrap();
         assert_eq!(pending["routines"][0]["findings"][0]["id"], "finding-1");
         assert_eq!(
             pending["routines"][0]["stewardInstructions"],
             "When a review request is absent, propose asking the assigned reviewer."
+        );
+        runtime.observe_steward_idle("steward-session", 1);
+        let retries = runtime.take_steward_finding_disposition_retries();
+        assert_eq!(retries.len(), 1);
+        assert_eq!(retries[0].project_id, project_id);
+        assert_eq!(retries[0].generation, steward_generation);
+        runtime
+            .read_routine_findings_for_steward(&project_id, "steward-session")
+            .unwrap();
+        runtime.observe_steward_idle("steward-session", 1);
+        assert!(
+            runtime
+                .take_steward_finding_disposition_retries()
+                .is_empty(),
+            "the same exact finding state receives only one recovery wake"
         );
 
         assert!(runtime.run_routine_now("routine-a", 1_200).unwrap());

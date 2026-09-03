@@ -398,12 +398,8 @@ async fn tool_call_inner(
             termloop_core::session_launch::AgentMcpRole::Steward { project_id },
             "routine_finding_read",
         ) => {
-            let core = state.core.lock().await;
-            if !core.is_current_steward_session(project_id, principal.session_id()) {
-                Err(termloop_core::CoreError::CapabilityDenied)
-            } else {
-                text_result(core.read_routine_findings(project_id))
-            }
+            let mut core = state.core.lock().await;
+            text_result(core.read_routine_findings_for_steward(project_id, principal.session_id()))
         }
         (
             termloop_core::session_launch::AgentMcpRole::Steward { project_id },
@@ -843,7 +839,7 @@ fn task_read_projection(
     let pull_request_candidates_by_base_branch = pull_request
         .as_ref()
         .map(pull_request_candidates_by_base_branch)
-        .unwrap_or_default();
+        .unwrap_or_else(|| json!({}));
     json!({
         "task": task,
         "effectiveBranch": effective_branch,
@@ -865,7 +861,7 @@ fn task_read_projection(
     })
 }
 
-fn pull_request_candidates_by_base_branch(pull_request: &Value) -> Vec<Value> {
+fn pull_request_candidates_by_base_branch(pull_request: &Value) -> Value {
     let mut groups = std::collections::BTreeMap::<String, Vec<Value>>::new();
     for candidate in pull_request
         .get("matches")
@@ -881,15 +877,12 @@ fn pull_request_candidates_by_base_branch(pull_request: &Value) -> Vec<Value> {
             .or_default()
             .push(candidate.clone());
     }
-    groups
-        .into_iter()
-        .map(|(base_branch, matches)| {
-            json!({
-                "baseBranch": base_branch,
-                "matches": matches,
-            })
-        })
-        .collect()
+    Value::Object(
+        groups
+            .into_iter()
+            .map(|(base_branch, matches)| (base_branch, Value::Array(matches)))
+            .collect(),
+    )
 }
 
 async fn read_pull_requests(
@@ -2258,16 +2251,12 @@ mod tests {
         assert_eq!(projection["branchCommitSummary"]["count"], 2);
         assert_eq!(projection["pullRequest"]["matches"][0]["number"], 43);
         assert_eq!(
-            projection["pullRequestCandidatesByBaseBranch"][0]["baseBranch"],
-            "development"
-        );
-        assert_eq!(
-            projection["pullRequestCandidatesByBaseBranch"][0]["matches"][0]["number"],
+            projection["pullRequestCandidatesByBaseBranch"]["development"][0]["number"],
             42
         );
         assert_eq!(
-            projection["pullRequestCandidatesByBaseBranch"][1]["baseBranch"],
-            "master"
+            projection["pullRequestCandidatesByBaseBranch"]["master"][0]["number"],
+            43
         );
         assert_eq!(projection["agentStatuses"][0]["sessionId"], "agent-1");
         assert_eq!(projection["coordinationAgent"]["sessionId"], "agent-1");
@@ -2298,7 +2287,7 @@ mod tests {
         assert!(unavailable["effectiveBranch"].is_null());
         assert!(unavailable["branchCommitSummary"].is_null());
         assert!(unavailable["pullRequest"].is_null());
-        assert_eq!(unavailable["pullRequestCandidatesByBaseBranch"], json!([]));
+        assert_eq!(unavailable["pullRequestCandidatesByBaseBranch"], json!({}));
     }
 
     #[test]
