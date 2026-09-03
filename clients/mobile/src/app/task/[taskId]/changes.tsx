@@ -30,9 +30,11 @@ type LoadState = "idle" | "loading" | "ready" | "failed";
 /// observation returned with its file list, and the only mutable client state is
 /// the reviewer’s temporary checkmarks.
 export default function TaskChangesRoute() {
-  const { taskId } = useLocalSearchParams<{ taskId: string }>();
+  const { taskId, connectionId } = useLocalSearchParams<{ taskId: string; connectionId?: string }>();
   const runtime = useMobileRuntime();
-  const { selected: connection } = useConnections();
+  const connections = useConnections();
+  const selectingConnection = connectionId !== undefined && connections.selectedId !== connectionId;
+  const connection = selectingConnection ? undefined : connections.selected;
   const overview = useOverview();
   const task = overview.overview?.tasks.find((candidate) => candidate.id === taskId);
   const [load, setLoad] = useState<LoadState>("idle");
@@ -48,6 +50,12 @@ export default function TaskChangesRoute() {
   const [preImage, setPreImage] = useState<TaskWorktreePreImageResult | undefined>();
   const [preImageLoading, setPreImageLoading] = useState(false);
   const [preImageError, setPreImageError] = useState<string | undefined>();
+
+  useEffect(() => {
+    if (connectionId !== undefined && connections.selectedId !== connectionId) {
+      connections.select(connectionId);
+    }
+  }, [connectionId, connections.select, connections.selectedId]);
 
   const reload = useCallback(async () => {
     if (connection === undefined || task === undefined || task.worktree === null) return;
@@ -205,6 +213,14 @@ export default function TaskChangesRoute() {
     setSelectedEntryId(undefined);
   }, []);
 
+  if (selectingConnection) {
+    return (
+      <Screen>
+        <ScreenHeader back="Task" title="Changes" />
+        <View style={styles.centre}><ActivityIndicator color={color.accentStrong} /></View>
+      </Screen>
+    );
+  }
   if (connection === undefined) {
     return <UnavailableChanges title="No Mac selected" body="Select a paired Mac before reading this Task's worktree." />;
   }

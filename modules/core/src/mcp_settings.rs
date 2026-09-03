@@ -236,7 +236,8 @@ mod tests {
                             McpToolName::ReplyToRequest => vec![McpToolRole::Helper],
                             McpToolName::WorkerGetNextRoutine
                             | McpToolName::WorkerCompleteRoutine
-                            | McpToolName::WorkerReportRoutineProblem => vec![McpToolRole::Worker],
+                            | McpToolName::WorkerReportRoutineProblem
+                            | McpToolName::TaskAgentRequest => vec![McpToolRole::Worker],
                             _ => vec![McpToolRole::Steward],
                         },
                     })

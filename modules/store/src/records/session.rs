@@ -694,9 +694,11 @@ impl Store {
             let retry_capability_probe = session.kind == SessionKind::Agent
                 && session.lifecycle_state == "resumeFailed"
                 && session.resume_failure == Some(ResumeFailureReason::ResumeCapabilityUnavailable);
-            if !matches!(session.lifecycle_state.as_str(), "running" | "resuming")
-                && !retry_capability_probe
-            {
+            let restart_candidate =
+                matches!(session.lifecycle_state.as_str(), "running" | "resuming")
+                    || configured_assistant && session.lifecycle_state == "exited"
+                    || retry_capability_probe;
+            if !restart_candidate {
                 continue;
             }
             changed = true;
@@ -731,6 +733,7 @@ impl Store {
             }
             if conversation_readiness.get(&session.id)
                 == Some(&AgentConversationReadiness::Unconfirmed)
+                && !configured_assistant
             {
                 // Observation loss is not proof that the provider conversation
                 // is absent. Avoid an automatic doomed resume while preserving

@@ -39,10 +39,16 @@ const PROJECT_TARGET_PREFIX = "project:";
 /// ticket. It never assembles argv, never fills in a default the Mac did not
 /// state, and shows redacted arguments exactly as redacted.
 export default function LaunchRoute() {
-  const { taskId } = useLocalSearchParams<{ taskId: string }>();
+  const { taskId, connectionId: routeConnectionId } = useLocalSearchParams<{
+    taskId: string;
+    connectionId?: string;
+  }>();
   const router = useRouter();
   const runtime = useMobileRuntime();
-  const { selected } = useConnections();
+  const connections = useConnections();
+  const selectingConnection = routeConnectionId !== undefined
+    && connections.selectedId !== routeConnectionId;
+  const selected = selectingConnection ? undefined : connections.selected;
   const store = useOverview();
 
   const projectId = taskId?.startsWith(PROJECT_TARGET_PREFIX)
@@ -60,6 +66,12 @@ export default function LaunchRoute() {
   const [prompt, setPrompt] = useState("");
   const [stage, setStage] = useState<"reading" | "choosing" | "previewing" | "launching">("reading");
   const [error, setError] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (routeConnectionId !== undefined && connections.selectedId !== routeConnectionId) {
+      connections.select(routeConnectionId);
+    }
+  }, [connections.select, connections.selectedId, routeConnectionId]);
 
   const connectionId = selected?.id;
 
@@ -148,7 +160,10 @@ export default function LaunchRoute() {
         retainPendingSessionInput(connectionId, result.sessionId, result.runtimeEpoch, prompt);
       }
       store.refresh();
-      router.replace({ pathname: "/session/[sessionId]", params: { sessionId: result.sessionId } });
+      router.replace({
+        pathname: "/session/[sessionId]",
+        params: { sessionId: result.sessionId, connectionId },
+      });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       // The ticket is spent whether or not the launch completed, so the next
@@ -161,7 +176,7 @@ export default function LaunchRoute() {
   const backLabel = project === undefined ? "Task" : "Project";
   const targetMissing = task === undefined && project === undefined;
 
-  if (targetMissing || selection === undefined || stage === "reading") {
+  if (selectingConnection || targetMissing || selection === undefined || stage === "reading") {
     return (
       <Screen>
         <ScreenHeader back={backLabel} title="Start agent" />

@@ -8,8 +8,8 @@ use termloop_core::{
 use tokio::sync::Mutex;
 use tokio::time::{Duration, Instant};
 
-use super::AppState;
 use super::invalidation::InvalidationRequest;
+use super::{AppState, ObservationPriority};
 
 pub(super) async fn start(
     project_id: &str,
@@ -87,6 +87,7 @@ pub(super) async fn start(
         }
     }
 
+    refresh_checked_out_branch(project_id, &params.task_id, state).await;
     plan = state
         .core
         .lock()
@@ -206,6 +207,54 @@ pub(super) async fn start(
         "reusedSession": reused_session,
         "status": "ready",
     }))
+}
+
+/// Refreshes the one live checkout fact used to name the branch in the start
+/// result. Failure is intentionally a fallback to the durable Task branch: a
+/// transient read must not make an otherwise launchable registered worktree
+/// unusable.
+async fn refresh_checked_out_branch(project_id: &str, task_id: &str, state: &AppState) {
+    let plan = match state.core.lock().await.plan_task_worktree_health(task_id) {
+        Ok(plan) => plan,
+        Err(_) => return,
+    };
+    let Ok(permit) = state
+        .git_observation_gate
+        .acquire_until(
+            project_id,
+            ObservationPriority::Explicit,
+            Instant::now() + Duration::from_secs(3),
+        )
+        .await
+    else {
+        return;
+    };
+    let observer = plan.clone();
+    let Ok(Ok(observation)) = tokio::task::spawn_blocking(move || observer.observe_shared()).await
+    else {
+        return;
+    };
+    drop(permit);
+    let (applied, state_revision) = {
+        let mut core = state.core.lock().await;
+        let applied = core.apply_observed_task_worktree_health(
+            plan.with_observation(Ok(observation)),
+            super::current_epoch_ms(),
+        );
+        (applied, core.state_revision())
+    };
+    if let Ok(applied) = applied
+        && applied.changed
+    {
+        state
+            .observation_sequence
+            .fetch_max(applied.observation_sequence, Ordering::Relaxed);
+        let _ = state.invalidation_requests.try_send(InvalidationRequest {
+            topics: vec![ProjectionTopic::Task],
+            state_revision,
+            observation_sequence: applied.observation_sequence,
+        });
+    }
 }
 
 async fn await_assignment_delivery(
@@ -370,7 +419,8 @@ fn stage_error(
         CoreError::CapabilityDenied
         | CoreError::AgentUnsupported
         | CoreError::InvalidParams(_)
-        | CoreError::TaskAgentStartFailed { .. } => error,
+        | CoreError::TaskAgentStartFailed { .. }
+        | CoreError::TaskAgentAlreadyAttached { .. } => error,
         _ => start_error(stage, retryable_for(&error, retryable), choose_base),
     }
 }
@@ -544,6 +594,20 @@ mod tests {
                 suggested_action: TaskAgentStartSuggestedAction::InspectTask,
                 ..
             }
+        ));
+        assert!(matches!(
+            stage_error(
+                CoreError::TaskAgentAlreadyAttached {
+                    task_id: "task-1".into(),
+                    session_id: "123e4567-e89b-42d3-a456-426614174000".into(),
+                },
+                TaskAgentStartStage::AgentLaunch,
+                true,
+                false,
+            ),
+            CoreError::TaskAgentAlreadyAttached { task_id, session_id }
+                if task_id == "task-1"
+                    && session_id == "123e4567-e89b-42d3-a456-426614174000"
         ));
     }
 }

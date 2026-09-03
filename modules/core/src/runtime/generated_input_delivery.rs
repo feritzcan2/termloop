@@ -96,6 +96,7 @@ struct GeneratedInputDelivery {
     id: u64,
     runtime_epoch: u64,
     provider_sequence_baseline: u64,
+    settlement: GeneratedInputSettlement,
     submission: GeneratedTerminalSubmission,
     state: GeneratedInputDeliveryState,
     failure: Option<GeneratedInputDeliveryFailure>,
@@ -105,6 +106,7 @@ struct GeneratedInputDelivery {
     paste_started: Arc<AtomicBool>,
     paste_receipted: bool,
     settlement_evidence: Option<OutputSettlementEvidence>,
+    submit_receipted_signal: Arc<AtomicBool>,
     submit_receipted: bool,
     submit_attempts: u8,
     protocol_reply_waits: u8,
@@ -205,6 +207,18 @@ impl GeneratedInputDeliveryRuntime {
             .map(|delivery| delivery.submission.provenance())
     }
 
+    pub(crate) fn contains_submission(
+        &self,
+        session_id: &str,
+        runtime_epoch: u64,
+        submission: &GeneratedTerminalSubmission,
+    ) -> bool {
+        self.deliveries.get(session_id).is_some_and(|delivery| {
+            delivery.runtime_epoch == runtime_epoch
+                && crate::same_generated_terminal_submission(&delivery.submission, submission)
+        })
+    }
+
     pub fn accepts_new_submission(&self, session_id: &str, runtime_epoch: u64) -> bool {
         self.deliveries.get(session_id).is_none_or(|delivery| {
             delivery.runtime_epoch == runtime_epoch && delivery.state.accepts_replacement()
@@ -279,6 +293,7 @@ impl GeneratedInputDeliveryRuntime {
         let user_input_activity = terminal.user_input_activity(session_id, runtime_epoch);
         let cancel_submit = Arc::new(AtomicBool::new(false));
         let paste_started = Arc::new(AtomicBool::new(false));
+        let submit_receipted_signal = Arc::new(AtomicBool::new(false));
         let (provider_ack_signal, provider_ack_wait) = std::sync::mpsc::channel();
         self.order.retain(|candidate| candidate != session_id);
         self.order.push_back(session_id.to_owned());
@@ -288,6 +303,7 @@ impl GeneratedInputDeliveryRuntime {
                 id: delivery_id,
                 runtime_epoch,
                 provider_sequence_baseline,
+                settlement,
                 submission: submission.clone(),
                 state: GeneratedInputDeliveryState::WritingPaste,
                 failure: None,
@@ -302,6 +318,7 @@ impl GeneratedInputDeliveryRuntime {
                 paste_started: Arc::clone(&paste_started),
                 paste_receipted: false,
                 settlement_evidence: None,
+                submit_receipted_signal: Arc::clone(&submit_receipted_signal),
                 submit_receipted: false,
                 submit_attempts: 0,
                 protocol_reply_waits: 0,
@@ -380,6 +397,7 @@ impl GeneratedInputDeliveryRuntime {
         let retry_terminal = terminal.clone();
         let retry_submission = submission.clone();
         let retry_cancel_submit = Arc::clone(&cancel_submit);
+        let worker_submit_receipted = Arc::clone(&submit_receipted_signal);
         let session_id = session_id.to_owned();
         let worker_session_id = session_id.clone();
         let spawn = std::thread::Builder::new()
@@ -395,6 +413,7 @@ impl GeneratedInputDeliveryRuntime {
                     settlement,
                     cancel_submit,
                     paste_started,
+                    submit_receipted_signal: Arc::clone(&worker_submit_receipted),
                 });
                 let GeneratedInputTransportResult {
                     outcome,
@@ -453,6 +472,7 @@ impl GeneratedInputDeliveryRuntime {
                     retry_submission.submit_input(),
                     2,
                     &mut retry_diagnostics,
+                    &worker_submit_receipted,
                 ) {
                     Ok(_) => GeneratedInputTransportOutcome::SubmitRetried,
                     Err(
@@ -549,6 +569,7 @@ impl GeneratedInputDeliveryRuntime {
                 id: delivery_id,
                 runtime_epoch,
                 provider_sequence_baseline,
+                settlement: GeneratedInputSettlement::OutputActivity,
                 submission,
                 state: GeneratedInputDeliveryState::Blocked,
                 failure: Some(GeneratedInputDeliveryFailure::ComposerUnavailable),
@@ -558,6 +579,7 @@ impl GeneratedInputDeliveryRuntime {
                 paste_started: Arc::new(AtomicBool::new(false)),
                 paste_receipted: false,
                 settlement_evidence: None,
+                submit_receipted_signal: Arc::new(AtomicBool::new(false)),
                 submit_receipted: false,
                 submit_attempts: 0,
                 protocol_reply_waits: 0,
@@ -654,7 +676,10 @@ impl GeneratedInputDeliveryRuntime {
                 }
                 delivery.provider_ack_signal.take();
                 record_delivery_failure(delivery, failure);
-                if let Some((_, user_input_activity)) = delivery.provider_confirmation {
+                if unwritten_readiness_failure(delivery, failure) {
+                    delivery.provider_confirmation = None;
+                    delivery.state = GeneratedInputDeliveryState::Blocked;
+                } else if let Some((_, user_input_activity)) = delivery.provider_confirmation {
                     record_confirmation_activity(delivery, user_input_activity);
                     delivery.state =
                         if manual_recovery_is_attributed(delivery, failure, user_input_activity) {
@@ -673,7 +698,10 @@ impl GeneratedInputDeliveryRuntime {
                 }
                 delivery.provider_ack_signal.take();
                 record_delivery_failure(delivery, failure);
-                if let Some((_, user_input_activity)) = delivery.provider_confirmation {
+                if unwritten_readiness_failure(delivery, failure) {
+                    delivery.provider_confirmation = None;
+                    delivery.state = GeneratedInputDeliveryState::Failed;
+                } else if let Some((_, user_input_activity)) = delivery.provider_confirmation {
                     record_confirmation_activity(delivery, user_input_activity);
                     delivery.state =
                         if manual_recovery_is_attributed(delivery, failure, user_input_activity) {
@@ -702,6 +730,14 @@ impl GeneratedInputDeliveryRuntime {
         };
         if delivery.runtime_epoch != runtime_epoch
             || provider_sequence <= delivery.provider_sequence_baseline
+        {
+            return false;
+        }
+        // A provider turn after composer readiness already timed out belongs
+        // to manual user input, not to this still-unwritten submission.
+        if delivery
+            .failure
+            .is_some_and(|failure| unwritten_readiness_failure(delivery, failure))
         {
             return false;
         }
@@ -767,6 +803,48 @@ impl GeneratedInputDeliveryRuntime {
         true
     }
 
+    /// A provider-queue submission steers an already-running turn, so the
+    /// provider does not emit a second prompt-submitted acknowledgement.
+    /// Confirm it from the first newer same-epoch progress signal observed only
+    /// after the terminal has receipted the submit. The receipt is exposed by
+    /// the transport worker before its completion event is reconciled so
+    /// provider progress racing that event is retained without accepting
+    /// progress that happened before the submit.
+    pub fn confirm_provider_queue_progress(
+        &mut self,
+        session_id: &str,
+        runtime_epoch: u64,
+        provider_sequence: u64,
+    ) -> bool {
+        let Some(delivery) = self.deliveries.get_mut(session_id) else {
+            return false;
+        };
+        if delivery.runtime_epoch != runtime_epoch
+            || delivery.settlement != GeneratedInputSettlement::ProviderQueue
+            || !delivery.submit_receipted_signal.load(Ordering::Acquire)
+            || provider_sequence <= delivery.provider_sequence_baseline
+        {
+            return false;
+        }
+        if delivery.state == GeneratedInputDeliveryState::WritingPaste {
+            delivery.provider_confirmation = Some(match delivery.provider_confirmation {
+                Some((current, current_user_input)) if current > provider_sequence => {
+                    (current, current_user_input)
+                }
+                _ => (provider_sequence, None),
+            });
+            return false;
+        }
+        if delivery.state != GeneratedInputDeliveryState::AwaitingProviderAck {
+            return false;
+        }
+        delivery.provider_confirmation = Some((provider_sequence, None));
+        delivery.state = GeneratedInputDeliveryState::Confirmed;
+        delivery.failure = None;
+        signal_provider_ack(delivery);
+        true
+    }
+
     fn fail_immediately(&mut self, session_id: &str, failure: GeneratedInputDeliveryFailure) {
         if let Some(delivery) = self.deliveries.get_mut(session_id) {
             delivery.provider_ack_signal.take();
@@ -807,6 +885,11 @@ fn merge_transport_diagnostics(
     delivery: &mut GeneratedInputDelivery,
     diagnostics: GeneratedInputTransportDiagnostics,
 ) -> bool {
+    if diagnostics.submit_receipted {
+        delivery
+            .submit_receipted_signal
+            .store(true, Ordering::Release);
+    }
     let before = (
         delivery.paste_receipted,
         delivery.settlement_evidence,
@@ -874,6 +957,14 @@ fn manual_recovery_is_attributed(
     ) && submission_content_unchanged(delivery, activity)
 }
 
+fn unwritten_readiness_failure(
+    delivery: &GeneratedInputDelivery,
+    failure: GeneratedInputDeliveryFailure,
+) -> bool {
+    failure == GeneratedInputDeliveryFailure::ComposerNotReady
+        && !delivery.paste_started.load(Ordering::Acquire)
+}
+
 #[derive(Debug)]
 pub struct GeneratedInputRuntimeEvent {
     session_id: String,
@@ -938,6 +1029,7 @@ struct GeneratedInputTransportPlan {
     settlement: GeneratedInputSettlement,
     cancel_submit: Arc<AtomicBool>,
     paste_started: Arc<AtomicBool>,
+    submit_receipted_signal: Arc<AtomicBool>,
 }
 
 fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTransportResult {
@@ -951,6 +1043,7 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
         settlement,
         cancel_submit,
         paste_started,
+        submit_receipted_signal,
     } = plan;
     let mut diagnostics = GeneratedInputTransportDiagnostics::default();
     if matches!(
@@ -1159,6 +1252,7 @@ fn run_transport_delivery(plan: GeneratedInputTransportPlan) -> GeneratedInputTr
         submission.submit_input(),
         1,
         &mut diagnostics,
+        &submit_receipted_signal,
     ) {
         Ok(output_after_submit) => (
             GeneratedInputTransportOutcome::Submitted,
@@ -1262,6 +1356,7 @@ fn write_submit_attempt(
     submit_input: &[u8],
     attempt: u8,
     diagnostics: &mut GeneratedInputTransportDiagnostics,
+    submit_receipted_signal: &AtomicBool,
 ) -> Result<termloop_terminal::OutputActivitySnapshot, SubmitAttemptFailure> {
     diagnostics.submit_attempts = diagnostics.submit_attempts.max(attempt);
     let mut protocol_settlement_waits = 0;
@@ -1320,6 +1415,7 @@ fn write_submit_attempt(
     };
     match submit_write.wait(WRITE_RECEIPT_TIMEOUT) {
         Ok(receipt) => {
+            submit_receipted_signal.store(true, Ordering::Release);
             diagnostics.submit_receipted = true;
             Ok(receipt.output_after_write)
         }
@@ -1414,6 +1510,7 @@ mod tests {
                 id: 1,
                 runtime_epoch: 7,
                 provider_sequence_baseline: 10,
+                settlement: GeneratedInputSettlement::ComposerRender,
                 submission: test_submission(),
                 state: GeneratedInputDeliveryState::AwaitingProviderAck,
                 failure: None,
@@ -1423,6 +1520,7 @@ mod tests {
                 paste_started: Arc::new(AtomicBool::new(true)),
                 paste_receipted: true,
                 settlement_evidence: Some(OutputSettlementEvidence::ComposerRenderQuiescence),
+                submit_receipted_signal: Arc::new(AtomicBool::new(true)),
                 submit_receipted: true,
                 submit_attempts: 1,
                 protocol_reply_waits: 0,
@@ -1451,14 +1549,15 @@ mod tests {
     }
 
     #[test]
-    fn provider_ack_that_races_transport_receipt_is_not_lost() {
+    fn provider_queue_confirms_only_from_progress_after_submit_receipt() {
         let mut runtime = GeneratedInputDeliveryRuntime::default();
         runtime.deliveries.insert(
             "session".into(),
             GeneratedInputDelivery {
-                id: 3,
+                id: 1,
                 runtime_epoch: 7,
                 provider_sequence_baseline: 10,
+                settlement: GeneratedInputSettlement::ProviderQueue,
                 submission: test_submission(),
                 state: GeneratedInputDeliveryState::WritingPaste,
                 failure: None,
@@ -1468,6 +1567,147 @@ mod tests {
                 paste_started: Arc::new(AtomicBool::new(true)),
                 paste_receipted: false,
                 settlement_evidence: None,
+                submit_receipted_signal: Arc::new(AtomicBool::new(false)),
+                submit_receipted: false,
+                submit_attempts: 0,
+                protocol_reply_waits: 0,
+                user_input_mutated: None,
+                output_activity: OutputActivityDiagnostics::default(),
+                user_input_sequence_baseline: 4,
+                user_input_mutation_sequence_baseline: 3,
+                provider_confirmation: None,
+                cancel_submit: Arc::new(AtomicBool::new(false)),
+                provider_ack_signal: None,
+            },
+        );
+
+        assert!(
+            !runtime.confirm_provider_queue_progress("session", 7, 11),
+            "progress racing before the submit receipt is not delivery evidence"
+        );
+        assert!(runtime.apply_transport_event(GeneratedInputRuntimeEvent {
+            session_id: "session".into(),
+            runtime_epoch: 7,
+            delivery_id: 1,
+            outcome: GeneratedInputTransportOutcome::Submitted,
+            diagnostics: GeneratedInputTransportDiagnostics {
+                paste_receipted: true,
+                submit_receipted: true,
+                submit_attempts: 1,
+                ..GeneratedInputTransportDiagnostics::default()
+            },
+        }));
+        assert_eq!(
+            runtime.state("session", 7),
+            Some(GeneratedInputDeliveryState::AwaitingProviderAck)
+        );
+        assert!(!runtime.confirm_provider_queue_progress("session", 8, 11));
+        assert!(!runtime.confirm_provider_queue_progress("session", 7, 10));
+
+        runtime.deliveries.get_mut("session").unwrap().settlement =
+            GeneratedInputSettlement::ComposerRender;
+        assert!(
+            !runtime.confirm_provider_queue_progress("session", 7, 11),
+            "ordinary composer delivery keeps its exact PromptSubmitted acknowledgement"
+        );
+        runtime.deliveries.get_mut("session").unwrap().settlement =
+            GeneratedInputSettlement::ProviderQueue;
+
+        assert!(runtime.confirm_provider_queue_progress("session", 7, 11));
+        assert_eq!(
+            runtime.state("session", 7),
+            Some(GeneratedInputDeliveryState::Confirmed)
+        );
+    }
+
+    #[test]
+    fn provider_queue_retains_progress_racing_the_transport_event_after_submit_receipt() {
+        let mut runtime = GeneratedInputDeliveryRuntime::default();
+        let submit_receipted_signal = Arc::new(AtomicBool::new(false));
+        runtime.deliveries.insert(
+            "session".into(),
+            GeneratedInputDelivery {
+                id: 1,
+                runtime_epoch: 7,
+                provider_sequence_baseline: 10,
+                settlement: GeneratedInputSettlement::ProviderQueue,
+                submission: test_submission(),
+                state: GeneratedInputDeliveryState::WritingPaste,
+                failure: None,
+                original_failure: None,
+                cancel_cause: None,
+                cancel_notification_type: None,
+                paste_started: Arc::new(AtomicBool::new(true)),
+                paste_receipted: false,
+                settlement_evidence: None,
+                submit_receipted_signal: Arc::clone(&submit_receipted_signal),
+                submit_receipted: false,
+                submit_attempts: 0,
+                protocol_reply_waits: 0,
+                user_input_mutated: None,
+                output_activity: OutputActivityDiagnostics::default(),
+                user_input_sequence_baseline: 4,
+                user_input_mutation_sequence_baseline: 3,
+                provider_confirmation: None,
+                cancel_submit: Arc::new(AtomicBool::new(false)),
+                provider_ack_signal: None,
+            },
+        );
+
+        assert!(!runtime.confirm_provider_queue_progress("session", 7, 11));
+        assert_eq!(runtime.deliveries["session"].provider_confirmation, None);
+
+        // The terminal worker publishes this receipt before its runtime event
+        // can contend for Core's lock with the provider progress event.
+        submit_receipted_signal.store(true, Ordering::Release);
+        assert!(!runtime.confirm_provider_queue_progress("session", 7, 11));
+        assert_eq!(
+            runtime.deliveries["session"].provider_confirmation,
+            Some((11, None))
+        );
+        assert_eq!(
+            runtime.state("session", 7),
+            Some(GeneratedInputDeliveryState::WritingPaste)
+        );
+
+        assert!(runtime.apply_transport_event(GeneratedInputRuntimeEvent {
+            session_id: "session".into(),
+            runtime_epoch: 7,
+            delivery_id: 1,
+            outcome: GeneratedInputTransportOutcome::Submitted,
+            diagnostics: GeneratedInputTransportDiagnostics {
+                paste_receipted: true,
+                submit_receipted: true,
+                submit_attempts: 1,
+                ..GeneratedInputTransportDiagnostics::default()
+            },
+        }));
+        assert_eq!(
+            runtime.state("session", 7),
+            Some(GeneratedInputDeliveryState::Confirmed)
+        );
+    }
+
+    #[test]
+    fn provider_ack_that_races_transport_receipt_is_not_lost() {
+        let mut runtime = GeneratedInputDeliveryRuntime::default();
+        runtime.deliveries.insert(
+            "session".into(),
+            GeneratedInputDelivery {
+                id: 3,
+                runtime_epoch: 7,
+                provider_sequence_baseline: 10,
+                settlement: GeneratedInputSettlement::ComposerRender,
+                submission: test_submission(),
+                state: GeneratedInputDeliveryState::WritingPaste,
+                failure: None,
+                original_failure: None,
+                cancel_cause: None,
+                cancel_notification_type: None,
+                paste_started: Arc::new(AtomicBool::new(true)),
+                paste_receipted: false,
+                settlement_evidence: None,
+                submit_receipted_signal: Arc::new(AtomicBool::new(false)),
                 submit_receipted: false,
                 submit_attempts: 0,
                 protocol_reply_waits: 0,
@@ -1508,6 +1748,69 @@ mod tests {
     }
 
     #[test]
+    fn manual_turn_before_paste_does_not_confirm_an_undelivered_submission() {
+        let mut runtime = GeneratedInputDeliveryRuntime::default();
+        runtime.deliveries.insert(
+            "session".into(),
+            GeneratedInputDelivery {
+                id: 3,
+                runtime_epoch: 7,
+                provider_sequence_baseline: 10,
+                settlement: GeneratedInputSettlement::ComposerRender,
+                submission: test_submission(),
+                state: GeneratedInputDeliveryState::WritingPaste,
+                failure: None,
+                original_failure: None,
+                cancel_cause: None,
+                cancel_notification_type: None,
+                paste_started: Arc::new(AtomicBool::new(false)),
+                paste_receipted: false,
+                settlement_evidence: None,
+                submit_receipted_signal: Arc::new(AtomicBool::new(false)),
+                submit_receipted: false,
+                submit_attempts: 0,
+                protocol_reply_waits: 0,
+                user_input_mutated: None,
+                output_activity: OutputActivityDiagnostics::default(),
+                user_input_sequence_baseline: 4,
+                user_input_mutation_sequence_baseline: 3,
+                provider_confirmation: None,
+                cancel_submit: Arc::new(AtomicBool::new(false)),
+                provider_ack_signal: None,
+            },
+        );
+
+        assert!(!runtime.confirm_provider_submission("session", 7, 11, Some(activity(5, 4))));
+        assert_eq!(
+            runtime.state("session", 7),
+            Some(GeneratedInputDeliveryState::WritingPaste)
+        );
+        assert!(runtime.apply_transport_event(GeneratedInputRuntimeEvent {
+            session_id: "session".into(),
+            runtime_epoch: 7,
+            delivery_id: 3,
+            outcome: GeneratedInputTransportOutcome::Blocked(
+                GeneratedInputDeliveryFailure::ComposerNotReady,
+            ),
+            diagnostics: GeneratedInputTransportDiagnostics::default(),
+        }));
+        assert_eq!(
+            runtime.state("session", 7),
+            Some(GeneratedInputDeliveryState::Blocked)
+        );
+        assert_eq!(
+            runtime.failure("session", 7),
+            Some(GeneratedInputDeliveryFailure::ComposerNotReady)
+        );
+        assert!(!runtime.confirm_provider_submission("session", 7, 12, Some(activity(6, 5))));
+        assert!(!runtime.confirm_provider_progress("session", 7, 13));
+        assert_eq!(
+            runtime.state("session", 7),
+            Some(GeneratedInputDeliveryState::Blocked)
+        );
+    }
+
+    #[test]
     fn newer_provider_ack_confirms_receipted_submit_after_user_input() {
         let mut runtime = GeneratedInputDeliveryRuntime::default();
         runtime.deliveries.insert(
@@ -1516,6 +1819,7 @@ mod tests {
                 id: 1,
                 runtime_epoch: 7,
                 provider_sequence_baseline: 10,
+                settlement: GeneratedInputSettlement::ComposerRender,
                 submission: test_submission(),
                 state: GeneratedInputDeliveryState::AwaitingProviderAck,
                 failure: None,
@@ -1525,6 +1829,7 @@ mod tests {
                 paste_started: Arc::new(AtomicBool::new(true)),
                 paste_receipted: true,
                 settlement_evidence: Some(OutputSettlementEvidence::ComposerRenderQuiescence),
+                submit_receipted_signal: Arc::new(AtomicBool::new(true)),
                 submit_receipted: true,
                 submit_attempts: 1,
                 protocol_reply_waits: 0,
@@ -1562,6 +1867,7 @@ mod tests {
                 id: 1,
                 runtime_epoch: 7,
                 provider_sequence_baseline: 10,
+                settlement: GeneratedInputSettlement::ComposerRender,
                 submission: test_submission(),
                 state: GeneratedInputDeliveryState::AwaitingProviderAck,
                 failure: None,
@@ -1571,6 +1877,7 @@ mod tests {
                 paste_started: Arc::new(AtomicBool::new(true)),
                 paste_receipted: true,
                 settlement_evidence: Some(OutputSettlementEvidence::ComposerRenderQuiescence),
+                submit_receipted_signal: Arc::new(AtomicBool::new(true)),
                 submit_receipted: true,
                 submit_attempts: 1,
                 protocol_reply_waits: 0,
@@ -1641,6 +1948,7 @@ mod tests {
                 id: 1,
                 runtime_epoch: 7,
                 provider_sequence_baseline: 10,
+                settlement: GeneratedInputSettlement::ComposerRender,
                 submission: test_submission(),
                 state: GeneratedInputDeliveryState::WritingPaste,
                 failure: None,
@@ -1650,6 +1958,7 @@ mod tests {
                 paste_started: Arc::new(AtomicBool::new(true)),
                 paste_receipted: false,
                 settlement_evidence: None,
+                submit_receipted_signal: Arc::new(AtomicBool::new(false)),
                 submit_receipted: false,
                 submit_attempts: 0,
                 protocol_reply_waits: 0,
@@ -1768,6 +2077,7 @@ mod tests {
                     id: 1,
                     runtime_epoch: 7,
                     provider_sequence_baseline: 10,
+                    settlement: GeneratedInputSettlement::ComposerRender,
                     submission: test_submission(),
                     state,
                     failure: Some(failure),
@@ -1777,6 +2087,7 @@ mod tests {
                     paste_started: Arc::new(AtomicBool::new(true)),
                     paste_receipted: true,
                     settlement_evidence: Some(OutputSettlementEvidence::ComposerRenderQuiescence),
+                    submit_receipted_signal: Arc::new(AtomicBool::new(false)),
                     submit_receipted: false,
                     submit_attempts: 0,
                     protocol_reply_waits: 0,
@@ -1820,6 +2131,7 @@ mod tests {
                 id: 1,
                 runtime_epoch: 7,
                 provider_sequence_baseline: 10,
+                settlement: GeneratedInputSettlement::ComposerRender,
                 submission: test_submission(),
                 state: GeneratedInputDeliveryState::Blocked,
                 failure: Some(GeneratedInputDeliveryFailure::OutputDidNotSettle),
@@ -1829,6 +2141,7 @@ mod tests {
                 paste_started: Arc::new(AtomicBool::new(true)),
                 paste_receipted: true,
                 settlement_evidence: None,
+                submit_receipted_signal: Arc::new(AtomicBool::new(false)),
                 submit_receipted: false,
                 submit_attempts: 0,
                 protocol_reply_waits: 0,
@@ -1884,6 +2197,7 @@ mod tests {
                 id: 1,
                 runtime_epoch: 7,
                 provider_sequence_baseline: 10,
+                settlement: GeneratedInputSettlement::ComposerRender,
                 submission: test_submission(),
                 state: GeneratedInputDeliveryState::AwaitingProviderAck,
                 failure: None,
@@ -1893,6 +2207,7 @@ mod tests {
                 paste_started: Arc::new(AtomicBool::new(true)),
                 paste_receipted: true,
                 settlement_evidence: Some(OutputSettlementEvidence::ComposerRenderQuiescence),
+                submit_receipted_signal: Arc::new(AtomicBool::new(true)),
                 submit_receipted: true,
                 submit_attempts: 1,
                 protocol_reply_waits: 0,

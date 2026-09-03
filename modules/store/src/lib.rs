@@ -25,7 +25,7 @@ use termloop_domain::{
     RunConfiguration, RunSetupMark, SavedAgentLaunchSelection, SessionArchiveOperation,
     SessionRecord, SessionRelocationOperation, SessionRelocationReceipt, StewardConfiguration,
     StewardConversationRef, TaskArchiveOperation, TaskArchiveSuspension, TaskBranchBinding,
-    TaskRecord, TaskSourceConfiguration, TaskWorktreeBinding, TrackerConfiguration,
+    TaskBranchSet, TaskRecord, TaskSourceConfiguration, TaskWorktreeBinding, TrackerConfiguration,
     WorkerConfiguration, WorktreeCleanupOperation, WorktreeCleanupReceipt,
     WorktreeProvisioningOperation, WorktreeRepairOperation, WorktreeRepairReceipt,
     WorktreeStaleResolutionOperation, WorktreeStaleResolutionReceipt,
@@ -52,8 +52,9 @@ use termloop_domain::{
 // from each source to one Project sidecar. Version 44 adds the source-owned
 // active-Task WIP limit for automatic import. Version 45 adds explicit Task
 // automation launch options. Version 46 adds the permission selection.
-// Version 47 adds the managed Task branch/worktree prefix.
-const CURRENT_SCHEMA_VERSION: u32 = 47;
+// Version 47 adds the managed Task branch/worktree prefix. Version 48 adds the
+// bounded current set of branches observed in each managed Task worktree.
+const CURRENT_SCHEMA_VERSION: u32 = 48;
 
 pub struct CoreWriteAuthority {
     _private: (),
@@ -73,6 +74,8 @@ struct CurrentState {
     projects: Vec<ProjectRecord>,
     #[serde(default)]
     tasks: Vec<TaskRecord>,
+    #[serde(default)]
+    task_branch_sets: Vec<TaskBranchSet>,
     #[serde(default)]
     task_archive_operations: Vec<TaskArchiveOperation>,
     #[serde(default)]
@@ -148,6 +151,7 @@ impl Default for CurrentState {
             mcp_tool_description_overrides: vec![],
             projects: vec![],
             tasks: vec![],
+            task_branch_sets: vec![],
             task_archive_operations: vec![],
             task_archive_suspensions: vec![],
             session_archive_operations: vec![],
@@ -328,6 +332,9 @@ impl Store {
     }
     pub fn tasks(&self) -> &[TaskRecord] {
         &self.state.tasks
+    }
+    pub fn task_branch_sets(&self) -> &[TaskBranchSet] {
+        &self.state.task_branch_sets
     }
     pub fn task_archive_operations(&self) -> &[TaskArchiveOperation] {
         &self.state.task_archive_operations

@@ -65,6 +65,20 @@ impl CompanionMessageKind {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CompanionMessageInputMode {
+    #[default]
+    Text,
+    Voice,
+}
+
+impl CompanionMessageInputMode {
+    pub fn is_text(&self) -> bool {
+        *self == Self::Text
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompanionMessageRefs {
@@ -497,6 +511,8 @@ pub struct CompanionMessage {
     pub author: CompanionMessageAuthor,
     #[serde(default, skip_serializing_if = "CompanionMessageKind::is_reply")]
     pub kind: CompanionMessageKind,
+    #[serde(default, skip_serializing_if = "CompanionMessageInputMode::is_text")]
+    pub input_mode: CompanionMessageInputMode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refs: Option<CompanionMessageRefs>,
     pub content: String,
@@ -541,6 +557,7 @@ mod tests {
             sequence: 1,
             author: CompanionMessageAuthor::User,
             kind: CompanionMessageKind::Reply,
+            input_mode: CompanionMessageInputMode::Text,
             refs: None,
             content: "ş".into(),
             created_at_epoch_ms: 1,
@@ -558,6 +575,7 @@ mod tests {
             sequence: 1,
             author: CompanionMessageAuthor::Steward,
             kind: CompanionMessageKind::Suggestion,
+            input_mode: CompanionMessageInputMode::Text,
             refs: None,
             content: " ".into(),
             created_at_epoch_ms: 1,

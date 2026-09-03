@@ -1,9 +1,15 @@
 import { build } from "esbuild";
-import { cp, mkdir, realpath, stat } from "node:fs/promises";
+import { execFile as execFileCallback } from "node:child_process";
+import { cp, mkdir, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+
+const execFile = promisify(execFileCallback);
 
 const packageDirectory = path.dirname(fileURLToPath(import.meta.url));
+const packageManifest = JSON.parse(await readFile(path.join(packageDirectory, "package.json"), "utf8"));
+const gatewaySequence = releaseSequence(packageManifest.version);
 const checkout = await realpath(path.resolve(packageDirectory, "../.."));
 const gitMarker = await stat(path.join(checkout, ".git")).catch(() => undefined);
 const compiledDevelopmentProfile = gitMarker?.isFile() ? developmentProfileId(checkout) : undefined;
@@ -25,6 +31,29 @@ await Promise.all([
   cp("src/assets/ghostty-embedded.conf", "dist/ghostty-embedded.conf"),
   cp("src/assets/fonts/OFL.txt", "dist/JetBrainsMono-OFL.txt")
 ]);
+
+const mobileAccessDirectory = path.join(packageDirectory, "dist/mobile-access");
+const mobileScriptsDirectory = path.join(checkout, "clients/mobile/scripts");
+await mkdir(mobileAccessDirectory, { recursive: true });
+await Promise.all([
+  cp(path.join(mobileScriptsDirectory, "mobile-access.mjs"), path.join(mobileAccessDirectory, "mobile-access.mjs")),
+  cp(path.join(mobileScriptsDirectory, "mobile-access-installer.mjs"), path.join(mobileAccessDirectory, "mobile-access-installer.mjs")),
+]);
+await execFile(process.execPath, [
+  path.join(mobileScriptsDirectory, "mobile-access.mjs"),
+  "--build-artifact",
+  "--artifact-dir", mobileAccessDirectory,
+  "--channel", "production",
+  "--owner", "ai.termloop.desktop",
+  "--sequence", String(gatewaySequence),
+  "--release-version", packageManifest.version,
+], { cwd: path.join(checkout, "clients/mobile") });
+
+function releaseSequence(version) {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (!match) throw new Error(`Desktop version ${version} cannot produce a monotonic gateway sequence.`);
+  return (Number(match[1]) * 1_000_000) + (Number(match[2]) * 1_000) + Number(match[3]);
+}
 
 function developmentProfileId(checkoutPath) {
   const label = path.basename(checkoutPath)

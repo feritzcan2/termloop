@@ -2,7 +2,7 @@
 
 # Required parameters:
 # @raycast.schemaVersion 1
-# @raycast.title Remove TermLoop Builds
+# @raycast.title TermLoop Remove Builds
 # @raycast.mode fullOutput
 
 # Optional parameters:

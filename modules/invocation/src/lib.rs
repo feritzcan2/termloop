@@ -105,7 +105,7 @@ const IMPROVER_WORKER_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const IMPROVER_ROUTINE_INSTRUCTIONS_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.improver.routine-instructions",
-    version: 7,
+    version: 9,
     authored_body: include_str!(
         "../../../resources/prompts/builtin.improver.routine-instructions.md"
     ),
@@ -119,19 +119,19 @@ const ROUTINE_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const PLAYBOOK_BUILDER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.builder.playbook",
-    version: 12,
+    version: 17,
     authored_body: include_str!("../../../resources/prompts/builtin.builder.playbook.md"),
 };
 
 const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.steward.executor",
-    version: 30,
+    version: 36,
     authored_body: include_str!("../../../resources/prompts/builtin.steward.executor.md"),
 };
 
 const WORKER_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.worker.executor",
-    version: 16,
+    version: 22,
     authored_body: include_str!("../../../resources/prompts/builtin.worker.executor.md"),
 };
 
@@ -167,7 +167,7 @@ const CI_PR_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const STEP_CHECK_TRACKER_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.tracker.step-check",
-    version: 7,
+    version: 8,
     authored_body: include_str!("../../../resources/prompts/builtin.tracker.step-check.md"),
 };
 
@@ -895,6 +895,12 @@ pub fn validate_quick_action_with_attachments(
     attachments: &[QuickActionImageAttachment],
 ) -> Result<(), InvocationError> {
     validate_quick_action(agent_id, model, permission, reasoning, prompt)?;
+    validate_image_attachments(attachments)
+}
+
+pub fn validate_image_attachments(
+    attachments: &[QuickActionImageAttachment],
+) -> Result<(), InvocationError> {
     if attachments.len() > 1 {
         return Err(InvocationError::InvalidImageAttachment);
     }
@@ -941,6 +947,22 @@ pub fn validate_quick_action_with_attachments(
         }
     }
     Ok(())
+}
+
+/// Encodes one user-initiated image paste as a provider-neutral remote file
+/// reference without a submit key. The path is serialized as a JSON string so
+/// spaces, quotes, and platform separators remain unambiguous to every Agent
+/// composer while the user continues typing the accompanying instruction.
+pub fn image_attachment_terminal_paste(
+    attachment: &QuickActionImageAttachment,
+) -> Result<Vec<u8>, InvocationError> {
+    validate_image_attachments(std::slice::from_ref(attachment))?;
+    let mut reference = serde_json::to_string(&attachment.file_path)
+        .map_err(|_| InvocationError::InvalidImageAttachment)?;
+    reference.push(' ');
+    Ok(termloop_platform::terminal_paste_input(
+        reference.as_bytes(),
+    ))
 }
 
 pub fn validate_agent_configuration(
@@ -3815,7 +3837,7 @@ mod tests {
             (
                 ExecutorRole::StepCheckTracker,
                 "builtin.tracker.step-check",
-                7,
+                8,
             ),
             (ExecutorRole::CustomTracker, "builtin.tracker.custom", 4),
         ];
@@ -4057,10 +4079,15 @@ mod tests {
         let launch = prompt_improver_launch(target);
         let delivered = launch.delivered_prompt().unwrap();
 
-        assert_eq!(template.version, 12);
-        assert_eq!(launch.provenance().template_version, 12);
+        assert_eq!(template.version, 17);
+        assert_eq!(launch.provenance().template_version, 17);
         for expected in [
             "two compact review",
+            "For a scoped edit to one or a few existing steps",
+            "After this change",
+            "not a configuration delta",
+            "Never collapse those roles",
+            "JSON-escaped snapshot fragment",
             "show the complete normal path as one readable arrow sequence",
             "present the complete detailed draft",
             "configuration_version_write.content",
@@ -4072,6 +4099,16 @@ mod tests {
             "Every saved pipeline contains exactly",
             "Every `check` contains exactly",
             "never send probe",
+            "authenticated scoped",
+            "Project checkout cwd or",
+            "task_agent_request",
+            "Worker-to-Agent coordination among the recommended options",
+            "pullRequestCandidatesByBaseBranch",
+            "`coordinationAgent` projection",
+            "sole authority",
+            "never require the Worker to re-prove Agent",
+            "Worker to attempt",
+            "ordinary unmet evidence and is `waiting`",
         ] {
             assert!(delivered.contains(expected), "missing {expected:?}");
         }
@@ -4266,6 +4303,32 @@ mod tests {
             codex.inspectable_manifest().digest,
             claude.inspectable_manifest().digest
         );
+    }
+
+    #[test]
+    fn image_attachment_paste_is_provider_neutral_and_does_not_submit() {
+        let attachment_id = "123e4567-e89b-42d3-a456-426614174000";
+        let file_path = std::env::temp_dir()
+            .join("termloop-quick-action-images")
+            .join(attachment_id)
+            .join("image.png");
+        let attachment = QuickActionImageAttachment {
+            attachment_id: attachment_id.into(),
+            file_path: file_path.to_string_lossy().into_owned(),
+            media_type: "image/png".into(),
+            byte_length: 4_096,
+            sha256: format!("sha256:{}", "a".repeat(64)),
+            width: 800,
+            height: 600,
+        };
+
+        let paste = image_attachment_terminal_paste(&attachment).unwrap();
+        let expected = format!("{} ", serde_json::to_string(&attachment.file_path).unwrap());
+        assert_eq!(
+            paste,
+            termloop_platform::terminal_paste_input(expected.as_bytes())
+        );
+        assert!(!paste.ends_with(b"\r"));
     }
 
     #[test]
@@ -4638,6 +4701,7 @@ mod tests {
                     .content
                     .contains("task_agent_transcript_tail_read")
             );
+            assert!(instructions.content.contains("task_agent_request"));
             match agent_id {
                 "codex" => assert!(worker.args().iter().any(|argument| {
                     argument.starts_with("developer_instructions=")
@@ -5760,7 +5824,7 @@ mod tests {
     fn ask_to_follow_up_is_visible_versioned_and_terminal_safe() {
         let prompt = ask_to_follow_up_prompt(
             "request-2",
-            "İlk cevabını dikkate alıp bir örnek daha ver.\nKısa tut.",
+            "Consider your first answer and give one more example.\nKeep it brief.",
         )
         .unwrap();
         assert_eq!(
@@ -5774,12 +5838,16 @@ mod tests {
                 ("request_id", "request-2"),
                 (
                     "message",
-                    "İlk cevabını dikkate alıp bir örnek daha ver.\nKısa tut."
+                    "Consider your first answer and give one more example.\nKeep it brief."
                 )
             ]
         );
         assert!(prompt.delivered_prompt().contains("request-2"));
-        assert!(prompt.delivered_prompt().contains("İlk cevabını"));
+        assert!(
+            prompt
+                .delivered_prompt()
+                .contains("Consider your first answer")
+        );
         assert!(!prompt.delivered_prompt().contains("{{"));
         assert_terminal_submission(prompt.terminal_input_sequence(), prompt.delivered_prompt());
 
@@ -5830,11 +5898,21 @@ mod tests {
     #[test]
     fn steward_prompt_completes_explicit_task_worktree_and_agent_requests() {
         let prompt = executor_prompt(ExecutorRole::Steward).unwrap();
-        assert_eq!(prompt.provenance().template_version, 30);
+        assert_eq!(prompt.provenance().template_version, 36);
         assert!(prompt.authored_preview().contains("routine_finding_read"));
         assert!(prompt.authored_preview().contains("playbook_read"));
         assert!(prompt.authored_preview().contains("task_set_steward_brief"));
         assert!(prompt.authored_preview().contains("task_agent_start"));
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("every response regardless of input mode")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("idempotent and safe to retry")
+        );
         assert!(
             prompt
                 .authored_preview()
@@ -5900,7 +5978,11 @@ mod tests {
                 .authored_preview()
                 .contains("call `agent_message_send` to the same running Source Session")
         );
-        assert!(prompt.authored_preview().contains("call `task_close`"));
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("Call `task_close` only when the Task-level outcome is complete")
+        );
         assert!(
             prompt
                 .authored_preview()
@@ -5924,12 +6006,12 @@ mod tests {
         assert!(
             prompt
                 .authored_preview()
-                .contains("set `refs.routineFindingIds` to\nevery exact `findings[].id`")
+                .contains("`refs.routineFindingIds` for a batch")
         );
         assert!(
             prompt
                 .authored_preview()
-                .contains("Never use a Routine\n`routineId`")
+                .contains("Never use a\nRoutine `routineId`")
         );
         assert!(
             prompt
@@ -5945,12 +6027,22 @@ mod tests {
         assert!(
             prompt
                 .authored_preview()
-                .contains("concise, decisive `steward_suggest` messages")
+                .contains("every user-visible `steward_suggest` message concisely and decisively",)
         );
         assert!(
             prompt
                 .authored_preview()
-                .contains("dominant language of\nthe newest user message")
+                .contains("dominant language of the newest user message")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("Proposal-level clarity is the standard for every\nkind")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("one to four short, natural, easily pronounced sentences")
         );
         assert!(
             prompt
@@ -5961,6 +6053,83 @@ mod tests {
             prompt
                 .authored_preview()
                 .contains("does not compress Task briefs, Agent messages")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("own it through verified completion")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("Act without additional approval when the action is Project-internal")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("either reversible or a normal non-destructive execution")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("communication outside the Project, a destructive or materially")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("Never turn a safe Project-management decision into a question")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("Every current `ask` or `auto` finding must leave the wake")
+        );
+        assert!(prompt.authored_preview().contains("use `task_agent_start`"));
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("suggestedAction: messageExistingAgent")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("Never call `task_agent_start` for")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("Exact Task state reconciliation")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("evidence is not state drift")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("Never reconcile from another Task's branch")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("The Worker remains the sole authority")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("is disposition 6, not a reason to leave it pending")
+        );
+        assert!(prompt.authored_preview().contains("deliveredAndDismissed"));
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("`task_read.coordinationAgent` projection")
+        );
+        assert!(
+            prompt
+                .authored_preview()
+                .contains("Do not run repository, provider, build, test")
         );
 
         let retired =
@@ -5974,7 +6143,7 @@ mod tests {
             default_steward_system_prompt()
         );
         let latest_retired =
-            include_str!("../../../resources/prompts/retired/builtin.steward.executor.v29.md")
+            include_str!("../../../resources/prompts/retired/builtin.steward.executor.v35.md")
                 .splitn(3, "\n\n")
                 .nth(2)
                 .unwrap()
@@ -6016,7 +6185,7 @@ mod tests {
     #[test]
     fn pipeline_prompts_treat_a_step_title_as_a_label_not_a_yes_no_contract() {
         let worker = executor_prompt(ExecutorRole::Worker).unwrap();
-        assert_eq!(worker.provenance().template_version, 16);
+        assert_eq!(worker.provenance().template_version, 22);
         assert!(
             worker
                 .authored_preview()
@@ -6037,9 +6206,48 @@ mod tests {
                 .authored_preview()
                 .contains("exactly one focused Task")
         );
+        assert!(worker.authored_preview().contains("`step.tasks[0].taskId`"));
+        assert!(
+            worker
+                .authored_preview()
+                .contains("`step.taskRead.arguments`")
+        );
+        assert!(worker.authored_preview().contains("terminal's cwd or HEAD"));
+        assert!(
+            worker
+                .authored_preview()
+                .contains("`pullRequestCandidatesByBaseBranch`")
+        );
+        assert!(
+            worker
+                .authored_preview()
+                .contains("`coordinationAgent.state`")
+        );
+        assert!(
+            worker
+                .authored_preview()
+                .contains("sole authority\nfor the request target")
+        );
+        assert!(
+            worker
+                .authored_preview()
+                .contains("resolve and attempt that exposed capability")
+        );
+        assert!(
+            worker
+                .authored_preview()
+                .contains("absence of the outcome is not an access or configuration problem")
+        );
+        assert!(
+            worker
+                .authored_preview()
+                .contains("rejects a step verdict unless")
+        );
+        assert!(worker.authored_preview().contains("self-report"));
+        assert!(worker.authored_preview().contains("`unsupported`"));
 
         let step = tracker_assignment_prompt(ExecutorRole::StepCheckTracker).unwrap();
-        assert_eq!(step.provenance().template_version, 7);
+        assert_eq!(step.provenance().template_version, 8);
         assert!(step.delivered_preview().contains("Its `title` is a label"));
         assert!(
             step.delivered_preview()
@@ -6049,6 +6257,8 @@ mod tests {
             step.delivered_preview()
                 .contains("exactly one focused Task")
         );
+        assert!(step.delivered_preview().contains("Agent plan completion"));
+        assert!(step.delivered_preview().contains("`notReported`"));
         assert!(!step.delivered_preview().contains("one yes/no question"));
     }
 

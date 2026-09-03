@@ -35,6 +35,42 @@ fn generated_envelope_rejects_unknown_fields() {
 }
 
 #[test]
+fn remote_skill_creation_is_strict_bounded_and_full_control_only() {
+    assert!(READ_ONLY_METHODS.contains(&"skill.catalogGet"));
+    assert!(!READ_ONLY_METHODS.contains(&"skill.definitionCreate"));
+    assert!(validate_method_params(
+        "skill.definitionCreate",
+        &serde_json::json!({
+            "directoryName": "shared-review",
+            "content": "---\nname: shared-review\ndescription: Review changes.\n---\n"
+        })
+    ));
+    for invalid in [
+        serde_json::json!({"directoryName": "../escape", "content": "content"}),
+        serde_json::json!({"directoryName": "Nested/Skill", "content": "content"}),
+        serde_json::json!({"directoryName": "shared-review", "content": ""}),
+        serde_json::json!({
+            "directoryName": "shared-review",
+            "content": "content",
+            "projectId": "project-1"
+        }),
+    ] {
+        assert!(!validate_method_params("skill.definitionCreate", &invalid));
+    }
+    assert!(validate_method_result(
+        "skill.definitionCreate",
+        &serde_json::json!({
+            "skills": [],
+            "warnings": [],
+            "projectIncluded": false,
+            "projectName": null,
+            "providerSnapshotIncluded": false,
+            "managerAvailable": true
+        })
+    ));
+}
+
+#[test]
 fn project_task_automation_is_strict_and_revision_checked() {
     assert!(METHODS.contains(&"project.taskAutomationGet"));
     assert!(METHODS.contains(&"project.taskAutomationSet"));

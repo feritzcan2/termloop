@@ -49,7 +49,8 @@ struct InputReadinessState {
     synchronized_frame_open: bool,
     synchronized_frame_had_show_cursor: bool,
     synchronized_frame_cursor_position: Option<CursorPosition>,
-    synchronized_frame_cursor_after_show: Option<CursorPosition>,
+    synchronized_frame_cursor_position_observed: bool,
+    synchronized_frame_visible_cursor_position: Option<CursorPosition>,
     synchronized_frame_last_right_angle_prompt_position: Option<CursorPosition>,
     visible_right_angle_prompt_position: Option<CursorPosition>,
     completed_frame_cursor_position: Option<CursorPosition>,
@@ -102,7 +103,7 @@ fn completed_frame_has_composer_prompt(state: &InputReadinessState) -> bool {
         && state.synchronized_frame_had_show_cursor
         && state
             .synchronized_frame_last_right_angle_prompt_position
-            .zip(state.synchronized_frame_cursor_after_show)
+            .zip(state.synchronized_frame_visible_cursor_position)
             .is_some_and(|(prompt, cursor)| {
                 prompt.row == cursor.row && cursor.column > prompt.column
             })
@@ -146,8 +147,9 @@ impl InputReadinessTracker {
                         if state.synchronized_frame_open =>
                     {
                         state.synchronized_frame_cursor_position = Some(position);
+                        state.synchronized_frame_cursor_position_observed = true;
                         if state.synchronized_frame_had_show_cursor {
-                            state.synchronized_frame_cursor_after_show = Some(position);
+                            state.synchronized_frame_visible_cursor_position = Some(position);
                         }
                     }
                     _ => {}
@@ -206,7 +208,8 @@ impl InputReadinessTracker {
                     state.synchronized_frame_had_show_cursor = false;
                     state.synchronized_frame_cursor_position =
                         state.completed_frame_cursor_position;
-                    state.synchronized_frame_cursor_after_show = None;
+                    state.synchronized_frame_cursor_position_observed = false;
+                    state.synchronized_frame_visible_cursor_position = None;
                     state.synchronized_frame_last_right_angle_prompt_position = None;
                 }
                 let showed_cursor = record_marker(byte, SHOW_CURSOR, &mut state.show_cursor_match);
@@ -215,7 +218,16 @@ impl InputReadinessTracker {
                 }
                 if showed_cursor && state.synchronized_frame_open {
                     state.synchronized_frame_had_show_cursor = true;
-                    state.synchronized_frame_cursor_after_show = None;
+                    // Codex may position the composer cursor immediately before
+                    // or after making it visible. Accept either order only when
+                    // that position was observed in this exact frame; the prior
+                    // frame's remembered cursor is not readiness evidence.
+                    state.synchronized_frame_visible_cursor_position =
+                        if state.synchronized_frame_cursor_position_observed {
+                            state.synchronized_frame_cursor_position
+                        } else {
+                            None
+                        };
                 }
                 if record_marker(
                     byte,
@@ -257,12 +269,13 @@ impl InputReadinessTracker {
                         record_completed_composer_prompt(&mut state);
                     }
                     state.completed_frame_cursor_position = state
-                        .synchronized_frame_cursor_after_show
+                        .synchronized_frame_visible_cursor_position
                         .or(state.synchronized_frame_cursor_position);
                     state.synchronized_frame_open = false;
                     state.synchronized_frame_had_show_cursor = false;
                     state.synchronized_frame_cursor_position = None;
-                    state.synchronized_frame_cursor_after_show = None;
+                    state.synchronized_frame_cursor_position_observed = false;
+                    state.synchronized_frame_visible_cursor_position = None;
                     state.synchronized_frame_last_right_angle_prompt_position = None;
                 }
             }
@@ -440,6 +453,36 @@ mod tests {
         assert!(facts.composer_prompt_seen_in_current_alternate_screen);
         assert_eq!(facts.composer_prompt_render_count, 1);
         assert!(facts.composer_prompt_seen_after_bracketed_paste);
+        assert_eq!(facts.composer_prompt_ready_count, 1);
+    }
+
+    #[test]
+    fn codex_composer_accepts_cursor_position_before_show_cursor() {
+        let tracker = InputReadinessTracker::default();
+        tracker.record(BRACKETED_PASTE_ENABLE);
+
+        tracker.record(
+            "\x1b[?2026h\x1b[8;1H\x1b[K\x1b[1m›\x1b[22m prior prompt\
+             \x1b[49;3H\x1b[?25h\x1b[?2026l"
+                .as_bytes(),
+        );
+        assert!(
+            !tracker
+                .snapshot("session".into(), 7)
+                .unwrap()
+                .facts()
+                .composer_prompt_seen_after_bracketed_paste,
+            "a transcript prompt must not become ready from a visible cursor on another row"
+        );
+
+        tracker.record(
+            "\x1b[?2026h\x1b[49;1H\x1b[K\x1b[1m›\x1b[22m Ask Codex to do anything\
+             \x1b[49;3H\x1b[?25h\x1b[?2026l"
+                .as_bytes(),
+        );
+        let facts = tracker.snapshot("session".into(), 7).unwrap().facts();
+        assert!(facts.composer_prompt_seen_after_bracketed_paste);
+        assert_eq!(facts.composer_prompt_render_count, 1);
         assert_eq!(facts.composer_prompt_ready_count, 1);
     }
 

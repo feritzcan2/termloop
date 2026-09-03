@@ -1,7 +1,8 @@
 import { Icon, type IconName } from "./Icon.js";
 import type { AgentCapabilityDto } from "@termloop/contract/current";
+import type { WorkspaceView } from "../workspace-view-memory.js";
 
-export type WorkspaceView = "overview" | "agents" | "history" | "steward";
+export type { WorkspaceView } from "../workspace-view-memory.js";
 
 export function WorkspaceViewSwitch({ view, viewActive = true, disabled, agents = [], select, launchTerminal, launchAgent, setupDevServer, runDevServer, attentionCount = 0, taskAttentionCount = 0, viewAction, secondaryAction }: {
   view: WorkspaceView;

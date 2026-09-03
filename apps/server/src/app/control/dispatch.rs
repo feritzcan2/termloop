@@ -7,6 +7,7 @@ use termloop_contract::current::{
     ControlSubscribeResult, ErrorCode, ProjectDeleteBlocker, ProjectionInvalidatedPayload,
     ProjectionTopic, ProtocolErrorDetails,
 };
+use termloop_core::companion_integrations::assistant_session::StewardWakeAdmission;
 use tokio::time::{Duration, Instant};
 
 use super::super::core_lock::{in_operation, record_operation_duration};
@@ -18,22 +19,22 @@ use super::super::invalidation::{
 use super::super::{AppState, current_epoch_ms};
 use super::errors::{git_observation_error_response, response_conflict, response_error};
 use super::handlers::{
-    bind_task_branch, cleanup_task_worktree, close_session, create_worker_configuration,
-    delete_project, delete_steward_configuration, delete_worker_configuration,
-    dismiss_task_worktree_provisioning, dismiss_task_worktree_repair, fork_agent_session,
-    get_context_bank_catalog, get_context_bank_file, get_skill_catalog, get_skill_definition,
-    git_host_pull_request_change_list, git_host_pull_request_diff, git_host_pull_request_list,
-    inspect_task_worktree_cleanup, inspect_task_worktree_repair, launch_agent_session,
-    launch_assistant_prompt_improver, launch_current_worker, launch_project_run,
-    launch_quick_action, launch_run_configuration_improver, launch_settings_improver,
-    launch_task_run, launch_task_session, list_deleted_sessions, list_session_history,
-    preview_agent_session, preview_assistant_prompt_improver, preview_quick_action,
-    preview_relocate_agent_session, preview_relocate_agent_to_project,
-    preview_resume_agent_session, preview_run_configuration_improver,
-    preview_session_history_resume, preview_settings_improver, preview_task_agent_session,
-    project_list_local_branches, project_worktree_change_list, project_worktree_diff,
-    project_worktree_pre_image, project_worktree_summary, provision_task_worktree,
-    relocate_agent_session, repair_provider_history, repair_task_worktree,
+    bind_task_branch, cleanup_task_worktree, close_session, create_skill_definition,
+    create_worker_configuration, delete_project, delete_steward_configuration,
+    delete_worker_configuration, dismiss_task_worktree_provisioning, dismiss_task_worktree_repair,
+    fork_agent_session, get_context_bank_catalog, get_context_bank_file, get_skill_catalog,
+    get_skill_definition, git_host_pull_request_change_list, git_host_pull_request_diff,
+    git_host_pull_request_list, inspect_task_worktree_cleanup, inspect_task_worktree_repair,
+    launch_agent_session, launch_assistant_prompt_improver, launch_current_worker,
+    launch_project_run, launch_quick_action, launch_run_configuration_improver,
+    launch_settings_improver, launch_task_run, launch_task_session, list_deleted_sessions,
+    list_session_history, paste_agent_image, preview_agent_session,
+    preview_assistant_prompt_improver, preview_quick_action, preview_relocate_agent_session,
+    preview_relocate_agent_to_project, preview_resume_agent_session,
+    preview_run_configuration_improver, preview_session_history_resume, preview_settings_improver,
+    preview_task_agent_session, project_list_local_branches, project_worktree_change_list,
+    project_worktree_diff, project_worktree_pre_image, project_worktree_summary,
+    provision_task_worktree, relocate_agent_session, repair_provider_history, repair_task_worktree,
     resolve_context_bank_sibling_conflict, resolve_stale_task_worktree, restart_agent_session,
     restart_agents_for_client_launch, restore_deleted_session, resume_agent_session,
     save_context_bank_file, save_skill_definition, session_history_preview, set_skill_deployment,
@@ -780,6 +781,7 @@ async fn dispatch_inner(
             "skill.deploymentSet" => set_skill_deployment(request.params, state).await,
             "skill.definitionGet" => get_skill_definition(request.params, state).await,
             "skill.definitionSave" => save_skill_definition(request.params, state).await,
+            "skill.definitionCreate" => create_skill_definition(request.params, state).await,
             "contextBank.catalogGet" => get_context_bank_catalog(request.params, state).await,
             "contextBank.fileGet" => get_context_bank_file(request.params, state).await,
             "contextBank.fileSave" => save_context_bank_file(request.params, state).await,
@@ -880,8 +882,14 @@ async fn dispatch_inner(
                                 state.clone(),
                             )
                             .await;
-                            result
-                                .map(|admitted| json!({"admitted":admitted,"coalesced":!admitted}))
+                            result.map(|admission| match admission {
+                                StewardWakeAdmission::Admitted => {
+                                    json!({"admitted":true,"coalesced":false})
+                                }
+                                StewardWakeAdmission::Coalesced => {
+                                    json!({"admitted":false,"coalesced":true})
+                                }
+                            })
                         }
                     }
                 }
@@ -1290,13 +1298,23 @@ async fn dispatch_inner(
                 )
                 .expect("validated Companion transcript append params");
                 let author = companion_transcript_author(scope.expect("authenticated scope"));
+                let input_mode = match params
+                    .input_mode
+                    .unwrap_or(protocol::CompanionMessageInputMode::Text)
+                {
+                    protocol::CompanionMessageInputMode::Text => "text",
+                    protocol::CompanionMessageInputMode::Voice => "voice",
+                };
                 let mut core = state.core.lock().await;
-                let result = core.append_companion_message(
+                let result = core.append_companion_message_input(
                     &params.project_id,
-                    author,
-                    "reply",
-                    termloop_core::companion_integrations::transcript::CompanionMessageRefsInput::default(),
-                    params.content,
+                    termloop_core::companion_integrations::transcript::CompanionMessageAppendInput {
+                        author: author.into(),
+                        kind: "reply".into(),
+                        input_mode: input_mode.into(),
+                        refs: termloop_core::companion_integrations::transcript::CompanionMessageRefsInput::default(),
+                        content: params.content,
+                    },
                     current_epoch_ms(),
                 );
                 let state_revision = core.state_revision();
@@ -1317,6 +1335,10 @@ async fn dispatch_inner(
                     }
                 }
                 result
+            }
+            "voice.settingsGet" => super::super::voice::settings_get(request.params, state).await,
+            "voice.credentialsSet" => {
+                super::super::voice::credentials_set(request.params, state).await
             }
             "companion.proposalRespond" => {
                 let params = serde_json::from_value::<protocol::CompanionProposalRespondParams>(
@@ -1412,6 +1434,7 @@ async fn dispatch_inner(
                     .await
                     .request_agent_handover_to(&params.session_id, &params.target_session_id)
             }
+            "session.pasteImage" => paste_agent_image(request.params, state).await,
             "session.archive" => archive_session(request.params, state).await,
             "project.delete" => delete_project(request.params, state).await,
             "quickAction.preview" => preview_quick_action(request.params, state).await,

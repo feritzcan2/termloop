@@ -1,6 +1,36 @@
 use super::*;
 
 #[test]
+fn executor_task_reads_are_exact_project_scoped_and_include_current_task_state() {
+    let mut fixture = Fixture::new();
+    let task = fixture.create_task("Exact Task", Value::Null);
+    let task_id = task["id"].as_str().unwrap();
+
+    let projected = fixture
+        .runtime
+        .task_projection_for_executor(&fixture.project_id, task_id)
+        .unwrap();
+    assert_eq!(projected["id"], task_id);
+    assert_eq!(projected["title"], "Exact Task");
+    assert!(projected["branch"].is_null());
+    assert!(projected["worktree"].is_null());
+    assert!(projected["jira_url"].is_null());
+    assert_eq!(
+        fixture
+            .runtime
+            .task_agent_status_projection_for_executor(&fixture.project_id, task_id)
+            .unwrap(),
+        json!([])
+    );
+    assert!(matches!(
+        fixture
+            .runtime
+            .task_projection_for_executor("other-project", task_id),
+        Err(CoreError::NotFound)
+    ));
+}
+
+#[test]
 fn worktree_less_task_lifecycle_is_current_state_only() {
     let mut fixture = Fixture::new();
     let first = fixture.create_task("  Build API  ", json!("  Keep it small  "));
@@ -72,6 +102,45 @@ fn worktree_less_task_lifecycle_is_current_state_only() {
         .list_tasks(json!({ "projectId": fixture.project_id }))
         .unwrap();
     assert_eq!(listed["items"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn developer_notes_are_durable_and_compare_and_swap_the_current_list() {
+    let mut fixture = Fixture::new();
+    let task = fixture.create_task("Track follow-up", Value::Null);
+    let task_id = task["id"].as_str().unwrap();
+    assert_eq!(task["developer_notes"], json!([]));
+
+    let first =
+        json!([{ "id": "note-1", "text": "Review the narrow sidebar", "completed": false }]);
+    let updated = fixture
+        .runtime
+        .update_task_developer_notes(json!({
+            "taskId": task_id,
+            "expectedDeveloperNotes": [],
+            "developerNotes": first,
+        }))
+        .unwrap();
+    assert_eq!(updated["developer_notes"], first);
+
+    assert!(matches!(
+        fixture.runtime.update_task_developer_notes(json!({
+            "taskId": task_id,
+            "expectedDeveloperNotes": [],
+            "developerNotes": [{ "id": "note-2", "text": "Stale write", "completed": false }],
+        })),
+        Err(CoreError::RevisionConflict)
+    ));
+
+    let completed = fixture
+        .runtime
+        .update_task_developer_notes(json!({
+            "taskId": task_id,
+            "expectedDeveloperNotes": first,
+            "developerNotes": [{ "id": "note-1", "text": "Review the narrow sidebar", "completed": true }],
+        }))
+        .unwrap();
+    assert_eq!(completed["developer_notes"][0]["completed"], true);
 }
 
 #[test]

@@ -60,8 +60,8 @@ enum Haptics {
 }
 
 // SwiftUI offers no programmatic dictation, but the WatchKit root interface
-// controller can still present the system text input sheet. This powers the
-// watch-face "Stew'a Söyle" complication: tap → sheet opens → speak → send.
+// controller can still present the system text input sheet as the denied-mic
+// fallback for one-off messages.
 enum DictationPresenter {
     static func present(completion: @escaping (String?) -> Void) {
         guard let controller = WKApplication.shared().rootInterfaceController else {
@@ -246,14 +246,15 @@ final class AppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCent
 }
 
 // Assignable to the Ultra's Action Button via Shortcuts: one press opens the
-// app straight onto the Stew chat with dictation ready.
+// app straight into one bounded Steward voice message.
 struct TalkToStewIntent: AppIntent {
-    static let title: LocalizedStringResource = "Stew Sohbetini Aç"
+    static let title: LocalizedStringResource = "Stew'a Sesli Mesaj"
     static let openAppWhenRun = true
 
     @MainActor
     func perform() async throws -> some IntentResult {
         AppState.shared.pendingChatTarget = WatchSelectionStore.chatTarget
+        AppState.shared.autoTalkRequested = true
         return .result()
     }
 }
@@ -305,9 +306,9 @@ struct TermLoopShortcuts: AppShortcutsProvider {
         )
         AppShortcut(
             intent: TalkToStewIntent(),
-            phrases: ["\(.applicationName) sohbeti aç"],
-            shortTitle: "Sohbeti Aç",
-            systemImageName: "bubble.left.and.bubble.right.fill"
+            phrases: ["\(.applicationName) Stew'a sesli mesaj"],
+            shortTitle: "Stew'a Mesaj",
+            systemImageName: "mic.circle.fill"
         )
     }
 }
@@ -359,10 +360,9 @@ struct ContentView: View {
         }
         .onOpenURL { url in
             switch url.host {
-            case "talk":
+            case "message", "talk":
                 path = NavigationPath()
-                path.append(WatchDestination.chat)
-                appState.autoTalkRequested = true
+                path.append(WatchDestination.talk)
             case "launch-agent":
                 path = NavigationPath()
                 path.append(ProjectAgentLauncherRoute())

@@ -12,11 +12,22 @@ import {
   shellAssistantStageVisible,
   shellNativeOverlayOpen,
   shellTerminalOccluded,
+  stagePageAfterProjectChange,
 } from "../src/renderer/ui/Shell.js";
 import { clampSidebarWidth } from "../src/renderer/sidebar-width.js";
 import type { Session } from "../src/renderer/model.js";
 
 describe("Shell navigation from the changes editor", () => {
+  it("closes project-scoped settings pages when the Project changes", () => {
+    expect(stagePageAfterProjectChange({ kind: "skill", id: "skill-a" })).toBeUndefined();
+    expect(stagePageAfterProjectChange({ kind: "contextFile", id: "context-a" })).toBeUndefined();
+    expect(stagePageAfterProjectChange({ kind: "taskSources" })).toBeUndefined();
+    expect(stagePageAfterProjectChange({ kind: "mcpTool", id: "tool-a" }))
+      .toEqual({ kind: "mcpTool", id: "tool-a" });
+    expect(stagePageAfterProjectChange({ kind: "prompt", id: "prompt-a" }))
+      .toEqual({ kind: "prompt", id: "prompt-a" });
+  });
+
   it("dismisses the editor before selecting an agent Session", () => {
     const events: string[] = [];
     const dismissChanges = vi.fn(() => events.push("dismiss"));
@@ -172,6 +183,7 @@ describe("Shell sidebar sizing", () => {
     expect(shellTerminalOccluded(false, true)).toBe(true);
     expect(shellTerminalOccluded(true, false)).toBe(true);
     expect(shellTerminalOccluded(false, false, true)).toBe(true);
+    expect(shellTerminalOccluded(false, false, false, true)).toBe(true);
   });
 
   it("makes the native child window interactive for Project relocation confirmation", () => {
@@ -180,7 +192,6 @@ describe("Shell sidebar sizing", () => {
       projectMenu: false,
       editProject: false,
       deleteProject: false,
-      mobileConnect: false,
       renameSession: false,
       commandPalette: false,
       shortcutSettings: false,
@@ -201,7 +212,6 @@ describe("Shell sidebar sizing", () => {
       projectMenu: false,
       editProject: false,
       deleteProject: false,
-      mobileConnect: false,
       renameSession: false,
       commandPalette: false,
       shortcutSettings: false,
@@ -219,7 +229,6 @@ describe("Shell sidebar sizing", () => {
       projectMenu: false,
       editProject: false,
       deleteProject: false,
-      mobileConnect: true,
       renameSession: false,
       commandPalette: false,
       shortcutSettings: false,
@@ -231,6 +240,6 @@ describe("Shell sidebar sizing", () => {
       providerHistoryRepair: false,
       taskRail: false,
       archivedRail: false,
-    })).toBe(true);
+    })).toBe(false);
   });
 });

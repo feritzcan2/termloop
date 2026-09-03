@@ -1006,6 +1006,47 @@ mod tests {
     use termloop_store::Store;
     use termloop_terminal::TerminalService;
 
+    const TRANSPORT_EVENT_TIMEOUT: Duration = Duration::from_secs(30);
+
+    #[test]
+    fn generated_input_terminal_fixture() {
+        if std::env::var_os("TERMLOOP_TEST_ASK_TO_INPUT_FIXTURE").is_none() {
+            return;
+        }
+        use std::io::{Read, Write};
+
+        let _terminal_input_mode = termloop_platform::configure_headless_terminal_input_fixture()
+            .expect("fixture must configure its PTY input mode");
+        print!("\x1b[?2004h\x1b[?25hTERMLOOP_ASK_TO_INPUT_READY");
+        std::io::stdout().flush().unwrap();
+
+        let mut input = std::io::stdin().lock();
+        let mut observed = Vec::new();
+        while !observed.ends_with(b"\x1b[201~") {
+            let mut byte = [0_u8; 1];
+            input
+                .read_exact(&mut byte)
+                .expect("fixture input closed before bracketed paste completed");
+            observed.push(byte[0]);
+            assert!(
+                observed.len() <= 1_000_000,
+                "fixture received an unbounded bracketed paste"
+            );
+        }
+        assert!(observed.starts_with(b"\x1b[200~"));
+        print!("\x1b[?25hTERMLOOP_ASK_TO_INPUT_VISIBLE");
+        std::io::stdout().flush().unwrap();
+
+        let mut submit = [0_u8; 1];
+        input
+            .read_exact(&mut submit)
+            .expect("fixture input closed before generated submit");
+        assert_eq!(submit, *b"\r");
+        print!("\x1b[?2004lTERMLOOP_ASK_TO_INPUT_RECEIVED");
+        std::io::stdout().flush().unwrap();
+        std::thread::sleep(Duration::from_secs(1));
+    }
+
     fn runtime_with_asker() -> (CoreRuntime, String, std::path::PathBuf) {
         let root = std::env::temp_dir().join(format!(
             "termloop-core-ask-to-{}-{}",
@@ -1356,15 +1397,20 @@ mod tests {
                 .and_then(|continuation| continuation.current_request_id.as_deref()),
             Some(request_id.as_str())
         );
-        assert!(
-            !runtime
-                .confirm_generated_input_submission("asker", 7, 4)
-                .unwrap()
-        );
         let event = generated_input_events
-            .recv_timeout(Duration::from_secs(15))
+            .recv_timeout(TRANSPORT_EVENT_TIMEOUT)
             .unwrap();
         assert!(runtime.record_generated_input_runtime_event(event).unwrap());
+        assert_eq!(
+            runtime.generated_input_delivery_state("asker", 7),
+            Some(GeneratedInputDeliveryState::AwaitingProviderAck)
+        );
+        assert!(!runtime.ask_to_requests[&request_id].reply_delivered);
+        assert!(
+            runtime
+                .confirm_generated_input_progress("asker", 7, 4)
+                .unwrap()
+        );
 
         assert!(runtime.ask_to_requests[&request_id].reply_delivered);
         assert_eq!(
@@ -1565,7 +1611,30 @@ mod tests {
             .clone();
         let project_id = runtime.store.sessions()[0].project_id.clone();
         insert_running_helper(&mut runtime, &helper_id, &project_id);
-        let (program, args) = termloop_platform::default_shell();
+        let (program, args, environment) = if termloop_platform::host_uses_bracketed_paste_framing()
+        {
+            (
+                std::env::current_exe()
+                    .unwrap()
+                    .into_os_string()
+                    .into_string()
+                    .unwrap(),
+                vec![
+                    "--exact".into(),
+                    "session_launch::ask_to::tests::generated_input_terminal_fixture".into(),
+                    "--nocapture".into(),
+                ],
+                termloop_platform::LaunchEnvironment::os_baseline()
+                    .with_explicit("TERMLOOP_TEST_ASK_TO_INPUT_FIXTURE", "1"),
+            )
+        } else {
+            let (program, args) = termloop_platform::default_shell();
+            (
+                program,
+                args,
+                termloop_platform::LaunchEnvironment::os_baseline(),
+            )
+        };
         runtime
             .terminal
             .spawn(termloop_terminal::PtySpawnSpec {
@@ -1574,7 +1643,7 @@ mod tests {
                 program,
                 args,
                 cwd: root.display().to_string(),
-                environment: termloop_platform::LaunchEnvironment::os_baseline(),
+                environment,
                 recent_output_replay: false,
             })
             .unwrap();
@@ -1715,7 +1784,7 @@ mod tests {
                 .unwrap()
         );
         let event = generated_input_events
-            .recv_timeout(Duration::from_secs(15))
+            .recv_timeout(TRANSPORT_EVENT_TIMEOUT)
             .unwrap();
         assert!(runtime.record_generated_input_runtime_event(event).unwrap());
         assert_eq!(

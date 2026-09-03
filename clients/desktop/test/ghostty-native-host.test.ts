@@ -14,6 +14,39 @@ describe("Ghostty native host visibility", () => {
     expect(handler).not.toContain("ghostty_surface_set_occlusion(e->surface, !visible);");
   });
 
+  it("forces a full draw when a hidden native surface becomes visible", () => {
+    const handler = source.slice(
+      source.indexOf("static Napi::Value SetSurfaceVisible"),
+      source.indexOf("static Napi::Value FocusSurface"),
+    );
+    const unhide = handler.indexOf("e->view.hidden = !visible;");
+    const visibility = handler.indexOf("ghostty_surface_set_occlusion(e->surface, visible);");
+    const draw = handler.indexOf("ghostty_surface_draw(e->surface);");
+
+    expect(handler).toContain("if (visible)");
+    expect(unhide).toBeGreaterThanOrEqual(0);
+    expect(visibility).toBeGreaterThan(unhide);
+    expect(draw).toBeGreaterThan(visibility);
+  });
+
+  it("restores Chromium focus before hiding a focused native surface", () => {
+    const focusMethods = source.slice(
+      source.indexOf("- (void)focusSurface"),
+      source.indexOf("// -- keyboard / IME"),
+    );
+    const visibilityHandler = source.slice(
+      source.indexOf("static Napi::Value SetSurfaceVisible"),
+      source.indexOf("static Napi::Value FocusSurface"),
+    );
+    const restore = visibilityHandler.indexOf("[e->view restoreFocusIfOwned]");
+    const hide = visibilityHandler.indexOf("e->view.hidden = !visible;");
+
+    expect(focusMethods).toContain("self.restorationResponder = current;");
+    expect(focusMethods).toContain("[window makeFirstResponder:responder]");
+    expect(restore).toBeGreaterThanOrEqual(0);
+    expect(restore).toBeLessThan(hide);
+  });
+
   it("routes AppKit command key equivalents through Ghostty bindings", () => {
     const handler = source.slice(
       source.indexOf("- (BOOL)performKeyEquivalent"),
@@ -38,6 +71,20 @@ describe("Ghostty native host visibility", () => {
     expect(ghosttyLookup).toBeGreaterThan(lifecycleGuard);
     expect(handler).toContain("notifyShellShortcut(shortcut)");
     expect(handler).toContain("[super performKeyEquivalent:event]");
+  });
+
+  it("routes image-only Cmd+V to the remote image paste intent", () => {
+    const handler = source.slice(
+      source.indexOf("- (BOOL)performKeyEquivalent"),
+      source.indexOf("- (void)flagsChanged"),
+    );
+    const imagePaste = handler.indexOf("isImageOnlyPasteKeyEquivalent(event)");
+    const ghosttyLookup = handler.indexOf("ghostty_surface_key_is_binding");
+
+    expect(source).toContain("[NSImage canInitWithPasteboard:pasteboard]");
+    expect(handler).toContain('notifyShellShortcut("pasteImage")');
+    expect(imagePaste).toBeGreaterThanOrEqual(0);
+    expect(imagePaste).toBeLessThan(ghosttyLookup);
   });
 
   it("fails closed when the embedded Ghostty config has diagnostics", () => {

@@ -6,6 +6,7 @@ import {
   type ProjectTaskAutomationResult,
   type SessionDto,
   type SessionTerminateResult,
+  type AgentCoordinationDeliveryResult,
   type TaskDeleteResult,
   type TaskDto,
   type TaskPageDto,
@@ -52,6 +53,17 @@ const updatedTaskAutomation: Promise<ProjectTaskAutomationResult> = client.call(
 const sessions: Promise<SessionDto[]> = client.call("session.list");
 const terminated: Promise<SessionTerminateResult> = client.call("session.terminate", {
   sessionId: "session-1",
+});
+const imagePasted: Promise<AgentCoordinationDeliveryResult> = client.call("session.pasteImage", {
+  sessionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  attachments: [{
+    attachmentId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    mediaType: "image/png",
+    byteLength: 128,
+    sha256: `sha256:${"c".repeat(64)}`,
+    width: 12,
+    height: 8,
+  }],
 });
 const renamed: Promise<SessionDto> = client.call("session.rename", {
   sessionId: "session-1",
@@ -101,6 +113,7 @@ void taskAutomation;
 void updatedTaskAutomation;
 void sessions;
 void terminated;
+void imagePasted;
 void renamed;
 void createdTask;
 void tasks;
@@ -125,6 +138,8 @@ client.call("mcp.toolDescriptionReset", { tool: "unknown", expectedRevision: 1 }
 client.call("session.terminate", { sessionId: 42 });
 // @ts-expect-error session.rename requires an explicit name or null.
 client.call("session.rename", { sessionId: "session-1" });
+// @ts-expect-error session.pasteImage requires exactly the generated attachment fields.
+client.call("session.pasteImage", { sessionId: "session-1", attachments: [{ mediaType: "image/png" }] });
 // @ts-expect-error worktree intent must be explicit in F2-00.
 client.call("task.create", { projectId: "project-1", title: "Build API" });
 client.call("task.create", {

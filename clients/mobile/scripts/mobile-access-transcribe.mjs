@@ -35,19 +35,62 @@ export function validVoiceUpload(contentType, byteLength) {
   return allowedAudioTypes.has(type) && byteLength > 0 && byteLength <= voiceUploadLimitBytes;
 }
 
+/// Reports only the file container, never recorded content. This keeps failed
+/// device uploads diagnosable without retaining or logging the user's speech.
+export function voiceContainerOf(audio) {
+  const bytes = Buffer.isBuffer(audio) ? audio : Buffer.from(audio ?? []);
+  if (bytes.length >= 12
+    && bytes.subarray(0, 4).toString("ascii") === "RIFF"
+    && bytes.subarray(8, 12).toString("ascii") === "WAVE") return "wav";
+  if (bytes.length >= 12 && bytes.subarray(4, 8).toString("ascii") === "ftyp") return "isobmff";
+  if (bytes.length >= 4
+    && bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) return "webm";
+  return "unknown";
+}
+
 export function transcriptionOf(stdout) {
   const parsed = JSON.parse(String(stdout));
   const text = typeof parsed?.text === "string" ? parsed.text.trim() : "";
   return { text, onDevice: parsed?.onDevice === true };
 }
 
-function runTool(file, args) {
+function runTool(file, args, { signal } = {}) {
   return new Promise((resolve, reject) => {
-    execFile(file, args, { timeout: 30_000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile(file, args, { timeout: 30_000, maxBuffer: 1024 * 1024, signal }, (error, stdout, stderr) => {
       if (error) reject(new Error(String(stderr || error.message).trim()));
       else resolve(stdout);
     });
   });
+}
+
+/// Both promises are already running when selection begins. The primary is
+/// deliberately authoritative even when the fallback finishes first; the
+/// fallback is consumed only after a primary failure. Cancelling unused work
+/// keeps a successful primary from leaving the local recognizer behind.
+export async function preferPrimaryTranscription(primaryPromise, fallbackPromise, cancelFallback = () => {}) {
+  const primary = settled(primaryPromise);
+  const fallback = settled(fallbackPromise);
+  const primaryResult = await primary;
+  if (primaryResult.ok) {
+    cancelFallback();
+    await fallback;
+    return { provider: "openai", transcription: primaryResult.value };
+  }
+  const fallbackResult = await fallback;
+  if (fallbackResult.ok) {
+    return { provider: "apple", transcription: fallbackResult.value };
+  }
+  throw new AggregateError(
+    [primaryResult.error, fallbackResult.error],
+    "all transcription providers failed",
+  );
+}
+
+function settled(promise) {
+  return Promise.resolve(promise).then(
+    (value) => ({ ok: true, value }),
+    (error) => ({ ok: false, error }),
+  );
 }
 
 async function newerThanSource(file) {
@@ -74,11 +117,11 @@ export async function ensureTranscriber(cacheDir) {
   return executable;
 }
 
-export async function transcribeAudioFile(cacheDir, audioFile, locale = "tr-TR") {
+export async function transcribeAudioFile(cacheDir, audioFile, locale, { signal } = {}) {
   const executable = await ensureTranscriber(cacheDir);
-  const args = [audioFile, locale];
+  const args = locale === undefined ? [audioFile] : [audioFile, locale];
   if (/\.[cm]?js$/i.test(executable)) {
-    return transcriptionOf(await runTool(process.execPath, [executable, ...args]));
+    return transcriptionOf(await runTool(process.execPath, [executable, ...args], { signal }));
   }
-  return transcriptionOf(await runTool(executable, args));
+  return transcriptionOf(await runTool(executable, args, { signal }));
 }

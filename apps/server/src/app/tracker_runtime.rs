@@ -1,7 +1,7 @@
 //! Demand-driven Routine deadline supervision. With no active check this task
 //! performs zero periodic work and waits only for a runtime wake notification.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
@@ -22,6 +22,7 @@ pub(super) struct TrackerReportCapabilityRegistry {
 
 struct TrackerReportGrant {
     capability: termloop_core::companion_integrations::tracker_runtime::TrackerCheckCapability,
+    task_reads: HashSet<String>,
 }
 
 impl TrackerReportCapabilityRegistry {
@@ -54,6 +55,43 @@ impl TrackerReportCapabilityRegistry {
                     .find(|grant| grant.capability.check_id == check_id)
             })
             .map(|grant| grant.capability.clone())
+    }
+
+    pub(super) fn mark_task_read(
+        &mut self,
+        session_id: &str,
+        check_id: &str,
+        task_id: &str,
+        now_epoch_ms: u64,
+    ) -> bool {
+        self.prune_expired(now_epoch_ms);
+        let Some(grant) = self.entries.get_mut(session_id).and_then(|grants| {
+            grants
+                .iter_mut()
+                .find(|grant| grant.capability.check_id == check_id)
+        }) else {
+            return false;
+        };
+        grant.task_reads.insert(task_id.to_owned());
+        true
+    }
+
+    pub(super) fn task_was_read(
+        &mut self,
+        session_id: &str,
+        check_id: &str,
+        task_id: &str,
+        now_epoch_ms: u64,
+    ) -> bool {
+        self.prune_expired(now_epoch_ms);
+        self.entries
+            .get(session_id)
+            .and_then(|grants| {
+                grants
+                    .iter()
+                    .find(|grant| grant.capability.check_id == check_id)
+            })
+            .is_some_and(|grant| grant.task_reads.contains(task_id))
     }
 
     #[cfg(test)]
@@ -95,7 +133,10 @@ impl TrackerReportCapabilityRegistry {
         {
             return existing.capability == capability;
         }
-        grants.push(TrackerReportGrant { capability });
+        grants.push(TrackerReportGrant {
+            capability,
+            task_reads: HashSet::new(),
+        });
         true
     }
 
@@ -271,5 +312,17 @@ mod tests {
         assert!(registry.lookup("worker-session", "check-1", 0).is_some());
         assert!(registry.consume("worker-session", "check-1", 0).is_some());
         assert!(registry.lookup("worker-session", "check-1", 0).is_none());
+    }
+
+    #[test]
+    fn task_read_receipts_are_exact_to_session_check_and_task() {
+        let mut registry = TrackerReportCapabilityRegistry::default();
+        assert!(registry.issue("worker-session".into(), capability(1, 100), 0));
+        assert!(!registry.task_was_read("worker-session", "check-1", "task-1", 0));
+        assert!(!registry.mark_task_read("other-session", "check-1", "task-1", 0));
+        assert!(registry.mark_task_read("worker-session", "check-1", "task-1", 0));
+        assert!(registry.task_was_read("worker-session", "check-1", "task-1", 0));
+        assert!(!registry.task_was_read("worker-session", "check-1", "task-2", 0));
+        assert!(!registry.task_was_read("worker-session", "check-2", "task-1", 0));
     }
 }

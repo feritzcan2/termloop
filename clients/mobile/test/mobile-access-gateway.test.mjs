@@ -5,8 +5,268 @@ import os from "node:os";
 import path from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 import { describe, expect, it } from "vitest";
+import {
+  KIND_ACK,
+  KIND_ATTACH,
+  KIND_INPUT,
+  KIND_INPUT_ACK,
+  decodeFrame,
+  encodeFrame,
+} from "../src/adapters/production/terminal-frame";
 
 describe("persistent mobile access gateway", () => {
+  it("multiplexes control, invalidations, and terminal frames over one downstream socket", async () => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), "termloop-mobile-multiplex-"));
+    const runtimeFile = path.join(directory, "runtime.json");
+    const gatewayConfig = path.join(directory, "gateway.json");
+    const upstreamServer = http.createServer();
+    const upstreamSockets = new WebSocketServer({ server: upstreamServer });
+    const upstreamPaths = [];
+    let subscriptionSocket;
+    let inputAckEnabled = false;
+    upstreamSockets.on("connection", (socket, request) => {
+      upstreamPaths.push(request.url);
+      socket.on("message", (data, isBinary) => {
+        if (request.url === "/terminal") {
+          if (!isBinary || data.toString().startsWith("TL01t")) {
+            socket.send(Buffer.from("TLOK"));
+            return;
+          }
+          const frame = decodeFrame(new Uint8Array(data));
+          if (frame.kind === 17) {
+            inputAckEnabled = true;
+          } else if (frame.kind === KIND_ATTACH) {
+            socket.send(encodeFrame(frame.sessionId, frame.epoch, frame.sequence, KIND_ACK));
+          } else if (frame.kind === KIND_INPUT && inputAckEnabled) {
+            socket.send(encodeFrame(frame.sessionId, frame.epoch, frame.sequence, KIND_INPUT_ACK));
+          }
+          return;
+        }
+        const requestMessage = JSON.parse(data.toString());
+        if (requestMessage.method === "control.subscribe") {
+          subscriptionSocket = socket;
+          socket.send(JSON.stringify({
+            id: requestMessage.id,
+            ok: true,
+            result: { stateRevision: 1, observationSequence: 1 },
+          }));
+          return;
+        }
+        if (requestMessage.method === "session.forkAgent") {
+          socket.send(JSON.stringify({
+            id: requestMessage.id,
+            ok: false,
+            error: {
+              code: "conflict",
+              message: "agent conversation fork is unavailable",
+              details: { kind: "agentForkUnavailable", reason: "runtimeConflict" },
+            },
+          }));
+          return;
+        }
+        socket.send(JSON.stringify({
+          id: requestMessage.id,
+          ok: true,
+          result: { product: "TermLoop", version: "0.1.0", protocolVersion: requestMessage.protocolVersion },
+        }));
+      });
+    });
+    const upstreamPort = await listen(upstreamServer);
+    writeFileSync(runtimeFile, JSON.stringify({
+      ...JSON.parse(runtime(upstreamPort, "r", "t", "a", 1)),
+      token: "a".repeat(64),
+    }));
+    const gatewayPort = await freePort();
+    writeFileSync(gatewayConfig, JSON.stringify({
+      version: 1,
+      runtimeFile,
+      port: gatewayPort,
+      controlToken: "c".repeat(64),
+      terminalToken: "m".repeat(64),
+    }));
+    const groupedSessionIds = ["agent-1", "agent-2", "agent-3", "agent-4"];
+    writeFileSync(path.join(directory, "agent-groups.json"), JSON.stringify({
+      version: 1,
+      groupsByProject: {
+        "project-1": [{ sessionIds: groupedSessionIds, name: "Review crew" }],
+      },
+    }));
+    const gateway = spawn(process.execPath, [path.resolve("scripts/mobile-access-gateway.mjs"), gatewayConfig], {
+      cwd: path.resolve("."), stdio: "ignore",
+    });
+    try {
+      await waitForHealth(gatewayPort);
+      const updateGroup = "b9fe7485-92ef-4b40-9e9d-3b3b6ca3356e";
+      const updatePage = await fetch(`http://127.0.0.1:${gatewayPort}/mobile-update?group=${updateGroup}`);
+      expect(updatePage.status).toBe(200);
+      expect(updatePage.headers.get("content-type")).toBe("text/html; charset=utf-8");
+      expect(await updatePage.text()).toContain(
+        `href="ai.termloop.mobile://force-update?group=${updateGroup}"`,
+      );
+      const identityResponse = await fetch(`http://127.0.0.1:${gatewayPort}/.well-known/termloop-mobile-access`);
+      expect(identityResponse.status).toBe(200);
+      expect(await identityResponse.json()).toMatchObject({
+        buildId: "source-development",
+        compatibility: {
+          mobileTransport: { min: 2, max: 2 },
+          mobileApi: { min: 1, max: 1 },
+        },
+      });
+      const health = await fetch(`http://127.0.0.1:${gatewayPort}/health`);
+      expect(await health.json()).toMatchObject({ ready: true, buildId: "source-development" });
+      const refusedGroups = await fetch(`http://127.0.0.1:${gatewayPort}/agent-groups`);
+      expect(refusedGroups.status).toBe(401);
+      const agentGroups = await fetch(`http://127.0.0.1:${gatewayPort}/agent-groups`, {
+        headers: { authorization: `Bearer ${"c".repeat(64)}` },
+      });
+      expect(agentGroups.status).toBe(200);
+      expect(await agentGroups.json()).toEqual({
+        version: 1,
+        groupsByProject: {
+          "project-1": [{ sessionIds: groupedSessionIds, name: "Review crew" }],
+        },
+      });
+      const unsupported = await refusedUpgrade(gatewayPort, "/future-transport");
+      expect(unsupported.status).toBe(426);
+      expect(unsupported.headers["x-termloop-gateway-build"]).toBe("source-development");
+      expect(unsupported.body).toContain("unsupportedWebSocketPath");
+      expect(unsupported.body).not.toContain("c".repeat(64));
+      expect(unsupported.body).not.toContain("m".repeat(64));
+
+      const tooOld = new WebSocket(`ws://127.0.0.1:${gatewayPort}/mobile`);
+      await opened(tooOld);
+      tooOld.send(JSON.stringify({
+        type: "mobile.authenticate",
+        mobileTransportVersion: 1,
+        controlToken: "c".repeat(64),
+        terminalToken: "m".repeat(64),
+      }));
+      await expect(closed(tooOld)).resolves.toEqual({ code: 4406, reason: "mobile transport too old" });
+      const tooNew = new WebSocket(`ws://127.0.0.1:${gatewayPort}/mobile`);
+      await opened(tooNew);
+      tooNew.send(JSON.stringify({
+        type: "mobile.authenticate",
+        mobileTransportVersion: 3,
+        controlToken: "c".repeat(64),
+        terminalToken: "m".repeat(64),
+      }));
+      await expect(closed(tooNew)).resolves.toEqual({ code: 4406, reason: "mobile transport too new" });
+      const revoked = new WebSocket(`ws://127.0.0.1:${gatewayPort}/mobile`);
+      await opened(revoked);
+      revoked.send(JSON.stringify({
+        type: "mobile.authenticate",
+        mobileTransportVersion: 2,
+        controlToken: "x".repeat(64),
+        terminalToken: "m".repeat(64),
+      }));
+      await expect(closed(revoked)).resolves.toEqual({ code: 1008, reason: "invalid credential" });
+
+      const mobile = new WebSocket(`ws://127.0.0.1:${gatewayPort}/mobile`);
+      await opened(mobile);
+      mobile.send(JSON.stringify({
+        type: "mobile.authenticate",
+        mobileTransportVersion: 2,
+        mobileInputReceiptVersion: 1,
+        terminalInputAckVersion: 1,
+        controlToken: "c".repeat(64),
+        terminalToken: "m".repeat(64),
+      }));
+      expect(JSON.parse((await message(mobile)).toString())).toEqual({
+        event: "mobile.ready",
+        mobileTransportVersion: 2,
+        terminalInputAckVersion: 1,
+      });
+      mobile.send(JSON.stringify({
+        id: "control-1",
+        mobileApiVersion: 1,
+        token: "c".repeat(64),
+        method: "system.version",
+        params: {},
+      }));
+      expect(JSON.parse((await message(mobile)).toString())).toMatchObject({ id: "control-1", ok: true });
+      mobile.send(JSON.stringify({
+        id: "control-fork",
+        mobileApiVersion: 1,
+        token: "c".repeat(64),
+        method: "session.forkAgent",
+        params: { sessionId: "session-1" },
+      }));
+      expect(JSON.parse((await message(mobile)).toString())).toEqual({
+        id: "control-fork",
+        ok: false,
+        error: {
+          code: "conflict",
+          message: "agent conversation fork is unavailable",
+          details: { kind: "agentForkUnavailable", reason: "runtimeConflict" },
+        },
+      });
+
+      const session = "11111111-2222-4333-8444-555555555555";
+      mobile.send(encodeFrame(session, 7, 1n, KIND_ATTACH));
+      const ack = decodeFrame(new Uint8Array(await message(mobile)));
+      expect(ack).toMatchObject({ sessionId: session, epoch: 7, kind: KIND_ACK });
+
+      const inputReceipt = message(mobile);
+      mobile.send(encodeFrame(session, 7, 2n, KIND_INPUT, new TextEncoder().encode("hello")));
+      expect(decodeFrame(new Uint8Array(await inputReceipt))).toMatchObject({
+        sessionId: session,
+        epoch: 7,
+        sequence: 2n,
+        kind: KIND_INPUT_ACK,
+      });
+      expect(inputAckEnabled).toBe(true);
+
+      await waitFor(() => subscriptionSocket !== undefined);
+      subscriptionSocket.send(JSON.stringify({
+        protocolVersion: `sha256:${"a".repeat(64)}`,
+        event: "projection.invalidated",
+        payload: { stateRevision: 4, observationSequence: 8, topics: ["session"] },
+      }));
+      expect(JSON.parse((await message(mobile)).toString())).toMatchObject({
+        event: "projection.invalidated",
+        payload: { stateRevision: 4, observationSequence: 8 },
+      });
+      expect(upstreamPaths.filter((value) => value === "/terminal")).toHaveLength(1);
+      const restarting = closed(mobile);
+      gateway.kill("SIGTERM");
+      await expect(restarting).resolves.toEqual({ code: 1001, reason: "gateway restarting" });
+    } finally {
+      gateway.kill("SIGTERM");
+      upstreamSockets.close();
+      upstreamServer.close();
+    }
+  });
+
+  it("preserves the full capped log generation before continuing in place", async () => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), "termloop-mobile-log-"));
+    const runtimeFile = path.join(directory, "runtime.json");
+    const gatewayConfig = path.join(directory, "gateway.json");
+    const logFile = path.join(directory, "gateway.log");
+    const evidence = `${"x".repeat((4 * 1024 * 1024) + 1)}incident-at-cap\n`;
+    writeFileSync(runtimeFile, runtime(49999, "r", "t"));
+    writeFileSync(logFile, evidence);
+    const gatewayPort = await freePort();
+    writeFileSync(gatewayConfig, JSON.stringify({
+      version: 1,
+      runtimeFile,
+      port: gatewayPort,
+      controlToken: "c".repeat(64),
+      terminalToken: "m".repeat(64),
+      logFile,
+    }));
+    const gateway = spawn(process.execPath, [path.resolve("scripts/mobile-access-gateway.mjs"), gatewayConfig], {
+      cwd: path.resolve("."), stdio: "ignore",
+    });
+    try {
+      await waitForHealth(gatewayPort);
+      expect(readFileSync(`${logFile}.overflow`, "utf8")).toBe(evidence);
+      expect(readFileSync(logFile, "utf8")).toBe("");
+      if (process.platform !== "win32") expect(statSync(`${logFile}.overflow`).mode & 0o777).toBe(0o600);
+    } finally {
+      gateway.kill("SIGTERM");
+    }
+  });
+
   it("stages an owner-selected image in the running agent's ignored runtime directory", async () => {
     const directory = mkdtempSync(path.join(os.tmpdir(), "termloop-mobile-image-"));
     const cwd = path.join(directory, "project");
@@ -193,6 +453,78 @@ describe("persistent mobile access gateway", () => {
     }
   });
 
+  it("correlates mobile and upstream control lifecycle without logging credentials", async () => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), "termloop-mobile-diagnostics-"));
+    const runtimeFile = path.join(directory, "runtime.json");
+    const gatewayConfig = path.join(directory, "gateway.json");
+    const upstreamServer = http.createServer();
+    const upstreamSockets = new WebSocketServer({ server: upstreamServer });
+    upstreamSockets.on("connection", (socket) => {
+      socket.on("message", (data) => {
+        const request = JSON.parse(data.toString());
+        socket.send(JSON.stringify({
+          id: request.id,
+          ok: true,
+          result: { product: "TermLoop", version: "0.1.0", protocolVersion: request.protocolVersion },
+        }));
+      });
+    });
+    const upstreamPort = await listen(upstreamServer);
+    writeFileSync(runtimeFile, runtime(upstreamPort, "r", "t"));
+    const gatewayPort = await freePort();
+    writeFileSync(gatewayConfig, JSON.stringify({
+      version: 1,
+      runtimeFile,
+      port: gatewayPort,
+      controlToken: "c".repeat(64),
+      terminalToken: "m".repeat(64),
+    }));
+    const gateway = spawn(process.execPath, [path.resolve("scripts/mobile-access-gateway.mjs"), gatewayConfig], {
+      cwd: path.resolve("."), stdio: ["ignore", "pipe", "pipe"],
+    });
+    let output = "";
+    gateway.stdout.on("data", (data) => { output += data.toString("utf8"); });
+    gateway.stderr.on("data", (data) => { output += data.toString("utf8"); });
+    try {
+      await waitForHealth(gatewayPort);
+      const response = await mobileCall(gatewayPort, "system.version", {
+        mobileRunId: "mobile-correlation-1",
+        controlGeneration: 4,
+        mobileAppState: "active",
+        foregroundRevision: 9,
+        backgroundDurationMs: 8_000,
+      });
+      expect(response.ok).toBe(true);
+      await waitFor(() => output.includes('"event":"request_completed"'));
+
+      const records = output.trim().split("\n")
+        .filter((line) => line.startsWith("{"))
+        .map((line) => JSON.parse(line));
+      expect(records).toContainEqual(expect.objectContaining({
+        area: "control",
+        event: "request_completed",
+        method: "system.version",
+        mobileRunId: "mobile-correlation-1",
+        controlGeneration: 4,
+        mobileAppState: "active",
+        foregroundRevision: 9,
+        backgroundDurationMs: 8_000,
+      }));
+      expect(records).toContainEqual(expect.objectContaining({
+        area: "upstreamControl",
+        event: "request_completed",
+        downstreamRequestId: "mobile-system.version",
+        mobileRunId: "mobile-correlation-1",
+      }));
+      expect(output).not.toContain("c".repeat(64));
+      expect(output).not.toContain("r".repeat(64));
+    } finally {
+      gateway.kill("SIGTERM");
+      upstreamSockets.close();
+      upstreamServer.close();
+    }
+  });
+
   it("registers a bounded APNs device behind the stable owner credential", async () => {
     const directory = mkdtempSync(path.join(os.tmpdir(), "termloop-mobile-push-"));
     const runtimeFile = path.join(directory, "runtime.json");
@@ -266,22 +598,24 @@ describe("persistent mobile access gateway", () => {
   });
 });
 
-function runtime(port, read, terminal, protocol = "a") {
+function runtime(port, read, terminal, protocol = "a", terminalInputAckVersion) {
   return JSON.stringify({
     protocolVersion: `sha256:${protocol.repeat(64)}`,
     controlUrl: `ws://127.0.0.1:${port}/control`,
     terminalUrl: `ws://127.0.0.1:${port}/terminal`,
     readOnlyToken: read.repeat(64),
     terminalToken: terminal.repeat(64),
+    ...(terminalInputAckVersion === 1 ? { terminalInputAckVersion } : {}),
   });
 }
 
-async function mobileCall(port, method) {
+async function mobileCall(port, method, diagnostics = {}) {
   const socket = new WebSocket(`ws://127.0.0.1:${port}/control`);
   await opened(socket);
   socket.send(JSON.stringify({
     id: `mobile-${method}`,
     mobileApiVersion: 1,
+    ...diagnostics,
     token: "c".repeat(64),
     method,
     params: {},
@@ -343,6 +677,29 @@ function opened(socket) {
 function message(socket) {
   return new Promise((resolve, reject) => {
     socket.once("message", (data) => resolve(Buffer.from(data)));
+    socket.once("error", reject);
+  });
+}
+
+function closed(socket) {
+  return new Promise((resolve) => socket.once("close", (code, reason) => resolve({
+    code,
+    reason: reason.toString("utf8"),
+  })));
+}
+
+function refusedUpgrade(port, pathname) {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(`ws://127.0.0.1:${port}${pathname}`);
+    socket.once("unexpected-response", (_request, response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.once("end", () => resolve({
+        status: response.statusCode,
+        headers: response.headers,
+        body: Buffer.concat(chunks).toString("utf8"),
+      }));
+    });
     socket.once("error", reject);
   });
 }

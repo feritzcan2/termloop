@@ -294,6 +294,71 @@ fn restart_recovery_never_reissues_an_ambiguous_remove() {
 }
 
 #[test]
+fn restart_recovery_verifies_the_alternate_checkout_when_the_task_branch_is_missing() {
+    let mut fixture = Fixture::new();
+    let (task_id, destination, proof_id, generation) = provision_cleanup_fixture(&mut fixture);
+    let runner = GitRunner::discover().unwrap();
+    termloop_gitio::test_support::checkout_new_branch(
+        &runner,
+        &destination,
+        "feature/recovery-alternate",
+    )
+    .unwrap();
+    let task_branch = GitRefName::from_bytes(b"refs/heads/feature/cleanup".to_vec()).unwrap();
+    let task_branch_oid = runner
+        .resolve_ref(&fixture.project_directory, &task_branch)
+        .unwrap()
+        .unwrap();
+    runner
+        .delete_ref_if_matches(&fixture.project_directory, &task_branch, &task_branch_oid)
+        .unwrap();
+    std::fs::write(destination.join("local.txt"), "local\n").unwrap();
+
+    let operation_id = Uuid::new_v4().to_string();
+    let removal = prepare_cleanup_removal(
+        &mut fixture,
+        json!({
+            "operationId": operation_id,
+            "taskId": task_id,
+            "expectedManagedWorktreeOperationId": proof_id,
+            "expectedWorktreeGeneration": generation,
+            "cleanupMode": "discardCheckoutContent",
+            "acknowledgedContentBlockers": ["untrackedContent"],
+        }),
+    );
+    assert_eq!(
+        fixture.runtime.store.cleanup_operations()[0]
+            .baseline
+            .checkout_branch_ref
+            .as_deref(),
+        Some("refs/heads/feature/recovery-alternate")
+    );
+    let _executed = removal.execute();
+    assert!(!destination.exists());
+
+    let mut recovered =
+        CoreRuntime::open(fixture.state_path.clone(), TerminalService::default(), 2).unwrap();
+    let plan = recovered
+        .plan_task_worktree_cleanup_recovery()
+        .pop()
+        .unwrap();
+    let result = recovered
+        .apply_task_worktree_cleanup_observation(plan.observe().unwrap())
+        .unwrap();
+    assert!(matches!(result, TaskWorktreeCleanupProgress::Return(_)));
+    assert!(recovered.store.cleanup_operations().is_empty());
+    assert!(recovered.store.tasks()[0].worktree.is_none());
+    let alternate =
+        GitRefName::from_bytes(b"refs/heads/feature/recovery-alternate".to_vec()).unwrap();
+    assert!(
+        runner
+            .resolve_ref(&fixture.project_directory, &alternate)
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[test]
 fn final_commit_conflict_becomes_durable_recovery_attention() {
     let mut fixture = Fixture::new();
     let runner = GitRunner::discover().unwrap();

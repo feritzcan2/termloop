@@ -262,4 +262,50 @@ describe("StewardPetHost Project transcript baseline", () => {
     await act(async () => { liveSwitch.click(); });
     expect(setEnabled).toHaveBeenCalledWith(true);
   });
+
+  it("pauses presence polling while the document is hidden and refreshes on resume", async () => {
+    vi.useFakeTimers();
+    const getPresence = vi.fn(async () => ({
+      configuration: { enabled: true, executorSessionId: "session-1" },
+      presence: { lastActivityAtEpochMs: null, activeCommandLabel: null, pendingProposal: false },
+    }) as never);
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+
+    await act(async () => {
+      root.render(createElement(StewardPetHost, {
+        projectId: "project-a",
+        refreshToken: 0,
+        sessions: [{ id: "session-1", lifecycle_state: "running" }] as never,
+        agentStatuses: [],
+        compact: true,
+        userBusy: false,
+        getSteward: async () => ({
+          configuration: { enabled: true, executorSessionId: "session-1" },
+          presence: { lastActivityAtEpochMs: null, activeCommandLabel: null, pendingProposal: false },
+        }) as never,
+        getPresence,
+        listTranscript: async () => ({ messages: [] }) as never,
+        respondToProposal: vi.fn(),
+        acceptSuggestion: vi.fn(),
+        listRuntime: async () => ({ reports: [] }) as never,
+        openSteward: vi.fn(),
+        dismissUtterance: vi.fn(),
+        openReference: vi.fn(),
+      }));
+    });
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(getPresence).toHaveBeenCalledTimes(1);
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+    expect(getPresence).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(getPresence).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(getPresence).toHaveBeenCalledTimes(3);
+    vi.useRealTimers();
+  });
 });

@@ -122,8 +122,10 @@
   complete source value returned by the read and fails on a stale source; Core
   clears the old executor binding and never accepts Project or Session scope
   from arguments. Invocation retains the built-in wake/safety layer at launch.
-  Workers may report bounded current findings but cannot mutate Tasks or
-  contact Task Agents.
+  Workers may report bounded current findings but cannot mutate Tasks. During
+  one exact claimed Playbook step, a Worker may send a bounded request only to
+  an ordinary Agent projected into that focused Task after the scoped Task read;
+  it cannot launch, substitute, or contact any other Agent.
 - Session projection may expose the exact live Ask-To source for a helper. The
   source and bounded continuation provenance survive restart, but never become
   parentage, history, lifecycle cascading, content storage, or bearer authority.

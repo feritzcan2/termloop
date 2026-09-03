@@ -1,4 +1,5 @@
 import AVFoundation
+import NaturalLanguage
 import SwiftUI
 
 struct ChatMessage: Codable, Identifiable, Equatable {
@@ -21,6 +22,11 @@ struct ChatSendResponse: Codable {
 struct VoiceSendResponse: Codable {
     let transcript: String
     let message: ChatMessage
+}
+
+private struct StewardSpeechRequest: Codable {
+    let projectId: String
+    let sequence: Int
 }
 
 struct StewardActionRequest: Codable {
@@ -57,48 +63,136 @@ struct StatusResponse: Codable {
     let sessions: [StatusSession]
 }
 
-enum Speech {
-    static let synthesizer = AVSpeechSynthesizer()
+@MainActor
+final class SpeechPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDelegate {
+    @Published private(set) var isSpeaking = false
 
-    static func speak(_ text: String) {
-        synthesizer.stopSpeaking(at: .immediate)
-        let utterance = AVSpeechUtterance(string: String(text.prefix(600)))
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+    private let synthesizer = AVSpeechSynthesizer()
+    private var player: AVAudioPlayer?
+    private var completion: (() -> Void)?
+
+    override init() {
+        super.init()
+        synthesizer.delegate = self
+    }
+
+    func play(_ audio: Data?, fallbackText: String, completion: @escaping () -> Void) {
+        cancel()
+        self.completion = completion
+        activatePlaybackSession()
+        if let audio,
+           let player = try? AVAudioPlayer(data: audio),
+           player.prepareToPlay() {
+            self.player = player
+            player.delegate = self
+            player.volume = 1
+            player.enableRate = true
+            player.rate = 1.12
+            isSpeaking = true
+            if player.play() { return }
+        }
+        player = nil
+        let utterance = AVSpeechUtterance(string: String(fallbackText.prefix(1_500)))
+        utterance.voice = speechVoice(for: fallbackText)
+        utterance.rate = 0.5
+        utterance.pitchMultiplier = 0.98
+        utterance.volume = 1
+        isSpeaking = true
         synthesizer.speak(utterance)
+    }
+
+    func cancel() {
+        completion = nil
+        player?.stop()
+        player = nil
+        synthesizer.stopSpeaking(at: .immediate)
+        isSpeaking = false
+        try? AVAudioSession.sharedInstance().setActive(false)
+    }
+
+    private func speechVoice(for text: String) -> AVSpeechSynthesisVoice? {
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(text)
+        if let language = recognizer.dominantLanguage?.rawValue,
+           let voice = AVSpeechSynthesisVoice(language: language) {
+            return voice
+        }
+        return Locale.preferredLanguages.first.flatMap { AVSpeechSynthesisVoice(language: $0) }
+    }
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in self.finished() }
+    }
+
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        Task { @MainActor in self.finished() }
+    }
+
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        Task { @MainActor in self.finished() }
+    }
+
+    private func activatePlaybackSession() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers])
+        try? session.setActive(true)
+    }
+
+    private func finished() {
+        guard isSpeaking else { return }
+        isSpeaking = false
+        player = nil
+        try? AVAudioSession.sharedInstance().setActive(false)
+        let action = completion
+        completion = nil
+        action?()
     }
 }
 
-// Voice conversation with the project Steward. One message fills the screen at
-// a time; swiping left/right pages through the history and the newest message
-// is always the landing page. Dictation goes in through the watch keyboard's
-// mic, replies come back on the polled Companion transcript and are optionally
-// spoken aloud. When a reply lands after the app left the foreground, the
-// gateway's "Stew replied" push reopens this page.
+private enum QuickMessageResult: Equatable {
+    case preparing
+    case sent
+    case failed(String)
+}
+
+// Steward's asynchronous wrist inbox. One message fills the screen at a time;
+// swiping pages history and tapping a reply can still read it aloud. The watch-
+// face path overlays a purpose-built one-shot recorder and never waits for the
+// answer: the gateway's later "Stew replied" push reopens this inbox.
 struct ChatView: View {
     let autoStart: Bool
 
     init(autoStart: Bool = false) {
         self.autoStart = autoStart
+        _quickCapture = State(initialValue: autoStart)
+        _quickResult = State(initialValue: .preparing)
     }
 
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var appState = AppState.shared
     @AppStorage("chatConnectionId") private var connectionId = ""
     @AppStorage("chatProjectId") private var projectId = ""
     @AppStorage("speakReplies") private var speakReplies = true
 
     @StateObject private var recorder = VoiceRecorder()
+    @StateObject private var speech = SpeechPlayer()
     @State private var projects: [ChatProjectOption] = []
     @State private var messages: [ChatMessage] = []
     @State private var selectedSequence: Int?
     @State private var expandedMessage: ChatMessage?
     @State private var controlsPresented = false
     @State private var sending = false
-    @State private var lastSpokenSequence = 0
     @State private var awaitingReplySince: Int?
+    @State private var speakingReplySequence: Int?
     @State private var didAutoStart = false
+    @State private var quickCapture: Bool
+    @State private var quickResult: QuickMessageResult
+    @State private var quickTarget: WatchProjectTarget? = nil
 
     var body: some View {
-        VStack(spacing: 3) {
+        ZStack {
+            VStack(spacing: 3) {
             if messages.isEmpty {
                 Spacer()
                 EmptyStateView(
@@ -154,7 +248,7 @@ struct ChatView: View {
                     } else {
                         ZStack {
                             Circle().fill(Theme.stew)
-                            Image(systemName: sending ? "ellipsis" : "mic.fill")
+                            Image(systemName: speech.isSpeaking ? "waveform" : (sending ? "ellipsis" : "mic.fill"))
                                 .font(.system(size: 17, weight: .semibold))
                                 .foregroundStyle(.black)
                         }
@@ -165,7 +259,7 @@ struct ChatView: View {
                 .disabled(sending || recorder.phase == .transcribing)
                 Spacer()
                 Button {
-                    speakReplies.toggle()
+                    speakerTapped()
                 } label: {
                     Image(systemName: speakReplies ? "speaker.wave.2.fill" : "speaker.slash")
                         .font(.system(size: 14))
@@ -175,6 +269,11 @@ struct ChatView: View {
                 .frame(width: 34, height: 34)
             }
             .padding(.horizontal, 2)
+            }
+            .opacity(quickCapture ? 0 : 1)
+            .allowsHitTesting(!quickCapture)
+
+            if quickCapture { quickMessageStage }
         }
         .navigationTitle(currentProjectName)
         .sheet(item: $expandedMessage) { message in
@@ -202,12 +301,10 @@ struct ChatView: View {
         }
         .task { await run() }
         .onChange(of: projectId) { _, _ in
-            messages = []
-            Task { await refresh() }
+            targetChanged()
         }
         .onChange(of: connectionId) { _, _ in
-            messages = []
-            Task { await refresh() }
+            targetChanged()
         }
         .onChange(of: appState.autoTalkRequested) { _, requested in
             if requested { autoTalk() }
@@ -215,15 +312,89 @@ struct ChatView: View {
         .onAppear {
             if appState.autoTalkRequested { autoTalk() }
         }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background {
+                recorder.cancel()
+                speech.cancel()
+                speakingReplySequence = nil
+            } else if phase == .active {
+                if quickCapture, quickResult == .preparing, recorder.phase == .idle {
+                    // A cold complication launch can still be inactive when the
+                    // initial 50 ms attempt fires. Start as soon as watchOS gives
+                    // us the foreground instead of leaving the wrist waiting.
+                    listen()
+                } else if !quickCapture {
+                    restoreAwaitingReply()
+                    Task { await refresh() }
+                }
+            }
+        }
+        .onDisappear {
+            recorder.cancel()
+            speech.cancel()
+        }
+    }
+
+    @ViewBuilder
+    private var quickMessageStage: some View {
+        switch quickResult {
+        case .sent:
+            VoiceStageView(
+                stage: .success,
+                title: "Gönderildi",
+                caption: "Yanıt bildirimle gelecek"
+            )
+        case .failed(let message):
+            VoiceStageView(
+                stage: .failure,
+                title: "Gönderilemedi",
+                caption: message,
+                onTap: beginQuickMessage
+            )
+        case .preparing:
+            switch recorder.phase {
+            case .listening:
+                VoiceStageView(
+                    stage: .listening,
+                    level: recorder.level,
+                    title: "Mesajını söyle",
+                    caption: "1 sn sessizlikte gönderilir",
+                    onTap: recorder.finish
+                )
+            case .transcribing:
+                VoiceStageView(stage: .sending, title: "Gönderiliyor…")
+            case .denied:
+                VoiceStageView(
+                    stage: .failure,
+                    title: "Mikrofon izni kapalı",
+                    caption: "Dikte etmek için dokun",
+                    onTap: presentDictation
+                )
+            case .idle:
+                VoiceStageView(stage: .sending, title: "Mikrofon açılıyor…")
+            }
+        }
     }
 
     private var footerLabel: String {
-        switch recorder.phase {
-        case .listening: return "dinliyorum…"
-        case .transcribing: return "yazıya çevriliyor…"
-        case .denied: return "mikrofon izni kapalı"
-        case .idle: return awaitingReplySince == nil ? "" : "stew düşünüyor…"
+        let status: String
+        if speech.isSpeaking { status = "stew konuşuyor…" }
+        else if speakingReplySequence != nil { status = "ses hazırlanıyor…" }
+        else {
+            switch recorder.phase {
+            case .listening: status = "dinliyorum…"
+            case .transcribing: status = "yazıya çevriliyor…"
+            case .denied: status = "mikrofon izni kapalı"
+            case .idle:
+                if let since = awaitingReplySince {
+                    let replyReady = messages.contains { $0.author == "steward" && $0.sequence > since }
+                    status = replyReady && !speakReplies ? "cevap hazır • sesi aç" : "yanıt bildirimle gelecek"
+                } else {
+                    status = ""
+                }
+            }
         }
+        return status
     }
 
     private var footerColor: Color {
@@ -244,6 +415,11 @@ struct ChatView: View {
     // step. If the microphone was refused, the system dictation sheet remains
     // as the way in.
     private func micTapped() {
+        if speech.isSpeaking {
+            speech.cancel()
+            listen()
+            return
+        }
         if recorder.phase == .listening {
             recorder.finish()
             return
@@ -256,37 +432,66 @@ struct ChatView: View {
         recorder.begin { url in
             guard let url else {
                 if recorder.phase == .denied { presentDictation() }
+                else if quickCapture { quickResult = .failed("Yeniden denemek için dokun") }
                 return
             }
             Task { await sendVoice(url) }
         }
     }
 
+    private func speakerTapped() {
+        if speakReplies {
+            speakReplies = false
+            speech.cancel()
+            speakingReplySequence = nil
+            return
+        }
+        speakReplies = true
+        announceReplyIfArrived()
+    }
+
     private func presentDictation() {
         DictationPresenter.present { text in
             guard let text, !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-            Task { _ = await send(text) }
+            Task {
+                let delivered = await send(text)
+                if quickCapture {
+                    if delivered { Haptics.delivered() }
+                    finishQuickMessage(delivered: delivered)
+                }
+            }
         }
     }
 
-    // Watch-face complication path: the app opens already listening, so the
-    // wearer only has to speak.
+    // Watch-face complication path: resolve the already-synced default locally
+    // and open the microphone without waiting for status or transcript network
+    // reads. The wearer only taps once and speaks.
     private func autoTalk() {
         appState.autoTalkRequested = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            listen()
-        }
+        didAutoStart = true
+        beginQuickMessage()
     }
 
     private func run() async {
-        await loadProjects()
-        if autoStart && !didAutoStart {
-            didAutoStart = true
-            listen()
+        if autoStart || quickCapture || appState.autoTalkRequested {
+            if !didAutoStart {
+                didAutoStart = true
+                appState.autoTalkRequested = false
+                beginQuickMessage()
+            }
+            // No status or transcript request belongs on the complication's
+            // critical path. Dismissing the success screen cancels this task.
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(30))
+            }
+            return
         }
+        await loadProjects()
+        restoreAwaitingReply()
+        await refresh()
         while !Task.isCancelled {
-            await refresh()
             try? await Task.sleep(for: .seconds(awaitingReplySince == nil ? 6 : 3))
+            await refresh()
         }
     }
 
@@ -326,6 +531,7 @@ struct ChatView: View {
         if !connectionId.isEmpty && !projectId.isEmpty {
             WatchSelectionStore.chatTarget = WatchProjectTarget(connectionId: connectionId, projectId: projectId)
         }
+        restoreAwaitingReply()
     }
 
     private func refresh() async {
@@ -338,10 +544,10 @@ struct ChatView: View {
         ) else { return }
         // Land on the newest message only when something new arrived, so
         // browsing old pages is never yanked back by the poll.
-        let previousLast = messages.last?.sequence
-        messages = list.messages
-        if let last = messages.last?.sequence, last != previousLast {
-            selectedSequence = last
+        let previousNewest = messages.map(\.sequence).max()
+        messages = list.messages.sorted { $0.sequence < $1.sequence }
+        if let newest = messages.last?.sequence, newest != previousNewest {
+            selectedSequence = newest
         }
         announceReplyIfArrived()
     }
@@ -353,23 +559,36 @@ struct ChatView: View {
             try? FileManager.default.removeItem(at: url)
             recorder.markTranscribed()
         }
-        guard let credential = CredentialStore.credential(id: connectionId), !projectId.isEmpty else {
+        let target = quickCapture
+            ? quickTarget
+            : WatchProjectTarget(connectionId: connectionId, projectId: projectId)
+        guard let target,
+              let credential = CredentialStore.credential(id: target.connectionId),
+              !target.projectId.isEmpty
+        else {
             Haptics.failed()
+            if quickCapture { quickResult = .failed("iPhone'dan hedef projeyi seç") }
             return
         }
         guard let sent: VoiceSendResponse = try? await GatewayAPI.postAudio(
             credential: credential,
             path: "/watch/voice",
-            query: [URLQueryItem(name: "project", value: projectId)],
+            query: [URLQueryItem(name: "project", value: target.projectId)],
             fileURL: url
         ) else {
             Haptics.failed()
+            if quickCapture { quickResult = .failed("Bağlantıyı kontrol edip tekrar dene") }
             return
         }
-        awaitingReplySince = sent.message.sequence
-        lastSpokenSequence = sent.message.sequence
+        awaitReply(
+            after: sent.message.sequence,
+            connectionId: target.connectionId,
+            projectId: target.projectId
+        )
         messages.append(sent.message)
         selectedSequence = sent.message.sequence
+        Haptics.delivered()
+        if quickCapture { finishQuickMessage(delivered: true) }
     }
 
     private func send(_ text: String) async -> Bool {
@@ -387,8 +606,7 @@ struct ChatView: View {
             Haptics.failed()
             return false
         }
-        awaitingReplySince = sent.message.sequence
-        lastSpokenSequence = sent.message.sequence
+        awaitReply(after: sent.message.sequence, connectionId: connectionId, projectId: projectId)
         messages.append(sent.message)
         selectedSequence = sent.message.sequence
         return true
@@ -406,8 +624,7 @@ struct ChatView: View {
             Haptics.failed()
             return false
         }
-        awaitingReplySince = sent.message.sequence
-        lastSpokenSequence = sent.message.sequence
+        awaitReply(after: sent.message.sequence, connectionId: connectionId, projectId: projectId)
         messages.append(sent.message)
         selectedSequence = sent.message.sequence
         Haptics.delivered()
@@ -418,13 +635,122 @@ struct ChatView: View {
     // already on screen when the page opens stays silent.
     private func announceReplyIfArrived() {
         guard let since = awaitingReplySince,
-              let reply = messages.last(where: { $0.author == "steward" && $0.sequence > since })
+              recorder.phase == .idle,
+              speakingReplySequence == nil,
+              let reply = messages
+                .filter({ $0.author == "steward" && $0.sequence > since })
+                .max(by: { $0.sequence < $1.sequence })
         else { return }
-        awaitingReplySince = nil
-        if reply.sequence > lastSpokenSequence {
-            lastSpokenSequence = reply.sequence
-            Haptics.reply()
-            if speakReplies { Speech.speak(reply.content) }
+        guard speakReplies else { return }
+        speakingReplySequence = reply.sequence
+        Haptics.reply()
+        Task { await speak(reply, after: since) }
+    }
+
+    private func speak(_ reply: ChatMessage, after userSequence: Int) async {
+        let targetConnectionId = connectionId
+        let targetProjectId = projectId
+        guard !targetConnectionId.isEmpty, !targetProjectId.isEmpty else {
+            speakingReplySequence = nil
+            return
+        }
+        let audio: Data?
+        if let credential = CredentialStore.credential(id: targetConnectionId) {
+            audio = try? await GatewayAPI.postBinary(
+                credential: credential,
+                path: "/watch/speech",
+                body: StewardSpeechRequest(projectId: targetProjectId, sequence: reply.sequence)
+            )
+        } else {
+            audio = nil
+        }
+        guard scenePhase == .active,
+              connectionId == targetConnectionId,
+              projectId == targetProjectId,
+              awaitingReplySince == userSequence,
+              speakingReplySequence == reply.sequence
+        else {
+            speakingReplySequence = nil
+            return
+        }
+        speech.play(audio, fallbackText: reply.content) {
+            StewardReplyStore.clear(
+                sequence: userSequence,
+                connectionId: targetConnectionId,
+                projectId: targetProjectId
+            )
+            if awaitingReplySince == userSequence { awaitingReplySince = nil }
+            speakingReplySequence = nil
+        }
+    }
+
+    private func awaitReply(after sequence: Int, connectionId: String, projectId: String) {
+        if self.connectionId == connectionId && self.projectId == projectId {
+            awaitingReplySince = sequence
+            speakingReplySequence = nil
+        }
+        StewardReplyStore.remember(sequence: sequence, connectionId: connectionId, projectId: projectId)
+    }
+
+    private func restoreAwaitingReply() {
+        awaitingReplySince = StewardReplyStore.sequence(connectionId: connectionId, projectId: projectId)
+    }
+
+    private func targetChanged() {
+        messages = []
+        speech.cancel()
+        speakingReplySequence = nil
+        restoreAwaitingReply()
+        Task { await refresh() }
+    }
+
+    private func beginQuickMessage() {
+        quickCapture = true
+        quickResult = .preparing
+        speech.cancel()
+        speakingReplySequence = nil
+        guard prepareQuickTarget() else {
+            quickResult = .failed("iPhone'dan hedef projeyi seç")
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            guard quickCapture, scenePhase == .active, recorder.phase == .idle else { return }
+            listen()
+        }
+    }
+
+    private func prepareQuickTarget() -> Bool {
+        if let selected = WatchSelectionStore.chatTarget,
+           CredentialStore.credential(id: selected.connectionId) != nil {
+            connectionId = selected.connectionId
+            projectId = selected.projectId
+            quickTarget = selected
+            return !selected.projectId.isEmpty
+        }
+        guard let credential = CredentialStore.preferred(),
+              let defaultProjectId = credential.targetProjectId,
+              !defaultProjectId.isEmpty
+        else { return false }
+        connectionId = credential.id
+        projectId = defaultProjectId
+        WatchSelectionStore.chatTarget = WatchProjectTarget(
+            connectionId: credential.id,
+            projectId: defaultProjectId
+        )
+        quickTarget = WatchProjectTarget(connectionId: credential.id, projectId: defaultProjectId)
+        return true
+    }
+
+    private func finishQuickMessage(delivered: Bool) {
+        guard quickCapture else { return }
+        if !delivered {
+            quickResult = .failed("Bağlantıyı kontrol edip tekrar dene")
+            return
+        }
+        quickResult = .sent
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            guard quickCapture, quickResult == .sent else { return }
+            dismiss()
         }
     }
 }

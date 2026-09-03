@@ -140,4 +140,21 @@ describe("client-local layout model", () => {
       } },
     })).toBeUndefined();
   });
+
+  it("accepts a peer Agent group beyond the former member cap", () => {
+    const sessionIds = Array.from({ length: 160 }, (_, index) => `agent-${index}`);
+    const decoded = decodeLayoutDocument({
+      version: 2,
+      profiles: { local: {
+        projects: {},
+        sessionOrderByProject: { project: sessionIds },
+        agentGroupsByProject: { project: [{ sessionIds, name: "Large crew" }] },
+      } },
+    });
+
+    expect(decoded?.profiles.local?.agentGroupsByProject?.project?.[0]).toEqual({
+      sessionIds,
+      name: "Large crew",
+    });
+  });
 });

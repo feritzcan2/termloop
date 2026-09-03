@@ -22,4 +22,5 @@ export type TerminalSurface = {
 export type TerminalSurfaceFactory = (
   onInput: (data: string | Uint8Array) => void,
   onResize: (rows: number, cols: number) => void,
+  onImagePaste: () => void,
 ) => TerminalSurface;

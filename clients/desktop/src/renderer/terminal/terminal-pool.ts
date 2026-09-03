@@ -63,6 +63,7 @@ export class TerminalPool {
     private readonly surfaceFactory: TerminalSurfaceFactory,
     private readonly attachmentFactory: AttachmentFactory,
     private readonly diagnosticsEnabled = false,
+    private readonly onImagePaste: (sessionId: string) => void = () => {},
   ) {}
 
   reconcile(sessions: readonly Session[]): void {
@@ -123,6 +124,7 @@ export class TerminalPool {
           entry.dimensions = { rows, cols };
           entry.attachment?.resize(rows, cols);
         },
+        () => this.onImagePaste(entry.session.id),
       );
     }
     const mountToken = {};

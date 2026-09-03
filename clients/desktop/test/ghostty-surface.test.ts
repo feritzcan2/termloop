@@ -179,6 +179,48 @@ describe("GhosttySurface", () => {
     expect(snapshot?.textContent).toBe("native screen");
 
     surface.setVisible(true);
+    await flush();
+    expect(snapshot).toBeUndefined();
+  });
+
+  it("synchronizes the live pane frame before revealing a hidden native surface", async () => {
+    const { bridge } = fakeBridge();
+    const revealFrame = deferred<{ rows: number; cols: number }>();
+    let snapshot: { className: string; textContent: string; setAttribute(): void; remove(): void } | undefined;
+    const host = {
+      getBoundingClientRect: () => ({ x: 10, y: 20, width: 640, height: 480 }),
+      append: (child: typeof snapshot) => { snapshot = child; },
+    } as unknown as HTMLElement;
+    vi.stubGlobal("document", {
+      createElement: () => ({
+        className: "",
+        textContent: "",
+        setAttribute: vi.fn(),
+        remove: () => { snapshot = undefined; },
+      }),
+    });
+    const surface = new GhosttySurface(() => {}, () => {}, bridge);
+    await surface.mount(host, false);
+    vi.mocked(bridge.setFrame).mockClear();
+    vi.mocked(bridge.setVisible).mockClear();
+
+    surface.setVisible(false);
+    await flush();
+    expect(snapshot?.textContent).toBe("native screen");
+
+    vi.mocked(bridge.setFrame).mockReturnValueOnce(revealFrame.promise);
+    surface.setVisible(true);
+    expect(snapshot?.textContent).toBe("native screen");
+    expect(bridge.setVisible).not.toHaveBeenCalledWith(7, true);
+
+    revealFrame.resolve({ rows: 30, cols: 100 });
+    await flush();
+
+    expect(bridge.setFrame).toHaveBeenCalledWith(7, 10, 20, 640, 480);
+    expect(bridge.setVisible).toHaveBeenCalledWith(7, true);
+    expect(vi.mocked(bridge.setFrame).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(bridge.setVisible).mock.invocationCallOrder.at(-1)!,
+    );
     expect(snapshot).toBeUndefined();
   });
 

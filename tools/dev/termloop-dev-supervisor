@@ -98,9 +98,9 @@ PY
   fi
   ps -p "$pid" -o state= -o lstart= 2>/dev/null | "$python_binary" -c '
 import sys
-parts = sys.stdin.read().split()
-if parts and parts[0] != "Z" and len(parts) > 1:
-    print("unix:" + " ".join(parts[1:]))
+parts = sys.stdin.read().strip().split(maxsplit=1)
+if len(parts) == 2 and not parts[0].startswith("Z"):
+    print("unix:" + parts[1])
 ' || true
 }
 

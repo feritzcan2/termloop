@@ -47,14 +47,26 @@ export function Row(props: RowProps) {
     tone, title, eyebrow, state, detail, trailing, meta,
     accessibleName, onPress, onLongPress, minHeight, disabled,
   } = props;
-  const interactive = onPress !== undefined && disabled !== true;
+  const opens = onPress !== undefined && disabled !== true;
+  /// A stopped Session may no longer open a terminal, but its long-press menu
+  /// still owns rename, copy, recovery, and removal. Keep that secondary intent
+  /// reachable without drawing a chevron that promises the primary navigation.
+  const hasActions = onLongPress !== undefined;
+  const interactive = opens || hasActions;
   return (
     <Pressable
-      onPress={interactive ? onPress : undefined}
-      onLongPress={onLongPress}
+      onPress={opens ? onPress : undefined}
+      onLongPress={hasActions ? onLongPress : undefined}
       disabled={!interactive}
       accessibilityRole={interactive ? "button" : "text"}
       accessibilityLabel={accessibleName}
+      accessibilityHint={hasActions
+        ? opens ? "Double tap to open. Long press for actions." : "Long press for actions."
+        : undefined}
+      accessibilityActions={hasActions ? [{ name: "longpress", label: "Show actions" }] : undefined}
+      onAccessibilityAction={hasActions ? (event) => {
+        if (event.nativeEvent.actionName === "longpress") onLongPress?.();
+      } : undefined}
       style={({ pressed }) => [
         styles.row,
         rowWash(tone),
@@ -83,7 +95,7 @@ export function Row(props: RowProps) {
         </Text>
       </View>
       {trailing}
-      {interactive ? <Text style={styles.chevron}>›</Text> : null}
+      {opens ? <Text style={styles.chevron}>›</Text> : null}
     </Pressable>
   );
 }

@@ -6,9 +6,12 @@ import {
   attentionTransitions,
   createApnsJwt,
   createApnsRequestId,
+  defaultPushNotificationPreferences,
   macDesktopRecentlyActive,
   nextStatusMap,
   pendingStewardDecisionNotifications,
+  pushDeliveryOptions,
+  pushNotificationPreferencesOf,
   retainCurrentAttention,
   stewardMessageNotificationOf,
   stewardTranscriptNotifications,
@@ -133,6 +136,38 @@ describe("mobile APNs attention projection", () => {
     }, "mac_1");
     expect(payload).toMatchObject({ connectionId: "mac_1", sessionId: session.id, projectId: "prj_1" });
     expect(JSON.stringify(payload)).not.toContain("terminal");
+  });
+
+  it("applies independent Mobile and Watch delivery preferences", () => {
+    const preferences = pushNotificationPreferencesOf({
+      version: 1,
+      mobile: {
+        ...defaultPushNotificationPreferences.mobile,
+        agentReadyForReview: false,
+      },
+      watch: {
+        ...defaultPushNotificationPreferences.watch,
+        stewardMessages: false,
+        playSound: false,
+      },
+    });
+    expect(preferences).toBeDefined();
+    expect(pushDeliveryOptions(preferences, "ai.termloop.mobile", "needsInput"))
+      .toEqual({ enabled: true, playSound: true });
+    expect(pushDeliveryOptions(preferences, "ai.termloop.mobile", "needsReview"))
+      .toEqual({ enabled: false, playSound: true });
+    expect(pushDeliveryOptions(preferences, "ai.termloop.mobile.watch", "stewardProposal"))
+      .toEqual({ enabled: false, playSound: false });
+
+    const silent = apnsPayload({
+      kind: "needsInput",
+      sessionId: session.id,
+      projectId: session.project_id,
+      title: "Claude needs your input",
+      body: "Waiting",
+    }, "mac_1", { playSound: false });
+    expect(silent.aps).not.toHaveProperty("sound");
+    expect(pushNotificationPreferencesOf({ version: 1, mobile: {}, watch: {} })).toBeUndefined();
   });
 
   it("uses typed Watch actions for Steward proposals and suggestions", () => {

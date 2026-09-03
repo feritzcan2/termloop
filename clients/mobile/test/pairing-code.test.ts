@@ -34,5 +34,7 @@ describe("mobile pair code", () => {
       .toThrow("incomplete or unsupported");
     expect(() => parsePairingCode(`TLMP1:${JSON.stringify({ ...payload, version: 2 })}`))
       .toThrow("incomplete or unsupported");
+    expect(() => parsePairingCode(`TLMP1:${JSON.stringify({ ...payload, version: 3 })}`))
+      .toThrow("incomplete or unsupported");
   });
 });

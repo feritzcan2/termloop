@@ -570,7 +570,10 @@ impl CoreRuntime {
     /// an exited-shell reap races a replacement or shutdown. Explicit close or
     /// resume intent treats an already-absent PTY as a completed release and
     /// heals the stale hint; every other terminal failure remains fail-closed.
-    fn release_agent_terminal_hold(&mut self, session_id: &str) -> Result<(), CoreError> {
+    pub(crate) fn release_agent_terminal_hold(
+        &mut self,
+        session_id: &str,
+    ) -> Result<(), CoreError> {
         if !self.agent_terminal_holds.contains(session_id) {
             return Ok(());
         }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { AgentCapabilityDto, LocalBranchDto, ProjectLocalBranchListResult, ProjectTaskAutomationGetResult, TaskProvisionWorktreeParams } from "@termloop/contract/current";
 import type { Task } from "../../model.js";
-import { agentLaunchDefaults, DEFAULT_TASK_WORKTREE_PREFIX } from "../../project-task-automation.js";
+import { agentLaunchDefaults, DEFAULT_TASK_WORKTREE_PREFIX, permissionLabel } from "../../project-task-automation.js";
 import { Icon } from "../Icon.js";
 import {
   selectedWorktreeParent,
@@ -17,7 +17,7 @@ export type EditorState = { mode: "create" } | { mode: "edit"; task: Task };
 /// to chain the optional worktree and launches, so a success carries the id.
 export type TaskCreateOutcome = { taskId: string } | { failure: string };
 
-export type TaskStartSelection = "terminal" | {
+type TaskAgentStartSelection = {
   kind: "agent";
   agentId: string;
   model: string;
@@ -25,6 +25,23 @@ export type TaskStartSelection = "terminal" | {
   reasoning: AgentCapabilityDto["reasoning"][number];
   kickoffMessage: string | null;
 };
+
+export type TaskStartSelection = "terminal" | TaskAgentStartSelection;
+
+function defaultAgentStart(
+  capabilities: readonly AgentCapabilityDto[],
+  agentId: string,
+): TaskAgentStartSelection {
+  const defaults = agentLaunchDefaults(capabilities, agentId);
+  return {
+    kind: "agent",
+    agentId,
+    model: defaults.model ?? "default",
+    permission: defaults.permission ?? "default",
+    reasoning: defaults.reasoning ?? "default",
+    kickoffMessage: null,
+  };
+}
 
 /// Everything the create flow needs beyond the create command itself. The flow
 /// only composes the same named commands the Task row offers one by one; it adds
@@ -34,6 +51,8 @@ export type CreateTaskFlow = {
   repositoryPath: string;
   rememberedParentPath: string | undefined;
   rememberParentPath(parentPath: string): void;
+  rememberedBaseRef: string | undefined;
+  rememberBaseRef(baseRef: string): void;
   listBranches(projectId: string): Promise<ProjectLocalBranchListResult>;
   loadProjectAutomation?(projectId: string): Promise<ProjectTaskAutomationGetResult>;
   agentCapabilities: readonly AgentCapabilityDto[];
@@ -92,7 +111,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
   const [workspace, setWorkspace] = useState<"create" | "none">("create");
   const [worktreePrefix, setWorktreePrefix] = useState(DEFAULT_TASK_WORKTREE_PREFIX);
   const [starts, setStarts] = useState<ReadonlySet<string>>(new Set());
-  const [automationAgentStart, setAutomationAgentStart] = useState<Exclude<TaskStartSelection, "terminal">>();
+  const [agentStarts, setAgentStarts] = useState<ReadonlyMap<string, TaskAgentStartSelection>>(new Map());
   const [branchMode, setBranchMode] = useState<"existing" | "create">("create");
   const [createdBranchName, setCreatedBranchName] = useState("");
   const [branchEdited, setBranchEdited] = useState(false);
@@ -116,7 +135,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
 
   /// Deliberately keyed on the two stable inputs rather than the whole `flow`
   /// object, which the rail recreates per render.
-  const { projectId, listBranches, loadProjectAutomation } = flow;
+  const { projectId, rememberedBaseRef, listBranches, loadProjectAutomation } = flow;
   useEffect(() => {
     let current = true;
     if (!projectId || !loadProjectAutomation) {
@@ -137,14 +156,15 @@ function CreateTaskDialog({ close, createTask, flow }: {
         && flow.agentCapabilities.some((capability) => capability.available && capability.agent_id === configuration.agentId)
         ? configuration.agentId
         : undefined;
-      setAutomationAgentStart(selectedAgent ? {
+      const selectedAgentStart: TaskAgentStartSelection | undefined = selectedAgent ? {
         kind: "agent",
         agentId: selectedAgent,
         model: configuration.model!,
         permission: configuration.permission!,
         reasoning: configuration.reasoning!,
         kickoffMessage: configuration.kickoffMessage,
-      } : undefined);
+      } : undefined;
+      setAgentStarts(selectedAgentStart ? new Map([[selectedAgent, selectedAgentStart]]) : new Map());
       setStarts(selectedAgent ? new Set([selectedAgent]) : new Set());
       setAutomationLoading(false);
     }).catch(() => {
@@ -167,7 +187,12 @@ function CreateTaskDialog({ close, createTask, flow }: {
       const sorted = sortLocalBranches(result.branches);
       setLocalBranches(sorted);
       setBranchesTruncated(result.truncated);
-      setBaseRef((selected) => sorted.some((branch) => branch.exact_ref === selected) ? selected : sorted[0]?.exact_ref ?? "");
+      setBaseRef((selected) => {
+        if (sorted.some((branch) => branch.exact_ref === selected)) return selected;
+        const remembered = sorted.find((branch) => branch.exact_ref === rememberedBaseRef);
+        if (remembered) return remembered.exact_ref;
+        return sorted[0]?.exact_ref ?? "";
+      });
       setExistingBranchName((selected) => sorted.some((branch) => branch.name === selected) ? selected : sorted[0]?.name ?? "");
       setBranchesLoading(false);
     }).catch((loadError: unknown) => {
@@ -176,7 +201,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
       setBranchesError(loadError instanceof Error ? loadError.message : "Local branches could not be loaded.");
     });
     return () => { current = false; };
-  }, [listBranches, projectId]);
+  }, [listBranches, projectId, rememberedBaseRef]);
 
   /// The branch field is never empty: the title drives it, and before a title
   /// exists (or when it yields no slug) a per-dialog suffix keeps the proposal
@@ -240,16 +265,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
         if (starts.size > 0) {
           const selections = [...starts].map((start): TaskStartSelection => {
             if (start === "terminal") return "terminal";
-            if (automationAgentStart?.agentId === start) return automationAgentStart;
-            const defaults = agentLaunchDefaults(flow.agentCapabilities, start);
-            return {
-              kind: "agent",
-              agentId: start,
-              model: defaults.model ?? "default",
-              permission: defaults.permission ?? "default",
-              reasoning: defaults.reasoning ?? "default",
-              kickoffMessage: null,
-            };
+            return agentStarts.get(start) ?? defaultAgentStart(flow.agentCapabilities, start);
           });
           flow.queueLaunches(taskId, selections);
         }
@@ -258,9 +274,28 @@ function CreateTaskDialog({ close, createTask, flow }: {
     } finally { setBusy(false); }
   };
 
-  const toggleStart = (start: string) => setStarts((current) => {
-    const next = new Set(current);
-    if (next.has(start)) next.delete(start); else next.add(start);
+  const toggleStart = (start: string) => {
+    if (start !== "terminal" && !starts.has(start)) {
+      setAgentStarts((current) => {
+        if (current.has(start)) return current;
+        const next = new Map(current);
+        next.set(start, defaultAgentStart(flow.agentCapabilities, start));
+        return next;
+      });
+    }
+    setStarts((current) => {
+      const next = new Set(current);
+      if (next.has(start)) next.delete(start); else next.add(start);
+      return next;
+    });
+  };
+  const changeAgentStart = (
+    agentId: string,
+    change: Partial<Pick<TaskAgentStartSelection, "model" | "permission" | "reasoning">>,
+  ) => setAgentStarts((current) => {
+    const selected = current.get(agentId) ?? defaultAgentStart(flow.agentCapabilities, agentId);
+    const next = new Map(current);
+    next.set(agentId, { ...selected, ...change });
     return next;
   });
   const changeDestinationPath = (nextPath: string) => {
@@ -282,6 +317,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
   const startIcon = (start: string) => start === "terminal"
     ? "terminal"
     : start === "claude" ? "claude" : start === "codex" ? "codex" : "agent";
+  const selectedAgentIds = startOptions.filter((start) => start !== "terminal" && starts.has(start));
   const submitLabel = busy
     ? (createdTaskId ? "Retrying…" : "Creating…")
     : createdTaskId ? "Retry worktree"
@@ -330,7 +366,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
             {branchMode === "create" ? (
               <div className="plan-row">
                 <label className="plan-label" htmlFor="create-base-ref">Base branch</label>
-                <select id="create-base-ref" value={baseRef} disabled={selectionUnavailable} onChange={(event) => { setBaseRef(event.target.value); setError(undefined); }}>
+                <select id="create-base-ref" value={baseRef} disabled={selectionUnavailable} onChange={(event) => { setBaseRef(event.target.value); flow.rememberBaseRef(event.target.value); setError(undefined); }}>
                   {selectionUnavailable ? <option value="">{branchesLoading ? "Loading local branches…" : "No local branches"}</option> : null}
                   {localBranches.map((branch) => <option key={branch.exact_ref} value={branch.exact_ref}>{branch.name}</option>)}
                 </select>
@@ -366,6 +402,35 @@ function CreateTaskDialog({ close, createTask, flow }: {
             </button>
           ))}
         </div>
+        {workspace === "create" && selectedAgentIds.length > 0 ? (
+          <div className="start-agent-configurations" aria-label="Agent launch settings">
+            {selectedAgentIds.map((agentId) => {
+              const capability = flow.agentCapabilities.find((candidate) => candidate.agent_id === agentId)!;
+              const selection = agentStarts.get(agentId) ?? defaultAgentStart(flow.agentCapabilities, agentId);
+              const label = startLabel(agentId);
+              return <section className="start-agent-configuration" key={agentId} aria-label={`${label} launch settings`}>
+                <div className="start-agent-configuration-head"><Icon name={startIcon(agentId)} /><span>{label}</span></div>
+                <div className="task-automation-launch-options">
+                  <label htmlFor={`create-agent-${agentId}-model`}><span>Model</span>
+                    <select id={`create-agent-${agentId}-model`} aria-label={`${label} model`} value={selection.model} disabled={busy || automationLoading} onChange={(event) => changeAgentStart(agentId, { model: event.target.value })}>
+                      {capability.models.map((model) => <option key={model} value={model}>{model}</option>)}
+                    </select>
+                  </label>
+                  <label htmlFor={`create-agent-${agentId}-permission`}><span>Permission mode</span>
+                    <select id={`create-agent-${agentId}-permission`} aria-label={`${label} permission mode`} value={selection.permission} disabled={busy || automationLoading} onChange={(event) => changeAgentStart(agentId, { permission: event.target.value as TaskAgentStartSelection["permission"] })}>
+                      {capability.permissions.map((permission) => <option key={permission} value={permission}>{permissionLabel(permission)}</option>)}
+                    </select>
+                  </label>
+                  <label htmlFor={`create-agent-${agentId}-reasoning`}><span>Reasoning</span>
+                    <select id={`create-agent-${agentId}-reasoning`} aria-label={`${label} reasoning`} value={selection.reasoning} disabled={busy || automationLoading} onChange={(event) => changeAgentStart(agentId, { reasoning: event.target.value as TaskAgentStartSelection["reasoning"] })}>
+                      {capability.reasoning.map((reasoning) => <option key={reasoning} value={reasoning}>{reasoning}</option>)}
+                    </select>
+                  </label>
+                </div>
+              </section>;
+            })}
+          </div>
+        ) : null}
 
         {automationLoading ? <p className="field-help" role="status">Loading Project defaults…</p> : null}
         {automationError ? <p className="field-help" role="status">{automationError}</p> : null}

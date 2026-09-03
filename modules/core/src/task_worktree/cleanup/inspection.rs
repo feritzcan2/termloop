@@ -9,7 +9,7 @@ use super::super::{
     TaskWorktreeHealthFacts, WorktreeHeadProjectionState, WorktreePathProjectionState,
     WorktreeRegistrationProjectionState,
 };
-use super::policy::observation_blocker;
+use super::policy::{cleanup_allows_stale_resolution, observation_blocker};
 use super::projection::{cleanup_preview_without_observation, cleanup_unknown_preview};
 use super::stale::{
     is_generation_zero_legacy_binding, map_stale_platform_error, observe_stale_resolution_facts,
@@ -77,6 +77,38 @@ impl TaskWorktreeCleanupInspectionPlan {
 }
 
 impl CoreRuntime {
+    /// Repository loss cannot authorize recursive disposal, but it need not
+    /// strand an exact managed binding: ForgetBinding mutates only durable
+    /// Task/proof records and revalidates that tuple again before commit.
+    fn cleanup_allows_record_only_forget_after_unknown_observation(
+        &self,
+        task_id: &str,
+        error: &CoreError,
+    ) -> bool {
+        matches!(error, CoreError::RepositoryUnavailable)
+            && self
+                .store
+                .cleanup_operations()
+                .iter()
+                .find(|operation| operation.task_id == task_id)
+                .is_none_or(cleanup_allows_stale_resolution)
+            && !self
+                .store
+                .provisioning_operations()
+                .iter()
+                .any(|operation| operation.task_id == task_id)
+            && !self
+                .store
+                .repair_operations()
+                .iter()
+                .any(|operation| operation.task_id == task_id)
+            && !self
+                .store
+                .stale_resolution_operations()
+                .iter()
+                .any(|operation| operation.task_id == task_id)
+    }
+
     pub fn plan_task_worktree_cleanup_inspection(
         &self,
         params: Value,
@@ -169,9 +201,15 @@ impl CoreRuntime {
                     )?;
                 }
                 return Ok(match &observed.proof {
-                    Some(proof) => {
-                        cleanup_unknown_preview(&observed.task, proof, observation_blocker(&error))
-                    }
+                    Some(proof) => cleanup_unknown_preview(
+                        &observed.task,
+                        proof,
+                        observation_blocker(&error),
+                        self.cleanup_allows_record_only_forget_after_unknown_observation(
+                            &observed.task.id,
+                            &error,
+                        ),
+                    ),
                     None => cleanup_preview_without_observation(
                         &observed.task,
                         observation_blocker(&error),
@@ -235,6 +273,7 @@ impl CoreRuntime {
                     &observed.task,
                     &cleanup_observation.proof,
                     WorktreeCleanupBlocker::ObservationFailed,
+                    false,
                 ));
             }
         };
