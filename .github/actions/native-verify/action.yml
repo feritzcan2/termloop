@@ -91,6 +91,7 @@ runs:
       run: pnpm test
       env:
         RUST_TEST_THREADS: "1"
+        TERMLOOP_SKIP_DEV_LAUNCH_CYCLE: "1"
         TERMLOOP_RUNTIME_FILE: ${{ runner.temp }}/termloop-native-verify-no-runtime.json
         TERMLOOP_TERMINAL_RENDERER: xterm
     - name: S0 acceptance (Linux virtual display)
