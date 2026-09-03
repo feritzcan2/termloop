@@ -22,11 +22,14 @@ import { mobileUpdatePage } from "./mobile-access-update-page.mjs";
 import {
   apnsPayload,
   attentionTransitions,
+  defaultPushNotificationPreferences,
   isStewardOrWorkerSession,
   loadApnsProvider,
   macDesktopRecentlyActive,
   nextStatusMap,
   pendingStewardDecisionNotifications,
+  pushDeliveryOptions,
+  pushNotificationPreferencesOf,
   retainCurrentAttention,
   sendApns,
   stewardTranscriptNotifications,
@@ -160,6 +163,7 @@ const configFile = process.argv[2];
 if (!configFile) throw new Error("usage: mobile-access-gateway <config-file>");
 const config = validateConfig(JSON.parse(await readFile(configFile, "utf8")));
 const agentGroupsFile = path.join(path.dirname(configFile), "agent-groups.json");
+const notificationPreferencesFile = path.join(path.dirname(configFile), "notification-preferences.json");
 await boundLog();
 const diagnostics = createGatewayDiagnosticReporter((line) => process.stdout.write(`${line}\n`));
 const sockets = new Set();
@@ -1259,7 +1263,10 @@ function desktopRecentlyActive() {
 async function deliverPush(notification, skipDeviceTokens = new Set()) {
   let provider;
   try { provider = await loadApnsProvider(config.push.apnsConfigFile); } catch { return new Set(); }
-  const current = await readPushDevices();
+  const [current, preferences] = await Promise.all([
+    readPushDevices(),
+    readPushNotificationPreferences(),
+  ]);
   const devices = current.devices ?? [];
   const retained = [];
   const accepted = new Set();
@@ -1268,7 +1275,16 @@ async function deliverPush(notification, skipDeviceTokens = new Set()) {
       retained.push(device);
       continue;
     }
-    const result = await sendApns(provider, device, apnsPayload(notification, config.push.connectionId));
+    const delivery = pushDeliveryOptions(preferences, device.bundleId, notification.kind);
+    if (!delivery.enabled) {
+      retained.push(device);
+      continue;
+    }
+    const result = await sendApns(
+      provider,
+      device,
+      apnsPayload(notification, config.push.connectionId, { playSound: delivery.playSound }),
+    );
     if (result.ok) accepted.add(device.deviceToken);
     if (!["BadDeviceToken", "DeviceTokenNotForTopic", "Unregistered"].includes(result.reason)) {
       retained.push(device);
@@ -1279,6 +1295,16 @@ async function deliverPush(notification, skipDeviceTokens = new Set()) {
     await chmod(config.push.devicesFile, 0o600);
   }
   return accepted;
+}
+
+async function readPushNotificationPreferences() {
+  try {
+    const source = await readFile(notificationPreferencesFile, "utf8");
+    if (Buffer.byteLength(source) > 32 * 1024) return defaultPushNotificationPreferences;
+    return pushNotificationPreferencesOf(JSON.parse(source)) ?? defaultPushNotificationPreferences;
+  } catch {
+    return defaultPushNotificationPreferences;
+  }
 }
 
 async function readPushDevices() {

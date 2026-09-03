@@ -833,7 +833,11 @@ button.task-signal.issue:hover { color: var(--warning); }
 .settings-page-header { margin: 0 0 18px; }
 .settings-page-header h3 { margin: 0; color: var(--text); font: 600 15px/1.25 var(--font-ui); }
 .settings-page-header p { margin: 6px 0 0; color: var(--text-secondary); font: 11px/1.5 var(--font-ui); }
-.notification-settings { display: grid; align-content: start; }
+.notification-settings { display: grid; align-content: start; gap: 22px; }
+.notification-settings > .settings-page-header { margin-bottom: 0; }
+.notification-device-section { display: grid; gap: 9px; }
+.notification-device-section > header h4 { margin: 0; color: var(--text); font: 700 10px/1.2 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.notification-device-section > header p { margin: 5px 0 0; color: var(--text-muted); font: 10px/1.45 var(--font-ui); }
 .settings-card { display: grid; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-raised); }
 .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 68px; padding: 12px 14px; }
 .settings-row + .settings-row { border-top: 1px solid var(--border); }

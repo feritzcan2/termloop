@@ -1,6 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
-import type { NotificationPreferences } from "../../notification-preferences.js";
+import type {
+  DesktopNotificationPreferences,
+  NotificationPreferences,
+  RemoteNotificationPreferences,
+} from "../../notification-preferences.js";
 import {
   ConnectionProfilesDialog,
   type ConnectionProfilesDialogProps,
@@ -53,10 +57,10 @@ export function SettingsDialog({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [close]);
 
-  const updatePreference = async (key: keyof NotificationPreferences, value: boolean) => {
-    if (!preferences || saving) return;
-    const previous = preferences;
-    const next = { ...preferences, [key]: value };
+  const savePreferences = async (
+    previous: NotificationPreferences,
+    next: NotificationPreferences,
+  ) => {
     setPreferences(next);
     setSaving(true);
     setSaveError(undefined);
@@ -68,6 +72,27 @@ export function SettingsDialog({
     } finally {
       setSaving(false);
     }
+  };
+
+  const updateDesktopPreference = async (key: keyof DesktopNotificationPreferences, value: boolean) => {
+    if (!preferences || saving) return;
+    const previous = preferences;
+    const next = { ...preferences, [key]: value };
+    await savePreferences(previous, next);
+  };
+
+  const updateRemotePreference = async (
+    target: "mobile" | "watch",
+    key: keyof RemoteNotificationPreferences,
+    value: boolean,
+  ) => {
+    if (!preferences || saving) return;
+    const previous = preferences;
+    const next = {
+      ...preferences,
+      [target]: { ...preferences[target], [key]: value },
+    };
+    await savePreferences(previous, next);
   };
 
   return (
@@ -90,7 +115,8 @@ export function SettingsDialog({
                 loadingError={loadingError}
                 saveError={saveError}
                 saving={saving}
-                update={updatePreference}
+                updateDesktop={updateDesktopPreference}
+                updateRemote={updateRemotePreference}
               />
             ) : (
               <>
@@ -113,62 +139,176 @@ function NotificationSettings({
   preferences,
   saveError,
   saving,
-  update,
+  updateDesktop,
+  updateRemote,
 }: {
   loadingError: string | undefined;
   preferences: NotificationPreferences | undefined;
   saveError: string | undefined;
   saving: boolean;
-  update(key: keyof NotificationPreferences, value: boolean): Promise<void>;
+  updateDesktop(key: keyof DesktopNotificationPreferences, value: boolean): Promise<void>;
+  updateRemote(
+    target: "mobile" | "watch",
+    key: keyof RemoteNotificationPreferences,
+    value: boolean,
+  ): Promise<void>;
 }) {
   return (
     <section className="notification-settings" aria-labelledby="notification-settings-title">
       <div className="settings-page-header">
         <h3 id="notification-settings-title">Notifications</h3>
-        <p>Choose when TermLoop should notify you that an Agent needs input.</p>
+        <p>Choose which alerts this Mac sends to each of your TermLoop devices.</p>
       </div>
       {preferences ? (
-        <div className="settings-card">
-          <SettingsSwitch
-            checked={preferences.enabled}
-            disabled={saving}
-            title="Agent attention notifications"
-            description="Show a desktop notification when an Agent needs input."
-            change={(checked) => void update("enabled", checked)}
+        <>
+          <NotificationDeviceSection
+            title="Desktop"
+            description="Notifications shown by TermLoop on this computer."
+          >
+            <SettingsSwitch
+              checked={preferences.enabled}
+              disabled={saving}
+              title="Agent attention notifications"
+              description="Show a desktop notification when an Agent needs input."
+              change={(checked) => void updateDesktop("enabled", checked)}
+            />
+            <SettingsSwitch
+              checked={preferences.notifyWhenFocused}
+              disabled={saving || !preferences.enabled}
+              title="Show while TermLoop is active"
+              description="Also notify when this window is already focused."
+              change={(checked) => void updateDesktop("notifyWhenFocused", checked)}
+            />
+            <SettingsSwitch
+              checked={preferences.playSound}
+              disabled={saving || !preferences.enabled}
+              title="Play notification sound"
+              description="Use the system notification sound for Agent alerts."
+              change={(checked) => void updateDesktop("playSound", checked)}
+            />
+          </NotificationDeviceSection>
+
+          <RemoteNotificationSection
+            target="mobile"
+            title="Mobile"
+            description="Push notifications sent to iPhones paired with this Mac."
+            preferences={preferences.mobile}
+            saving={saving}
+            update={updateRemote}
           />
-          <SettingsSwitch
-            checked={preferences.notifyWhenFocused}
-            disabled={saving || !preferences.enabled}
-            title="Show while TermLoop is active"
-            description="Also notify when this window is already focused."
-            change={(checked) => void update("notifyWhenFocused", checked)}
+
+          <RemoteNotificationSection
+            target="watch"
+            title="Apple Watch"
+            description="Direct Watch notifications, including notification actions."
+            preferences={preferences.watch}
+            saving={saving}
+            update={updateRemote}
           />
-          <SettingsSwitch
-            checked={preferences.playSound}
-            disabled={saving || !preferences.enabled}
-            title="Play notification sound"
-            description="Use the system notification sound for Agent alerts."
-            change={(checked) => void update("playSound", checked)}
-          />
-        </div>
+        </>
       ) : loadingError ? (
         <p className="settings-error" role="alert">Could not load notification settings: {loadingError}</p>
       ) : (
         <p className="settings-loading" role="status">Loading notification settings…</p>
       )}
       {saveError ? <p className="settings-error" role="alert">Could not save notification settings: {saveError}</p> : null}
-      <p className="settings-footnote">System notification permissions can also be changed in your operating system settings.</p>
+      <p className="settings-footnote">Device-level notification permissions remain controlled by the operating system on each device.</p>
     </section>
   );
 }
 
+function NotificationDeviceSection({
+  children,
+  description,
+  title,
+}: {
+  children: ReactNode;
+  description: string;
+  title: string;
+}) {
+  return (
+    <section className="notification-device-section">
+      <header><h4>{title}</h4><p>{description}</p></header>
+      <div className="settings-card">{children}</div>
+    </section>
+  );
+}
+
+function RemoteNotificationSection({
+  description,
+  preferences,
+  saving,
+  target,
+  title,
+  update,
+}: {
+  description: string;
+  preferences: RemoteNotificationPreferences;
+  saving: boolean;
+  target: "mobile" | "watch";
+  title: string;
+  update(
+    target: "mobile" | "watch",
+    key: keyof RemoteNotificationPreferences,
+    value: boolean,
+  ): Promise<void>;
+}) {
+  const deviceName = target === "mobile" ? "iPhone" : "Apple Watch";
+  return (
+    <NotificationDeviceSection title={title} description={description}>
+      <SettingsSwitch
+        accessibleName={`${deviceName} notifications`}
+        checked={preferences.enabled}
+        disabled={saving}
+        title={`${deviceName} notifications`}
+        description={`Send notifications from this Mac to ${deviceName}.`}
+        change={(checked) => void update(target, "enabled", checked)}
+      />
+      <SettingsSwitch
+        accessibleName={`${deviceName}: Agent needs input`}
+        checked={preferences.agentNeedsInput}
+        disabled={saving || !preferences.enabled}
+        title="Agent needs input"
+        description="Alert when an Agent is waiting for your response."
+        change={(checked) => void update(target, "agentNeedsInput", checked)}
+      />
+      <SettingsSwitch
+        accessibleName={`${deviceName}: Agent ready for review`}
+        checked={preferences.agentReadyForReview}
+        disabled={saving || !preferences.enabled}
+        title="Agent ready for review"
+        description="Alert when an Agent finishes a turn for you to review."
+        change={(checked) => void update(target, "agentReadyForReview", checked)}
+      />
+      <SettingsSwitch
+        accessibleName={`${deviceName}: Steward messages and approvals`}
+        checked={preferences.stewardMessages}
+        disabled={saving || !preferences.enabled}
+        title="Steward messages and approvals"
+        description="Alert for Steward replies, proposals, and suggestions."
+        change={(checked) => void update(target, "stewardMessages", checked)}
+      />
+      <SettingsSwitch
+        accessibleName={`${deviceName}: Play notification sound`}
+        checked={preferences.playSound}
+        disabled={saving || !preferences.enabled}
+        title="Play notification sound"
+        description={`Include sound with ${deviceName} notifications.`}
+        change={(checked) => void update(target, "playSound", checked)}
+      />
+    </NotificationDeviceSection>
+  );
+}
+
 function SettingsSwitch({
+  accessibleName,
   change,
   checked,
   description,
   disabled,
   title,
 }: {
+  accessibleName?: string;
   change(checked: boolean): void;
   checked: boolean;
   description: string;
@@ -182,7 +322,7 @@ function SettingsSwitch({
         type="button"
         role="switch"
         aria-checked={checked}
-        aria-label={title}
+        aria-label={accessibleName ?? title}
         className={checked ? "settings-switch on" : "settings-switch"}
         disabled={disabled}
         onClick={() => change(!checked)}
