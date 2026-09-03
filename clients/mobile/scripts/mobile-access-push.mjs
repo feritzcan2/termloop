@@ -8,6 +8,7 @@ const TOKEN_MAX = 256;
 const DEFAULT_DESKTOP_ACTIVE_MS = 2 * 60 * 1000;
 const DEFAULT_DEVICE_NOTIFICATION_PREFERENCES = Object.freeze({
   enabled: true,
+  notifyWhenMacActive: false,
   agentNeedsInput: true,
   agentReadyForReview: true,
   stewardMessages: true,
@@ -29,7 +30,7 @@ export function pushNotificationPreferencesOf(value) {
     : { version: 1, mobile, watch };
 }
 
-export function pushDeliveryOptions(preferences, bundleId, notificationKind) {
+export function pushDeliveryOptions(preferences, bundleId, notificationKind, context = {}) {
   const target = typeof bundleId === "string" && bundleId.endsWith(".watch")
     ? preferences.watch
     : preferences.mobile;
@@ -39,7 +40,7 @@ export function pushDeliveryOptions(preferences, bundleId, notificationKind) {
       ? target.agentReadyForReview
       : target.stewardMessages;
   return {
-    enabled: target.enabled && kindEnabled,
+    enabled: target.enabled && kindEnabled && (!context.macActive || target.notifyWhenMacActive),
     playSound: target.playSound,
   };
 }
@@ -146,12 +147,14 @@ export function apnsPayload(notification, connectionId, options = {}) {
 function deviceNotificationPreferencesOf(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
   if (typeof value.enabled !== "boolean"
+    || (value.notifyWhenMacActive !== undefined && typeof value.notifyWhenMacActive !== "boolean")
     || typeof value.agentNeedsInput !== "boolean"
     || typeof value.agentReadyForReview !== "boolean"
     || typeof value.stewardMessages !== "boolean"
     || typeof value.playSound !== "boolean") return undefined;
   return {
     enabled: value.enabled,
+    notifyWhenMacActive: value.notifyWhenMacActive ?? false,
     agentNeedsInput: value.agentNeedsInput,
     agentReadyForReview: value.agentReadyForReview,
     stewardMessages: value.stewardMessages,

@@ -70,15 +70,29 @@ describe("SettingsDialog", () => {
     expect(foreground?.getAttribute("aria-checked")).toBe("true");
 
     const mobileReview = container.querySelector<HTMLButtonElement>('[aria-label="iPhone: Agent ready for review"]');
+    const mobileWhileActive = container.querySelector<HTMLButtonElement>('[aria-label="iPhone: Send while this Mac is active"]');
     const watchSteward = container.querySelector<HTMLButtonElement>('[aria-label="Apple Watch: Steward messages and approvals"]');
+    const watchWhileActive = container.querySelector<HTMLButtonElement>('[aria-label="Apple Watch: Send while this Mac is active"]');
     expect(mobileReview?.getAttribute("aria-checked")).toBe("true");
+    expect(mobileWhileActive?.getAttribute("aria-checked")).toBe("false");
     expect(watchSteward?.getAttribute("aria-checked")).toBe("true");
+    expect(watchWhileActive?.getAttribute("aria-checked")).toBe("false");
+    await act(async () => mobileWhileActive?.click());
+    expect(saveNotificationPreferences).toHaveBeenLastCalledWith({
+      ...defaultNotificationPreferences,
+      notifyWhenFocused: true,
+      mobile: {
+        ...defaultNotificationPreferences.mobile,
+        notifyWhenMacActive: true,
+      },
+    });
     await act(async () => mobileReview?.click());
     expect(saveNotificationPreferences).toHaveBeenLastCalledWith({
       ...defaultNotificationPreferences,
       notifyWhenFocused: true,
       mobile: {
         ...defaultNotificationPreferences.mobile,
+        notifyWhenMacActive: true,
         agentReadyForReview: false,
       },
     });
