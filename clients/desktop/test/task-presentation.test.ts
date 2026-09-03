@@ -270,7 +270,7 @@ describe("Task facts", () => {
     expect(integrationTone(integration, true)).toBe("attention");
   });
 
-  it("keeps a local base comparison ahead of a provider merge claim", () => {
+  it("keeps a local base comparison ahead of a provider merge claim and accepts cached merged results", () => {
     const projection = {
       task_id: "task-1", branch_name: "feature/work", repository_provider: "github", repository_host: "github.com",
       repository_owner: "o", repository_project: null, repository_name: "r", quality: "matches", freshness: "fresh", reason: null,
@@ -294,6 +294,16 @@ describe("Task facts", () => {
 
     expect(taskIntegration(projection, stillUnmerged)).toMatchObject({ tone: "attention", label: "2 unmerged", action: "commits" });
     expect(taskIntegration(projection, undefined)).toMatchObject({ tone: "done", label: "Merged", action: "pullRequest" });
+
+    projection.freshness = "stale";
+    projection.reason = "timeout";
+    expect(taskIntegration(projection, undefined)).toMatchObject({ tone: "done", label: "Merged", action: "pullRequest" });
+
+    projection.freshness = "unavailable";
+    expect(taskIntegration(projection, undefined)).toMatchObject({ tone: "done", label: "Merged", action: "pullRequest" });
+
+    projection.candidate_truncated = true;
+    expect(taskIntegration(projection, undefined)).toMatchObject({ tone: "quiet", label: "Merge unknown", action: undefined });
   });
 
   it("does not describe open PR branches with the durable Task branch base result", () => {
