@@ -18,6 +18,7 @@ import { pullRequestIdentity, type ChangesOpenSource } from "../change-source.js
 import { isAssistantSession } from "./AssistantRail.js";
 import { isProjectRelocationDragCandidate, isTaskRelocationDragCandidate, useOptionalSidebarSessionDnd, type SessionDropPlacement } from "./SidebarSessionDnd.js";
 import { readWorktreeParentPath, writeWorktreeParentPath } from "../worktree-parent-memory.js";
+import { readWorktreeBaseRef, writeWorktreeBaseRef } from "../worktree-base-ref-memory.js";
 import { readTaskCollapsed, writeTaskCollapsed } from "../task-collapse-memory.js";
 import { readFavoriteTaskIds, writeFavoriteTaskIds } from "../task-favorite-memory.js";
 import { AgentPlanDisclosure } from "./AgentPlanDisclosure.js";
@@ -321,6 +322,13 @@ export function TaskRail(props: TaskRailProps) {
   const rememberParentPath = useCallback((parentPath: string) => {
     setLastWorktreeParentPath(parentPath);
     writeWorktreeParentPath(props.projectId, parentPath);
+  }, [props.projectId]);
+  const lastWorktreeBaseRef = useMemo(
+    () => readWorktreeBaseRef(props.projectId),
+    [editor, props.projectId, provisionTarget],
+  );
+  const rememberBaseRef = useCallback((baseRef: string) => {
+    writeWorktreeBaseRef(props.projectId, baseRef);
   }, [props.projectId]);
   const [cleanupTarget, setCleanupTarget] = useState<Task>();
   const [repairTarget, setRepairTarget] = useState<Task>();
@@ -675,6 +683,8 @@ export function TaskRail(props: TaskRailProps) {
           repositoryPath: props.projectFolder ?? "",
           rememberedParentPath: lastWorktreeParentPath,
           rememberParentPath,
+          rememberedBaseRef: lastWorktreeBaseRef,
+          rememberBaseRef,
           listBranches: props.listProjectLocalBranches,
           ...(props.loadProjectTaskAutomation
             ? { loadProjectAutomation: props.loadProjectTaskAutomation }
@@ -685,7 +695,7 @@ export function TaskRail(props: TaskRailProps) {
         }}
       /> : null}
       {bindTarget ? <BindBranchDialog task={bindTarget} initialRepositoryPath={props.projectFolder ?? ""} close={() => setBindTarget(undefined)} bind={props.bindTaskBranch} /> : null}
-      {provisionTarget ? <ProvisionWorktreeDialog task={provisionTarget} projectId={props.projectId} repositoryPath={props.projectFolder ?? ""} rememberedParentPath={lastWorktreeParentPath} rememberParentPath={rememberParentPath} listBranches={props.listProjectLocalBranches} close={() => setProvisionTarget(undefined)} provision={props.provisionTaskWorktree} /> : null}
+      {provisionTarget ? <ProvisionWorktreeDialog task={provisionTarget} projectId={props.projectId} repositoryPath={props.projectFolder ?? ""} rememberedParentPath={lastWorktreeParentPath} rememberParentPath={rememberParentPath} rememberedBaseRef={lastWorktreeBaseRef} rememberBaseRef={rememberBaseRef} listBranches={props.listProjectLocalBranches} close={() => setProvisionTarget(undefined)} provision={props.provisionTaskWorktree} /> : null}
       {cleanupTarget ? <CleanupWorktreeDialog task={cleanupTarget} close={() => setCleanupTarget(undefined)} inspect={props.inspectTaskWorktreeCleanup} cleanup={props.cleanupTaskWorktree} /> : null}
       {repairTarget ? <RepairWorktreeDialog task={repairTarget} close={() => setRepairTarget(undefined)} inspect={props.inspectTaskWorktreeRepair} repair={props.repairTaskWorktree} /> : null}
       {archiveTarget ? <ArchiveTaskDialog

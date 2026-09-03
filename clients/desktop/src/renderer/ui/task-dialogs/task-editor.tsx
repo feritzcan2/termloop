@@ -51,6 +51,8 @@ export type CreateTaskFlow = {
   repositoryPath: string;
   rememberedParentPath: string | undefined;
   rememberParentPath(parentPath: string): void;
+  rememberedBaseRef: string | undefined;
+  rememberBaseRef(baseRef: string): void;
   listBranches(projectId: string): Promise<ProjectLocalBranchListResult>;
   loadProjectAutomation?(projectId: string): Promise<ProjectTaskAutomationGetResult>;
   agentCapabilities: readonly AgentCapabilityDto[];
@@ -133,7 +135,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
 
   /// Deliberately keyed on the two stable inputs rather than the whole `flow`
   /// object, which the rail recreates per render.
-  const { projectId, listBranches, loadProjectAutomation } = flow;
+  const { projectId, rememberedBaseRef, listBranches, loadProjectAutomation } = flow;
   useEffect(() => {
     let current = true;
     if (!projectId || !loadProjectAutomation) {
@@ -185,7 +187,12 @@ function CreateTaskDialog({ close, createTask, flow }: {
       const sorted = sortLocalBranches(result.branches);
       setLocalBranches(sorted);
       setBranchesTruncated(result.truncated);
-      setBaseRef((selected) => sorted.some((branch) => branch.exact_ref === selected) ? selected : sorted[0]?.exact_ref ?? "");
+      setBaseRef((selected) => {
+        if (sorted.some((branch) => branch.exact_ref === selected)) return selected;
+        const remembered = sorted.find((branch) => branch.exact_ref === rememberedBaseRef);
+        if (remembered) return remembered.exact_ref;
+        return sorted[0]?.exact_ref ?? "";
+      });
       setExistingBranchName((selected) => sorted.some((branch) => branch.name === selected) ? selected : sorted[0]?.name ?? "");
       setBranchesLoading(false);
     }).catch((loadError: unknown) => {
@@ -194,7 +201,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
       setBranchesError(loadError instanceof Error ? loadError.message : "Local branches could not be loaded.");
     });
     return () => { current = false; };
-  }, [listBranches, projectId]);
+  }, [listBranches, projectId, rememberedBaseRef]);
 
   /// The branch field is never empty: the title drives it, and before a title
   /// exists (or when it yields no slug) a per-dialog suffix keeps the proposal
@@ -359,7 +366,7 @@ function CreateTaskDialog({ close, createTask, flow }: {
             {branchMode === "create" ? (
               <div className="plan-row">
                 <label className="plan-label" htmlFor="create-base-ref">Base branch</label>
-                <select id="create-base-ref" value={baseRef} disabled={selectionUnavailable} onChange={(event) => { setBaseRef(event.target.value); setError(undefined); }}>
+                <select id="create-base-ref" value={baseRef} disabled={selectionUnavailable} onChange={(event) => { setBaseRef(event.target.value); flow.rememberBaseRef(event.target.value); setError(undefined); }}>
                   {selectionUnavailable ? <option value="">{branchesLoading ? "Loading local branches…" : "No local branches"}</option> : null}
                   {localBranches.map((branch) => <option key={branch.exact_ref} value={branch.exact_ref}>{branch.name}</option>)}
                 </select>
