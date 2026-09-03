@@ -164,8 +164,11 @@ fixture_pid=""
 identity_fixture_supervisor_pid=""
 development_signing_identity=""
 if [[ "$(uname -s)" == "Darwin" && "${TERMLOOP_DEV_CODE_SIGN_IDENTITY:-}" != "-" ]]; then
-  development_signing_identity="$(security find-identity -v -p codesigning 2>/dev/null | \
-    awk '/"Apple Development: / { print $2; exit }')"
+  development_signing_identity="${TERMLOOP_DEV_CODE_SIGN_IDENTITY:-}"
+  if [[ -z "$development_signing_identity" ]]; then
+    development_signing_identity="$(security find-identity -v -p codesigning 2>/dev/null | \
+      awk '/"Apple Development: / { print $2; exit }')"
+  fi
 fi
 launch_fixture_launches=""
 launch_fixture_bundle_baseline=""
@@ -347,7 +350,9 @@ grep -q '^launch bundle contract mismatch:' "$bundle_mismatch_error"
 [[ "$(find "$bundle_fixture_profile/launches" -maxdepth 1 -type d -name 'current' | wc -l | tr -d ' ')" == "1" ]]
 
 run_launch_cycle=false
-if [[ "$(uname -s)" == "Darwin" ]]; then
+if [[ "${TERMLOOP_SKIP_DEV_LAUNCH_CYCLE:-}" == "1" ]]; then
+  echo "Skipping persistent launch cycle: explicitly disabled for this native gate."
+elif [[ "$(uname -s)" == "Darwin" ]]; then
   run_launch_cycle=true
 elif [[ "$(uname -s)" == "Linux" ]]; then
   if command -v systemctl >/dev/null 2>&1 \
