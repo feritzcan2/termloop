@@ -21,6 +21,15 @@ describe("presentation store", () => {
     });
   });
 
+  it("keeps the New Project dialog closed for an empty initial projection until requested", () => {
+    presentationStore.getState().ensureSelection([], new Map());
+
+    expect(presentationStore.getState().projectDialogOpen).toBe(false);
+
+    presentationStore.getState().openProjectDialog();
+    expect(presentationStore.getState().projectDialogOpen).toBe(true);
+  });
+
   it("keeps a completed agent highlighted until its Session is selected", () => {
     presentationStore.getState().updateReviewReadySessions(["session-a"], ["session-a"]);
     expect(presentationStore.getState().reviewReadySessionIds).toEqual(new Set(["session-a"]));
