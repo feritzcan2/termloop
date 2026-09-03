@@ -2497,7 +2497,13 @@ button.history-row-main { cursor: pointer; }
    than truncating, because the page exists to read the whole thing. */
 .td-heading h1 { display: -webkit-box; margin: 0; overflow: hidden; color: var(--td-text); font-size: 18px; font-weight: 650; letter-spacing: -.02em; line-height: 1.3; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .td-status { flex: none; margin-top: 3px; padding: 3px 9px; border: 1px solid var(--border-strong); border-radius: 999px; background: rgba(255,255,255,.04); color: var(--td-dim); font: 700 10.5px/1.3 var(--font-mono); letter-spacing: .09em; text-transform: uppercase; }
-.td-brief { margin: 0; max-width: 72ch; color: var(--td-body); font-size: 12.5px; line-height: 1.6; }
+.td-brief { display: grid; gap: 10px; max-width: 72ch; color: var(--td-body); font-size: 12.5px; line-height: 1.6; }
+.td-brief p, .td-brief ul, .td-brief pre { margin: 0; }
+.td-brief h2 { margin: 5px 0 -3px; color: var(--text); font: 700 14px/1.35 var(--font-ui); }
+.td-brief ul { display: grid; gap: 5px; padding-left: 19px; }
+.td-brief code { padding: 1px 4px; border-radius: 4px; background: rgba(255,255,255,.07); color: var(--text); font: 11.5px/1.45 var(--font-mono); }
+.td-brief pre { overflow-x: auto; padding: 9px 11px; border: 1px solid var(--border); border-radius: 7px; background: rgba(0,0,0,.2); white-space: pre-wrap; }
+.td-brief pre code { padding: 0; background: transparent; }
 /* The meta line is the rail component re-read at page scale. */
 .td-header .task-meta { padding: 2px 0 0; }
 .td-header .task-meta-branch, .td-header .task-meta-sep, .td-header .task-signal { font-size: 11.5px; }
