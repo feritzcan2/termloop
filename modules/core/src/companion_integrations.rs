@@ -2,6 +2,7 @@
 
 pub mod assistant_reset;
 pub mod assistant_session;
+pub(crate) mod finding_disposition;
 pub mod playbook;
 pub mod playbook_runtime;
 pub mod prompt_improvement;
