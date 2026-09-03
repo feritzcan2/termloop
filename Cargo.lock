@@ -2321,7 +2321,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-agents"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "futures-util",
  "serde",
@@ -2335,7 +2335,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-companion"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "futures-util",
  "serde",
@@ -2347,7 +2347,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-contract"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "regex",
  "serde",
@@ -2356,7 +2356,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-core"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "base64",
  "serde",
@@ -2379,7 +2379,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-domain"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "serde",
  "uuid",
@@ -2387,14 +2387,14 @@ dependencies = [
 
 [[package]]
 name = "termloop-gitio"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "termloop-platform",
 ]
 
 [[package]]
 name = "termloop-invocation"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -2407,14 +2407,14 @@ dependencies = [
 
 [[package]]
 name = "termloop-llm"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "termloop-platform",
 ]
 
 [[package]]
 name = "termloop-observability"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "termloop-gitio",
  "termloop-platform",
@@ -2422,7 +2422,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-platform"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "base64",
  "ed25519-dalek",
@@ -2442,7 +2442,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-providers"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "caseless",
  "reqwest",
@@ -2458,7 +2458,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-r0-server"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "axum",
  "futures-util",
@@ -2472,7 +2472,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-server"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "axum",
  "futures-util",
@@ -2492,7 +2492,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-store"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -2504,7 +2504,7 @@ dependencies = [
 
 [[package]]
 name = "termloop-terminal"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "portable-pty",
  "termloop-platform",
