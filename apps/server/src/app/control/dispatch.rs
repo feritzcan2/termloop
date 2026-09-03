@@ -935,7 +935,7 @@ async fn dispatch_inner(
                         match outcome {
                             Err(error) => Err(error),
                             Ok(outcome) => {
-                                super::super::acknowledge_confirmed_steward_wakes(
+                                super::super::reconcile_steward_wake_runtime_events(
                                     &mut core,
                                     &state.companion_wakes,
                                 );

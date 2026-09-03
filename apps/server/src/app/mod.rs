@@ -11,7 +11,9 @@ use std::sync::{
     Arc, Mutex as StdMutex, Weak,
     atomic::{AtomicBool, AtomicU64, Ordering},
 };
-use termloop_contract::current::{ProjectionInvalidatedPayload, ProjectionTopic};
+use termloop_contract::current::{
+    CompanionWakeReason, ProjectionInvalidatedPayload, ProjectionTopic,
+};
 use termloop_core::CoreError;
 use termloop_terminal::TerminalService;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -1096,7 +1098,7 @@ async fn reconcile_agent_runtime_signals(
                     false
                 }
             };
-            acknowledge_confirmed_steward_wakes(&mut core, &companion_wakes);
+            reconcile_steward_wake_runtime_events(&mut core, &companion_wakes);
             (changed, topic, core.state_revision(), latest_sequence)
         };
         observation_sequence.fetch_max(latest_sequence, Ordering::Relaxed);
@@ -1161,7 +1163,7 @@ async fn reconcile_generated_input_runtime_events(
                     continue;
                 }
             };
-            acknowledge_confirmed_steward_wakes(&mut core, &companion_wakes);
+            reconcile_steward_wake_runtime_events(&mut core, &companion_wakes);
             (changed, core.state_revision(), latest_sequence)
         };
         observation_sequence.fetch_max(latest_sequence, Ordering::Relaxed);
@@ -1180,7 +1182,7 @@ async fn reconcile_generated_input_runtime_events(
     }
 }
 
-fn acknowledge_confirmed_steward_wakes(
+fn reconcile_steward_wake_runtime_events(
     core: &mut termloop_core::CoreRuntime,
     companion_wakes: &companion_supervisor::CompanionWakeQueue,
 ) {
@@ -1189,6 +1191,15 @@ fn acknowledge_confirmed_steward_wakes(
             &confirmation.project_id,
             confirmation.generation,
             confirmation.wake_id,
+        );
+    }
+    let project_limit = core.project_count();
+    for wake in core.take_steward_finding_disposition_retries() {
+        companion_wakes.enqueue(
+            wake.project_id,
+            CompanionWakeReason::RoutineFinding,
+            wake.generation,
+            project_limit,
         );
     }
 }

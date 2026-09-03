@@ -170,6 +170,8 @@ pub struct CoreRuntime {
     pub(crate) pending_assistant_wake_deliveries:
         HashMap<String, companion_integrations::assistant_session::PendingAssistantWakeDelivery>,
     pub(crate) confirmed_steward_wakes: VecDeque<ConfirmedStewardWake>,
+    pub(crate) steward_finding_dispositions:
+        companion_integrations::finding_disposition::StewardFindingDispositionRuntime,
     pub(crate) codex_runtimes: HashMap<String, CodexRuntime>,
     /// A reserved Project deletion makes the Project unavailable to every new
     /// or completing launch while the daemon terminates its Session runtimes
@@ -661,6 +663,8 @@ impl CoreRuntime {
             pending_generated_input_queues: HashMap::new(),
             pending_assistant_wake_deliveries: HashMap::new(),
             confirmed_steward_wakes: VecDeque::new(),
+            steward_finding_dispositions:
+                companion_integrations::finding_disposition::StewardFindingDispositionRuntime::default(),
             codex_runtimes: HashMap::new(),
             project_delete_reservations: HashSet::new(),
             project_assistant_reset_reservations: HashSet::new(),
@@ -884,6 +888,7 @@ impl CoreRuntime {
         }
         if next.state == AgentState::Idle {
             self.try_deliver_ask_to_reply_for_source(session_id);
+            self.observe_steward_idle(session_id, capability_runtime_epoch);
         }
 
         let mut session_changed = false;
@@ -1197,6 +1202,7 @@ impl CoreRuntime {
         self.deliver_pending_agent_generated_input(session_id)?;
         if next.state == AgentState::Idle {
             self.try_deliver_ask_to_reply_for_source(session_id);
+            self.observe_steward_idle(session_id, runtime_epoch);
         }
         Ok(projection_changed)
     }

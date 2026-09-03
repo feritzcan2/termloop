@@ -131,7 +131,7 @@ const STEWARD_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
 
 const WORKER_EXECUTOR_TEMPLATE: PromptTemplate = PromptTemplate {
     id: "builtin.worker.executor",
-    version: 22,
+    version: 23,
     authored_body: include_str!("../../../resources/prompts/builtin.worker.executor.md"),
 };
 
@@ -6185,7 +6185,7 @@ mod tests {
     #[test]
     fn pipeline_prompts_treat_a_step_title_as_a_label_not_a_yes_no_contract() {
         let worker = executor_prompt(ExecutorRole::Worker).unwrap();
-        assert_eq!(worker.provenance().template_version, 22);
+        assert_eq!(worker.provenance().template_version, 23);
         assert!(
             worker
                 .authored_preview()
@@ -6216,7 +6216,12 @@ mod tests {
         assert!(
             worker
                 .authored_preview()
-                .contains("`pullRequestCandidatesByBaseBranch`")
+                .contains("`pullRequestCandidatesByBaseBranch.<required-base>`")
+        );
+        assert!(
+            worker
+                .authored_preview()
+                .contains("`pullRequestCandidatesByBaseBranch.development`")
         );
         assert!(
             worker
