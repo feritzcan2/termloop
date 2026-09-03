@@ -441,6 +441,20 @@ describe("the Task detail page on screen", () => {
     await unmount();
   });
 
+  it("keeps a long description inside the detail page's scroll surface", async () => {
+    const task = detailTask({ brief: Array.from({ length: 80 }, (_, index) => `Description line ${index + 1}`).join("\n") });
+    const { container, unmount } = await mount({ task });
+
+    const body = container.querySelector(".td-body")!;
+    const brief = container.querySelector(".td-brief")!;
+    expect(container.querySelector(".td-header .td-brief")).toBeNull();
+    expect(brief.parentElement).toBe(body);
+    expect(brief.compareDocumentPosition(container.querySelector('[aria-label="Sessions"]')!))
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+    await unmount();
+  });
+
   it("shows the checked-out worktree branch as the effective branch", async () => {
     const task = detailTask({
       worktree_health: health({ checked_out_branch: "feature/live-checkout", head_state: "mismatch" }),
