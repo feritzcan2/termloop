@@ -376,9 +376,6 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
             <h1 title={task.title}>{task.title}</h1>
             {task.status === "closed" ? <span className="td-status closed">Closed</span> : null}
           </div>
-          {task.brief?.trim() ? (
-            <TaskBrief brief={task.brief} format={task.jira_url ? "jiraWiki" : "plain"} />
-          ) : null}
           <TaskMetaLine
             task={task}
             stage={stage}
@@ -401,6 +398,9 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
       </header>
       {error ? <p className="ap-error" role="alert">{error}</p> : null}
       <div className="td-body">
+        {task.brief?.trim() ? (
+          <TaskBrief brief={task.brief} format={task.jira_url ? "jiraWiki" : "plain"} />
+        ) : null}
         {now.length > 0 ? (
           <section className="td-block td-now" aria-label="Needs attention">
             <h2>Now</h2>
