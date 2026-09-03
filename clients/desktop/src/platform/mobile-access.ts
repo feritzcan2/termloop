@@ -6,11 +6,13 @@ import { promisify } from "node:util";
 import QRCode from "qrcode/lib/browser.js";
 
 import type { LayoutDocument } from "../layout/model.js";
+import type { NotificationPreferences } from "../notification-preferences.js";
 
 const run = promisify(execFile);
 const MAX_BOOTSTRAP_OUTPUT_BYTES = 32 * 1024;
 const MAX_AGENT_GROUP_PROJECTION_BYTES = 256 * 1024;
 let agentGroupPublishSequence = 0;
+let notificationPreferencesPublishSequence = 0;
 
 export function mobileAccessScriptPath(bundleDirectory: string, checkout?: string): string {
   return checkout
@@ -111,6 +113,46 @@ export async function publishMobileAgentGroups(
     if (!config?.isFile() || config.isSymbolicLink()) continue;
     const destination = path.join(directory, "agent-groups.json");
     const temporary = `${destination}.tmp-${process.pid}-${++agentGroupPublishSequence}`;
+    try {
+      await writeFile(temporary, source, { mode: 0o600, flag: "wx" });
+      await rename(temporary, destination);
+      await chmod(destination, 0o600);
+      published += 1;
+    } catch (error) {
+      await unlink(temporary).catch(() => undefined);
+      throw error;
+    }
+  }
+  return published;
+}
+
+/// Publishes this Mac's iPhone and Apple Watch delivery policy beside every
+/// enrolled gateway. The gateway reads latest state before each APNs delivery,
+/// so changing a switch does not require restarting Mobile Access.
+export async function publishMobileNotificationPreferences(
+  preferences: Pick<NotificationPreferences, "mobile" | "watch">,
+  stateRoot = mobileAccessStateRoot(),
+): Promise<number> {
+  const source = `${JSON.stringify({
+    version: 1,
+    mobile: preferences.mobile,
+    watch: preferences.watch,
+  })}\n`;
+  const entries = await readdir(stateRoot, { withFileTypes: true }).catch((error: unknown) => {
+    if (isMissing(error)) return [];
+    throw error;
+  });
+  let published = 0;
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !/^mac-[a-f0-9]{16}$/u.test(entry.name)) continue;
+    const directory = path.join(stateRoot, entry.name);
+    const config = await lstat(path.join(directory, "gateway.json")).catch((error: unknown) => {
+      if (isMissing(error)) return undefined;
+      throw error;
+    });
+    if (!config?.isFile() || config.isSymbolicLink()) continue;
+    const destination = path.join(directory, "notification-preferences.json");
+    const temporary = `${destination}.tmp-${process.pid}-${++notificationPreferencesPublishSequence}`;
     try {
       await writeFile(temporary, source, { mode: 0o600, flag: "wx" });
       await rename(temporary, destination);

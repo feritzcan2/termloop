@@ -9,9 +9,11 @@ import {
   packagedMobileAccessScriptPath,
   prepareMobileAccessQr,
   publishMobileAgentGroups,
+  publishMobileNotificationPreferences,
   reconcilePackagedMobileAccess,
   shouldReconcilePackagedMobileAccess,
 } from "../src/platform/mobile-access.js";
+import { defaultNotificationPreferences } from "../src/notification-preferences.js";
 
 describe("mobile access QR preparation", () => {
   const temporaryDirectories: string[] = [];
@@ -130,5 +132,34 @@ describe("mobile access QR preparation", () => {
           "project-1": [{ sessionIds, name: "Review crew" }],
         },
       });
+  });
+
+  it("publishes Mobile and Watch notification preferences to enrolled gateways", async () => {
+    const stateRoot = await mkdtemp(path.join(os.tmpdir(), "termloop-mobile-notifications-"));
+    temporaryDirectories.push(stateRoot);
+    const gatewayDirectory = path.join(stateRoot, "mac-0123456789abcdef");
+    await mkdir(gatewayDirectory);
+    await writeFile(path.join(gatewayDirectory, "gateway.json"), "{}", { mode: 0o600 });
+    const preferences = {
+      ...defaultNotificationPreferences,
+      mobile: {
+        ...defaultNotificationPreferences.mobile,
+        agentReadyForReview: false,
+      },
+      watch: {
+        ...defaultNotificationPreferences.watch,
+        playSound: false,
+      },
+    };
+
+    await expect(publishMobileNotificationPreferences(preferences, stateRoot)).resolves.toBe(1);
+    expect(JSON.parse(await readFile(
+      path.join(gatewayDirectory, "notification-preferences.json"),
+      "utf8",
+    ))).toEqual({
+      version: 1,
+      mobile: preferences.mobile,
+      watch: preferences.watch,
+    });
   });
 });

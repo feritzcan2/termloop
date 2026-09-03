@@ -90,6 +90,7 @@ import {
   mobileAccessScriptPath,
   prepareMobileAccessQr,
   publishMobileAgentGroups,
+  publishMobileNotificationPreferences,
   reconcilePackagedMobileAccess,
   shouldReconcilePackagedMobileAccess,
 } from "./platform/mobile-access.js";
@@ -275,6 +276,7 @@ async function updateNotificationPreferences(value: unknown): Promise<Notificati
     for (const notification of attentionNotifications.values()) notification.close();
     attentionNotifications.clear();
   }
+  await publishClientMobileNotificationPreferences(preferences);
   return notificationPreferencesCache;
 }
 
@@ -283,6 +285,16 @@ async function publishClientMobileAgentGroups(document: LayoutDocument): Promise
     await publishMobileAgentGroups(document);
   } catch (cause: unknown) {
     console.warn("Mobile Agent groups could not be published.", cause instanceof Error ? cause.name : "unknown");
+  }
+}
+
+async function publishClientMobileNotificationPreferences(
+  preferences: NotificationPreferences,
+): Promise<void> {
+  try {
+    await publishMobileNotificationPreferences(preferences);
+  } catch (cause: unknown) {
+    console.warn("Mobile notification preferences could not be published.", cause instanceof Error ? cause.name : "unknown");
   }
 }
 
@@ -351,6 +363,7 @@ handleIpc("termloop:mobile-access-pairing", async (event) => {
       mobileAccessNodeExecutable(process.env.TERMLOOP_DEV_NODE_BINARY),
     );
     await publishClientMobileAgentGroups(await clientLayoutStore().load());
+    await publishClientMobileNotificationPreferences(await currentNotificationPreferences());
     return {
       ok: true,
       qrSvg,
@@ -1386,9 +1399,20 @@ if (ownsSingleInstance) void app.whenReady().then(async () => {
   else Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate()));
   if (shouldReconcilePackagedMobileAccess(app.isPackaged)) {
     void reconcilePackagedMobileAccess(directory).then(
-      (outcome) => console.info(`[mobile-access] ${outcome || "reconciled"}`),
+      async (outcome) => {
+        console.info(`[mobile-access] ${outcome || "reconciled"}`);
+        await publishClientMobileNotificationPreferences(await currentNotificationPreferences());
+      },
       (cause: unknown) => console.error(
         `[mobile-access] reconcile failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+      ),
+    );
+  } else {
+    void currentNotificationPreferences().then(
+      publishClientMobileNotificationPreferences,
+      (cause: unknown) => console.warn(
+        "Mobile notification preferences could not be loaded.",
+        cause instanceof Error ? cause.name : "unknown",
       ),
     );
   }

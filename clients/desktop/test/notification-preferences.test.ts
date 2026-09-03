@@ -45,8 +45,12 @@ describe("desktop notification preferences", () => {
     const store = new NotificationPreferencesFileStore(file);
     expect(await store.load()).toEqual(defaultNotificationPreferences);
 
-    const saved = { enabled: true, notifyWhenFocused: true, playSound: false };
-    expect(await store.save(saved)).toEqual(saved);
+    const legacy = { enabled: true, notifyWhenFocused: true, playSound: false };
+    const saved = {
+      ...defaultNotificationPreferences,
+      ...legacy,
+    };
+    expect(await store.save(legacy)).toEqual(saved);
     expect(await store.load()).toEqual(saved);
     expect(JSON.parse(await readFile(file, "utf8"))).toEqual({ version: 1, notifications: saved });
     await expect(store.save({ enabled: "yes" })).rejects.toThrow("invalidNotificationPreferences");
