@@ -74,6 +74,7 @@ runs:
       env:
         ELECTRON_DISABLE_SANDBOX: "1"
         TERMLOOP_NON_UTF_FS: "1"
+        TERMLOOP_SKIP_DEV_LAUNCH_CYCLE: "1"
     - name: Test (Windows bounded concurrency)
       if: runner.os == 'Windows'
       shell: bash
@@ -86,7 +87,6 @@ runs:
       run: pnpm test
       env:
         RUST_TEST_THREADS: "1"
-        TERMLOOP_DEV_CODE_SIGN_IDENTITY: "-"
         TERMLOOP_RUNTIME_FILE: ${{ runner.temp }}/termloop-native-verify-no-runtime.json
         TERMLOOP_TERMINAL_RENDERER: xterm
     - name: S0 acceptance (Linux virtual display)
