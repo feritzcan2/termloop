@@ -13,6 +13,7 @@ import {
 } from "../task-presentation.js";
 import { playbookRelativeMinutes } from "./playbook-policy.js";
 import { GitHostPullRequests, TaskMetaLine } from "./TaskRail.js";
+import { TaskBrief } from "./TaskBrief.js";
 import { Icon } from "./Icon.js";
 import { pullRequestIdentity, type ChangesOpenSource } from "../change-source.js";
 
@@ -375,7 +376,9 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
             <h1 title={task.title}>{task.title}</h1>
             {task.status === "closed" ? <span className="td-status closed">Closed</span> : null}
           </div>
-          {task.brief?.trim() ? <p className="td-brief">{task.brief}</p> : null}
+          {task.brief?.trim() ? (
+            <TaskBrief brief={task.brief} format={task.jira_url ? "jiraWiki" : "plain"} />
+          ) : null}
           <TaskMetaLine
             task={task}
             stage={stage}
